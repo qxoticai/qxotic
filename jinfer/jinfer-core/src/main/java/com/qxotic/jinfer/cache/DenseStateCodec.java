@@ -13,7 +13,7 @@ import java.util.function.Function;
  *  (Llama, Granite) plug in with their two cache accessors; hybrid
  *  models (windows, recurrent checkpoints) write their own codec — their per-layer shapes
  *  genuinely differ and are clearer hand-written. */
-public final class DenseKvCodec<S extends RuntimeState> implements KvCodec<S> {
+public final class DenseStateCodec<S extends RuntimeState> implements StateCodec<S> {
 
     private final int layers;
     private final long kvDim;
@@ -21,7 +21,7 @@ public final class DenseKvCodec<S extends RuntimeState> implements KvCodec<S> {
     private final Function<S, FloatTensor[]> keys;
     private final Function<S, FloatTensor[]> values;
 
-    public DenseKvCodec(int layers, long kvDim, Function<S, FloatTensor[]> keys, Function<S, FloatTensor[]> values) {
+    public DenseStateCodec(int layers, long kvDim, Function<S, FloatTensor[]> keys, Function<S, FloatTensor[]> values) {
         this.layers = layers;
         this.kvDim = kvDim;
         this.bytesPerPosition = layers * 2L * kvDim * 2L;

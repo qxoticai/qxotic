@@ -1,6 +1,6 @@
 package com.qxotic.llm;
 
-import com.qxotic.jinfer.cache.KvCodec;
+import com.qxotic.jinfer.cache.StateCodec;
 import com.qxotic.jinfer.cache.KvTransfer;
 
 import java.lang.foreign.MemorySegment;
@@ -15,14 +15,14 @@ import java.lang.foreign.MemorySegment;
  *  F16). Checkpoint section: recurrent layer l → the {@code hist × dim} conv history (F32, as of
  *  the block end). Checkpoints are sparse (cache policy); a resume restores rows along the chain
  *  and the deepest checkpoint. */
-public final class Lfm2KvCodec implements KvCodec<Lfm2.State> {
+public final class Lfm2StateCodec implements StateCodec<Lfm2.State> {
 
     private final Lfm2.Configuration config;
     private final int convFloats;                 // hist * dim, per recurrent layer
     private final long bytesPerPosition;          // attention K+V, native F16
     private final long checkpointBytes;           // all recurrent layers' conv history, F32
 
-    public Lfm2KvCodec(Lfm2.Configuration config) {
+    public Lfm2StateCodec(Lfm2.Configuration config) {
         this.config = config;
         this.convFloats = Math.max(config.shortConvLCache() - 1, 0) * config.embeddingLength();
         long perPos = 0, fixed = 0;

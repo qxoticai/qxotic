@@ -37,7 +37,7 @@ public final class SparseCheckpointTest {
         @Override public void resumeAt(int p) { position = p; }
     }
 
-    static final class FakeCodec implements KvCodec<FakeState> {
+    static final class FakeCodec implements StateCodec<FakeState> {
         @Override public long rowBytes(int positions) { return positions * 8L; }
         @Override public long checkpointBytes() { return 8; }
         @Override public void saveRows(FakeState s, int from, int to, MemorySegment dst) {

@@ -19,7 +19,7 @@ public final class PromptCacheEvictionTest {
         @Override public void resumeAt(int p) { position = p; }
     }
 
-    static final class FakeCodec implements KvCodec<FakeState> {
+    static final class FakeCodec implements StateCodec<FakeState> {
         @Override public long rowBytes(int positions) { return positions * 1024L; }
         @Override public long checkpointBytes() { return 4096; }                           // fixed checkpoint part
         @Override public void saveRows(FakeState s, int from, int to, MemorySegment dst) { }

@@ -384,8 +384,8 @@ public class Main {
 
         // --sealed: restore the whole prompt from the sealed file (instant TTFT), or create it on
         // the first run. Any mismatch (different prompt/model) falls back to a plain prefill.
-        if (options.sealedPrompt() != null && model.kvCodec().isPresent()) {
-            var codec = model.kvCodec().get();
+        if (options.sealedPrompt() != null && model.stateCodec().isPresent()) {
+            var codec = model.stateCodec().get();
             long[] fp = new long[promptTokens.size()];
             for (int i = 0; i < fp.length; i++) fp[i] = promptTokens.get(i);
             byte[] seed = com.qxotic.jinfer.cache.PromptCache.modelSeed(options.modelPath());

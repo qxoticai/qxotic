@@ -1,7 +1,7 @@
 /**
  * Prompt caching: pure policy over two narrow seams.
  *
- * <p>The model contributes one {@link com.qxotic.jinfer.cache.KvCodec} - serialize/restore the
+ * <p>The model contributes one {@link com.qxotic.jinfer.cache.StateCodec} - serialize/restore the
  * resume-state for a span of positions to opaque bytes (per-position KV rows for attention,
  * fixed-size checkpoints for recurrent/windowed layers). Storage contributes one
  * {@link com.qxotic.jinfer.CacheStore}. {@link com.qxotic.jinfer.cache.PromptCache} owns

@@ -20,7 +20,7 @@ import java.util.HexFormat;
  *
  *  <p>Layout (little-endian): {@code JKVS, formatVersion, modelSeed[32], nameLen+nameUtf8,
  *  fingerprintCount N, pad to 64} then {@code N} fingerprint longs, pad to 64, then the KV span
- *  ({@link KvCodec#save} of {@code [0,N)}). {@link #open} maps the file lazily — header and
+ *  ({@link StateCodec#save} of {@code [0,N)}). {@link #open} maps the file lazily — header and
  *  fingerprints are the only pages touched before a restore. The model seed (see
  *  {@link PromptCache#modelSeed}) also covers the codec blob layout: any layout change ships as a
  *  seed/format bump, so a stale file fails validation instead of restoring garbage. */
@@ -45,7 +45,7 @@ public final class SealedPrompt {
     /** Seals {@code state} — which must hold exactly the {@code fingerprints.length} positions of
      *  the compiled prompt — into {@code out}. */
     public static <S extends RuntimeState> void compile(
-            Path out, String name, KvCodec<S> codec, S state, long[] fingerprints, byte[] modelSeed) throws IOException {
+            Path out, String name, StateCodec<S> codec, S state, long[] fingerprints, byte[] modelSeed) throws IOException {
         int n = fingerprints.length;
         if (state.position() != n) {
             throw new IllegalStateException("state at " + state.position() + ", prompt is " + n + " positions");
@@ -117,7 +117,7 @@ public final class SealedPrompt {
     /** Restores the sealed prompt into {@code state} iff it is a prefix of {@code requestFp}
      *  (plain comparison, no hashing) and returns the positions resumed; returns 0 on any mismatch
      *  — the caller prefills normally, a miss never degrades correctness. */
-    public <S extends RuntimeState> int tryRestore(S state, KvCodec<S> codec, long[] requestFp) {
+    public <S extends RuntimeState> int tryRestore(S state, StateCodec<S> codec, long[] requestFp) {
         int n = positions();
         if (requestFp.length < n) return 0;
         for (int i = 0; i < n; i++) {

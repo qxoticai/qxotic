@@ -1,6 +1,6 @@
 package com.qxotic.llm;
 
-import com.qxotic.jinfer.cache.KvCodec;
+import com.qxotic.jinfer.cache.StateCodec;
 import com.qxotic.jinfer.cache.KvTransfer;
 
 import java.lang.foreign.MemorySegment;
@@ -18,13 +18,13 @@ import java.lang.foreign.MemorySegment;
  *  wraps at most once, so each direction is at most two contiguous segment copies. Restore is a
  *  pure copy; the cache chain-applies blocks in order (the deepest window wins) and then resumes
  *  the state at the chain end. */
-public final class GptOssKvCodec implements KvCodec<GptOss.State> {
+public final class GptOssStateCodec implements StateCodec<GptOss.State> {
 
     private final GptOss.Configuration config;
     private final long bytesPerPosition;          // full-attention K+V rows, native F16
     private final long checkpointBytes;           // all SWA layers' fixed W-row windows, native F16
 
-    public GptOssKvCodec(GptOss.Configuration config) {
+    public GptOssStateCodec(GptOss.Configuration config) {
         this.config = config;
         long perPos = 0, fixed = 0;
         for (int l = 0; l < config.numberOfLayers(); l++) {

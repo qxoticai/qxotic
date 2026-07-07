@@ -57,8 +57,8 @@ public final class NemotronH implements LanguageModel<NemotronH.Configuration, N
     }
 
     @Override
-    public java.util.Optional<com.qxotic.jinfer.cache.KvCodec<State>> kvCodec() {
-        return java.util.Optional.of(new NemotronHKvCodec(config()));
+    public java.util.Optional<com.qxotic.jinfer.cache.StateCodec<State>> stateCodec() {
+        return java.util.Optional.of(new NemotronHStateCodec(config()));
     }
 
     @Override

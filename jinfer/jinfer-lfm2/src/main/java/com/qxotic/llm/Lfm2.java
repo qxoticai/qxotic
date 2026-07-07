@@ -99,8 +99,8 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
     }
 
     @Override
-    public java.util.Optional<com.qxotic.jinfer.cache.KvCodec<Lfm2.State>> kvCodec() {
-        return java.util.Optional.of(new Lfm2KvCodec(config()));
+    public java.util.Optional<com.qxotic.jinfer.cache.StateCodec<Lfm2.State>> stateCodec() {
+        return java.util.Optional.of(new Lfm2StateCodec(config()));
     }
 
     // === Forward ===

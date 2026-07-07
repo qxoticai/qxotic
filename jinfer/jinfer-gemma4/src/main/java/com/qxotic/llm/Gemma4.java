@@ -178,8 +178,8 @@ public final class Gemma4 implements LanguageModel<Gemma4.Configuration, Gemma4.
     }
 
     @Override
-    public java.util.Optional<com.qxotic.jinfer.cache.KvCodec<Gemma4.State>> kvCodec() {
-        return java.util.Optional.of(new Gemma4KvCodec(config()));
+    public java.util.Optional<com.qxotic.jinfer.cache.StateCodec<Gemma4.State>> stateCodec() {
+        return java.util.Optional.of(new Gemma4StateCodec(config()));
     }
 
     // -Dgemma.trace: per-layer residual checkpoints matching llama.cpp's eval-callback node names.

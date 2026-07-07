@@ -24,7 +24,7 @@ import java.util.Set;
  *  storage, no collision handling: git/IPFS regime).
  *
  *  <p>Blocks match COMPLETELY or not at all: recurrent checkpoints exist only at block boundaries
- *  (see {@link KvCodec}), so the longest reusable prefix is a chain of whole blocks. Checkpoints
+ *  (see {@link StateCodec}), so the longest reusable prefix is a chain of whole blocks. Checkpoints
  *  are SPARSE — multi-token blocks always carry one, single-token decode runs one every
  *  {@code jinfer.checkpointStride} (64) positions — so a decode block costs its rows only and a
  *  resume lands at the deepest checkpointed block, the caller re-ingesting the short tail. The
@@ -35,7 +35,7 @@ import java.util.Set;
  *  tip key, no re-walk — which is what makes single-token commits during decode natural. Large
  *  blocks and single-token blocks are the same mechanism at different spans.
  *
- *  <p>The model contributes only a {@link KvCodec}; storage only a {@link CacheStore}. This class
+ *  <p>The model contributes only a {@link StateCodec}; storage only a {@link CacheStore}. This class
  *  is pure policy: keys, the prefix tree, matching, budget/LRU-leaf eviction. Single-threaded by
  *  design (the generation worker), like the store. */
 public final class PromptCache<S extends RuntimeState> {
@@ -142,7 +142,7 @@ public final class PromptCache<S extends RuntimeState> {
         }
     }
 
-    private final KvCodec<S> codec;
+    private final StateCodec<S> codec;
     private final CacheStore store;
     private final long budgetBytes;
     private final byte[] modelSeed;
@@ -159,13 +159,13 @@ public final class PromptCache<S extends RuntimeState> {
     private long clock;
     private long hits, misses, evictions;
 
-    public PromptCache(KvCodec<S> codec, CacheStore store, long budgetBytes) {
+    public PromptCache(StateCodec<S> codec, CacheStore store, long budgetBytes) {
         this(codec, store, budgetBytes, new byte[0]);
     }
 
     /** Full control over checkpoint spacing (see the {@code Cursor.commit} policy); the other
      *  constructors default {@code stride} from {@code -Djinfer.checkpointStride} (64). */
-    public PromptCache(KvCodec<S> codec, CacheStore store, long budgetBytes, byte[] modelSeed, int stride) {
+    public PromptCache(StateCodec<S> codec, CacheStore store, long budgetBytes, byte[] modelSeed, int stride) {
         this(codec, store, budgetBytes, modelSeed, false, stride);
     }
 
@@ -174,12 +174,12 @@ public final class PromptCache<S extends RuntimeState> {
      *  streams collide — can never match each other's blocks. A codec layout change ships with a
      *  seed change and auto-invalidates persisted blocks (miss → recompute, no migration). One
      *  cache instance/file per model is the deployment shape; see {@link #modelSeed}. */
-    public PromptCache(KvCodec<S> codec, CacheStore store, long budgetBytes, byte[] modelSeed) {
+    public PromptCache(StateCodec<S> codec, CacheStore store, long budgetBytes, byte[] modelSeed) {
         this(codec, store, budgetBytes, modelSeed, false,
                 Math.max(1, Integer.getInteger("jinfer.checkpointStride", 64)));
     }
 
-    private PromptCache(KvCodec<S> codec, CacheStore store, long budgetBytes, byte[] modelSeed, boolean frozen,
+    private PromptCache(StateCodec<S> codec, CacheStore store, long budgetBytes, byte[] modelSeed, boolean frozen,
                         int stride) {
         this.stride = Math.max(1, stride);
         this.multiTokenGap = Math.max(this.stride, 4096);
@@ -205,7 +205,7 @@ public final class PromptCache<S extends RuntimeState> {
         this.DETACHED.live = false;
     }
 
-    /** A fast, stable model identity for {@link #PromptCache(KvCodec, CacheStore, long, byte[])}
+    /** A fast, stable model identity for {@link #PromptCache(StateCodec, CacheStore, long, byte[])}
      *  and for naming a persisted cache file: file length + SHA-256 of the first and last MiB of
      *  the GGUF (full-content hashing of multi-GB weights is not worth it — length + head/tail
      *  covers metadata, tensor table and data edges). */
@@ -390,7 +390,7 @@ public final class PromptCache<S extends RuntimeState> {
      *  cached on it (a RAM overlay tier is future work). The mapping lives for the process
      *  (global arena). */
     public static <S extends RuntimeState> PromptCache<S> open(
-            java.nio.file.Path file, KvCodec<S> codec, byte[] modelSeed) throws java.io.IOException {
+            java.nio.file.Path file, StateCodec<S> codec, byte[] modelSeed) throws java.io.IOException {
         MemorySegment map;
         try (java.nio.channels.FileChannel ch = java.nio.channels.FileChannel.open(file, java.nio.file.StandardOpenOption.READ)) {
             map = ch.map(java.nio.channels.FileChannel.MapMode.READ_ONLY, 0, ch.size(), Arena.global());

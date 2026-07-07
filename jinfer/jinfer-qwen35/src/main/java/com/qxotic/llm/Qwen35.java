@@ -99,8 +99,8 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
     }
 
     @Override
-    public java.util.Optional<com.qxotic.jinfer.cache.KvCodec<Qwen35.State>> kvCodec() {
-        return java.util.Optional.of(new Qwen35KvCodec(config()));
+    public java.util.Optional<com.qxotic.jinfer.cache.StateCodec<Qwen35.State>> stateCodec() {
+        return java.util.Optional.of(new Qwen35StateCodec(config()));
     }
 
     /** The turn-delimiter / eos ids that terminate generation (convenience for callers/tests). */

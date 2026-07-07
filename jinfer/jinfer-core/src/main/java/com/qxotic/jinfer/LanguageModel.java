@@ -1,6 +1,6 @@
 package com.qxotic.jinfer;
 
-import com.qxotic.jinfer.cache.KvCodec;
+import com.qxotic.jinfer.cache.StateCodec;
 import com.qxotic.jinfer.chat.TurnTemplate;
 
 import java.util.Optional;
@@ -22,7 +22,7 @@ public interface LanguageModel<C extends Config, W, S extends RuntimeState> exte
     default Optional<TurnTemplate> turnTemplate() { return Optional.empty(); }
 
     /** The prompt-cache resume-state codec for this model, when caching is supported. Stateless. */
-    default Optional<KvCodec<S>> kvCodec() { return Optional.empty(); }
+    default Optional<StateCodec<S>> stateCodec() { return Optional.empty(); }
 
     /** Vocabulary logits for the {@code output}-th retained hidden state (0 .. outputCount()-1). */
     FloatTensor logits(S state, int output);

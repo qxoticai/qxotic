@@ -83,7 +83,7 @@ public final class Gemma4MtpIdentityTest {
 
         // CachedSession integration: speculative decode on a session's state, then adopt(committed)
         {
-            PromptCache<Gemma4.State> cache = new PromptCache<>(m.kvCodec().orElseThrow(), CacheStore.inMemory(),
+            PromptCache<Gemma4.State> cache = new PromptCache<>(m.stateCodec().orElseThrow(), CacheStore.inMemory(),
                     1L << 30, PromptCache.modelSeed(model));
             CachedSession<Gemma4.State> session = CachedSession.resume(m, cache, m.newState(4096, 64), new long[0]);
             int[] ids = withBos(bos, tk.encode(PROMPTS[0]));

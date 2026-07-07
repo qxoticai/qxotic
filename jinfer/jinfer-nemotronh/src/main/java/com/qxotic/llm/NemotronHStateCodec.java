@@ -1,6 +1,6 @@
 package com.qxotic.llm;
 
-import com.qxotic.jinfer.cache.KvCodec;
+import com.qxotic.jinfer.cache.StateCodec;
 import com.qxotic.jinfer.cache.KvTransfer;
 
 import java.lang.foreign.MemorySegment;
@@ -22,7 +22,7 @@ import java.lang.foreign.MemorySegment;
  *  blocks amortize it well; single-token decode blocks are expensive for this model, so harnesses
  *  keep decode budgets small and cache budgets large (compression of unchanged checkpoints is a
  *  noted follow-up). */
-public final class NemotronHKvCodec implements KvCodec<NemotronH.State> {
+public final class NemotronHStateCodec implements StateCodec<NemotronH.State> {
 
     private final NemotronH.Configuration config;
     private final int convFloats;                 // (dConv-1) * convChannels, per SSM layer
@@ -30,7 +30,7 @@ public final class NemotronHKvCodec implements KvCodec<NemotronH.State> {
     private final long bytesPerPosition;          // attention K+V rows, native F16
     private final long checkpointBytes;           // all SSM layers' conv + S, F32
 
-    public NemotronHKvCodec(NemotronH.Configuration config) {
+    public NemotronHStateCodec(NemotronH.Configuration config) {
         this.config = config;
         this.convFloats = (config.ssmConvKernel() - 1) * config.ssmConvChannels();
         this.ssmFloats = config.ssmInnerSize() * config.ssmStateSize();

@@ -1,5 +1,5 @@
 // Shared driver core for the per-model validation harnesses (cache/sealed/frozen/oracle): one
-// model + its S1 seams (turnTemplate/kvCodec) + the check/finish protocol every run uses. The
+// model + its S1 seams (turnTemplate/stateCodec) + the check/finish protocol every run uses. The
 // scenarios (CacheScenario, SealedScenario, FrozenScenario, OracleScenario) are parameterized by
 // this; per-model entry points shrink to wiring.
 package com.qxotic.jinfer.testkit;
@@ -9,7 +9,7 @@ import com.qxotic.jinfer.GgufTokenizer;
 import com.qxotic.jinfer.LanguageModel;
 import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.jinfer.cache.CachedSession;
-import com.qxotic.jinfer.cache.KvCodec;
+import com.qxotic.jinfer.cache.StateCodec;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.TurnTemplate;
@@ -25,7 +25,7 @@ public final class Harness<S extends RuntimeState> {
 
     public final LanguageModel<?, ?, S> model;
     public final TurnTemplate template;
-    public final KvCodec<S> codec;
+    public final StateCodec<S> codec;
     public final GgufTokenizer tokenizer;
     public final Set<Integer> stops;
     public final Path path;
@@ -45,7 +45,7 @@ public final class Harness<S extends RuntimeState> {
         this.deterministicDecode = deterministicDecode;
         this.model = model;
         this.template = model.turnTemplate().orElseThrow();
-        this.codec = model.kvCodec().orElseThrow();
+        this.codec = model.stateCodec().orElseThrow();
         this.tokenizer = model.tokenizer();
         this.stops = model.stopTokens();
         this.path = path;

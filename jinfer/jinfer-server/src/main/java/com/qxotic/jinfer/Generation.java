@@ -4,7 +4,7 @@ import com.qxotic.jinfer.Generator.GenerationResult;
 import com.qxotic.jinfer.Generator.StopSpec;
 import com.qxotic.jinfer.cache.CachedSession;
 import com.qxotic.jinfer.cache.SessionPool;
-import com.qxotic.jinfer.cache.KvCodec;
+import com.qxotic.jinfer.cache.StateCodec;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Role;
@@ -25,7 +25,7 @@ import java.util.function.IntConsumer;
  * Transport-agnostic - endpoint handlers and SSE streaming live in {@link Server}.
  *
  * <p>Plain chat on a model with a {@link TurnTemplate} is lowered through the hand-written
- * template (injection-inert, oracle-validated framing); when the model also has a {@link KvCodec}
+ * template (injection-inert, oracle-validated framing); when the model also has a {@link StateCodec}
  * and caching is enabled, the conversation is served through a per-model {@link PromptCache}, so a
  * follow-up request that echoes the prior turns resumes their KV instead of re-prefilling.
  * Requests with tools, and models without a template, take the whole-render fallback.
@@ -38,7 +38,7 @@ final class Generation {
     private final Map<GgufTokenizer, int[]> newlineCache = Collections.synchronizedMap(new WeakHashMap<>());
     private final TurnTemplate template;         // memoized model framing, null when the model has none
     private final Set<Integer> stopTokens;       // memoized model stops
-    private final PromptCache<?> promptCache;    // per-model cache; null without a KvCodec or when disabled
+    private final PromptCache<?> promptCache;    // per-model cache; null without a StateCodec or when disabled
     private final SessionPool<?> sessionPool;    // tier 1: last-N live conversations (append-only reuse)
 
     Generation(LanguageModel<?, ?, ?> model, LLMOptions options, Worker worker) {
@@ -52,7 +52,7 @@ final class Generation {
     }
 
     private static <S extends RuntimeState> PromptCache<S> buildCache(LanguageModel<?, ?, S> m, java.nio.file.Path modelPath) {
-        KvCodec<S> codec = m.kvCodec().orElse(null);
+        StateCodec<S> codec = m.stateCodec().orElse(null);
         if (codec == null) return null;
         return new PromptCache<>(codec, CacheStore.inMemory(),
                 RuntimeFlags.PROMPT_CACHE_BUDGET_BYTES, PromptCache.modelSeed(modelPath));
