@@ -26,7 +26,7 @@ import java.lang.foreign.MemorySegment;
  *  codec: restore methods copy bytes into the state's tensors, and the cache calls
  *  {@link RuntimeState#resumeAt} once after the whole chain is applied. Rows restore in chain
  *  order from position 0; the checkpoint is applied once, from the resume block. */
-public interface KvCodec<S extends RuntimeState> {
+public interface StateCodec<S extends RuntimeState> {
 
     /** Rows-section size for a span of {@code positions} — exact and deterministic. */
     long rowBytes(int positions);

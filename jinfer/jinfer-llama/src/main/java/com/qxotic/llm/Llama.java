@@ -104,9 +104,9 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
     }
 
     @Override
-    public java.util.Optional<com.qxotic.jinfer.cache.KvCodec<Llama.State>> kvCodec() {
+    public java.util.Optional<com.qxotic.jinfer.cache.StateCodec<Llama.State>> stateCodec() {
         // uniform full attention: the shared dense codec over this State's KV arrays
-        return java.util.Optional.of(new com.qxotic.jinfer.cache.DenseKvCodec<>(
+        return java.util.Optional.of(new com.qxotic.jinfer.cache.DenseStateCodec<>(
                 config().numberOfLayers(), config().kvDim(), s -> s.keyCache, s -> s.valueCache));
     }
 

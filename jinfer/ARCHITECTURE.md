@@ -12,7 +12,7 @@ jinfer-jinja    Jinja template engine (CompiledTemplate) - used by the server fa
 jinfer-kernels  ModelLoader, FlashAttention, GEMM dispatch (JAM native / Vector API);
                 test-jar ships the shared testkit (Harness + scenario batteries)
 jinfer-<model>  one module per curated model (lfm2, gemma4, llama, gptoss, qwen35, ...):
-                the arch port + its TurnTemplate + its KvCodec
+                the arch port + its TurnTemplate + its StateCodec
 jinfer-server   OpenAI-compatible HTTP server on top
 ```
 
@@ -35,7 +35,7 @@ Models without a hand-written template fall back to the server's Jinja render pa
 
 ## Prompt cache: policy over two seams
 
-The model provides a `KvCodec` (resume-state for a position span &harr; opaque bytes: per-position
+The model provides a `StateCodec` (resume-state for a position span &harr; opaque bytes: per-position
 K/V rows for attention layers; fixed-size checkpoints for short-conv, SSM, or sliding-window
 layers - restored at true ring slots since RoPE is position-baked). Storage provides a
 `CacheStore`. `PromptCache` owns the rest:

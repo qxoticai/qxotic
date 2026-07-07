@@ -101,8 +101,8 @@ public final class GptOss implements LanguageModel<GptOss.Configuration, GptOss.
     }
 
     @Override
-    public java.util.Optional<com.qxotic.jinfer.cache.KvCodec<GptOss.State>> kvCodec() {
-        return java.util.Optional.of(new GptOssKvCodec(config()));
+    public java.util.Optional<com.qxotic.jinfer.cache.StateCodec<GptOss.State>> stateCodec() {
+        return java.util.Optional.of(new GptOssStateCodec(config()));
     }
 
     // === Math helpers (ported from the production GptOss) ===

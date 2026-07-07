@@ -37,7 +37,7 @@ public final class SessionPoolTest {
         }
     }
 
-    static final class FakeCodec implements KvCodec<FakeState> {
+    static final class FakeCodec implements StateCodec<FakeState> {
         @Override public long rowBytes(int positions) { return positions * 8L; }
         @Override public void saveRows(FakeState s, int from, int to, MemorySegment dst) { }
         @Override public void restoreRows(FakeState s, int from, int to, MemorySegment src) { }

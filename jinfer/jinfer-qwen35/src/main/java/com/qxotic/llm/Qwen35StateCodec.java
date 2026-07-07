@@ -1,6 +1,6 @@
 package com.qxotic.llm;
 
-import com.qxotic.jinfer.cache.KvCodec;
+import com.qxotic.jinfer.cache.StateCodec;
 import com.qxotic.jinfer.cache.KvTransfer;
 
 import java.lang.foreign.MemorySegment;
@@ -16,7 +16,7 @@ import java.lang.foreign.MemorySegment;
  *  {@code headVDim × headVDim × dtRank} delta-net state (F32, a heap array - copied via a heap
  *  segment view). Restore is a pure copy; the cache chain-applies blocks in order (deepest
  *  checkpoint wins) and then resumes the state at the chain end. */
-public final class Qwen35KvCodec implements KvCodec<Qwen35.State> {
+public final class Qwen35StateCodec implements StateCodec<Qwen35.State> {
 
     private final Qwen35.Configuration config;
     private final int convFloats;                 // (convKernel-1) * convChannels, per SSM layer
@@ -24,7 +24,7 @@ public final class Qwen35KvCodec implements KvCodec<Qwen35.State> {
     private final long bytesPerPosition;          // attention K+V, native F16
     private final long checkpointBytes;           // all SSM layers' conv ring + delta-net state, F32
 
-    public Qwen35KvCodec(Qwen35.Configuration config) {
+    public Qwen35StateCodec(Qwen35.Configuration config) {
         this.config = config;
         this.convFloats = (config.ssmConvKernel - 1) * config.convChannels();
         this.ssmFloats = config.headVDim() * config.headVDim() * config.ssmTimeStepRank;

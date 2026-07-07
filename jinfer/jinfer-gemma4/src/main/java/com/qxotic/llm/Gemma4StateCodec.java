@@ -1,6 +1,6 @@
 package com.qxotic.llm;
 
-import com.qxotic.jinfer.cache.KvCodec;
+import com.qxotic.jinfer.cache.StateCodec;
 import com.qxotic.jinfer.cache.KvTransfer;
 
 import java.lang.foreign.MemorySegment;
@@ -19,13 +19,13 @@ import java.lang.foreign.MemorySegment;
  *  {@code max(0,to-W)+r}; the ring span wraps at most once, so each direction is at most two
  *  contiguous segment copies). Restore is a pure copy; rows chain-apply in order and the
  *  checkpoint is applied once, from the resume block. */
-public final class Gemma4KvCodec implements KvCodec<Gemma4.State> {
+public final class Gemma4StateCodec implements StateCodec<Gemma4.State> {
 
     private final Gemma4.Configuration config;
     private final long bytesPerPosition;          // full-attention K+V rows, native F16
     private final long checkpointBytes;           // all SWA layers' fixed W-row windows, native F16
 
-    public Gemma4KvCodec(Gemma4.Configuration config) {
+    public Gemma4StateCodec(Gemma4.Configuration config) {
         this.config = config;
         long perPos = 0, fixed = 0;
         for (int l = 0; l < config.ownKvLayers(); l++) {

@@ -10,7 +10,7 @@ import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.CacheStore;
 import com.qxotic.jinfer.Media;
 import com.qxotic.jinfer.cache.CachedSession;
-import com.qxotic.jinfer.cache.KvCodec;
+import com.qxotic.jinfer.cache.StateCodec;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
@@ -34,7 +34,7 @@ public final class Gemma4MultimodalCacheRun {
     static int failures;
     static Gemma4 model;
     static TurnTemplate template;
-    static KvCodec<Gemma4.State> codec;
+    static StateCodec<Gemma4.State> codec;
     static Set<Integer> stops;
     static long budget;
     static byte[] seed;
@@ -45,7 +45,7 @@ public final class Gemma4MultimodalCacheRun {
         budget = big ? 14L << 30 : 4L << 30;   // 12B SWA checkpoints are ~hundreds of MB per block
         model = Gemma4.loadModel(text, mmproj, 4096);
         template = model.turnTemplate().orElseThrow();
-        codec = model.kvCodec().orElseThrow();
+        codec = model.stateCodec().orElseThrow();
         stops = model.stopTokens();
         seed = PromptCache.modelSeed(text);
         System.out.println("model=" + text.getFileName() + " modalities=" + model.modalities()

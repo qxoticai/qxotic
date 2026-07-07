@@ -7,7 +7,7 @@
 package com.qxotic.jinfer;
 
 import com.qxotic.jinfer.cache.CachedSession;
-import com.qxotic.jinfer.cache.KvCodec;
+import com.qxotic.jinfer.cache.StateCodec;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.cache.SealedPrompt;
 import com.qxotic.jinfer.chat.Message;
@@ -63,7 +63,7 @@ public final class TtftBench {
      *  TTFT vs warm resume TTFT for the follow-up question. */
     static <S extends RuntimeState> void warm(LanguageModel<?, ?, S> model, Path gguf, int reps) {
         TurnTemplate tpl = model.turnTemplate().orElseThrow();
-        KvCodec<S> codec = model.kvCodec().orElseThrow();
+        StateCodec<S> codec = model.stateCodec().orElseThrow();
         PromptCache<S> cache = new PromptCache<>(codec, CacheStore.inMemory(), 8L << 30, PromptCache.modelSeed(gguf));
 
         // history: [start][user: story][genPrompt] -> reply -> closeTurn, all committed
@@ -126,7 +126,7 @@ public final class TtftBench {
      *  generated tokens) so the serve side can rebuild the exact fingerprints from text. */
     static <S extends RuntimeState> void sealedCompile(LanguageModel<?, ?, S> model, Path gguf, Path out) throws Exception {
         TurnTemplate tpl = model.turnTemplate().orElseThrow();
-        KvCodec<S> codec = model.kvCodec().orElseThrow();
+        StateCodec<S> codec = model.stateCodec().orElseThrow();
         List<Batch> prefix = concat(tpl.conversationStart(), tpl.encodeTurn(Message.user(story())));
         int[] ids = Batch.tokenIds(prefix);
         long[] fp = new long[ids.length];
@@ -140,7 +140,7 @@ public final class TtftBench {
     /** Fresh-JVM serve: open + tryRestore + follow-up prefill + first token. */
     static <S extends RuntimeState> void sealedServe(LanguageModel<?, ?, S> model, Path gguf, Path file) throws Exception {
         TurnTemplate tpl = model.turnTemplate().orElseThrow();
-        KvCodec<S> codec = model.kvCodec().orElseThrow();
+        StateCodec<S> codec = model.stateCodec().orElseThrow();
         List<Batch> followUp = concat(tpl.encodeTurn(Message.user(QUESTION)), tpl.generationPrompt(true));
 
         // JIT warmup on a throwaway state (a running server / native image has warm code; without
