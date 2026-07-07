@@ -403,7 +403,7 @@ class JamBackendParityTest {
 
     @Test void tileSelectionSane() {
         assertTrue(Q8Kernel.tileCode() >= 0 && Q8Kernel.tileCode() <= 12, "TILE_CODE in [0,12], was " + Q8Kernel.tileCode());
-        assertTrue(!VectorJAM.IS_512 || Q8Kernel.tileCode() <= 5, "IS_512 implies a 512-bit tile code (<=5)");
+        assertTrue(!VectorSupport.IS_512 || Q8Kernel.tileCode() <= 5, "IS_512 implies a 512-bit tile code (<=5)");
     }
 
     // ---- helpers ----
