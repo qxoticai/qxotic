@@ -2,32 +2,24 @@ package com.qxotic.jinfer;
 
 import com.qxotic.format.gguf.GGMLType;
 import com.qxotic.jam.JAM;
-import com.qxotic.jam.NativeJAM;
-
-import java.lang.foreign.MemorySegment;
 
 /**
- * Native backend: passes the operands to {@code NativeJAM.global().mm}. jam carries the (dtype × ISA) dispatch
- * itself and writes token-major output (jinfer's layout), so this is just segment + offset + tag plumbing.
- * Each operand goes in as {@code (vseg, vbase + relativeByteOffset)} — {@code vseg.address() + vbase} is the
- * tensor's base, so jam reads it zero-copy and bounds-checks against {@code vseg}. Offsets are {@code long}
- * (a weight byte offset can exceed 2³¹ on large models).
+ * Runs any {@link JAM} backend (native {@code NativeJAM} or Vector API {@code VectorJAM}) over jinfer's
+ * {@link SegmentFloatTensor} view. This is the one place the tensor-to-JAM translation lives: an operand's
+ * {@code (vseg, vbase)} = (GLOBAL segment, absolute byte base) with ELEMENT offsets/strides becomes JAM's
+ * {@code (segment, BYTE operand offset, element stride)} contract, so jam reads it zero-copy and bounds-checks
+ * against {@code vseg}. On a runtime decline ({@code st != OK} — EBUSY contention, or a shape the backend
+ * won't take) it hands off to the scalar floor. {@link Dispatch} gates every call, so a decline is rare.
+ * Offsets are {@code long} (a weight byte offset can exceed 2³¹ on large models).
  */
 final class JamMatMul implements MatMul {
 
-    private final MatMul fallback;   // scalar floor, for a runtime decline (EBUSY contention / unsupported)
+    private final JAM jam;
+    private final MatMul fallback;   // scalar floor, for a runtime decline
 
-    JamMatMul(MatMul fallback) { this.fallback = fallback; }
-
-    static boolean tryLoad() {
-        if (Boolean.getBoolean("jinfer.disableJam")) return false;       // force the Java backends (testing)
-        // Direct touch triggers NativeJAM's static init (libjam load). Deliberately NOT Class.forName:
-        // reflective lookup needs registration on native image and silently disabled jam there.
-        try { NativeJAM.global(); return true; }
-        catch (Throwable t) {
-            System.err.println("jam native library unavailable (" + t + "); using the Java backends.");
-            return false;
-        }
+    JamMatMul(JAM jam, MatMul fallback) {
+        this.jam = jam;
+        this.fallback = fallback;
     }
 
     @Override
@@ -37,16 +29,16 @@ final class JamMatMul implements MatMul {
                    int m, int n, int k) {
         GGMLType t = w.type();
         SegmentFloatTensor sw = (SegmentFloatTensor) w, sa = (SegmentFloatTensor) a, sc = (SegmentFloatTensor) c;
-        long wByteOff = sw.vbase + (wOff / t.getElementsPerBlock()) * t.getBlockByteSize();   // block-aware weight offset
-        long aByteOff = sa.vbase + aOff * Float.BYTES;
-        long cByteOff = sc.vbase + cOff * Float.BYTES;
-        int st = NativeJAM.global().mm(sw.vseg, wByteOff, jamTag(t), wStride,
-                                       sa.vseg, aByteOff, JAM.F32, aStride,
-                                       sc.vseg, cByteOff, JAM.F32, cStride,
-                                       m, n, k);
-        if (st != JAM.OK) {   // EBUSY (concurrent same-context) / unsupported shape -> the floor finishes it
+        // wOff/aOff/cOff are ELEMENT offsets (Dispatch guarantees wOff is block-aligned, so the block-aware
+        // weight byte offset is exact); F32 activation/result are 4 bytes/element.
+        long wByte = sw.vbase + (wOff / t.getElementsPerBlock()) * t.getBlockByteSize();
+        long aByte = sa.vbase + aOff * Float.BYTES;
+        long cByte = sc.vbase + cOff * Float.BYTES;
+        int st = jam.mm(sw.vseg, wByte, jamTag(t), wStride,
+                        sa.vseg, aByte, JAM.F32, aStride,
+                        sc.vseg, cByte, JAM.F32, cStride, m, n, k);
+        if (st != JAM.OK)   // EBUSY (concurrent same-context) / unsupported shape -> the floor finishes it
             fallback.mm(w, wOff, wStride, a, aOff, aStride, c, cOff, cStride, m, n, k);
-        }
     }
 
     /** GGMLType -> jam dtype tag (== ggml_type value, but mapped explicitly to stay honest). */
