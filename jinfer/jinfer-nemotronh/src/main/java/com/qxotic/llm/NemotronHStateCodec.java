@@ -1,94 +1,38 @@
 package com.qxotic.llm;
 
-import com.qxotic.jinfer.cache.StateCodec;
+import com.qxotic.jinfer.cache.AbstractStateCodec;
 import com.qxotic.jinfer.cache.KvTransfer;
 
 import java.lang.foreign.MemorySegment;
 
-/** Nemotron-H resume-state codec: ATTENTION layers serialize their per-position K/V rows for the
- *  span (raw F16, linear absolute positions); SSM (Mamba2) layers serialize their fixed-size F32
- *  checkpoint - the conv ring plus the recurrent S matrix - which only exists at the position the
- *  state is at, exactly why blocks match completely or not at all. MOE layers route per token and
- *  carry no cross-token state - nothing to checkpoint.
+/** Nemotron-H resume-state codec: ATTENTION layers store per-position K/V rows (shared base); SSM
+ *  (Mamba2) layers checkpoint a fixed-size F32 snapshot — the conv ring plus the recurrent S matrix —
+ *  which only exists at the state's current position, exactly why blocks match completely or not at all.
+ *  MOE layers route per token and carry no cross-token state. The S matrix is a heap array copied via a
+ *  heap segment view.
  *
- *  <p>Blob layout, layer-major: ATTENTION layer l -> K rows {@code [from,to)} then V rows (native
- *  F16); SSM layer l -> conv ring ({@code (dConv-1) x convChannels} F32) then the S matrix
- *  ({@code dInner x dState} F32, a heap array copied via {@code MemorySegment.ofArray}). Restore
- *  is a pure copy; the cache chain-applies blocks in order (deepest SSM checkpoint wins) and then
- *  resumes the state at the chain end.
- *
- *  <p>Size note: the fixed checkpoint dominates - 23 SSM layers x (2 MiB S + 72 KiB ring) is
- *  ~47.6 MiB per block regardless of span, vs ~6 KiB per position of attention K/V. Turn-aligned
- *  blocks amortize it well; single-token decode blocks are expensive for this model, so harnesses
- *  keep decode budgets small and cache budgets large (compression of unchanged checkpoints is a
- *  noted follow-up). */
-public final class NemotronHStateCodec implements StateCodec<NemotronH.State> {
+ *  <p>Size note: the fixed checkpoint dominates — 23 SSM layers × (2 MiB S + 72 KiB ring) is ~47.6 MiB
+ *  per block regardless of span, vs ~6 KiB/position of attention K/V. Turn-aligned blocks amortize it;
+ *  single-token decode blocks are expensive, so harnesses keep decode budgets small and cache budgets
+ *  large (checkpoint compression is a noted follow-up). */
+public final class NemotronHStateCodec extends AbstractStateCodec<NemotronH.State> {
 
     private final NemotronH.Configuration config;
     private final int convFloats;                 // (dConv-1) * convChannels, per SSM layer
-    private final int ssmFloats;                  // dInner * dState, per SSM layer
-    private final long bytesPerPosition;          // attention K+V rows, native F16
-    private final long checkpointBytes;           // all SSM layers' conv + S, F32
 
     public NemotronHStateCodec(NemotronH.Configuration config) {
+        super(config.numberOfLayers(), l -> config.layerTypes()[l] == NemotronH.LayerType.ATTENTION,
+              l -> config.kvDim(), s -> s.keyCache, s -> s.valueCache,
+              l -> config.layerTypes()[l] == NemotronH.LayerType.SSM ? (convFloats(config) + ssmFloats(config)) * 4L : 0L);
         this.config = config;
-        this.convFloats = (config.ssmConvKernel() - 1) * config.ssmConvChannels();
-        this.ssmFloats = config.ssmInnerSize() * config.ssmStateSize();
-        long perPos = 0, fixed = 0;
-        for (NemotronH.LayerType type : config.layerTypes()) {
-            switch (type) {
-                case ATTENTION -> perPos += 2L * config.kvDim() * 2L;        // K+V rows, F16
-                case SSM -> fixed += (convFloats + ssmFloats) * 4L;          // F32 checkpoint
-                case MOE -> { }
-            }
-        }
-        this.bytesPerPosition = perPos;
-        this.checkpointBytes = fixed;
+        this.convFloats = convFloats(config);
     }
+
+    private static int convFloats(NemotronH.Configuration c) { return (c.ssmConvKernel() - 1) * c.ssmConvChannels(); }
+    private static int ssmFloats(NemotronH.Configuration c) { return c.ssmInnerSize() * c.ssmStateSize(); }
 
     @Override
-    public long rowBytes(int positions) {
-        return positions * bytesPerPosition;
-    }
-
-    @Override
-    public long checkpointBytes() {
-        return checkpointBytes;
-    }
-
-    @Override
-    public void saveRows(NemotronH.State state, int from, int to, MemorySegment dst) {
-        rows(state, from, to, dst, true);
-    }
-
-    @Override
-    public void restoreRows(NemotronH.State state, int from, int to, MemorySegment src) {
-        rows(state, from, to, src, false);
-    }
-
-    @Override
-    public void saveCheckpoint(NemotronH.State state, int to, MemorySegment dst) {
-        checkpoint(state, dst, true);
-    }
-
-    @Override
-    public void restoreCheckpoint(NemotronH.State state, int to, MemorySegment src) {
-        checkpoint(state, src, false);
-    }
-
-    /** One walk per section drives both directions so each layout is single-sourced. */
-    private void rows(NemotronH.State state, int from, int to, MemorySegment blob, boolean out) {
-        long off = 0;
-        int n = to - from;
-        long kvDim = config.kvDim();
-        for (int l = 0; l < config.numberOfLayers(); l++) {
-            if (config.layerTypes()[l] != NemotronH.LayerType.ATTENTION) continue;
-            off += KvTransfer.transfer(state.keyCache[l], from * kvDim, blob, off, n * kvDim, out);
-            off += KvTransfer.transfer(state.valueCache[l], from * kvDim, blob, off, n * kvDim, out);
-        }
-    }
-
-    private void checkpoint(NemotronH.State state, MemorySegment blob, boolean out) {
+    protected void checkpoint(NemotronH.State state, int to, MemorySegment blob, boolean out) {
         long off = 0;
         for (int l = 0; l < config.numberOfLayers(); l++) {
             if (config.layerTypes()[l] != NemotronH.LayerType.SSM) continue;
