@@ -382,11 +382,16 @@ public class Main {
         S state = model.newState(model.config().contextLength(),
                 Math.min(Math.max(promptTokens.size(), 16), RuntimeFlags.BATCH_CAPACITY));   // ports chunk long prompts
 
-        // --sealed: restore the whole prompt from the sealed file (instant TTFT), or create it on
-        // the first run. Any mismatch (different prompt/model) falls back to a plain prefill.
-        if (options.sealedPrompt() != null && model.stateCodec().isPresent()) {
+        // --sealed: restore the (system+prompt) prefix from the sealed file (instant TTFT), or create it
+        // on the first run. The seal covers every position BUT THE LAST: it captures the KV/recurrent
+        // state, not the transient last-position activations (s.residual / lastChunkLen) that logits()
+        // reads. So the final token is always ingested fresh, and its forward pass reproduces those — for
+        // attention and recurrent layers alike (the last token also advances the conv state from as-of-P-1
+        // to as-of-P). Any mismatch (different prompt/model) falls back to a plain prefill.
+        if (options.sealedPrompt() != null && model.stateCodec().isPresent() && promptTokens.size() >= 2) {
             var codec = model.stateCodec().get();
-            long[] fp = new long[promptTokens.size()];
+            int last = promptTokens.get(promptTokens.size() - 1);
+            long[] fp = new long[promptTokens.size() - 1];
             for (int i = 0; i < fp.length; i++) fp[i] = promptTokens.get(i);
             byte[] seed = com.qxotic.jinfer.cache.PromptCache.modelSeed(options.modelPath());
             if (Files.exists(options.sealedPrompt())) {
@@ -395,7 +400,7 @@ public class Main {
                         .tryRestore(state, codec, fp);
                 if (restored == fp.length) {
                     System.err.printf("sealed prompt restored: %d positions in %.1f ms%n", restored, (System.nanoTime() - t0) / 1e6);
-                    promptTokens = List.of();          // decode straight from the restored state
+                    promptTokens = List.of(last);      // re-ingest the last token to rebuild the hidden state
                 } else {
                     System.err.println("sealed prompt mismatch: prefilling normally");
                 }
@@ -403,7 +408,7 @@ public class Main {
                 model.ingest(state, Batch.prefill(fpToIds(fp)));
                 com.qxotic.jinfer.cache.SealedPrompt.compile(options.sealedPrompt(), "cli", codec, state, fp, seed);
                 System.err.println("sealed prompt compiled: " + options.sealedPrompt() + " (" + fp.length + " positions)");
-                promptTokens = List.of();
+                promptTokens = List.of(last);
             }
         }
 
