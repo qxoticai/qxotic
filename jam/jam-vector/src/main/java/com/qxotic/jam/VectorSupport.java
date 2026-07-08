@@ -99,8 +99,10 @@ final class VectorSupport {
         default -> 1; // 3x4
     };
 
-    /** True when the JIT keeps wide vector tiles (>=16 live vectors) spill-free — gates both the Q8_0 4x4
-     *  tile and the {@link BandGemm} 4x4 default (see {@link #jitHandlesWideTile}). */
+    /** Optimistic "the JIT keeps wide vector tiles (>=16 live vectors) spill-free" — gates only the
+     *  {@link BandGemm} 4x4 default now (the Q8_0 register tile defaults to the spill-free 3x2 regardless;
+     *  see {@link #autoTileCode}). NOTE: stock C2 and Oracle GraalVM actually allocate only zmm0-15, so this
+     *  over-reports for BandGemm too; revisit if BandGemm 4x4-vs-3x3 is measured on those JITs. */
     static final boolean WIDE_TILE = jitHandlesWideTile();
 
     private static int autoTileCode() {
@@ -113,7 +115,12 @@ final class VectorSupport {
                 // VEX encoding at xmm16+). A 32-ZMM Graal (jam.vector.wideTiles=true) takes 4x4.
                 return WIDE_TILES_COMPILABLE ? 2 : 0;
             }
-            return jitHandlesWideTile() ? 2 /* 4x4 */ : 0 /* 3x2 */;
+            // 3x2 fits entirely in zmm0-15, so it is spill-free on EVERY current JIT. 4x4 needs 32 ZMM to
+            // avoid spilling, which today only a patched Graal provides: stock HotSpot C2 and Oracle GraalVM
+            // allocate only zmm0-15, so 4x4 spills (disassembly: 519 zmm<->stack moves vs 23 for 3x2; 632 vs
+            // 706 t/s on Oracle EE Q8_0 prefill). Force 4x4 with -Djam.vector.tile=4x4 on a 32-ZMM build (or
+            // on C2, where its ILP hides the spills).
+            return 0;   // 3x2
         }
         if (width >= 256) return 6;   // AVX2 2x4
         return 12;                    // scalar
