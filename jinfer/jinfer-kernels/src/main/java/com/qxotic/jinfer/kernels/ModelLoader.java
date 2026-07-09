@@ -1,11 +1,12 @@
 // Shared GGUF loading plumbing: parse metadata, memory-map tensors, and convert GGUF tensors into
 // FloatTensor views. Architecture-agnostic - used by every model port. The legacy engine's
 // arch-dispatching loader lives in jinfer-models (LegacyModelLoader).
-package com.qxotic.jinfer;
+package com.qxotic.jinfer.kernels;
 
 import com.qxotic.format.gguf.GGMLType;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.format.gguf.TensorEntry;
+import com.qxotic.jinfer.*;
 import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.lang.foreign.Arena;
@@ -120,23 +121,10 @@ public final class ModelLoader {
     }
 
     public static FloatTensor loadQuantized(GGMLTensorEntry entry) {
-        GGMLType ggmlType = entry.ggmlType();
-        long numElements = FloatTensor.numberOfElementsLong(entry.shape());
-        return switch (ggmlType) {
-            case Q8_0 -> new Q8_0FloatTensor(numElements, entry.memorySegment());
-            case Q4_0 -> new Q4_0FloatTensor(numElements, entry.memorySegment());
-            case Q4_1 -> new Q4_1FloatTensor(numElements, entry.memorySegment());
-            case Q5_1 -> new Q5_1FloatTensor(numElements, entry.memorySegment());
-            case Q4_K -> new Q4_KFloatTensor(numElements, entry.memorySegment());
-            case Q5_K -> new Q5_KFloatTensor(numElements, entry.memorySegment());
-            case Q6_K -> new Q6_KFloatTensor(numElements, entry.memorySegment());
-            case F32 -> new F32FloatTensor(numElements, entry.memorySegment());
-            case F16 -> new F16FloatTensor(numElements, entry.memorySegment());
-            case BF16 -> new BF16FloatTensor(numElements, entry.memorySegment());
-            case MXFP4 -> new MXFP4FloatTensor(numElements, entry.memorySegment());
-            case NVFP4 -> new NVFP4FloatTensor(numElements, entry.memorySegment());
-            default -> throw new UnsupportedOperationException("Quantization format " + ggmlType);
-        };
+        return FloatTensor.create(
+                entry.ggmlType(),
+                FloatTensor.numberOfElementsLong(entry.shape()),
+                entry.memorySegment());
     }
 
     /** Zero-copy F32 view of a GGUF tensor (native mapped segment). */
@@ -145,7 +133,10 @@ public final class ModelLoader {
         if (ggmlType != GGMLType.F32) {
             throw new UnsupportedOperationException("Conversion to " + ggmlType);
         }
-        return new F32FloatTensor(
-                FloatTensor.numberOfElementsLong(tensorEntry.shape()), tensorEntry.memorySegment());
+        return (F32FloatTensor)
+                FloatTensor.create(
+                        GGMLType.F32,
+                        FloatTensor.numberOfElementsLong(tensorEntry.shape()),
+                        tensorEntry.memorySegment());
     }
 }

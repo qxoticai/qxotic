@@ -1,4 +1,6 @@
-package com.qxotic.jinfer;
+package com.qxotic.jinfer.kernels;
+
+import com.qxotic.jinfer.*;
 
 /**
  * Bench-only nanosecond accumulators for attributing prefill cost to attention vs the rest. Zero

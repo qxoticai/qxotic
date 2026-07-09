@@ -242,6 +242,30 @@ public abstract class FloatTensor {
     }
 
     /**
+     * A zero-copy view of {@code segment} as the FloatTensor for {@code type} — the public factory
+     * for callers outside this package (the GGUF loader) that map a tensor's bytes. Keeps the
+     * concrete quantized subclasses package-private: they are an implementation detail of the
+     * dequantizing dot/gemm kernels, not API.
+     */
+    public static FloatTensor create(GGMLType type, long numElements, MemorySegment segment) {
+        return switch (type) {
+            case Q8_0 -> new Q8_0FloatTensor(numElements, segment);
+            case Q4_0 -> new Q4_0FloatTensor(numElements, segment);
+            case Q4_1 -> new Q4_1FloatTensor(numElements, segment);
+            case Q5_1 -> new Q5_1FloatTensor(numElements, segment);
+            case Q4_K -> new Q4_KFloatTensor(numElements, segment);
+            case Q5_K -> new Q5_KFloatTensor(numElements, segment);
+            case Q6_K -> new Q6_KFloatTensor(numElements, segment);
+            case F32 -> new F32FloatTensor(numElements, segment);
+            case F16 -> new F16FloatTensor(numElements, segment);
+            case BF16 -> new BF16FloatTensor(numElements, segment);
+            case MXFP4 -> new MXFP4FloatTensor(numElements, segment);
+            case NVFP4 -> new NVFP4FloatTensor(numElements, segment);
+            default -> throw new UnsupportedOperationException("Quantization format " + type);
+        };
+    }
+
+    /**
      * A fresh native F32 tensor (the allocatable, writable kind) — the public factory for callers
      * outside this package (e.g. the com.qxotic.jinfer.models model prototype) that need
      * scratch/cache tensors.

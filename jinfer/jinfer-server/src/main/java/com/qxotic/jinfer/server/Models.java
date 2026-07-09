@@ -5,6 +5,7 @@ package com.qxotic.jinfer.server;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.*;
+import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.models.gemma4.Gemma4;
 import com.qxotic.jinfer.models.gptoss.GptOss;
 import com.qxotic.jinfer.models.lfm2.Lfm2;

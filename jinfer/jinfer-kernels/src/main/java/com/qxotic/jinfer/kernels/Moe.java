@@ -6,7 +6,9 @@
 // per-expert FFN math (gated/ungated, activation, biases, layout) is supplied as an ExpertKernel
 // closure — called once per expert (never per element), so the vector kernels inside stay
 // monomorphic.
-package com.qxotic.jinfer;
+package com.qxotic.jinfer.kernels;
+
+import com.qxotic.jinfer.*;
 
 public final class Moe {
     private Moe() {}
