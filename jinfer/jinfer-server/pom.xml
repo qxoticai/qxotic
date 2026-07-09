@@ -57,6 +57,11 @@
       <groupId>com.qxotic</groupId>
       <artifactId>gguf</artifactId>
     </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>json</artifactId>
+      <!-- JsonCodec: the OpenAI wire format and the whole-render chat fallback -->
+    </dependency>
   </dependencies>
 
   <!-- The shade + native-image configuration lives in jinfer-parent's pluginManagement; this

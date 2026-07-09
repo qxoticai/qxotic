@@ -30,10 +30,6 @@
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
-      <artifactId>json</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
       <artifactId>jam-core</artifactId>
       <!-- the JAM interface + dtype tags -->
     </dependency>
