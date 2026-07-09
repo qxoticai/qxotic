@@ -4,13 +4,13 @@
 package com.qxotic.jinfer;
 
 import com.qxotic.format.gguf.GGUF;
-import com.qxotic.llm.Gemma4;
-import com.qxotic.llm.GptOss;
-import com.qxotic.llm.Granite;
-import com.qxotic.llm.Lfm2;
-import com.qxotic.llm.Llama;
-import com.qxotic.llm.NemotronH;
-import com.qxotic.llm.Qwen35;
+import com.qxotic.jinfer.models.gemma4.Gemma4;
+import com.qxotic.jinfer.models.gptoss.GptOss;
+import com.qxotic.jinfer.models.lfm2.Lfm2;
+import com.qxotic.jinfer.models.llama.Granite;
+import com.qxotic.jinfer.models.llama.Llama;
+import com.qxotic.jinfer.models.nemotronh.NemotronH;
+import com.qxotic.jinfer.models.qwen35.Qwen35;
 import java.io.IOException;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;

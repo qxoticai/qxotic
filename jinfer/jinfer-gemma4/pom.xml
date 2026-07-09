@@ -12,7 +12,7 @@
   <packaging>jar</packaging>
 
   <name>jinfer-gemma4</name>
-  <description>Gemma 4 against the com.qxotic.llm model API (multi-modal + MTP), reusing the jinfer kernels</description>
+  <description>Gemma 4 against the com.qxotic.jinfer.models model API (multi-modal + MTP), reusing the jinfer kernels</description>
 
   <dependencies>
     <dependency>

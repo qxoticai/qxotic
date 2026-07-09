@@ -1,12 +1,12 @@
 package com.qxotic.jinfer;
 
-import com.qxotic.llm.Gemma4;
-import com.qxotic.llm.GptOss;
-import com.qxotic.llm.Granite;
-import com.qxotic.llm.Lfm2;
-import com.qxotic.llm.Llama;
-import com.qxotic.llm.NemotronH;
-import com.qxotic.llm.Qwen35;
+import com.qxotic.jinfer.models.gemma4.Gemma4;
+import com.qxotic.jinfer.models.gptoss.GptOss;
+import com.qxotic.jinfer.models.lfm2.Lfm2;
+import com.qxotic.jinfer.models.llama.Granite;
+import com.qxotic.jinfer.models.llama.Llama;
+import com.qxotic.jinfer.models.nemotronh.NemotronH;
+import com.qxotic.jinfer.models.qwen35.Qwen35;
 import java.io.PrintStream;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
@@ -16,11 +16,11 @@ import java.util.List;
 import java.util.concurrent.ForkJoinPool;
 
 /**
- * pp/tg throughput benchmark for the new com.qxotic.llm seam (the jinfer-gemma4 port), printed in
- * the same markdown table as {@link LegacyBench} so the new API's numbers are directly comparable
- * to the production engine. Drives the forward directly — {@code newState → ingest → logits} — and
- * times it with {@code nanoTime} (the seam has no internal timers). Greedy argmax (temp 0), like
- * llama-bench.
+ * pp/tg throughput benchmark for the new com.qxotic.jinfer.models seam (the jinfer-gemma4 port),
+ * printed in the same markdown table as {@link LegacyBench} so the new API's numbers are directly
+ * comparable to the production engine. Drives the forward directly — {@code newState → ingest →
+ * logits} — and times it with {@code nanoTime} (the seam has no internal timers). Greedy argmax
+ * (temp 0), like llama-bench.
  *
  * <pre>jinfer-bench -m model.gguf [-p 512] [-n 128] [-r 5] [-w 2] [--ctx N]</pre>
  */
@@ -57,7 +57,7 @@ public final class JinferBench {
 
         List<Row> rows = new ArrayList<>();
         for (String path : models) {
-            System.err.printf("loading %s (ctx=%d) via com.qxotic.llm ...%n", path, ctx);
+            System.err.printf("loading %s (ctx=%d) via com.qxotic.jinfer.models ...%n", path, ctx);
             LanguageModel<?, ?, ?> model = loadAny(Path.of(path), ctx);
             String name = name(path);
             if (p > 0) rows.add(measure(model, name, threads, "pp" + p, p, true, warmup, reps));
@@ -224,7 +224,7 @@ public final class JinferBench {
     private static void usage(PrintStream out) {
         out.println(
                 """
-                jinfer-bench — pp/tg throughput for the com.qxotic.llm seam (jinfer-gemma4)
+                jinfer-bench — pp/tg throughput for the com.qxotic.jinfer.models seam (jinfer-gemma4)
 
                 usage: jinfer-bench -m <model.gguf> [-m ...] [options]
                   -m, --model <path>      model to benchmark (repeatable)

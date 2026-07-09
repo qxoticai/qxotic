@@ -165,8 +165,8 @@ public final class Activations {
     /**
      * Fused {@code gate[i] = silu(gate[i]) * up[i]} over {@code n} elements (SwiGLU), the
      * SiLU-gated counterpart of {@link #geluMultiply} — delegates to the vectorized {@code
-     * siluMultiplyInPlace}. Public so {@code com.qxotic.llm} ports (e.g. LFM2.5) can use it without
-     * the package-private method.
+     * siluMultiplyInPlace}. Public so {@code com.qxotic.jinfer.models} ports (e.g. LFM2.5) can use
+     * it without the package-private method.
      */
     public static void siluMultiply(
             FloatTensor gate, int gateOff, FloatTensor up, int upOff, int n) {
