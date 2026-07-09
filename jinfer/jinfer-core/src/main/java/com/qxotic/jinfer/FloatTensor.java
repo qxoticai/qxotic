@@ -1,5 +1,6 @@
 // The FloatTensor hierarchy's public base: the tensor read/write/dot/gemm seam shared by every
-// GGML quantization. Split out of Tensors.java so it can be public (consumed by the com.qxotic.llm
+// GGML quantization. Split out of Tensors.java so it can be public (consumed by the
+// com.qxotic.jinfer.models
 // model-API prototype); the concrete quantized subclasses stay package-private in Tensors.java.
 package com.qxotic.jinfer;
 
@@ -242,8 +243,8 @@ public abstract class FloatTensor {
 
     /**
      * A fresh native F32 tensor (the allocatable, writable kind) — the public factory for callers
-     * outside this package (e.g. the com.qxotic.llm model prototype) that need scratch/cache
-     * tensors.
+     * outside this package (e.g. the com.qxotic.jinfer.models model prototype) that need
+     * scratch/cache tensors.
      */
     public static FloatTensor allocateF32(int... dims) {
         return F32FloatTensor.allocate(dims);

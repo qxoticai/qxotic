@@ -12,7 +12,7 @@
   <packaging>jar</packaging>
 
   <name>jinfer-nemotronh</name>
-  <description>Nemotron-H (SSM/attention/MoE hybrid) model port (new com.qxotic.llm API)</description>
+  <description>Nemotron-H (SSM/attention/MoE hybrid) model port (new com.qxotic.jinfer.models API)</description>
 
   <dependencies>
     <dependency>

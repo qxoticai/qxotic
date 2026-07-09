@@ -6,9 +6,10 @@ import jdk.incubator.vector.VectorSpecies;
 
 /**
  * Public SIMD primitives over contiguous {@code float[]} ranges, for model ports that live outside
- * this package (e.g. the gated-delta-net recurrence in {@code com.qxotic.llm.Qwen35}) and so cannot
- * reach {@link FloatTensor}'s package-private {@code F_SPECIES}/{@code USE_VECTOR_API}. Same vector
- * path {@link FloatTensor} uses, with a scalar fallback.
+ * this package (e.g. the gated-delta-net recurrence in {@code
+ * com.qxotic.jinfer.models.qwen35.Qwen35}) and so cannot reach {@link FloatTensor}'s
+ * package-private {@code F_SPECIES}/{@code USE_VECTOR_API}. Same vector path {@link FloatTensor}
+ * uses, with a scalar fallback.
  */
 public final class VectorMath {
     private VectorMath() {}

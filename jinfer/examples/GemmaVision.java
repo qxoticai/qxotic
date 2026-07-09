@@ -5,7 +5,7 @@
 // jinfer is a local (unpublished) build - install it to your ~/.m2 once, then jbang resolves it:
 //     cd jinfer && ./mvnw -q -DskipTests install
 //REPOS mavenLocal,central
-//DEPS com.qxotic:jinfer-gemma4:0.1.0-SNAPSHOT
+//DEPS com.qxotic:jinfer-gemma4:0.1.0
 
 // Gemma 4 vision (image -> text) through jinfer's multimodal chat API.
 // Same code runs on every Gemma 4 size - only the GGUF + mmproj paths change:
@@ -30,7 +30,7 @@ import com.qxotic.jinfer.Media;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.media.ImageCodec;
-import com.qxotic.llm.Gemma4;
+import com.qxotic.jinfer.models.gemma4.Gemma4;
 
 import java.nio.file.Path;
 import java.util.ArrayList;

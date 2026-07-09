@@ -3,7 +3,7 @@
 //COMPILE_OPTIONS --enable-preview --release 25
 //RUNTIME_OPTIONS --enable-preview --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED -Xmx24g
 //REPOS mavenLocal,central
-//DEPS com.qxotic:jinfer-gemma4:0.1.0-SNAPSHOT
+//DEPS com.qxotic:jinfer-gemma4:0.1.0
 
 // Gemma 4 video understanding (equivalent of the docs' "Describe this video."):
 //   https://ai.google.dev/gemma/docs/capabilities/vision/video
@@ -26,7 +26,7 @@ import com.qxotic.jinfer.Media;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.media.VideoCodec;
-import com.qxotic.llm.Gemma4;
+import com.qxotic.jinfer.models.gemma4.Gemma4;
 
 import java.nio.file.Path;
 import java.util.ArrayList;

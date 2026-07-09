@@ -3,7 +3,7 @@
 //COMPILE_OPTIONS --enable-preview --release 25
 //RUNTIME_OPTIONS --enable-preview --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED -Xmx24g
 //REPOS mavenLocal,central
-//DEPS com.qxotic:jinfer-gemma4:0.1.0-SNAPSHOT
+//DEPS com.qxotic:jinfer-gemma4:0.1.0
 
 // Gemma 4 with MULTIPLE images in one prompt (per the docs: several image blocks per turn).
 // Each image becomes its own <|image>...<image|> soft-token span; the model reasons across all of them.
@@ -22,7 +22,7 @@ import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.media.ImageCodec;
-import com.qxotic.llm.Gemma4;
+import com.qxotic.jinfer.models.gemma4.Gemma4;
 
 import java.nio.file.Path;
 import java.util.ArrayList;

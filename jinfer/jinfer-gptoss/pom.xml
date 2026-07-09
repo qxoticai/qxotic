@@ -12,7 +12,7 @@
   <packaging>jar</packaging>
 
   <name>jinfer-gptoss</name>
-  <description>GPT-OSS (MoE, attention sinks, SWA) model port (new com.qxotic.llm API)</description>
+  <description>GPT-OSS (MoE, attention sinks, SWA) model port (new com.qxotic.jinfer.models API)</description>
 
   <dependencies>
     <dependency>
