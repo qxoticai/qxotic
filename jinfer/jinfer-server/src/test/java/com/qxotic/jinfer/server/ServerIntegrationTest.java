@@ -1,5 +1,6 @@
-package com.qxotic.jinfer;
+package com.qxotic.jinfer.server;
 
+import com.qxotic.jinfer.*;
 import com.sun.net.httpserver.HttpServer;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -1085,7 +1086,7 @@ public final class ServerIntegrationTest {
      * small for this isolated run), reporting finish_reason "length".
      */
     private static void tokenCeiling() throws Exception {
-        int ceiling = RuntimeFlags.SERVER_MAX_TOKENS;
+        int ceiling = ServerFlags.SERVER_MAX_TOKENS;
         check(ceiling > 0, "ceiling mode needs -Dllama.serverMaxTokens > 0 (" + ceiling + ")");
         HttpResponse<String> response =
                 post(

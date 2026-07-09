@@ -1,5 +1,6 @@
-package com.qxotic.jinfer;
+package com.qxotic.jinfer.server;
 
+import com.qxotic.jinfer.*;
 import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
 import java.io.FilterOutputStream;
@@ -76,8 +77,7 @@ final class Sse {
                                 for (Stream stream : ACTIVE) {
                                     long start = stream.writeStartNanos;
                                     if (start != 0
-                                            && now - start
-                                                    > RuntimeFlags.SERVER_WRITE_STALL_NANOS) {
+                                            && now - start > ServerFlags.SERVER_WRITE_STALL_NANOS) {
                                         System.err.println(
                                                 "closing stalled streaming client "
                                                         + stream.exchange.getRemoteAddress());

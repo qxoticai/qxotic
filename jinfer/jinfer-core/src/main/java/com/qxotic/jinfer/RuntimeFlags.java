@@ -5,7 +5,6 @@ import com.sun.management.HotSpotDiagnosticMXBean;
 import java.lang.management.ManagementFactory;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.concurrent.TimeUnit;
 
 /**
  * Every tunable jinfer.* system property read AT RUN TIME, in one place. This class is initialized
@@ -24,16 +23,16 @@ import java.util.concurrent.TimeUnit;
  *   <li>jinfer.PreloadGGUF — model baked into the image heap (AOT)
  * </ul>
  */
-final class RuntimeFlags {
+public final class RuntimeFlags {
 
     // generation / engine
-    static final int MAX_PROMPT_SEQUENCE_LENGTH =
+    public static final int MAX_PROMPT_SEQUENCE_LENGTH =
             Integer.getInteger("jinfer.maxPromptSequenceLength", 1024);
     // Default scratch/batch width when a caller creates a state without picking one
     // (Model.newState(ctx)):
     // a prefill of up to this many tokens ingests in a single batch; longer prompts re-chunk by the
     // caller.
-    static final int BATCH_CAPACITY = Integer.getInteger("jinfer.batchCapacity", 512);
+    public static final int BATCH_CAPACITY = Integer.getInteger("jinfer.batchCapacity", 512);
     static final boolean ROLLING_ATTENTION =
             !"false".equals(System.getProperty("jinfer.rollingAttention"));
     // Block-tiled flash prefill (FlashAttention.qkTile/pvTile): each f16 KV vector is decoded once
@@ -73,29 +72,17 @@ final class RuntimeFlags {
     static final boolean DECODE_SPIN = !"false".equals(System.getProperty("jinfer.decodeSpin"));
 
     // grammar-constrained decoding (GBNF / response_format json_object)
-    static final boolean GRAMMAR = !"false".equals(System.getProperty("jinfer.grammar"));
+    public static final boolean GRAMMAR = !"false".equals(System.getProperty("jinfer.grammar"));
 
     // prompt cache
-    static final boolean PROMPT_CACHE = !"false".equals(System.getProperty("jinfer.promptCache"));
+    public static final boolean PROMPT_CACHE =
+            !"false".equals(System.getProperty("jinfer.promptCache"));
 
     /** Live conversations kept resident for append-only reuse (tier 1); each holds a full state. */
-    static final int SESSIONS = Integer.getInteger("jinfer.sessions", 4);
+    public static final int SESSIONS = Integer.getInteger("jinfer.sessions", 4);
 
-    static final long PROMPT_CACHE_BUDGET_BYTES =
+    public static final long PROMPT_CACHE_BUDGET_BYTES =
             Long.getLong("jinfer.promptCacheMB", 2048L) * (1L << 20);
-
-    // server
-    static final int SERVER_THREADS = Integer.getInteger("jinfer.serverThreads", 16);
-    static final int SERVER_QUEUE = Integer.getInteger("jinfer.serverQueue", 4);
-    static final long SERVER_MAX_BODY_BYTES =
-            Math.min(Long.getLong("jinfer.serverMaxBodyMB", 32), 1024) << 20;
-    static final long SERVER_WRITE_STALL_NANOS =
-            TimeUnit.SECONDS.toNanos(Long.getLong("jinfer.serverWriteTimeout", 30));
-    static final int SERVER_MAX_TOKENS =
-            Integer.getInteger("jinfer.serverMaxTokens", 4096); // 0 = no completion-token ceiling
-    static final long SERVER_REQUEST_TIMEOUT_NANOS =
-            TimeUnit.SECONDS.toNanos(
-                    Long.getLong("jinfer.serverRequestTimeout", 300)); // 0 = no generation deadline
 
     /**
      * Whether a vector-intrinsifying compiler runs the wide decode kernel without boxing: a native

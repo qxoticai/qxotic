@@ -86,7 +86,7 @@ public class GgufTokenizer {
         return chatTemplate;
     }
 
-    boolean isSpecialToken(int token) {
+    public boolean isSpecialToken(int token) {
         return token >= 0
                 && token < vocabularySize()
                 && !tokenizer.vocabulary().isTokenOfType(token, StandardTokenType.NORMAL);
@@ -129,7 +129,7 @@ public class GgufTokenizer {
     }
 
     /** Raw UTF-8 bytes of one token (the streaming decoder assembles code points across tokens). */
-    byte[] decodeTokenBytes(int token) {
+    public byte[] decodeTokenBytes(int token) {
         return tokenizer.decodeBytes(new int[] {token});
     }
 

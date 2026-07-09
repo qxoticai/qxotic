@@ -1,9 +1,10 @@
 // Thin JSON facade over com.qxotic:json: parse/stringify with this project's null and
 // number conventions (Json.NULL <-> Java null, decimals as double). The single place the
 // external JSON library is adapted to the engine's Map/List/null value model.
-package com.qxotic.jinfer;
+package com.qxotic.jinfer.server;
 
 import com.qxotic.format.json.Json;
+import com.qxotic.jinfer.*;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;

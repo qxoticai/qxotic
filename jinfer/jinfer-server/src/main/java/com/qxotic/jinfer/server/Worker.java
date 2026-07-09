@@ -1,5 +1,6 @@
-package com.qxotic.jinfer;
+package com.qxotic.jinfer.server;
 
+import com.qxotic.jinfer.*;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
@@ -15,9 +16,9 @@ import java.util.concurrent.SynchronousQueue;
 final class Worker {
 
     private final BlockingQueue<Runnable> queue =
-            RuntimeFlags.SERVER_QUEUE == 0
+            ServerFlags.SERVER_QUEUE == 0
                     ? new SynchronousQueue<>()
-                    : new ArrayBlockingQueue<>(RuntimeFlags.SERVER_QUEUE);
+                    : new ArrayBlockingQueue<>(ServerFlags.SERVER_QUEUE);
     private volatile boolean busy;
 
     void start() {
@@ -93,6 +94,6 @@ final class Worker {
 
     /** Retry-After seconds suggested when the queue is full. */
     static int retryAfterSeconds() {
-        return Math.max(1, 2 * (RuntimeFlags.SERVER_QUEUE + 1));
+        return Math.max(1, 2 * (ServerFlags.SERVER_QUEUE + 1));
     }
 }

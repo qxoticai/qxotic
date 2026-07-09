@@ -1,8 +1,9 @@
 // OpenAI-compatible wire shapes: the JSON envelopes for chat/completions/responses (full and
 // streaming chunks), usage, and llama.cpp-style timings. Pure builders from a GenerationResult
 // or running Usage counters — no transport, no generation logic.
-package com.qxotic.jinfer;
+package com.qxotic.jinfer.server;
 
+import com.qxotic.jinfer.*;
 import com.qxotic.jinfer.Generator.GenerationResult;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;

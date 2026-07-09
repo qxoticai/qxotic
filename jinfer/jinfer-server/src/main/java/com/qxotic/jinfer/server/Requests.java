@@ -1,5 +1,6 @@
-package com.qxotic.jinfer;
+package com.qxotic.jinfer.server;
 
+import com.qxotic.jinfer.*;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;

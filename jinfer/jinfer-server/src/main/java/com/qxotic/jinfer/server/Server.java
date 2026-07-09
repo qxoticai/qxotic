@@ -1,5 +1,6 @@
-package com.qxotic.jinfer;
+package com.qxotic.jinfer.server;
 
+import com.qxotic.jinfer.*;
 import com.qxotic.jinfer.Generator.GenerationResult;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -123,7 +124,7 @@ public final class Server {
         Sse.startReaper();
         // bounded pool: handlers only parse/validate and block on the generation queue latch,
         // so a fixed pool also caps the threads slow-loris connections can pin
-        server.setExecutor(Executors.newFixedThreadPool(RuntimeFlags.SERVER_THREADS));
+        server.setExecutor(Executors.newFixedThreadPool(ServerFlags.SERVER_THREADS));
         server.start();
         Runtime.getRuntime().addShutdownHook(new Thread(() -> server.stop(1)));
         System.out.printf(
@@ -591,7 +592,7 @@ public final class Server {
             Http.sendError(
                     exchange,
                     503,
-                    "Server busy: " + RuntimeFlags.SERVER_QUEUE + " requests already queued");
+                    "Server busy: " + ServerFlags.SERVER_QUEUE + " requests already queued");
             return;
         }
         // a job that finished without ever answering (escaped exception) must not hang the client
