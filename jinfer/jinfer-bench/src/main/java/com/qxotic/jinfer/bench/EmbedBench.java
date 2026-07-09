@@ -1,5 +1,6 @@
-package com.qxotic.jinfer;
+package com.qxotic.jinfer.bench;
 
+import com.qxotic.jinfer.*;
 import com.qxotic.jinfer.models.qwen35.Qwen3;
 import java.io.PrintStream;
 import java.nio.file.Path;
