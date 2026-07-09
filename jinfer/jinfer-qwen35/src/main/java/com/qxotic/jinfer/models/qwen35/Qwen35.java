@@ -25,6 +25,7 @@ import static com.qxotic.jinfer.Norms.rmsnorm;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.*;
 import com.qxotic.jinfer.jinja.JinjaRenderer;
+import com.qxotic.jinfer.kernels.*;
 import java.io.IOException;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
@@ -752,7 +753,7 @@ public final class Qwen35
         w.ssmOut[layer].matmul(state.ssmTmp, state.xb, dim, dInner);
     }
 
-    /** Dense SwiGLU FFN (inlined; production uses the package-private Ffn.dense). */
+    /** Dense SwiGLU FFN, inlined here (each port owns its dense FFN). */
     private void ffnForward(State state, int layer) {
         Configuration config = configuration;
         Weights w = weights;

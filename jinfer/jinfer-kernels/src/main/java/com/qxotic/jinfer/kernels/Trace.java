@@ -1,4 +1,6 @@
-package com.qxotic.jinfer;
+package com.qxotic.jinfer.kernels;
+
+import com.qxotic.jinfer.*;
 
 /**
  * Per-layer residual-checkpoint tracing for the model ports, enabled with {@code -Djinfer.trace}.

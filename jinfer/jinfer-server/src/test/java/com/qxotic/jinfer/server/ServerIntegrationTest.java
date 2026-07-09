@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.server;
 
 import com.qxotic.jinfer.*;
+import com.qxotic.jinfer.kernels.*;
 import com.sun.net.httpserver.HttpServer;
 import java.net.URI;
 import java.net.http.HttpClient;

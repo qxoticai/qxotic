@@ -2,6 +2,7 @@ package com.qxotic.jinfer.server;
 
 import com.qxotic.jinfer.*;
 import com.qxotic.jinfer.Generator.GenerationResult;
+import com.qxotic.jinfer.kernels.*;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;

@@ -19,6 +19,7 @@ import static com.qxotic.jinfer.Norms.rmsnorm;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.*;
 import com.qxotic.jinfer.jinja.JinjaRenderer;
+import com.qxotic.jinfer.kernels.*;
 import java.io.IOException;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;

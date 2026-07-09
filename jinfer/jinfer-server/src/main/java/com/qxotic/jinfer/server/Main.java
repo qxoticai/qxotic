@@ -15,6 +15,7 @@ import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.*;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.TurnTemplate;
+import com.qxotic.jinfer.kernels.*;
 import java.io.BufferedOutputStream;
 import java.io.BufferedReader;
 import java.io.FileDescriptor;

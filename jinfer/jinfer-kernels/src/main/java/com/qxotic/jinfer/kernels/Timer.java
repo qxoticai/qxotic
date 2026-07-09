@@ -1,7 +1,8 @@
 // A scoped stderr timer for model-loading phases; try-with-resources logs the elapsed time on
 // close.
-package com.qxotic.jinfer;
+package com.qxotic.jinfer.kernels;
 
+import com.qxotic.jinfer.*;
 import java.util.concurrent.TimeUnit;
 
 public interface Timer extends AutoCloseable {
