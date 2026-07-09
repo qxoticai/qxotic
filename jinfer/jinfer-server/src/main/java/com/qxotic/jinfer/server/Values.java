@@ -1,7 +1,8 @@
 // Typed value coercion for parsed-JSON request maps: read objects/arrays/strings/numbers with
 // defaults and lenient (string-encoded) number parsing. Shared leaf utility, no dependencies.
-package com.qxotic.jinfer;
+package com.qxotic.jinfer.server;
 
+import com.qxotic.jinfer.*;
 import java.util.List;
 import java.util.Map;
 

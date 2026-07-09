@@ -1,8 +1,9 @@
 // Tool-call parsing: turns a model reply into normalized OpenAI tool_calls. Recognizes the
 // three shapes LFM2.5 emits — native <|tool_call_start|>...<|tool_call_end|> blocks, a JSON
 // tool-call envelope, and bare Pythonic [name(args)] text — independent of HTTP/transport.
-package com.qxotic.jinfer;
+package com.qxotic.jinfer.server;
 
+import com.qxotic.jinfer.*;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;

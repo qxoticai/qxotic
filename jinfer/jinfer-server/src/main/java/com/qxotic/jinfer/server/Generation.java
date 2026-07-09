@@ -1,5 +1,6 @@
-package com.qxotic.jinfer;
+package com.qxotic.jinfer.server;
 
+import com.qxotic.jinfer.*;
 import com.qxotic.jinfer.Generator.GenerationResult;
 import com.qxotic.jinfer.Generator.StopSpec;
 import com.qxotic.jinfer.cache.PromptCache;
@@ -275,11 +276,11 @@ final class Generation {
                         options.maxTokens());
         // server-side completion-token ceiling: an unbounded (or oversized) request can never run
         // the worker past llama.serverMaxTokens; hitting it reports finish_reason "length"
-        if (RuntimeFlags.SERVER_MAX_TOKENS > 0)
+        if (ServerFlags.SERVER_MAX_TOKENS > 0)
             maxTokens =
                     maxTokens < 0
-                            ? RuntimeFlags.SERVER_MAX_TOKENS
-                            : Math.min(maxTokens, RuntimeFlags.SERVER_MAX_TOKENS);
+                            ? ServerFlags.SERVER_MAX_TOKENS
+                            : Math.min(maxTokens, ServerFlags.SERVER_MAX_TOKENS);
         // defense in depth: server requests were already checked by validateGenerationParams on the
         // handler thread; these guards keep the method safe for any future non-HTTP caller
         LLMOptions.require(Values.intValue(request.get("n"), 1) == 1, "Only n=1 is supported");
@@ -330,7 +331,7 @@ final class Generation {
                 new Generator.Params(
                         sampler,
                         maxTokens,
-                        RuntimeFlags.SERVER_REQUEST_TIMEOUT_NANOS,
+                        ServerFlags.SERVER_REQUEST_TIMEOUT_NANOS,
                         stops,
                         inlineReasoning(request));
         Generator.Listener listener =

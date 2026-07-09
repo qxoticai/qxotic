@@ -1,7 +1,8 @@
 // Request validation for the OpenAI endpoints: shape, roles, tools, and sampling parameters.
 // Runs on the HTTP handler thread (before queueing) so malformed requests fail fast with a 400.
-package com.qxotic.jinfer;
+package com.qxotic.jinfer.server;
 
+import com.qxotic.jinfer.*;
 import java.util.List;
 import java.util.Map;
 

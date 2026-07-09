@@ -1,5 +1,6 @@
-package com.qxotic.jinfer;
+package com.qxotic.jinfer.server;
 
+import com.qxotic.jinfer.*;
 import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
 import java.io.IOException;
@@ -63,12 +64,12 @@ final class Http {
      */
     static byte[] readBody(HttpExchange exchange) throws IOException {
         byte[] body =
-                exchange.getRequestBody().readNBytes((int) RuntimeFlags.SERVER_MAX_BODY_BYTES + 1);
-        if (body.length > RuntimeFlags.SERVER_MAX_BODY_BYTES) {
+                exchange.getRequestBody().readNBytes((int) ServerFlags.SERVER_MAX_BODY_BYTES + 1);
+        if (body.length > ServerFlags.SERVER_MAX_BODY_BYTES) {
             sendError(
                     exchange,
                     413,
-                    "Request body exceeds " + (RuntimeFlags.SERVER_MAX_BODY_BYTES >> 20) + " MB");
+                    "Request body exceeds " + (ServerFlags.SERVER_MAX_BODY_BYTES >> 20) + " MB");
             return null;
         }
         return body;

@@ -36,7 +36,7 @@ public final class Generator {
      * inlineThink} keeps think spans inline in the text instead of routing them to the reasoning
      * channel.
      */
-    record Params(
+    public record Params(
             Sampler sampler,
             int maxTokens,
             long timeoutNanos,
@@ -48,7 +48,7 @@ public final class Generator {
      * text stops truncate the produced text and, when streaming, are held back so a configured stop
      * string is never emitted downstream.
      */
-    record StopSpec(Set<Integer> tokenStops, List<String> textStops) {}
+    public record StopSpec(Set<Integer> tokenStops, List<String> textStops) {}
 
     /**
      * Streaming callbacks; fields are nullable. A non-null {@code onContent} switches to
@@ -57,7 +57,7 @@ public final class Generator {
      * onToken} sees every sampled token - specials and the stop token included - before any text
      * for it is emitted.
      */
-    record Listener(
+    public record Listener(
             IntConsumer onToken,
             Consumer<String> onContent,
             Consumer<String> onReasoning,
@@ -72,7 +72,7 @@ public final class Generator {
      * reasoning} carries the think-span text for non-streaming passes. {@code toolCalls} is
      * attached by the chat layer after parsing - never by the generator.
      */
-    record GenerationResult(
+    public record GenerationResult(
             List<Integer> tokens,
             int stopToken,
             String text,
@@ -108,7 +108,7 @@ public final class Generator {
          * The chat-layer rewrite of a reply that parsed as tool calls; {@code content} is any text
          * the model produced before the first call marker.
          */
-        GenerationResult asToolCalls(List<Map<String, Object>> calls, String content) {
+        public GenerationResult asToolCalls(List<Map<String, Object>> calls, String content) {
             return new GenerationResult(
                     tokens,
                     stopToken,
@@ -327,7 +327,7 @@ public final class Generator {
     // ---- tokenizer-based stop / stream / reasoning machinery (model-agnostic) ----
 
     /** Prompt size as billed to the client: a leading BOS is template overhead, not user input. */
-    static int consumedPromptTokens(GgufTokenizer tokenizer, List<Integer> promptTokens) {
+    public static int consumedPromptTokens(GgufTokenizer tokenizer, List<Integer> promptTokens) {
         Map<String, Integer> specialTokens = tokenizer.getSpecialTokens();
         int bos =
                 specialTokens.getOrDefault(
@@ -344,7 +344,7 @@ public final class Generator {
      * models otherwise starve the answer under tight max_tokens). Cumulative across spans; the
      * forced token consumes no RNG draw. Negative = uncapped.
      */
-    static Sampler withThinkBudget(Sampler inner, GgufTokenizer tokenizer, int budget) {
+    public static Sampler withThinkBudget(Sampler inner, GgufTokenizer tokenizer, int budget) {
         Integer open = tokenizer.getSpecialTokens().get("<think>");
         Integer close = tokenizer.getSpecialTokens().get("</think>");
         if (budget < 0 || open == null || close == null) {

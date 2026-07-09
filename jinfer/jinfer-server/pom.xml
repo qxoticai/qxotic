@@ -16,7 +16,7 @@
 
   <properties>
     <jinfer.image.name>jinfer</jinfer.image.name>
-    <jinfer.image.mainClass>com.qxotic.jinfer.Main</jinfer.image.mainClass>
+    <jinfer.image.mainClass>com.qxotic.jinfer.server.Main</jinfer.image.mainClass>
     <jinfer.image.addModules>jdk.incubator.vector,jdk.httpserver</jinfer.image.addModules>
   </properties>
 

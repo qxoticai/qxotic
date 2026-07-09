@@ -12,7 +12,7 @@ import java.util.random.RandomGeneratorFactory;
  * top-p, seed); model-aware policy (think-token bans) lives in {@link Generator#configuredSampler}.
  */
 @FunctionalInterface
-interface Sampler {
+public interface Sampler {
     int sampleToken(FloatTensor logits);
 
     Sampler ARGMAX = FloatTensor::argmax;

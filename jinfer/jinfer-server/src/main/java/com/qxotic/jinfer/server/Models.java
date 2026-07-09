@@ -1,9 +1,10 @@
 // Loads any new-API generative model, dispatching on general.architecture to the matching port
 // (all implement LanguageModel). The single place that knows the full arch -> port mapping for the
 // server; mirrors the dispatch in JinferBench.loadAny.
-package com.qxotic.jinfer;
+package com.qxotic.jinfer.server;
 
 import com.qxotic.format.gguf.GGUF;
+import com.qxotic.jinfer.*;
 import com.qxotic.jinfer.models.gemma4.Gemma4;
 import com.qxotic.jinfer.models.gptoss.GptOss;
 import com.qxotic.jinfer.models.lfm2.Lfm2;

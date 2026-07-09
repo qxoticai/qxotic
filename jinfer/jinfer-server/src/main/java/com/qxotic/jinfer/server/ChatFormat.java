@@ -3,8 +3,9 @@
 // chat API cannot represent yet: tool-calling requests (templates read arbitrary message fields)
 // and models without a hand-written TurnTemplate. Plain chat on covered models goes through
 // com.qxotic.jinfer.chat (TurnTemplate + PromptCache) instead.
-package com.qxotic.jinfer;
+package com.qxotic.jinfer.server;
 
+import com.qxotic.jinfer.*;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;

@@ -9,9 +9,10 @@
 //
 // Build/run: `mvn package` then `java -jar target/jinfer.jar --help` (see the Makefile for the
 // exact runtime flags and native-image targets).
-package com.qxotic.jinfer;
+package com.qxotic.jinfer.server;
 
 import com.qxotic.format.gguf.GGUF;
+import com.qxotic.jinfer.*;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.TurnTemplate;
 import java.io.BufferedOutputStream;
