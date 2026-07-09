@@ -167,8 +167,8 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
         if (configuration.isRecurrentLayer(l)) shortConvMixer(state, l, seqLen);
         else attention(state, l, startPos, seqLen);
         feedForward(state, l, seqLen);
-        if (LLM.TRACE)
-            LLM.traceSum("l_out-" + l, state.residual, seqLen * configuration.embeddingLength);
+        if (Trace.ENABLED)
+            Trace.sum("l_out-" + l, state.residual, seqLen * configuration.embeddingLength);
     }
 
     // --- short-conv mixer (recurrent layer) ---

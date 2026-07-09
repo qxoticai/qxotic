@@ -11,18 +11,30 @@ import jdk.incubator.vector.VectorSpecies;
 public final class Activations {
     private Activations() {}
 
-    static float sigmoid(float x) {
+    /** Logistic sigmoid {@code 1/(1+e^-x)}. */
+    public static float sigmoid(float x) {
         return 1.0f / (1.0f + (float) Math.exp(-x));
     }
 
-    static float silu(float x) {
+    /** SiLU / swish {@code x*sigmoid(x)}. */
+    public static float silu(float x) {
         return x * sigmoid(x);
     }
 
-    static float softplus(float x) {
+    /** Numerically-stable softplus {@code log(1+e^x)}. */
+    public static float softplus(float x) {
         if (x > 20f) return x;
         if (x < -20f) return (float) Math.exp(x);
         return (float) Math.log1p(Math.exp(x));
+    }
+
+    /** In-place ReLU-squared over {@code n} elements: {@code max(0,x)^2} (Nemotron-H FFN). */
+    public static void reluSqr(FloatTensor t, int off, int n) {
+        for (int i = 0; i < n; i++) {
+            float r = t.getFloat(off + i);
+            r = r > 0f ? r : 0f;
+            t.setFloat(off + i, r * r);
+        }
     }
 
     private static final float GELU_C = (float) Math.sqrt(2.0 / Math.PI);

@@ -177,7 +177,7 @@ public final class Granite
                                     fDim,
                                     eps));
             attention(state, l, startPos, seqLen);
-            LLM.addScaled(state.x, state.xb, seqLen * dim, residScale);
+            FloatTensor.addScaled(state.x, state.xb, seqLen * dim, residScale);
             Parallel.forRows(
                     seqLen,
                     s ->
@@ -190,8 +190,8 @@ public final class Granite
                                     fDim,
                                     eps));
             feedForward(state, l, seqLen);
-            LLM.addScaled(state.x, state.xb, seqLen * dim, residScale);
-            if (LLM.TRACE) LLM.traceSum("l_out-" + l, state.x, seqLen * dim);
+            FloatTensor.addScaled(state.x, state.xb, seqLen * dim, residScale);
+            if (Trace.ENABLED) Trace.sum("l_out-" + l, state.x, seqLen * dim);
         }
     }
 
@@ -227,7 +227,7 @@ public final class Granite
                 seqLen,
                 s -> {
                     for (int h = 0; h < fHeads; h++)
-                        LLM.ropeInterleaved(
+                        RoPE.applyInterleaved(
                                 state.attnQ,
                                 s * fQDim + h * fHeadSz,
                                 fStart + s,
@@ -235,7 +235,7 @@ public final class Granite
                                 w.ropeCi,
                                 fHalf);
                     for (int h = 0; h < fKvHeads; h++)
-                        LLM.ropeInterleaved(
+                        RoPE.applyInterleaved(
                                 state.k,
                                 s * fKvDim + h * fHeadSz,
                                 fStart + s,

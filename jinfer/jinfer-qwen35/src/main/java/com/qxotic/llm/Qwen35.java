@@ -11,14 +11,15 @@
 // over
 // the chunk's rows, carried forward in the State exactly as in a streaming decode. This
 // keeps the port to public jinfer kernels only (matmul / flashDecode / gemm-with-offset /
-// Activations.siluMultiply / RoPE.precomputeFreqsCis) and the shared LLM scalar helpers
-// (sigmoid/silu/softplus) + LLM.ropeInterleaved. Text-only -> implements only LanguageModel.
+// Activations.siluMultiply / RoPE.precomputeFreqsCis) and the shared scalar helpers
+// (Activations.sigmoid/silu/softplus) + RoPE.applyInterleaved. Text-only -> implements only
+// LanguageModel.
 package com.qxotic.llm;
 
+import static com.qxotic.jinfer.Activations.sigmoid;
+import static com.qxotic.jinfer.Activations.silu;
+import static com.qxotic.jinfer.Activations.softplus;
 import static com.qxotic.jinfer.Norms.rmsnorm;
-import static com.qxotic.llm.LLM.sigmoid;
-import static com.qxotic.llm.LLM.silu;
-import static com.qxotic.llm.LLM.softplus;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.*;
@@ -213,7 +214,7 @@ public final class Qwen35
                 else ffnForwardBatch(state, l, seqLen);
             }
             state.x.addInPlace(0, state.xb, 0, seqLen * dim);
-            if (LLM.TRACE) LLM.traceSum("l_out-" + l, state.x, seqLen * dim);
+            if (Trace.ENABLED) Trace.sum("l_out-" + l, state.x, seqLen * dim);
         }
         state.lastRowOffset = (seqLen - 1) * dim;
     }
@@ -281,7 +282,7 @@ public final class Qwen35
                                 eps);
                     if (w.ropeHalf > 0) {
                         for (int h = 0; h < fHeads; h++)
-                            LLM.ropeInterleaved(
+                            RoPE.applyInterleaved(
                                     state.attnQ,
                                     qDst + h * fHeadSz,
                                     fStart + s,
@@ -289,7 +290,7 @@ public final class Qwen35
                                     w.ropeCi,
                                     w.ropeHalf);
                         for (int h = 0; h < fKvHeads; h++)
-                            LLM.ropeInterleaved(
+                            RoPE.applyInterleaved(
                                     state.k,
                                     kBase + h * fHeadSz,
                                     fStart + s,
@@ -549,10 +550,10 @@ public final class Qwen35
         }
         if (w.ropeHalf > 0) {
             for (int h = 0; h < heads; h++)
-                LLM.ropeInterleaved(
+                RoPE.applyInterleaved(
                         state.q, h * headSize, position, w.ropeCr, w.ropeCi, w.ropeHalf);
             for (int h = 0; h < kvHeads; h++)
-                LLM.ropeInterleaved(
+                RoPE.applyInterleaved(
                         state.k, h * headSize, position, w.ropeCr, w.ropeCi, w.ropeHalf);
         }
         state.k.copyTo(0, state.keyCache[layer], position * kvDim, kvDim);

@@ -216,8 +216,8 @@ public final class GptOss
     private void layer(State state, int l, int startPos, int seqLen) {
         attention(state, l, startPos, seqLen);
         moeFeedForward(state, l, state.residual, seqLen);
-        if (LLM.TRACE)
-            LLM.traceSum("l_out-" + l, state.residual, seqLen * configuration.embeddingLength());
+        if (Trace.ENABLED)
+            Trace.sum("l_out-" + l, state.residual, seqLen * configuration.embeddingLength());
     }
 
     // --- attention (GQA + sinks, biased projections, YaRN RoPE, SWA-or-full) ---
@@ -565,7 +565,7 @@ public final class GptOss
                 state.decodeScratch);
         attn.wo().gemm(state.xbK, queryDim, state.tscratch, dim, 1, dim, queryDim);
         addBias(state.tscratch, 0, attn.oBias(), 0, dim);
-        LLM.addScaledInto(
+        FloatTensor.addScaledInto(
                 state.th,
                 state.residual,
                 (long) i * dim,
