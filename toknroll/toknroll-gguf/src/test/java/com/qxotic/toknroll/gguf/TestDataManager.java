@@ -219,8 +219,7 @@ public class TestDataManager {
     }
 
     private GGUF loadFromCache(Path cachedFile) throws IOException {
-        try (FileChannel channel =
-                FileChannel.open(cachedFile, StandardOpenOption.READ)) {
+        try (FileChannel channel = FileChannel.open(cachedFile, StandardOpenOption.READ)) {
             return GGUF.read(channel);
         }
     }

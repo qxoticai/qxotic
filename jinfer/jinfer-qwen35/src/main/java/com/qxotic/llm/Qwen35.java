@@ -1,27 +1,28 @@
 // Qwen3.5 ("qwen35" / "qwen35moe") against the com.qxotic.llm model API: a faithful port of the
-// production com.qxotic.jinfer.Qwen35 forward. Qwen3.5 is a HYBRID gated-delta-net (linear-attention)
+// production com.qxotic.jinfer.Qwen35 forward. Qwen3.5 is a HYBRID gated-delta-net
+// (linear-attention)
 // + periodic full-attention transformer, dense or MoE: layers are SSM (gated delta-net) by default,
-// every full_attention_interval-th layer is full softmax attention with QK-norm + a query/output gate.
+// every full_attention_interval-th layer is full softmax attention with QK-norm + a query/output
+// gate.
 //
 // This port batches prompt prefill: dense FFN via ffnForwardBatch, MoE via moeForwardBatch (CSR
 // gather-by-expert GEMMs), token-exact vs the single-token reference forward (behind
-// -Djinfer.singleTokenPrefill). Only the gated delta-net recurrence + conv ring stay sequential over
+// -Djinfer.singleTokenPrefill). Only the gated delta-net recurrence + conv ring stay sequential
+// over
 // the chunk's rows, carried forward in the State exactly as in a streaming decode. This
 // keeps the port to public jinfer kernels only (matmul / flashDecode / gemm-with-offset /
 // Activations.siluMultiply / RoPE.precomputeFreqsCis) and the shared LLM scalar helpers
 // (sigmoid/silu/softplus) + LLM.ropeInterleaved. Text-only -> implements only LanguageModel.
 package com.qxotic.llm;
 
-import com.qxotic.format.gguf.GGUF;
-
-import com.qxotic.jinfer.*;
-import com.qxotic.jinfer.jinja.JinjaRenderer;
-
 import static com.qxotic.jinfer.Norms.rmsnorm;
 import static com.qxotic.llm.LLM.sigmoid;
 import static com.qxotic.llm.LLM.silu;
 import static com.qxotic.llm.LLM.softplus;
 
+import com.qxotic.format.gguf.GGUF;
+import com.qxotic.jinfer.*;
+import com.qxotic.jinfer.jinja.JinjaRenderer;
 import java.io.IOException;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
@@ -30,7 +31,8 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.Weights, Qwen35.State> {
+public final class Qwen35
+        implements LanguageModel<Qwen35.Configuration, Qwen35.Weights, Qwen35.State> {
 
     private final Configuration configuration;
     private final GgufTokenizer tokenizer;
@@ -44,9 +46,19 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
 
     // === com.qxotic.jinfer model API seam ===
 
-    @Override public Configuration config() { return configuration; }
-    @Override public Weights weights()       { return weights; }
-    public GgufTokenizer tokenizer()          { return tokenizer; }
+    @Override
+    public Configuration config() {
+        return configuration;
+    }
+
+    @Override
+    public Weights weights() {
+        return weights;
+    }
+
+    public GgufTokenizer tokenizer() {
+        return tokenizer;
+    }
 
     @Override
     public State newState(int contextCapacity, int batchCapacity) {
@@ -57,40 +69,70 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
     @Override
     public void ingest(State s, Batch batch) {
         int n = batch.count();
-        if (n > s.batchCapacity) throw new IllegalArgumentException("batch " + n + " exceeds batchCapacity " + s.batchCapacity);
+        if (n > s.batchCapacity)
+            throw new IllegalArgumentException(
+                    "batch " + n + " exceeds batchCapacity " + s.batchCapacity);
         int from = s.position();
         if (from + n > s.contextCapacity) {
-            throw new IllegalArgumentException("ingest of " + n + " at position " + from + " exceeds contextCapacity " + s.contextCapacity);
+            throw new IllegalArgumentException(
+                    "ingest of "
+                            + n
+                            + " at position "
+                            + from
+                            + " exceeds contextCapacity "
+                            + s.contextCapacity);
         }
         switch (batch.input()) {
             case Batch.Input.Tokens t -> {
                 int[] ids = t.ids();
-                // Prefill batches the projection GEMMs over the chunk (dense FFN via ffnForwardBatch, MoE
-                // via moeForwardBatch); only the delta-net recurrence + conv ring stay sequential over rows.
-                if (n == 1) Parallel.onDecodePool(() -> { forward(s, ids, 0, from, 1); return null; });
+                // Prefill batches the projection GEMMs over the chunk (dense FFN via
+                // ffnForwardBatch, MoE
+                // via moeForwardBatch); only the delta-net recurrence + conv ring stay sequential
+                // over rows.
+                if (n == 1)
+                    Parallel.onDecodePool(
+                            () -> {
+                                forward(s, ids, 0, from, 1);
+                                return null;
+                            });
                 else forward(s, ids, 0, from, n);
             }
             case Batch.Input.Sequences seq ->
-                throw new UnsupportedOperationException("Qwen3.5 is generative: packed sequences (batched embedding) not supported");
+                    throw new UnsupportedOperationException(
+                            "Qwen3.5 is generative: packed sequences (batched embedding) not"
+                                    + " supported");
             case Batch.Input.Embeddings e ->
-                throw new UnsupportedOperationException("Qwen3.5 is text-only: embedding input is not supported");
+                    throw new UnsupportedOperationException(
+                            "Qwen3.5 is text-only: embedding input is not supported");
         }
-        s.advance(n, Batch.Outputs.LAST);   // streamed MoE keeps only the last row's residual (LAST semantics)
+        s.advance(
+                n,
+                Batch.Outputs
+                        .LAST); // streamed MoE keeps only the last row's residual (LAST semantics)
     }
 
     @Override
     public FloatTensor logits(State s, int output) {
-        if (output != 0) throw new UnsupportedOperationException("Qwen3.5 port keeps only the last row (LAST); ALL outputs unsupported");
+        if (output != 0)
+            throw new UnsupportedOperationException(
+                    "Qwen3.5 port keeps only the last row (LAST); ALL outputs unsupported");
         int dim = configuration.embeddingLength;
-        return Parallel.onDecodePool(() -> {
-            rmsnorm(s.xb, 0, s.x, s.lastRowOffset, weights.outputNorm, dim, configuration.rmsNormEps);
-            weights.outputWeight.matmul(s.xb, s.logits, configuration.vocabularySize, dim);
-            return s.logits;
-        });
+        return Parallel.onDecodePool(
+                () -> {
+                    rmsnorm(
+                            s.xb,
+                            0,
+                            s.x,
+                            s.lastRowOffset,
+                            weights.outputNorm,
+                            dim,
+                            configuration.rmsNormEps);
+                    weights.outputWeight.matmul(s.xb, s.logits, configuration.vocabularySize, dim);
+                    return s.logits;
+                });
     }
 
-
-    private com.qxotic.jinfer.chat.TurnTemplate turnTemplate;   // memoized: stateless, model-lifetime
+    private com.qxotic.jinfer.chat.TurnTemplate turnTemplate; // memoized: stateless, model-lifetime
 
     @Override
     public java.util.Optional<com.qxotic.jinfer.chat.TurnTemplate> turnTemplate() {
@@ -106,14 +148,12 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
     /** The turn-delimiter / eos ids that terminate generation (convenience for callers/tests). */
     public Set<Integer> stopTokens() {
         Set<Integer> stops = new HashSet<>();
-        for (String name : new String[]{"<|im_end|>", "<|endoftext|>"}) {
+        for (String name : new String[] {"<|im_end|>", "<|endoftext|>"}) {
             Integer id = tokenizer.getSpecialTokens().get(name);
             if (id != null) stops.add(id);
         }
         return stops;
     }
-
-
 
     // === Forward (single-token reference; ingest streams the prompt one token at a time) ===
 
@@ -130,37 +170,69 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
         for (int l = 0; l < config.numberOfLayers; l++) {
             int fDim = dim;
             F32FloatTensor attNormW = w.attnNorm[l], postW = w.postAttentionNorm[l];
-            Parallel.forRows(seqLen, s -> rmsnorm(state.xb, (long) s * fDim, state.x, (long) s * fDim, attNormW, fDim, eps));
+            Parallel.forRows(
+                    seqLen,
+                    s ->
+                            rmsnorm(
+                                    state.xb,
+                                    (long) s * fDim,
+                                    state.x,
+                                    (long) s * fDim,
+                                    attNormW,
+                                    fDim,
+                                    eps));
 
             if (config.isFullAttention[l]) {
-                if (seqLen == 1) attentionForward(state, l, startPos); else attentionForwardBatch(state, l, startPos, seqLen);
+                if (seqLen == 1) attentionForward(state, l, startPos);
+                else attentionForwardBatch(state, l, startPos, seqLen);
             } else {
-                if (seqLen == 1) ssmForward(state, l); else ssmForwardBatch(state, l, seqLen);
+                if (seqLen == 1) ssmForward(state, l);
+                else ssmForwardBatch(state, l, seqLen);
             }
 
             // sublayer residual, then post-attention norm acts as the pre-FFN norm
             state.xb.addInPlace(0, state.x, 0, seqLen * dim);
             state.xb.copyTo(0, state.x, 0, seqLen * dim);
-            Parallel.forRows(seqLen, s -> rmsnorm(state.xb, (long) s * fDim, state.xb, (long) s * fDim, postW, fDim, eps));
+            Parallel.forRows(
+                    seqLen,
+                    s ->
+                            rmsnorm(
+                                    state.xb,
+                                    (long) s * fDim,
+                                    state.xb,
+                                    (long) s * fDim,
+                                    postW,
+                                    fDim,
+                                    eps));
 
-            if (config.isMoE()) { if (seqLen == 1) moeForward(state, l); else moeForwardBatch(state, l, seqLen); }
-            else { if (seqLen == 1) ffnForward(state, l); else ffnForwardBatch(state, l, seqLen); }
+            if (config.isMoE()) {
+                if (seqLen == 1) moeForward(state, l);
+                else moeForwardBatch(state, l, seqLen);
+            } else {
+                if (seqLen == 1) ffnForward(state, l);
+                else ffnForwardBatch(state, l, seqLen);
+            }
             state.x.addInPlace(0, state.xb, 0, seqLen * dim);
             if (LLM.TRACE) LLM.traceSum("l_out-" + l, state.x, seqLen * dim);
         }
         state.lastRowOffset = (seqLen - 1) * dim;
     }
 
-    // === Batched prefill cores: projection GEMMs over the chunk; the delta-net recurrence + conv stay
+    // === Batched prefill cores: projection GEMMs over the chunk; the delta-net recurrence + conv
+    // stay
     //     sequential over rows (state carries forward). Token-exact vs the single-token cores. ===
 
-    /** Batched full attention: GEMM Q/K/V, per-row QK-norm + RoPE, KV to cache, causal flash attention,
-     *  sigmoid(gate)-gated output projection. Mirrors {@link #attentionForward}. */
+    /**
+     * Batched full attention: GEMM Q/K/V, per-row QK-norm + RoPE, KV to cache, causal flash
+     * attention, sigmoid(gate)-gated output projection. Mirrors {@link #attentionForward}.
+     */
     private void attentionForwardBatch(State state, int layer, int startPos, int seqLen) {
         Configuration config = configuration;
         Weights w = weights;
         int dim = config.embeddingLength, headSize = config.headSize, heads = config.numberOfHeads;
-        int kvHeads = config.numberOfKeyValueHeads, kvDim = config.kvDim(), queryDim = config.queryDim();
+        int kvHeads = config.numberOfKeyValueHeads,
+                kvDim = config.kvDim(),
+                queryDim = config.queryDim();
         int kvMul = heads / kvHeads;
         float eps = config.rmsNormEps;
 
@@ -168,47 +240,103 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
         w.attnK[layer].gemm(state.xb, dim, state.k, kvDim, seqLen, kvDim, dim);
         w.attnV[layer].gemm(state.xb, dim, state.v, kvDim, seqLen, kvDim, dim);
 
-        int fHeadSz = headSize, fHeads = heads, fKvHeads = kvHeads, fQDim = queryDim, fKvDim = kvDim, fStart = startPos;
+        int fHeadSz = headSize,
+                fHeads = heads,
+                fKvHeads = kvHeads,
+                fQDim = queryDim,
+                fKvDim = kvDim,
+                fStart = startPos;
         F32FloatTensor qNormW = w.attnQNorm[layer], kNormW = w.attnKNorm[layer];
         float[] gateArr = state.attnGateArr;
-        Parallel.forRows(seqLen, s -> {
-            int qBase = s * 2 * fQDim, qDst = s * fQDim;
-            for (int h = 0; h < fHeads; h++) {
-                int base = qBase + h * 2 * fHeadSz;
-                for (int d = 0; d < fHeadSz; d++) {
-                    gateArr[qDst + h * fHeadSz + d] = state.q.getFloat(base + fHeadSz + d);
-                    state.attnQ.setFloat(qDst + h * fHeadSz + d, state.q.getFloat(base + d));
-                }
-            }
-            for (int h = 0; h < fHeads; h++) rmsnorm(state.attnQ, qDst + h * fHeadSz, state.attnQ, qDst + h * fHeadSz, qNormW, fHeadSz, eps);
-            int kBase = s * fKvDim;
-            for (int h = 0; h < fKvHeads; h++) rmsnorm(state.k, kBase + h * fHeadSz, state.k, kBase + h * fHeadSz, kNormW, fHeadSz, eps);
-            if (w.ropeHalf > 0) {
-                for (int h = 0; h < fHeads; h++) LLM.ropeInterleaved(state.attnQ, qDst + h * fHeadSz, fStart + s, w.ropeCr, w.ropeCi, w.ropeHalf);
-                for (int h = 0; h < fKvHeads; h++) LLM.ropeInterleaved(state.k, kBase + h * fHeadSz, fStart + s, w.ropeCr, w.ropeCi, w.ropeHalf);
-            }
-        });
+        Parallel.forRows(
+                seqLen,
+                s -> {
+                    int qBase = s * 2 * fQDim, qDst = s * fQDim;
+                    for (int h = 0; h < fHeads; h++) {
+                        int base = qBase + h * 2 * fHeadSz;
+                        for (int d = 0; d < fHeadSz; d++) {
+                            gateArr[qDst + h * fHeadSz + d] = state.q.getFloat(base + fHeadSz + d);
+                            state.attnQ.setFloat(
+                                    qDst + h * fHeadSz + d, state.q.getFloat(base + d));
+                        }
+                    }
+                    for (int h = 0; h < fHeads; h++)
+                        rmsnorm(
+                                state.attnQ,
+                                qDst + h * fHeadSz,
+                                state.attnQ,
+                                qDst + h * fHeadSz,
+                                qNormW,
+                                fHeadSz,
+                                eps);
+                    int kBase = s * fKvDim;
+                    for (int h = 0; h < fKvHeads; h++)
+                        rmsnorm(
+                                state.k,
+                                kBase + h * fHeadSz,
+                                state.k,
+                                kBase + h * fHeadSz,
+                                kNormW,
+                                fHeadSz,
+                                eps);
+                    if (w.ropeHalf > 0) {
+                        for (int h = 0; h < fHeads; h++)
+                            LLM.ropeInterleaved(
+                                    state.attnQ,
+                                    qDst + h * fHeadSz,
+                                    fStart + s,
+                                    w.ropeCr,
+                                    w.ropeCi,
+                                    w.ropeHalf);
+                        for (int h = 0; h < fKvHeads; h++)
+                            LLM.ropeInterleaved(
+                                    state.k,
+                                    kBase + h * fHeadSz,
+                                    fStart + s,
+                                    w.ropeCr,
+                                    w.ropeCi,
+                                    w.ropeHalf);
+                    }
+                });
 
         FloatTensor keyCache = state.keyCache[layer], valueCache = state.valueCache[layer];
         for (int s = 0; s < seqLen; s++) {
             state.k.copyTo((long) s * kvDim, keyCache, (long) (startPos + s) * kvDim, kvDim);
             state.v.copyTo((long) s * kvDim, valueCache, (long) (startPos + s) * kvDim, kvDim);
         }
-        FlashAttention.causalPrefill((F32FloatTensor) state.attnQ, (F32FloatTensor) state.attnOut,
-                keyCache, valueCache, heads, startPos, seqLen, headSize, kvDim, queryDim, kvMul);
+        FlashAttention.causalPrefill(
+                (F32FloatTensor) state.attnQ,
+                (F32FloatTensor) state.attnOut,
+                keyCache,
+                valueCache,
+                heads,
+                startPos,
+                seqLen,
+                headSize,
+                kvDim,
+                queryDim,
+                kvMul);
 
         int total = seqLen * queryDim;
-        for (int i = 0; i < total; i++) state.attnOut.setFloat(i, state.attnOut.getFloat(i) * sigmoid(gateArr[i]));
+        for (int i = 0; i < total; i++)
+            state.attnOut.setFloat(i, state.attnOut.getFloat(i) * sigmoid(gateArr[i]));
         w.attnOutput[layer].gemm(state.attnOut, queryDim, state.xb, dim, seqLen, dim, queryDim);
     }
 
-    /** Batched gated delta-net: the QKV/gate/alpha/beta/out projections become GEMMs over the chunk;
-     *  the conv ring + per-head recurrence run sequentially over rows (state carries). Mirrors {@link #ssmForward}. */
+    /**
+     * Batched gated delta-net: the QKV/gate/alpha/beta/out projections become GEMMs over the chunk;
+     * the conv ring + per-head recurrence run sequentially over rows (state carries). Mirrors
+     * {@link #ssmForward}.
+     */
     private void ssmForwardBatch(State state, int layer, int seqLen) {
         Configuration config = configuration;
         Weights w = weights;
-        int dim = config.embeddingLength, dInner = config.ssmInnerSize, nGroup = config.ssmGroupCount;
-        int dtRank = config.ssmTimeStepRank, dState = config.ssmStateSize, convKernel = config.ssmConvKernel;
+        int dim = config.embeddingLength,
+                dInner = config.ssmInnerSize,
+                nGroup = config.ssmGroupCount;
+        int dtRank = config.ssmTimeStepRank,
+                dState = config.ssmStateSize,
+                convKernel = config.ssmConvKernel;
         int headVDim = config.headVDim(), convChannels = config.convChannels();
         int kOff = dState * nGroup, vOff = 2 * dState * nGroup;
         float eps = config.rmsNormEps, scale = (float) (1.0 / Math.sqrt(headVDim));
@@ -223,86 +351,144 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
         F32FloatTensor convWeight = w.ssmConv1d[layer];
         float[] convOut = state.ssmConvOut, qGroup = state.ssmQGroup, kGroup = state.ssmKGroup;
         float[] qArr = state.ssmQ, kArr = state.ssmK, vArr = state.ssmV;
-        float[] gate = state.ssmGate, beta = state.ssmBeta, output = state.ssmOutput, sk = state.ssmSk, dd = state.ssmD;
+        float[] gate = state.ssmGate,
+                beta = state.ssmBeta,
+                output = state.ssmOutput,
+                sk = state.ssmSk,
+                dd = state.ssmD;
         float[] S = state.ssmState[layer];
         int fK = convKernel, fCC = convChannels, fHist = convKernel - 1, fSeq = seqLen;
         int fHV = headVDim, fNG = nGroup, fDt = dtRank, fKOff = kOff, fVOff = vOff;
         float fScale = scale, fEps = eps;
 
-        // batched causal conv (parallel over channels; each reads ring history + chunk rows), then roll ring
-        Parallel.parallelFor(0, convChannels, c -> {
-            int wOff = c * fK;
-            for (int s = 0; s < fSeq; s++) {
-                float sum = 0;
-                for (int k = 0; k < fK; k++) {
-                    int pos = s - fHist + k;
-                    float in = pos < 0 ? convState.getFloat((pos + fHist) * fCC + c) : qkv.getFloat(pos * fCC + c);
-                    sum += convWeight.getFloat(wOff + k) * in;
-                }
-                convOut[s * fCC + c] = silu(sum);
-            }
-        });
-        Parallel.parallelFor(0, convChannels, c -> {
-            for (int k = 0; k < fHist; k++) {
-                int pos = fSeq - fHist + k;
-                float v = pos < 0 ? convState.getFloat((pos + fHist) * fCC + c) : qkv.getFloat(pos * fCC + c);
-                convState.setFloat(k * fCC + c, v);
-            }
-        });
+        // batched causal conv (parallel over channels; each reads ring history + chunk rows), then
+        // roll ring
+        Parallel.parallelFor(
+                0,
+                convChannels,
+                c -> {
+                    int wOff = c * fK;
+                    for (int s = 0; s < fSeq; s++) {
+                        float sum = 0;
+                        for (int k = 0; k < fK; k++) {
+                            int pos = s - fHist + k;
+                            float in =
+                                    pos < 0
+                                            ? convState.getFloat((pos + fHist) * fCC + c)
+                                            : qkv.getFloat(pos * fCC + c);
+                            sum += convWeight.getFloat(wOff + k) * in;
+                        }
+                        convOut[s * fCC + c] = silu(sum);
+                    }
+                });
+        Parallel.parallelFor(
+                0,
+                convChannels,
+                c -> {
+                    for (int k = 0; k < fHist; k++) {
+                        int pos = fSeq - fHist + k;
+                        float v =
+                                pos < 0
+                                        ? convState.getFloat((pos + fHist) * fCC + c)
+                                        : qkv.getFloat(pos * fCC + c);
+                        convState.setFloat(k * fCC + c, v);
+                    }
+                });
 
-        // batched per-group L2-norm of Q,K (Q folds 1/sqrt(HV)) + tile nGroup -> dtRank (parallel over rows)
-        Parallel.forRows(seqLen, s -> {
-            int cBase = s * fCC, gBase = s * fNG * fHV, dBase = s * fDt * fHV;
-            for (int h = 0; h < fNG; h++) {
-                float qNormSq = 0, kNormSq = 0; int hOff = h * fHV;
-                for (int d = 0; d < fHV; d++) { float qv = convOut[cBase + hOff + d], kv = convOut[cBase + fKOff + hOff + d]; qNormSq += qv * qv; kNormSq += kv * kv; }
-                float qInv = (float) (1.0 / Math.sqrt(qNormSq + fEps)) * fScale, kInv = (float) (1.0 / Math.sqrt(kNormSq + fEps));
-                for (int d = 0; d < fHV; d++) { qGroup[gBase + hOff + d] = convOut[cBase + hOff + d] * qInv; kGroup[gBase + hOff + d] = convOut[cBase + fKOff + hOff + d] * kInv; }
-            }
-            for (int h = 0; h < fDt; h++) {
-                int dstOff = dBase + h * fHV, srcOff = gBase + (h % fNG) * fHV, vSrc = cBase + fVOff + h * fHV;
-                for (int d = 0; d < fHV; d++) { qArr[dstOff + d] = qGroup[srcOff + d]; kArr[dstOff + d] = kGroup[srcOff + d]; vArr[dstOff + d] = convOut[vSrc + d]; }
-            }
-        });
+        // batched per-group L2-norm of Q,K (Q folds 1/sqrt(HV)) + tile nGroup -> dtRank (parallel
+        // over rows)
+        Parallel.forRows(
+                seqLen,
+                s -> {
+                    int cBase = s * fCC, gBase = s * fNG * fHV, dBase = s * fDt * fHV;
+                    for (int h = 0; h < fNG; h++) {
+                        float qNormSq = 0, kNormSq = 0;
+                        int hOff = h * fHV;
+                        for (int d = 0; d < fHV; d++) {
+                            float qv = convOut[cBase + hOff + d],
+                                    kv = convOut[cBase + fKOff + hOff + d];
+                            qNormSq += qv * qv;
+                            kNormSq += kv * kv;
+                        }
+                        float qInv = (float) (1.0 / Math.sqrt(qNormSq + fEps)) * fScale,
+                                kInv = (float) (1.0 / Math.sqrt(kNormSq + fEps));
+                        for (int d = 0; d < fHV; d++) {
+                            qGroup[gBase + hOff + d] = convOut[cBase + hOff + d] * qInv;
+                            kGroup[gBase + hOff + d] = convOut[cBase + fKOff + hOff + d] * kInv;
+                        }
+                    }
+                    for (int h = 0; h < fDt; h++) {
+                        int dstOff = dBase + h * fHV,
+                                srcOff = gBase + (h % fNG) * fHV,
+                                vSrc = cBase + fVOff + h * fHV;
+                        for (int d = 0; d < fHV; d++) {
+                            qArr[dstOff + d] = qGroup[srcOff + d];
+                            kArr[dstOff + d] = kGroup[srcOff + d];
+                            vArr[dstOff + d] = convOut[vSrc + d];
+                        }
+                    }
+                });
 
         // batched gate/beta: gate = softplus(alpha@x + dt_bias)*A ; beta = sigmoid(beta@x)
-        for (int i = 0; i < seqLen * fDt; i++) gate[i] = softplus(state.alphaProj.getFloat(i) + w.ssmDtBias[layer].getFloat(i % fDt)) * w.ssmA[layer].getFloat(i % fDt);
+        for (int i = 0; i < seqLen * fDt; i++)
+            gate[i] =
+                    softplus(state.alphaProj.getFloat(i) + w.ssmDtBias[layer].getFloat(i % fDt))
+                            * w.ssmA[layer].getFloat(i % fDt);
         for (int i = 0; i < seqLen * fDt; i++) beta[i] = sigmoid(state.betaProj.getFloat(i));
 
-        // delta-net recurrence: ONE parallelFor over heads; each head runs all rows sequentially (state carries)
-        Parallel.parallelFor(0, dtRank, h -> {
-            int stateBase = h * fHV * fHV, skOff = h * fHV;
-            for (int s = 0; s < fSeq; s++) {
-                int base = s * fDt * fHV + h * fHV, gOff = s * fDt + h;
-                float expGate = (float) Math.exp(gate[gOff]), betaH = beta[gOff];
-                VectorMath.scale(S, stateBase, expGate, fHV * fHV);
-                for (int j = 0; j < fHV; j++) sk[skOff + j] = VectorMath.dot(S, stateBase + j * fHV, kArr, base, fHV);
-                for (int i = 0; i < fHV; i++) dd[skOff + i] = (vArr[base + i] - sk[skOff + i]) * betaH;
-                for (int j = 0; j < fHV; j++) VectorMath.axpy(S, stateBase + j * fHV, dd[skOff + j], kArr, base, fHV);
-                for (int j = 0; j < fHV; j++) output[base + j] = VectorMath.dot(S, stateBase + j * fHV, qArr, base, fHV);
-            }
-        });
+        // delta-net recurrence: ONE parallelFor over heads; each head runs all rows sequentially
+        // (state carries)
+        Parallel.parallelFor(
+                0,
+                dtRank,
+                h -> {
+                    int stateBase = h * fHV * fHV, skOff = h * fHV;
+                    for (int s = 0; s < fSeq; s++) {
+                        int base = s * fDt * fHV + h * fHV, gOff = s * fDt + h;
+                        float expGate = (float) Math.exp(gate[gOff]), betaH = beta[gOff];
+                        VectorMath.scale(S, stateBase, expGate, fHV * fHV);
+                        for (int j = 0; j < fHV; j++)
+                            sk[skOff + j] = VectorMath.dot(S, stateBase + j * fHV, kArr, base, fHV);
+                        for (int i = 0; i < fHV; i++)
+                            dd[skOff + i] = (vArr[base + i] - sk[skOff + i]) * betaH;
+                        for (int j = 0; j < fHV; j++)
+                            VectorMath.axpy(S, stateBase + j * fHV, dd[skOff + j], kArr, base, fHV);
+                        for (int j = 0; j < fHV; j++)
+                            output[base + j] =
+                                    VectorMath.dot(S, stateBase + j * fHV, qArr, base, fHV);
+                    }
+                });
 
         // batched SiLU(z)-gated RMSNorm -> ssmTmp (z = gateProj), then out projection
         F32FloatTensor ssmNormW = w.ssmNorm[layer];
         FloatTensor gateProj = state.gateProj;
         int fDInner = dInner;
-        Parallel.forRows(seqLen, s -> {
-            int dBase = s * fDt * fHV, zBase = s * fDInner;
-            for (int h = 0; h < fDt; h++) {
-                int headOff = dBase + h * fHV, oOff = zBase + h * fHV; float ss = 0;
-                for (int d = 0; d < fHV; d++) { float val = output[headOff + d]; ss += val * val; }
-                float invRms = (float) (1.0 / Math.sqrt(ss / fHV + fEps));
-                for (int d = 0; d < fHV; d++) {
-                    float normed = output[headOff + d] * invRms * ssmNormW.getFloat(d);
-                    state.ssmTmp.setFloat(oOff + d, normed * silu(gateProj.getFloat(oOff + d)));
-                }
-            }
-        });
+        Parallel.forRows(
+                seqLen,
+                s -> {
+                    int dBase = s * fDt * fHV, zBase = s * fDInner;
+                    for (int h = 0; h < fDt; h++) {
+                        int headOff = dBase + h * fHV, oOff = zBase + h * fHV;
+                        float ss = 0;
+                        for (int d = 0; d < fHV; d++) {
+                            float val = output[headOff + d];
+                            ss += val * val;
+                        }
+                        float invRms = (float) (1.0 / Math.sqrt(ss / fHV + fEps));
+                        for (int d = 0; d < fHV; d++) {
+                            float normed = output[headOff + d] * invRms * ssmNormW.getFloat(d);
+                            state.ssmTmp.setFloat(
+                                    oOff + d, normed * silu(gateProj.getFloat(oOff + d)));
+                        }
+                    }
+                });
         w.ssmOut[layer].gemm(state.ssmTmp, dInner, state.xb, dim, seqLen, dim, dInner);
     }
 
-    /** Batched dense SwiGLU FFN: gate/up/down become GEMMs over the chunk. Mirrors {@link #ffnForward}. */
+    /**
+     * Batched dense SwiGLU FFN: gate/up/down become GEMMs over the chunk. Mirrors {@link
+     * #ffnForward}.
+     */
     private void ffnForwardBatch(State state, int layer, int seqLen) {
         Configuration config = configuration;
         Weights w = weights;
@@ -313,8 +499,10 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
         w.ffnDown[layer].gemm(state.ffnGate, hiddenDim, state.xb, dim, seqLen, dim, hiddenDim);
     }
 
-    /** Full softmax attention with QK-norm, fused query/output gate (attn_q -> [q | gate]), GQA and
-     *  RoPE; output gated by sigmoid(gate). */
+    /**
+     * Full softmax attention with QK-norm, fused query/output gate (attn_q -> [q | gate]), GQA and
+     * RoPE; output gated by sigmoid(gate).
+     */
     private void attentionForward(State state, int layer, int position) {
         Configuration config = configuration;
         Weights w = weights;
@@ -338,24 +526,57 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
             }
         }
         for (int h = 0; h < heads; h++) {
-            rmsnorm(state.q, h * headSize, state.q, h * headSize, w.attnQNorm[layer], headSize, eps);
+            rmsnorm(
+                    state.q,
+                    h * headSize,
+                    state.q,
+                    h * headSize,
+                    w.attnQNorm[layer],
+                    headSize,
+                    eps);
         }
         w.attnK[layer].matmul(state.xb, state.k, kvDim, dim);
         w.attnV[layer].matmul(state.xb, state.v, kvDim, dim);
         for (int h = 0; h < kvHeads; h++) {
-            rmsnorm(state.k, h * headSize, state.k, h * headSize, w.attnKNorm[layer], headSize, eps);
+            rmsnorm(
+                    state.k,
+                    h * headSize,
+                    state.k,
+                    h * headSize,
+                    w.attnKNorm[layer],
+                    headSize,
+                    eps);
         }
         if (w.ropeHalf > 0) {
-            for (int h = 0; h < heads; h++) LLM.ropeInterleaved(state.q, h * headSize, position, w.ropeCr, w.ropeCi, w.ropeHalf);
-            for (int h = 0; h < kvHeads; h++) LLM.ropeInterleaved(state.k, h * headSize, position, w.ropeCr, w.ropeCi, w.ropeHalf);
+            for (int h = 0; h < heads; h++)
+                LLM.ropeInterleaved(
+                        state.q, h * headSize, position, w.ropeCr, w.ropeCi, w.ropeHalf);
+            for (int h = 0; h < kvHeads; h++)
+                LLM.ropeInterleaved(
+                        state.k, h * headSize, position, w.ropeCr, w.ropeCi, w.ropeHalf);
         }
         state.k.copyTo(0, state.keyCache[layer], position * kvDim, kvDim);
         state.v.copyTo(0, state.valueCache[layer], position * kvDim, kvDim);
 
         FloatTensor keyCache = state.keyCache[layer], valueCache = state.valueCache[layer];
         float attScale = 1.0f / (float) Math.sqrt(headSize);
-        FlashAttention.flashDecode((F32FloatTensor) state.q, (F32FloatTensor) state.xb2,
-                keyCache, valueCache, null, null, heads, position, 0, headSize, kvDim, kvMul, attScale, 0, null, state.decodeScratch);
+        FlashAttention.flashDecode(
+                (F32FloatTensor) state.q,
+                (F32FloatTensor) state.xb2,
+                keyCache,
+                valueCache,
+                null,
+                null,
+                heads,
+                position,
+                0,
+                headSize,
+                kvDim,
+                kvMul,
+                attScale,
+                0,
+                null,
+                state.decodeScratch);
 
         for (int i = 0; i < queryDim; i++) {
             state.xb2.setFloat(i, state.xb2.getFloat(i) * sigmoid(gateArr[i]));
@@ -363,9 +584,11 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
         w.attnOutput[layer].matmul(state.xb2, state.xb, dim, queryDim);
     }
 
-    /** Gated delta-net (linear-attention) layer: depthwise causal conv -> SiLU -> per-group L2-norm
-     *  of Q/K -> tile to value heads -> delta-net recurrence over a [headVDim,headVDim] state ->
-     *  SiLU(z)-gated RMSNorm -> output projection. (Production single-token reference recurrence.) */
+    /**
+     * Gated delta-net (linear-attention) layer: depthwise causal conv -> SiLU -> per-group L2-norm
+     * of Q/K -> tile to value heads -> delta-net recurrence over a [headVDim,headVDim] state ->
+     * SiLU(z)-gated RMSNorm -> output projection. (Production single-token reference recurrence.)
+     */
     private void ssmForward(State state, int layer) {
         Configuration config = configuration;
         Weights w = weights;
@@ -392,57 +615,78 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
         F32FloatTensor convWeight = w.ssmConv1d[layer];
         FloatTensor qkv = state.ssmQkv;
         float[] convOut = state.ssmConvOut;
-        Parallel.parallelFor(0, convChannels, c -> {
-            float sum = 0;
-            int wOff = c * convKernel;
-            for (int k = 0; k < convKernel - 1; k++) {
-                sum += convWeight.getFloat(wOff + k) * convState.getFloat(k * convChannels + c);
-            }
-            sum += convWeight.getFloat(wOff + (convKernel - 1)) * qkv.getFloat(c);
-            convOut[c] = silu(sum);
-        });
+        Parallel.parallelFor(
+                0,
+                convChannels,
+                c -> {
+                    float sum = 0;
+                    int wOff = c * convKernel;
+                    for (int k = 0; k < convKernel - 1; k++) {
+                        sum +=
+                                convWeight.getFloat(wOff + k)
+                                        * convState.getFloat(k * convChannels + c);
+                    }
+                    sum += convWeight.getFloat(wOff + (convKernel - 1)) * qkv.getFloat(c);
+                    convOut[c] = silu(sum);
+                });
         // update conv ring (per channel: shift left, append current qkv as newest)
-        Parallel.parallelFor(0, convChannels, c -> {
-            for (int k = 0; k < convKernel - 2; k++) {
-                convState.setFloat(k * convChannels + c, convState.getFloat((k + 1) * convChannels + c));
-            }
-            convState.setFloat((convKernel - 2) * convChannels + c, qkv.getFloat(c));
-        });
+        Parallel.parallelFor(
+                0,
+                convChannels,
+                c -> {
+                    for (int k = 0; k < convKernel - 2; k++) {
+                        convState.setFloat(
+                                k * convChannels + c,
+                                convState.getFloat((k + 1) * convChannels + c));
+                    }
+                    convState.setFloat((convKernel - 2) * convChannels + c, qkv.getFloat(c));
+                });
 
-        // 4. split + per-group L2-norm of Q,K (Q folds in 1/sqrt(headVDim)); 5. tile nGroup -> dtRank
+        // 4. split + per-group L2-norm of Q,K (Q folds in 1/sqrt(headVDim)); 5. tile nGroup ->
+        // dtRank
         float scale = (float) (1.0 / Math.sqrt(headVDim));
         float[] qGroup = state.ssmQGroup, kGroup = state.ssmKGroup;
-        Parallel.parallelFor(0, nGroup, h -> {
-            float qNormSq = 0, kNormSq = 0;
-            int hOff = h * headVDim;
-            for (int d = 0; d < headVDim; d++) {
-                float qv = convOut[hOff + d];
-                float kv = convOut[kOff + hOff + d];
-                qNormSq += qv * qv;
-                kNormSq += kv * kv;
-            }
-            float qInv = (float) (1.0 / Math.sqrt(qNormSq + eps)) * scale;
-            float kInv = (float) (1.0 / Math.sqrt(kNormSq + eps));
-            for (int d = 0; d < headVDim; d++) {
-                qGroup[hOff + d] = convOut[hOff + d] * qInv;
-                kGroup[hOff + d] = convOut[kOff + hOff + d] * kInv;
-            }
-        });
+        Parallel.parallelFor(
+                0,
+                nGroup,
+                h -> {
+                    float qNormSq = 0, kNormSq = 0;
+                    int hOff = h * headVDim;
+                    for (int d = 0; d < headVDim; d++) {
+                        float qv = convOut[hOff + d];
+                        float kv = convOut[kOff + hOff + d];
+                        qNormSq += qv * qv;
+                        kNormSq += kv * kv;
+                    }
+                    float qInv = (float) (1.0 / Math.sqrt(qNormSq + eps)) * scale;
+                    float kInv = (float) (1.0 / Math.sqrt(kNormSq + eps));
+                    for (int d = 0; d < headVDim; d++) {
+                        qGroup[hOff + d] = convOut[hOff + d] * qInv;
+                        kGroup[hOff + d] = convOut[kOff + hOff + d] * kInv;
+                    }
+                });
         float[] qArr = state.ssmQ, kArr = state.ssmK, vArr = state.ssmV;
-        Parallel.parallelFor(0, dtRank, h -> {
-            int dstOff = h * headVDim, srcOff = (h % nGroup) * headVDim, vSrc = vOff + h * headVDim;
-            for (int d = 0; d < headVDim; d++) {
-                qArr[dstOff + d] = qGroup[srcOff + d];
-                kArr[dstOff + d] = kGroup[srcOff + d];
-                vArr[dstOff + d] = convOut[vSrc + d];
-            }
-        });
+        Parallel.parallelFor(
+                0,
+                dtRank,
+                h -> {
+                    int dstOff = h * headVDim,
+                            srcOff = (h % nGroup) * headVDim,
+                            vSrc = vOff + h * headVDim;
+                    for (int d = 0; d < headVDim; d++) {
+                        qArr[dstOff + d] = qGroup[srcOff + d];
+                        kArr[dstOff + d] = kGroup[srcOff + d];
+                        vArr[dstOff + d] = convOut[vSrc + d];
+                    }
+                });
 
         // 6. gate = softplus(alpha@x + dt_bias) * A ; beta = sigmoid(beta@x)
         w.ssmAlpha[layer].matmul(state.xb, state.ssmTmp, dtRank, dim);
         float[] gate = state.ssmGate;
         for (int h = 0; h < dtRank; h++) {
-            gate[h] = softplus(state.ssmTmp.getFloat(h) + w.ssmDtBias[layer].getFloat(h)) * w.ssmA[layer].getFloat(h);
+            gate[h] =
+                    softplus(state.ssmTmp.getFloat(h) + w.ssmDtBias[layer].getFloat(h))
+                            * w.ssmA[layer].getFloat(h);
         }
         w.ssmBeta[layer].matmul(state.xb, state.ssmTmp, dtRank, dim);
         float[] beta = state.ssmBeta;
@@ -454,43 +698,55 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
         float[] output = state.ssmOutput;
         float[] S = state.ssmState[layer];
         float[] sk = state.ssmSk, d = state.ssmD;
-        Parallel.parallelFor(0, dtRank, h -> {
-            float expGate = (float) Math.exp(gate[h]);
-            float betaH = beta[h];
-            int stateBase = h * headVDim * headVDim;
-            int headOff = h * headVDim;
-            for (int idx = stateBase; idx < stateBase + headVDim * headVDim; idx++) S[idx] *= expGate;
-            for (int j = 0; j < headVDim; j++) {
-                float sum = 0; int row = stateBase + j * headVDim;
-                for (int i = 0; i < headVDim; i++) sum += S[row + i] * kArr[headOff + i];
-                sk[headOff + j] = sum;
-            }
-            for (int i = 0; i < headVDim; i++) d[headOff + i] = (vArr[headOff + i] - sk[headOff + i]) * betaH;
-            for (int j = 0; j < headVDim; j++) {
-                float dj = d[headOff + j]; int row = stateBase + j * headVDim;
-                for (int i = 0; i < headVDim; i++) S[row + i] += dj * kArr[headOff + i];
-            }
-            for (int j = 0; j < headVDim; j++) {
-                float sum = 0; int row = stateBase + j * headVDim;
-                for (int i = 0; i < headVDim; i++) sum += S[row + i] * qArr[headOff + i];
-                output[headOff + j] = sum;
-            }
-        });
+        Parallel.parallelFor(
+                0,
+                dtRank,
+                h -> {
+                    float expGate = (float) Math.exp(gate[h]);
+                    float betaH = beta[h];
+                    int stateBase = h * headVDim * headVDim;
+                    int headOff = h * headVDim;
+                    for (int idx = stateBase; idx < stateBase + headVDim * headVDim; idx++)
+                        S[idx] *= expGate;
+                    for (int j = 0; j < headVDim; j++) {
+                        float sum = 0;
+                        int row = stateBase + j * headVDim;
+                        for (int i = 0; i < headVDim; i++) sum += S[row + i] * kArr[headOff + i];
+                        sk[headOff + j] = sum;
+                    }
+                    for (int i = 0; i < headVDim; i++)
+                        d[headOff + i] = (vArr[headOff + i] - sk[headOff + i]) * betaH;
+                    for (int j = 0; j < headVDim; j++) {
+                        float dj = d[headOff + j];
+                        int row = stateBase + j * headVDim;
+                        for (int i = 0; i < headVDim; i++) S[row + i] += dj * kArr[headOff + i];
+                    }
+                    for (int j = 0; j < headVDim; j++) {
+                        float sum = 0;
+                        int row = stateBase + j * headVDim;
+                        for (int i = 0; i < headVDim; i++) sum += S[row + i] * qArr[headOff + i];
+                        output[headOff + j] = sum;
+                    }
+                });
 
         // 8. SiLU(z)-gated RMSNorm per head, 9. output projection
-        Parallel.parallelFor(0, dtRank, h -> {
-            int headOff = h * headVDim;
-            float ss = 0;
-            for (int dd = 0; dd < headVDim; dd++) {
-                float val = output[headOff + dd];
-                ss += val * val;
-            }
-            float invRms = (float) (1.0 / Math.sqrt(ss / headVDim + eps));
-            for (int dd = 0; dd < headVDim; dd++) {
-                float normed = output[headOff + dd] * invRms * w.ssmNorm[layer].getFloat(dd);
-                state.ssmTmp.setFloat(headOff + dd, normed * silu(z[headOff + dd]));
-            }
-        });
+        Parallel.parallelFor(
+                0,
+                dtRank,
+                h -> {
+                    int headOff = h * headVDim;
+                    float ss = 0;
+                    for (int dd = 0; dd < headVDim; dd++) {
+                        float val = output[headOff + dd];
+                        ss += val * val;
+                    }
+                    float invRms = (float) (1.0 / Math.sqrt(ss / headVDim + eps));
+                    for (int dd = 0; dd < headVDim; dd++) {
+                        float normed =
+                                output[headOff + dd] * invRms * w.ssmNorm[layer].getFloat(dd);
+                        state.ssmTmp.setFloat(headOff + dd, normed * silu(z[headOff + dd]));
+                    }
+                });
         w.ssmOut[layer].matmul(state.ssmTmp, state.xb, dim, dInner);
     }
 
@@ -506,20 +762,32 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
         w.ffnDown[layer].matmul(state.ffnGate, state.xb, dim, hiddenDim);
     }
 
-    /** Insertion-sort top-k of the softmaxed router probs into {@code topE}/{@code topP}, descending and
-     *  stable so ties keep the lower expert index. Unfilled slots are left as {@code -1}/-INF. */
-    private static void selectTopK(FloatTensor probs, int probBase, int numExperts, int topK,
-                                   int[] topE, float[] topP) {
-        for (int i = 0; i < topK; i++) { topE[i] = -1; topP[i] = Float.NEGATIVE_INFINITY; }
+    /**
+     * Insertion-sort top-k of the softmaxed router probs into {@code topE}/{@code topP}, descending
+     * and stable so ties keep the lower expert index. Unfilled slots are left as {@code -1}/-INF.
+     */
+    private static void selectTopK(
+            FloatTensor probs, int probBase, int numExperts, int topK, int[] topE, float[] topP) {
+        for (int i = 0; i < topK; i++) {
+            topE[i] = -1;
+            topP[i] = Float.NEGATIVE_INFINITY;
+        }
         for (int e = 0; e < numExperts; e++) {
             float prob = probs.getFloat(probBase + e);
             int insertPos = -1;
             for (int k = 0; k < topK; k++) {
-                if (prob > topP[k]) { insertPos = k; break; }
+                if (prob > topP[k]) {
+                    insertPos = k;
+                    break;
+                }
             }
             if (insertPos >= 0) {
-                for (int k = topK - 1; k > insertPos; k--) { topP[k] = topP[k - 1]; topE[k] = topE[k - 1]; }
-                topP[insertPos] = prob; topE[insertPos] = e;
+                for (int k = topK - 1; k > insertPos; k--) {
+                    topP[k] = topP[k - 1];
+                    topE[k] = topE[k - 1];
+                }
+                topP[insertPos] = prob;
+                topE[insertPos] = e;
             }
         }
     }
@@ -555,11 +823,22 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
             if (weight <= 0f) continue;
             int gateUpOffset = expertIdx * gateUpStride;
             int downOffset = expertIdx * downStride;
-            // gemm(seqLen=1, thisOffset) is the public form of the package-private matmul-with-offset.
-            w.moeExpertGate[layer].gemm(state.xb, dim, state.moeGateResult, expertFFN, 1, expertFFN, dim, gateUpOffset);
-            w.moeExpertUp[layer].gemm(state.xb, dim, state.moeUpResult, expertFFN, 1, expertFFN, dim, gateUpOffset);
+            // gemm(seqLen=1, thisOffset) is the public form of the package-private
+            // matmul-with-offset.
+            w.moeExpertGate[layer].gemm(
+                    state.xb, dim, state.moeGateResult, expertFFN, 1, expertFFN, dim, gateUpOffset);
+            w.moeExpertUp[layer].gemm(
+                    state.xb, dim, state.moeUpResult, expertFFN, 1, expertFFN, dim, gateUpOffset);
             Activations.siluMultiply(state.moeGateResult, 0, state.moeUpResult, 0, expertFFN);
-            w.moeExpertDown[layer].gemm(state.moeGateResult, expertFFN, state.moeExpertOut, dim, 1, dim, expertFFN, downOffset);
+            w.moeExpertDown[layer].gemm(
+                    state.moeGateResult,
+                    expertFFN,
+                    state.moeExpertOut,
+                    dim,
+                    1,
+                    dim,
+                    expertFFN,
+                    downOffset);
             moeOutput.saxpyInPlace(0, state.moeExpertOut, 0, dim, weight);
         }
 
@@ -580,9 +859,12 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
         moeOutput.copyTo(0, state.xb, 0, dim);
     }
 
-    /** Batched top-k MoE + shared expert (prompt prefill): router GEMM, per-row softmax+top-k+renorm,
-     *  CSR gather-by-expert GEMMs, plus the batched shared expert with its sigmoid input gate. Sums
-     *  experts + shared*sharedScale into {@code xb}. Token-exact vs the single-token {@link #moeForward}. */
+    /**
+     * Batched top-k MoE + shared expert (prompt prefill): router GEMM, per-row
+     * softmax+top-k+renorm, CSR gather-by-expert GEMMs, plus the batched shared expert with its
+     * sigmoid input gate. Sums experts + shared*sharedScale into {@code xb}. Token-exact vs the
+     * single-token {@link #moeForward}.
+     */
     private void moeForwardBatch(State state, int layer, int seqLen) {
         Configuration config = configuration;
         Weights w = weights;
@@ -593,12 +875,14 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
         int gateUpStride = expertFFN * dim;
         int downStride = dim * expertFFN;
 
-        // The pre-FFN normed input is already in state.xb; snapshot it as the per-row router/expert/shared
+        // The pre-FFN normed input is already in state.xb; snapshot it as the per-row
+        // router/expert/shared
         // input (the CSR gather scrambles row order).
         state.xb.copyTo(0, state.moeInputB, 0, seqLen * dim);
 
         // router: softmax over all experts, top-k, renormalize top-k (per row)
-        w.moeRouter[layer].gemm(state.moeInputB, dim, state.moeRouterB, numExperts, seqLen, numExperts, dim);
+        w.moeRouter[layer].gemm(
+                state.moeInputB, dim, state.moeRouterB, numExperts, seqLen, numExperts, dim);
         int[] counts = state.moeExpertCounts;
         java.util.Arrays.fill(counts, 0);
         for (int s = 0; s < seqLen; s++) {
@@ -619,29 +903,84 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
 
         // CSR grouping + gather + scatter is the shared kernel; the per-expert gated SiLU is here.
         Moe.Routing r = state.moeRouting;
-        r.seqLen = seqLen; r.topK = topK; r.numExperts = numExperts;
-        Moe.dispatch(r, dim, state.moeInputB, state.moeGather, state.moeDownB, state.moeOutB, null,
+        r.seqLen = seqLen;
+        r.topK = topK;
+        r.numExperts = numExperts;
+        Moe.dispatch(
+                r,
+                dim,
+                state.moeInputB,
+                state.moeGather,
+                state.moeDownB,
+                state.moeOutB,
+                null,
                 (e, n, gather, out) -> {
                     int gateUpOffset = e * gateUpStride;
-                    w.moeExpertGate[layer].gemm(gather, dim, state.moeGateUpB, expertFFN, n, expertFFN, dim, gateUpOffset);
-                    w.moeExpertUp[layer].gemm(gather, dim, state.moeUpB, expertFFN, n, expertFFN, dim, gateUpOffset);
-                    Parallel.forRows(n, j -> Activations.siluMultiply(state.moeGateUpB, j * expertFFN, state.moeUpB, j * expertFFN, expertFFN));
-                    w.moeExpertDown[layer].gemm(state.moeGateUpB, expertFFN, out, dim, n, dim, expertFFN, e * downStride);
+                    w.moeExpertGate[layer].gemm(
+                            gather,
+                            dim,
+                            state.moeGateUpB,
+                            expertFFN,
+                            n,
+                            expertFFN,
+                            dim,
+                            gateUpOffset);
+                    w.moeExpertUp[layer].gemm(
+                            gather, dim, state.moeUpB, expertFFN, n, expertFFN, dim, gateUpOffset);
+                    Parallel.forRows(
+                            n,
+                            j ->
+                                    Activations.siluMultiply(
+                                            state.moeGateUpB,
+                                            j * expertFFN,
+                                            state.moeUpB,
+                                            j * expertFFN,
+                                            expertFFN));
+                    w.moeExpertDown[layer].gemm(
+                            state.moeGateUpB,
+                            expertFFN,
+                            out,
+                            dim,
+                            n,
+                            dim,
+                            expertFFN,
+                            e * downStride);
                 });
 
         // shared expert (batched) + sigmoid input gate, added per row
         if (config.expertSharedFeedForwardLength > 0 && w.moeSharedGate[layer] != null) {
             int sharedFFN = config.expertSharedFeedForwardLength;
-            w.moeSharedGate[layer].gemm(state.moeInputB, dim, state.moeSharedGateB, sharedFFN, seqLen, sharedFFN, dim);
-            w.moeSharedUp[layer].gemm(state.moeInputB, dim, state.moeSharedUpB, sharedFFN, seqLen, sharedFFN, dim);
-            Parallel.forRows(seqLen, s -> Activations.siluMultiply(state.moeSharedGateB, s * sharedFFN, state.moeSharedUpB, s * sharedFFN, sharedFFN));
-            w.moeSharedDown[layer].gemm(state.moeSharedGateB, sharedFFN, state.moeSharedOutB, dim, seqLen, dim, sharedFFN);
+            w.moeSharedGate[layer].gemm(
+                    state.moeInputB, dim, state.moeSharedGateB, sharedFFN, seqLen, sharedFFN, dim);
+            w.moeSharedUp[layer].gemm(
+                    state.moeInputB, dim, state.moeSharedUpB, sharedFFN, seqLen, sharedFFN, dim);
+            Parallel.forRows(
+                    seqLen,
+                    s ->
+                            Activations.siluMultiply(
+                                    state.moeSharedGateB,
+                                    s * sharedFFN,
+                                    state.moeSharedUpB,
+                                    s * sharedFFN,
+                                    sharedFFN));
+            w.moeSharedDown[layer].gemm(
+                    state.moeSharedGateB,
+                    sharedFFN,
+                    state.moeSharedOutB,
+                    dim,
+                    seqLen,
+                    dim,
+                    sharedFFN);
             if (w.moeSharedInputGate[layer] != null) {
-                w.moeSharedInputGate[layer].gemm(state.moeInputB, dim, state.moeSharedInputGateB, 1, seqLen, 1, dim);
-                Parallel.forRows(seqLen, s -> {
-                    float sharedScale = sigmoid(state.moeSharedInputGateB.getFloat(s));
-                    state.moeOutB.saxpyInPlace(s * dim, state.moeSharedOutB, s * dim, dim, sharedScale);
-                });
+                w.moeSharedInputGate[layer].gemm(
+                        state.moeInputB, dim, state.moeSharedInputGateB, 1, seqLen, 1, dim);
+                Parallel.forRows(
+                        seqLen,
+                        s -> {
+                            float sharedScale = sigmoid(state.moeSharedInputGateB.getFloat(s));
+                            state.moeOutB.saxpyInPlace(
+                                    s * dim, state.moeSharedOutB, s * dim, dim, sharedScale);
+                        });
             } else {
                 state.moeOutB.addInPlace(0, state.moeSharedOutB, 0, seqLen * dim);
             }
@@ -675,11 +1014,28 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
         final int expertFeedForwardLength;
         final int expertSharedFeedForwardLength;
 
-        Configuration(int embeddingLength, int numberOfLayers, int numberOfHeads, int numberOfKeyValueHeads,
-                      int headSize, int vocabularySize, int contextLength, float rmsNormEps, float ropeTheta,
-                      int ropeDimensionCount, int hiddenDim, boolean[] isFullAttention, int ssmInnerSize,
-                      int ssmGroupCount, int ssmTimeStepRank, int ssmStateSize, int ssmConvKernel,
-                      int expertCount, int expertUsedCount, int expertFeedForwardLength, int expertSharedFeedForwardLength) {
+        Configuration(
+                int embeddingLength,
+                int numberOfLayers,
+                int numberOfHeads,
+                int numberOfKeyValueHeads,
+                int headSize,
+                int vocabularySize,
+                int contextLength,
+                float rmsNormEps,
+                float ropeTheta,
+                int ropeDimensionCount,
+                int hiddenDim,
+                boolean[] isFullAttention,
+                int ssmInnerSize,
+                int ssmGroupCount,
+                int ssmTimeStepRank,
+                int ssmStateSize,
+                int ssmConvKernel,
+                int expertCount,
+                int expertUsedCount,
+                int expertFeedForwardLength,
+                int expertSharedFeedForwardLength) {
             this.embeddingLength = embeddingLength;
             this.numberOfLayers = numberOfLayers;
             this.numberOfHeads = numberOfHeads;
@@ -703,19 +1059,42 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
             this.expertSharedFeedForwardLength = expertSharedFeedForwardLength;
         }
 
-        @Override public int vocabularySize() { return vocabularySize; }
-        @Override public int contextLength()  { return contextLength; }
+        @Override
+        public int vocabularySize() {
+            return vocabularySize;
+        }
 
-        int queryDim()    { return numberOfHeads * headSize; }
-        int kvDim()       { return numberOfKeyValueHeads * headSize; }
-        int headVDim()    { return ssmInnerSize / ssmTimeStepRank; }
-        int convChannels(){ return ssmInnerSize + 2 * ssmGroupCount * ssmStateSize; }
-        boolean isMoE()   { return expertCount > 0; }
+        @Override
+        public int contextLength() {
+            return contextLength;
+        }
+
+        int queryDim() {
+            return numberOfHeads * headSize;
+        }
+
+        int kvDim() {
+            return numberOfKeyValueHeads * headSize;
+        }
+
+        int headVDim() {
+            return ssmInnerSize / ssmTimeStepRank;
+        }
+
+        int convChannels() {
+            return ssmInnerSize + 2 * ssmGroupCount * ssmStateSize;
+        }
+
+        boolean isMoE() {
+            return expertCount > 0;
+        }
     }
 
-    // === Weights (production parallel-array layout, kept verbatim: the gated-delta-net math indexes
+    // === Weights (production parallel-array layout, kept verbatim: the gated-delta-net math
+    // indexes
     //     w.xxx[layer] across intricate kernels, so re-grouping into LayerWeights[] would risk the
-    //     token-exactness this port is verified against; a follow-up refactor can use the compare harness). ===
+    //     token-exactness this port is verified against; a follow-up refactor can use the compare
+    // harness). ===
 
     public static final class Weights {
         final FloatTensor tokenEmbeddingTable;
@@ -732,15 +1111,41 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
         final float[] ropeCr, ropeCi;
         final int ropeHalf;
 
-        Weights(FloatTensor tokenEmbeddingTable, F32FloatTensor outputNorm, FloatTensor outputWeight,
-                F32FloatTensor[] attnNorm, F32FloatTensor[] postAttentionNorm, FloatTensor[] attnQ, FloatTensor[] attnK,
-                FloatTensor[] attnV, FloatTensor[] attnOutput, F32FloatTensor[] attnQNorm, F32FloatTensor[] attnKNorm,
-                FloatTensor[] attnQkv, FloatTensor[] attnGate, FloatTensor[] ssmAlpha, FloatTensor[] ssmBeta,
-                FloatTensor[] ssmOut, F32FloatTensor[] ssmConv1d, F32FloatTensor[] ssmA, F32FloatTensor[] ssmDtBias,
-                F32FloatTensor[] ssmNorm, FloatTensor[] ffnGate, FloatTensor[] ffnUp, FloatTensor[] ffnDown,
-                FloatTensor[] moeRouter, FloatTensor[] moeExpertGate, FloatTensor[] moeExpertUp, FloatTensor[] moeExpertDown,
-                FloatTensor[] moeSharedGate, FloatTensor[] moeSharedUp, FloatTensor[] moeSharedDown,
-                FloatTensor[] moeSharedInputGate, float[] ropeCr, float[] ropeCi, int ropeHalf) {
+        Weights(
+                FloatTensor tokenEmbeddingTable,
+                F32FloatTensor outputNorm,
+                FloatTensor outputWeight,
+                F32FloatTensor[] attnNorm,
+                F32FloatTensor[] postAttentionNorm,
+                FloatTensor[] attnQ,
+                FloatTensor[] attnK,
+                FloatTensor[] attnV,
+                FloatTensor[] attnOutput,
+                F32FloatTensor[] attnQNorm,
+                F32FloatTensor[] attnKNorm,
+                FloatTensor[] attnQkv,
+                FloatTensor[] attnGate,
+                FloatTensor[] ssmAlpha,
+                FloatTensor[] ssmBeta,
+                FloatTensor[] ssmOut,
+                F32FloatTensor[] ssmConv1d,
+                F32FloatTensor[] ssmA,
+                F32FloatTensor[] ssmDtBias,
+                F32FloatTensor[] ssmNorm,
+                FloatTensor[] ffnGate,
+                FloatTensor[] ffnUp,
+                FloatTensor[] ffnDown,
+                FloatTensor[] moeRouter,
+                FloatTensor[] moeExpertGate,
+                FloatTensor[] moeExpertUp,
+                FloatTensor[] moeExpertDown,
+                FloatTensor[] moeSharedGate,
+                FloatTensor[] moeSharedUp,
+                FloatTensor[] moeSharedDown,
+                FloatTensor[] moeSharedInputGate,
+                float[] ropeCr,
+                float[] ropeCi,
+                int ropeHalf) {
             this.tokenEmbeddingTable = tokenEmbeddingTable;
             this.outputNorm = outputNorm;
             this.outputWeight = outputWeight;
@@ -778,32 +1183,69 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
         }
     }
 
-    // === State (single-token scratch; KV cache + conv ring + delta-net state carry across ingests) ===
+    // === State (single-token scratch; KV cache + conv ring + delta-net state carry across ingests)
+    // ===
 
     public static final class State extends com.qxotic.jinfer.BaseState {
         final int contextCapacity, batchCapacity;
         int lastRowOffset;
 
         final FloatTensor x, xb, xb2, q, k, v, logits, ffnUp, ffnGate, ssmQkv, ssmTmp;
-        final FloatTensor attnQ, attnOut, gateProj, alphaProj, betaProj;   // batched-prefill scratch (chunk rows)
+        final FloatTensor attnQ,
+                attnOut,
+                gateProj,
+                alphaProj,
+                betaProj; // batched-prefill scratch (chunk rows)
         final FlashAttention.DecodeScratch decodeScratch = new FlashAttention.DecodeScratch();
-        final float[] attnGateArr, ssmZ, ssmConvOut, ssmQ, ssmK, ssmV, ssmQGroup, ssmKGroup, ssmGate, ssmBeta, ssmOutput, ssmSk, ssmD;
+        final float[] attnGateArr,
+                ssmZ,
+                ssmConvOut,
+                ssmQ,
+                ssmK,
+                ssmV,
+                ssmQGroup,
+                ssmKGroup,
+                ssmGate,
+                ssmBeta,
+                ssmOutput,
+                ssmSk,
+                ssmD;
         final FloatTensor[] keyCache, valueCache, ssmConvState;
         final float[][] ssmState;
-        final FloatTensor moeRouterLogits, moeOutput, moeExpertOut, moeGateResult, moeUpResult,
-                moeSharedGate, moeSharedUp, moeSharedOut, moeSharedInputGate;
+        final FloatTensor moeRouterLogits,
+                moeOutput,
+                moeExpertOut,
+                moeGateResult,
+                moeUpResult,
+                moeSharedGate,
+                moeSharedUp,
+                moeSharedOut,
+                moeSharedInputGate;
         final int[] moeTopExperts;
         final float[] moeTopWeights;
         // batched grouped-MoE prefill scratch (CSR gather-by-expert; sized to batchCapacity rows)
-        final FloatTensor moeInputB, moeRouterB, moeOutB, moeGather, moeGateUpB, moeUpB, moeDownB,
-                moeSharedGateB, moeSharedUpB, moeSharedOutB, moeSharedInputGateB;
+        final FloatTensor moeInputB,
+                moeRouterB,
+                moeOutB,
+                moeGather,
+                moeGateUpB,
+                moeUpB,
+                moeDownB,
+                moeSharedGateB,
+                moeSharedUpB,
+                moeSharedOutB,
+                moeSharedInputGateB;
         final int[] moeExpertCounts, moeExpertOffsets, moeCursor, moeRowByExpert, moeRowTopE;
         final float[] moeProbByExpert, moeRowTopP;
         final Moe.Routing moeRouting;
 
         State(Configuration config, int contextCapacity, int batchCapacity) {
             if (contextCapacity > config.contextLength) {
-                throw new IllegalArgumentException("contextCapacity " + contextCapacity + " exceeds model contextLength " + config.contextLength);
+                throw new IllegalArgumentException(
+                        "contextCapacity "
+                                + contextCapacity
+                                + " exceeds model contextLength "
+                                + config.contextLength);
             }
             this.contextCapacity = contextCapacity;
             this.batchCapacity = Math.max(1, batchCapacity);
@@ -818,10 +1260,10 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
             int hiddenDim = config.hiddenDim;
             int xb2Size = Math.max(queryDim, hiddenDim);
 
-            int B = this.batchCapacity;   // prompt chunks process B rows at once (batched GEMMs)
+            int B = this.batchCapacity; // prompt chunks process B rows at once (batched GEMMs)
             this.x = FloatTensor.allocateF32(B * dim);
             this.xb = FloatTensor.allocateF32(B * dim);
-            this.xb2 = FloatTensor.allocateF32(xb2Size);          // single-token decode only
+            this.xb2 = FloatTensor.allocateF32(xb2Size); // single-token decode only
             this.q = FloatTensor.allocateF32(B * 2 * queryDim);
             this.k = FloatTensor.allocateF32(B * kvDim);
             this.v = FloatTensor.allocateF32(B * kvDim);
@@ -837,7 +1279,7 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
             this.gateProj = FloatTensor.allocateF32(B * dInner);
             this.alphaProj = FloatTensor.allocateF32(B * dtRank);
             this.betaProj = FloatTensor.allocateF32(B * dtRank);
-            this.ssmZ = new float[B * dInner];                 // all chunk rows (batched conv/norm/scan)
+            this.ssmZ = new float[B * dInner]; // all chunk rows (batched conv/norm/scan)
             this.ssmConvOut = new float[B * convChannels];
             this.ssmQ = new float[B * dtRank * headVDim];
             this.ssmK = new float[B * dtRank * headVDim];
@@ -847,7 +1289,7 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
             this.ssmGate = new float[B * dtRank];
             this.ssmBeta = new float[B * dtRank];
             this.ssmOutput = new float[B * dtRank * headVDim];
-            this.ssmSk = new float[dtRank * headVDim];          // per-head scratch (reused across rows)
+            this.ssmSk = new float[dtRank * headVDim]; // per-head scratch (reused across rows)
             this.ssmD = new float[dtRank * headVDim];
 
             if (config.isMoE()) {
@@ -884,16 +1326,34 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
                 this.moeRowTopE = new int[c * tk];
                 this.moeProbByExpert = new float[c * tk];
                 this.moeRowTopP = new float[c * tk];
-                this.moeRouting = new Moe.Routing(moeRowTopE, moeRowTopP, moeExpertCounts, moeExpertOffsets,
-                        moeCursor, moeRowByExpert, moeProbByExpert);
+                this.moeRouting =
+                        new Moe.Routing(
+                                moeRowTopE,
+                                moeRowTopP,
+                                moeExpertCounts,
+                                moeExpertOffsets,
+                                moeCursor,
+                                moeRowByExpert,
+                                moeProbByExpert);
             } else {
-                this.moeRouterLogits = this.moeOutput = this.moeExpertOut = this.moeGateResult = this.moeUpResult = null;
-                this.moeSharedGate = this.moeSharedUp = this.moeSharedOut = this.moeSharedInputGate = null;
+                this.moeRouterLogits =
+                        this.moeOutput =
+                                this.moeExpertOut = this.moeGateResult = this.moeUpResult = null;
+                this.moeSharedGate =
+                        this.moeSharedUp = this.moeSharedOut = this.moeSharedInputGate = null;
                 this.moeTopExperts = null;
                 this.moeTopWeights = null;
-                this.moeInputB = this.moeRouterB = this.moeOutB = this.moeGather = this.moeGateUpB = this.moeUpB = null;
-                this.moeDownB = this.moeSharedGateB = this.moeSharedUpB = this.moeSharedOutB = this.moeSharedInputGateB = null;
-                this.moeExpertCounts = this.moeExpertOffsets = this.moeCursor = this.moeRowByExpert = this.moeRowTopE = null;
+                this.moeInputB =
+                        this.moeRouterB =
+                                this.moeOutB =
+                                        this.moeGather = this.moeGateUpB = this.moeUpB = null;
+                this.moeDownB =
+                        this.moeSharedGateB =
+                                this.moeSharedUpB =
+                                        this.moeSharedOutB = this.moeSharedInputGateB = null;
+                this.moeExpertCounts =
+                        this.moeExpertOffsets =
+                                this.moeCursor = this.moeRowByExpert = this.moeRowTopE = null;
                 this.moeProbByExpert = this.moeRowTopP = null;
                 this.moeRouting = null;
             }
@@ -907,14 +1367,22 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
                     keyCache[l] = FloatTensor.allocateF16(contextCapacity * kvDim);
                     valueCache[l] = FloatTensor.allocateF16(contextCapacity * kvDim);
                 } else {
-                    ssmConvState[l] = FloatTensor.allocateF32((config.ssmConvKernel - 1) * convChannels);
+                    ssmConvState[l] =
+                            FloatTensor.allocateF32((config.ssmConvKernel - 1) * convChannels);
                     ssmState[l] = new float[headVDim * headVDim * dtRank];
                 }
             }
         }
 
-        @Override public int contextCapacity() { return contextCapacity; }
-        @Override public int batchCapacity()   { return batchCapacity; }
+        @Override
+        public int contextCapacity() {
+            return contextCapacity;
+        }
+
+        @Override
+        public int batchCapacity() {
+            return batchCapacity;
+        }
     }
 
     // === Loading ===
@@ -926,7 +1394,9 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
         }
     }
 
-    public static Qwen35 loadModel(FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeightsFlag) throws IOException {
+    public static Qwen35 loadModel(
+            FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeightsFlag)
+            throws IOException {
         GgufTokenizer tokenizer = new GgufTokenizer(gguf, JinjaRenderer::template);
         String arch = gguf.getString("general.architecture");
 
@@ -938,11 +1408,17 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
         int numberOfLayers = gguf.getValue(int.class, arch + ".block_count");
         int numberOfHeads = gguf.getValue(int.class, arch + ".attention.head_count");
         int numberOfKeyValueHeads = gguf.getValue(int.class, arch + ".attention.head_count_kv");
-        int headSize = gguf.getValueOrDefault(int.class, arch + ".attention.key_length", embeddingLength / numberOfHeads);
-        float rmsNormEps = gguf.getValueOrDefault(float.class, arch + ".attention.layer_norm_rms_epsilon", 1e-6f);
+        int headSize =
+                gguf.getValueOrDefault(
+                        int.class, arch + ".attention.key_length", embeddingLength / numberOfHeads);
+        float rmsNormEps =
+                gguf.getValueOrDefault(
+                        float.class, arch + ".attention.layer_norm_rms_epsilon", 1e-6f);
         float ropeTheta = gguf.getValueOrDefault(float.class, arch + ".rope.freq_base", 1000000f);
-        int ropeDimensionCount = gguf.getValueOrDefault(int.class, arch + ".rope.dimension_count", headSize);
-        int fullAttentionInterval = gguf.getValueOrDefault(int.class, arch + ".full_attention_interval", 4);
+        int ropeDimensionCount =
+                gguf.getValueOrDefault(int.class, arch + ".rope.dimension_count", headSize);
+        int fullAttentionInterval =
+                gguf.getValueOrDefault(int.class, arch + ".full_attention_interval", 4);
         int hiddenDim = gguf.getValueOrDefault(int.class, arch + ".feed_forward_length", 0);
 
         int ssmInnerSize = gguf.getValueOrDefault(int.class, arch + ".ssm.inner_size", 0);
@@ -953,18 +1429,39 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
 
         int expertCount = gguf.getValueOrDefault(int.class, arch + ".expert_count", 0);
         int expertUsedCount = gguf.getValueOrDefault(int.class, arch + ".expert_used_count", 0);
-        int expertFeedForwardLength = gguf.getValueOrDefault(int.class, arch + ".expert_feed_forward_length", 0);
-        int expertSharedFeedForwardLength = gguf.getValueOrDefault(int.class, arch + ".expert_shared_feed_forward_length", 0);
+        int expertFeedForwardLength =
+                gguf.getValueOrDefault(int.class, arch + ".expert_feed_forward_length", 0);
+        int expertSharedFeedForwardLength =
+                gguf.getValueOrDefault(int.class, arch + ".expert_shared_feed_forward_length", 0);
 
         boolean[] isFullAttention = new boolean[numberOfLayers];
         for (int i = 0; i < numberOfLayers; i++) {
             isFullAttention[i] = (i + 1) % fullAttentionInterval == 0;
         }
 
-        Configuration config = new Configuration(embeddingLength, numberOfLayers, numberOfHeads, numberOfKeyValueHeads,
-                headSize, tokenizer.vocabularySize(), contextLength, rmsNormEps, ropeTheta, ropeDimensionCount, hiddenDim,
-                isFullAttention, ssmInnerSize, ssmGroupCount, ssmTimeStepRank, ssmStateSize, ssmConvKernel,
-                expertCount, expertUsedCount, expertFeedForwardLength, expertSharedFeedForwardLength);
+        Configuration config =
+                new Configuration(
+                        embeddingLength,
+                        numberOfLayers,
+                        numberOfHeads,
+                        numberOfKeyValueHeads,
+                        headSize,
+                        tokenizer.vocabularySize(),
+                        contextLength,
+                        rmsNormEps,
+                        ropeTheta,
+                        ropeDimensionCount,
+                        hiddenDim,
+                        isFullAttention,
+                        ssmInnerSize,
+                        ssmGroupCount,
+                        ssmTimeStepRank,
+                        ssmStateSize,
+                        ssmConvKernel,
+                        expertCount,
+                        expertUsedCount,
+                        expertFeedForwardLength,
+                        expertSharedFeedForwardLength);
 
         if (!loadWeightsFlag) {
             return new Qwen35(config, tokenizer, null);
@@ -975,19 +1472,26 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
 
     static Weights loadWeights(Map<String, GGMLTensorEntry> tensors, Configuration config) {
         int n = config.numberOfLayers;
-        FloatTensor tokenEmbeddingTable = ModelLoader.loadQuantized(tensors.get("token_embd.weight"));
-        FloatTensor outputWeight = tensors.containsKey("output.weight")
-                ? ModelLoader.loadQuantized(tensors.get("output.weight")) : tokenEmbeddingTable;
+        FloatTensor tokenEmbeddingTable =
+                ModelLoader.loadQuantized(tensors.get("token_embd.weight"));
+        FloatTensor outputWeight =
+                tensors.containsKey("output.weight")
+                        ? ModelLoader.loadQuantized(tensors.get("output.weight"))
+                        : tokenEmbeddingTable;
 
         int ropeDim = Math.max(0, Math.min(config.ropeDimensionCount, config.headSize) & ~1);
-        Pair<float[], float[]> rope = ropeDim > 0 ? RoPE.precomputeFreqsCis(config.contextLength, ropeDim, config.ropeTheta) : null;
+        Pair<float[], float[]> rope =
+                ropeDim > 0
+                        ? RoPE.precomputeFreqsCis(config.contextLength, ropeDim, config.ropeTheta)
+                        : null;
 
         return new Weights(
                 tokenEmbeddingTable,
                 ModelLoader.toF32Tensor(tensors.get("output_norm.weight")),
                 outputWeight,
                 ModelLoader.f32Array(n, i -> tensors.get("blk." + i + ".attn_norm.weight")),
-                ModelLoader.f32Array(n, i -> tensors.get("blk." + i + ".post_attention_norm.weight")),
+                ModelLoader.f32Array(
+                        n, i -> tensors.get("blk." + i + ".post_attention_norm.weight")),
                 ModelLoader.quantArray(n, i -> tensors.get("blk." + i + ".attn_q.weight")),
                 ModelLoader.quantArray(n, i -> tensors.get("blk." + i + ".attn_k.weight")),
                 ModelLoader.quantArray(n, i -> tensors.get("blk." + i + ".attn_v.weight")),
@@ -1006,14 +1510,46 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
                 ModelLoader.quantArray(n, i -> tensors.get("blk." + i + ".ffn_gate.weight")),
                 ModelLoader.quantArray(n, i -> tensors.get("blk." + i + ".ffn_up.weight")),
                 ModelLoader.quantArray(n, i -> tensors.get("blk." + i + ".ffn_down.weight")),
-                ModelLoader.quantArray(n, i -> ModelLoader.firstPresent(tensors, "blk." + i + ".ffn_gate_inp.weight", "blk." + i + ".ffn_router.weight")),
+                ModelLoader.quantArray(
+                        n,
+                        i ->
+                                ModelLoader.firstPresent(
+                                        tensors,
+                                        "blk." + i + ".ffn_gate_inp.weight",
+                                        "blk." + i + ".ffn_router.weight")),
                 ModelLoader.quantArray(n, i -> tensors.get("blk." + i + ".ffn_gate_exps.weight")),
                 ModelLoader.quantArray(n, i -> tensors.get("blk." + i + ".ffn_up_exps.weight")),
                 ModelLoader.quantArray(n, i -> tensors.get("blk." + i + ".ffn_down_exps.weight")),
-                ModelLoader.quantArray(n, i -> ModelLoader.firstPresent(tensors, "blk." + i + ".ffn_gate_shexp.weight", "blk." + i + ".ffn_shared_expert_gate.weight")),
-                ModelLoader.quantArray(n, i -> ModelLoader.firstPresent(tensors, "blk." + i + ".ffn_up_shexp.weight", "blk." + i + ".ffn_shared_expert_up.weight")),
-                ModelLoader.quantArray(n, i -> ModelLoader.firstPresent(tensors, "blk." + i + ".ffn_down_shexp.weight", "blk." + i + ".ffn_shared_expert_down.weight")),
-                ModelLoader.quantArray(n, i -> ModelLoader.firstPresent(tensors, "blk." + i + ".ffn_gate_inp_shexp.weight", "blk." + i + ".ffn_shared_expert_gate_inp.weight")),
-                rope != null ? rope.first() : null, rope != null ? rope.second() : null, ropeDim / 2);
+                ModelLoader.quantArray(
+                        n,
+                        i ->
+                                ModelLoader.firstPresent(
+                                        tensors,
+                                        "blk." + i + ".ffn_gate_shexp.weight",
+                                        "blk." + i + ".ffn_shared_expert_gate.weight")),
+                ModelLoader.quantArray(
+                        n,
+                        i ->
+                                ModelLoader.firstPresent(
+                                        tensors,
+                                        "blk." + i + ".ffn_up_shexp.weight",
+                                        "blk." + i + ".ffn_shared_expert_up.weight")),
+                ModelLoader.quantArray(
+                        n,
+                        i ->
+                                ModelLoader.firstPresent(
+                                        tensors,
+                                        "blk." + i + ".ffn_down_shexp.weight",
+                                        "blk." + i + ".ffn_shared_expert_down.weight")),
+                ModelLoader.quantArray(
+                        n,
+                        i ->
+                                ModelLoader.firstPresent(
+                                        tensors,
+                                        "blk." + i + ".ffn_gate_inp_shexp.weight",
+                                        "blk." + i + ".ffn_shared_expert_gate_inp.weight")),
+                rope != null ? rope.first() : null,
+                rope != null ? rope.second() : null,
+                ropeDim / 2);
     }
 }

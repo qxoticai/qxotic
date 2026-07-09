@@ -10,36 +10,56 @@ import java.util.Locale;
 /**
  * Loads the bundled native {@code libjam} for the current OS/arch.
  *
- * <p>The fat {@code jam.jar} carries one native library per platform under
- * {@code /com/qxotic/jam/native/<os>-<arch>/<libname>} (e.g. {@code linux-x86-64/libjam.so},
- * {@code darwin-aarch64/libjam.dylib}, {@code windows-x86-64/jam.dll}). At first use this class detects
- * the platform, extracts the matching library to a temp file, and {@link System#load(String) loads} it.
+ * <p>The fat {@code jam.jar} carries one native library per platform under {@code
+ * /com/qxotic/jam/native/<os>-<arch>/<libname>} (e.g. {@code linux-x86-64/libjam.so}, {@code
+ * darwin-aarch64/libjam.dylib}, {@code windows-x86-64/jam.dll}). At first use this class detects
+ * the platform, extracts the matching library to a temp file, and {@link System#load(String) loads}
+ * it.
  *
  * <p>Overrides, in order:
+ *
  * <ol>
- *   <li>{@code -Djam.native.library.path=/abs/path/to/libjam.so} (or {@code JAM_NATIVE_LIBRARY_PATH}) — load that file directly;</li>
- *   <li>a bundled resource for {@code <os>-<arch>} — extract &amp; load (the normal path);</li>
- *   <li>fallback {@code System.loadLibrary("jam")} — for dev runs with the lib on {@code java.library.path}.</li>
+ *   <li>{@code -Djam.native.library.path=/abs/path/to/libjam.so} (or {@code
+ *       JAM_NATIVE_LIBRARY_PATH}) — load that file directly;
+ *   <li>a bundled resource for {@code <os>-<arch>} — extract &amp; load (the normal path);
+ *   <li>fallback {@code System.loadLibrary("jam")} — for dev runs with the lib on {@code
+ *       java.library.path}.
  * </ol>
  */
 final class NativeLoader {
     private NativeLoader() {}
+
     private static boolean loaded;
 
     static synchronized void load() {
         if (loaded) return;
 
         String override = config("jam.native.library.path", "");
-        if (!override.isEmpty()) { System.load(override); loaded = true; return; }
+        if (!override.isEmpty()) {
+            System.load(override);
+            loaded = true;
+            return;
+        }
 
-        String os = os(), arch = arch(), lib = System.mapLibraryName("jam");   // jam.dll / libjam.dylib / libjam.so
+        String os = os(),
+                arch = arch(),
+                lib = System.mapLibraryName("jam"); // jam.dll / libjam.dylib / libjam.so
         String res = "/com/qxotic/jam/native/" + os + "-" + arch + "/" + lib;
         InputStream in = NativeLoader.class.getResourceAsStream(res);
-        if (in == null) {                                   // dev fallback: rely on java.library.path
-            try { System.loadLibrary("jam"); loaded = true; return; }
-            catch (UnsatisfiedLinkError e) {
-                throw new UnsatisfiedLinkError("jam: no bundled native library at " + res
-                    + ", and 'jam' is not on java.library.path (os=" + os + " arch=" + arch + ")");
+        if (in == null) { // dev fallback: rely on java.library.path
+            try {
+                System.loadLibrary("jam");
+                loaded = true;
+                return;
+            } catch (UnsatisfiedLinkError e) {
+                throw new UnsatisfiedLinkError(
+                        "jam: no bundled native library at "
+                                + res
+                                + ", and 'jam' is not on java.library.path (os="
+                                + os
+                                + " arch="
+                                + arch
+                                + ")");
             }
         }
         try (InputStream src = in) {
@@ -55,11 +75,15 @@ final class NativeLoader {
         }
     }
 
-    /** Resolve {@code -Dprop}, else its env form ({@code jam.x.y} → {@code JAM_X_Y}: upper-case, dots→underscores),
-     *  else {@code def}. The env form matches the native {@code JAM_*} vars; shared by NativeJAM's binding selector. */
+    /**
+     * Resolve {@code -Dprop}, else its env form ({@code jam.x.y} → {@code JAM_X_Y}: upper-case,
+     * dots→underscores), else {@code def}. The env form matches the native {@code JAM_*} vars;
+     * shared by NativeJAM's binding selector.
+     */
     static String config(String prop, String def) {
         String v = System.getProperty(prop);
-        if (v == null || v.isEmpty()) v = System.getenv(prop.toUpperCase(Locale.ROOT).replace('.', '_'));
+        if (v == null || v.isEmpty())
+            v = System.getenv(prop.toUpperCase(Locale.ROOT).replace('.', '_'));
         return (v == null || v.isEmpty()) ? def : v;
     }
 
@@ -74,10 +98,15 @@ final class NativeLoader {
     static String arch() {
         String a = System.getProperty("os.arch", "").toLowerCase();
         switch (a) {
-            case "amd64": case "x86_64": case "x64": return "x86-64";
-            case "aarch64": case "arm64":            return "aarch64";
-            default: return a.replaceAll("[^a-z0-9]+", "");
+            case "amd64":
+            case "x86_64":
+            case "x64":
+                return "x86-64";
+            case "aarch64":
+            case "arm64":
+                return "aarch64";
+            default:
+                return a.replaceAll("[^a-z0-9]+", "");
         }
     }
-
 }

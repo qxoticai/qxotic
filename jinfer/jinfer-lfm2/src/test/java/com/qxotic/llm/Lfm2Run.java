@@ -1,8 +1,7 @@
 // Runnable smoke/parity check for the LFM2.5 port: load a real LFM2.5 GGUF and greedily decode
-// through the com.qxotic.llm.Model seam.   java ... com.qxotic.llm.Lfm2Run [model.gguf] [prompt] [nTokens]
+// through the com.qxotic.llm.Model seam.   java ... com.qxotic.llm.Lfm2Run [model.gguf] [prompt]
+// [nTokens]
 package com.qxotic.llm;
-
-import com.qxotic.jinfer.FloatTensor;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -17,15 +16,22 @@ public final class Lfm2Run {
 
         Lfm2 model = Lfm2.loadModel(Path.of(path), 4096);
         var c = model.config();
-        System.err.printf("config: dim=%d layers=%d heads=%d vocab=%d ctx=%d dConv=%d experts=%d%n",
-                c.embeddingLength(), c.numberOfLayers(), c.numberOfHeads(), c.vocabularySize(), c.contextLength(),
-                c.shortConvLCache(), c.expertCount());
+        System.err.printf(
+                "config: dim=%d layers=%d heads=%d vocab=%d ctx=%d dConv=%d experts=%d%n",
+                c.embeddingLength(),
+                c.numberOfLayers(),
+                c.numberOfHeads(),
+                c.vocabularySize(),
+                c.contextLength(),
+                c.shortConvLCache(),
+                c.expertCount());
 
         var tk = model.tokenizer();
         int bos = tk.getSpecialTokens().getOrDefault("<bos>", 1);
         List<Integer> promptTokens = new ArrayList<>();
         promptTokens.add(bos);
-        if (System.getenv("CHAT") != null) {   // LFM2 ChatML: <|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n
+        if (System.getenv("CHAT") != null) { // LFM2 ChatML:
+            // <|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n
             int imStart = tk.getSpecialTokens().getOrDefault("<|im_start|>", bos);
             int imEnd = tk.getSpecialTokens().getOrDefault("<|im_end|>", -1);
             promptTokens.add(imStart);
@@ -58,5 +64,4 @@ public final class Lfm2Run {
         System.out.println(promptStr + out);
         System.err.printf("%n%.2f tok/s (%d tokens)%n", n / secs, n);
     }
-
 }

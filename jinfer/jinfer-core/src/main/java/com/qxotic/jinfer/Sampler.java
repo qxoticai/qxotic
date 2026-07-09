@@ -6,11 +6,10 @@ import java.util.random.RandomGenerator;
 import java.util.random.RandomGeneratorFactory;
 
 /**
- * Token sampling over a logits tensor, with composable building blocks: {@link #ARGMAX},
- * {@link CategoricalSampler}, {@link ToppSampler}, the {@link #withTemperature} softmax wrapper
- * and the {@link #banning} token filter. {@link #select} assembles the standard stack from
- * (temperature, top-p, seed); model-aware policy (think-token bans) lives in
- * {@link Generator#configuredSampler}.
+ * Token sampling over a logits tensor, with composable building blocks: {@link #ARGMAX}, {@link
+ * CategoricalSampler}, {@link ToppSampler}, the {@link #withTemperature} softmax wrapper and the
+ * {@link #banning} token filter. {@link #select} assembles the standard stack from (temperature,
+ * top-p, seed); model-aware policy (think-token bans) lives in {@link Generator#configuredSampler}.
  */
 @FunctionalInterface
 interface Sampler {
@@ -18,8 +17,10 @@ interface Sampler {
 
     Sampler ARGMAX = FloatTensor::argmax;
 
-    /** The standard sampling stack: greedy at temperature 0, otherwise temperature-scaled
-     *  softmax feeding categorical sampling (top-p nucleus sampling when 0 &lt; topp &lt; 1). */
+    /**
+     * The standard sampling stack: greedy at temperature 0, otherwise temperature-scaled softmax
+     * feeding categorical sampling (top-p nucleus sampling when 0 &lt; topp &lt; 1).
+     */
     static Sampler select(int vocabularySize, float temperature, float topp, long rngSeed) {
         if (temperature == 0.0f) {
             return ARGMAX;
@@ -34,8 +35,10 @@ interface Sampler {
         return withTemperature(innerSampler, temperature);
     }
 
-    /** Temperature-scales the logits and converts them to probabilities (in place) before
-     *  delegating; the inner sampler sees a probability distribution. */
+    /**
+     * Temperature-scales the logits and converts them to probabilities (in place) before
+     * delegating; the inner sampler sees a probability distribution.
+     */
     static Sampler withTemperature(Sampler inner, float temperature) {
         return logits -> {
             int logitsSize = Math.toIntExact(logits.size());
@@ -56,34 +59,40 @@ interface Sampler {
         };
     }
 
-    /** Grammar-constrained sampling: masks logits with the current grammar state before
-     *  delegating, then advances the grammar with the chosen token. When no valid token
-     *  remains, forces {@code eosToken} so generation terminates cleanly instead of
-     *  feeding a garbage token into the forward pass.
+    /**
+     * Grammar-constrained sampling: masks logits with the current grammar state before delegating,
+     * then advances the grammar with the chosen token. When no valid token remains, forces {@code
+     * eosToken} so generation terminates cleanly instead of feeding a garbage token into the
+     * forward pass.
      *
-     *  <p>For reasoning models the constraint must not apply during the think span — masking from
-     *  token 0 prevents the model from emitting {@code <think>} and so suppresses the reasoning
-     *  that drives answer quality. When {@code thinkCloseToken >= 0} the grammar stays dormant
-     *  (pure pass-through) until that token is produced; then a short skip phase lets the model
-     *  emit the boilerplate newline between {@code </think>} and the answer ({@code skipTokens} =
-     *  newline token ids) <i>without</i> consuming it in the grammar, before the first real token
-     *  starts the (still-fresh) constraint. Pass {@code thinkCloseToken < 0} to constrain
-     *  immediately. */
-    static Sampler withGrammar(Sampler inner, Grammar.Cursor cursor, int eosToken, int thinkCloseToken, int[] skipTokens) {
+     * <p>For reasoning models the constraint must not apply during the think span — masking from
+     * token 0 prevents the model from emitting {@code <think>} and so suppresses the reasoning that
+     * drives answer quality. When {@code thinkCloseToken >= 0} the grammar stays dormant (pure
+     * pass-through) until that token is produced; then a short skip phase lets the model emit the
+     * boilerplate newline between {@code </think>} and the answer ({@code skipTokens} = newline
+     * token ids) <i>without</i> consuming it in the grammar, before the first real token starts the
+     * (still-fresh) constraint. Pass {@code thinkCloseToken < 0} to constrain immediately.
+     */
+    static Sampler withGrammar(
+            Sampler inner,
+            Grammar.Cursor cursor,
+            int eosToken,
+            int thinkCloseToken,
+            int[] skipTokens) {
         if (cursor == null || !RuntimeFlags.GRAMMAR) return inner;
         java.util.Set<Integer> skip = new java.util.HashSet<>();
         if (skipTokens != null) for (int t : skipTokens) skip.add(t);
-        int[] phase = { thinkCloseToken < 0 ? 2 : 0 };         // 0 think span, 1 skip ws, 2 constrain
+        int[] phase = {thinkCloseToken < 0 ? 2 : 0}; // 0 think span, 1 skip ws, 2 constrain
         return logits -> {
-            if (phase[0] == 0) {                               // reasoning: pass through, watch for </think>
+            if (phase[0] == 0) { // reasoning: pass through, watch for </think>
                 int tok = inner.sampleToken(logits);
                 if (tok == thinkCloseToken) phase[0] = 1;
                 return tok;
             }
-            if (phase[0] == 1) {                               // skip the newline(s) between </think> and the answer
-                int tok = inner.sampleToken(logits);           // peek the next token, unconstrained
-                if (skip.contains(tok)) return tok;            // newline: emit as-is, grammar untouched
-                phase[0] = 2;                                  // first answer token — re-decide it under the grammar
+            if (phase[0] == 1) { // skip the newline(s) between </think> and the answer
+                int tok = inner.sampleToken(logits); // peek the next token, unconstrained
+                if (skip.contains(tok)) return tok; // newline: emit as-is, grammar untouched
+                phase[0] = 2; // first answer token — re-decide it under the grammar
             }
             if (!cursor.maskLogits(logits)) {
                 cursor.advanceWith(eosToken);
@@ -148,7 +157,8 @@ final class ToppSampler implements Sampler {
 
     @Override
     public int sampleToken(FloatTensor logits) {
-        Comparator<Integer> comparator = Comparator.comparingDouble((Integer i) -> logits.getFloat(i)).reversed();
+        Comparator<Integer> comparator =
+                Comparator.comparingDouble((Integer i) -> logits.getFloat(i)).reversed();
 
         int n = Math.toIntExact(logits.size());
         int head = 0;

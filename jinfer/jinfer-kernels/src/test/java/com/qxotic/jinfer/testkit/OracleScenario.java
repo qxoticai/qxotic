@@ -13,7 +13,6 @@ import com.qxotic.jinfer.ModelLoader;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.jinja.JinjaRenderer;
-
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -31,10 +30,15 @@ public final class OracleScenario {
     private final Map<String, Object> renderVars;
     private final Checks checks = new Checks();
 
-    /** Loads the GGUF's tokenizer + compiled chat template. {@code renderVars} are the extra
-     *  template variables (bos/eos/date) that pin the render deterministic. */
-    public OracleScenario(Path gguf, java.util.function.Function<GgufTokenizer, TurnTemplate> template,
-                          Map<String, Object> renderVars) throws Exception {
+    /**
+     * Loads the GGUF's tokenizer + compiled chat template. {@code renderVars} are the extra
+     * template variables (bos/eos/date) that pin the render deterministic.
+     */
+    public OracleScenario(
+            Path gguf,
+            java.util.function.Function<GgufTokenizer, TurnTemplate> template,
+            Map<String, Object> renderVars)
+            throws Exception {
         GGUF g;
         try (FileChannel channel = FileChannel.open(gguf, StandardOpenOption.READ)) {
             g = ModelLoader.readGguf(channel, gguf.toString());
@@ -51,11 +55,17 @@ public final class OracleScenario {
         compare(name, generationPrompt, true, Map.of(), conversation);
     }
 
-    /** Comparison with per-case overrides: {@code thinking} selects the hand-written
-     *  generation-prompt scaffold, {@code extraVars} merge over the instance render vars (e.g.
-     *  {@code enable_thinking=false} to pin a template's non-thinking branch). */
-    public void compare(String name, boolean generationPrompt, boolean thinking,
-                        Map<String, Object> extraVars, List<Message> conversation) {
+    /**
+     * Comparison with per-case overrides: {@code thinking} selects the hand-written
+     * generation-prompt scaffold, {@code extraVars} merge over the instance render vars (e.g.
+     * {@code enable_thinking=false} to pin a template's non-thinking branch).
+     */
+    public void compare(
+            String name,
+            boolean generationPrompt,
+            boolean thinking,
+            Map<String, Object> extraVars,
+            List<Message> conversation) {
         List<Object> maps = new ArrayList<>();
         for (Message m : conversation) {
             Map<String, Object> map = new LinkedHashMap<>();
@@ -79,10 +89,14 @@ public final class OracleScenario {
         checks.check(equal, name + " (" + ours.size() + " tokens)");
         if (equal) return;
         int at = 0;
-        while (at < Math.min(oracle.size(), ours.size()) && oracle.get(at).equals(ours.get(at))) at++;
-        System.out.println("  diverge at " + at + "/" + oracle.size() + " (ours " + ours.size() + ")");
-        System.out.println("  oracle: " + window(oracle, at) + "  |" + decode(window(oracle, at)) + "|");
-        System.out.println("  ours:   " + window(ours, at) + "  |" + decode(window(ours, at)) + "|");
+        while (at < Math.min(oracle.size(), ours.size()) && oracle.get(at).equals(ours.get(at)))
+            at++;
+        System.out.println(
+                "  diverge at " + at + "/" + oracle.size() + " (ours " + ours.size() + ")");
+        System.out.println(
+                "  oracle: " + window(oracle, at) + "  |" + decode(window(oracle, at)) + "|");
+        System.out.println(
+                "  ours:   " + window(ours, at) + "  |" + decode(window(ours, at)) + "|");
         System.out.println("  rendered: " + rendered.replace("\n", "\\n"));
     }
 

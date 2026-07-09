@@ -1,9 +1,8 @@
-// Greedy decode smoke runner for the NemotronH port.  java ... com.qxotic.llm.NemotronHRun <model.gguf> [prompt] [nTokens]
+// Greedy decode smoke runner for the NemotronH port.  java ... com.qxotic.llm.NemotronHRun
+// <model.gguf> [prompt] [nTokens]
 package com.qxotic.llm;
 
 import com.qxotic.jinfer.Batch;
-import com.qxotic.jinfer.FloatTensor;
-
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Set;
@@ -16,12 +15,18 @@ public final class NemotronHRun {
 
         NemotronH model = NemotronH.loadModel(Path.of(path), 4096);
         var c = model.config();
-        System.err.printf("config: dim=%d layers=%d heads=%d kvHeads=%d vocab=%d ctx=%d experts=%d%n",
-                c.embeddingLength(), c.numberOfLayers(), c.numberOfHeads(), c.numberOfKeyValueHeads(),
-                c.vocabularySize(), c.contextLength(), c.expertCount());
+        System.err.printf(
+                "config: dim=%d layers=%d heads=%d kvHeads=%d vocab=%d ctx=%d experts=%d%n",
+                c.embeddingLength(),
+                c.numberOfLayers(),
+                c.numberOfHeads(),
+                c.numberOfKeyValueHeads(),
+                c.vocabularySize(),
+                c.contextLength(),
+                c.expertCount());
 
         var tk = model.tokenizer();
-        List<Integer> pt = tk.encode(promptStr);   // add_bos=false: no leading BOS
+        List<Integer> pt = tk.encode(promptStr); // add_bos=false: no leading BOS
         int[] ids = pt.stream().mapToInt(Integer::intValue).toArray();
         System.err.println("prompt tokens: " + pt);
 
@@ -43,5 +48,4 @@ public final class NemotronHRun {
         System.out.println(promptStr + out);
         System.err.printf("%n%.2f tok/s (%d tokens)%n", n / secs, n);
     }
-
 }

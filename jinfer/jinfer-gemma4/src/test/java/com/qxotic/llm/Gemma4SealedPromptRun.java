@@ -5,12 +5,16 @@ package com.qxotic.llm;
 
 import com.qxotic.jinfer.testkit.Harness;
 import com.qxotic.jinfer.testkit.SealedScenario;
-
 import java.nio.file.Path;
 
 public final class Gemma4SealedPromptRun {
     public static void main(String[] args) throws Exception {
-        Path path = Path.of(args.length > 0 ? args[0] : "/home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-Q8_0.gguf");
-        new SealedScenario<>(new Harness<>(Gemma4.loadModel(path, 8192), path, 8192)).run("Gemma4SealedPromptRun");
+        Path path =
+                Path.of(
+                        args.length > 0
+                                ? args[0]
+                                : "/home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-Q8_0.gguf");
+        new SealedScenario<>(new Harness<>(Gemma4.loadModel(path, 8192), path, 8192))
+                .run("Gemma4SealedPromptRun");
     }
 }

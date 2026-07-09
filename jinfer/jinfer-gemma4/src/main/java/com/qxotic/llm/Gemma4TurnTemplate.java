@@ -11,36 +11,37 @@ import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.TurnTemplate;
-
 import java.util.ArrayList;
 import java.util.List;
 
-/** Hand-written Gemma 4 chat framing, matching the GGUF chat_template's plain-conversation shape
- *  and the hand-built prompt precedent (Gemma4VisionRun/Gemma4AudioRun).
+/**
+ * Hand-written Gemma 4 chat framing, matching the GGUF chat_template's plain-conversation shape and
+ * the hand-built prompt precedent (Gemma4VisionRun/Gemma4AudioRun).
  *
- *  <p>Layout: {@code <bos>} once, then per turn {@code <|turn>{role}\n{content}<turn|>\n},
- *  generation prompt {@code <|turn>model\n}. Gemma's assistant role name is {@code model}
- *  ({@link Role#ASSISTANT} maps to it). The role header and the content are tokenized as ONE
- *  contiguous plain-encoded run — that is how a rendered template tokenizes (specials force the
- *  only splits), and BPE merges across the header/content boundary.
+ * <p>Layout: {@code <bos>} once, then per turn {@code <|turn>{role}\n{content}<turn|>\n},
+ * generation prompt {@code <|turn>model\n}. Gemma's assistant role name is {@code model} ({@link
+ * Role#ASSISTANT} maps to it). The role header and the content are tokenized as ONE contiguous
+ * plain-encoded run — that is how a rendered template tokenizes (specials force the only splits),
+ * and BPE merges across the header/content boundary.
  *
- *  <p>Media parts are structural (never parsed out of text): an image lowers to
- *  {@code <|image>} [bidirectional embeddings] {@code <image|>} and audio to
- *  {@code <|audio>} [causal embeddings] {@code <audio|>}, in part order, encoders resolved
- *  through the model's {@link MultiModal} seam at encode time. A text-only load still frames text
- *  turns; a media part then throws naming the missing encoder.
+ * <p>Media parts are structural (never parsed out of text): an image lowers to {@code <|image>}
+ * [bidirectional embeddings] {@code <image|>} and audio to {@code <|audio>} [causal embeddings]
+ * {@code <audio|>}, in part order, encoders resolved through the model's {@link MultiModal} seam at
+ * encode time. A text-only load still frames text turns; a media part then throws naming the
+ * missing encoder.
  *
- *  <p>Two domains: {@code <bos>}/{@code <|turn>}/{@code <turn|>}/media wrappers are emitted as
- *  trusted ids; everything else goes through plain {@link GgufTokenizer#encode} so conversation
- *  text can never mint control tokens. */
+ * <p>Two domains: {@code <bos>}/{@code <|turn>}/{@code <turn|>}/media wrappers are emitted as
+ * trusted ids; everything else goes through plain {@link GgufTokenizer#encode} so conversation text
+ * can never mint control tokens.
+ */
 public final class Gemma4TurnTemplate implements TurnTemplate {
 
     private final GgufTokenizer tokenizer;
-    private final MultiModal media;   // encoder source; null or empty modalities on text-only loads
+    private final MultiModal media; // encoder source; null or empty modalities on text-only loads
     private final int modelDim;
-    private final int bos;        // <bos>
-    private final int turnOpen;   // <|turn>
-    private final int turnClose;  // <turn|>
+    private final int bos; // <bos>
+    private final int turnOpen; // <|turn>
+    private final int turnClose; // <turn|>
 
     public Gemma4TurnTemplate(GgufTokenizer tokenizer) {
         this(tokenizer, null, 0);
@@ -57,7 +58,7 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
 
     @Override
     public List<Batch> conversationStart() {
-        return List.of(Batch.prefill(new int[]{bos}));
+        return List.of(Batch.prefill(new int[] {bos}));
     }
 
     @Override
@@ -70,7 +71,8 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
         StringBuilder text = new StringBuilder(roleName(message.role())).append('\n');
         boolean hasMedia = message.content().stream().anyMatch(p -> p instanceof Part.Blob);
         if (!hasMedia) {
-            // Gemma's template trims each message's text (| trim for user/system, strip_thinking for
+            // Gemma's template trims each message's text (| trim for user/system, strip_thinking
+            // for
             // model); a text-only turn's content is stripped to stay token-exact with the render.
             text.append(message.textOnly().strip());
             flushText(text, ids);
@@ -91,8 +93,10 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
         return out;
     }
 
-    /** {@code <open>} [embeddings] {@code <close>}: wrapper ids around the encoded block —
-     *  bidirectional for images (one attention group), causal for audio (gemma4ua). */
+    /**
+     * {@code <open>} [embeddings] {@code <close>}: wrapper ids around the encoded block —
+     * bidirectional for images (one attention group), causal for audio (gemma4ua).
+     */
     private void encodeMedia(Media m, List<Integer> ids, List<Batch> out) {
         switch (m) {
             case Media.Image img -> {
@@ -112,34 +116,53 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
                 ids.add(tokenizer.requiredSpecial("<audio|>"));
             }
             case Media.Video vid -> {
-                // Video decomposes into frames: each frame is a timestamped image block, interleaved
-                // as the docs show ("00:00 <|image>...", "00:01 ..."). Timestamps are plain text (not
-                // special tokens). Per-frame token cost = image budget (~256 at budget 280) - use a low
+                // Video decomposes into frames: each frame is a timestamped image block,
+                // interleaved
+                // as the docs show ("00:00 <|image>...", "00:01 ..."). Timestamps are plain text
+                // (not
+                // special tokens). Per-frame token cost = image budget (~256 at budget 280) - use a
+                // low
                 // jinfer.gemma4.imageTokenBudget for video so many frames fit the context.
                 Media.Image[] frames = vid.frames();
                 for (int i = 0; i < frames.length; i++) {
                     int sec = (int) (i / Math.max(vid.fps(), 1f));
-                    ids.addAll(tokenizer.encode(String.format("%n%02d:%02d%n", sec / 60, sec % 60)));
+                    ids.addAll(
+                            tokenizer.encode(String.format("%n%02d:%02d%n", sec / 60, sec % 60)));
                     encodeMedia(frames[i], ids, out);
                 }
             }
-            default -> throw new IllegalArgumentException("Gemma 4: unsupported media " + m.getClass().getSimpleName());
+            default ->
+                    throw new IllegalArgumentException(
+                            "Gemma 4: unsupported media " + m.getClass().getSimpleName());
         }
     }
 
-    /** Runs the modality's embedder and materializes the model-dim rows (chunks are ephemeral views). */
+    /**
+     * Runs the modality's embedder and materializes the model-dim rows (chunks are ephemeral
+     * views).
+     */
     private <R extends Media> FloatTensor encode(Class<R> type, R m) {
         if (media == null) {
-            throw new IllegalStateException("text-only template: construct with the model's encoders for media turns");
+            throw new IllegalStateException(
+                    "text-only template: construct with the model's encoders for media turns");
         }
-        Embedder<R> embedder = media.embedder(type).orElseThrow(() -> new IllegalStateException(
-                "this Gemma 4 load carries no " + type.getSimpleName() + " encoder (load with an mmproj)"));
+        Embedder<R> embedder =
+                media.embedder(type)
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "this Gemma 4 load carries no "
+                                                        + type.getSimpleName()
+                                                        + " encoder (load with an mmproj)"));
         List<float[]> chunks = new ArrayList<>();
-        embedder.embed(m, Integer.MAX_VALUE, t -> {
-            float[] c = new float[(int) t.size()];
-            for (int i = 0; i < c.length; i++) c[i] = t.getFloat(i);
-            chunks.add(c);
-        });
+        embedder.embed(
+                m,
+                Integer.MAX_VALUE,
+                t -> {
+                    float[] c = new float[(int) t.size()];
+                    for (int i = 0; i < c.length; i++) c[i] = t.getFloat(i);
+                    chunks.add(c);
+                });
         int total = 0;
         for (float[] c : chunks) total += c.length;
         F32FloatTensor rows = F32FloatTensor.allocate(total);

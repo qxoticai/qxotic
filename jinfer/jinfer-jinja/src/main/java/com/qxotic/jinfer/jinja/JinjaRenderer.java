@@ -2,7 +2,6 @@ package com.qxotic.jinfer.jinja;
 
 import com.qxotic.format.json.Json;
 import com.qxotic.jinfer.CompiledTemplate;
-
 import java.time.LocalDateTime;
 import java.time.format.TextStyle;
 import java.util.ArrayList;
@@ -14,9 +13,8 @@ import java.util.Map;
 import java.util.regex.Pattern;
 
 /**
- * Minimal Jinja template renderer for LLM chat templates.
- * Two-phase architecture (lexer → parser, like llama.cpp's jinja/):
- * tokenize the template into a flat token stream, then parse the stream
+ * Minimal Jinja template renderer for LLM chat templates. Two-phase architecture (lexer → parser,
+ * like llama.cpp's jinja/): tokenize the template into a flat token stream, then parse the stream
  * into an AST, then execute the AST against a variable context.
  */
 public final class JinjaRenderer {
@@ -24,34 +22,91 @@ public final class JinjaRenderer {
     // ── Value system ──────────────────────────────────────────────
 
     sealed interface Val {
-        default boolean truthy() { return true; }
-        default String asStr() { return toString(); }
-        default boolean isString() { return this instanceof Str; }
-        default boolean isMapping() { return this instanceof Obj; }
-        default boolean isSequence() { return this instanceof Arr; }
-        default boolean isDefined() { return !(this instanceof Undef); }
-        default boolean isNone() { return this instanceof None; }
+        default boolean truthy() {
+            return true;
+        }
+
+        default String asStr() {
+            return toString();
+        }
+
+        default boolean isString() {
+            return this instanceof Str;
+        }
+
+        default boolean isMapping() {
+            return this instanceof Obj;
+        }
+
+        default boolean isSequence() {
+            return this instanceof Arr;
+        }
+
+        default boolean isDefined() {
+            return !(this instanceof Undef);
+        }
+
+        default boolean isNone() {
+            return this instanceof None;
+        }
 
         record Int(long v) implements Val {
-            @Override public boolean truthy() { return v != 0; }
-            @Override public String asStr() { return Long.toString(v); }
+            @Override
+            public boolean truthy() {
+                return v != 0;
+            }
+
+            @Override
+            public String asStr() {
+                return Long.toString(v);
+            }
         }
+
         record Flt(double v) implements Val {
-            @Override public boolean truthy() { return v != 0.0; }
-            @Override public String asStr() { return fmtDouble(v); }
+            @Override
+            public boolean truthy() {
+                return v != 0.0;
+            }
+
+            @Override
+            public String asStr() {
+                return fmtDouble(v);
+            }
         }
+
         record Str(String v) implements Val {
-            @Override public boolean truthy() { return !v.isEmpty(); }
-            @Override public String asStr() { return v; }
+            @Override
+            public boolean truthy() {
+                return !v.isEmpty();
+            }
+
+            @Override
+            public String asStr() {
+                return v;
+            }
         }
+
         record Bool(boolean v) implements Val {
-            @Override public boolean truthy() { return v; }
-            @Override public String asStr() { return v ? "True" : "False"; }
+            @Override
+            public boolean truthy() {
+                return v;
+            }
+
+            @Override
+            public String asStr() {
+                return v ? "True" : "False";
+            }
         }
+
         record Arr(List<Val> v) implements Val {
-            @Override public boolean truthy() { return !v.isEmpty(); }
+            @Override
+            public boolean truthy() {
+                return !v.isEmpty();
+            }
+
             // Python/Jinja str(list): elements use repr (strings quoted)
-            @Override public String asStr() {
+            @Override
+            public String asStr() {
                 var sb = new StringBuilder("[");
                 for (int i = 0; i < v.size(); i++) {
                     if (i > 0) sb.append(", ");
@@ -60,11 +115,21 @@ public final class JinjaRenderer {
                 return sb.append("]").toString();
             }
         }
-        record Obj(LinkedHashMap<String,Val> v, boolean hasBuiltins) implements Val {
-            Obj(LinkedHashMap<String,Val> v) { this(v, true); }
-            @Override public boolean truthy() { return !v.isEmpty(); }
-            // Python/Jinja str(dict): {'key': <repr>, ...} — what models trained on `tools | string`
-            @Override public String asStr() {
+
+        record Obj(LinkedHashMap<String, Val> v, boolean hasBuiltins) implements Val {
+            Obj(LinkedHashMap<String, Val> v) {
+                this(v, true);
+            }
+
+            @Override
+            public boolean truthy() {
+                return !v.isEmpty();
+            }
+
+            // Python/Jinja str(dict): {'key': <repr>, ...} — what models trained on `tools |
+            // string`
+            @Override
+            public String asStr() {
                 var sb = new StringBuilder("{");
                 boolean first = true;
                 for (var e : v.entrySet()) {
@@ -74,66 +139,113 @@ public final class JinjaRenderer {
                 }
                 return sb.append("}").toString();
             }
+
             Val get(String key) {
                 Val found = v.get(key);
                 if (found != null) return found;
                 if (!hasBuiltins) return new Undef(key);
                 Val.Obj self = this;
                 return switch (key) {
-                    case "items"  -> new Val.Func("items", args -> {
-                        var arr = new ArrayList<Val>();
-                        for (var e : self.v.entrySet())
-                            arr.add(new Val.Arr(List.of(new Val.Str(e.getKey()), e.getValue())));
-                        return new Val.Arr(arr);
-                    });
-                    case "keys"   -> new Val.Func("keys", args -> {
-                        var keys = new ArrayList<Val>();
-                        for (String k : self.v.keySet()) keys.add(new Val.Str(k));
-                        return new Val.Arr(keys);
-                    });
-                    case "values" -> new Val.Func("values", args -> {
-                        return new Val.Arr(new ArrayList<>(self.v.values()));
-                    });
-                    case "get"    -> new Val.Func("get", args -> {
-                        String k = expectStr(requireArg(args, 0));
-                        Val def = args.size() > 1 ? requireArg(args, 1) : Val.NONE;
-                        Val f = self.v.get(k);
-                        return f != null ? f : def;
-                    });
-                    default       -> new Undef(key);
+                    case "items" ->
+                            new Val.Func(
+                                    "items",
+                                    args -> {
+                                        var arr = new ArrayList<Val>();
+                                        for (var e : self.v.entrySet())
+                                            arr.add(
+                                                    new Val.Arr(
+                                                            List.of(
+                                                                    new Val.Str(e.getKey()),
+                                                                    e.getValue())));
+                                        return new Val.Arr(arr);
+                                    });
+                    case "keys" ->
+                            new Val.Func(
+                                    "keys",
+                                    args -> {
+                                        var keys = new ArrayList<Val>();
+                                        for (String k : self.v.keySet()) keys.add(new Val.Str(k));
+                                        return new Val.Arr(keys);
+                                    });
+                    case "values" ->
+                            new Val.Func(
+                                    "values",
+                                    args -> {
+                                        return new Val.Arr(new ArrayList<>(self.v.values()));
+                                    });
+                    case "get" ->
+                            new Val.Func(
+                                    "get",
+                                    args -> {
+                                        String k = expectStr(requireArg(args, 0));
+                                        Val def = args.size() > 1 ? requireArg(args, 1) : Val.NONE;
+                                        Val f = self.v.get(k);
+                                        return f != null ? f : def;
+                                    });
+                    default -> new Undef(key);
                 };
             }
-            void set(String key, Val val) { v.put(key, val); }
-            boolean has(String key) { return v.containsKey(key); }
+
+            void set(String key, Val val) {
+                v.put(key, val);
+            }
+
+            boolean has(String key) {
+                return v.containsKey(key);
+            }
         }
+
         record Func(String name, Callable fn) implements Val {
-            @Override public String asStr() { return "[function " + name + "]"; }
-            @FunctionalInterface interface Callable { Val call(List<Val> args); }
+            @Override
+            public String asStr() {
+                return "[function " + name + "]";
+            }
+
+            @FunctionalInterface
+            interface Callable {
+                Val call(List<Val> args);
+            }
         }
+
         record None() implements Val {
-            @Override public boolean truthy() { return false; }
-            @Override public String asStr() { return "None"; }
+            @Override
+            public boolean truthy() {
+                return false;
+            }
+
+            @Override
+            public String asStr() {
+                return "None";
+            }
         }
+
         record Undef(String hint) implements Val {
-            @Override public boolean truthy() { return false; }
-            @Override public String asStr() { return ""; }
+            @Override
+            public boolean truthy() {
+                return false;
+            }
+
+            @Override
+            public String asStr() {
+                return "";
+            }
         }
 
         static final None NONE = new None();
 
         static Val of(Object o) {
             return switch (o) {
-                case null          -> NONE;
-                case Val v         -> v;
-                case Boolean b     -> new Bool(b);
-                case Integer i     -> new Int(i);
-                case Long l        -> new Int(l);
-                case Double d      -> new Flt(d);
-                case Float f       -> new Flt(f);
-                case Number n      -> new Flt(n.doubleValue());
-                case String s      -> new Str(s);
-                case Map<?,?> m -> {
-                    var obj = new LinkedHashMap<String,Val>();
+                case null -> NONE;
+                case Val v -> v;
+                case Boolean b -> new Bool(b);
+                case Integer i -> new Int(i);
+                case Long l -> new Int(l);
+                case Double d -> new Flt(d);
+                case Float f -> new Flt(f);
+                case Number n -> new Flt(n.doubleValue());
+                case String s -> new Str(s);
+                case Map<?, ?> m -> {
+                    var obj = new LinkedHashMap<String, Val>();
                     for (var e : m.entrySet())
                         obj.put(String.valueOf(e.getKey()), of(e.getValue()));
                     yield new Obj(obj);
@@ -160,9 +272,11 @@ public final class JinjaRenderer {
         return s;
     }
 
-    /** Python {@code repr()} of a value as used inside a list/dict's {@code str()} — strings are
-     *  single-quoted, True/False/None capitalized, containers recurse. (Plain top-level
-     *  {@code str()} does NOT quote strings; that's {@link Val#asStr()}.) */
+    /**
+     * Python {@code repr()} of a value as used inside a list/dict's {@code str()} — strings are
+     * single-quoted, True/False/None capitalized, containers recurse. (Plain top-level {@code
+     * str()} does NOT quote strings; that's {@link Val#asStr()}.)
+     */
     static String pyRepr(Val v) {
         return switch (v) {
             case Val.Str s -> "'" + s.v.replace("\\", "\\\\").replace("'", "\\'") + "'";
@@ -172,8 +286,10 @@ public final class JinjaRenderer {
         };
     }
 
-    /** Thrown when a template uses a construct this minimal engine does not implement. Failing
-     *  loudly here is deliberate: the alternative is a silently mis-rendered prompt. */
+    /**
+     * Thrown when a template uses a construct this minimal engine does not implement. Failing
+     * loudly here is deliberate: the alternative is a silently mis-rendered prompt.
+     */
     static RuntimeException unsupported(String feature) {
         return new RuntimeException("[jinja] unsupported template feature: " + feature);
     }
@@ -182,23 +298,33 @@ public final class JinjaRenderer {
 
     static Val applyFilter(String name, Val val, List<Val> args) {
         return switch (name) {
-            case "tojson"    -> tojson(val);
-            case "trim"      -> new Val.Str(val.asStr().strip());
-            case "string"    -> new Val.Str(val.asStr());
-            case "length"    -> new Val.Int(length(val));
-            case "default"   -> val.isDefined() ? val : (args.isEmpty() ? new Val.Str("") : requireArg(args, 0));
-            case "join"      -> new Val.Str(join(val, args.isEmpty() ? "" : expectStr(requireArg(args, 0))));
-            case "split"     -> split(val, expectStr(requireArg(args, 0)));
-            case "upper"     -> new Val.Str(val.asStr().toUpperCase());
-            case "lower"     -> new Val.Str(val.asStr().toLowerCase());
-            case "startswith" -> new Val.Bool(val.asStr().startsWith(expectStr(requireArg(args, 0))));
-            case "endswith"   -> new Val.Bool(val.asStr().endsWith(expectStr(requireArg(args, 0))));
-            case "list"      -> toList(val);
-            case "first"     -> val instanceof Val.Arr a && !a.v.isEmpty() ? a.v.getFirst() : Val.NONE;
-            case "last"      -> val instanceof Val.Arr a && !a.v.isEmpty() ? a.v.getLast() : Val.NONE;
-            case "count"     -> new Val.Int(length(val));
+            case "tojson" -> tojson(val);
+            case "trim" -> new Val.Str(val.asStr().strip());
+            case "string" -> new Val.Str(val.asStr());
+            case "length" -> new Val.Int(length(val));
+            case "default" ->
+                    val.isDefined()
+                            ? val
+                            : (args.isEmpty() ? new Val.Str("") : requireArg(args, 0));
+            case "join" ->
+                    new Val.Str(join(val, args.isEmpty() ? "" : expectStr(requireArg(args, 0))));
+            case "split" -> split(val, expectStr(requireArg(args, 0)));
+            case "upper" -> new Val.Str(val.asStr().toUpperCase());
+            case "lower" -> new Val.Str(val.asStr().toLowerCase());
+            case "startswith" ->
+                    new Val.Bool(val.asStr().startsWith(expectStr(requireArg(args, 0))));
+            case "endswith" -> new Val.Bool(val.asStr().endsWith(expectStr(requireArg(args, 0))));
+            case "list" -> toList(val);
+            case "first" -> val instanceof Val.Arr a && !a.v.isEmpty() ? a.v.getFirst() : Val.NONE;
+            case "last" -> val instanceof Val.Arr a && !a.v.isEmpty() ? a.v.getLast() : Val.NONE;
+            case "count" -> new Val.Int(length(val));
             case "capitalize" -> new Val.Str(capitalize(val.asStr()));
-            case "replace"   -> new Val.Str(val.asStr().replace(expectStr(requireArg(args, 0)), expectStr(requireArg(args, 1))));
+            case "replace" ->
+                    new Val.Str(
+                            val.asStr()
+                                    .replace(
+                                            expectStr(requireArg(args, 0)),
+                                            expectStr(requireArg(args, 1))));
             case "selectattr" -> filterAttr(val, args, true);
             case "rejectattr" -> filterAttr(val, args, false);
             default -> throw unsupported("filter '" + name + "'");
@@ -230,8 +356,7 @@ public final class JinjaRenderer {
         String s = v.asStr();
         if (s.isEmpty()) return new Val.Arr(List.of());
         var parts = new ArrayList<Val>();
-        for (String part : s.split(Pattern.quote(delimiter), -1))
-            parts.add(new Val.Str(part));
+        for (String part : s.split(Pattern.quote(delimiter), -1)) parts.add(new Val.Str(part));
         return new Val.Arr(parts);
     }
 
@@ -240,7 +365,8 @@ public final class JinjaRenderer {
         if (v instanceof Val.Arr) return v;
         if (v instanceof Val.Str s) {
             var chars = new ArrayList<Val>(s.v.length());
-            for (int i = 0; i < s.v.length(); i++) chars.add(new Val.Str(String.valueOf(s.v.charAt(i))));
+            for (int i = 0; i < s.v.length(); i++)
+                chars.add(new Val.Str(String.valueOf(s.v.charAt(i))));
             return new Val.Arr(chars);
         }
         return new Val.Arr(new ArrayList<>(List.of(v)));
@@ -250,9 +376,11 @@ public final class JinjaRenderer {
         return s.isEmpty() ? s : Character.toUpperCase(s.charAt(0)) + s.substring(1).toLowerCase();
     }
 
-    /** {@code selectattr}/{@code rejectattr}: keep (or drop) items whose attribute passes a test.
-     *  Forms: {@code seq|selectattr('attr')} (truthy) and {@code seq|selectattr('attr', test, arg)}
-     *  (e.g. {@code 'equalto'}). Non-arrays pass through unchanged. */
+    /**
+     * {@code selectattr}/{@code rejectattr}: keep (or drop) items whose attribute passes a test.
+     * Forms: {@code seq|selectattr('attr')} (truthy) and {@code seq|selectattr('attr', test, arg)}
+     * (e.g. {@code 'equalto'}). Non-arrays pass through unchanged.
+     */
     static Val filterAttr(Val seq, List<Val> args, boolean keep) {
         if (!(seq instanceof Val.Arr a)) return seq;
         String attr = expectStr(requireArg(args, 0));
@@ -327,8 +455,12 @@ public final class JinjaRenderer {
             }
             // chat templates call raise_exception(...) to reject malformed conversations; surface
             // it as a distinct error (not an "unsupported feature") so the message is the real one.
-            case "raise_exception" -> throw new RuntimeException("[jinja:raise] "
-                    + (args.isEmpty() ? "template raised an exception" : expectStr(requireArg(args, 0))));
+            case "raise_exception" ->
+                    throw new RuntimeException(
+                            "[jinja:raise] "
+                                    + (args.isEmpty()
+                                            ? "template raised an exception"
+                                            : expectStr(requireArg(args, 0))));
             // range([start,] stop[, step]) -> list of ints (Python/Jinja semantics: stop exclusive)
             case "range" -> {
                 long start = 0, stop, step = 1;
@@ -354,26 +486,33 @@ public final class JinjaRenderer {
         var sb = new StringBuilder();
         for (int i = 0; i < fmt.length(); i++) {
             char c = fmt.charAt(i);
-            if (c != '%' || i + 1 >= fmt.length()) { sb.append(c); continue; }
+            if (c != '%' || i + 1 >= fmt.length()) {
+                sb.append(c);
+                continue;
+            }
             char d = fmt.charAt(++i);
-            sb.append(switch (d) {
-                case 'Y' -> String.format("%04d", t.getYear());
-                case 'y' -> String.format("%02d", t.getYear() % 100);
-                case 'm' -> String.format("%02d", t.getMonthValue());
-                case 'd' -> String.format("%02d", t.getDayOfMonth());
-                case 'H' -> String.format("%02d", t.getHour());
-                case 'I' -> String.format("%02d", (t.getHour() % 12 == 0) ? 12 : t.getHour() % 12);
-                case 'M' -> String.format("%02d", t.getMinute());
-                case 'S' -> String.format("%02d", t.getSecond());
-                case 'p' -> t.getHour() < 12 ? "AM" : "PM";
-                case 'j' -> String.format("%03d", t.getDayOfYear());
-                case 'B' -> t.getMonth().getDisplayName(TextStyle.FULL, Locale.ENGLISH);
-                case 'b' -> t.getMonth().getDisplayName(TextStyle.SHORT, Locale.ENGLISH);
-                case 'A' -> t.getDayOfWeek().getDisplayName(TextStyle.FULL, Locale.ENGLISH);
-                case 'a' -> t.getDayOfWeek().getDisplayName(TextStyle.SHORT, Locale.ENGLISH);
-                case '%' -> "%";
-                default -> "%" + d;
-            });
+            sb.append(
+                    switch (d) {
+                        case 'Y' -> String.format("%04d", t.getYear());
+                        case 'y' -> String.format("%02d", t.getYear() % 100);
+                        case 'm' -> String.format("%02d", t.getMonthValue());
+                        case 'd' -> String.format("%02d", t.getDayOfMonth());
+                        case 'H' -> String.format("%02d", t.getHour());
+                        case 'I' ->
+                                String.format(
+                                        "%02d", (t.getHour() % 12 == 0) ? 12 : t.getHour() % 12);
+                        case 'M' -> String.format("%02d", t.getMinute());
+                        case 'S' -> String.format("%02d", t.getSecond());
+                        case 'p' -> t.getHour() < 12 ? "AM" : "PM";
+                        case 'j' -> String.format("%03d", t.getDayOfYear());
+                        case 'B' -> t.getMonth().getDisplayName(TextStyle.FULL, Locale.ENGLISH);
+                        case 'b' -> t.getMonth().getDisplayName(TextStyle.SHORT, Locale.ENGLISH);
+                        case 'A' -> t.getDayOfWeek().getDisplayName(TextStyle.FULL, Locale.ENGLISH);
+                        case 'a' ->
+                                t.getDayOfWeek().getDisplayName(TextStyle.SHORT, Locale.ENGLISH);
+                        case '%' -> "%";
+                        default -> "%" + d;
+                    });
         }
         return sb.toString();
     }
@@ -382,22 +521,22 @@ public final class JinjaRenderer {
 
     static boolean applyTest(String test, Val val) {
         return switch (test) {
-            case "defined"  -> val.isDefined();
+            case "defined" -> val.isDefined();
             case "undefined" -> !val.isDefined();
-            case "none"     -> val.isNone();
-            case "string"   -> val instanceof Val.Str;
-            case "mapping"  -> val instanceof Val.Obj;
+            case "none" -> val.isNone();
+            case "string" -> val instanceof Val.Str;
+            case "mapping" -> val instanceof Val.Obj;
             case "sequence" -> val instanceof Val.Arr;
-            case "number"   -> val instanceof Val.Int || val instanceof Val.Flt;
-            case "boolean"  -> val instanceof Val.Bool;
+            case "number" -> val instanceof Val.Int || val instanceof Val.Flt;
+            case "boolean" -> val instanceof Val.Bool;
             case "callable" -> val instanceof Val.Func;
             case "iterable" -> val instanceof Val.Arr || val instanceof Val.Obj;
-            case "true"     -> val.truthy();
-            case "false"    -> !val.truthy();
-            case "odd"      -> (val instanceof Val.Int i && i.v % 2 != 0);
-            case "even"     -> (val instanceof Val.Int i && i.v % 2 == 0);
-            case "integer"  -> val instanceof Val.Int;
-            case "float"    -> val instanceof Val.Flt;
+            case "true" -> val.truthy();
+            case "false" -> !val.truthy();
+            case "odd" -> (val instanceof Val.Int i && i.v % 2 != 0);
+            case "even" -> (val instanceof Val.Int i && i.v % 2 == 0);
+            case "integer" -> val instanceof Val.Int;
+            case "float" -> val instanceof Val.Flt;
             default -> false;
         };
     }
@@ -426,19 +565,49 @@ public final class JinjaRenderer {
     // TOKEN TYPES
     // ════════════════════════════════════════════════════════════════
 
-    enum T { EOF, TEXT, OPEN_STMT, CLOSE_STMT, OPEN_EXPR, CLOSE_EXPR,
-             IDENT, STRING, INT, FLOAT,
-             // Punctuation
-             EQ, LP, RP, LB, RB, LC, RC, COMMA, DOT, COLON, PIPE, TILDE,
-             // Operators
-             PLUS, MINUS, STAR, SLASH, PCT,
-             // Comparisons (single token: symbol + value string)
-             CMP,
+    enum T {
+        EOF,
+        TEXT,
+        OPEN_STMT,
+        CLOSE_STMT,
+        OPEN_EXPR,
+        CLOSE_EXPR,
+        IDENT,
+        STRING,
+        INT,
+        FLOAT,
+        // Punctuation
+        EQ,
+        LP,
+        RP,
+        LB,
+        RB,
+        LC,
+        RC,
+        COMMA,
+        DOT,
+        COLON,
+        PIPE,
+        TILDE,
+        // Operators
+        PLUS,
+        MINUS,
+        STAR,
+        SLASH,
+        PCT,
+        // Comparisons (single token: symbol + value string)
+        CMP,
     }
 
-    record Tok(T type, String val, int pos, boolean trimLeft, boolean trimRight, boolean lineStart) {
-        Tok(T type, String val, int pos) { this(type, val, pos, false, false, false); }
-        Tok(T type, String val, int pos, boolean trimLeft, boolean trimRight) { this(type, val, pos, trimLeft, trimRight, false); }
+    record Tok(
+            T type, String val, int pos, boolean trimLeft, boolean trimRight, boolean lineStart) {
+        Tok(T type, String val, int pos) {
+            this(type, val, pos, false, false, false);
+        }
+
+        Tok(T type, String val, int pos, boolean trimLeft, boolean trimRight) {
+            this(type, val, pos, trimLeft, trimRight, false);
+        }
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -450,17 +619,38 @@ public final class JinjaRenderer {
         int i;
         int depth; // 0=text mode, >0 inside {{ or {%
         boolean stripNextText; // set when previous close tag had trimRight (explicit -%} / -}})
-        boolean trimNextNewline; // set after a bare BLOCK close (trim_blocks): drop ONE leading newline
+        boolean trimNextNewline; // set after a bare BLOCK close (trim_blocks): drop ONE leading
+        // newline
         List<Tok> toks; // set by tokenize()
 
-        Lexer(CharSequence cs) { this.cs = cs; }
+        Lexer(CharSequence cs) {
+            this.cs = cs;
+        }
 
-        char ch()        { return i < cs.length() ? cs.charAt(i) : 0; }
-        char ch(int off) { int p = i + off; return p < cs.length() ? cs.charAt(p) : 0; }
-        void adv()       { i++; }
-        void adv(int n)  { i += n; }
-        int pos()        { return i; }
-        boolean eof()    { return i >= cs.length(); }
+        char ch() {
+            return i < cs.length() ? cs.charAt(i) : 0;
+        }
+
+        char ch(int off) {
+            int p = i + off;
+            return p < cs.length() ? cs.charAt(p) : 0;
+        }
+
+        void adv() {
+            i++;
+        }
+
+        void adv(int n) {
+            i += n;
+        }
+
+        int pos() {
+            return i;
+        }
+
+        boolean eof() {
+            return i >= cs.length();
+        }
 
         List<Tok> tokenize() {
             toks = new ArrayList<Tok>();
@@ -477,23 +667,34 @@ public final class JinjaRenderer {
                         stripNextText = false;
                         trimNextNewline = false;
                         // Tag opener. Bare BLOCK tags ({% and {#, not {{) get HF's lstrip_blocks:
-                        // whitespace from the line start up to the tag is stripped (explicit {%-/{#-
+                        // whitespace from the line start up to the tag is stripped (explicit
+                        // {%-/{#-
                         // already strip all preceding whitespace).
-                        if (matchTrim(T.OPEN_STMT, "{%-")) { depth++; }
-                        else if (matchStr("{%")) { lstripLineToTag(); depth++; toks.add(tok(T.OPEN_STMT, p)); }
-                        else if (matchTrim(T.OPEN_EXPR, "{{-")) { depth++; }
-                        else if (matchStr("{{")) { depth++; toks.add(tok(T.OPEN_EXPR, p)); }
-                        else if (matchStr("{#")) {
+                        if (matchTrim(T.OPEN_STMT, "{%-")) {
+                            depth++;
+                        } else if (matchStr("{%")) {
+                            lstripLineToTag();
+                            depth++;
+                            toks.add(tok(T.OPEN_STMT, p));
+                        } else if (matchTrim(T.OPEN_EXPR, "{{-")) {
+                            depth++;
+                        } else if (matchStr("{{")) {
+                            depth++;
+                            toks.add(tok(T.OPEN_EXPR, p));
+                        } else if (matchStr("{#")) {
                             // Comments participate in whitespace control: {#- strips the trailing
                             // whitespace of the preceding text, -#} the leading whitespace after;
                             // a bare {# still gets lstrip_blocks / trim_blocks like any block tag.
-                            if (ch() == '-') stripLastText(); else lstripLineToTag();
+                            if (ch() == '-') stripLastText();
+                            else lstripLineToTag();
                             while (!eof() && !(ch() == '#' && ch(1) == '}')) adv();
                             boolean right = !eof() && i > 0 && cs.charAt(i - 1) == '-';
                             if (!eof()) adv(2);
                             if (right) stripNextText = true;
                             else trimNextNewline = true;
-                        } else { adv(); } // stray {
+                        } else {
+                            adv();
+                        } // stray {
                     } else {
                         toks.add(readText(p));
                     }
@@ -501,37 +702,113 @@ public final class JinjaRenderer {
                 }
 
                 // Inside {{ or {% — skip whitespace, tokenize individually
-                if (Character.isWhitespace(c)) { adv(); continue; }
+                if (Character.isWhitespace(c)) {
+                    adv();
+                    continue;
+                }
 
                 // Close tags (must check before other token types)
-                if (matchTrim(T.CLOSE_STMT, "-%}")) { depth--; continue; }
-                if (matchStr("%}")) { depth--; toks.add(tok(T.CLOSE_STMT, p)); trimNextNewline = true; continue; }
-                if (matchTrim(T.CLOSE_EXPR, "-}}")) { depth--; continue; }
-                if (matchStr("}}")) { depth--; toks.add(tok(T.CLOSE_EXPR, p)); continue; }
+                if (matchTrim(T.CLOSE_STMT, "-%}")) {
+                    depth--;
+                    continue;
+                }
+                if (matchStr("%}")) {
+                    depth--;
+                    toks.add(tok(T.CLOSE_STMT, p));
+                    trimNextNewline = true;
+                    continue;
+                }
+                if (matchTrim(T.CLOSE_EXPR, "-}}")) {
+                    depth--;
+                    continue;
+                }
+                if (matchStr("}}")) {
+                    depth--;
+                    toks.add(tok(T.CLOSE_EXPR, p));
+                    continue;
+                }
 
                 // Two-char comparisons
-                if (matchStr("<=") || matchStr(">=") || matchStr("==") || matchStr("!=")) { toks.add(new Tok(T.CMP, cs.subSequence(p, i).toString(), p)); continue; }
-                if (c == '<' || c == '>') { adv(); toks.add(new Tok(T.CMP, String.valueOf(c), p)); continue; }
+                if (matchStr("<=") || matchStr(">=") || matchStr("==") || matchStr("!=")) {
+                    toks.add(new Tok(T.CMP, cs.subSequence(p, i).toString(), p));
+                    continue;
+                }
+                if (c == '<' || c == '>') {
+                    adv();
+                    toks.add(new Tok(T.CMP, String.valueOf(c), p));
+                    continue;
+                }
 
                 // Punctuation/operators
                 switch (c) {
-                    case '=' -> { adv(); toks.add(new Tok(T.EQ, "=", p)); }
-                    case '(' -> { adv(); toks.add(new Tok(T.LP, "(", p)); }
-                    case ')' -> { adv(); toks.add(new Tok(T.RP, ")", p)); }
-                    case '[' -> { adv(); toks.add(new Tok(T.LB, "[", p)); }
-                    case ']' -> { adv(); toks.add(new Tok(T.RB, "]", p)); }
-                    case '{' -> { adv(); toks.add(new Tok(T.LC, "{", p)); }
-                    case '}' -> { adv(); toks.add(new Tok(T.RC, "}", p)); }
-                    case ',' -> { adv(); toks.add(new Tok(T.COMMA, ",", p)); }
-                    case '.' -> { adv(); toks.add(new Tok(T.DOT, ".", p)); }
-                    case ':' -> { adv(); toks.add(new Tok(T.COLON, ":", p)); }
-                    case '|' -> { adv(); toks.add(new Tok(T.PIPE, "|", p)); }
-                    case '~' -> { adv(); toks.add(new Tok(T.TILDE, "~", p)); }
-                    case '+' -> { adv(); toks.add(new Tok(T.PLUS, "+", p)); }
-                    case '-' -> { adv(); toks.add(new Tok(T.MINUS, "-", p)); }
-                    case '*' -> { adv(); toks.add(new Tok(T.STAR, "*", p)); }
-                    case '/' -> { adv(); toks.add(new Tok(T.SLASH, "/", p)); }
-                    case '%' -> { adv(); toks.add(new Tok(T.PCT, "%", p)); }
+                    case '=' -> {
+                        adv();
+                        toks.add(new Tok(T.EQ, "=", p));
+                    }
+                    case '(' -> {
+                        adv();
+                        toks.add(new Tok(T.LP, "(", p));
+                    }
+                    case ')' -> {
+                        adv();
+                        toks.add(new Tok(T.RP, ")", p));
+                    }
+                    case '[' -> {
+                        adv();
+                        toks.add(new Tok(T.LB, "[", p));
+                    }
+                    case ']' -> {
+                        adv();
+                        toks.add(new Tok(T.RB, "]", p));
+                    }
+                    case '{' -> {
+                        adv();
+                        toks.add(new Tok(T.LC, "{", p));
+                    }
+                    case '}' -> {
+                        adv();
+                        toks.add(new Tok(T.RC, "}", p));
+                    }
+                    case ',' -> {
+                        adv();
+                        toks.add(new Tok(T.COMMA, ",", p));
+                    }
+                    case '.' -> {
+                        adv();
+                        toks.add(new Tok(T.DOT, ".", p));
+                    }
+                    case ':' -> {
+                        adv();
+                        toks.add(new Tok(T.COLON, ":", p));
+                    }
+                    case '|' -> {
+                        adv();
+                        toks.add(new Tok(T.PIPE, "|", p));
+                    }
+                    case '~' -> {
+                        adv();
+                        toks.add(new Tok(T.TILDE, "~", p));
+                    }
+                    case '+' -> {
+                        adv();
+                        toks.add(new Tok(T.PLUS, "+", p));
+                    }
+                    case '-' -> {
+                        adv();
+                        toks.add(new Tok(T.MINUS, "-", p));
+                    }
+                    case '*' -> {
+                        adv();
+                        toks.add(new Tok(T.STAR, "*", p));
+                    }
+                    case '/' -> {
+                        adv();
+                        toks.add(new Tok(T.SLASH, "/", p));
+                    }
+                    case '%' -> {
+                        adv();
+                        toks.add(new Tok(T.PCT, "%", p));
+                    }
                     default -> {}
                 }
                 if (i > p) continue; // token emitted
@@ -543,10 +820,16 @@ public final class JinjaRenderer {
                 }
 
                 // String literal
-                if (c == '"' || c == '\'') { toks.add(readString(p, c)); continue; }
+                if (c == '"' || c == '\'') {
+                    toks.add(readString(p, c));
+                    continue;
+                }
 
                 // Identifier
-                if (Character.isLetter(c) || c == '_') { toks.add(readIdent(p)); continue; }
+                if (Character.isLetter(c) || c == '_') {
+                    toks.add(readIdent(p));
+                    continue;
+                }
 
                 // Stray char — treat as text
                 toks.add(new Tok(T.TEXT, String.valueOf(c), p));
@@ -558,8 +841,7 @@ public final class JinjaRenderer {
 
         boolean matchTrim(T type, String s) {
             // s is e.g. "{%-" or "-}}" — the FULL marker including trim dashes
-            for (int j = 0; j < s.length(); j++)
-                if (ch(j) != s.charAt(j)) return false;
+            for (int j = 0; j < s.length(); j++) if (ch(j) != s.charAt(j)) return false;
             int save = pos();
             adv(s.length());
             // An OPEN marker's dash ({%- / {{-) strips the PRECEDING text; a CLOSE marker's
@@ -573,17 +855,20 @@ public final class JinjaRenderer {
             return true;
         }
 
-        /** lstrip_blocks: if the last TEXT token's final line (after its last newline) is only
-         *  spaces/tabs AND that line start is reachable (a newline inside the token, or the token
-         *  opens the template), strip them - whitespace from the line start up to a block tag.
-         *  Whitespace following another tag on the same line is not at a line start. Leaves the
-         *  newline and any non-whitespace intact (so {@code abc} followed by a block tag keeps
-         *  its space). */
+        /**
+         * lstrip_blocks: if the last TEXT token's final line (after its last newline) is only
+         * spaces/tabs AND that line start is reachable (a newline inside the token, or the token
+         * opens the template), strip them - whitespace from the line start up to a block tag.
+         * Whitespace following another tag on the same line is not at a line start. Leaves the
+         * newline and any non-whitespace intact (so {@code abc} followed by a block tag keeps its
+         * space).
+         */
         void lstripLineToTag() {
             for (int j = toks.size() - 1; j >= 0; j--) {
                 Tok pt = toks.get(j);
                 if (pt.type != T.TEXT) {
-                    if (pt.type == T.CLOSE_STMT || pt.type == T.CLOSE_EXPR) return; // tag-adjacent, no line text
+                    if (pt.type == T.CLOSE_STMT || pt.type == T.CLOSE_EXPR)
+                        return; // tag-adjacent, no line text
                     continue;
                 }
                 String v = pt.val;
@@ -608,27 +893,30 @@ public final class JinjaRenderer {
                 Tok pt = toks.get(j);
                 if (pt.type == T.TEXT) {
                     String stripped = pt.val.stripTrailing();
-                    if (!stripped.equals(pt.val))
-                        toks.set(j, new Tok(T.TEXT, stripped, pt.pos));
+                    if (!stripped.equals(pt.val)) toks.set(j, new Tok(T.TEXT, stripped, pt.pos));
                     break;
                 }
             }
         }
 
         boolean matchStr(String s) {
-            for (int j = 0; j < s.length(); j++)
-                if (ch(j) != s.charAt(j)) return false;
+            for (int j = 0; j < s.length(); j++) if (ch(j) != s.charAt(j)) return false;
             adv(s.length());
             return true;
         }
 
-        Tok tok(T type, int p) { return new Tok(type, "", p); }
+        Tok tok(T type, int p) {
+            return new Tok(type, "", p);
+        }
 
         Tok readNumber(int p) {
             if (ch() == '-') adv();
             while (Character.isDigit(ch())) adv();
             boolean isFloat = ch() == '.' && Character.isDigit(ch(1));
-            if (isFloat) { adv(); while (Character.isDigit(ch())) adv(); }
+            if (isFloat) {
+                adv();
+                while (Character.isDigit(ch())) adv();
+            }
             String n = cs.subSequence(p, i).toString();
             return isFloat ? new Tok(T.FLOAT, n, p) : new Tok(T.INT, n, p);
         }
@@ -640,11 +928,19 @@ public final class JinjaRenderer {
                 if (ch() == '\\' && !eof()) {
                     adv(); // skip backslash
                     if (!eof()) {
-                        sb.append(switch (ch()) {
-                            case 'n' -> '\n'; case 't' -> '\t'; case 'r' -> '\r';
-                            case '\\' -> '\\'; case '\'' -> '\''; case '"' -> '"';
-                            default -> { sb.append('\\'); yield ch(); }
-                        });
+                        sb.append(
+                                switch (ch()) {
+                                    case 'n' -> '\n';
+                                    case 't' -> '\t';
+                                    case 'r' -> '\r';
+                                    case '\\' -> '\\';
+                                    case '\'' -> '\'';
+                                    case '"' -> '"';
+                                    default -> {
+                                        sb.append('\\');
+                                        yield ch();
+                                    }
+                                });
                     }
                 } else {
                     sb.append(ch());
@@ -677,13 +973,18 @@ public final class JinjaRenderer {
             }
             String val = cs.subSequence(s, i).toString();
             boolean lineStart = false;
-            if (stripNextText) {                        // explicit -%} / -#} / -}}: strip all leading whitespace
+            if (stripNextText) { // explicit -%} / -#} / -}}: strip all leading whitespace
                 val = val.stripLeading();
                 stripNextText = false;
                 trimNextNewline = false;
-            } else if (trimNextNewline) {                // trim_blocks: drop exactly one leading newline
-                if (val.startsWith("\r\n")) { val = val.substring(2); lineStart = true; }
-                else if (val.startsWith("\n")) { val = val.substring(1); lineStart = true; }
+            } else if (trimNextNewline) { // trim_blocks: drop exactly one leading newline
+                if (val.startsWith("\r\n")) {
+                    val = val.substring(2);
+                    lineStart = true;
+                } else if (val.startsWith("\n")) {
+                    val = val.substring(1);
+                    lineStart = true;
+                }
                 trimNextNewline = false;
             }
             // A newline consumed by trim_blocks still begins a new line, so whitespace up to a
@@ -699,41 +1000,71 @@ public final class JinjaRenderer {
     // The AST and parser are intentionally package-private: this module's public surface is prompt
     // generation only (see compiler()), not a reusable Jinja parser.
     sealed interface Node {}
+
     record Prog(List<Node> body) implements Node {}
+
     record TextNode(String s) implements Node {}
+
     record OutputNode(Node expr) implements Node {}
+
     record IfNode(Node test, List<Node> body, List<Node> alt) implements Node {}
-    record CondNode(Node test, Node then, Node orElse) implements Node {} // a if test else b (value-valued)
+
+    record CondNode(Node test, Node then, Node orElse)
+            implements Node {} // a if test else b (value-valued)
+
     record ForNode(String var, String var2, Node iterable, List<Node> body) implements Node {}
-    record GenerationNode(List<Node> body) implements Node {} // {% generation %}…{% endgeneration %}: renders the body transparently, records the assistant span
+
+    record GenerationNode(List<Node> body)
+            implements Node {} // {% generation %}…{% endgeneration %}: renders the body
+
+    // transparently, records the assistant span
+
     record SetNode(Node target, Node value) implements Node {}
-    record BlockExpr(List<Node> body) implements Node {} // {% set x %}…{% endset %}: the body rendered to a string
-    record MacroNode(String name, List<String> params, List<Node> defaults, List<Node> body) implements Node {}
+
+    record BlockExpr(List<Node> body)
+            implements Node {} // {% set x %}…{% endset %}: the body rendered to a string
+
+    record MacroNode(String name, List<String> params, List<Node> defaults, List<Node> body)
+            implements Node {}
+
     record FilterNode(Node operand, String name, List<Node> args) implements Node {}
+
     record BinNode(String op, Node left, Node right) implements Node {}
+
     record UnaNode(String op, Node arg) implements Node {}
+
     record MemberNode(Node obj, Node prop, boolean computed) implements Node {}
+
     record CallNode(Node callee, List<Node> args) implements Node {}
+
     record IdentNode(String name) implements Node {}
+
     record LitNode(Object val) implements Node {} // String, Long, Double, Boolean, Val.None
+
     record TestNode(String name, Node operand, boolean negate) implements Node {}
+
     record SliceNode(Node start, Node stop, Node step) implements Node {}
 
     // ════════════════════════════════════════════════════════════════
     // PARSER (token-based, like llama.cpp)
     // ════════════════════════════════════════════════════════════════
 
-    /** Parses the template source into the internal AST (the executable form behind a
-     *  {@link CompiledTemplate}; the public entry point is {@link #template(String)}). */
+    /**
+     * Parses the template source into the internal AST (the executable form behind a {@link
+     * CompiledTemplate}; the public entry point is {@link #template(String)}).
+     */
     static Prog parse(String source) {
         return new Parser(new Lexer(source).tokenize()).parseProgram();
     }
 
-    /** The module's public entry point: turns a Jinja chat-template source into a {@link CompiledTemplate}
-     *  prompt generator — parse once, render many times. Returns {@code null} if the source fails to
-     *  parse. Suitable as a {@code Function<String, CompiledTemplate>} method reference
-     *  ({@code JinjaRenderer::template}, e.g. for {@link com.qxotic.jinfer.GgufTokenizer}). The AST and
-     *  parser behind the returned template stay internal — callers only ever see a render-only template. */
+    /**
+     * The module's public entry point: turns a Jinja chat-template source into a {@link
+     * CompiledTemplate} prompt generator — parse once, render many times. Returns {@code null} if
+     * the source fails to parse. Suitable as a {@code Function<String, CompiledTemplate>} method
+     * reference ({@code JinjaRenderer::template}, e.g. for {@link
+     * com.qxotic.jinfer.GgufTokenizer}). The AST and parser behind the returned template stay
+     * internal — callers only ever see a render-only template.
+     */
     public static CompiledTemplate template(String source) {
         try {
             // jinja2 keep_trailing_newline=False (the default HF renders with): exactly one
@@ -752,17 +1083,35 @@ public final class JinjaRenderer {
         final List<Tok> toks;
         int idx;
 
-        Parser(List<Tok> toks) { this.toks = toks; }
+        Parser(List<Tok> toks) {
+            this.toks = toks;
+        }
 
-        Tok peek() { return idx < toks.size() ? toks.get(idx) : eofTok(); }
-        Tok peek(int off) { int p = idx + off; return p < toks.size() ? toks.get(p) : eofTok(); }
-        Tok next()  { return toks.get(idx++); }
-        boolean eof() { return idx >= toks.size() || peek().type == T.EOF; }
-        static Tok eofTok() { return new Tok(T.EOF, "", 0); }
+        Tok peek() {
+            return idx < toks.size() ? toks.get(idx) : eofTok();
+        }
+
+        Tok peek(int off) {
+            int p = idx + off;
+            return p < toks.size() ? toks.get(p) : eofTok();
+        }
+
+        Tok next() {
+            return toks.get(idx++);
+        }
+
+        boolean eof() {
+            return idx >= toks.size() || peek().type == T.EOF;
+        }
+
+        static Tok eofTok() {
+            return new Tok(T.EOF, "", 0);
+        }
 
         Tok expect(T type) {
             Tok t = peek();
-            if (t.type != type) throw err("expected " + type + ", got " + t.type + " '" + t.val + "'");
+            if (t.type != type)
+                throw err("expected " + type + ", got " + t.type + " '" + t.val + "'");
             idx++;
             return t;
         }
@@ -774,12 +1123,18 @@ public final class JinjaRenderer {
             idx++;
         }
 
-        boolean is(T type) { return peek().type == type; }
-        boolean isId(String name) { return peek().type == T.IDENT && peek().val.equals(name); }
+        boolean is(T type) {
+            return peek().type == type;
+        }
+
+        boolean isId(String name) {
+            return peek().type == T.IDENT && peek().val.equals(name);
+        }
 
         boolean isStmt(String... names) {
-            return peek().type == T.OPEN_STMT && peek(1).type == T.IDENT
-                   && List.of(names).contains(peek(1).val);
+            return peek().type == T.OPEN_STMT
+                    && peek(1).type == T.IDENT
+                    && List.of(names).contains(peek(1).val);
         }
 
         RuntimeException err(String msg) {
@@ -796,10 +1151,21 @@ public final class JinjaRenderer {
         Node parseAny() {
             Tok t = peek();
             return switch (t.type) {
-                case T.TEXT -> { idx++; yield new TextNode(t.val); }
-                case T.OPEN_EXPR -> { idx++; Node e = parseExpr(); expect(T.CLOSE_EXPR); yield new OutputNode(e); }
+                case T.TEXT -> {
+                    idx++;
+                    yield new TextNode(t.val);
+                }
+                case T.OPEN_EXPR -> {
+                    idx++;
+                    Node e = parseExpr();
+                    expect(T.CLOSE_EXPR);
+                    yield new OutputNode(e);
+                }
                 case T.OPEN_STMT -> parseStatement();
-                default           -> { idx++; yield new TextNode(t.val); } // comment or stray
+                default -> {
+                    idx++;
+                    yield new TextNode(t.val);
+                } // comment or stray
             };
         }
 
@@ -808,9 +1174,9 @@ public final class JinjaRenderer {
             String kw = peek().type == T.IDENT ? next().val : "";
             Node result;
             switch (kw) {
-                case "if"    -> result = parseIf();
-                case "for"   -> result = parseFor();
-                case "set"   -> result = parseSet();
+                case "if" -> result = parseIf();
+                case "for" -> result = parseFor();
+                case "set" -> result = parseSet();
                 case "macro" -> result = parseMacro();
                 case "generation" -> result = parseGeneration();
                 case "break", "continue" -> throw err("{% " + kw + " %} is not supported");
@@ -840,12 +1206,15 @@ public final class JinjaRenderer {
             return new IfNode(test, body, parseIfTail());
         }
 
-        /** The chain after an {@code if}/{@code elif} body: each {@code elif} nests as the single
-         *  alternative of the previous branch (so they stay mutually exclusive and a trailing
-         *  {@code else} is preserved rather than clobbering the elifs), terminated by {@code endif}. */
+        /**
+         * The chain after an {@code if}/{@code elif} body: each {@code elif} nests as the single
+         * alternative of the previous branch (so they stay mutually exclusive and a trailing {@code
+         * else} is preserved rather than clobbering the elifs), terminated by {@code endif}.
+         */
         List<Node> parseIfTail() {
             if (isStmt("elif")) {
-                expect(T.OPEN_STMT); expectId("elif");
+                expect(T.OPEN_STMT);
+                expectId("elif");
                 Node test = parseExpr();
                 expect(T.CLOSE_STMT);
                 List<Node> body = parseBody("elif", "else", "endif");
@@ -853,10 +1222,14 @@ public final class JinjaRenderer {
             }
             List<Node> alt = new ArrayList<>();
             if (isStmt("else")) {
-                expect(T.OPEN_STMT); expectId("else"); expect(T.CLOSE_STMT);
+                expect(T.OPEN_STMT);
+                expectId("else");
+                expect(T.CLOSE_STMT);
                 alt = parseBody("endif");
             }
-            expect(T.OPEN_STMT); expectId("endif"); expect(T.CLOSE_STMT);
+            expect(T.OPEN_STMT);
+            expectId("endif");
+            expect(T.CLOSE_STMT);
             return alt;
         }
 
@@ -868,7 +1241,9 @@ public final class JinjaRenderer {
             Node iterable = parseExpr();
             expect(T.CLOSE_STMT);
             var body = parseBody("endfor");
-            expect(T.OPEN_STMT); expectId("endfor"); expect(T.CLOSE_STMT);
+            expect(T.OPEN_STMT);
+            expectId("endfor");
+            expect(T.CLOSE_STMT);
             String v1 = loopVars.getFirst();
             String v2 = loopVars.size() > 1 ? loopVars.get(1) : null;
             return new ForNode(v1, v2, iterable, body);
@@ -879,14 +1254,19 @@ public final class JinjaRenderer {
         Node parseGeneration() {
             expect(T.CLOSE_STMT);
             var body = parseBody("endgeneration");
-            expect(T.OPEN_STMT); expectId("endgeneration"); expect(T.CLOSE_STMT); // unclosed -> clear error, like for/if
+            expect(T.OPEN_STMT);
+            expectId("endgeneration");
+            expect(T.CLOSE_STMT); // unclosed -> clear error, like for/if
             return new GenerationNode(body);
         }
 
         List<String> parseVarList() {
             var vars = new ArrayList<String>();
             vars.add(expect(T.IDENT).val);
-            while (is(T.COMMA)) { next(); vars.add(expect(T.IDENT).val); }
+            while (is(T.COMMA)) {
+                next();
+                vars.add(expect(T.IDENT).val);
+            }
             return vars;
         }
 
@@ -894,15 +1274,17 @@ public final class JinjaRenderer {
 
         Node parseSet() {
             Node target = parseExpr();
-            if (is(T.EQ)) {                              // {% set x = expr %}
+            if (is(T.EQ)) { // {% set x = expr %}
                 next();
                 Node value = parseExpr();
                 expect(T.CLOSE_STMT);
                 return new SetNode(target, value);
             }
-            expect(T.CLOSE_STMT);                        // {% set x %}…{% endset %}: capture the rendered body
+            expect(T.CLOSE_STMT); // {% set x %}…{% endset %}: capture the rendered body
             List<Node> body = parseBody("endset");
-            expect(T.OPEN_STMT); expectId("endset"); expect(T.CLOSE_STMT);
+            expect(T.OPEN_STMT);
+            expectId("endset");
+            expect(T.CLOSE_STMT);
             return new SetNode(target, new BlockExpr(body));
         }
 
@@ -921,7 +1303,9 @@ public final class JinjaRenderer {
             expect(T.RP);
             expect(T.CLOSE_STMT);
             var body = parseBody("endmacro");
-            expect(T.OPEN_STMT); expectId("endmacro"); expect(T.CLOSE_STMT);
+            expect(T.OPEN_STMT);
+            expectId("endmacro");
+            expect(T.CLOSE_STMT);
             return new MacroNode(name, params, defaults, body);
         }
 
@@ -947,7 +1331,9 @@ public final class JinjaRenderer {
             return parseTernary();
         }
 
-        void skipText() { while (!eof() && is(T.TEXT)) idx++; }
+        void skipText() {
+            while (!eof() && is(T.TEXT)) idx++;
+        }
 
         Node parseTernary() {
             Node thenVal = parseOr();
@@ -955,7 +1341,10 @@ public final class JinjaRenderer {
                 next(); // if
                 Node test = parseOr();
                 Node orElse = null; // omitted else -> undefined when the test is false
-                if (isId("else")) { next(); orElse = parseTernary(); }
+                if (isId("else")) {
+                    next();
+                    orElse = parseTernary();
+                }
                 return new CondNode(test, thenVal, orElse);
             }
             return thenVal;
@@ -963,18 +1352,27 @@ public final class JinjaRenderer {
 
         Node parseOr() {
             Node left = parseAnd();
-            while (isId("or")) { next(); left = new BinNode("or", left, parseAnd()); }
+            while (isId("or")) {
+                next();
+                left = new BinNode("or", left, parseAnd());
+            }
             return left;
         }
 
         Node parseAnd() {
             Node left = parseNot();
-            while (isId("and")) { next(); left = new BinNode("and", left, parseNot()); }
+            while (isId("and")) {
+                next();
+                left = new BinNode("and", left, parseNot());
+            }
             return left;
         }
 
         Node parseNot() {
-            if (isId("not")) { next(); return new UnaNode("not", parseNot()); }
+            if (isId("not")) {
+                next();
+                return new UnaNode("not", parseNot());
+            }
             return parseComp();
         }
 
@@ -982,34 +1380,59 @@ public final class JinjaRenderer {
             Node left = parseConcat();
             // is / is not
             if (isId("is")) {
-                next(); boolean neg = false;
-                if (isId("not")) { next(); neg = true; }
+                next();
+                boolean neg = false;
+                if (isId("not")) {
+                    next();
+                    neg = true;
+                }
                 String test = expect(T.IDENT).val;
                 return new TestNode(test, left, neg);
             }
             // in / not in
-            if (isId("in")) { next(); return new BinNode("in", left, parseConcat()); }
+            if (isId("in")) {
+                next();
+                return new BinNode("in", left, parseConcat());
+            }
             if (isId("not") && peek(1).type == T.IDENT && peek(1).val.equals("in")) {
-                next(); next(); return new BinNode("notin", left, parseConcat());
+                next();
+                next();
+                return new BinNode("notin", left, parseConcat());
             }
             // comparison operators
-            if (is(T.CMP)) { String op = next().val; return new BinNode(op, left, parseConcat()); }
+            if (is(T.CMP)) {
+                String op = next().val;
+                return new BinNode(op, left, parseConcat());
+            }
             return left;
         }
 
-        /** String concatenation with {@code ~}, left-associative and chainable (a ~ b ~ c),
-         *  binding tighter than comparisons but looser than +/-. */
+        /**
+         * String concatenation with {@code ~}, left-associative and chainable (a ~ b ~ c), binding
+         * tighter than comparisons but looser than +/-.
+         */
         Node parseConcat() {
             Node left = parseAdd();
-            while (is(T.TILDE)) { next(); left = new BinNode("~", left, parseAdd()); }
+            while (is(T.TILDE)) {
+                next();
+                left = new BinNode("~", left, parseAdd());
+            }
             return left;
         }
 
         Node parseAdd() {
             Node left = parseMul();
             while (true) {
-                if (is(T.PLUS)) { next(); left = new BinNode("+", left, parseMul()); continue; }
-                if (is(T.MINUS)) { next(); left = new BinNode("-", left, parseMul()); continue; }
+                if (is(T.PLUS)) {
+                    next();
+                    left = new BinNode("+", left, parseMul());
+                    continue;
+                }
+                if (is(T.MINUS)) {
+                    next();
+                    left = new BinNode("-", left, parseMul());
+                    continue;
+                }
                 break;
             }
             return left;
@@ -1018,25 +1441,47 @@ public final class JinjaRenderer {
         Node parseMul() {
             Node left = parseUnary();
             while (true) {
-                if (is(T.STAR)) { next(); left = new BinNode("*", left, parseUnary()); continue; }
-                if (is(T.SLASH)) { next(); left = new BinNode("/", left, parseUnary()); continue; }
-                if (is(T.PCT)) { next(); left = new BinNode("%", left, parseUnary()); continue; }
+                if (is(T.STAR)) {
+                    next();
+                    left = new BinNode("*", left, parseUnary());
+                    continue;
+                }
+                if (is(T.SLASH)) {
+                    next();
+                    left = new BinNode("/", left, parseUnary());
+                    continue;
+                }
+                if (is(T.PCT)) {
+                    next();
+                    left = new BinNode("%", left, parseUnary());
+                    continue;
+                }
                 break;
             }
             return left;
         }
 
         Node parseUnary() {
-            if (is(T.PLUS)) { next(); return parseUnary(); } // unary plus is no-op
-            if (is(T.MINUS)) { next(); return new BinNode("*", new LitNode(-1L), parseUnary()); }
+            if (is(T.PLUS)) {
+                next();
+                return parseUnary();
+            } // unary plus is no-op
+            if (is(T.MINUS)) {
+                next();
+                return new BinNode("*", new LitNode(-1L), parseUnary());
+            }
             return parseTestExpr();
         }
 
         Node parseTestExpr() {
             Node operand = parseFilter();
             if (isId("is")) {
-                next(); boolean neg = false;
-                if (isId("not")) { next(); neg = true; }
+                next();
+                boolean neg = false;
+                if (isId("not")) {
+                    next();
+                    neg = true;
+                }
                 String test = expect(T.IDENT).val;
                 return new TestNode(test, operand, neg);
             }
@@ -1085,10 +1530,17 @@ public final class JinjaRenderer {
                     }
                     if (is(T.COLON)) {
                         next();
-                        // an immediate ']' , ',' or ':' means the stop bound was omitted ([n:], [::s])
-                        Node stop = (is(T.RB) || is(T.COMMA) || is(T.COLON)) ? new LitNode(Val.NONE) : parseExpr();
+                        // an immediate ']' , ',' or ':' means the stop bound was omitted ([n:],
+                        // [::s])
+                        Node stop =
+                                (is(T.RB) || is(T.COMMA) || is(T.COLON))
+                                        ? new LitNode(Val.NONE)
+                                        : parseExpr();
                         Node step = new LitNode(Val.NONE);
-                        if (is(T.COLON)) { next(); step = is(T.RB) ? new LitNode(Val.NONE) : parseExpr(); }
+                        if (is(T.COLON)) {
+                            next();
+                            step = is(T.RB) ? new LitNode(Val.NONE) : parseExpr();
+                        }
                         expect(T.RB);
                         node = new MemberNode(node, new SliceNode(key, stop, step), true);
                     } else {
@@ -1109,7 +1561,8 @@ public final class JinjaRenderer {
                     Node id = new IdentNode(t.val);
                     if (is(T.LP)) {
                         next();
-                        var args = is(T.RP) ? new ArrayList<Node>() : new ArrayList<>(parseArgList());
+                        var args =
+                                is(T.RP) ? new ArrayList<Node>() : new ArrayList<>(parseArgList());
                         expect(T.RP);
                         yield new CallNode(id, args);
                     }
@@ -1122,19 +1575,29 @@ public final class JinjaRenderer {
                     yield new LitNode(sb.toString());
                 }
                 case T.INT -> {
-                    try { yield new LitNode(Long.parseLong(t.val)); }
-                    catch (NumberFormatException e) { yield new LitNode(0L); }
+                    try {
+                        yield new LitNode(Long.parseLong(t.val));
+                    } catch (NumberFormatException e) {
+                        yield new LitNode(0L);
+                    }
                 }
                 case T.FLOAT -> {
-                    try { yield new LitNode(Double.parseDouble(t.val)); }
-                    catch (NumberFormatException e) { yield new LitNode(0.0); }
+                    try {
+                        yield new LitNode(Double.parseDouble(t.val));
+                    } catch (NumberFormatException e) {
+                        yield new LitNode(0.0);
+                    }
                 }
                 case T.LP -> {
                     Node e = parseExpr();
                     if (is(T.COMMA)) { // tuple literal -> treated as a list
                         var items = new ArrayList<Node>();
                         items.add(e);
-                        while (is(T.COMMA)) { next(); if (is(T.RP)) break; items.add(parseExpr()); }
+                        while (is(T.COMMA)) {
+                            next();
+                            if (is(T.RP)) break;
+                            items.add(parseExpr());
+                        }
                         expect(T.RP);
                         yield new LitNode(items);
                     }
@@ -1142,34 +1605,51 @@ public final class JinjaRenderer {
                     yield e;
                 }
                 case T.LB -> {
-                    if (is(T.RB)) { next(); yield new LitNode(new ArrayList<Node>()); }
+                    if (is(T.RB)) {
+                        next();
+                        yield new LitNode(new ArrayList<Node>());
+                    }
                     var items = new ArrayList<Node>();
                     items.add(parseExpr());
-                    while (is(T.COMMA)) { next(); if (is(T.RB)) break; items.add(parseExpr()); }
+                    while (is(T.COMMA)) {
+                        next();
+                        if (is(T.RB)) break;
+                        items.add(parseExpr());
+                    }
                     expect(T.RB);
                     yield new LitNode(items);
                 }
-                case T.LC -> { yield parseDictExpr(); }
+                case T.LC -> {
+                    yield parseDictExpr();
+                }
                 default -> throw err("unexpected token " + t.type);
             };
         }
 
         Node parseDictExpr() {
             // { already consumed
-            if (is(T.RC)) { next(); return new LitNode(new LinkedHashMap<String,Node>()); }
-            var map = new LinkedHashMap<String,Node>();
+            if (is(T.RC)) {
+                next();
+                return new LitNode(new LinkedHashMap<String, Node>());
+            }
+            var map = new LinkedHashMap<String, Node>();
             while (true) {
                 Node key = parseExpr();
                 expect(T.COLON);
                 Node val = parseExpr();
                 // string-literal and identifier keys are the common forms; fall back to the
                 // literal's value for number keys
-                String k = key instanceof IdentNode i ? i.name()
-                         : key instanceof LitNode lit ? String.valueOf(lit.val())
-                         : key.toString();
+                String k =
+                        key instanceof IdentNode i
+                                ? i.name()
+                                : key instanceof LitNode lit
+                                        ? String.valueOf(lit.val())
+                                        : key.toString();
                 map.put(k, val);
-                if (is(T.COMMA)) { next(); if (is(T.RC)) break; }
-                else break;
+                if (is(T.COMMA)) {
+                    next();
+                    if (is(T.RC)) break;
+                } else break;
             }
             expect(T.RC);
             return new LitNode(map);
@@ -1186,7 +1666,10 @@ public final class JinjaRenderer {
                     next(); // consume =
                     args.add(new BinNode("kwarg", name, parseExpr()));
                 }
-                if (is(T.COMMA)) { next(); continue; }
+                if (is(T.COMMA)) {
+                    next();
+                    continue;
+                }
                 break;
             }
             return args;
@@ -1197,31 +1680,38 @@ public final class JinjaRenderer {
     // TEMPLATE EXECUTOR
     // ════════════════════════════════════════════════════════════════
 
-    static String render(Prog program, Map<String,Object> context) {
+    static String render(Prog program, Map<String, Object> context) {
         var ctx = new Frame();
         for (var e : context.entrySet()) ctx.set(e.getKey(), Val.of(e.getValue()));
         return new Executor(ctx, new ArrayList<>()).execute(program);
     }
 
-    static String render(String template, Map<String,Object> context) {
+    static String render(String template, Map<String, Object> context) {
         return render(parse(template), context);
     }
 
-    /** Render result carrying the {@code {% generation %}} assistant spans as (start,end) char offsets into {@code text}. */
+    /**
+     * Render result carrying the {@code {% generation %}} assistant spans as (start,end) char
+     * offsets into {@code text}.
+     */
     public record Rendered(String text, List<int[]> generationSpans) {}
 
-    /** Like {@link #render(String, Map)} but also returns the recorded {@code {% generation %}} assistant spans. */
-    public static Rendered renderWithSpans(String template, Map<String,Object> context) {
+    /**
+     * Like {@link #render(String, Map)} but also returns the recorded {@code {% generation %}}
+     * assistant spans.
+     */
+    public static Rendered renderWithSpans(String template, Map<String, Object> context) {
         var ctx = new Frame();
         for (var e : context.entrySet()) ctx.set(e.getKey(), Val.of(e.getValue()));
         return new Executor(ctx, new ArrayList<>()).executeWithSpans(parse(template));
     }
 
     static final class Frame {
-        final LinkedHashMap<String,Val> vars = new LinkedHashMap<>();
+        final LinkedHashMap<String, Val> vars = new LinkedHashMap<>();
         // macro definitions live on the (shared) root frame so calls can bind params by name,
         // honoring defaults and keyword arguments — see Executor.CallNode handling
-        final Map<String,MacroNode> macros = new HashMap<>();
+        final Map<String, MacroNode> macros = new HashMap<>();
+
         Val get(String name) {
             Val v = vars.get(name);
             if (v != null) return v;
@@ -1232,18 +1722,27 @@ public final class JinjaRenderer {
             if (name.equals("None") || name.equals("none") || name.equals("null")) return Val.NONE;
             return new Val.Undef(name);
         }
-        void set(String name, Val val) { vars.put(name, val); }
+
+        void set(String name, Val val) {
+            vars.put(name, val);
+        }
     }
 
     static final class Executor {
         final Frame frame;
         final List<Frame> stack;
 
-        final List<int[]> generationSpans = new ArrayList<>();   // (start,end) char offsets of {% generation %} bodies
+        final List<int[]> generationSpans =
+                new ArrayList<>(); // (start,end) char offsets of {% generation %} bodies
 
-        Executor(Frame root, List<Frame> stack) { this.frame = root; this.stack = stack; }
+        Executor(Frame root, List<Frame> stack) {
+            this.frame = root;
+            this.stack = stack;
+        }
 
-        String execute(Prog prog) { return executeWithSpans(prog).text(); }
+        String execute(Prog prog) {
+            return executeWithSpans(prog).text();
+        }
 
         Rendered executeWithSpans(Prog prog) {
             var out = new StringBuilder();
@@ -1261,22 +1760,27 @@ public final class JinjaRenderer {
                 }
                 case ForNode f -> {
                     Val iter = eval(f.iterable());
-                    List<Val> items = switch (iter) {
-                        case Val.Arr a -> a.v();
-                        case Val.Obj o -> {
-                            var arr = new ArrayList<Val>();
-                            for (var e : o.v.entrySet())
-                                arr.add(new Val.Arr(List.of(new Val.Str(e.getKey()), e.getValue())));
-                            yield arr;
-                        }
-                        default -> {
-                            String s = iter.asStr();
-                            if (s.isEmpty()) yield List.of();
-                            var arr = new ArrayList<Val>();
-                            for (String part : s.split("\n")) arr.add(new Val.Str(part));
-                            yield arr;
-                        }
-                    };
+                    List<Val> items =
+                            switch (iter) {
+                                case Val.Arr a -> a.v();
+                                case Val.Obj o -> {
+                                    var arr = new ArrayList<Val>();
+                                    for (var e : o.v.entrySet())
+                                        arr.add(
+                                                new Val.Arr(
+                                                        List.of(
+                                                                new Val.Str(e.getKey()),
+                                                                e.getValue())));
+                                    yield arr;
+                                }
+                                default -> {
+                                    String s = iter.asStr();
+                                    if (s.isEmpty()) yield List.of();
+                                    var arr = new ArrayList<Val>();
+                                    for (String part : s.split("\n")) arr.add(new Val.Str(part));
+                                    yield arr;
+                                }
+                            };
                     for (int idx = 0; idx < items.size(); idx++) {
                         Val item = items.get(idx);
                         var lf = new Frame();
@@ -1286,25 +1790,28 @@ public final class JinjaRenderer {
                         } else {
                             lf.set(f.var(), item);
                         }
-                        var loop = new LinkedHashMap<String,Val>();
+                        var loop = new LinkedHashMap<String, Val>();
                         loop.put("index0", new Val.Int(idx));
-                        loop.put("index",  new Val.Int(idx + 1));
-                        loop.put("first",  new Val.Bool(idx == 0));
-                        loop.put("last",   new Val.Bool(idx == items.size() - 1));
+                        loop.put("index", new Val.Int(idx + 1));
+                        loop.put("first", new Val.Bool(idx == 0));
+                        loop.put("last", new Val.Bool(idx == items.size() - 1));
                         loop.put("length", new Val.Int(items.size()));
                         lf.set("__loop__", new Val.Obj(loop, false));
                         try {
                             stack.addLast(lf);
                             execAll(f.body(), out);
-                        } catch (BreakSignal __) { break; }
-                        catch (ContinueSignal __) { continue; }
-                        finally { stack.removeLast(); }
+                        } catch (BreakSignal __) {
+                            break;
+                        } catch (ContinueSignal __) {
+                            continue;
+                        } finally {
+                            stack.removeLast();
+                        }
                     }
                 }
                 case SetNode s -> {
                     Val v = eval(s.value());
-                    if (s.target() instanceof IdentNode id)
-                        scope().set(id.name(), v);
+                    if (s.target() instanceof IdentNode id) scope().set(id.name(), v);
                     else if (s.target() instanceof MemberNode mm) {
                         Val obj = eval(mm.obj());
                         if (obj instanceof Val.Obj o && mm.prop() instanceof LitNode lp) {
@@ -1317,23 +1824,28 @@ public final class JinjaRenderer {
                     frame.macros.put(m.name(), m);
                     // ... and expose a positional Func value so `macro is defined` / passing it
                     // around still works
-                    scope().set(m.name(), new Val.Func(m.name(), args -> invokeMacro(m, args, Map.of())));
+                    scope().set(
+                                    m.name(),
+                                    new Val.Func(m.name(), args -> invokeMacro(m, args, Map.of())));
                 }
-                case GenerationNode g -> {                       // transparent render + record the assistant span
+                case GenerationNode g -> { // transparent render + record the assistant span
                     int start = out.length();
                     execAll(g.body(), out);
-                    generationSpans.add(new int[]{start, out.length()});
+                    generationSpans.add(new int[] {start, out.length()});
                 }
                 default -> {}
             }
         }
 
         private static final class BreakSignal extends RuntimeException {}
+
         private static final class ContinueSignal extends RuntimeException {}
 
-        /** Invoke a macro, binding each parameter from (in priority order) a positional argument,
-         *  a keyword argument, its default expression, or undefined. */
-        Val invokeMacro(MacroNode m, List<Val> args, Map<String,Val> kwargs) {
+        /**
+         * Invoke a macro, binding each parameter from (in priority order) a positional argument, a
+         * keyword argument, its default expression, or undefined.
+         */
+        Val invokeMacro(MacroNode m, List<Val> args, Map<String, Val> kwargs) {
             var mf = new Frame();
             for (int i = 0; i < m.params().size(); i++) {
                 String p = m.params().get(i);
@@ -1359,29 +1871,35 @@ public final class JinjaRenderer {
             return new Val.Str(out.toString());
         }
 
-        Frame scope() { return stack.isEmpty() ? frame : stack.getLast(); }
+        Frame scope() {
+            return stack.isEmpty() ? frame : stack.getLast();
+        }
 
         Val eval(Node expr) {
             return switch (expr) {
-                case BlockExpr b -> evalExprBlock(b.body());   // {% set x %}…{% endset %} body
-                case LitNode l   -> {
+                case BlockExpr b -> evalExprBlock(b.body()); // {% set x %}…{% endset %} body
+                case LitNode l -> {
                     // list/dict/tuple literals carry element Nodes — evaluate them here
                     if (l.val() instanceof List<?> li) {
                         var out = new ArrayList<Val>(li.size());
                         for (Object e : li) out.add(e instanceof Node n ? eval(n) : Val.of(e));
                         yield new Val.Arr(out);
                     }
-                    if (l.val() instanceof Map<?,?> mp) {
-                        var out = new LinkedHashMap<String,Val>();
+                    if (l.val() instanceof Map<?, ?> mp) {
+                        var out = new LinkedHashMap<String, Val>();
                         for (var e : mp.entrySet())
-                            out.put(String.valueOf(e.getKey()), e.getValue() instanceof Node n ? eval(n) : Val.of(e.getValue()));
+                            out.put(
+                                    String.valueOf(e.getKey()),
+                                    e.getValue() instanceof Node n
+                                            ? eval(n)
+                                            : Val.of(e.getValue()));
                         yield new Val.Obj(out, false);
                     }
                     yield Val.of(l.val());
                 }
                 case IdentNode id -> lookup(id.name());
-                case BinNode b   -> evalBin(b.op(), eval(b.left()), eval(b.right()));
-                case UnaNode u   -> evalUnary(u.op(), eval(u.arg()));
+                case BinNode b -> evalBin(b.op(), eval(b.left()), eval(b.right()));
+                case UnaNode u -> evalUnary(u.op(), eval(u.arg()));
                 case FilterNode f -> {
                     Val v = eval(f.operand());
                     var a = new ArrayList<Val>();
@@ -1392,10 +1910,13 @@ public final class JinjaRenderer {
                 case CallNode c -> {
                     Val callee = eval(c.callee());
                     var args = new ArrayList<Val>();
-                    var kwargs = new LinkedHashMap<String,Val>();
+                    var kwargs = new LinkedHashMap<String, Val>();
                     for (Node n : c.args()) {
                         if (n instanceof BinNode b && "kwarg".equals(b.op())) {
-                            String k = b.left() instanceof IdentNode id ? id.name() : eval(b.left()).asStr();
+                            String k =
+                                    b.left() instanceof IdentNode id
+                                            ? id.name()
+                                            : eval(b.left()).asStr();
                             kwargs.put(k, eval(b.right()));
                         } else {
                             args.add(eval(n));
@@ -1420,8 +1941,11 @@ public final class JinjaRenderer {
                         yield callFunction(calleeName, args);
                     }
                     // Calling the result of a member access that isn't a function — e.g. a string
-                    // method written WITH parentheses (`s.strip()`); the paren-less `s.strip` works.
-                    throw unsupported("call of a non-function value (string/array methods must be used without parentheses, e.g. `s.strip` not `s.strip()`)");
+                    // method written WITH parentheses (`s.strip()`); the paren-less `s.strip`
+                    // works.
+                    throw unsupported(
+                            "call of a non-function value (string/array methods must be used"
+                                    + " without parentheses, e.g. `s.strip` not `s.strip()`)");
                 }
                 case TestNode t -> {
                     Val v = eval(t.operand());
@@ -1431,10 +1955,12 @@ public final class JinjaRenderer {
                 case OutputNode o -> eval(o.expr());
                 // ternary: yields the chosen branch's VALUE (not its rendered text); a missing
                 // else yields undefined, per Jinja
-                case CondNode c -> eval(c.test()).truthy() ? eval(c.then())
-                    : (c.orElse() == null ? new Val.Undef("") : eval(c.orElse()));
-                case IfNode i -> eval(i.test()).truthy()
-                    ? evalBlockExpr(i.body()) : evalBlockExpr(i.alt());
+                case CondNode c ->
+                        eval(c.test()).truthy()
+                                ? eval(c.then())
+                                : (c.orElse() == null ? new Val.Undef("") : eval(c.orElse()));
+                case IfNode i ->
+                        eval(i.test()).truthy() ? evalBlockExpr(i.body()) : evalBlockExpr(i.alt());
                 default -> Val.NONE;
             };
         }
@@ -1455,9 +1981,10 @@ public final class JinjaRenderer {
 
         Val evalBin(String op, Val l, Val r) {
             return switch (op) {
-                case "+" -> l.isString() || r.isString()
-                    ? new Val.Str(l.asStr() + r.asStr())
-                    : new Val.Flt(toNum(l) + toNum(r));
+                case "+" ->
+                        l.isString() || r.isString()
+                                ? new Val.Str(l.asStr() + r.asStr())
+                                : new Val.Flt(toNum(l) + toNum(r));
                 case "-" -> new Val.Flt(toNum(l) - toNum(r));
                 case "*" -> new Val.Flt(toNum(l) * toNum(r));
                 case "/" -> new Val.Flt(toNum(l) / toNum(r));
@@ -1465,14 +1992,14 @@ public final class JinjaRenderer {
                 case "~" -> new Val.Str(l.asStr() + r.asStr());
                 case "==" -> new Val.Bool(eq(l, r));
                 case "!=" -> new Val.Bool(!eq(l, r));
-                case "<"  -> new Val.Bool(toNum(l) < toNum(r));
-                case ">"  -> new Val.Bool(toNum(l) > toNum(r));
+                case "<" -> new Val.Bool(toNum(l) < toNum(r));
+                case ">" -> new Val.Bool(toNum(l) > toNum(r));
                 case "<=" -> new Val.Bool(toNum(l) <= toNum(r));
                 case ">=" -> new Val.Bool(toNum(l) >= toNum(r));
                 // and/or return an OPERAND (Python/Jinja semantics), not a coerced bool — this is
                 // what makes the common `x or 'default'` / `a.get('k') or fallback` idiom work.
                 case "and" -> l.truthy() ? r : l;
-                case "or"  -> l.truthy() ? l : r;
+                case "or" -> l.truthy() ? l : r;
                 case "in" -> new Val.Bool(contains(r, l));
                 case "notin" -> new Val.Bool(!contains(r, l));
                 default -> Val.NONE;
@@ -1495,12 +2022,18 @@ public final class JinjaRenderer {
                     return index(obj, (int) toNum(key));
                 return access(obj, key.asStr());
             }
-            String prop = mm.prop() instanceof LitNode l ? String.valueOf(l.val()) : eval(mm.prop()).asStr();
+            String prop =
+                    mm.prop() instanceof LitNode l
+                            ? String.valueOf(l.val())
+                            : eval(mm.prop()).asStr();
             return access(obj, prop);
         }
 
         static boolean isIntIndex(Val v) {
-            return v instanceof Val.Int || (v instanceof Val.Flt f && f.v == Math.floor(f.v) && !Double.isInfinite(f.v));
+            return v instanceof Val.Int
+                    || (v instanceof Val.Flt f
+                            && f.v == Math.floor(f.v)
+                            && !Double.isInfinite(f.v));
         }
 
         /** {@code seq[i]} with Python negative indexing; out-of-range yields undefined. */
@@ -1511,7 +2044,9 @@ public final class JinjaRenderer {
             }
             String str = ((Val.Str) obj).v;
             int n = str.length(), j = i < 0 ? i + n : i;
-            return j >= 0 && j < n ? new Val.Str(String.valueOf(str.charAt(j))) : new Val.Undef("index " + i);
+            return j >= 0 && j < n
+                    ? new Val.Str(String.valueOf(str.charAt(j)))
+                    : new Val.Undef("index " + i);
         }
 
         Val access(Val obj, String prop) {
@@ -1523,20 +2058,36 @@ public final class JinjaRenderer {
             };
         }
 
-        /** String methods resolve to callables so the standard {@code s.strip()} form works (and
-         *  they can take arguments, e.g. {@code s.startswith(x)}, {@code s.split(',')}). */
+        /**
+         * String methods resolve to callables so the standard {@code s.strip()} form works (and
+         * they can take arguments, e.g. {@code s.startswith(x)}, {@code s.split(',')}).
+         */
         Val dispatchStrMethod(Val.Str s, String m) {
             return switch (m) {
                 // strip/split have method-specific no-arg behavior, so they stay bespoke ...
-                case "strip"  -> new Val.Func("strip", a -> new Val.Str(a.isEmpty() ? s.v.strip() : strip(s.v, expectStr(a.get(0)))));
+                case "strip" ->
+                        new Val.Func(
+                                "strip",
+                                a ->
+                                        new Val.Str(
+                                                a.isEmpty()
+                                                        ? s.v.strip()
+                                                        : strip(s.v, expectStr(a.get(0)))));
                 case "lstrip" -> new Val.Func("lstrip", a -> new Val.Str(s.v.stripLeading()));
                 case "rstrip" -> new Val.Func("rstrip", a -> new Val.Str(s.v.stripTrailing()));
-                case "split"  -> new Val.Func("split", a -> a.isEmpty() ? new Val.Arr(splitToValList(s.v)) : split(s, expectStr(a.get(0))));
+                case "split" ->
+                        new Val.Func(
+                                "split",
+                                a ->
+                                        a.isEmpty()
+                                                ? new Val.Arr(splitToValList(s.v))
+                                                : split(s, expectStr(a.get(0))));
                 // ... the rest share their implementation with the identically-named filter
                 case "lower", "upper", "capitalize", "startswith", "endswith", "replace" ->
                         new Val.Func(m, a -> applyFilter(m, s, a));
                 case "title" -> new Val.Func("title", a -> applyFilter("capitalize", s, a));
-                // unknown member: undefined (lenient, like Jinja) so `x.attr is defined` guards work
+                // unknown member: undefined (lenient, like Jinja) so `x.attr is defined` guards
+                // work
                 default -> new Val.Undef(m);
             };
         }
@@ -1551,21 +2102,23 @@ public final class JinjaRenderer {
 
         static List<Val> splitToValList(String s) {
             var parts = new ArrayList<Val>();
-            for (String p : s.split("\\s+"))
-                if (!p.isEmpty()) parts.add(new Val.Str(p));
+            for (String p : s.split("\\s+")) if (!p.isEmpty()) parts.add(new Val.Str(p));
             return parts;
         }
 
         Val dispatchArrMethod(Val.Arr a, String m) {
             return switch (m) {
                 case "pop" -> a.v.isEmpty() ? Val.NONE : a.v.removeLast();
-                // integer indexing is handled in evalMember; unknown members are undefined (lenient)
+                // integer indexing is handled in evalMember; unknown members are undefined
+                // (lenient)
                 default -> new Val.Undef(m);
             };
         }
 
-        /** Python-style {@code seq[start:stop:step]} over an array or string; any bound may be
-         *  omitted (None) and step may be negative (e.g. {@code [::-1]} reverses). */
+        /**
+         * Python-style {@code seq[start:stop:step]} over an array or string; any bound may be
+         * omitted (None) and step may be negative (e.g. {@code [::-1]} reverses).
+         */
         Val slice(Val v, Val s, Val sp, Val st) {
             boolean isArr = v instanceof Val.Arr;
             List<Val> src = isArr ? ((Val.Arr) v).v : null;
@@ -1574,21 +2127,24 @@ public final class JinjaRenderer {
             int step = !st.isDefined() || st.isNone() ? 1 : (int) toNum(st);
             if (step == 0) throw unsupported("slice with step 0");
             boolean noStart = !s.isDefined() || s.isNone();
-            boolean noStop  = !sp.isDefined() || sp.isNone();
+            boolean noStop = !sp.isDefined() || sp.isNone();
             int start = noStart ? (step > 0 ? 0 : len - 1) : sliceBound((int) toNum(s), len, step);
-            int stop  = noStop  ? (step > 0 ? len : -1)     : sliceBound((int) toNum(sp), len, step);
+            int stop = noStop ? (step > 0 ? len : -1) : sliceBound((int) toNum(sp), len, step);
             // single pass straight into the result (no intermediate list of boxed indices)
             var out = isArr ? new ArrayList<Val>() : null;
             var sb = isArr ? null : new StringBuilder();
             for (int i = start; step > 0 ? i < stop : i > stop; i += step) {
                 if (i < 0 || i >= len) continue;
-                if (isArr) out.add(src.get(i)); else sb.append(str.charAt(i));
+                if (isArr) out.add(src.get(i));
+                else sb.append(str.charAt(i));
             }
             return isArr ? new Val.Arr(out) : new Val.Str(sb.toString());
         }
 
-        /** Normalize a slice bound (add len if negative, then clamp per Python: [0,len] for a
-         *  forward step, [-1,len-1] for a backward step). */
+        /**
+         * Normalize a slice bound (add len if negative, then clamp per Python: [0,len] for a
+         * forward step, [-1,len-1] for a backward step).
+         */
         static int sliceBound(int i, int len, int step) {
             if (i < 0) i += len;
             return step > 0 ? Math.clamp(i, 0, len) : Math.clamp(i, -1, len - 1);
@@ -1618,8 +2174,11 @@ public final class JinjaRenderer {
                 case Val.Flt f -> f.v;
                 case Val.Bool b -> b.v ? 1.0 : 0.0;
                 default -> {
-                    try { yield Double.parseDouble(v.asStr()); }
-                    catch (NumberFormatException __) { yield 0.0; }
+                    try {
+                        yield Double.parseDouble(v.asStr());
+                    } catch (NumberFormatException __) {
+                        yield 0.0;
+                    }
                 }
             };
         }

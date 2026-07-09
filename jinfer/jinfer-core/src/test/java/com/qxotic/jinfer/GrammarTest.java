@@ -15,14 +15,23 @@ public final class GrammarTest {
     // ---- vocab mock: single-byte tokens (47 entries) ----
 
     static final class MockV implements Grammar.Vocab {
-        static final String[] WORDS = {"{", "}", "[", "]", "\"", ":", ",", "\n", " ",
-                "t", "r", "u", "e", "1", "n", "a", "b", "c", "f", "s", "l", "-",
-                "0", "9", ".", "+", "E", "\\", "/", "x", "y", "z", "d", "m", "2",
-                "3", "4", "5", "6", "7", "8", "A", "B", "C", "D", "F", "[", "]",
-                "(", ")", "*", "?", "w", "q", "!"};
-        @Override public int size() { return WORDS.length; }
-        @Override public byte[] bytes(int t) {
-            return t >= 0 && t < WORDS.length ? WORDS[t].getBytes(StandardCharsets.UTF_8) : new byte[0];
+        static final String[] WORDS = {
+            "{", "}", "[", "]", "\"", ":", ",", "\n", " ", "t", "r", "u", "e", "1", "n", "a", "b",
+            "c", "f", "s", "l", "-", "0", "9", ".", "+", "E", "\\", "/", "x", "y", "z", "d", "m",
+            "2", "3", "4", "5", "6", "7", "8", "A", "B", "C", "D", "F", "[", "]", "(", ")", "*",
+            "?", "w", "q", "!"
+        };
+
+        @Override
+        public int size() {
+            return WORDS.length;
+        }
+
+        @Override
+        public byte[] bytes(int t) {
+            return t >= 0 && t < WORDS.length
+                    ? WORDS[t].getBytes(StandardCharsets.UTF_8)
+                    : new byte[0];
         }
     }
 
@@ -31,23 +40,34 @@ public final class GrammarTest {
 
     static final class MockV2 implements Grammar.Vocab {
         static final String[] WORDS = {
-            "{", "}", "[", "]", ":", ",",               // structure
-            "\"", "\\\"", "\\", "/",                      // string pieces
-            "true", "false", "null",                      // literals
+            "{", "}", "[", "]", ":", ",", // structure
+            "\"", "\\\"", "\\", "/", // string pieces
+            "true", "false", "null", // literals
             "0", "123", "9", "1", "-", ".", "e", "E", "+", // numbers
-            "\n", "  ", "\t", "\r",                       // whitespace
-            "a", "b", "c",                                 // letters for keys
-            "[1]", "\"key\"",                             // composite tokens
+            "\n", "  ", "\t", "\r", // whitespace
+            "a", "b", "c", // letters for keys
+            "[1]", "\"key\"", // composite tokens
         };
-        @Override public int size() { return WORDS.length; }
-        @Override public byte[] bytes(int t) {
-            return t >= 0 && t < WORDS.length ? WORDS[t].getBytes(StandardCharsets.UTF_8) : new byte[0];
+
+        @Override
+        public int size() {
+            return WORDS.length;
+        }
+
+        @Override
+        public byte[] bytes(int t) {
+            return t >= 0 && t < WORDS.length
+                    ? WORDS[t].getBytes(StandardCharsets.UTF_8)
+                    : new byte[0];
         }
     }
 
     // ---- helpers ----
 
-    static String tok(Grammar.Vocab v, int t) { return new String(v.bytes(t), StandardCharsets.UTF_8); }
+    static String tok(Grammar.Vocab v, int t) {
+        return new String(v.bytes(t), StandardCharsets.UTF_8);
+    }
+
     static int tidx(Grammar.Vocab v, String s) {
         for (int t = 0; t < v.size(); t++) if (tok(v, t).equals(s)) return t;
         return -1;
@@ -56,6 +76,7 @@ public final class GrammarTest {
     // ---- reusable scratch for helpers (avoids allocation churn) ----
 
     static F32FloatTensor scratchTensor;
+
     static F32FloatTensor scratch(Grammar.Vocab v) {
         int max = 57; // max vocab size across mocks
         if (scratchTensor == null || scratchTensor.size() < max)
@@ -73,31 +94,41 @@ public final class GrammarTest {
         F32FloatTensor logits = scratch(v);
         for (int i = 0; i < scratchTensor.size(); i++) logits.setFloat(i, 0.0f);
         cur.maskLogits(logits);
-        for (int t = 0; t < v.size(); t++)
-            if (logits.getFloat(t) > -1e30f) s.add(tok(v, t));
+        for (int t = 0; t < v.size(); t++) if (logits.getFloat(t) > -1e30f) s.add(tok(v, t));
         return s;
     }
+
     static boolean allows(Grammar.Cursor cur, Grammar.Vocab v, String s) {
         return allowedSet(cur, v).contains(s);
     }
+
     static boolean rejects(Grammar.Cursor cur, Grammar.Vocab v, String s) {
         return !allows(cur, v, s);
     }
+
     static boolean anyValid(Grammar.Cursor cur, Grammar.Vocab v) {
         return !allowedSet(cur, v).isEmpty();
     }
+
     // After a complete top-level JSON value, RFC 8259 allows only trailing whitespace/EOS — no
     // further content. (Grammar.json is "ws value ws", so whitespace tokens stay valid.)
     static boolean jsonDone(Grammar.Cursor cur, Grammar.Vocab v) {
-        return rejects(cur, v, ",") && rejects(cur, v, "{") && rejects(cur, v, "1") && rejects(cur, v, "\"");
+        return rejects(cur, v, ",")
+                && rejects(cur, v, "{")
+                && rejects(cur, v, "1")
+                && rejects(cur, v, "\"");
     }
+
     static void advance(Grammar.Cursor cur, Grammar.Vocab v, String s) {
-        int t = tidx(v, s); if (t >= 0) cur.advanceWith(t);
+        int t = tidx(v, s);
+        if (t >= 0) cur.advanceWith(t);
     }
 
     static void check(String what, boolean ok) {
-        if (!ok) { failures++; System.err.println("FAIL: " + what); }
-        else System.out.println("ok: " + what);
+        if (!ok) {
+            failures++;
+            System.err.println("FAIL: " + what);
+        } else System.out.println("ok: " + what);
     }
 
     // count allowed tokens via mask (faster than allowedSet for counts)
@@ -148,7 +179,10 @@ public final class GrammarTest {
         testStringLiteralEscapes();
         testStripCommentEdgeCases();
 
-        if (failures > 0) { System.err.println("\nGrammarTest: " + failures + " failures"); System.exit(1); }
+        if (failures > 0) {
+            System.err.println("\nGrammarTest: " + failures + " failures");
+            System.exit(1);
+        }
         System.out.println("\nGrammarTest: 0 failures");
     }
 
@@ -497,8 +531,13 @@ public final class GrammarTest {
         check("gbnf json compiles", gbnfJson.isValid());
 
         Grammar.Cursor gc = gbnfJson.cursor();
-        boolean gStart = allows(gc, v, "{") || allows(gc, v, "[") || allows(gc, v, "\"")
-                || allows(gc, v, "t") || allows(gc, v, "f") || allows(gc, v, "n");
+        boolean gStart =
+                allows(gc, v, "{")
+                        || allows(gc, v, "[")
+                        || allows(gc, v, "\"")
+                        || allows(gc, v, "t")
+                        || allows(gc, v, "f")
+                        || allows(gc, v, "n");
         check("gbnf json start accepts values", gStart);
 
         gc.reset();
@@ -666,10 +705,10 @@ public final class GrammarTest {
         advance(c, v, "{");
         advance(c, v, "\"");
         advance(c, v, "a");
-        advance(c, v, "\\");  // enters escape state 6
-        advance(c, v, "\"");  // escaped quote → back to string state 5
+        advance(c, v, "\\"); // enters escape state 6
+        advance(c, v, "\""); // escaped quote → back to string state 5
         advance(c, v, "b");
-        advance(c, v, "\"");  // close string
+        advance(c, v, "\""); // close string
         check("str escaped quote", anyValid(c, v));
 
         // escaped backslash
@@ -677,7 +716,7 @@ public final class GrammarTest {
         advance(c, v, "{");
         advance(c, v, "\"");
         advance(c, v, "\\");
-        advance(c, v, "\\");  // escaped backslash → back to string
+        advance(c, v, "\\"); // escaped backslash → back to string
         advance(c, v, "\"");
         check("str escaped backslash", anyValid(c, v));
 
@@ -699,7 +738,7 @@ public final class GrammarTest {
         advance(c, v, "0");
         advance(c, v, "4");
         advance(c, v, "1");
-        advance(c, v, "a");  // anything after 4 hex digits → back to string
+        advance(c, v, "a"); // anything after 4 hex digits → back to string
         advance(c, v, "\"");
         check("str unicode escape", jsonDone(c, v));
 
@@ -812,7 +851,10 @@ public final class GrammarTest {
         check("disabled maskLogits returns true", allPass);
         boolean allUnmodified = true;
         for (int i = 0; i < v2.size(); i++)
-            if (scratch(v2).getFloat(i) <= -1e30f) { allUnmodified = false; break; }
+            if (scratch(v2).getFloat(i) <= -1e30f) {
+                allUnmodified = false;
+                break;
+            }
         check("disabled leaves logits unchanged", allUnmodified);
     }
 
@@ -862,7 +904,10 @@ public final class GrammarTest {
         check("dead state mask returns false", !maskOk);
         boolean allNeg = true;
         for (int i = 0; i < v.size(); i++)
-            if (scratch(v).getFloat(i) > -1e30f) { allNeg = false; break; }
+            if (scratch(v).getFloat(i) > -1e30f) {
+                allNeg = false;
+                break;
+            }
         check("dead state all logits -inf", allNeg);
 
         // reset recovers
@@ -878,8 +923,7 @@ public final class GrammarTest {
         resetScratch(v.size());
         c2.maskLogits(scratch(v));
         boolean allNeg2 = true;
-        for (int i = 0; i < v.size(); i++)
-            if (scratch(v).getFloat(i) > -1e30f) allNeg2 = false;
+        for (int i = 0; i < v.size(); i++) if (scratch(v).getFloat(i) > -1e30f) allNeg2 = false;
         check("dead multi-byte mismatch", allNeg2);
     }
 
@@ -954,13 +998,19 @@ public final class GrammarTest {
         check("lit compiles", s.isValid() && allows(s.cursor(), v, "a"));
 
         s = Grammar.of("root ::= \"a\" | \"b\" | \"c\"", v);
-        check("alt compiles", s.isValid() && allows(s.cursor(), v, "a") && allows(s.cursor(), v, "c"));
+        check(
+                "alt compiles",
+                s.isValid() && allows(s.cursor(), v, "a") && allows(s.cursor(), v, "c"));
 
         s = Grammar.of("root ::= \"a\" root | \"b\"", v);
-        check("rec compiles", s.isValid() && allows(s.cursor(), v, "a") && allows(s.cursor(), v, "b"));
+        check(
+                "rec compiles",
+                s.isValid() && allows(s.cursor(), v, "a") && allows(s.cursor(), v, "b"));
 
         s = Grammar.json(v);
-        check("json compiles", s.isValid() && allows(s.cursor(), v, "{") && rejects(s.cursor(), v, "}"));
+        check(
+                "json compiles",
+                s.isValid() && allows(s.cursor(), v, "{") && rejects(s.cursor(), v, "}"));
 
         s = Grammar.of(Grammar.JSON_GRAMMAR, v);
         check("json gbnf compiles", s.isValid() && allows(s.cursor(), v, "["));
@@ -1017,7 +1067,13 @@ public final class GrammarTest {
 
         // 50 levels of nested objects
         c = json.cursor();
-        for (int i = 0; i < 50; i++) { advance(c, v, "{"); advance(c, v, "\""); advance(c, v, "a"); advance(c, v, "\""); advance(c, v, ":"); }
+        for (int i = 0; i < 50; i++) {
+            advance(c, v, "{");
+            advance(c, v, "\"");
+            advance(c, v, "a");
+            advance(c, v, "\"");
+            advance(c, v, ":");
+        }
         advance(c, v, "1");
         for (int i = 0; i < 50; i++) advance(c, v, "}");
         check("deep object 50", jsonDone(c, v));
@@ -1090,7 +1146,9 @@ public final class GrammarTest {
         Grammar.Spec s2 = null;
         try {
             s2 = Grammar.of("root ::= \"#\\\"x\"", v); // string: #"x
-        } catch (Exception e) { /* ignore parse error */ }
+        } catch (Exception e) {
+            /* ignore parse error */
+        }
         if (s2 != null) check("hash-backslash-quote compiles", s2.isValid());
     }
 
@@ -1208,10 +1266,18 @@ public final class GrammarTest {
 
     static void testZeroVocab() {
         System.out.println("-- zero vocab --");
-        Grammar.Vocab zv = new Grammar.Vocab() {
-            @Override public int size() { return 0; }
-            @Override public byte[] bytes(int t) { return new byte[0]; }
-        };
+        Grammar.Vocab zv =
+                new Grammar.Vocab() {
+                    @Override
+                    public int size() {
+                        return 0;
+                    }
+
+                    @Override
+                    public byte[] bytes(int t) {
+                        return new byte[0];
+                    }
+                };
 
         Grammar.Spec s = Grammar.of("root ::= \"a\"", zv);
         check("zero-vocab compiles", s.isValid());
@@ -1383,7 +1449,8 @@ public final class GrammarTest {
         check("strip-comm esc-quote hash ok", s2.isValid());
 
         // Multiple lines with comments in GBNF grammar
-        String gbnf = """
+        String gbnf =
+                """
                 root ::= "a"  # first choice
                        | "b"  # second choice
                 """;

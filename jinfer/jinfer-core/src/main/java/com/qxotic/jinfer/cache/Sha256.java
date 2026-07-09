@@ -5,8 +5,10 @@ import java.nio.ByteOrder;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
-/** The cache package's one digest idiom: SHA-256 folded to four longs (block keys, media
- *  fingerprints, model seeds all speak it). */
+/**
+ * The cache package's one digest idiom: SHA-256 folded to four longs (block keys, media
+ * fingerprints, model seeds all speak it).
+ */
 final class Sha256 {
 
     private Sha256() {}
@@ -22,6 +24,6 @@ final class Sha256 {
     /** Finalizes {@code sha} and returns the 256-bit digest as 4 little-endian longs. */
     static long[] digestLongs(MessageDigest sha) {
         ByteBuffer out = ByteBuffer.wrap(sha.digest()).order(ByteOrder.LITTLE_ENDIAN);
-        return new long[]{out.getLong(), out.getLong(), out.getLong(), out.getLong()};
+        return new long[] {out.getLong(), out.getLong(), out.getLong(), out.getLong()};
     }
 }

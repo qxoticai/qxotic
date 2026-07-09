@@ -3,9 +3,7 @@
 package com.qxotic.jinfer;
 
 import com.qxotic.format.gguf.GGMLType;
-
 import java.lang.foreign.MemorySegment;
 
-public record GGMLTensorEntry(String name, GGMLType ggmlType, int[] shape,
-                              MemorySegment memorySegment) {
-}
+public record GGMLTensorEntry(
+        String name, GGMLType ggmlType, int[] shape, MemorySegment memorySegment) {}

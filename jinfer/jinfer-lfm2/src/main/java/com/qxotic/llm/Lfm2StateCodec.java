@@ -2,22 +2,27 @@ package com.qxotic.llm;
 
 import com.qxotic.jinfer.cache.AbstractStateCodec;
 import com.qxotic.jinfer.cache.KvTransfer;
-
 import java.lang.foreign.MemorySegment;
 
-/** LFM2/LFM2-MoE resume-state codec: attention layers store per-position K/V rows (shared base);
- *  short-conv (recurrent) layers checkpoint the rolling FIR history — a fixed-size F32 snapshot that
- *  only exists at the state's current position, which is exactly why blocks match completely or not at
- *  all. MoE routing is per-token and carries no cross-token state — nothing to checkpoint. */
+/**
+ * LFM2/LFM2-MoE resume-state codec: attention layers store per-position K/V rows (shared base);
+ * short-conv (recurrent) layers checkpoint the rolling FIR history — a fixed-size F32 snapshot that
+ * only exists at the state's current position, which is exactly why blocks match completely or not
+ * at all. MoE routing is per-token and carries no cross-token state — nothing to checkpoint.
+ */
 public final class Lfm2StateCodec extends AbstractStateCodec<Lfm2.State> {
 
     private final Lfm2.Configuration config;
-    private final int convFloats;                 // hist * dim, per recurrent layer
+    private final int convFloats; // hist * dim, per recurrent layer
 
     public Lfm2StateCodec(Lfm2.Configuration config) {
-        super(config.numberOfLayers(), l -> !config.isRecurrentLayer(l), l -> config.kvDim(l),
-              s -> s.keyCache, s -> s.valueCache,
-              l -> config.isRecurrentLayer(l) ? convFloats(config) * 4L : 0L);
+        super(
+                config.numberOfLayers(),
+                l -> !config.isRecurrentLayer(l),
+                l -> config.kvDim(l),
+                s -> s.keyCache,
+                s -> s.valueCache,
+                l -> config.isRecurrentLayer(l) ? convFloats(config) * 4L : 0L);
         this.config = config;
         this.convFloats = convFloats(config);
     }

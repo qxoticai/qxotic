@@ -5,11 +5,12 @@ import java.lang.foreign.MemorySegment;
 
 /**
  * Walks a large (&gt; L3) Q8_0 matrix in {@code rowsPerGemv}-row slices, running each slice through
- * {@code vectorGemv512} — simulating decode's sequence of separate gemvs over cold weights. Sweeping
- * {@code rowsPerGemv} shows whether small/medium gemvs reach the kernel's ~121 GB/s peak or fall short
- * (per-gemv prefetch ramp-up), which decides whether fusing consecutive gemvs into larger streams helps.
+ * {@code vectorGemv512} — simulating decode's sequence of separate gemvs over cold weights.
+ * Sweeping {@code rowsPerGemv} shows whether small/medium gemvs reach the kernel's ~121 GB/s peak
+ * or fall short (per-gemv prefetch ramp-up), which decides whether fusing consecutive gemvs into
+ * larger streams helps.
  *
- *   java ... com.qxotic.GemvSeqBench [totalRows=65536] [dim1=4096] [rowsPerGemv=2048] [iters=200]
+ * <p>java ... com.qxotic.GemvSeqBench [totalRows=65536] [dim1=4096] [rowsPerGemv=2048] [iters=200]
  */
 public final class GemvSeqBench {
     public static void main(String[] args) {
@@ -30,16 +31,43 @@ public final class GemvSeqBench {
 
         for (int it = 0; it < 4; it++)
             for (int g = 0; g < nGemv; g++)
-                MatMul.instance().mm(w, (long) g * rowsPerGemv * dim1, dim1, x, 0, dim1, out, g * rowsPerGemv, rowsPerGemv, rowsPerGemv, 1, dim1);
+                MatMul.instance()
+                        .mm(
+                                w,
+                                (long) g * rowsPerGemv * dim1,
+                                dim1,
+                                x,
+                                0,
+                                dim1,
+                                out,
+                                g * rowsPerGemv,
+                                rowsPerGemv,
+                                rowsPerGemv,
+                                1,
+                                dim1);
         long t0 = System.nanoTime();
         for (int it = 0; it < iters; it++)
             for (int g = 0; g < nGemv; g++)
-                MatMul.instance().mm(w, (long) g * rowsPerGemv * dim1, dim1, x, 0, dim1, out, g * rowsPerGemv, rowsPerGemv, rowsPerGemv, 1, dim1);
+                MatMul.instance()
+                        .mm(
+                                w,
+                                (long) g * rowsPerGemv * dim1,
+                                dim1,
+                                x,
+                                0,
+                                dim1,
+                                out,
+                                g * rowsPerGemv,
+                                rowsPerGemv,
+                                rowsPerGemv,
+                                1,
+                                dim1);
         long t1 = System.nanoTime();
 
         double secs = (t1 - t0) / 1e9;
         double gbps = (double) wbytes * iters / secs / 1e9;
-        System.out.printf("rowsPerGemv=%-5d  %.1f GB/s  (%d gemvs/iter, total %.0f MB)%n",
+        System.out.printf(
+                "rowsPerGemv=%-5d  %.1f GB/s  (%d gemvs/iter, total %.0f MB)%n",
                 rowsPerGemv, gbps, nGemv, wbytes / 1e6);
     }
 }

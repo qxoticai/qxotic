@@ -7,15 +7,31 @@ package com.qxotic.llm;
 import com.qxotic.jinfer.testkit.CacheScenario;
 import com.qxotic.jinfer.testkit.Harness;
 import com.qxotic.jinfer.testkit.Stories;
-
 import java.nio.file.Path;
 
 public final class GptOssCacheRun {
     public static void main(String[] args) throws Exception {
-        Path path = Path.of(args.length > 0 ? args[0] : "/home/mukel/Desktop/playground/models/unsloth/gpt-oss-20b-Q8_0.gguf");
-        Harness<GptOss.State> h = new Harness<>(GptOss.loadModel(path, 8192), path, 8192, false);   // all-MoE: not byte-deterministic
-        new CacheScenario<>(h, CacheScenario.Config.of(null, 200,
-                new CacheScenario.LongCase(Stories.pelican(), "What was the codeword at the start? One word.", 1280))
-                .logTailOnly()).run("GptOssCacheRun");
+        Path path =
+                Path.of(
+                        args.length > 0
+                                ? args[0]
+                                : "/home/mukel/Desktop/playground/models/unsloth/gpt-oss-20b-Q8_0.gguf");
+        Harness<GptOss.State> h =
+                new Harness<>(
+                        GptOss.loadModel(path, 8192),
+                        path,
+                        8192,
+                        false); // all-MoE: not byte-deterministic
+        new CacheScenario<>(
+                        h,
+                        CacheScenario.Config.of(
+                                        null,
+                                        200,
+                                        new CacheScenario.LongCase(
+                                                Stories.pelican(),
+                                                "What was the codeword at the start? One word.",
+                                                1280))
+                                .logTailOnly())
+                .run("GptOssCacheRun");
     }
 }

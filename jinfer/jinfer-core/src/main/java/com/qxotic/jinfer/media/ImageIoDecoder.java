@@ -1,17 +1,20 @@
-// javax.imageio-based image decoder: PNG/JPEG/... -> Media.Image (RGB, values in [0,1], HWC). No external
-// process, so it is the natural default on a normal JVM. NOT used under GraalVM native-image: ImageIO's
-// IIORegistry discovers codec plugins via ServiceLoader + reflection, which is fragile to configure in a
-// native image - so ImageCodec loads this class REFLECTIVELY (never statically references it), which keeps
+// javax.imageio-based image decoder: PNG/JPEG/... -> Media.Image (RGB, values in [0,1], HWC). No
+// external
+// process, so it is the natural default on a normal JVM. NOT used under GraalVM native-image:
+// ImageIO's
+// IIORegistry discovers codec plugins via ServiceLoader + reflection, which is fragile to configure
+// in a
+// native image - so ImageCodec loads this class REFLECTIVELY (never statically references it),
+// which keeps
 // it and java.desktop out of native images, where ffmpeg is the default instead.
 package com.qxotic.jinfer.media;
 
 import com.qxotic.jinfer.Media;
-
-import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.file.Path;
+import javax.imageio.ImageIO;
 
 public final class ImageIoDecoder implements ImageDecoder {
 
@@ -27,12 +30,14 @@ public final class ImageIoDecoder implements ImageDecoder {
 
     @Override
     public Media.Image decode(byte[] encoded) throws IOException {
-        return fromBuffered(ImageIO.read(new ByteArrayInputStream(encoded)), "<" + encoded.length + " bytes>");
+        return fromBuffered(
+                ImageIO.read(new ByteArrayInputStream(encoded)), "<" + encoded.length + " bytes>");
     }
 
     private static Media.Image fromBuffered(BufferedImage bi, String src) throws IOException {
         if (bi == null) {
-            throw new IOException("javax.imageio could not decode " + src + " (unsupported format?)");
+            throw new IOException(
+                    "javax.imageio could not decode " + src + " (unsupported format?)");
         }
         int h = bi.getHeight(), w = bi.getWidth();
         float[] v = new float[h * w * 3];

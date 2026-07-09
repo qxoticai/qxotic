@@ -31,8 +31,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Scanner;
 
-import jdk.incubator.vector.VectorOperators;
-
 public final class Llama32HipCli {
     private static final int TIMING_WARMUP_TOKENS = 2;
     private static final int PAGE_BYTES = 4096;

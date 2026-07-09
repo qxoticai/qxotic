@@ -2,8 +2,6 @@ package com.qxotic.jinfer;
 
 import com.qxotic.jinfer.Generator.GenerationResult;
 
-import java.util.Map;
-
 /**
  * Server observability: lifetime request/token counters and the Prometheus text exposition
  * (llama.cpp-style {@code /metrics}). Counters are single-writer (the generation worker) and read
@@ -26,8 +24,10 @@ final class Metrics {
         completionTokens += result.completionTokens();
     }
 
-    /** Record one prompt-cache serve (worker thread): tier 1 = append-only on a pooled live
-     *  session, otherwise a tier-2 block restore; {@code restored} positions were reused. */
+    /**
+     * Record one prompt-cache serve (worker thread): tier 1 = append-only on a pooled live session,
+     * otherwise a tier-2 block restore; {@code restored} positions were reused.
+     */
     static void recordPromptCache(boolean tier1, int restored) {
         if (tier1) sessionPoolHits++;
         cachedTokens += restored;
@@ -48,7 +48,14 @@ final class Metrics {
     }
 
     private static void metric(StringBuilder sb, String name, String type, Number value) {
-        sb.append("# TYPE ").append(name).append(' ').append(type).append('\n')
-          .append(name).append(' ').append(value).append('\n');
+        sb.append("# TYPE ")
+                .append(name)
+                .append(' ')
+                .append(type)
+                .append('\n')
+                .append(name)
+                .append(' ')
+                .append(value)
+                .append('\n');
     }
 }

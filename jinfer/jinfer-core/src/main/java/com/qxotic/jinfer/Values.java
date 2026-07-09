@@ -6,8 +6,7 @@ import java.util.List;
 import java.util.Map;
 
 final class Values {
-    private Values() {
-    }
+    private Values() {}
 
     @SuppressWarnings("unchecked")
     static Map<String, Object> asObject(Object value, String name) {
@@ -41,14 +40,17 @@ final class Values {
             try {
                 return Long.parseLong(s.trim());
             } catch (NumberFormatException e) {
-                throw new IllegalArgumentException("Invalid argument: '" + s + "' is not an integer");
+                throw new IllegalArgumentException(
+                        "Invalid argument: '" + s + "' is not an integer");
             }
         }
         return defaultValue;
     }
 
-    /** The text of an OpenAI message {@code content} field: a plain string, or the concatenated
-     *  {@code text} parts of a multimodal content array (non-text parts ignored). */
+    /**
+     * The text of an OpenAI message {@code content} field: a plain string, or the concatenated
+     * {@code text} parts of a multimodal content array (non-text parts ignored).
+     */
     static String messageContent(Object content) {
         if (content instanceof List<?> parts) {
             StringBuilder sb = new StringBuilder();

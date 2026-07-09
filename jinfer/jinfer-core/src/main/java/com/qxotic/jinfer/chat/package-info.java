@@ -10,8 +10,8 @@
  * offline (the oracle tests); {@code instanceof TurnTemplate} is the capability test.
  *
  * <p>Two tokenization domains, always: turn scaffolding is emitted as trusted special-token ids;
- * conversation text is tokenized plainly, so content can never mint control tokens. Everything
- * else deliberately lives elsewhere: stop tokens on the model, batching policy on
- * {@link com.qxotic.jinfer.Batch#prepare}, session state in {@code cache.CachedSession}.
+ * conversation text is tokenized plainly, so content can never mint control tokens. Everything else
+ * deliberately lives elsewhere: stop tokens on the model, batching policy on {@link
+ * com.qxotic.jinfer.Batch#prepare}, session state in {@code cache.CachedSession}.
  */
 package com.qxotic.jinfer.chat;

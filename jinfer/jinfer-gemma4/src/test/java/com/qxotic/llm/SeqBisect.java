@@ -1,15 +1,14 @@
 package com.qxotic.llm;
 
 import com.qxotic.jinfer.FloatTensor;
-
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 
 /**
  * Diagnostic: for each seqLen, compare the last-token logits from a single batched prefill against
- * ingesting the same tokens one at a time. The two are mathematically identical (causal attention), so
- * any gross divergence isolates a seqLen-dependent bug in the batched (multi-row) GEMM path.
+ * ingesting the same tokens one at a time. The two are mathematically identical (causal attention),
+ * so any gross divergence isolates a seqLen-dependent bug in the batched (multi-row) GEMM path.
  *
  * <pre>SeqBisect &lt;model.gguf&gt; [maxSeq]</pre>
  */
@@ -32,9 +31,11 @@ public final class SeqBisect {
             float[] step = snapshot(model.logits(ss), vocab);
 
             double maxAbs = 0;
-            for (int i = 0; i < vocab; i++) maxAbs = Math.max(maxAbs, Math.abs(batched[i] - step[i]));
+            for (int i = 0; i < vocab; i++)
+                maxAbs = Math.max(maxAbs, Math.abs(batched[i] - step[i]));
             int ab = argmax(batched), as = argmax(step);
-            System.out.printf("seqLen=%2d  argmax batched=%-7d step=%-7d %s  maxAbsDiff=%.4g%n",
+            System.out.printf(
+                    "seqLen=%2d  argmax batched=%-7d step=%-7d %s  maxAbsDiff=%.4g%n",
                     seqLen, ab, as, ab == as ? "OK      " : "MISMATCH", maxAbs);
         }
     }

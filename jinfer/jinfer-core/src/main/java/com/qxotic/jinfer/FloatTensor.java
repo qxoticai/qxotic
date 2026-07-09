@@ -4,37 +4,31 @@
 package com.qxotic.jinfer;
 
 import com.oracle.svm.shared.AlwaysInline;
-
 import com.qxotic.format.gguf.GGMLType;
-
-import jdk.incubator.vector.ByteVector;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
+import java.lang.reflect.Field;
+import java.util.Arrays;
 import jdk.incubator.vector.FloatVector;
-import jdk.incubator.vector.ShortVector;
-import jdk.incubator.vector.VectorOperators;
 import jdk.incubator.vector.VectorShape;
 import jdk.incubator.vector.VectorSpecies;
 
-
-import java.lang.reflect.Field;
-
-import java.lang.foreign.Arena;
-import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
-import java.nio.ByteOrder;
-import java.util.Arrays;
-import java.util.function.IntConsumer;
-
 public abstract class FloatTensor {
 
-    // GGML super-block sizes (== GGMLType.{Q*_K,MXFP4}.getElementsPerBlock(); javac-foldable constants)
+    // GGML super-block sizes (== GGMLType.{Q*_K,MXFP4}.getElementsPerBlock(); javac-foldable
+    // constants)
     static final int QK_K = 256;
     static final int QK_MXFP4 = 32;
 
-    static final int VECTOR_BIT_SIZE = Integer.getInteger("jinfer.VectorBitSize", VectorShape.preferredShape().vectorBitSize());
+    static final int VECTOR_BIT_SIZE =
+            Integer.getInteger(
+                    "jinfer.VectorBitSize", VectorShape.preferredShape().vectorBitSize());
     static final boolean USE_VECTOR_API = VECTOR_BIT_SIZE != 0;
 
-    // ---- The Vector gemm kernels and their JVM/CPU-aware register-tile selection now live in jam-vector
-    //      (VectorSupport.TILE_CODE, -Djam.vector.tile); jinfer's FloatTensor gemm entry points delegate there. ----
+    // ---- The Vector gemm kernels and their JVM/CPU-aware register-tile selection now live in
+    // jam-vector
+    //      (VectorSupport.TILE_CODE, -Djam.vector.tile); jinfer's FloatTensor gemm entry points
+    // delegate there. ----
 
     static final VectorSpecies<Float> F_SPECIES;
     static final VectorSpecies<Integer> I_SPECIES;
@@ -44,7 +38,8 @@ public abstract class FloatTensor {
         if (USE_VECTOR_API) {
             F_SPECIES = VectorShape.forBitSize(VECTOR_BIT_SIZE).withLanes(float.class);
             I_SPECIES = F_SPECIES.withLanes(int.class);
-            S_SPECIES_HALF = VectorShape.forBitSize(F_SPECIES.vectorBitSize() / 2).withLanes(short.class);
+            S_SPECIES_HALF =
+                    VectorShape.forBitSize(F_SPECIES.vectorBitSize() / 2).withLanes(short.class);
             assert F_SPECIES.length() == S_SPECIES_HALF.length();
         } else {
             F_SPECIES = null;
@@ -67,7 +62,8 @@ public abstract class FloatTensor {
 
     // Graal does not intrinsify lanewise transcendentals (EXP falls back ~4x slower than
     // Math.exp); C2 lowers them to the vector math stubs (~3x faster than Math.exp).
-    static final boolean JIT_VECTOR_MATH = !System.getProperty("java.vm.version", "").contains("jvmci");
+    static final boolean JIT_VECTOR_MATH =
+            !System.getProperty("java.vm.version", "").contains("jvmci");
 
     // Shared GEMM tiling knobs (used by all quantized tensor types).
 
@@ -84,9 +80,11 @@ public abstract class FloatTensor {
         }
     }
 
-    /** Vector-access routing: with GLOBAL_SEGMENT, access (vectorSegment, vectorBase + byteOffset)
-     *  uses one exact segment type with absolute addresses so bounds/liveness checks fold away
-     *  (and native-image call sites stay monomorphic); otherwise fall back to the segment itself. */
+    /**
+     * Vector-access routing: with GLOBAL_SEGMENT, access (vectorSegment, vectorBase + byteOffset)
+     * uses one exact segment type with absolute addresses so bounds/liveness checks fold away (and
+     * native-image call sites stay monomorphic); otherwise fall back to the segment itself.
+     */
     static MemorySegment vectorSegment(MemorySegment segment) {
         return GLOBAL_SEGMENT != null ? GLOBAL_SEGMENT : segment;
     }
@@ -95,80 +93,96 @@ public abstract class FloatTensor {
         return GLOBAL_SEGMENT != null ? segment.address() : 0L;
     }
 
-    // MemorySegment accessors, routed through GLOBAL_SEGMENT (absolute address) when available so the
-    // bounds/liveness checks fold and the access inlines into the GEMM kernels (native-image's inliner
-    // otherwise leaves readShort as a real out-of-line call: ~25% of prefill). sun.misc.Unsafe is not
-    // an option: it plants a JEP 498 warning check (Unsafe.beforeMemoryAccess) in the caller, an opaque
-    // call that under native-image blocks Vector API expansion and boxes whole kernels. Callers pass
+    // MemorySegment accessors, routed through GLOBAL_SEGMENT (absolute address) when available so
+    // the
+    // bounds/liveness checks fold and the access inlines into the GEMM kernels (native-image's
+    // inliner
+    // otherwise leaves readShort as a real out-of-line call: ~25% of prefill). sun.misc.Unsafe is
+    // not
+    // an option: it plants a JEP 498 warning check (Unsafe.beforeMemoryAccess) in the caller, an
+    // opaque
+    // call that under native-image blocks Vector API expansion and boxes whole kernels. Callers
+    // pass
     // native or mapped segments only (address() must be a real address). Requires GraalVM >= 25.0.3
     // for fast MemorySegment scalar access in native images.
-    @AlwaysInline("hot scalar accessor: must inline into kernels (profiled out-of-line on CE native)")
+    @AlwaysInline(
+            "hot scalar accessor: must inline into kernels (profiled out-of-line on CE native)")
     static short readShort(MemorySegment memorySegment, long offset) {
         return GLOBAL_SEGMENT != null
-                ? GLOBAL_SEGMENT.get(ValueLayout.JAVA_SHORT_UNALIGNED, memorySegment.address() + offset)
+                ? GLOBAL_SEGMENT.get(
+                        ValueLayout.JAVA_SHORT_UNALIGNED, memorySegment.address() + offset)
                 : memorySegment.get(ValueLayout.JAVA_SHORT_UNALIGNED, offset);
     }
 
-    @AlwaysInline("hot scalar accessor: must inline into kernels (profiled out-of-line on CE native)")
-
+    @AlwaysInline(
+            "hot scalar accessor: must inline into kernels (profiled out-of-line on CE native)")
     static void writeShort(MemorySegment memorySegment, long offset, short value) {
         if (GLOBAL_SEGMENT != null) {
-            GLOBAL_SEGMENT.set(ValueLayout.JAVA_SHORT_UNALIGNED, memorySegment.address() + offset, value);
+            GLOBAL_SEGMENT.set(
+                    ValueLayout.JAVA_SHORT_UNALIGNED, memorySegment.address() + offset, value);
         } else {
             memorySegment.set(ValueLayout.JAVA_SHORT_UNALIGNED, offset, value);
         }
     }
 
-    @AlwaysInline("hot scalar accessor: must inline into kernels (profiled out-of-line on CE native)")
-
+    @AlwaysInline(
+            "hot scalar accessor: must inline into kernels (profiled out-of-line on CE native)")
     static float readFloat16(MemorySegment memorySegment, long offset) {
         return Float.float16ToFloat(readShort(memorySegment, offset));
     }
 
-    @AlwaysInline("hot scalar accessor: must inline into kernels (profiled out-of-line on CE native)")
-
+    @AlwaysInline(
+            "hot scalar accessor: must inline into kernels (profiled out-of-line on CE native)")
     static byte readByte(MemorySegment memorySegment, long offset) {
         return GLOBAL_SEGMENT != null
                 ? GLOBAL_SEGMENT.get(ValueLayout.JAVA_BYTE, memorySegment.address() + offset)
                 : memorySegment.get(ValueLayout.JAVA_BYTE, offset);
     }
 
-    @AlwaysInline("hot scalar accessor: must inline into kernels (profiled out-of-line on CE native)")
-
+    @AlwaysInline(
+            "hot scalar accessor: must inline into kernels (profiled out-of-line on CE native)")
     static int readInt(MemorySegment memorySegment, long offset) {
         return GLOBAL_SEGMENT != null
-                ? GLOBAL_SEGMENT.get(ValueLayout.JAVA_INT_UNALIGNED, memorySegment.address() + offset)
+                ? GLOBAL_SEGMENT.get(
+                        ValueLayout.JAVA_INT_UNALIGNED, memorySegment.address() + offset)
                 : memorySegment.get(ValueLayout.JAVA_INT_UNALIGNED, offset);
     }
 
-    @AlwaysInline("hot scalar accessor: must inline into kernels (profiled out-of-line on CE native)")
-
+    @AlwaysInline(
+            "hot scalar accessor: must inline into kernels (profiled out-of-line on CE native)")
     static long readLong(MemorySegment memorySegment, long offset) {
         return GLOBAL_SEGMENT != null
-                ? GLOBAL_SEGMENT.get(ValueLayout.JAVA_LONG_UNALIGNED, memorySegment.address() + offset)
+                ? GLOBAL_SEGMENT.get(
+                        ValueLayout.JAVA_LONG_UNALIGNED, memorySegment.address() + offset)
                 : memorySegment.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
     }
 
-    @AlwaysInline("hot scalar accessor: must inline into kernels (profiled out-of-line on CE native)")
-
+    @AlwaysInline(
+            "hot scalar accessor: must inline into kernels (profiled out-of-line on CE native)")
     static float readFloat(MemorySegment memorySegment, long offset) {
         return GLOBAL_SEGMENT != null
-                ? GLOBAL_SEGMENT.get(ValueLayout.JAVA_FLOAT_UNALIGNED, memorySegment.address() + offset)
+                ? GLOBAL_SEGMENT.get(
+                        ValueLayout.JAVA_FLOAT_UNALIGNED, memorySegment.address() + offset)
                 : memorySegment.get(ValueLayout.JAVA_FLOAT_UNALIGNED, offset);
     }
 
-    @AlwaysInline("hot scalar accessor: must inline into kernels (profiled out-of-line on CE native)")
-
+    @AlwaysInline(
+            "hot scalar accessor: must inline into kernels (profiled out-of-line on CE native)")
     static void writeFloat(MemorySegment memorySegment, long offset, float value) {
         if (GLOBAL_SEGMENT != null) {
-            GLOBAL_SEGMENT.set(ValueLayout.JAVA_FLOAT_UNALIGNED, memorySegment.address() + offset, value);
+            GLOBAL_SEGMENT.set(
+                    ValueLayout.JAVA_FLOAT_UNALIGNED, memorySegment.address() + offset, value);
         } else {
             memorySegment.set(ValueLayout.JAVA_FLOAT_UNALIGNED, offset, value);
         }
     }
 
-    /** Float store at an absolute address: GLOBAL_SEGMENT folds to a raw store (no Unsafe warning check). */
-    @AlwaysInline("hot scalar accessor: must inline into kernels (profiled out-of-line on CE native)")
+    /**
+     * Float store at an absolute address: GLOBAL_SEGMENT folds to a raw store (no Unsafe warning
+     * check).
+     */
+    @AlwaysInline(
+            "hot scalar accessor: must inline into kernels (profiled out-of-line on CE native)")
     static void putFloat(long address, float value) {
         if (GLOBAL_SEGMENT != null) {
             GLOBAL_SEGMENT.set(ValueLayout.JAVA_FLOAT_UNALIGNED, address, value);
@@ -179,16 +193,28 @@ public abstract class FloatTensor {
 
     public abstract long size();
 
-    /** Bulk raw copy of {@code elemCount} elements (native encoding, no conversion) into {@code dst}
-     *  at {@code dstByteOffset}; returns the bytes copied. Flat layouts (F32/F16) override with one
-     *  segment copy; block-quantized layouts don't support it. */
-    public long copyRawTo(long elemOffset, java.lang.foreign.MemorySegment dst, long dstByteOffset, long elemCount) {
+    /**
+     * Bulk raw copy of {@code elemCount} elements (native encoding, no conversion) into {@code dst}
+     * at {@code dstByteOffset}; returns the bytes copied. Flat layouts (F32/F16) override with one
+     * segment copy; block-quantized layouts don't support it.
+     */
+    public long copyRawTo(
+            long elemOffset,
+            java.lang.foreign.MemorySegment dst,
+            long dstByteOffset,
+            long elemCount) {
         throw new UnsupportedOperationException("copyRawTo: " + getClass().getSimpleName());
     }
 
-    /** Bulk raw copy from {@code src} at {@code srcByteOffset} into elements at {@code elemOffset};
-     *  returns the bytes consumed. */
-    public long copyRawFrom(java.lang.foreign.MemorySegment src, long srcByteOffset, long elemOffset, long elemCount) {
+    /**
+     * Bulk raw copy from {@code src} at {@code srcByteOffset} into elements at {@code elemOffset};
+     * returns the bytes consumed.
+     */
+    public long copyRawFrom(
+            java.lang.foreign.MemorySegment src,
+            long srcByteOffset,
+            long elemOffset,
+            long elemCount) {
         throw new UnsupportedOperationException("copyRawFrom: " + getClass().getSimpleName());
     }
 
@@ -214,8 +240,11 @@ public abstract class FloatTensor {
         return result;
     }
 
-    /** A fresh native F32 tensor (the allocatable, writable kind) — the public factory for callers
-     *  outside this package (e.g. the com.qxotic.llm model prototype) that need scratch/cache tensors. */
+    /**
+     * A fresh native F32 tensor (the allocatable, writable kind) — the public factory for callers
+     * outside this package (e.g. the com.qxotic.llm model prototype) that need scratch/cache
+     * tensors.
+     */
     public static FloatTensor allocateF32(int... dims) {
         return F32FloatTensor.allocate(dims);
     }
@@ -230,7 +259,8 @@ public abstract class FloatTensor {
         return F16FloatTensor.allocate(dims);
     }
 
-    static float scalarDot(FloatTensor thiz, long thisOffset, FloatTensor that, long thatOffset, int size) {
+    static float scalarDot(
+            FloatTensor thiz, long thisOffset, FloatTensor that, long thatOffset, int size) {
         float result = 0f;
         for (int j = 0; j < size; j++) {
             result += thiz.getFloat(thisOffset + j) * that.getFloat(thatOffset + j);
@@ -251,11 +281,24 @@ public abstract class FloatTensor {
         gemv(that, 0, out, 0, dim0, dim1, thisOffset);
     }
 
-    void matmul(FloatTensor that, long thatOffset, FloatTensor out, long outOffset, int dim0, int dim1) {
+    void matmul(
+            FloatTensor that,
+            long thatOffset,
+            FloatTensor out,
+            long outOffset,
+            int dim0,
+            int dim1) {
         gemv(that, thatOffset, out, outOffset, dim0, dim1, 0);
     }
 
-    void matmul(FloatTensor that, long thatOffset, FloatTensor out, long outOffset, int dim0, int dim1, long thisOffset) {
+    void matmul(
+            FloatTensor that,
+            long thatOffset,
+            FloatTensor out,
+            long outOffset,
+            int dim0,
+            int dim1,
+            long thisOffset) {
         gemv(that, thatOffset, out, outOffset, dim0, dim1, thisOffset);
     }
 
@@ -268,25 +311,67 @@ public abstract class FloatTensor {
         gemv(that, 0, out, 0, dim0, dim1, thisOffset);
     }
 
-    void gemv(FloatTensor that, long thatOffset, FloatTensor out, long outOffset, int dim0, int dim1) {
+    void gemv(
+            FloatTensor that,
+            long thatOffset,
+            FloatTensor out,
+            long outOffset,
+            int dim0,
+            int dim1) {
         gemv(that, thatOffset, out, outOffset, dim0, dim1, 0);
     }
 
-    // gemv/gemm are thin entry points onto MatMul, which dispatches on this.type() (the weight) to the
+    // gemv/gemm are thin entry points onto MatMul, which dispatches on this.type() (the weight) to
+    // the
     // fastest applicable backend and falls to the ScalarMatMul floor. No subclass overrides these.
-    void gemv(FloatTensor that, long thatOffset, FloatTensor out, long outOffset, int dim0, int dim1, long thisOffset) {
-        MatMul.instance().mm(this, thisOffset, dim1, that, thatOffset, dim1, out, outOffset, dim0, dim0, 1, dim1);
+    void gemv(
+            FloatTensor that,
+            long thatOffset,
+            FloatTensor out,
+            long outOffset,
+            int dim0,
+            int dim1,
+            long thisOffset) {
+        MatMul.instance()
+                .mm(
+                        this,
+                        thisOffset,
+                        dim1,
+                        that,
+                        thatOffset,
+                        dim1,
+                        out,
+                        outOffset,
+                        dim0,
+                        dim0,
+                        1,
+                        dim1);
     }
 
     void matmulBatch(FloatTensor that, FloatTensor out, int sequenceLength, int dim0, int dim1) {
         gemm(that, dim1, out, dim0, sequenceLength, dim0, dim1);
     }
 
-    void matmulBatch(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1) {
+    void matmulBatch(
+            FloatTensor that,
+            int thatStride,
+            FloatTensor out,
+            int outStride,
+            int sequenceLength,
+            int dim0,
+            int dim1) {
         gemm(that, thatStride, out, outStride, sequenceLength, dim0, dim1, 0);
     }
 
-    void matmulBatch(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1, long thisOffset) {
+    void matmulBatch(
+            FloatTensor that,
+            int thatStride,
+            FloatTensor out,
+            int outStride,
+            int sequenceLength,
+            int dim0,
+            int dim1,
+            long thisOffset) {
         gemm(that, thatStride, out, outStride, sequenceLength, dim0, dim1, thisOffset);
     }
 
@@ -294,12 +379,40 @@ public abstract class FloatTensor {
         gemm(that, dim1, out, dim0, sequenceLength, dim0, dim1);
     }
 
-    public void gemm(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1) {
+    public void gemm(
+            FloatTensor that,
+            int thatStride,
+            FloatTensor out,
+            int outStride,
+            int sequenceLength,
+            int dim0,
+            int dim1) {
         gemm(that, thatStride, out, outStride, sequenceLength, dim0, dim1, 0);
     }
 
-    public void gemm(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1, long thisOffset) {
-        MatMul.instance().mm(this, thisOffset, dim1, that, 0, thatStride, out, 0, outStride, dim0, sequenceLength, dim1);
+    public void gemm(
+            FloatTensor that,
+            int thatStride,
+            FloatTensor out,
+            int outStride,
+            int sequenceLength,
+            int dim0,
+            int dim1,
+            long thisOffset) {
+        MatMul.instance()
+                .mm(
+                        this,
+                        thisOffset,
+                        dim1,
+                        that,
+                        0,
+                        thatStride,
+                        out,
+                        0,
+                        outStride,
+                        dim0,
+                        sequenceLength,
+                        dim1);
     }
 
     @FunctionalInterface
@@ -324,7 +437,8 @@ public abstract class FloatTensor {
     }
 
     public void copyTo(long thisOffset, FloatTensor that, long thatOffset, int size) {
-        that.mapWithIndexInPlace(thatOffset, size, (value, index) -> this.getFloat(index - thatOffset + thisOffset));
+        that.mapWithIndexInPlace(
+                thatOffset, size, (value, index) -> this.getFloat(index - thatOffset + thisOffset));
     }
 
     public int argmax(long thisOffset, int size) {
@@ -339,7 +453,7 @@ public abstract class FloatTensor {
                 maxIndex = i;
             }
         }
-        return Math.toIntExact(maxIndex);   // argmax over logits: index fits int (vocab < 2^31)
+        return Math.toIntExact(maxIndex); // argmax over logits: index fits int (vocab < 2^31)
     }
 
     public int argmax() {
@@ -368,7 +482,8 @@ public abstract class FloatTensor {
         return mapInPlace(0, Math.toIntExact(size()), mapFunction);
     }
 
-    FloatTensor mapWithIndexInPlace(long thisOffset, int size, FloatTensor.MapWithIndexFunction mapWithIndexFunction) {
+    FloatTensor mapWithIndexInPlace(
+            long thisOffset, int size, FloatTensor.MapWithIndexFunction mapWithIndexFunction) {
         long endOffset = thisOffset + size;
         for (long i = thisOffset; i < endOffset; ++i) {
             setFloat(i, mapWithIndexFunction.apply(getFloat(i), Math.toIntExact(i)));
@@ -377,13 +492,15 @@ public abstract class FloatTensor {
     }
 
     public FloatTensor addInPlace(long thisOffset, FloatTensor that, long thatOffset, int size) {
-        return mapWithIndexInPlace(thisOffset, size, (value, index) -> value + that.getFloat(index - thisOffset + thatOffset));
+        return mapWithIndexInPlace(
+                thisOffset,
+                size,
+                (value, index) -> value + that.getFloat(index - thisOffset + thatOffset));
     }
 
     FloatTensor addInPlace(FloatTensor that) {
         return addInPlace(0, that, 0, Math.toIntExact(size()));
     }
-
 
     FloatTensor siluMultiplyInPlace(long thisOffset, FloatTensor that, long thatOffset, int size) {
         for (int i = 0; i < size; i++) {
@@ -412,7 +529,10 @@ public abstract class FloatTensor {
         return mapInPlace(thisOffset, size, unused -> value);
     }
 
-    /** Clamp {@code [thisOffset, thisOffset+size)} to {@code [lo, hi]} in place. Scalar floor; F32 overrides with SIMD. */
+    /**
+     * Clamp {@code [thisOffset, thisOffset+size)} to {@code [lo, hi]} in place. Scalar floor; F32
+     * overrides with SIMD.
+     */
     public FloatTensor clampInPlace(long thisOffset, int size, float lo, float hi) {
         for (int i = 0; i < size; i++) {
             float v = getFloat(thisOffset + i);
@@ -428,9 +548,12 @@ public abstract class FloatTensor {
         return divideInPlace(thisOffset, size, sum);
     }
 
-    public FloatTensor saxpyInPlace(long thisOffset, FloatTensor that, long thatOffset, int size, float a) {
+    public FloatTensor saxpyInPlace(
+            long thisOffset, FloatTensor that, long thatOffset, int size, float a) {
         for (int i = 0; i < size; ++i) {
-            setFloat(thisOffset + i, a * that.getFloat(thatOffset + i) + this.getFloat(thisOffset + i));
+            setFloat(
+                    thisOffset + i,
+                    a * that.getFloat(thatOffset + i) + this.getFloat(thisOffset + i));
         }
         return this;
     }

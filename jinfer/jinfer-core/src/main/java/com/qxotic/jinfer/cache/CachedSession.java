@@ -3,32 +3,32 @@ package com.qxotic.jinfer.cache;
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.Model;
 import com.qxotic.jinfer.RuntimeState;
-
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.security.MessageDigest;
-
 import java.util.Arrays;
 import java.util.List;
 
-/** The dual representation bound to a state: the exact ingested fingerprint stream (token ids)
- *  alongside the KV, with a cache commit at every ingestion boundary so the committed chain is
- *  always contiguous — the protocol {@link PromptCache} requires, provided once here instead of
- *  re-written by every driver. Ingestion chunks at the state's batch capacity; each chunk is one
- *  block (large blocks), each decode {@link #step} is one block (single-token blocks).
+/**
+ * The dual representation bound to a state: the exact ingested fingerprint stream (token ids)
+ * alongside the KV, with a cache commit at every ingestion boundary so the committed chain is
+ * always contiguous — the protocol {@link PromptCache} requires, provided once here instead of
+ * re-written by every driver. Ingestion chunks at the state's batch capacity; each chunk is one
+ * block (large blocks), each decode {@link #step} is one block (single-token blocks).
  *
- *  <p>Attach with {@link #resume}: restores the longest cached prefix of {@code expected} into the
- *  fresh state; the caller re-ingests everything past {@link #position()}.
+ * <p>Attach with {@link #resume}: restores the longest cached prefix of {@code expected} into the
+ * fresh state; the caller re-ingests everything past {@link #position()}.
  *
- *  <p>Media just works: an {@link Batch.Input.Embeddings} batch contributes per-position
- *  fingerprints derived from a SHA-256 of its raw row bits, spread across positions
- *  ({@code digest[i & 3] + GOLDEN * i}) so the full 256-bit content identity enters the chained
- *  block key — same media, same encoder, same fingerprints; different media diverge at the block.
- *  {@link Batch#prepare} keeps each embeddings batch isolated, so a bidirectional image block (one
- *  attention group) commits as exactly one cache block. Note the fingerprints hash the ENCODED
- *  rows: re-fingerprinting an echoed conversation needs either the retained stream
- *  ({@link #fingerprints()}, the dual view) or a re-encode — servers keep the stream. */
+ * <p>Media just works: an {@link Batch.Input.Embeddings} batch contributes per-position
+ * fingerprints derived from a SHA-256 of its raw row bits, spread across positions ({@code digest[i
+ * & 3] + GOLDEN * i}) so the full 256-bit content identity enters the chained block key — same
+ * media, same encoder, same fingerprints; different media diverge at the block. {@link
+ * Batch#prepare} keeps each embeddings batch isolated, so a bidirectional image block (one
+ * attention group) commits as exactly one cache block. Note the fingerprints hash the ENCODED rows:
+ * re-fingerprinting an echoed conversation needs either the retained stream ({@link
+ * #fingerprints()}, the dual view) or a re-encode — servers keep the stream.
+ */
 public final class CachedSession<S extends RuntimeState> {
 
     private final Model<?, ?, S> model;
@@ -37,7 +37,8 @@ public final class CachedSession<S extends RuntimeState> {
     private long[] fp;
     private int len;
 
-    private CachedSession(Model<?, ?, S> model, S state, PromptCache<S>.Cursor cursor, long[] fp, int len) {
+    private CachedSession(
+            Model<?, ?, S> model, S state, PromptCache<S>.Cursor cursor, long[] fp, int len) {
         this.model = model;
         this.state = state;
         this.cursor = cursor;
@@ -45,25 +46,36 @@ public final class CachedSession<S extends RuntimeState> {
         this.len = len;
     }
 
-    /** A fresh session on a fresh state, resuming the longest cached prefix of {@code expected}
-     *  (empty for a brand-new conversation). */
+    /**
+     * A fresh session on a fresh state, resuming the longest cached prefix of {@code expected}
+     * (empty for a brand-new conversation).
+     */
     public static <S extends RuntimeState> CachedSession<S> resume(
             Model<?, ?, S> model, PromptCache<S> cache, S state, long[] expected) {
         return resume(model, cache, state, expected, expected.length);
     }
 
-    /** Like {@link #resume(Model, PromptCache, Object, long[])} but restoring at most
-     *  {@code maxPositions} — e.g. the prompt length minus its final block, so a whole-prompt hit
-     *  still re-ingests that block and leaves fresh logits at the cursor. */
+    /**
+     * Like {@link #resume(Model, PromptCache, Object, long[])} but restoring at most {@code
+     * maxPositions} — e.g. the prompt length minus its final block, so a whole-prompt hit still
+     * re-ingests that block and leaves fresh logits at the cursor.
+     */
     public static <S extends RuntimeState> CachedSession<S> resume(
-            Model<?, ?, S> model, PromptCache<S> cache, S state, long[] expected, int maxPositions) {
-        PromptCache<S>.Cursor cursor = cache.resume(expected, Math.min(expected.length, maxPositions), state);
+            Model<?, ?, S> model,
+            PromptCache<S> cache,
+            S state,
+            long[] expected,
+            int maxPositions) {
+        PromptCache<S>.Cursor cursor =
+                cache.resume(expected, Math.min(expected.length, maxPositions), state);
         long[] fp = Arrays.copyOf(expected, Math.max(256, expected.length));
         return new CachedSession<>(model, state, cursor, fp, cursor.position());
     }
 
-    /** Ingests batches (chunked at the state's batch capacity), committing each chunk: token ids
-     *  fingerprint as themselves, embeddings by rows content hash (one block per media group). */
+    /**
+     * Ingests batches (chunked at the state's batch capacity), committing each chunk: token ids
+     * fingerprint as themselves, embeddings by rows content hash (one block per media group).
+     */
     public void ingest(List<Batch> batches) {
         List<Batch> prepared = Batch.prepare(batches, state.batchCapacity());
         for (int c = 0; c < prepared.size(); c++) {
@@ -79,19 +91,23 @@ public final class CachedSession<S extends RuntimeState> {
                     model.ingest(state, b);
                     for (int i = 0; i < e.count(); i++) append(digest[i & 3] + GOLDEN * i);
                 }
-                default -> throw new IllegalArgumentException(
-                        "CachedSession cannot fingerprint " + b.input().getClass().getSimpleName());
+                default ->
+                        throw new IllegalArgumentException(
+                                "CachedSession cannot fingerprint "
+                                        + b.input().getClass().getSimpleName());
             }
             cursor.commit(fp, off, len - off, state, c == prepared.size() - 1);
         }
     }
 
-    /** Ingests turn-aligned groups whose flattened fingerprints formed this session's resume
-     *  stream, skipping what the resume already restored: whole groups before the cursor, and the
-     *  restored HEAD of a partially-covered group. A cache hit ends on a BLOCK boundary, which
-     *  need not be a group boundary (a previous generation prompt is a byte-exact prefix of the
-     *  echoed assistant turn; long turns commit as several blocks) - re-ingesting the whole group
-     *  there would duplicate its restored head in the context and poison the cache. */
+    /**
+     * Ingests turn-aligned groups whose flattened fingerprints formed this session's resume stream,
+     * skipping what the resume already restored: whole groups before the cursor, and the restored
+     * HEAD of a partially-covered group. A cache hit ends on a BLOCK boundary, which need not be a
+     * group boundary (a previous generation prompt is a byte-exact prefix of the echoed assistant
+     * turn; long turns commit as several blocks) - re-ingesting the whole group there would
+     * duplicate its restored head in the context and poison the cache.
+     */
     public void ingestGroups(List<List<Batch>> groups) {
         int restored = state.position();
         int pos = 0;
@@ -99,7 +115,7 @@ public final class CachedSession<S extends RuntimeState> {
             int glen = 0;
             for (Batch b : group) glen += b.count();
             int end = pos + glen;
-            if (end <= restored) {                       // fully restored: skip
+            if (end <= restored) { // fully restored: skip
                 pos = end;
                 continue;
             }
@@ -108,9 +124,11 @@ public final class CachedSession<S extends RuntimeState> {
         }
     }
 
-    /** The group minus its first {@code skip} positions - whole batches drop, a token batch at
-     *  the seam is sliced. A hit strictly inside a media batch cannot happen (a media group is
-     *  one block, and its content-hash fingerprints never collide with token ids). */
+    /**
+     * The group minus its first {@code skip} positions - whole batches drop, a token batch at the
+     * seam is sliced. A hit strictly inside a media batch cannot happen (a media group is one
+     * block, and its content-hash fingerprints never collide with token ids).
+     */
     private static List<Batch> tail(List<Batch> group, int skip) {
         List<Batch> out = new java.util.ArrayList<>();
         for (Batch b : group) {
@@ -134,9 +152,11 @@ public final class CachedSession<S extends RuntimeState> {
 
     private static final long GOLDEN = 0x9E3779B97F4A7C15L;
 
-    /** SHA-256 of the raw row bits, as 4 longs — the media block's content identity. Flat F32
-     *  tensors (the embedder output) hash via bulk raw copies; the per-element path remains the
-     *  encoding-generic fallback (same LE float-bit stream either way). */
+    /**
+     * SHA-256 of the raw row bits, as 4 longs — the media block's content identity. Flat F32
+     * tensors (the embedder output) hash via bulk raw copies; the per-element path remains the
+     * encoding-generic fallback (same LE float-bit stream either way).
+     */
     private static long[] rowsDigest(Batch.Input.Embeddings e) {
         MessageDigest sha = Sha256.sha256();
         long size = e.rows().size();
@@ -145,10 +165,10 @@ public final class CachedSession<S extends RuntimeState> {
             MemorySegment chunk = MemorySegment.ofBuffer(buf);
             for (long off = 0; off < size; off += buf.capacity() / Float.BYTES) {
                 long n = Math.min(buf.capacity() / Float.BYTES, size - off);
-                long bytes = e.rows().copyRawTo(off, chunk, 0, n);        // bulk: one segment copy
+                long bytes = e.rows().copyRawTo(off, chunk, 0, n); // bulk: one segment copy
                 sha.update(buf.array(), 0, (int) bytes);
             }
-        } catch (UnsupportedOperationException fallback) {                // non-flat encodings
+        } catch (UnsupportedOperationException fallback) { // non-flat encodings
             sha.reset();
             buf.clear();
             for (long i = 0; i < size; i++) {
@@ -170,29 +190,40 @@ public final class CachedSession<S extends RuntimeState> {
         cursor.commit(token, state);
     }
 
-    /** Fingerprint stream length. Equals {@link #position()} while every ingestion goes through
-     *  the session (decode-loop steps are brought back in lockstep via {@link #adopt}). */
+    /**
+     * Fingerprint stream length. Equals {@link #position()} while every ingestion goes through the
+     * session (decode-loop steps are brought back in lockstep via {@link #adopt}).
+     */
     public int length() {
         return len;
     }
 
-    /** True when this session's WHOLE stream is a strict prefix of {@code req[0..reqLen)} — the
-     *  append-only reuse test ({@link SessionPool}): the live state can continue with the
-     *  remainder, nothing to rewind, and at least one position is left to ingest. */
+    /**
+     * True when this session's WHOLE stream is a strict prefix of {@code req[0..reqLen)} — the
+     * append-only reuse test ({@link SessionPool}): the live state can continue with the remainder,
+     * nothing to rewind, and at least one position is left to ingest.
+     */
     public boolean streamIsStrictPrefixOf(long[] req, int reqLen) {
         return len < reqLen && Arrays.equals(fp, 0, len, req, 0, len);
     }
 
-    /** Adopts decode-loop tokens that were ingested directly on the state (the generator steps
-     *  the state itself, not the session): appends their fingerprints and commits them as one
-     *  block, keeping the stream, the cursor and the block cache in lockstep with the KV. The
-     *  caller passes exactly the ingested tokens ({@code state.position() - length()} of them —
-     *  a trailing stop or budget-final token is sampled but never ingested). */
+    /**
+     * Adopts decode-loop tokens that were ingested directly on the state (the generator steps the
+     * state itself, not the session): appends their fingerprints and commits them as one block,
+     * keeping the stream, the cursor and the block cache in lockstep with the KV. The caller passes
+     * exactly the ingested tokens ({@code state.position() - length()} of them — a trailing stop or
+     * budget-final token is sampled but never ingested).
+     */
     public void adopt(List<Integer> ingested) {
         if (ingested.isEmpty()) return;
         if (state.position() != len + ingested.size()) {
-            throw new IllegalStateException("adopt of " + ingested.size() + " tokens at stream "
-                    + len + " but state is at " + state.position());
+            throw new IllegalStateException(
+                    "adopt of "
+                            + ingested.size()
+                            + " tokens at stream "
+                            + len
+                            + " but state is at "
+                            + state.position());
         }
         int off = len;
         for (int id : ingested) append(id);

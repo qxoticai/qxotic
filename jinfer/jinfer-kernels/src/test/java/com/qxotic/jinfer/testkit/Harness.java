@@ -9,11 +9,10 @@ import com.qxotic.jinfer.GgufTokenizer;
 import com.qxotic.jinfer.LanguageModel;
 import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.jinfer.cache.CachedSession;
-import com.qxotic.jinfer.cache.StateCodec;
 import com.qxotic.jinfer.cache.PromptCache;
+import com.qxotic.jinfer.cache.StateCodec;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.TurnTemplate;
-
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.nio.file.Path;
@@ -31,10 +30,14 @@ public final class Harness<S extends RuntimeState> {
     public final Path path;
     public final byte[] seed;
     public final int ctx;
-    /** Whether this model's greedy decode is byte-deterministic under load (dense models: yes;
-     *  threaded-MoE reductions: no) - declared once per model, scenarios gate reply-text equality
-     *  on it and always gate resume-state byte-identity. */
+
+    /**
+     * Whether this model's greedy decode is byte-deterministic under load (dense models: yes;
+     * threaded-MoE reductions: no) - declared once per model, scenarios gate reply-text equality on
+     * it and always gate resume-state byte-identity.
+     */
     public final boolean deterministicDecode;
+
     private final Checks checks = new Checks();
 
     public Harness(LanguageModel<?, ?, S> model, Path path, int ctx) {
@@ -75,8 +78,10 @@ public final class Harness<S extends RuntimeState> {
         return greedy(state, tok -> model.ingest(state, Batch.step(tok)), maxTokens).text();
     }
 
-    /** The shared greedy loop: argmax, feed each token through {@code step}, stop on the model's
-     *  stop set or the budget. */
+    /**
+     * The shared greedy loop: argmax, feed each token through {@code step}, stop on the model's
+     * stop set or the budget.
+     */
     private Reply greedy(S state, java.util.function.IntConsumer step, int maxTokens) {
         StringBuilder out = new StringBuilder();
         int tok = model.logits(state).argmax();
@@ -99,10 +104,12 @@ public final class Harness<S extends RuntimeState> {
         return fp;
     }
 
-    /** Resume-state equality through the codec (model-agnostic): serialize both states' resume
-     *  state for {@code [0,positions)} and byte-compare - exactly the bytes a cache block holds.
-     *  This is the sound cache-identity gate; reply-text equality is load-sensitive for MoE
-     *  models (threaded reductions are not byte-deterministic, near-tie greedy picks can flip). */
+    /**
+     * Resume-state equality through the codec (model-agnostic): serialize both states' resume state
+     * for {@code [0,positions)} and byte-compare - exactly the bytes a cache block holds. This is
+     * the sound cache-identity gate; reply-text equality is load-sensitive for MoE models (threaded
+     * reductions are not byte-deterministic, near-tie greedy picks can flip).
+     */
     public boolean statesEqual(S a, S b, int positions) {
         long rowBytes = codec.rowBytes(positions);
         long bytes = rowBytes + codec.checkpointBytes();

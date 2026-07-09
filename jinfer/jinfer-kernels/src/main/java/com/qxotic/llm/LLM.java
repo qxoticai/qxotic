@@ -15,11 +15,16 @@ final class LLM {
         if (!TRACE) return;
         double s = 0;
         for (int i = 0; i < n; i++) s += t.getFloat(i);
-        System.err.printf("[trace] %s sum=%.6f v0=%.4f,%.4f,%.4f%n", name, s, t.getFloat(0), t.getFloat(1), t.getFloat(2));
+        System.err.printf(
+                "[trace] %s sum=%.6f v0=%.4f,%.4f,%.4f%n",
+                name, s, t.getFloat(0), t.getFloat(1), t.getFloat(2));
     }
 
-    /** Interleaved RoPE (GGUF "llama" pair convention): rotates the (2i, 2i+1) pairs of one head. */
-    static void ropeInterleaved(FloatTensor q, int headOffset, int position, float[] cr, float[] ci, int ropeHalf) {
+    /**
+     * Interleaved RoPE (GGUF "llama" pair convention): rotates the (2i, 2i+1) pairs of one head.
+     */
+    static void ropeInterleaved(
+            FloatTensor q, int headOffset, int position, float[] cr, float[] ci, int ropeHalf) {
         int base = position * ropeHalf;
         for (int i = 0; i < ropeHalf; i++) {
             float fcr = cr[base + i], fci = ci[base + i];
@@ -36,20 +41,29 @@ final class LLM {
         x.addInPlace(0, xb, 0, n);
     }
 
-    /** {@code out[0..n] = base[baseOff..] + scale * add[0..n]}; base and add are left unchanged.
-     *  Lets a running residual be born directly from a read-only source row (no seed copy). */
-    static void addScaledInto(FloatTensor out, FloatTensor base, long baseOff, FloatTensor add, int n, float scale) {
-        for (int i = 0; i < n; i++) out.setFloat(i, base.getFloat(baseOff + i) + scale * add.getFloat(i));
+    /**
+     * {@code out[0..n] = base[baseOff..] + scale * add[0..n]}; base and add are left unchanged.
+     * Lets a running residual be born directly from a read-only source row (no seed copy).
+     */
+    static void addScaledInto(
+            FloatTensor out, FloatTensor base, long baseOff, FloatTensor add, int n, float scale) {
+        for (int i = 0; i < n; i++)
+            out.setFloat(i, base.getFloat(baseOff + i) + scale * add.getFloat(i));
     }
 
-    // Scalar activations, mirroring the package-private com.qxotic.jinfer.Activations so the ports (in a
+    // Scalar activations, mirroring the package-private com.qxotic.jinfer.Activations so the ports
+    // (in a
     // different package) share one token-exact copy instead of each inlining their own.
 
     /** Logistic sigmoid {@code 1/(1+e^-x)}. */
-    static float sigmoid(float x) { return 1.0f / (1.0f + (float) Math.exp(-x)); }
+    static float sigmoid(float x) {
+        return 1.0f / (1.0f + (float) Math.exp(-x));
+    }
 
     /** SiLU / swish {@code x·sigmoid(x)}. */
-    static float silu(float x) { return x * sigmoid(x); }
+    static float silu(float x) {
+        return x * sigmoid(x);
+    }
 
     /** Numerically-stable softplus {@code log(1+e^x)}. */
     static float softplus(float x) {
@@ -60,6 +74,10 @@ final class LLM {
 
     /** In-place ReLU-squared over {@code n} elements: {@code max(0,x)^2}. */
     static void reluSqr(FloatTensor t, int off, int n) {
-        for (int i = 0; i < n; i++) { float r = t.getFloat(off + i); r = r > 0f ? r : 0f; t.setFloat(off + i, r * r); }
+        for (int i = 0; i < n; i++) {
+            float r = t.getFloat(off + i);
+            r = r > 0f ? r : 0f;
+            t.setFloat(off + i, r * r);
+        }
     }
 }

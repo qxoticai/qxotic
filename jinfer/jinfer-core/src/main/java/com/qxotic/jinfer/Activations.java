@@ -4,10 +4,9 @@
 // run the same kernels as the production engine instead of scalar fallbacks.
 package com.qxotic.jinfer;
 
+import java.nio.ByteOrder;
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.VectorSpecies;
-
-import java.nio.ByteOrder;
 
 public final class Activations {
     private Activations() {}
@@ -34,83 +33,138 @@ public final class Activations {
         return 0.5f * x * (1.0f + (float) Math.tanh(inner));
     }
 
-    /** Scalar twin of {@link #geluMultiply}'s vector body — same op order and {@link F32FloatTensor#tanhApprox}
-     *  as the lanes, so the vector loop's scalar tail applies the identical approximation. */
+    /**
+     * Scalar twin of {@link #geluMultiply}'s vector body — same op order and {@link
+     * F32FloatTensor#tanhApprox} as the lanes, so the vector loop's scalar tail applies the
+     * identical approximation.
+     */
     private static float geluApprox(float x) {
         float inner = (x * x * x * 0.044715f + x) * GELU_C;
         return x * 0.5f * (1.0f + F32FloatTensor.tanhApprox(inner));
     }
 
-    /** Fused {@code gate[i] = gelu(gate[i]) * up[i]} over {@code n} elements — vectorized for F32
-     *  tensors (minimax-rational {@code tanhVec}), scalar otherwise. The whole-tensor GELU-gate used
-     *  by gated FFNs / PLE; callers parallelize across rows. */
-    public static void geluMultiply(FloatTensor gate, int gateOff, FloatTensor up, int upOff, int n) {
-        if (FloatTensor.USE_VECTOR_API && gate instanceof F32FloatTensor g && up instanceof F32FloatTensor u) {
+    /**
+     * Fused {@code gate[i] = gelu(gate[i]) * up[i]} over {@code n} elements — vectorized for F32
+     * tensors (minimax-rational {@code tanhVec}), scalar otherwise. The whole-tensor GELU-gate used
+     * by gated FFNs / PLE; callers parallelize across rows.
+     */
+    public static void geluMultiply(
+            FloatTensor gate, int gateOff, FloatTensor up, int upOff, int n) {
+        if (FloatTensor.USE_VECTOR_API
+                && gate instanceof F32FloatTensor g
+                && up instanceof F32FloatTensor u) {
             VectorSpecies<Float> sp = FloatTensor.F_SPECIES;
             int bound = sp.loopBound(n);
             for (int i = 0; i < bound; i += sp.length()) {
                 long gb = (long) (gateOff + i) * Float.BYTES;
                 long ub = (long) (upOff + i) * Float.BYTES;
-                FloatVector x = FloatVector.fromMemorySegment(sp, g.vseg, g.vbase + gb, ByteOrder.LITTLE_ENDIAN);
-                FloatVector uv = FloatVector.fromMemorySegment(sp, u.vseg, u.vbase + ub, ByteOrder.LITTLE_ENDIAN);
+                FloatVector x =
+                        FloatVector.fromMemorySegment(
+                                sp, g.vseg, g.vbase + gb, ByteOrder.LITTLE_ENDIAN);
+                FloatVector uv =
+                        FloatVector.fromMemorySegment(
+                                sp, u.vseg, u.vbase + ub, ByteOrder.LITTLE_ENDIAN);
                 FloatVector inner = x.mul(x).mul(x).mul(0.044715f).add(x).mul(GELU_C);
                 FloatVector t = F32FloatTensor.tanhVec(inner);
-                x.mul(0.5f).mul(t.add(1.0f)).mul(uv).intoMemorySegment(g.vseg, g.vbase + gb, ByteOrder.LITTLE_ENDIAN);
+                x.mul(0.5f)
+                        .mul(t.add(1.0f))
+                        .mul(uv)
+                        .intoMemorySegment(g.vseg, g.vbase + gb, ByteOrder.LITTLE_ENDIAN);
             }
-            // tail uses geluApprox (matches the vector body) rather than the exact gelu, so the whole span
-            // goes through one function; the full-scalar fallback below stays on exact gelu as the oracle.
-            for (int i = bound; i < n; i++) gate.setFloat(gateOff + i, geluApprox(gate.getFloat(gateOff + i)) * up.getFloat(upOff + i));
+            // tail uses geluApprox (matches the vector body) rather than the exact gelu, so the
+            // whole span
+            // goes through one function; the full-scalar fallback below stays on exact gelu as the
+            // oracle.
+            for (int i = bound; i < n; i++)
+                gate.setFloat(
+                        gateOff + i,
+                        geluApprox(gate.getFloat(gateOff + i)) * up.getFloat(upOff + i));
             return;
         }
-        for (int i = 0; i < n; i++) gate.setFloat(gateOff + i, gelu(gate.getFloat(gateOff + i)) * up.getFloat(upOff + i));
+        for (int i = 0; i < n; i++)
+            gate.setFloat(gateOff + i, gelu(gate.getFloat(gateOff + i)) * up.getFloat(upOff + i));
     }
 
-    /** Exact gpt-oss clamped-SwiGLU scalar: {@code quickgelu(min(gate,7)) * (clamp(up,±7) + 1)}, where
-     *  {@code quickgelu(x) = x*sigmoid(1.702x)}. The full-scalar oracle for {@link #clampedSwigluMultiply}. */
+    /**
+     * Exact gpt-oss clamped-SwiGLU scalar: {@code quickgelu(min(gate,7)) * (clamp(up,±7) + 1)},
+     * where {@code quickgelu(x) = x*sigmoid(1.702x)}. The full-scalar oracle for {@link
+     * #clampedSwigluMultiply}.
+     */
     public static float clampedSwiglu(float gate, float up) {
         float x = Math.min(gate, 7.0f);
         float y = Math.clamp(up, -7.0f, 7.0f);
         return (float) (x / (1.0 + Math.exp(1.702f * -x)) * (y + 1.0));
     }
 
-    /** Scalar twin of {@link #clampedSwigluMultiply}'s vector body (tanhApprox sigmoid), so the vector
-     *  loop's scalar tail applies the identical approximation as the lanes. */
+    /**
+     * Scalar twin of {@link #clampedSwigluMultiply}'s vector body (tanhApprox sigmoid), so the
+     * vector loop's scalar tail applies the identical approximation as the lanes.
+     */
     private static float clampedSwigluApprox(float gate, float up) {
         float x = Math.min(gate, 7.0f);
         float y = Math.clamp(up, -7.0f, 7.0f);
         return x * 0.5f * (1.0f + F32FloatTensor.tanhApprox(0.851f * x)) * (y + 1.0f);
     }
 
-    /** Fused gpt-oss clamped-SwiGLU {@code gate[i] = clampedSwiglu(gate[i], up[i])} over {@code n} elements,
-     *  in place on {@code gate} - vectorized for F32 (sigmoid via {@code sigmoid(1.702x) = 0.5(1 + tanh(0.851x))}
-     *  on the minimax-rational {@code tanhVec}), scalar otherwise. Callers parallelize across rows. */
-    public static void clampedSwigluMultiply(FloatTensor gate, int gateOff, FloatTensor up, int upOff, int n) {
-        if (FloatTensor.USE_VECTOR_API && gate instanceof F32FloatTensor g && up instanceof F32FloatTensor u) {
+    /**
+     * Fused gpt-oss clamped-SwiGLU {@code gate[i] = clampedSwiglu(gate[i], up[i])} over {@code n}
+     * elements, in place on {@code gate} - vectorized for F32 (sigmoid via {@code sigmoid(1.702x) =
+     * 0.5(1 + tanh(0.851x))} on the minimax-rational {@code tanhVec}), scalar otherwise. Callers
+     * parallelize across rows.
+     */
+    public static void clampedSwigluMultiply(
+            FloatTensor gate, int gateOff, FloatTensor up, int upOff, int n) {
+        if (FloatTensor.USE_VECTOR_API
+                && gate instanceof F32FloatTensor g
+                && up instanceof F32FloatTensor u) {
             VectorSpecies<Float> sp = FloatTensor.F_SPECIES;
             int bound = sp.loopBound(n);
             for (int i = 0; i < bound; i += sp.length()) {
                 long gb = (long) (gateOff + i) * Float.BYTES;
                 long ub = (long) (upOff + i) * Float.BYTES;
-                FloatVector x = FloatVector.fromMemorySegment(sp, g.vseg, g.vbase + gb, ByteOrder.LITTLE_ENDIAN).min(7.0f);
-                FloatVector y = FloatVector.fromMemorySegment(sp, u.vseg, u.vbase + ub, ByteOrder.LITTLE_ENDIAN).max(-7.0f).min(7.0f);
-                FloatVector t = F32FloatTensor.tanhVec(x.mul(0.851f));   // sigmoid(1.702x) = 0.5(1 + tanh(0.851x))
-                x.mul(0.5f).mul(t.add(1.0f)).mul(y.add(1.0f)).intoMemorySegment(g.vseg, g.vbase + gb, ByteOrder.LITTLE_ENDIAN);
+                FloatVector x =
+                        FloatVector.fromMemorySegment(
+                                        sp, g.vseg, g.vbase + gb, ByteOrder.LITTLE_ENDIAN)
+                                .min(7.0f);
+                FloatVector y =
+                        FloatVector.fromMemorySegment(
+                                        sp, u.vseg, u.vbase + ub, ByteOrder.LITTLE_ENDIAN)
+                                .max(-7.0f)
+                                .min(7.0f);
+                FloatVector t =
+                        F32FloatTensor.tanhVec(
+                                x.mul(0.851f)); // sigmoid(1.702x) = 0.5(1 + tanh(0.851x))
+                x.mul(0.5f)
+                        .mul(t.add(1.0f))
+                        .mul(y.add(1.0f))
+                        .intoMemorySegment(g.vseg, g.vbase + gb, ByteOrder.LITTLE_ENDIAN);
             }
-            for (int i = bound; i < n; i++) gate.setFloat(gateOff + i, clampedSwigluApprox(gate.getFloat(gateOff + i), up.getFloat(upOff + i)));
+            for (int i = bound; i < n; i++)
+                gate.setFloat(
+                        gateOff + i,
+                        clampedSwigluApprox(gate.getFloat(gateOff + i), up.getFloat(upOff + i)));
             return;
         }
-        for (int i = 0; i < n; i++) gate.setFloat(gateOff + i, clampedSwiglu(gate.getFloat(gateOff + i), up.getFloat(upOff + i)));
+        for (int i = 0; i < n; i++)
+            gate.setFloat(
+                    gateOff + i, clampedSwiglu(gate.getFloat(gateOff + i), up.getFloat(upOff + i)));
     }
 
-    /** Fused {@code gate[i] = silu(gate[i]) * up[i]} over {@code n} elements (SwiGLU), the SiLU-gated
-     *  counterpart of {@link #geluMultiply} — delegates to the vectorized {@code siluMultiplyInPlace}.
-     *  Public so {@code com.qxotic.llm} ports (e.g. LFM2.5) can use it without the package-private method. */
-    public static void siluMultiply(FloatTensor gate, int gateOff, FloatTensor up, int upOff, int n) {
+    /**
+     * Fused {@code gate[i] = silu(gate[i]) * up[i]} over {@code n} elements (SwiGLU), the
+     * SiLU-gated counterpart of {@link #geluMultiply} — delegates to the vectorized {@code
+     * siluMultiplyInPlace}. Public so {@code com.qxotic.llm} ports (e.g. LFM2.5) can use it without
+     * the package-private method.
+     */
+    public static void siluMultiply(
+            FloatTensor gate, int gateOff, FloatTensor up, int upOff, int n) {
         gate.siluMultiplyInPlace(gateOff, up, upOff, n);
     }
 
-    /** In-place logit soft-cap {@code x = cap * tanh(x / cap)} over {@code n} elements (no-op when
-     *  {@code cap <= 0}) — vectorized for F32 tensors. */
+    /**
+     * In-place logit soft-cap {@code x = cap * tanh(x / cap)} over {@code n} elements (no-op when
+     * {@code cap <= 0}) — vectorized for F32 tensors.
+     */
     public static void softcap(FloatTensor t, int off, int n, float cap) {
         if (cap <= 0f) return;
         if (FloatTensor.USE_VECTOR_API && t instanceof F32FloatTensor f) {
@@ -119,14 +173,20 @@ public final class Activations {
             float inv = 1.0f / cap;
             for (int i = 0; i < bound; i += sp.length()) {
                 long b = (long) (off + i) * Float.BYTES;
-                FloatVector x = FloatVector.fromMemorySegment(sp, f.vseg, f.vbase + b, ByteOrder.LITTLE_ENDIAN);
-                F32FloatTensor.tanhVec(x.mul(inv)).mul(cap).intoMemorySegment(f.vseg, f.vbase + b, ByteOrder.LITTLE_ENDIAN);
+                FloatVector x =
+                        FloatVector.fromMemorySegment(
+                                sp, f.vseg, f.vbase + b, ByteOrder.LITTLE_ENDIAN);
+                F32FloatTensor.tanhVec(x.mul(inv))
+                        .mul(cap)
+                        .intoMemorySegment(f.vseg, f.vbase + b, ByteOrder.LITTLE_ENDIAN);
             }
             // tail uses tanhApprox (not Math.tanh) so every lane of the span goes through one
             // monotonic function — soft-cap can't reorder logits across the body/tail boundary.
-            for (int i = bound; i < n; i++) t.setFloat(off + i, cap * F32FloatTensor.tanhApprox(t.getFloat(off + i) * inv));
+            for (int i = bound; i < n; i++)
+                t.setFloat(off + i, cap * F32FloatTensor.tanhApprox(t.getFloat(off + i) * inv));
             return;
         }
-        for (int i = 0; i < n; i++) t.setFloat(off + i, cap * (float) Math.tanh(t.getFloat(off + i) / cap));
+        for (int i = 0; i < n; i++)
+            t.setFloat(off + i, cap * (float) Math.tanh(t.getFloat(off + i) / cap));
     }
 }

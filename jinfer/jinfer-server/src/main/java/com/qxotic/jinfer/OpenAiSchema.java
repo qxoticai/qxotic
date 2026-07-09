@@ -4,18 +4,18 @@
 package com.qxotic.jinfer;
 
 import com.qxotic.jinfer.Generator.GenerationResult;
-
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 final class OpenAiSchema {
-    private OpenAiSchema() {
-    }
+    private OpenAiSchema() {}
 
-    /** Mutable per-request token counters, updated by the generation pipeline and read by the
-     *  streaming sinks to attach running usage to delta chunks. */
+    /**
+     * Mutable per-request token counters, updated by the generation pipeline and read by the
+     * streaming sinks to attach running usage to delta chunks.
+     */
     static final class Usage {
         int promptTokens;
         int completionTokens;
@@ -24,10 +24,14 @@ final class OpenAiSchema {
 
     static Map<String, Object> chunkUsage(Usage usage) {
         return Map.of(
-                "prompt_tokens", usage.promptTokens,
-                "completion_tokens", usage.completionTokens,
-                "total_tokens", usage.promptTokens + usage.completionTokens,
-                "prompt_tokens_details", Map.of("cached_tokens", usage.cachedTokens));
+                "prompt_tokens",
+                usage.promptTokens,
+                "completion_tokens",
+                usage.completionTokens,
+                "total_tokens",
+                usage.promptTokens + usage.completionTokens,
+                "prompt_tokens_details",
+                Map.of("cached_tokens", usage.cachedTokens));
     }
 
     static Map<String, Object> usage(GenerationResult result) {
@@ -43,17 +47,31 @@ final class OpenAiSchema {
         Map<String, Object> timings = new LinkedHashMap<>();
         timings.put("prompt_n", result.promptTokens());
         timings.put("prompt_ms", Math.round(result.promptMillis() * 100.0) / 100.0);
-        timings.put("prompt_per_second", result.promptMillis() > 0 ? Math.round(result.promptTokens() / result.promptMillis() * 100_000.0) / 100.0 : 0.0);
+        timings.put(
+                "prompt_per_second",
+                result.promptMillis() > 0
+                        ? Math.round(result.promptTokens() / result.promptMillis() * 100_000.0)
+                                / 100.0
+                        : 0.0);
         timings.put("predicted_n", result.completionTokens());
         timings.put("predicted_ms", Math.round(result.predictedMillis() * 100.0) / 100.0);
-        timings.put("predicted_per_second", result.predictedMillis() > 0 ? Math.round(result.completionTokens() / result.predictedMillis() * 100_000.0) / 100.0 : 0.0);
+        timings.put(
+                "predicted_per_second",
+                result.predictedMillis() > 0
+                        ? Math.round(
+                                        result.completionTokens()
+                                                / result.predictedMillis()
+                                                * 100_000.0)
+                                / 100.0
+                        : 0.0);
         timings.put("cached_n", result.cachedTokens());
         return timings;
     }
 
     // ---- chat completions ----
 
-    static Map<String, Object> chatCompletionResponse(String id, String modelId, GenerationResult result) {
+    static Map<String, Object> chatCompletionResponse(
+            String id, String modelId, GenerationResult result) {
         Map<String, Object> message = new LinkedHashMap<>();
         message.put("role", "assistant");
         message.put("content", result.toolCalls().isEmpty() ? result.text() : null);
@@ -64,15 +82,22 @@ final class OpenAiSchema {
         choice.put("message", message);
         choice.put("finish_reason", result.finishReason());
         return Map.of(
-                "id", id,
-                "object", "chat.completion",
-                "created", System.currentTimeMillis() / 1000,
-                "model", modelId,
-                "choices", List.of(choice),
-                "usage", usage(result));
+                "id",
+                id,
+                "object",
+                "chat.completion",
+                "created",
+                System.currentTimeMillis() / 1000,
+                "model",
+                modelId,
+                "choices",
+                List.of(choice),
+                "usage",
+                usage(result));
     }
 
-    static Map<String, Object> chatCompletionChunk(String id, String modelId, Map<String, Object> delta, String finishReason) {
+    static Map<String, Object> chatCompletionChunk(
+            String id, String modelId, Map<String, Object> delta, String finishReason) {
         Map<String, Object> choice = new LinkedHashMap<>();
         choice.put("index", 0);
         choice.put("delta", delta);
@@ -88,17 +113,32 @@ final class OpenAiSchema {
 
     // ---- text completions ----
 
-    static Map<String, Object> completionResponse(String id, String modelId, GenerationResult result) {
+    static Map<String, Object> completionResponse(
+            String id, String modelId, GenerationResult result) {
         return Map.of(
-                "id", id,
-                "object", "text_completion",
-                "created", System.currentTimeMillis() / 1000,
-                "model", modelId,
-                "choices", List.of(Map.of("text", result.text(), "index", 0, "finish_reason", result.finishReason())),
-                "usage", usage(result));
+                "id",
+                id,
+                "object",
+                "text_completion",
+                "created",
+                System.currentTimeMillis() / 1000,
+                "model",
+                modelId,
+                "choices",
+                List.of(
+                        Map.of(
+                                "text",
+                                result.text(),
+                                "index",
+                                0,
+                                "finish_reason",
+                                result.finishReason())),
+                "usage",
+                usage(result));
     }
 
-    static Map<String, Object> completionChunk(String id, String modelId, String text, String finishReason) {
+    static Map<String, Object> completionChunk(
+            String id, String modelId, String text, String finishReason) {
         Map<String, Object> choice = new LinkedHashMap<>();
         choice.put("text", text);
         choice.put("index", 0);
@@ -125,15 +165,21 @@ final class OpenAiSchema {
         return delta;
     }
 
-    static Map<String, Object> responseResponse(String id, String modelId, GenerationResult result) {
-        List<Map<String, Object>> output = result.toolCalls().isEmpty()
-                ? List.of(responseMessageItem("msg_" + id, "completed", result.text()))
-                : responseToolCallItems(result.toolCalls());
+    static Map<String, Object> responseResponse(
+            String id, String modelId, GenerationResult result) {
+        List<Map<String, Object>> output =
+                result.toolCalls().isEmpty()
+                        ? List.of(responseMessageItem("msg_" + id, "completed", result.text()))
+                        : responseToolCallItems(result.toolCalls());
         return responseEnvelope(id, modelId, "completed", output, responseUsage(result));
     }
 
-    static Map<String, Object> responseEnvelope(String id, String modelId, String status,
-                                                List<Map<String, Object>> output, Map<String, Object> usage) {
+    static Map<String, Object> responseEnvelope(
+            String id,
+            String modelId,
+            String status,
+            List<Map<String, Object>> output,
+            Map<String, Object> usage) {
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("id", id);
         response.put("object", "response");
@@ -149,14 +195,16 @@ final class OpenAiSchema {
 
     static Map<String, Object> responseMessageItem(String id, String status, String text) {
         return Map.of(
-                "id", id,
-                "type", "message",
-                "status", status,
-                "role", "assistant",
-                "content", List.of(Map.of(
-                        "type", "output_text",
-                        "text", text,
-                        "annotations", List.of())));
+                "id",
+                id,
+                "type",
+                "message",
+                "status",
+                status,
+                "role",
+                "assistant",
+                "content",
+                List.of(Map.of("type", "output_text", "text", text, "annotations", List.of())));
     }
 
     private static Map<String, Object> responseUsage(GenerationResult result) {
@@ -166,17 +214,20 @@ final class OpenAiSchema {
                 "total_tokens", result.promptTokens() + result.completionTokens());
     }
 
-    private static List<Map<String, Object>> responseToolCallItems(List<Map<String, Object>> toolCalls) {
+    private static List<Map<String, Object>> responseToolCallItems(
+            List<Map<String, Object>> toolCalls) {
         List<Map<String, Object>> output = new ArrayList<>();
         for (Map<String, Object> toolCall : toolCalls) {
-            Map<String, Object> function = Values.asObject(toolCall.get("function"), "tool_call.function");
-            output.add(Map.of(
-                    "id", Values.stringValue(toolCall.get("id"), ""),
-                    "type", "function_call",
-                    "status", "completed",
-                    "call_id", Values.stringValue(toolCall.get("id"), ""),
-                    "name", Values.stringValue(function.get("name"), ""),
-                    "arguments", Values.stringValue(function.get("arguments"), "{}")));
+            Map<String, Object> function =
+                    Values.asObject(toolCall.get("function"), "tool_call.function");
+            output.add(
+                    Map.of(
+                            "id", Values.stringValue(toolCall.get("id"), ""),
+                            "type", "function_call",
+                            "status", "completed",
+                            "call_id", Values.stringValue(toolCall.get("id"), ""),
+                            "name", Values.stringValue(function.get("name"), ""),
+                            "arguments", Values.stringValue(function.get("arguments"), "{}")));
         }
         return output;
     }

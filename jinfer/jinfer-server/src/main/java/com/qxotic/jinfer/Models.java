@@ -5,13 +5,12 @@ package com.qxotic.jinfer;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.llm.Gemma4;
-import com.qxotic.llm.Granite;
 import com.qxotic.llm.GptOss;
+import com.qxotic.llm.Granite;
 import com.qxotic.llm.Lfm2;
 import com.qxotic.llm.Llama;
 import com.qxotic.llm.NemotronH;
 import com.qxotic.llm.Qwen35;
-
 import java.io.IOException;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
@@ -19,11 +18,12 @@ import java.nio.file.StandardOpenOption;
 
 public final class Models {
 
-    private Models() {
-    }
+    private Models() {}
 
-    /** Loads {@code path} at context size {@code ctx} (-1 = the model's full context), dispatching on
-     *  {@code general.architecture} to the matching new-API port. */
+    /**
+     * Loads {@code path} at context size {@code ctx} (-1 = the model's full context), dispatching
+     * on {@code general.architecture} to the matching new-API port.
+     */
     public static LanguageModel<?, ?, ?> load(Path path, int ctx) throws IOException {
         try (FileChannel fc = FileChannel.open(path, StandardOpenOption.READ)) {
             GGUF gguf = ModelLoader.readGguf(fc, path.toString());
@@ -31,20 +31,25 @@ public final class Models {
         }
     }
 
-    /** As {@link #load(Path, int)} but reusing an already-parsed {@code gguf} (the header is not
-     *  re-read) - used by AOT preload. {@code fileChannel} supplies the tensor data to mmap. */
-    public static LanguageModel<?, ?, ?> load(FileChannel fileChannel, GGUF gguf, int ctx) throws IOException {
+    /**
+     * As {@link #load(Path, int)} but reusing an already-parsed {@code gguf} (the header is not
+     * re-read) - used by AOT preload. {@code fileChannel} supplies the tensor data to mmap.
+     */
+    public static LanguageModel<?, ?, ?> load(FileChannel fileChannel, GGUF gguf, int ctx)
+            throws IOException {
         String arch = gguf.getString("general.architecture");
         return switch (arch) {
             case "gemma4" -> Gemma4.loadModel(fileChannel, gguf, ctx, true);
             case "gpt-oss" -> GptOss.loadModel(fileChannel, gguf, ctx, true);
             case "qwen35", "qwen35moe" -> Qwen35.loadModel(fileChannel, gguf, ctx, true);
             case "nemotron_h", "nemotron_h_moe" -> NemotronH.loadModel(fileChannel, gguf, ctx);
-            case "llama", "minicpm", "mistral3", "smollm3" -> Llama.loadModel(fileChannel, gguf, ctx, true);   // same-graph Llama variants
+            case "llama", "minicpm", "mistral3", "smollm3" ->
+                    Llama.loadModel(fileChannel, gguf, ctx, true); // same-graph Llama variants
             case "granite" -> Granite.loadModel(fileChannel, gguf, ctx, true);
             default -> {
                 if (arch.startsWith("lfm")) yield Lfm2.loadModel(fileChannel, gguf, ctx, true);
-                throw new IllegalArgumentException("Models.load: unsupported architecture '" + arch + "'");
+                throw new IllegalArgumentException(
+                        "Models.load: unsupported architecture '" + arch + "'");
             }
         };
     }
