@@ -175,7 +175,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                                     dim,
                                     eps));
             attention(state, l, startPos, seqLen);
-            LLM.addScaled(state.x, state.xb, seqLen * dim, residScale);
+            FloatTensor.addScaled(state.x, state.xb, seqLen * dim, residScale);
             Parallel.forRows(
                     seqLen,
                     s ->
@@ -188,8 +188,8 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                                     dim,
                                     eps));
             feedForward(state, l, state.xb, seqLen);
-            LLM.addScaled(state.x, state.xb, seqLen * dim, residScale);
-            if (LLM.TRACE) LLM.traceSum("l_out-" + l, state.x, seqLen * dim);
+            FloatTensor.addScaled(state.x, state.xb, seqLen * dim, residScale);
+            if (Trace.ENABLED) Trace.sum("l_out-" + l, state.x, seqLen * dim);
         }
         // Lazy last-layer split: write every row's K/V into the cache (so any row can attend
         // later), but
@@ -242,7 +242,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                     seqLen,
                     s -> {
                         for (int h = 0; h < kvHeads; h++)
-                            LLM.ropeInterleaved(
+                            RoPE.applyInterleaved(
                                     state.k,
                                     s * kvDim + h * headSize,
                                     startPos + s,
@@ -295,7 +295,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                 dim); // Q for this row (attnQ is free scratch)
         if (config.useRope(L)) {
             for (int h = 0; h < heads; h++)
-                LLM.ropeInterleaved(state.attnQ, h * headSize, pos, w.ropeCr, w.ropeCi, ropeHalf);
+                RoPE.applyInterleaved(state.attnQ, h * headSize, pos, w.ropeCr, w.ropeCi, ropeHalf);
         }
         float aScale = config.attnTemp(pos);
         if (aScale != 1.0f) state.attnQ.mapInPlace(0, queryDim, v -> v * aScale);
@@ -322,7 +322,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                 state.decodeScratch);
         w.wo[L].gemm(
                 state.attnOut, queryDim, state.tscratch, dim, 1, dim, queryDim); // O -> tscratch
-        LLM.addScaledInto(
+        FloatTensor.addScaledInto(
                 state.th,
                 state.x,
                 (long) i * dim,
@@ -331,7 +331,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                 residScale); // th = s.x[i] + residScale*O (born, no seed copy)
         rmsnorm(state.tscratch, 0, state.th, 0, w.ffnNorm[L], dim, eps);
         feedForward(state, L, state.tscratch, 1); // SwiGLU (one row, in place on tscratch)
-        LLM.addScaled(
+        FloatTensor.addScaled(
                 state.th, state.tscratch, dim, residScale); // FFN residual -> state.th finished
     }
 
@@ -368,7 +368,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                 s -> {
                     if (useRope) {
                         for (int h = 0; h < fHeads; h++)
-                            LLM.ropeInterleaved(
+                            RoPE.applyInterleaved(
                                     state.attnQ,
                                     s * fQDim + h * fHeadSz,
                                     fStart + s,
@@ -376,7 +376,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                                     w.ropeCi,
                                     fHalf);
                         for (int h = 0; h < fKvHeads; h++)
-                            LLM.ropeInterleaved(
+                            RoPE.applyInterleaved(
                                     state.k,
                                     s * fKvDim + h * fHeadSz,
                                     fStart + s,

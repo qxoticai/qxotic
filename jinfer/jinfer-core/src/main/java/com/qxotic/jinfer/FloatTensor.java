@@ -502,6 +502,25 @@ public abstract class FloatTensor {
         return addInPlace(0, that, 0, Math.toIntExact(size()));
     }
 
+    /**
+     * Scaled residual add {@code x += scale * xb} over {@code n} elements. Note {@code xb} is
+     * scaled in place when {@code scale != 1}, so it is consumed, not merely read.
+     */
+    public static void addScaled(FloatTensor x, FloatTensor xb, int n, float scale) {
+        if (scale != 1.0f) xb.mapInPlace(0, n, v -> v * scale);
+        x.addInPlace(0, xb, 0, n);
+    }
+
+    /**
+     * {@code out[0..n] = base[baseOff..] + scale * add[0..n]}; base and add are left unchanged.
+     * Lets a running residual be born directly from a read-only source row (no seed copy).
+     */
+    public static void addScaledInto(
+            FloatTensor out, FloatTensor base, long baseOff, FloatTensor add, int n, float scale) {
+        for (int i = 0; i < n; i++)
+            out.setFloat(i, base.getFloat(baseOff + i) + scale * add.getFloat(i));
+    }
+
     FloatTensor siluMultiplyInPlace(long thisOffset, FloatTensor that, long thatOffset, int size) {
         for (int i = 0; i < size; i++) {
             float g = getFloat(thisOffset + i);

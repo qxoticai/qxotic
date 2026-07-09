@@ -612,7 +612,7 @@ public final class Gemma4
             weights.tokenEmbeddings.copyTo((long) token * dim, state.residual, s * dim, dim);
         }
         state.residual.mapInPlace(0, seqLen * dim, v -> v * sqrtDim);
-        LLM.traceSum("inp_scaled", state.residual, seqLen * dim);
+        Trace.sum("inp_scaled", state.residual, seqLen * dim);
     }
 
     /**
@@ -671,8 +671,8 @@ public final class Gemma4
         if (scale != 1.0f) {
             state.residual.mapInPlace(0, seqLen * configuration.embeddingLength(), v -> v * scale);
         }
-        if (LLM.TRACE)
-            LLM.traceSum("l_out-" + l, state.residual, seqLen * configuration.embeddingLength());
+        if (Trace.ENABLED)
+            Trace.sum("l_out-" + l, state.residual, seqLen * configuration.embeddingLength());
     }
 
     /**

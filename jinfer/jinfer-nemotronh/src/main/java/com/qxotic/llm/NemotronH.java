@@ -18,14 +18,14 @@
 // (seqLen==1) takes the single-token cores. Token-exact vs the production. Uses public kernels
 // (gemm,
 // gemm-with-offset, causalPrefill/flashDecode, Moe.dispatch) plus the shared scalars (silu/sigmoid/
-// softplus/reluSqr) from LLM.
+// softplus/reluSqr) from Activations.
 package com.qxotic.llm;
 
+import static com.qxotic.jinfer.Activations.reluSqr;
+import static com.qxotic.jinfer.Activations.sigmoid;
+import static com.qxotic.jinfer.Activations.silu;
+import static com.qxotic.jinfer.Activations.softplus;
 import static com.qxotic.jinfer.Norms.rmsnorm;
-import static com.qxotic.llm.LLM.reluSqr;
-import static com.qxotic.llm.LLM.sigmoid;
-import static com.qxotic.llm.LLM.silu;
-import static com.qxotic.llm.LLM.softplus;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.*;
@@ -185,7 +185,7 @@ public final class NemotronH
                 }
             }
             s.x.addInPlace(0, s.xb, 0, seqLen * dim); // residual; mixer left its output in xb
-            if (LLM.TRACE) LLM.traceSum("l" + l + "-" + c.layerTypes[l], s.x, seqLen * dim);
+            if (Trace.ENABLED) Trace.sum("l" + l + "-" + c.layerTypes[l], s.x, seqLen * dim);
         }
     }
 

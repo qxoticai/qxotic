@@ -13,7 +13,7 @@ public final class RoPE {
      * {@code cr}/{@code ci} are a {@link #precomputeFreqsCis}-family table at stride {@code
      * ropeHalf}.
      */
-    static void applyInterleaved(
+    public static void applyInterleaved(
             FloatTensor q, int headOffset, int position, float[] cr, float[] ci, int ropeHalf) {
         int base = position * ropeHalf;
         for (int i = 0; i < ropeHalf; i++) {
