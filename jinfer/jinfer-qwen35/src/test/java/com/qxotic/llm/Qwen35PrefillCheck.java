@@ -9,7 +9,6 @@ package com.qxotic.llm;
 
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.FloatTensor;
-
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -17,17 +16,25 @@ import java.util.List;
 public final class Qwen35PrefillCheck {
 
     public static void main(String[] args) throws Exception {
-        Path path = Path.of(args.length > 0 ? args[0] : "/home/mukel/Desktop/playground/models/unsloth/Qwen3.5-2B-GGUF/Qwen3.5-2B-Q8_0.gguf");
+        Path path =
+                Path.of(
+                        args.length > 0
+                                ? args[0]
+                                : "/home/mukel/Desktop/playground/models/unsloth/Qwen3.5-2B-GGUF/Qwen3.5-2B-Q8_0.gguf");
         if (!Files.exists(path)) {
             System.out.println("Qwen35PrefillCheck: model not found (" + path + "), skipping");
             return;
         }
         Qwen35 model = Qwen35.loadModel(path, 4096);
         int vocab = model.config().vocabularySize();
-        List<Integer> prompt = model.tokenizer().encode(
-                "The expedition logged river depth, canopy density and soil acidity at every station; "
-                + "readings were nominal and the weather held clear. Summarize the day in one sentence, "
-                + "then estimate how many stations a four-person team could cover before dusk.");
+        List<Integer> prompt =
+                model.tokenizer()
+                        .encode(
+                                "The expedition logged river depth, canopy density and soil acidity"
+                                    + " at every station; readings were nominal and the weather"
+                                    + " held clear. Summarize the day in one sentence, then"
+                                    + " estimate how many stations a four-person team could cover"
+                                    + " before dusk.");
         int[] ids = prompt.stream().mapToInt(Integer::intValue).toArray();
         int failures = 0;
 
@@ -42,10 +49,13 @@ public final class Qwen35PrefillCheck {
                 ref = snap;
                 continue;
             }
-            for (int i = 0; i < vocab; i++) repeatMax = Math.max(repeatMax, Math.abs((double) snap[i] - ref[i]));
+            for (int i = 0; i < vocab; i++)
+                repeatMax = Math.max(repeatMax, Math.abs((double) snap[i] - ref[i]));
         }
         boolean deterministic = repeatMax <= 1e-2;
-        System.out.printf("%s repeated batched prefills agree (max |d| = %.3g)%n", deterministic ? "ok:  " : "FAIL:", repeatMax);
+        System.out.printf(
+                "%s repeated batched prefills agree (max |d| = %.3g)%n",
+                deterministic ? "ok:  " : "FAIL:", repeatMax);
         if (!deterministic) failures++;
 
         // (2) batched vs step prefill: same next token; kernel reassociation reported
@@ -54,9 +64,12 @@ public final class Qwen35PrefillCheck {
         float[] step = snapshot(model.logits(stepped), vocab);
         int argBatched = argmax(ref), argStepped = argmax(step);
         double crossMax = 0;
-        for (int i = 0; i < vocab; i++) crossMax = Math.max(crossMax, Math.abs((double) ref[i] - step[i]));
+        for (int i = 0; i < vocab; i++)
+            crossMax = Math.max(crossMax, Math.abs((double) ref[i] - step[i]));
         boolean sameNext = argBatched == argStepped;
-        System.out.printf("%s batched and step prefill agree on the next token (%d vs %d; cross-path max |d| = %.3g)%n",
+        System.out.printf(
+                "%s batched and step prefill agree on the next token (%d vs %d; cross-path max |d|"
+                        + " = %.3g)%n",
                 sameNext ? "ok:  " : "FAIL:", argBatched, argStepped, crossMax);
         if (!sameNext) failures++;
 

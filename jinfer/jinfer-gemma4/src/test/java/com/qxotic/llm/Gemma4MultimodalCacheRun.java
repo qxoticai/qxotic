@@ -10,13 +10,12 @@ import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.CacheStore;
 import com.qxotic.jinfer.Media;
 import com.qxotic.jinfer.cache.CachedSession;
-import com.qxotic.jinfer.cache.StateCodec;
 import com.qxotic.jinfer.cache.PromptCache;
+import com.qxotic.jinfer.cache.StateCodec;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.TurnTemplate;
-
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.nio.file.Path;
@@ -26,10 +25,17 @@ import java.util.Set;
 
 public final class Gemma4MultimodalCacheRun {
 
-    static final Path E2B = Path.of("/home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-Q8_0.gguf");
-    static final Path E2B_MMPROJ = Path.of("/home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf");
-    static final Path B12 = Path.of("/home/mukel/Desktop/playground/models/unsloth/gemma-4-12b-it-GGUF/gemma-4-12b-it-Q8_0.gguf");
-    static final Path B12_MMPROJ = Path.of("/home/mukel/Desktop/playground/models/unsloth/gemma-4-12b-it-GGUF/mmproj-F32.gguf");
+    static final Path E2B =
+            Path.of("/home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-Q8_0.gguf");
+    static final Path E2B_MMPROJ =
+            Path.of(
+                    "/home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf");
+    static final Path B12 =
+            Path.of(
+                    "/home/mukel/Desktop/playground/models/unsloth/gemma-4-12b-it-GGUF/gemma-4-12b-it-Q8_0.gguf");
+    static final Path B12_MMPROJ =
+            Path.of(
+                    "/home/mukel/Desktop/playground/models/unsloth/gemma-4-12b-it-GGUF/mmproj-F32.gguf");
 
     static int failures;
     static Gemma4 model;
@@ -42,20 +48,36 @@ public final class Gemma4MultimodalCacheRun {
     public static void main(String[] args) throws Exception {
         boolean big = args.length > 0 && args[0].equals("12b");
         Path text = big ? B12 : E2B, mmproj = big ? B12_MMPROJ : E2B_MMPROJ;
-        budget = big ? 14L << 30 : 4L << 30;   // 12B SWA checkpoints are ~hundreds of MB per block
+        budget = big ? 14L << 30 : 4L << 30; // 12B SWA checkpoints are ~hundreds of MB per block
         model = Gemma4.loadModel(text, mmproj, 4096);
         template = model.turnTemplate().orElseThrow();
         codec = model.stateCodec().orElseThrow();
         stops = model.stopTokens();
         seed = PromptCache.modelSeed(text);
-        System.out.println("model=" + text.getFileName() + " modalities=" + model.modalities()
-                + " blockBytes(1)=" + ((codec.rowBytes(1) + codec.checkpointBytes()) >> 20) + "MB");
+        System.out.println(
+                "model="
+                        + text.getFileName()
+                        + " modalities="
+                        + model.modalities()
+                        + " blockBytes(1)="
+                        + ((codec.rowBytes(1) + codec.checkpointBytes()) >> 20)
+                        + "MB");
 
-        battery("image", new Part.Blob(solidImage(1f, 0f, 0f)), new Part.Blob(solidImage(0f, 0f, 1f)),
-                "\nWhat is the dominant color in this image? Answer with one word.", "red", big ? null : "blue");
+        battery(
+                "image",
+                new Part.Blob(solidImage(1f, 0f, 0f)),
+                new Part.Blob(solidImage(0f, 0f, 1f)),
+                "\nWhat is the dominant color in this image? Answer with one word.",
+                "red",
+                big ? null : "blue");
         if (big) {
-            battery("audio", new Part.Blob(sine(440)), new Part.Blob(sine(880)),
-                    "\nDescribe this audio clip in one short sentence.", null, null);
+            battery(
+                    "audio",
+                    new Part.Blob(sine(440)),
+                    new Part.Blob(sine(880)),
+                    "\nDescribe this audio clip in one short sentence.",
+                    null,
+                    null);
         }
 
         if (failures > 0) {
@@ -65,76 +87,126 @@ public final class Gemma4MultimodalCacheRun {
         System.out.println("Gemma4MultimodalCacheRun: all checks passed");
     }
 
-    /** The full battery for one modality: cache, cold resume byte-identity, divergence at the
-     *  media block, and the resume-vs-full TTFT benchmark (encode + prefill both skipped). */
-    static void battery(String name, Part.Blob media, Part.Blob otherMedia, String question, String expectWord, String expectOther) {
+    /**
+     * The full battery for one modality: cache, cold resume byte-identity, divergence at the media
+     * block, and the resume-vs-full TTFT benchmark (encode + prefill both skipped).
+     */
+    static void battery(
+            String name,
+            Part.Blob media,
+            Part.Blob otherMedia,
+            String question,
+            String expectWord,
+            String expectOther) {
         System.out.println("=== " + name + " ===");
         Message turn = new Message(Role.USER, List.of(media, new Part.Text(question)));
 
         // -- session A: encode (timed) + ingest (timed) + cached greedy reply --
-        PromptCache<Gemma4.State> cache = new PromptCache<>(codec, CacheStore.inMemory(), budget, seed);
-        CachedSession<Gemma4.State> a = CachedSession.resume(model, cache, model.newState(4096, 512), new long[0]);
+        PromptCache<Gemma4.State> cache =
+                new PromptCache<>(codec, CacheStore.inMemory(), budget, seed);
+        CachedSession<Gemma4.State> a =
+                CachedSession.resume(model, cache, model.newState(4096, 512), new long[0]);
         long t0 = System.nanoTime();
-        List<Batch> batches = concat(template.conversationStart(), template.encodeTurn(turn));   // media encode happens here
+        List<Batch> batches =
+                concat(
+                        template.conversationStart(),
+                        template.encodeTurn(turn)); // media encode happens here
         double encodeMs = (System.nanoTime() - t0) / 1e6;
         long t1 = System.nanoTime();
         a.ingest(batches);
         double ingestMs = (System.nanoTime() - t1) / 1e6;
-        long[] turnFp = a.fingerprints();                       // the dual view up to the turn end
+        long[] turnFp = a.fingerprints(); // the dual view up to the turn end
         double fullTtft = encodeMs + ingestMs + firstTokenMs(a);
         String reply = decode(a, 16);
         System.out.printf("reply: %s%n", reply.strip());
         int mediaRows = mediaRows(batches);
         check(mediaRows > 0, name + ": media block present (" + mediaRows + " rows)");
         if (expectWord != null) {
-            check(reply.toLowerCase().contains(expectWord), name + ": coherent (mentions '" + expectWord + "')");
+            check(
+                    reply.toLowerCase().contains(expectWord),
+                    name + ": coherent (mentions '" + expectWord + "')");
         }
 
         // -- cold resume: everything restored, byte-identical through the codec --
         long[] all = a.fingerprints();
-        CachedSession<Gemma4.State> b = CachedSession.resume(model, cache, model.newState(4096, 512), all);
-        check(b.position() == all.length, name + ": cold resume restores all " + all.length + " positions (got " + b.position() + ")");
-        check(statesEqual(a.state(), b.state(), all.length), name + ": restored state byte-identical via codec");
+        CachedSession<Gemma4.State> b =
+                CachedSession.resume(model, cache, model.newState(4096, 512), all);
+        check(
+                b.position() == all.length,
+                name
+                        + ": cold resume restores all "
+                        + all.length
+                        + " positions (got "
+                        + b.position()
+                        + ")");
+        check(
+                statesEqual(a.state(), b.state(), all.length),
+                name + ": restored state byte-identical via codec");
 
         // -- divergence inside the media block: only the pre-media text block is reused --
-        int[] bounds = blockBounds(batches);                    // [preMediaEnd, mediaEnd]
+        int[] bounds = blockBounds(batches); // [preMediaEnd, mediaEnd]
         long[] mutated = all.clone();
-        mutated[bounds[0] + mediaRows / 2] ^= 0x5DEECE66DL;     // flip a fingerprint inside the media block
-        CachedSession<Gemma4.State> d = CachedSession.resume(model, cache, model.newState(4096, 512), mutated);
-        check(d.position() == bounds[0], name + ": divergent media resumes only the text prefix ("
-                + d.position() + "/" + all.length + ", media block excluded)");
+        mutated[bounds[0] + mediaRows / 2] ^=
+                0x5DEECE66DL; // flip a fingerprint inside the media block
+        CachedSession<Gemma4.State> d =
+                CachedSession.resume(model, cache, model.newState(4096, 512), mutated);
+        check(
+                d.position() == bounds[0],
+                name
+                        + ": divergent media resumes only the text prefix ("
+                        + d.position()
+                        + "/"
+                        + all.length
+                        + ", media block excluded)");
 
-        // -- re-encode determinism (informational): same media, fresh encode -> same fingerprints? --
+        // -- re-encode determinism (informational): same media, fresh encode -> same fingerprints?
+        // --
         List<Batch> again = concat(template.conversationStart(), template.encodeTurn(turn));
-        PromptCache<Gemma4.State> scratch = new PromptCache<>(codec, CacheStore.inMemory(), budget, seed);
-        CachedSession<Gemma4.State> e = CachedSession.resume(model, scratch, model.newState(4096, 512), new long[0]);
+        PromptCache<Gemma4.State> scratch =
+                new PromptCache<>(codec, CacheStore.inMemory(), budget, seed);
+        CachedSession<Gemma4.State> e =
+                CachedSession.resume(model, scratch, model.newState(4096, 512), new long[0]);
         e.ingest(again);
         boolean reEncodeStable = java.util.Arrays.equals(turnFp, e.fingerprints());
-        System.out.println("      (re-encode fingerprint-stable: " + reEncodeStable
-                + " - a stateless echo re-encode " + (reEncodeStable ? "hits" : "misses; servers retain the fingerprint stream") + ")");
+        System.out.println(
+                "      (re-encode fingerprint-stable: "
+                        + reEncodeStable
+                        + " - a stateless echo re-encode "
+                        + (reEncodeStable
+                                ? "hits"
+                                : "misses; servers retain the fingerprint stream")
+                        + ")");
 
-        // -- a genuinely different media on the SAME cache: shares the text prefix, answers differently --
+        // -- a genuinely different media on the SAME cache: shares the text prefix, answers
+        // differently --
         Message otherTurn = new Message(Role.USER, List.of(otherMedia, new Part.Text(question)));
-        CachedSession<Gemma4.State> c = CachedSession.resume(model, cache, model.newState(4096, 512), new long[0]);
+        CachedSession<Gemma4.State> c =
+                CachedSession.resume(model, cache, model.newState(4096, 512), new long[0]);
         c.ingest(concat(template.conversationStart(), template.encodeTurn(otherTurn)));
         c.ingest(template.generationPrompt(true));
         String otherReply = decode(c, 16);
         System.out.printf("other-media reply: %s%n", otherReply.strip());
         if (expectOther != null) {
-            check(otherReply.toLowerCase().contains(expectOther), name + ": different media, coherent different answer ('" + expectOther + "')");
+            check(
+                    otherReply.toLowerCase().contains(expectOther),
+                    name + ": different media, coherent different answer ('" + expectOther + "')");
         }
 
         // -- benchmark: resume TTFT (no encode, no prefill) vs the full path --
         double best = Double.MAX_VALUE;
         for (int r = 0; r < 3; r++) {
             long t2 = System.nanoTime();
-            CachedSession<Gemma4.State> w = CachedSession.resume(model, cache, model.newState(4096, 512), turnFp);
-            if (w.position() != turnFp.length) throw new IllegalStateException("warm resume missed");
+            CachedSession<Gemma4.State> w =
+                    CachedSession.resume(model, cache, model.newState(4096, 512), turnFp);
+            if (w.position() != turnFp.length)
+                throw new IllegalStateException("warm resume missed");
             w.ingest(template.generationPrompt(true));
             model.logits(w.state()).argmax();
             best = Math.min(best, (System.nanoTime() - t2) / 1e6);
         }
-        System.out.printf("TTFT: full %.0fms (encode %.0fms + prefill %.0fms + first token)  vs  resume %.0fms  (%.0fx)%n",
+        System.out.printf(
+                "TTFT: full %.0fms (encode %.0fms + prefill %.0fms + first token)  vs  resume"
+                        + " %.0fms  (%.0fx)%n",
                 fullTtft, encodeMs, ingestMs, best, fullTtft / best);
         check(best < fullTtft, name + ": resume TTFT beats the full path");
     }
@@ -159,7 +231,9 @@ public final class Gemma4MultimodalCacheRun {
         return out.toString();
     }
 
-    /** Position bounds from the prepared batches: [end of the pre-media token block, end of media]. */
+    /**
+     * Position bounds from the prepared batches: [end of the pre-media token block, end of media].
+     */
     static int[] blockBounds(List<Batch> batches) {
         int pos = 0, preEnd = -1, mediaEnd = -1;
         for (Batch b : Batch.prepare(batches, 512)) {
@@ -169,7 +243,7 @@ public final class Gemma4MultimodalCacheRun {
             }
             pos += b.count();
         }
-        return new int[]{preEnd, mediaEnd};
+        return new int[] {preEnd, mediaEnd};
     }
 
     static int mediaRows(List<Batch> batches) {

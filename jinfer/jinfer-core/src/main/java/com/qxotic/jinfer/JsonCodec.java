@@ -4,7 +4,6 @@
 package com.qxotic.jinfer;
 
 import com.qxotic.format.json.Json;
-
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;

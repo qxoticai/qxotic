@@ -13,12 +13,12 @@ import java.util.Map;
 import java.util.zip.CRC32C;
 
 /**
- * Opaque payload storage for the prompt cache — a single-implementation seam so
- * alternative backends (in-memory arena, mmap pool, future network-attached store)
- * can plug in without touching cache logic.
+ * Opaque payload storage for the prompt cache — a single-implementation seam so alternative
+ * backends (in-memory arena, mmap pool, future network-attached store) can plug in without touching
+ * cache logic.
  *
- * <p>Blob lifecycle: allocated → filled once → maybe validated → freed. Immutable
- * after fill. Single-threaded by design (only the generation worker).
+ * <p>Blob lifecycle: allocated → filled once → maybe validated → freed. Immutable after fill.
+ * Single-threaded by design (only the generation worker).
  */
 public interface CacheStore extends AutoCloseable {
 
@@ -41,7 +41,9 @@ public interface CacheStore extends AutoCloseable {
      * (never restore the bytes) and {@link #free} it; the store itself does not reclaim, so a
      * still-referenced blob can never alias a new allocation.
      */
-    default boolean validate(MemorySegment blob) { return true; }
+    default boolean validate(MemorySegment blob) {
+        return true;
+    }
 
     /** Default backend: one confined arena per blob. */
     static CacheStore inMemory() {
@@ -61,13 +63,16 @@ public interface CacheStore extends AutoCloseable {
             @Override
             public void free(MemorySegment blob) {
                 Arena arena = arenas.remove(blob);
-                if (arena == null) throw new IllegalArgumentException("blob not allocated by this store");
+                if (arena == null)
+                    throw new IllegalArgumentException("blob not allocated by this store");
                 used -= blob.byteSize();
                 arena.close();
             }
 
             @Override
-            public long usedBytes() { return used; }
+            public long usedBytes() {
+                return used;
+            }
 
             @Override
             public void close() {
@@ -79,28 +84,30 @@ public interface CacheStore extends AutoCloseable {
     }
 
     /**
-     * Block-pool backend backed by a memory-mapped file. Fixed-size blocks
-     * ({@code blockTokens} KV tokens each), stored contiguously. A CRC32C
-     * trailer at end-of-file provides per-block integrity without fragmenting
-     * the data region. Allocations under one block fall back to in-memory arenas.
+     * Block-pool backend backed by a memory-mapped file. Fixed-size blocks ({@code blockTokens} KV
+     * tokens each), stored contiguously. A CRC32C trailer at end-of-file provides per-block
+     * integrity without fragmenting the data region. Allocations under one block fall back to
+     * in-memory arenas.
      */
-    static CacheStore mmap(Path file, long budgetBytes, int blockTokens, long kvBytesPerToken) throws IOException {
+    static CacheStore mmap(Path file, long budgetBytes, int blockTokens, long kvBytesPerToken)
+            throws IOException {
         return new BlockStore(file, budgetBytes, blockTokens, kvBytesPerToken);
     }
 }
 
 final class BlockStore implements CacheStore {
     private final MemorySegment pool;
-    private final long blockDataSize;   // blockTokens * kvBytesPerToken
+    private final long blockDataSize; // blockTokens * kvBytesPerToken
     private final int numBlocks;
-    private final long crcOffset;       // start of CRC trailer within the pool
+    private final long crcOffset; // start of CRC trailer within the pool
     private final BitSet usedBlocks;
-    private final CacheStore small;     // for allocations under one block
+    private final CacheStore small; // for allocations under one block
     private volatile long usedBytes;
 
     private final CRC32C crc = new CRC32C();
 
-    BlockStore(Path file, long budgetBytes, int blockTokens, long kvBytesPerToken) throws IOException {
+    BlockStore(Path file, long budgetBytes, int blockTokens, long kvBytesPerToken)
+            throws IOException {
         this.blockDataSize = blockTokens * kvBytesPerToken;
         long dataRegion = (budgetBytes / (blockDataSize + 4)) * blockDataSize;
         this.numBlocks = Math.toIntExact(dataRegion / blockDataSize);
@@ -109,8 +116,13 @@ final class BlockStore implements CacheStore {
         this.small = CacheStore.inMemory();
 
         long fileSize = crcOffset + (long) numBlocks * 4;
-        FileChannel fc = FileChannel.open(file, StandardOpenOption.READ, StandardOpenOption.WRITE,
-                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+        FileChannel fc =
+                FileChannel.open(
+                        file,
+                        StandardOpenOption.READ,
+                        StandardOpenOption.WRITE,
+                        StandardOpenOption.CREATE,
+                        StandardOpenOption.TRUNCATE_EXISTING);
         this.pool = fc.map(FileChannel.MapMode.READ_WRITE, 0, fileSize, Arena.global());
         fc.close();
     }
@@ -162,10 +174,14 @@ final class BlockStore implements CacheStore {
     }
 
     @Override
-    public long usedBytes() { return usedBytes + small.usedBytes(); }
+    public long usedBytes() {
+        return usedBytes + small.usedBytes();
+    }
 
     @Override
-    public void close() { small.close(); }
+    public void close() {
+        small.close();
+    }
 
     // ---- integrity ----
 
@@ -195,7 +211,8 @@ final class BlockStore implements CacheStore {
 
     private int crc32c(long offset, long len) {
         crc.reset();
-        crc.update(pool.asSlice(offset, len).asByteBuffer());   // direct buffer: intrinsified, zero-copy
+        crc.update(
+                pool.asSlice(offset, len).asByteBuffer()); // direct buffer: intrinsified, zero-copy
         return (int) crc.getValue();
     }
 

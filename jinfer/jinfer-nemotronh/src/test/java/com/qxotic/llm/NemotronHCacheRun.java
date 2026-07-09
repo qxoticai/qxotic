@@ -8,17 +8,26 @@ package com.qxotic.llm;
 import com.qxotic.jinfer.testkit.CacheScenario;
 import com.qxotic.jinfer.testkit.Harness;
 import com.qxotic.jinfer.testkit.Stories;
-
 import java.nio.file.Path;
 
 public final class NemotronHCacheRun {
     public static void main(String[] args) throws Exception {
-        Path path = Path.of(args.length > 0 ? args[0]
-                : "/home/mukel/Desktop/playground/models/bartowski/nvidia_Nemotron-Cascade-2-30B-A3B-Q8_0.gguf");
-        Harness<NemotronH.State> h = new Harness<>(NemotronH.loadModel(path, 4096), path, 4096, false);
-        new CacheScenario<>(h, CacheScenario.Config.of("You are a concise assistant.", 32,
-                new CacheScenario.LongCase(Stories.pelican(),
-                        "What was the secret codeword in the story? One word.", 700)))
+        Path path =
+                Path.of(
+                        args.length > 0
+                                ? args[0]
+                                : "/home/mukel/Desktop/playground/models/bartowski/nvidia_Nemotron-Cascade-2-30B-A3B-Q8_0.gguf");
+        Harness<NemotronH.State> h =
+                new Harness<>(NemotronH.loadModel(path, 4096), path, 4096, false);
+        new CacheScenario<>(
+                        h,
+                        CacheScenario.Config.of(
+                                "You are a concise assistant.",
+                                32,
+                                new CacheScenario.LongCase(
+                                        Stories.pelican(),
+                                        "What was the secret codeword in the story? One word.",
+                                        700)))
                 .run("NemotronHCacheRun");
     }
 }

@@ -6,7 +6,6 @@ package com.qxotic.jinfer;
 import com.qxotic.format.gguf.GGMLType;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.format.gguf.TensorEntry;
-
 import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.lang.foreign.Arena;
@@ -36,9 +35,12 @@ interface Timer extends AutoCloseable {
             @Override
             public void close() {
                 long elapsedNanos = System.nanoTime() - startNanos;
-                System.err.println(label + ": "
-                        + timeUnit.convert(elapsedNanos, TimeUnit.NANOSECONDS) + " "
-                        + timeUnit.toChronoUnit().name().toLowerCase());
+                System.err.println(
+                        label
+                                + ": "
+                                + timeUnit.convert(elapsedNanos, TimeUnit.NANOSECONDS)
+                                + " "
+                                + timeUnit.toChronoUnit().name().toLowerCase());
             }
         };
     }
@@ -46,40 +48,55 @@ interface Timer extends AutoCloseable {
 
 public final class ModelLoader {
 
-    private ModelLoader() {
-    }
+    private ModelLoader() {}
 
-    /** Parses the GGUF metadata (com.qxotic:gguf) from the channel, leaving its position past the header. */
+    /**
+     * Parses the GGUF metadata (com.qxotic:gguf) from the channel, leaving its position past the
+     * header.
+     */
     public static GGUF readGguf(FileChannel fileChannel, String modelLabel) throws IOException {
         try (var ignored = Timer.log("Parse " + modelLabel)) {
             fileChannel.position(0L);
-            return GGUF.read(Channels.newChannel(
-                    new BufferedInputStream(Channels.newInputStream(fileChannel), 1 << 20)));
+            return GGUF.read(
+                    Channels.newChannel(
+                            new BufferedInputStream(
+                                    Channels.newInputStream(fileChannel), 1 << 20)));
         }
     }
 
     /** Memory-maps the tensor data (whole-file mapping outlives the process: Arena.global). */
-    public static Map<String, GGMLTensorEntry> loadTensors(FileChannel fileChannel, GGUF gguf) throws IOException {
+    public static Map<String, GGMLTensorEntry> loadTensors(FileChannel fileChannel, GGUF gguf)
+            throws IOException {
         return loadTensors(fileChannel, gguf.getTensorDataOffset(), gguf.getTensors());
     }
 
-    public static Map<String, GGMLTensorEntry> loadTensors(FileChannel fileChannel, long tensorDataOffset,
-                                                    Collection<TensorEntry> tensors) throws IOException {
-        MemorySegment tensorData = fileChannel.map(FileChannel.MapMode.READ_ONLY, tensorDataOffset,
-                fileChannel.size() - tensorDataOffset, Arena.global());
+    public static Map<String, GGMLTensorEntry> loadTensors(
+            FileChannel fileChannel, long tensorDataOffset, Collection<TensorEntry> tensors)
+            throws IOException {
+        MemorySegment tensorData =
+                fileChannel.map(
+                        FileChannel.MapMode.READ_ONLY,
+                        tensorDataOffset,
+                        fileChannel.size() - tensorDataOffset,
+                        Arena.global());
         Map<String, GGMLTensorEntry> tensorEntries = HashMap.newHashMap(tensors.size());
         for (TensorEntry tensor : tensors) {
             int[] shape = Arrays.stream(tensor.shape()).mapToInt(Math::toIntExact).toArray();
-            long sizeInBytes = tensor.ggmlType().byteSizeFor(FloatTensor.numberOfElementsLong(shape));
+            long sizeInBytes =
+                    tensor.ggmlType().byteSizeFor(FloatTensor.numberOfElementsLong(shape));
             MemorySegment memorySegment = tensorData.asSlice(tensor.offset(), sizeInBytes);
-            tensorEntries.put(tensor.name(), new GGMLTensorEntry(tensor.name(), tensor.ggmlType(), shape, memorySegment));
+            tensorEntries.put(
+                    tensor.name(),
+                    new GGMLTensorEntry(tensor.name(), tensor.ggmlType(), shape, memorySegment));
         }
         return tensorEntries;
     }
 
-    /** The optional "llama3" RoPE frequency-scaling factors ({@code rope_freqs.weight}), or null if
-     *  the model uses plain RoPE. These are per-frequency divisors (1.0 for high frequencies, up to
-     *  the long-context factor for low frequencies); see {@link RoPE#precomputeFreqsCisFromFreqs}. */
+    /**
+     * The optional "llama3" RoPE frequency-scaling factors ({@code rope_freqs.weight}), or null if
+     * the model uses plain RoPE. These are per-frequency divisors (1.0 for high frequencies, up to
+     * the long-context factor for low frequencies); see {@link RoPE#precomputeFreqsCisFromFreqs}.
+     */
     public static float[] ropeFreqFactors(Map<String, GGMLTensorEntry> tensorEntries) {
         GGMLTensorEntry e = tensorEntries.get("rope_freqs.weight");
         return e == null ? null : e.memorySegment().toArray(ValueLayout.JAVA_FLOAT);
@@ -100,7 +117,8 @@ public final class ModelLoader {
     }
 
     /** First present entry among alternate tensor names (GGUF converter naming drift), or null. */
-    public static GGMLTensorEntry firstPresent(Map<String, GGMLTensorEntry> entries, String... names) {
+    public static GGMLTensorEntry firstPresent(
+            Map<String, GGMLTensorEntry> entries, String... names) {
         for (String name : names) {
             GGMLTensorEntry entry = entries.get(name);
             if (entry != null) return entry;
@@ -154,6 +172,7 @@ public final class ModelLoader {
         if (ggmlType != GGMLType.F32) {
             throw new UnsupportedOperationException("Conversion to " + ggmlType);
         }
-        return new F32FloatTensor(FloatTensor.numberOfElementsLong(tensorEntry.shape()), tensorEntry.memorySegment());
+        return new F32FloatTensor(
+                FloatTensor.numberOfElementsLong(tensorEntry.shape()), tensorEntry.memorySegment());
     }
 }

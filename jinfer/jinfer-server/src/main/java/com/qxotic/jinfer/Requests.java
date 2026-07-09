@@ -18,7 +18,8 @@ final class Requests {
 
     /** The model id to echo back: the request's {@code model}, else the served file name. */
     static String modelId(Map<String, Object> request, LLMOptions options) {
-        return Values.stringValue(request.get("model"), options.modelPath().getFileName().toString());
+        return Values.stringValue(
+                request.get("model"), options.modelPath().getFileName().toString());
     }
 
     /** The /v1/completions prompt: a string, or a string array joined by newlines. */
@@ -31,8 +32,11 @@ final class Requests {
 
     // ---- /v1/responses -----------------------------------------------------
 
-    /** Folds Responses-API spellings onto the chat shape in place: {@code max_output_tokens} ->
-     *  {@code max_tokens}, and flat {@code {type:function,name,...}} tools -> nested {@code function}. */
+    /**
+     * Folds Responses-API spellings onto the chat shape in place: {@code max_output_tokens} ->
+     * {@code max_tokens}, and flat {@code {type:function,name,...}} tools -> nested {@code
+     * function}.
+     */
     static void normalizeResponse(Map<String, Object> request) {
         if (!request.containsKey("max_tokens") && request.containsKey("max_output_tokens")) {
             request.put("max_tokens", request.get("max_output_tokens"));
@@ -51,7 +55,8 @@ final class Requests {
         if ("function".equals(tool.get("type")) && tool.get("name") != null) {
             Map<String, Object> function = new LinkedHashMap<>();
             function.put("name", tool.get("name"));
-            if (tool.get("description") != null) function.put("description", tool.get("description"));
+            if (tool.get("description") != null)
+                function.put("description", tool.get("description"));
             function.put("parameters", tool.getOrDefault("parameters", Map.of()));
             return Map.of("type", "function", "function", function);
         }
@@ -86,10 +91,11 @@ final class Requests {
         Map<String, Object> map = Values.asObject(item, "input item");
         String type = Values.stringValue(map.get("type"), "message");
         if ("function_call_output".equals(type)) {
-            messages.add(Map.of(
-                    "role", "tool",
-                    "name", Values.stringValue(map.get("call_id"), "tool"),
-                    "content", Values.stringValue(map.get("output"), "")));
+            messages.add(
+                    Map.of(
+                            "role", "tool",
+                            "name", Values.stringValue(map.get("call_id"), "tool"),
+                            "content", Values.stringValue(map.get("output"), "")));
             return;
         }
         String role = Values.stringValue(map.get("role"), "user");

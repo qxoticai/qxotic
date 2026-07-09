@@ -16,7 +16,9 @@ public final class Checks {
         }
     }
 
-    /** Prints the verdict ({@code name + ": " + allOkMessage}) and exits non-zero on any failure. */
+    /**
+     * Prints the verdict ({@code name + ": " + allOkMessage}) and exits non-zero on any failure.
+     */
     public void finish(String name, String allOkMessage) {
         if (failures > 0) {
             System.out.println(failures + " failure(s)");

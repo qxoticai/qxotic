@@ -1,10 +1,10 @@
-// Runnable smoke check for the gpt-oss port: load a real gpt-oss GGUF and greedily decode through the
+// Runnable smoke check for the gpt-oss port: load a real gpt-oss GGUF and greedily decode through
+// the
 // new model API.   java ... com.qxotic.llm.GptOssRun <model.gguf> [prompt] [nTokens]
-// Raw prompt only (gpt-oss's harmony chat format is not wired here); for correctness use GptOssCompare,
+// Raw prompt only (gpt-oss's harmony chat format is not wired here); for correctness use
+// GptOssCompare,
 // which checks token-exactness against the production GptOss.
 package com.qxotic.llm;
-
-import com.qxotic.jinfer.FloatTensor;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -19,9 +19,20 @@ public final class GptOssRun {
 
         GptOss model = GptOss.loadModel(Path.of(path), 4096);
         var c = model.config();
-        System.err.printf("config: dim=%d layers=%d heads=%d kvHeads=%d headSize=%d vocab=%d ctx=%d experts=%d/%d expertFF=%d swaWin=%d%n",
-                c.embeddingLength(), c.numberOfLayers(), c.numberOfHeads(), c.numberOfKeyValueHeads(), c.headSize(),
-                c.vocabularySize(), c.contextLength(), c.expertUsedCount(), c.expertCount(), c.expertFeedForwardLength(), c.slidingWindow());
+        System.err.printf(
+                "config: dim=%d layers=%d heads=%d kvHeads=%d headSize=%d vocab=%d ctx=%d"
+                        + " experts=%d/%d expertFF=%d swaWin=%d%n",
+                c.embeddingLength(),
+                c.numberOfLayers(),
+                c.numberOfHeads(),
+                c.numberOfKeyValueHeads(),
+                c.headSize(),
+                c.vocabularySize(),
+                c.contextLength(),
+                c.expertUsedCount(),
+                c.expertCount(),
+                c.expertFeedForwardLength(),
+                c.slidingWindow());
 
         var tk = model.tokenizer();
         int bos = tk.getSpecialTokens().getOrDefault("<|startoftext|>", 199998);
@@ -49,5 +60,4 @@ public final class GptOssRun {
         System.out.println(promptStr + out);
         System.err.printf("%n%.2f tok/s (%d tokens)%n", n / secs, n);
     }
-
 }

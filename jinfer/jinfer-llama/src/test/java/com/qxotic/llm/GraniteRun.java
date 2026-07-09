@@ -1,4 +1,5 @@
-// Runnable smoke check for the Granite 4.1 port: load the granite GGUF and greedily decode through the
+// Runnable smoke check for the Granite 4.1 port: load the granite GGUF and greedily decode through
+// the
 // com.qxotic.llm model API.   java ... com.qxotic.llm.GraniteRun <model.gguf> [prompt] [nTokens]
 package com.qxotic.llm;
 
@@ -15,9 +16,15 @@ public final class GraniteRun {
 
         Granite model = Granite.loadModel(Path.of(path), 4096);
         var c = model.config();
-        System.err.printf("config: dim=%d layers=%d heads=%d kvHeads=%d vocab=%d ctx=%d attnScale=%.5f%n",
-                c.embeddingLength(), c.numberOfLayers(), c.numberOfHeads(), c.numberOfKeyValueHeads(),
-                c.vocabularySize(), c.contextLength(), c.attentionScale());
+        System.err.printf(
+                "config: dim=%d layers=%d heads=%d kvHeads=%d vocab=%d ctx=%d attnScale=%.5f%n",
+                c.embeddingLength(),
+                c.numberOfLayers(),
+                c.numberOfHeads(),
+                c.numberOfKeyValueHeads(),
+                c.vocabularySize(),
+                c.contextLength(),
+                c.attentionScale());
 
         var tk = model.tokenizer();
         List<Integer> promptTokens = new ArrayList<>();

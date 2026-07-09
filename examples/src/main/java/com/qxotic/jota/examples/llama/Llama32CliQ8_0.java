@@ -34,8 +34,6 @@ import java.util.Locale;
 import java.util.Scanner;
 import java.util.Set;
 
-import jdk.incubator.vector.VectorOperators;
-
 /**
  * Llama 3.2 CLI with Q8_0 quantization support.
  *
@@ -566,13 +564,9 @@ public final class Llama32CliQ8_0 {
                 long withinBlockIndex = i % blockSize;
                 long blockOffset = blockIndex * blockBytes;
 
-                short scaleShort =
-                        seg.get(ValueLayout.JAVA_SHORT_UNALIGNED, blockOffset);
+                short scaleShort = seg.get(ValueLayout.JAVA_SHORT_UNALIGNED, blockOffset);
                 float scale = Float.float16ToFloat(scaleShort);
-                byte quantVal =
-                        seg.get(
-                                ValueLayout.JAVA_BYTE,
-                                blockOffset + 2 + withinBlockIndex);
+                byte quantVal = seg.get(ValueLayout.JAVA_BYTE, blockOffset + 2 + withinBlockIndex);
 
                 out[i] = quantVal * scale;
             }
@@ -3471,15 +3465,10 @@ public final class Llama32CliQ8_0 {
                         int withinBlockIndex = col % blockSize;
                         long blockOffset = rowBase + (long) blockIndex * blockBytes;
 
-                        short scaleShort =
-                                aSeg.get(
-                                        ValueLayout.JAVA_SHORT_UNALIGNED,
-                                        blockOffset);
+                        short scaleShort = aSeg.get(ValueLayout.JAVA_SHORT_UNALIGNED, blockOffset);
                         float scale = Float.float16ToFloat(scaleShort);
                         byte quantVal =
-                                aSeg.get(
-                                        ValueLayout.JAVA_BYTE,
-                                        blockOffset + 2 + withinBlockIndex);
+                                aSeg.get(ValueLayout.JAVA_BYTE, blockOffset + 2 + withinBlockIndex);
 
                         float av = quantVal * scale;
                         float xvCol =

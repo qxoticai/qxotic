@@ -1,9 +1,8 @@
-// Runnable smoke check for the standard-Llama port: load a Llama-family GGUF and greedily decode through
+// Runnable smoke check for the standard-Llama port: load a Llama-family GGUF and greedily decode
+// through
 // the com.qxotic.llm model API.   java ... com.qxotic.llm.LlamaRun <model.gguf> [prompt] [nTokens]
 // CHAT=1 wraps the prompt in the Llama-3 header chat format.
 package com.qxotic.llm;
-
-import com.qxotic.jinfer.FloatTensor;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -18,23 +17,38 @@ public final class LlamaRun {
 
         Llama model = Llama.loadModel(Path.of(path), 4096);
         var c = model.config();
-        System.err.printf("config: dim=%d layers=%d heads=%d kvHeads=%d vocab=%d ctx=%d%n",
-                c.embeddingLength(), c.numberOfLayers(), c.numberOfHeads(), c.numberOfKeyValueHeads(), c.vocabularySize(), c.contextLength());
+        System.err.printf(
+                "config: dim=%d layers=%d heads=%d kvHeads=%d vocab=%d ctx=%d%n",
+                c.embeddingLength(),
+                c.numberOfLayers(),
+                c.numberOfHeads(),
+                c.numberOfKeyValueHeads(),
+                c.vocabularySize(),
+                c.contextLength());
 
         var tk = model.tokenizer();
         var specials = tk.getSpecialTokens();
-        int bos = specials.getOrDefault("<bos>",
-                specials.getOrDefault("<|begin_of_text|>", specials.getOrDefault("<|startoftext|>", 1)));
+        int bos =
+                specials.getOrDefault(
+                        "<bos>",
+                        specials.getOrDefault(
+                                "<|begin_of_text|>", specials.getOrDefault("<|startoftext|>", 1)));
         List<Integer> promptTokens = new ArrayList<>();
         if (model.config().addBos()) promptTokens.add(bos);
-        if (System.getenv("CHAT") != null) {   // Llama-3: <|start_header_id|>user<|end_header_id|>\n\n{p}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n
+        if (System.getenv("CHAT") != null) { // Llama-3:
+            // <|start_header_id|>user<|end_header_id|>\n\n{p}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n
             int sh = tk.getSpecialTokens().getOrDefault("<|start_header_id|>", -1);
             int eh = tk.getSpecialTokens().getOrDefault("<|end_header_id|>", -1);
             int eot = tk.getSpecialTokens().getOrDefault("<|eot_id|>", -1);
             if (sh >= 0 && eh >= 0 && eot >= 0) {
-                promptTokens.add(sh); promptTokens.addAll(tk.encode("user")); promptTokens.add(eh);
-                promptTokens.addAll(tk.encode("\n\n" + promptStr.strip())); promptTokens.add(eot);
-                promptTokens.add(sh); promptTokens.addAll(tk.encode("assistant")); promptTokens.add(eh);
+                promptTokens.add(sh);
+                promptTokens.addAll(tk.encode("user"));
+                promptTokens.add(eh);
+                promptTokens.addAll(tk.encode("\n\n" + promptStr.strip()));
+                promptTokens.add(eot);
+                promptTokens.add(sh);
+                promptTokens.addAll(tk.encode("assistant"));
+                promptTokens.add(eh);
                 promptTokens.addAll(tk.encode("\n\n"));
             } else {
                 promptTokens.addAll(tk.encode(promptStr));
@@ -63,5 +77,4 @@ public final class LlamaRun {
         System.out.println(promptStr + out);
         System.err.printf("%n%.2f tok/s (%d tokens)%n", n / secs, n);
     }
-
 }

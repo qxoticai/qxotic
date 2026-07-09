@@ -11,12 +11,16 @@ public final class CacheStoreTest {
     static int failures;
 
     static void check(String what, boolean ok) {
-        if (!ok) { failures++; System.err.println("FAIL: " + what); }
-        else System.out.println("ok: " + what);
+        if (!ok) {
+            failures++;
+            System.err.println("FAIL: " + what);
+        } else System.out.println("ok: " + what);
     }
 
     static long sum(int[] arr) {
-        long s = 0; for (int v : arr) s += v; return s;
+        long s = 0;
+        for (int v : arr) s += v;
+        return s;
     }
 
     // ========================================================================
@@ -299,10 +303,16 @@ public final class CacheStoreTest {
 
         // Clean up temp file
         if (tmpFile != null) {
-            try { Files.deleteIfExists(tmpFile); } catch (IOException ignored) {}
+            try {
+                Files.deleteIfExists(tmpFile);
+            } catch (IOException ignored) {
+            }
         }
 
-        if (failures > 0) { System.err.println("\nCacheStoreTest: " + failures + " failures"); System.exit(1); }
+        if (failures > 0) {
+            System.err.println("\nCacheStoreTest: " + failures + " failures");
+            System.exit(1);
+        }
         System.out.println("\nCacheStoreTest: 0 failures");
     }
 }

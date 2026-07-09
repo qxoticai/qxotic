@@ -15,44 +15,60 @@ import java.util.concurrent.SynchronousQueue;
 final class Worker {
 
     private final BlockingQueue<Runnable> queue =
-            RuntimeFlags.SERVER_QUEUE == 0 ? new SynchronousQueue<>()
-                                           : new ArrayBlockingQueue<>(RuntimeFlags.SERVER_QUEUE);
+            RuntimeFlags.SERVER_QUEUE == 0
+                    ? new SynchronousQueue<>()
+                    : new ArrayBlockingQueue<>(RuntimeFlags.SERVER_QUEUE);
     private volatile boolean busy;
 
     void start() {
-        Thread.ofPlatform().name("generation-worker").daemon(true).start(() -> {
-            while (true) {
-                try {
-                    Runnable job = queue.take();
-                    busy = true;
-                    try {
-                        job.run();
-                    } finally {
-                        busy = false;
-                    }
-                } catch (InterruptedException e) {
-                    return;
-                } catch (Throwable t) {
-                    System.err.println("generation worker:");
-                    t.printStackTrace();
-                }
-            }
-        });
+        Thread.ofPlatform()
+                .name("generation-worker")
+                .daemon(true)
+                .start(
+                        () -> {
+                            while (true) {
+                                try {
+                                    Runnable job = queue.take();
+                                    busy = true;
+                                    try {
+                                        job.run();
+                                    } finally {
+                                        busy = false;
+                                    }
+                                } catch (InterruptedException e) {
+                                    return;
+                                } catch (Throwable t) {
+                                    System.err.println("generation worker:");
+                                    t.printStackTrace();
+                                }
+                            }
+                        });
     }
 
-    /** Submits and blocks until the job completes; throws if the queue is full. For startup work
-     *  (prompt-cache warming) that must finish before the server serves requests. */
+    /**
+     * Submits and blocks until the job completes; throws if the queue is full. For startup work
+     * (prompt-cache warming) that must finish before the server serves requests.
+     */
     void runToCompletion(Runnable job) {
         if (!submitAndWait(job)) {
             throw new IllegalStateException("generation queue full at startup");
         }
     }
 
-    /** Submits {@code job} and waits for it; returns false (without waiting) when the queue is
-     *  full, so the caller can answer with backpressure. */
+    /**
+     * Submits {@code job} and waits for it; returns false (without waiting) when the queue is full,
+     * so the caller can answer with backpressure.
+     */
     boolean submitAndWait(Runnable job) {
         CountDownLatch done = new CountDownLatch(1);
-        if (!queue.offer(() -> { try { job.run(); } finally { done.countDown(); } })) {
+        if (!queue.offer(
+                () -> {
+                    try {
+                        job.run();
+                    } finally {
+                        done.countDown();
+                    }
+                })) {
             return false;
         }
         await(done);

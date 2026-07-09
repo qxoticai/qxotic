@@ -1,7 +1,9 @@
 package com.qxotic.jinfer.chat;
 
-/** A conversation role. String-backed on purpose: the model's template is the authority on role
- *  names ("model" vs "assistant", tool roles), so this is a label, not an enum. */
+/**
+ * A conversation role. String-backed on purpose: the model's template is the authority on role
+ * names ("model" vs "assistant", tool roles), so this is a label, not an enum.
+ */
 public record Role(String name) {
     public static final Role SYSTEM = new Role("system");
     public static final Role USER = new Role("user");

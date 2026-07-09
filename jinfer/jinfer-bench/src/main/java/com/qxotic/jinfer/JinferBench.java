@@ -1,14 +1,12 @@
 package com.qxotic.jinfer;
 
-import com.qxotic.format.gguf.GGUF;
 import com.qxotic.llm.Gemma4;
-import com.qxotic.llm.Granite;
 import com.qxotic.llm.GptOss;
+import com.qxotic.llm.Granite;
 import com.qxotic.llm.Lfm2;
 import com.qxotic.llm.Llama;
 import com.qxotic.llm.NemotronH;
 import com.qxotic.llm.Qwen35;
-
 import java.io.PrintStream;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
@@ -18,10 +16,11 @@ import java.util.List;
 import java.util.concurrent.ForkJoinPool;
 
 /**
- * pp/tg throughput benchmark for the new com.qxotic.llm seam (the jinfer-gemma4 port), printed in the
- * same markdown table as {@link LegacyBench} so the new API's numbers are directly comparable to the
- * production engine. Drives the forward directly — {@code newState → ingest → logits} — and times it
- * with {@code nanoTime} (the seam has no internal timers). Greedy argmax (temp 0), like llama-bench.
+ * pp/tg throughput benchmark for the new com.qxotic.llm seam (the jinfer-gemma4 port), printed in
+ * the same markdown table as {@link LegacyBench} so the new API's numbers are directly comparable
+ * to the production engine. Drives the forward directly — {@code newState → ingest → logits} — and
+ * times it with {@code nanoTime} (the seam has no internal timers). Greedy argmax (temp 0), like
+ * llama-bench.
  *
  * <pre>jinfer-bench -m model.gguf [-p 512] [-n 128] [-r 5] [-w 2] [--ctx N]</pre>
  */
@@ -38,11 +37,21 @@ public final class JinferBench {
                 case "-r", "--repetitions" -> reps = Integer.parseInt(args[++i]);
                 case "-w", "--warmup" -> warmup = Integer.parseInt(args[++i]);
                 case "--ctx" -> ctx = Integer.parseInt(args[++i]);
-                case "-h", "--help" -> { usage(System.out); return; }
-                default -> { System.err.println("unknown option: " + args[i]); usage(System.err); System.exit(2); }
+                case "-h", "--help" -> {
+                    usage(System.out);
+                    return;
+                }
+                default -> {
+                    System.err.println("unknown option: " + args[i]);
+                    usage(System.err);
+                    System.exit(2);
+                }
             }
         }
-        if (models.isEmpty()) { usage(System.err); System.exit(2); }
+        if (models.isEmpty()) {
+            usage(System.err);
+            System.exit(2);
+        }
         if (ctx == 0) ctx = Math.max(p, 1) + n + 64;
         int threads = ForkJoinPool.commonPool().getParallelism();
 
@@ -57,7 +66,9 @@ public final class JinferBench {
         printTable(rows);
     }
 
-    /** Dispatch on general.architecture to the matching new-API port (all implement LanguageModel). */
+    /**
+     * Dispatch on general.architecture to the matching new-API port (all implement LanguageModel).
+     */
     private static LanguageModel<?, ?, ?> loadAny(Path path, int ctx) throws Exception {
         String arch;
         try (FileChannel fc = FileChannel.open(path, StandardOpenOption.READ)) {
@@ -68,22 +79,33 @@ public final class JinferBench {
             case "gpt-oss" -> GptOss.loadModel(path, ctx);
             case "qwen35", "qwen35moe" -> Qwen35.loadModel(path, ctx);
             case "nemotron_h", "nemotron_h_moe" -> NemotronH.loadModel(path, ctx);
-            case "llama", "minicpm", "mistral3", "smollm3" -> Llama.loadModel(path, ctx);   // same-graph Llama variants (metadata-driven)
+            case "llama", "minicpm", "mistral3", "smollm3" ->
+                    Llama.loadModel(path, ctx); // same-graph Llama variants (metadata-driven)
             case "granite" -> Granite.loadModel(path, ctx);
             default -> {
                 if (arch.startsWith("lfm")) yield Lfm2.loadModel(path, ctx);
-                throw new IllegalArgumentException("JinferBench: unsupported architecture '" + arch + "'");
+                throw new IllegalArgumentException(
+                        "JinferBench: unsupported architecture '" + arch + "'");
             }
         };
     }
 
-    /** One pp/tg test on the new seam. Unlike the native llama-bench (which needs a single warmup run),
-     *  the JVM must reach JIT/GC steady state first, so this warms <em>adaptively</em>: it keeps running
-     *  the pass until the last {@code WINDOW} throughputs span less than {@code TOL} (after at least
-     *  {@code minWarmup} passes, capped so a noisy box still terminates), then runs {@code reps} timed
-     *  passes reported as throughput mean ± stddev. */
-    private static <S extends RuntimeState> Row measure(LanguageModel<?, ?, S> model, String name, int threads, String test, int count, boolean prefill,
-                               int minWarmup, int reps) {
+    /**
+     * One pp/tg test on the new seam. Unlike the native llama-bench (which needs a single warmup
+     * run), the JVM must reach JIT/GC steady state first, so this warms <em>adaptively</em>: it
+     * keeps running the pass until the last {@code WINDOW} throughputs span less than {@code TOL}
+     * (after at least {@code minWarmup} passes, capped so a noisy box still terminates), then runs
+     * {@code reps} timed passes reported as throughput mean ± stddev.
+     */
+    private static <S extends RuntimeState> Row measure(
+            LanguageModel<?, ?, S> model,
+            String name,
+            int threads,
+            String test,
+            int count,
+            boolean prefill,
+            int minWarmup,
+            int reps) {
         int ctx = model.config().contextLength();
         int vocab = model.config().vocabularySize();
         int[] prompt = fillerTokens(vocab, prefill ? count : 1);
@@ -100,7 +122,10 @@ public final class JinferBench {
             System.err.printf("  %-6s [warmup %2d] %8.2f t/s%n", test, passes, t);
             if (passes >= Math.max(minWarmup, WINDOW)) {
                 double lo = Double.MAX_VALUE, hi = 0;
-                for (double v : recent) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+                for (double v : recent) {
+                    lo = Math.min(lo, v);
+                    hi = Math.max(hi, v);
+                }
                 if ((hi - lo) / lo < TOL) break;
             }
         }
@@ -115,9 +140,18 @@ public final class JinferBench {
         return new Row(name, threads, test, mean(tps), stddev(tps));
     }
 
-    /** One timed pass on a fresh state: a single batched prefill (pp) or {@code count} decode steps (tg).
-     *  Returns tokens/second. Shared by the warmup and timed loops so both measure identical work. */
-    private static <S extends RuntimeState> double runOnce(LanguageModel<?, ?, S> model, int ctx, int[] prompt, int count, boolean prefill, int vocab) {
+    /**
+     * One timed pass on a fresh state: a single batched prefill (pp) or {@code count} decode steps
+     * (tg). Returns tokens/second. Shared by the warmup and timed loops so both measure identical
+     * work.
+     */
+    private static <S extends RuntimeState> double runOnce(
+            LanguageModel<?, ?, S> model,
+            int ctx,
+            int[] prompt,
+            int count,
+            boolean prefill,
+            int vocab) {
         S s = model.newState(ctx, Math.max(prompt.length, 16));
         if (prefill) {
             // pp: one batched prefill of `count` tokens
@@ -136,7 +170,10 @@ public final class JinferBench {
         return count / ((System.nanoTime() - t0) / 1e9);
     }
 
-    /** Synthetic in-range token ids — throughput is content-independent, and tokenizer() isn't on the interface. */
+    /**
+     * Synthetic in-range token ids — throughput is content-independent, and tokenizer() isn't on
+     * the interface.
+     */
     private static int[] fillerTokens(int vocab, int count) {
         int[] ids = new int[count];
         for (int i = 0; i < count; i++) ids[i] = (i * 17 + 1) % vocab;
@@ -157,10 +194,20 @@ public final class JinferBench {
         String fmt = "| %-" + w + "s | %7s | %-6s | %16s |%n";
         System.out.printf(fmt, "model", "threads", "test", "t/s");
         System.out.printf(fmt, "-".repeat(w), "------:", "------", "---------------:");
-        for (Row r : rows) System.out.printf(fmt, r.model, r.threads, r.test, String.format("%.2f ± %.2f", r.mean, r.stddev));
+        for (Row r : rows)
+            System.out.printf(
+                    fmt,
+                    r.model,
+                    r.threads,
+                    r.test,
+                    String.format("%.2f ± %.2f", r.mean, r.stddev));
     }
 
-    private static double mean(double[] a) { double s = 0; for (double v : a) s += v; return s / a.length; }
+    private static double mean(double[] a) {
+        double s = 0;
+        for (double v : a) s += v;
+        return s / a.length;
+    }
 
     private static double stddev(double[] a) {
         if (a.length < 2) return 0;
@@ -175,15 +222,17 @@ public final class JinferBench {
     }
 
     private static void usage(PrintStream out) {
-        out.println("""
-            jinfer-bench — pp/tg throughput for the com.qxotic.llm seam (jinfer-gemma4)
+        out.println(
+                """
+                jinfer-bench — pp/tg throughput for the com.qxotic.llm seam (jinfer-gemma4)
 
-            usage: jinfer-bench -m <model.gguf> [-m ...] [options]
-              -m, --model <path>      model to benchmark (repeatable)
-              -p, --n-prompt <N>      prefill tokens (default 512; 0 to skip pp)
-              -n, --n-gen <N>         decode tokens  (default 128; 0 to skip tg)
-              -r, --repetitions <N>   timed reps     (default 5)
-              -w, --warmup <N>        min warmup passes; warms adaptively until throughput settles (default 2)
-                  --ctx <N>           context size   (default p + n + 64)""");
+                usage: jinfer-bench -m <model.gguf> [-m ...] [options]
+                  -m, --model <path>      model to benchmark (repeatable)
+                  -p, --n-prompt <N>      prefill tokens (default 512; 0 to skip pp)
+                  -n, --n-gen <N>         decode tokens  (default 128; 0 to skip tg)
+                  -r, --repetitions <N>   timed reps     (default 5)
+                  -w, --warmup <N>        min warmup passes; warms adaptively until throughput settles (default 2)
+                      --ctx <N>           context size   (default p + n + 64)\
+                """);
     }
 }

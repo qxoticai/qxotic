@@ -1,14 +1,17 @@
-// Pluggable image decoder: encoded image bytes (PNG/JPEG/WebP/...) -> raw Media.Image (RGB, values in
+// Pluggable image decoder: encoded image bytes (PNG/JPEG/WebP/...) -> raw Media.Image (RGB, values
+// in
 // [0,1], HWC-interleaved, 3 channels). Two implementations:
-//   - FfmpegImageDecoder: shells out to ffmpeg; native-image-safe, cross-platform (macOS/Windows/Linux),
+//   - FfmpegImageDecoder: shells out to ffmpeg; native-image-safe, cross-platform
+// (macOS/Windows/Linux),
 //     broad format support; needs ffmpeg on PATH.
-//   - ImageIoDecoder: javax.imageio; JVM-only (its IIORegistry ServiceLoader/reflection is fragile under
+//   - ImageIoDecoder: javax.imageio; JVM-only (its IIORegistry ServiceLoader/reflection is fragile
+// under
 //     GraalVM native-image), no external process.
-// Select via ImageCodec (-Djinfer.imageDecoder=ffmpeg|imageio; default ffmpeg under native-image, imageio on JVM).
+// Select via ImageCodec (-Djinfer.imageDecoder=ffmpeg|imageio; default ffmpeg under native-image,
+// imageio on JVM).
 package com.qxotic.jinfer.media;
 
 import com.qxotic.jinfer.Media;
-
 import java.io.IOException;
 import java.nio.file.Path;
 
