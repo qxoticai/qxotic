@@ -1,7 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
   <parent>
@@ -19,24 +17,23 @@
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jam-core</artifactId>
-      <version>0.1.0</version>
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
-      <artifactId>graalvm-annotations</artifactId>   <!-- @AlwaysInline: compile-only, not bundled; GraalVM supplies it at native-image build -->
-      <version>0.1.0</version>
+      <artifactId>graalvm-annotations</artifactId>
+      <!-- @AlwaysInline: compile-only, not bundled; GraalVM supplies it at native-image build -->
       <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
-      <artifactId>jam-scalar</artifactId>   <!-- the reference floor the SIMD kernels are checked against -->
-      <version>0.1.0</version>
+      <artifactId>jam-scalar</artifactId>
+      <!-- the reference floor the SIMD kernels are checked against -->
       <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
-      <artifactId>jam-native</artifactId>   <!-- cross-backend parity also checks NativeJAM, when libjam loads -->
-      <version>0.1.0</version>
+      <artifactId>jam-native</artifactId>
+      <!-- cross-backend parity also checks NativeJAM, when libjam loads -->
       <scope>test</scope>
     </dependency>
     <dependency>
@@ -53,13 +50,15 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
         <configuration>
-          <compilerArgs><arg>--add-modules</arg><arg>jdk.incubator.vector</arg></compilerArgs>
+          <compilerArgs>
+            <arg>--add-modules</arg>
+            <arg>jdk.incubator.vector</arg>
+          </compilerArgs>
         </configuration>
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
-        <version>3.2.5</version>
         <configuration>
           <argLine>--add-modules jdk.incubator.vector -Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0</argLine>
         </configuration>

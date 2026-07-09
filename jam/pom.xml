@@ -1,35 +1,24 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
-  <groupId>com.qxotic</groupId>
+  <parent>
+    <groupId>com.qxotic</groupId>
+    <artifactId>qxotic-parent</artifactId>
+    <version>0.1.0</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+
   <artifactId>jam</artifactId>
-  <version>0.1.0</version>
   <packaging>pom</packaging>
 
-  <!-- jam — fast quantized CPU matmul. Split into the API and its backends:
-         jam-core    the JAM interface + dtype geometry (pure Java, no native)
-         jam-native  the libjam (C) implementation, NativeJAM + JNI/FFM
-         jam-scalar  a pure-Java reference implementation (the dot floor, every dtype)
-         jam-vector  the Java Vector API backend — register-tiled SIMD gemm per dtype -->
-  <properties>
-    <maven.compiler.release>22</maven.compiler.release>   <!-- FFM (java.lang.foreign) is stable in 22 -->
-    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <junit.version>6.0.3</junit.version>
-  </properties>
-
-  <dependencyManagement>
-    <dependencies>
-      <dependency>
-        <groupId>org.junit.jupiter</groupId>
-        <artifactId>junit-jupiter</artifactId>
-        <version>${junit.version}</version>
-        <scope>test</scope>
-      </dependency>
-    </dependencies>
-  </dependencyManagement>
+  <name>jam (parent)</name>
+  <description>Fast quantized CPU matmul: the JAM interface and its backends.
+    jam-core is the interface plus dtype geometry (pure Java, no native); graalvm-annotations is the
+    compile-only @AlwaysInline stub (provided scope, shared with jinfer); jam-native is the libjam (C)
+    implementation behind NativeJAM (JNI/FFM); jam-scalar is the pure-Java reference (the dot floor,
+    every dtype); jam-vector is the Java Vector API backend (register-tiled SIMD gemm per dtype).
+    Plugin and dependency versions come from qxotic-parent; only the Java release differs.</description>
 
   <modules>
     <module>jam-core</module>
@@ -38,4 +27,9 @@
     <module>jam-scalar</module>
     <module>jam-vector</module>
   </modules>
+
+  <properties>
+    <!-- FFM (java.lang.foreign) is stable in 22 -->
+    <maven.compiler.release>22</maven.compiler.release>
+  </properties>
 </project>

@@ -36,6 +36,24 @@ The JVM powers global finance, big data, and mission-critical infrastructure. Qu
 
 ---
 
+## Building
+
+This is a single Maven reactor rooted at the repository root.
+No subtree is dependency-closed - `jinfer` alone pulls in `gguf`, `json`, `toknroll` and four `jam` artifacts - so always build from the root and select what you want with `-pl … -am`:
+
+```bash
+mvnd -pl jinfer/jinfer-server,jinfer/jinfer-bench -am package   # the jinfer CLI + benchmark
+mvnd -pl jam/jam-vector -am verify                              # jam and its backend parity tests
+mvnd package                                                    # everything
+```
+
+Add `-Pnative` to produce GraalVM native images (`jinfer`, `jinfer-bench`), and `-Pformat` to apply Spotless.
+
+Running Maven inside a subdirectory (`mvn -f jinfer`) only works once the outer modules are already installed, because that reactor cannot see them.
+`mvn install` from the root once, or just use `-pl … -am`.
+
+---
+
 ## Jota Backends
 
 The tensor engine supports multiple backends, packaged as separate artifacts:

@@ -1,56 +1,56 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-    <modelVersion>4.0.0</modelVersion>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
 
-    <parent>
-        <groupId>com.qxotic</groupId>
-        <artifactId>jinfer-parent</artifactId>
-        <version>0.1.0-SNAPSHOT</version>
-    </parent>
+  <parent>
+    <groupId>com.qxotic</groupId>
+    <artifactId>jinfer-parent</artifactId>
+    <version>0.1.0</version>
+  </parent>
 
-    <artifactId>jinfer-kernels</artifactId>
-    <packaging>jar</packaging>
+  <artifactId>jinfer-kernels</artifactId>
+  <packaging>jar</packaging>
 
-    <name>jinfer-kernels</name>
-    <description>Shared model kernels and GGUF loading (FlashAttention, Moe, Ffn, ModelLoader)</description>
+  <name>jinfer-kernels</name>
+  <description>Shared model kernels and GGUF loading (FlashAttention, Moe, Ffn, ModelLoader)</description>
 
-    <dependencies>
+  <dependencies>
 
-        <dependency>
-            <groupId>com.qxotic</groupId>
-            <artifactId>jinfer-core</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.qxotic</groupId>
-            <artifactId>gguf</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.qxotic</groupId>
-            <artifactId>graalvm-annotations</artifactId>   <!-- @AlwaysInline (FlashAttention): compile-only, not bundled -->
-            <version>0.1.0</version>
-            <scope>provided</scope>
-        </dependency>
-        <!-- test-only: TokenizerParityTest builds an LFMTokenizer with the Jinja chat template -->
-        <dependency>
-            <groupId>com.qxotic</groupId>
-            <artifactId>jinfer-jinja</artifactId>
-            <scope>test</scope>
-        </dependency>
-    </dependencies>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>gguf</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>graalvm-annotations</artifactId>
+      <!-- @AlwaysInline (FlashAttention): compile-only, not bundled -->
+      <scope>provided</scope>
+    </dependency>
+    <!-- test-only: TokenizerParityTest builds an LFMTokenizer with the Jinja chat template -->
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-jinja</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
 
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-jar-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <goals><goal>test-jar</goal></goals>
-                    </execution>
-                </executions>
-            </plugin>
-        </plugins>
-    </build>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <executions>
+          <execution>
+            <goals>
+              <goal>test-jar</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
 </project>

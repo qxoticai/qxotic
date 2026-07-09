@@ -1,45 +1,43 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-    <modelVersion>4.0.0</modelVersion>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
 
-    <parent>
-        <groupId>com.qxotic</groupId>
-        <artifactId>jinfer-parent</artifactId>
-        <version>0.1.0-SNAPSHOT</version>
-    </parent>
+  <parent>
+    <groupId>com.qxotic</groupId>
+    <artifactId>jinfer-parent</artifactId>
+    <version>0.1.0</version>
+  </parent>
 
-    <artifactId>jinfer-gemma4</artifactId>
-    <packaging>jar</packaging>
+  <artifactId>jinfer-gemma4</artifactId>
+  <packaging>jar</packaging>
 
-    <name>jinfer-gemma4</name>
-    <description>Gemma 4 against the com.qxotic.llm model API (multi-modal + MTP), reusing the jinfer kernels</description>
+  <name>jinfer-gemma4</name>
+  <description>Gemma 4 against the com.qxotic.llm model API (multi-modal + MTP), reusing the jinfer kernels</description>
 
-    <dependencies>
-        <dependency>
-            <groupId>com.qxotic</groupId>
-            <artifactId>jinfer-core</artifactId>
+  <dependencies>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-core</artifactId>
 
-        </dependency>
-        <dependency>
-            <groupId>com.qxotic</groupId>
-            <artifactId>jinfer-kernels</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.qxotic</groupId>
-            <artifactId>jinfer-jinja</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.qxotic</groupId>
-            <artifactId>gguf</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.qxotic</groupId>
-            <artifactId>jinfer-kernels</artifactId>
-            <version>${project.version}</version>
-            <type>test-jar</type>
-            <scope>test</scope>
-        </dependency>
-    </dependencies>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-kernels</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-jinja</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>gguf</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-kernels</artifactId>
+      <version>${project.version}</version>
+      <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
 </project>

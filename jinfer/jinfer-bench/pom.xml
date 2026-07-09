@@ -1,143 +1,83 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-    <modelVersion>4.0.0</modelVersion>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
 
-    <parent>
-        <groupId>com.qxotic</groupId>
-        <artifactId>jinfer-parent</artifactId>
-        <version>0.1.0-SNAPSHOT</version>
-    </parent>
+  <parent>
+    <groupId>com.qxotic</groupId>
+    <artifactId>jinfer-parent</artifactId>
+    <version>0.1.0</version>
+  </parent>
 
-    <artifactId>jinfer-bench</artifactId>
-    <packaging>jar</packaging>
+  <artifactId>jinfer-bench</artifactId>
+  <packaging>jar</packaging>
 
-    <name>jinfer-bench</name>
-    <description>llama-bench-style pp/tg benchmark (apples-to-apples)</description>
+  <name>jinfer-bench</name>
+  <description>llama-bench-style pp/tg benchmark (apples-to-apples)</description>
 
-    <properties>
+  <properties>
+    <jinfer.image.name>jinfer-bench</jinfer.image.name>
+    <jinfer.image.mainClass>com.qxotic.jinfer.JinferBench</jinfer.image.mainClass>
+    <!-- no HTTP server here: jinfer.image.addModules stays at the inherited jdk.incubator.vector -->
+  </properties>
 
-        <!-- native builder opt-in: wide 512-bit register tiles (needs a 32-ZMM Graal, GR-13757) -->
+  <dependencies>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-gemma4</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-llama</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-qwen35</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-gptoss</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-nemotronh</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-lfm2</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>gguf</artifactId>
+    </dependency>
+  </dependencies>
 
-        <jam.wideTiles>false</jam.wideTiles>
+  <!-- The shade + native-image configuration lives in jinfer-parent's pluginManagement; this
+       module only names the executable it produces (the jinfer.image.* properties above). -->
+  <build>
+    <finalName>${jinfer.image.name}</finalName>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-shade-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
 
-    </properties>
-
-
-    <dependencies>
-        <dependency>
-            <groupId>com.qxotic</groupId>
-            <artifactId>jinfer-core</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.qxotic</groupId>
-            <artifactId>jinfer-gemma4</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.qxotic</groupId>
-            <artifactId>jinfer-llama</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.qxotic</groupId>
-            <artifactId>jinfer-qwen35</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.qxotic</groupId>
-            <artifactId>jinfer-gptoss</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.qxotic</groupId>
-            <artifactId>jinfer-nemotronh</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.qxotic</groupId>
-            <artifactId>jinfer-lfm2</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.qxotic</groupId>
-            <artifactId>gguf</artifactId>
-        </dependency>
-    </dependencies>
-
-    <build>
-        <finalName>jinfer-bench</finalName>
+  <profiles>
+    <profile>
+      <id>native</id>
+      <build>
         <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-shade-plugin</artifactId>
-                <version>3.6.0</version>
-                <executions>
-                    <execution>
-                        <phase>package</phase>
-                        <goals><goal>shade</goal></goals>
-                        <configuration>
-                            <createDependencyReducedPom>false</createDependencyReducedPom>
-                            <transformers>
-                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>com.qxotic.jinfer.JinferBench</mainClass>
-                                </transformer>
-                            </transformers>
-                            <filters>
-                                <filter>
-                                    <artifact>*:*</artifact>
-                                    <excludes>
-                                        <exclude>META-INF/*.SF</exclude>
-                                        <exclude>META-INF/*.DSA</exclude>
-                                        <exclude>META-INF/*.RSA</exclude>
-                                    </excludes>
-                                </filter>
-                            </filters>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
+          <plugin>
+            <groupId>org.graalvm.buildtools</groupId>
+            <artifactId>native-maven-plugin</artifactId>
+          </plugin>
         </plugins>
-    </build>
-
-    <profiles>
-        <profile>
-            <id>native</id>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.graalvm.buildtools</groupId>
-                        <artifactId>native-maven-plugin</artifactId>
-                        <version>0.10.6</version>
-                        <extensions>true</extensions>
-                        <executions>
-                            <execution>
-                                <id>build-native</id>
-                                <phase>package</phase>
-                                <goals>
-                                    <goal>compile-no-fork</goal>
-                                </goals>
-                            </execution>
-                        </executions>
-                        <configuration>
-                            <imageName>jinfer-bench</imageName>
-                            <mainClass>com.qxotic.jinfer.JinferBench</mainClass>
-                            <buildArgs>
-                                <buildArg>-O3</buildArg>
-                                <buildArg>-Djam.vector.wideTiles=${jam.wideTiles}</buildArg>
-                                <buildArg>-march=native</buildArg>
-                                <buildArg>-H:+UnlockExperimentalVMOptions</buildArg>
-                                <buildArg>-H:+VectorAPISupport</buildArg>
-                                <buildArg>-H:+ForeignAPISupport</buildArg>
-                                <buildArg>--enable-preview</buildArg>
-                                <buildArg>--add-modules</buildArg>
-                                <buildArg>jdk.incubator.vector</buildArg>
-                                <buildArg>--enable-native-access=ALL-UNNAMED</buildArg>
-                                <buildArg>-J--enable-native-access=ALL-UNNAMED</buildArg>
-                                <buildArg>--initialize-at-build-time=com.qxotic.</buildArg>
-                                <buildArg>--initialize-at-run-time=com.qxotic.jinfer.RuntimeFlags,com.qxotic.jinfer.Parallel,com.qxotic.jinfer.MatMul,com.qxotic.jinfer.Dispatch,com.qxotic.jinfer.JamMatMul,com.qxotic.jam.NativeJAM,com.qxotic.jam.NativeLoader</buildArg>
-                                <buildArg>-H:IncludeResources=com/qxotic/jam/native/.*</buildArg>
-                                <buildArg>-Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0</buildArg>
-                            </buildArgs>
-                        </configuration>
-                    </plugin>
-                </plugins>
-            </build>
-        </profile>
-    </profiles>
+      </build>
+    </profile>
+  </profiles>
 </project>
