@@ -1,59 +1,57 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-    <modelVersion>4.0.0</modelVersion>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
 
-    <parent>
-        <groupId>com.qxotic</groupId>
-        <artifactId>jinfer-parent</artifactId>
-        <version>0.1.0-SNAPSHOT</version>
-    </parent>
+  <parent>
+    <groupId>com.qxotic</groupId>
+    <artifactId>jinfer-parent</artifactId>
+    <version>0.1.0</version>
+  </parent>
 
-    <artifactId>jinfer-core</artifactId>
-    <packaging>jar</packaging>
+  <artifactId>jinfer-core</artifactId>
+  <packaging>jar</packaging>
 
-    <name>jinfer-core</name>
-    <description>LLM inference engine core API</description>
+  <name>jinfer-core</name>
+  <description>LLM inference engine core API</description>
 
-    <dependencies>
+  <dependencies>
 
-        <dependency>
-            <groupId>com.qxotic</groupId>
-            <artifactId>gguf</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.qxotic</groupId>
-            <artifactId>toknroll-core</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.qxotic</groupId>
-            <artifactId>toknroll-gguf</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.qxotic</groupId>
-            <artifactId>json</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.qxotic</groupId>
-            <artifactId>jam-core</artifactId>     <!-- the JAM interface + dtype tags -->
-            <version>0.1.0</version>
-        </dependency>
-        <dependency>
-            <groupId>com.qxotic</groupId>
-            <artifactId>jam-native</artifactId>   <!-- NativeJAM + the bundled libjam -->
-            <version>0.1.0</version>
-        </dependency>
-        <dependency>
-            <groupId>com.qxotic</groupId>
-            <artifactId>jam-vector</artifactId>   <!-- VectorJAM + the relocated SIMD kernels -->
-            <version>0.1.0</version>
-        </dependency>
-        <dependency>
-            <groupId>com.qxotic</groupId>
-            <artifactId>graalvm-annotations</artifactId>   <!-- @AlwaysInline: compile-only, not bundled; GraalVM supplies it at native-image build -->
-            <version>0.1.0</version>
-            <scope>provided</scope>
-        </dependency>
-    </dependencies>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>gguf</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>toknroll-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>toknroll-gguf</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>json</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jam-core</artifactId>
+      <!-- the JAM interface + dtype tags -->
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jam-native</artifactId>
+      <!-- NativeJAM + the bundled libjam -->
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jam-vector</artifactId>
+      <!-- VectorJAM + the relocated SIMD kernels -->
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>graalvm-annotations</artifactId>
+      <!-- @AlwaysInline: compile-only, not bundled; GraalVM supplies it at native-image build -->
+      <scope>provided</scope>
+    </dependency>
+  </dependencies>
 </project>

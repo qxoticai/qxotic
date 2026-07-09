@@ -40,8 +40,11 @@
     <module>safetensors</module>
     <module>toknroll</module>
     <module>jota</module>
-    <!-- jam: native (CMake) int8 GEMM backend, standalone Java 22 (FFM). jinfer: LLM inference engine
-         (multi-module), standalone Java 25, depends on jam. Both diverge from this parent's Java 11. -->
+    <!-- jam: native (CMake) int8 GEMM backend, Java 22 (FFM). jinfer: LLM inference engine
+         (multi-module), Java 25, depends on jam. Both raise maven.compiler.release above this
+         parent's Java 11; neither subtree is dependency-closed, so build them from THIS root:
+           mvnd -pl jinfer/jinfer-server,jinfer/jinfer-bench -am package
+         `-f jam` / `-f jinfer` only work once the outer modules are installed. -->
     <module>jam</module>
     <module>jinfer</module>
     <module>examples</module>
@@ -225,8 +228,31 @@
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
-        <artifactId>jam</artifactId>
+        <artifactId>jam-core</artifactId>
         <version>${qxotic.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>jam-native</artifactId>
+        <version>${qxotic.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>jam-scalar</artifactId>
+        <version>${qxotic.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>jam-vector</artifactId>
+        <version>${qxotic.version}</version>
+      </dependency>
+      <!-- Compile-only stub of GraalVM's @AlwaysInline. Always depend on it with <scope>provided</scope>
+           so it is not bundled: on a native-image build the real annotation comes from the builder. -->
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>graalvm-annotations</artifactId>
+        <version>${qxotic.version}</version>
+        <scope>provided</scope>
       </dependency>
     </dependencies>
   </dependencyManagement>
