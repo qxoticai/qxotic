@@ -5,8 +5,9 @@
 //   sealed-serve:   java ... TtftBench sealed-serve <model.gguf> <in.jkv> (fresh JVM:
 // cold-from-disk TTFT)
 //   dump-text:      java ... TtftBench dump-text <dir>   (story + question, shared with llama.cpp)
-package com.qxotic.jinfer;
+package com.qxotic.jinfer.bench;
 
+import com.qxotic.jinfer.*;
 import com.qxotic.jinfer.cache.CachedSession;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.cache.SealedPrompt;

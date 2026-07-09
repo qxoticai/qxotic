@@ -16,7 +16,7 @@
 
   <properties>
     <jinfer.image.name>jinfer-bench</jinfer.image.name>
-    <jinfer.image.mainClass>com.qxotic.jinfer.JinferBench</jinfer.image.mainClass>
+    <jinfer.image.mainClass>com.qxotic.jinfer.bench.JinferBench</jinfer.image.mainClass>
     <!-- no HTTP server here: jinfer.image.addModules stays at the inherited jdk.incubator.vector -->
   </properties>
 
