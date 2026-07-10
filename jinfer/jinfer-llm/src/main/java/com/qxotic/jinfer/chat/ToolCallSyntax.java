@@ -42,6 +42,81 @@ public final class ToolCallSyntax {
         }
     }
 
+    /**
+     * Render calls as the pythonic list body {@code name(k=v, ...), ...} (WITHOUT the surrounding
+     * brackets or markers - the template adds those). The inverse of {@link #parseBlock}'s pythonic
+     * branch, and the exact shape LFM2's {@code render_tool_calls} macro emits: string values are
+     * single-quoted, object values are JSON, everything else is its Python {@code str} (so booleans
+     * are {@code True}/{@code False} and {@code null} is {@code None}). Byte-exactness with a
+     * model's template is verified by that model's oracle test.
+     */
+    public static String renderPythonic(List<Part.ToolCall> calls) {
+        StringBuilder sb = new StringBuilder();
+        for (int c = 0; c < calls.size(); c++) {
+            if (c > 0) sb.append(", ");
+            Part.ToolCall call = calls.get(c);
+            sb.append(call.name()).append('(');
+            boolean first = true;
+            for (Map.Entry<String, Object> arg : call.arguments().entrySet()) {
+                if (!first) sb.append(", ");
+                first = false;
+                sb.append(arg.getKey()).append('=').append(formatArgValue(arg.getValue()));
+            }
+            sb.append(')');
+        }
+        return sb.toString();
+    }
+
+    private static String formatArgValue(Object value) {
+        if (value instanceof String s) return "'" + s + "'";
+        if (value instanceof Map || value instanceof List) return jinjaJson(value);
+        if (value instanceof Boolean b) return b ? "True" : "False";
+        if (value == null) return "None";
+        return String.valueOf(value);
+    }
+
+    /**
+     * Serialize a parsed JSON value exactly as Jinja's {@code tojson} filter does: {@code ", "} and
+     * {@code ": "} separators, map insertion order preserved, JSON booleans/null (lowercase). This
+     * is the canonical form a model was trained on, so both the tool-definition JSON (which the
+     * server canonicalizes from the request) and object-valued call arguments must go through it to
+     * stay byte-exact with the model's template.
+     */
+    public static String jinjaJson(Object value) {
+        StringBuilder sb = new StringBuilder();
+        writeJinja(sb, value);
+        return sb.toString();
+    }
+
+    private static void writeJinja(StringBuilder sb, Object v) {
+        if (v == null) {
+            sb.append("null");
+        } else if (v instanceof String s) {
+            sb.append(Json.stringify(s));
+        } else if (v instanceof Boolean b) {
+            sb.append(b.booleanValue());
+        } else if (v instanceof Map<?, ?> m) {
+            sb.append('{');
+            boolean first = true;
+            for (Map.Entry<?, ?> e : m.entrySet()) {
+                if (!first) sb.append(", ");
+                first = false;
+                sb.append(Json.stringify(String.valueOf(e.getKey()))).append(": ");
+                writeJinja(sb, e.getValue());
+            }
+            sb.append('}');
+        } else if (v instanceof List<?> l) {
+            sb.append('[');
+            for (int i = 0; i < l.size(); i++) {
+                if (i > 0) sb.append(", ");
+                writeJinja(sb, l.get(i));
+            }
+            sb.append(']');
+        } else {
+            sb.append(v); // numbers
+        }
+    }
+
     /** A JSON tool-call payload: a single {@code {name,arguments}} object or an array of them. */
     private static List<Part.ToolCall> fromJson(Object parsed) {
         List<?> list = parsed instanceof List<?> l ? l : List.of(parsed);

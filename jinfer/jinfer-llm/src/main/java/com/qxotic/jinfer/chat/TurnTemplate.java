@@ -35,6 +35,41 @@ public interface TurnTemplate extends ChatTemplate {
     List<Batch> conversationStart();
 
     /**
+     * The conversation-scoped, turn-stable inputs the preamble is built from: the leading system
+     * message (if any) and the offered tools. Both are fixed for the life of the conversation, so
+     * the preamble stays a stable cache prefix as turns are appended.
+     */
+    record Preamble(java.util.Optional<Message> system, List<Tool> tools) {
+        public Preamble {
+            tools = List.copyOf(tools);
+        }
+    }
+
+    /**
+     * Whether this template can frame tool definitions and tool-call/result turns byte-exactly with
+     * the model's own chat template. Only models whose tool block is a stable prefix (tools in the
+     * system/developer preamble, not injected before the last user turn) should return true; the
+     * rest fall back to whole-render. Default false.
+     */
+    default boolean supportsTools() {
+        return false;
+    }
+
+    /**
+     * The preamble including tools: bos plus the model's system/tool framing (for LFM2, one system
+     * turn merging the system message and the tool list). Emitted once before the first turn,
+     * REPLACING {@link #conversationStart()} AND the leading system turn - the driver must not also
+     * encode the system message. The default ignores tools and simply appends the system message as
+     * its own turn, which is byte-exact only for templates that do not weld tools into the system
+     * turn; a {@link #supportsTools()} template overrides this.
+     */
+    default List<Batch> conversationStart(Preamble preamble) {
+        List<Batch> out = new ArrayList<>(conversationStart());
+        preamble.system().ifPresent(sys -> out.addAll(encodeTurn(sys)));
+        return out;
+    }
+
+    /**
      * The assistant generation prefix, appended after the last turn to start decoding. {@code
      * thinking} toggles the model's reasoning scaffold where one exists (matching the template's
      * {@code enable_thinking}); models without one ignore it.

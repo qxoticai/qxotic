@@ -5,13 +5,17 @@ import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.cache.SessionPool;
 import com.qxotic.jinfer.cache.StateCodec;
 import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.Role;
+import com.qxotic.jinfer.chat.Tool;
+import com.qxotic.jinfer.chat.ToolCallSyntax;
 import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.llm.*;
 import com.qxotic.jinfer.llm.Generator.GenerationResult;
 import com.qxotic.jinfer.llm.Generator.StopSpec;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -71,12 +75,22 @@ final class Generation {
     @SuppressWarnings("unchecked")
     GenerationResult chat(Map<String, Object> request, List<Object> messages, Sinks sinks) {
         boolean tools = ToolUse.offered(request);
-        // TurnTemplate path: the model's own framing, for plain chat - caching is a separate,
+        // TurnTemplate path: the model's own framing, for plain chat and - when the template can
+        // frame tools byte-exactly and the request does not FORCE a specific call (forcing seeds
+        // the
+        // prompt, still a whole-render concern) - for tool conversations too. Caching is a
+        // separate,
         // optional layer on top (the framing does not depend on it).
-        if (!tools && template != null && onlyKnownKwargs(request)) {
+        boolean toolTemplated =
+                tools
+                        && template != null
+                        && template.supportsTools()
+                        && ToolUse.forced(request) == null;
+        if ((!tools || toolTemplated) && template != null && onlyKnownKwargs(request)) {
             List<Message> conversation = toConversation(messages);
             if (conversation != null) {
-                return chatTemplated(model, request, conversation, sinks);
+                List<Tool> toolList = toolTemplated ? buildTools(request) : List.of();
+                return chatTemplated(model, request, conversation, toolList, sinks);
             }
         }
         ChatContext chatContext =
@@ -107,9 +121,7 @@ final class Generation {
         for (Object raw : messages) {
             if (!(raw instanceof Map<?, ?> m)) return null;
             String role = Values.stringValue(m.get("role"), "user");
-            if ("tool".equals(role)
-                    || m.get("tool_calls") != null
-                    || m.get("function_call") != null) return null;
+            if (m.get("function_call") != null) return null; // legacy shape: whole-render
             Object raw2 = m.get("content");
             if (raw2 instanceof List<?> parts) { // multimodal content array: only
                 for (Object part : parts) { // pure-text flattens faithfully
@@ -118,7 +130,72 @@ final class Generation {
                 }
             }
             String content = Values.messageContent(raw2);
-            out.add(new Message(new Role(role), content));
+            List<Part> callParts = toolCallParts(m.get("tool_calls"));
+            if (callParts == null) return null; // malformed tool_calls: whole-render
+            if (!callParts.isEmpty()) {
+                List<Part> all = new ArrayList<>();
+                if (!content.isEmpty()) all.add(new Part.Text(content));
+                all.addAll(callParts);
+                out.add(new Message(new Role(role), all));
+            } else {
+                out.add(new Message(new Role(role), content));
+            }
+        }
+        return out;
+    }
+
+    /**
+     * An assistant message's {@code tool_calls} array to {@link Part.ToolCall} parts (empty when
+     * absent), or null when the shape is unusable (so the caller falls back to whole-render). Each
+     * call's {@code arguments} JSON string is parsed to an ordered map; a non-object leaves an
+     * empty argument map.
+     */
+    @SuppressWarnings("unchecked")
+    private static List<Part> toolCallParts(Object toolCalls) {
+        if (toolCalls == null) return List.of();
+        if (!(toolCalls instanceof List<?> calls)) return null;
+        List<Part> parts = new ArrayList<>();
+        for (Object c : calls) {
+            if (!(c instanceof Map<?, ?> call)) return null;
+            Object fn = call.get("function");
+            if (!(fn instanceof Map<?, ?> f)) return null;
+            String name = Values.stringValue(f.get("name"), null);
+            if (name == null) return null;
+            Object args = f.get("arguments");
+            Map<String, Object> argMap = new LinkedHashMap<>();
+            if (args instanceof String s && !s.isBlank()) {
+                try {
+                    if (JsonCodec.parse(s) instanceof Map<?, ?> parsed)
+                        argMap.putAll((Map<String, Object>) parsed);
+                } catch (RuntimeException notJson) {
+                    /* leave empty */
+                }
+            } else if (args instanceof Map<?, ?> parsed) {
+                argMap.putAll((Map<String, Object>) parsed);
+            }
+            parts.add(new Part.ToolCall(Values.stringValue(call.get("id"), ""), name, argMap));
+        }
+        return parts;
+    }
+
+    /**
+     * The offered tools as {@link Tool}s, each carrying its request JSON canonicalized to the form
+     * Jinja {@code tojson} produces (so a template that embeds it stays byte-exact).
+     */
+    private static List<Tool> buildTools(Map<String, Object> request) {
+        List<Tool> out = new ArrayList<>();
+        for (Object raw : Values.asArray(request.get("tools"), "tools")) {
+            if (!(raw instanceof Map<?, ?> t)) continue;
+            String name = "";
+            String description = "";
+            String params = "{}";
+            if (t.get("function") instanceof Map<?, ?> fn) {
+                name = Values.stringValue(fn.get("name"), "");
+                description = Values.stringValue(fn.get("description"), "");
+                if (fn.get("parameters") != null)
+                    params = ToolCallSyntax.jinjaJson(fn.get("parameters"));
+            }
+            out.add(new Tool(name, description, params, ToolCallSyntax.jinjaJson(t)));
         }
         return out;
     }
@@ -147,6 +224,7 @@ final class Generation {
             LoadedModel<S> m,
             Map<String, Object> request,
             List<Message> conversation,
+            List<Tool> tools,
             Sinks sinks) {
         boolean think = requestThink(request);
         conversation = template.normalize(conversation); // the template's own framing may inject
@@ -158,8 +236,23 @@ final class Generation {
         // match completely, so one giant block would be unusable the moment the conversation
         // grows).
         List<List<Batch>> groups = new ArrayList<>();
-        groups.add(template.conversationStart());
-        for (Message msg : conversation) groups.add(template.encodeTurn(msg));
+        List<Message> turns = conversation;
+        if (!tools.isEmpty()) {
+            // Tools weld into the preamble with the leading system message; encode them together so
+            // the whole tool-block stays one turn-stable prefix, then skip the system turn below.
+            java.util.Optional<Message> system =
+                    !conversation.isEmpty() && conversation.get(0).role().equals(Role.SYSTEM)
+                            ? java.util.Optional.of(conversation.get(0))
+                            : java.util.Optional.empty();
+            groups.add(template.conversationStart(new TurnTemplate.Preamble(system, tools)));
+            turns =
+                    system.isPresent()
+                            ? conversation.subList(1, conversation.size())
+                            : conversation;
+        } else {
+            groups.add(template.conversationStart());
+        }
+        for (Message msg : turns) groups.add(template.encodeTurn(msg));
         groups.add(template.generationPrompt(think));
 
         int[] groupLen = new int[groups.size()];
