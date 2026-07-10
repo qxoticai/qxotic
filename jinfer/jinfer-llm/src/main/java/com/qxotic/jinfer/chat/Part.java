@@ -42,7 +42,14 @@ public sealed interface Part {
             if (name == null || name.isEmpty())
                 throw new IllegalArgumentException("empty tool name");
             id = id == null ? "" : id;
-            arguments = arguments == null ? java.util.Map.of() : java.util.Map.copyOf(arguments);
+            // Insertion order is load-bearing: the pythonic render emits arguments in order and the
+            // model was trained on the order they appeared, so a defensive copy must preserve it
+            // (Map.copyOf does not).
+            arguments =
+                    arguments == null
+                            ? java.util.Map.of()
+                            : java.util.Collections.unmodifiableMap(
+                                    new java.util.LinkedHashMap<>(arguments));
         }
     }
 

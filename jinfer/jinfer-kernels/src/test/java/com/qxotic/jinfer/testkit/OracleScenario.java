@@ -8,6 +8,7 @@ package com.qxotic.jinfer.testkit;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.jinja.JinjaRenderer;
 import com.qxotic.jinfer.kernels.*;
@@ -99,6 +100,121 @@ public final class OracleScenario {
         System.out.println(
                 "  ours:   " + window(ours, at) + "  |" + decode(window(ours, at)) + "|");
         System.out.println("  rendered: " + rendered.replace("\n", "\\n"));
+    }
+
+    /**
+     * Tool-aware comparison: the conversation may carry {@link
+     * com.qxotic.jinfer.chat.Part.ToolCall} parts (assistant turns) and {@link
+     * com.qxotic.jinfer.chat.Role#TOOL} turns, and {@code tools} is the offered tool list. The
+     * Jinja side gets {@code tools} (parsed from each Tool's rawJson, so its own {@code tojson}
+     * renders them) plus messages carrying {@code tool_calls}; our side runs the preamble path:
+     * {@code conversationStart(Preamble)} folds the leading system message and tools, then the
+     * remaining turns, then the generation prompt.
+     */
+    public void compareTools(
+            String name,
+            boolean generationPrompt,
+            List<com.qxotic.jinfer.chat.Tool> tools,
+            List<Message> conversation) {
+        List<Object> maps = new ArrayList<>();
+        for (Message m : conversation) maps.add(oracleMessage(m));
+        List<Object> toolVars = new ArrayList<>();
+        for (com.qxotic.jinfer.chat.Tool t : tools)
+            toolVars.add(com.qxotic.format.json.Json.parse(t.rawJson()));
+
+        Map<String, Object> vars = new HashMap<>(renderVars);
+        vars.put("messages", maps);
+        vars.put("tools", toolVars);
+        vars.put("add_generation_prompt", generationPrompt);
+        String rendered = jinja.render(vars);
+        List<Integer> oracle = tokenizer.encodeWithSpecialTokens(rendered);
+        List<Integer> ours = encodeWithPreamble(tools, conversation, generationPrompt);
+
+        boolean equal = oracle.equals(ours);
+        checks.check(equal, name + " (" + ours.size() + " tokens)");
+        if (equal) return;
+        int at = 0;
+        while (at < Math.min(oracle.size(), ours.size()) && oracle.get(at).equals(ours.get(at)))
+            at++;
+        System.out.println(
+                "  diverge at " + at + "/" + oracle.size() + " (ours " + ours.size() + ")");
+        System.out.println(
+                "  oracle: " + window(oracle, at) + "  |" + decode(window(oracle, at)) + "|");
+        System.out.println(
+                "  ours:   " + window(ours, at) + "  |" + decode(window(ours, at)) + "|");
+        System.out.println("  rendered: " + rendered.replace("\n", "\\n"));
+    }
+
+    /**
+     * Like {@link #compareTools} but against an explicit expected rendered string instead of the
+     * Jinja engine. Needed for the tool-CALL turns: jinfer-jinja cannot evaluate LFM2's {@code
+     * render_tool_calls} macro (nested namespace mutation + a macro call inside the loop), so the
+     * reference is the known-correct string the trained format produces, rescanned with
+     * encodeWithSpecialTokens - the same rescan the Jinja path uses.
+     */
+    public void compareToolsExpected(
+            String name,
+            String expectedRendered,
+            boolean generationPrompt,
+            List<com.qxotic.jinfer.chat.Tool> tools,
+            List<Message> conversation) {
+        List<Integer> oracle = tokenizer.encodeWithSpecialTokens(expectedRendered);
+        List<Integer> ours = encodeWithPreamble(tools, conversation, generationPrompt);
+        boolean equal = oracle.equals(ours);
+        checks.check(equal, name + " (" + ours.size() + " tokens)");
+        if (equal) return;
+        int at = 0;
+        while (at < Math.min(oracle.size(), ours.size()) && oracle.get(at).equals(ours.get(at)))
+            at++;
+        System.out.println(
+                "  diverge at " + at + "/" + oracle.size() + " (ours " + ours.size() + ")");
+        System.out.println(
+                "  oracle: " + window(oracle, at) + "  |" + decode(window(oracle, at)) + "|");
+        System.out.println(
+                "  ours:   " + window(ours, at) + "  |" + decode(window(ours, at)) + "|");
+    }
+
+    /** The preamble-path encoding: conversationStart(Preamble) + non-system turns + gen prompt. */
+    private List<Integer> encodeWithPreamble(
+            List<com.qxotic.jinfer.chat.Tool> tools,
+            List<Message> conversation,
+            boolean generationPrompt) {
+        java.util.Optional<Message> system =
+                !conversation.isEmpty() && conversation.get(0).role().equals(Role.SYSTEM)
+                        ? java.util.Optional.of(conversation.get(0))
+                        : java.util.Optional.empty();
+        List<Message> turns =
+                system.isPresent() ? conversation.subList(1, conversation.size()) : conversation;
+        List<Batch> batches =
+                new ArrayList<>(mine.conversationStart(new TurnTemplate.Preamble(system, tools)));
+        for (Message m : turns) batches.addAll(mine.encodeTurn(m));
+        if (generationPrompt) batches.addAll(mine.generationPrompt(true));
+        List<Integer> ours = new ArrayList<>();
+        for (int id : Batch.tokenIds(batches)) ours.add(id);
+        return ours;
+    }
+
+    /** A Message to the OpenAI-shaped map the Jinja template reads (text + tool_calls). */
+    private static Map<String, Object> oracleMessage(Message m) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("role", m.role().name());
+        StringBuilder text = new StringBuilder();
+        List<Object> toolCalls = new ArrayList<>();
+        for (com.qxotic.jinfer.chat.Part p : m.content()) {
+            if (p instanceof com.qxotic.jinfer.chat.Part.Text t) text.append(t.text());
+            else if (p instanceof com.qxotic.jinfer.chat.Part.ToolCall c) {
+                Map<String, Object> fn = new LinkedHashMap<>();
+                fn.put("name", c.name());
+                fn.put("arguments", c.arguments());
+                Map<String, Object> call = new LinkedHashMap<>();
+                call.put("type", "function");
+                call.put("function", fn);
+                toolCalls.add(call);
+            }
+        }
+        map.put("content", text.toString());
+        if (!toolCalls.isEmpty()) map.put("tool_calls", toolCalls);
+        return map;
     }
 
     // ---- helpers for the per-model injection-inertness checks ----
