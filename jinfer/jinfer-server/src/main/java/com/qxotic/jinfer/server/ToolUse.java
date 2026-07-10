@@ -76,6 +76,10 @@ final class ToolUse {
      */
     static GenerationResult parse(
             LoadedModel<?> model, GenerationResult result, Map<String, Object> request) {
+        // The model's own detector already ran during generation (structured calls on token ids);
+        // when it produced calls they are authoritative, so this string-scan fallback is only for
+        // models with no native tool-call format (whole-render / no TurnTemplate).
+        if (!result.toolCalls().isEmpty()) return result;
         // Parse from the FULL generated text (think span included). result.text() is the
         // think-STRIPPED content, so a call the model emits before it closes </think> (or in an
         // unterminated think span) would be deleted before we ever see it. Decoding the raw
@@ -107,7 +111,8 @@ final class ToolUse {
                             + " call(s) in: "
                             + text.strip().replace("\n", "\\n"));
         int marker = text.indexOf(ToolCalls.TC_START);
-        return result.asToolCalls(toolCalls, marker > 0 ? text.substring(0, marker).strip() : "");
+        return result.asToolCalls(
+                ToolCalls.fromWire(toolCalls), marker > 0 ? text.substring(0, marker).strip() : "");
     }
 
     /** The function names a request offers; calls naming anything else are dropped. */

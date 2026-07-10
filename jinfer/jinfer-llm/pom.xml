@@ -33,5 +33,10 @@
       <groupId>com.qxotic</groupId>
       <artifactId>toknroll-gguf</artifactId>
     </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>json</artifactId>
+      <!-- tool-call payloads: the JSON branch of ToolCallSyntax -->
+    </dependency>
   </dependencies>
 </project>

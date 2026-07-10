@@ -4,6 +4,7 @@
 package com.qxotic.jinfer.server;
 
 import com.qxotic.jinfer.*;
+import com.qxotic.jinfer.chat.Part;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -29,6 +30,64 @@ final class ToolCalls {
         List<Map<String, Object>> jsonCalls = parseJsonToolCalls(stripped);
         if (!jsonCalls.isEmpty()) return jsonCalls;
         return parseBarePythonic(stripped, knownTools);
+    }
+
+    /**
+     * Structured tool calls (from a model's detector) to the OpenAI wire shape: {@code {id, type:
+     * "function", function: {name, arguments}}} with {@code arguments} a JSON string. This is the
+     * one place a call becomes wire JSON; the id is the model's own when it minted one, else a
+     * generated {@code call_...}.
+     */
+    static List<Map<String, Object>> toWire(List<Part.ToolCall> calls) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (int i = 0; i < calls.size(); i++) {
+            Part.ToolCall call = calls.get(i);
+            Map<String, Object> function = new LinkedHashMap<>();
+            function.put("name", call.name());
+            function.put("arguments", JsonCodec.stringify(call.arguments()));
+            Map<String, Object> wire = new LinkedHashMap<>();
+            wire.put(
+                    "id",
+                    call.id().isEmpty()
+                            ? "call_" + Long.toUnsignedString(System.nanoTime(), 36) + "_" + i
+                            : call.id());
+            wire.put("type", "function");
+            wire.put("function", function);
+            out.add(wire);
+        }
+        return out;
+    }
+
+    /** The whole-render fallback's normalized maps back to structured calls (for the result). */
+    static List<Part.ToolCall> fromWire(List<Map<String, Object>> wire) {
+        List<Part.ToolCall> out = new ArrayList<>();
+        for (Map<String, Object> call : wire) {
+            Object fn = call.get("function");
+            String name = null;
+            Object args = null;
+            if (fn instanceof Map<?, ?> f) {
+                name = Values.stringValue(f.get("name"), null);
+                args = f.get("arguments");
+            }
+            if (name == null) continue;
+            Map<String, Object> arguments =
+                    args instanceof String str ? asMap(safeParse(str)) : asMap(args);
+            out.add(new Part.ToolCall(Values.stringValue(call.get("id"), ""), name, arguments));
+        }
+        return out;
+    }
+
+    private static Object safeParse(String s) {
+        try {
+            return JsonCodec.parse(s);
+        } catch (RuntimeException notJson) {
+            return null;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> asMap(Object o) {
+        return o instanceof Map<?, ?> m ? (Map<String, Object>) m : Map.of();
     }
 
     /** The OpenAI streaming-delta form of parsed calls: each call with its {@code index}. */

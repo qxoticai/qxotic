@@ -369,7 +369,8 @@ public final class Server {
                                             modelId,
                                             Map.of(
                                                     "tool_calls",
-                                                    ToolCalls.toolCallDeltas(result.toolCalls())),
+                                                    ToolCalls.toolCallDeltas(
+                                                            ToolCalls.toWire(result.toolCalls()))),
                                             null));
                         }
                         endStream(

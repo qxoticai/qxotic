@@ -49,6 +49,17 @@ public interface TurnTemplate extends ChatTemplate {
     List<Batch> closeTurn();
 
     /**
+     * A fresh detector that turns this model's generated token ids into structured tool calls, or
+     * empty when the model has no native tool-call format. The detector is stateful and single-use;
+     * the generation driver creates one per request. This is the decode-side counterpart to the
+     * (encode-side) tool rendering, and it is per-model because the call format is - see {@link
+     * ToolCallDetector}.
+     */
+    default java.util.Optional<ToolCallDetector> toolCallDetector() {
+        return java.util.Optional.empty();
+    }
+
+    /**
      * The conversation as the model's own template would frame it - e.g. a template that
      * unconditionally renders a system turn injects its default here when the conversation lacks
      * one. Identity by default. EVERY caller that encodes turn-by-turn (incremental drivers, the

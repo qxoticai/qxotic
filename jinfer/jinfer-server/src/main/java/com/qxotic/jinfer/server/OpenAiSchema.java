@@ -78,7 +78,8 @@ final class OpenAiSchema {
         message.put("role", "assistant");
         message.put("content", result.toolCalls().isEmpty() ? result.text() : null);
         if (result.reasoning() != null) message.put("reasoning_content", result.reasoning());
-        if (!result.toolCalls().isEmpty()) message.put("tool_calls", result.toolCalls());
+        if (!result.toolCalls().isEmpty())
+            message.put("tool_calls", ToolCalls.toWire(result.toolCalls()));
         Map<String, Object> choice = new LinkedHashMap<>();
         choice.put("index", 0);
         choice.put("message", message);
@@ -172,7 +173,7 @@ final class OpenAiSchema {
         List<Map<String, Object>> output =
                 result.toolCalls().isEmpty()
                         ? List.of(responseMessageItem("msg_" + id, "completed", result.text()))
-                        : responseToolCallItems(result.toolCalls());
+                        : responseToolCallItems(ToolCalls.toWire(result.toolCalls()));
         return responseEnvelope(id, modelId, "completed", output, responseUsage(result));
     }
 
