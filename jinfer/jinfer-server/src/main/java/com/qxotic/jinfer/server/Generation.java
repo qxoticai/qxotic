@@ -190,16 +190,11 @@ final class Generation {
         List<Tool> out = new ArrayList<>();
         for (Object raw : Values.asArray(request.get("tools"), "tools")) {
             if (!(raw instanceof Map<?, ?> t)) continue;
-            String name = "";
-            String description = "";
-            String params = "{}";
-            if (t.get("function") instanceof Map<?, ?> fn) {
-                name = Values.stringValue(fn.get("name"), "");
-                description = Values.stringValue(fn.get("description"), "");
-                if (fn.get("parameters") != null)
-                    params = ToolCallSyntax.jinjaJson(fn.get("parameters"));
-            }
-            out.add(new Tool(name, description, params, ToolCallSyntax.jinjaJson(t)));
+            String name =
+                    t.get("function") instanceof Map<?, ?> fn
+                            ? Values.stringValue(fn.get("name"), "")
+                            : "";
+            if (!name.isEmpty()) out.add(new Tool(name, ToolCallSyntax.jinjaJson(t)));
         }
         return out;
     }
@@ -434,8 +429,7 @@ final class Generation {
                                 ? m.chatTemplate().flatMap(TurnTemplate::toolCallDetector)
                                 : java.util.Optional.empty());
         Generator.Listener listener =
-                new Generator.Listener(
-                        onToken, sinks.onText(), sinks.onReasoning(), sinks.onToolCall());
+                new Generator.Listener(onToken, sinks.onText(), sinks.onReasoning());
         S state =
                 resumedState != null
                         ? resumedState

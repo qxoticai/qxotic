@@ -5,12 +5,15 @@ import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.Tool;
+import com.qxotic.jinfer.chat.ToolCallDetector;
 import com.qxotic.jinfer.chat.ToolCallSyntax;
 import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.llm.*;
 import com.qxotic.jinfer.llm.GgufTokenizer;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Hand-written LFM2.5 chat framing (ChatML dialect), byte-exact with the GGUF's Jinja {@code
@@ -53,10 +56,10 @@ public final class Lfm2TurnTemplate implements TurnTemplate {
         this.tcStart = tokenizer.requiredSpecial("<|tool_call_start|>");
         this.tcEnd = tokenizer.requiredSpecial("<|tool_call_end|>");
         this.newline = ids(tokenizer.encode("\n"));
-        List<Integer> gen = new java.util.ArrayList<>(List.of(imStart));
+        List<Integer> gen = new ArrayList<>(List.of(imStart));
         gen.addAll(tokenizer.encode("assistant\n"));
         this.generationPrompt = List.of(Batch.prefill(gen));
-        List<Integer> close = new java.util.ArrayList<>(List.of(imEnd));
+        List<Integer> close = new ArrayList<>(List.of(imEnd));
         close.addAll(tokenizer.encode("\n"));
         this.closeTurn = List.of(Batch.prefill(close));
     }
@@ -73,8 +76,8 @@ public final class Lfm2TurnTemplate implements TurnTemplate {
     }
 
     @Override
-    public java.util.Optional<com.qxotic.jinfer.chat.ToolCallDetector> toolCallDetector() {
-        return java.util.Optional.of(new Lfm2ToolCallDetector(tokenizer));
+    public Optional<ToolCallDetector> toolCallDetector() {
+        return Optional.of(new Lfm2ToolCallDetector(tokenizer));
     }
 
     @Override
@@ -90,7 +93,7 @@ public final class Lfm2TurnTemplate implements TurnTemplate {
      */
     @Override
     public List<Batch> conversationStart(Preamble preamble) {
-        List<Integer> ids = new java.util.ArrayList<>(List.of(bos));
+        List<Integer> ids = new ArrayList<>(List.of(bos));
         String system = preamble.system().map(Message::text).orElse("");
         if (!preamble.tools().isEmpty()) {
             StringBuilder tools = new StringBuilder("List of tools: [");
@@ -121,7 +124,7 @@ public final class Lfm2TurnTemplate implements TurnTemplate {
         // Each plain span (header+content, and the bracketed call list) is a separate contiguous
         // run: the trusted markers split them, exactly as encodeWithSpecialTokens rescans the
         // rendered string.
-        List<Integer> ids = new java.util.ArrayList<>();
+        List<Integer> ids = new ArrayList<>();
         ids.add(imStart);
         ids.addAll(tokenizer.encode(role.name() + "\n" + content));
         if (!calls.isEmpty()) {
@@ -143,7 +146,7 @@ public final class Lfm2TurnTemplate implements TurnTemplate {
 
     /** The tool-call parts of a (usually assistant) message, in order. */
     private static List<Part.ToolCall> toolCalls(Message message) {
-        List<Part.ToolCall> calls = new java.util.ArrayList<>();
+        List<Part.ToolCall> calls = new ArrayList<>();
         for (Part part : message.content()) if (part instanceof Part.ToolCall c) calls.add(c);
         return calls;
     }

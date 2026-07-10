@@ -176,7 +176,7 @@ public class Main {
                         state,
                         promptTokens,
                         params,
-                        new Generator.Listener(onToken, null, null, null));
+                        new Generator.Listener(onToken, null, null));
         int generated = result.tokens().size() + (result.stopToken() >= 0 ? 1 : 0);
         String timingPrefix = options.colors() ? ANSI_CYAN : "";
         String timingSuffix = options.colors() ? ANSI_RESET : "";
