@@ -167,7 +167,8 @@ public class Main {
                         budget,
                         0, // CLI: no generation deadline
                         new Generator.StopSpec(stopTokens, List.of()),
-                        options.think());
+                        options.think(),
+                        model.chatTemplate().flatMap(TurnTemplate::toolCallDetector));
         Generator.GenerationResult result =
                 Generator.generate(
                         model.model(),

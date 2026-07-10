@@ -60,6 +60,11 @@ public final class Lfm2TurnTemplate implements TurnTemplate {
     }
 
     @Override
+    public java.util.Optional<com.qxotic.jinfer.chat.ToolCallDetector> toolCallDetector() {
+        return java.util.Optional.of(new Lfm2ToolCallDetector(tokenizer));
+    }
+
+    @Override
     public List<Batch> conversationStart() {
         return List.of(Batch.prefill(new int[] {bos}));
     }

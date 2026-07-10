@@ -42,7 +42,17 @@ public final class Generator {
             int maxTokens,
             long timeoutNanos,
             StopSpec stops,
-            boolean inlineThink) {}
+            boolean inlineThink,
+            java.util.Optional<com.qxotic.jinfer.chat.ToolCallDetector> toolCallDetector) {
+        public Params(
+                Sampler sampler,
+                int maxTokens,
+                long timeoutNanos,
+                StopSpec stops,
+                boolean inlineThink) {
+            this(sampler, maxTokens, timeoutNanos, stops, inlineThink, java.util.Optional.empty());
+        }
+    }
 
     /**
      * Token stops end generation (the stop token is reported but excluded from the result tokens);
@@ -70,15 +80,16 @@ public final class Generator {
      * The outcome of one generation pass. {@code tokens} are the generated tokens excluding the
      * trailing stop token, reported in {@code stopToken} (-1 when not ended by a stop token).
      * {@code text} has think spans routed out (unless inlineThink) and text stops applied; {@code
-     * reasoning} carries the think-span text for non-streaming passes. {@code toolCalls} is
-     * attached by the chat layer after parsing - never by the generator.
+     * reasoning} carries the think-span text for non-streaming passes. {@code toolCalls} holds the
+     * structured calls the model's {@link com.qxotic.jinfer.chat.ToolCallDetector} found, empty
+     * when the model has no native tool-call format (the whole-render fallback fills them instead).
      */
     public record GenerationResult(
             List<Integer> tokens,
             int stopToken,
             String text,
             String reasoning,
-            List<Map<String, Object>> toolCalls,
+            List<com.qxotic.jinfer.chat.Part.ToolCall> toolCalls,
             int promptTokens,
             int completionTokens,
             int cachedTokens,
@@ -109,7 +120,8 @@ public final class Generator {
          * The chat-layer rewrite of a reply that parsed as tool calls; {@code content} is any text
          * the model produced before the first call marker.
          */
-        public GenerationResult asToolCalls(List<Map<String, Object>> calls, String content) {
+        public GenerationResult asToolCalls(
+                List<com.qxotic.jinfer.chat.Part.ToolCall> calls, String content) {
             return new GenerationResult(
                     tokens,
                     stopToken,
@@ -182,6 +194,11 @@ public final class Generator {
                         ? contextLength - promptPositions
                         : Math.min(params.maxTokens(), contextLength - promptPositions);
 
+        // The model's tool-call detector (per-model, id-level). When streaming, it lives in the
+        // demux and suppresses call spans from the live text; otherwise it runs a single pass over
+        // the finished reply below. Its calls() fill the result either way.
+        com.qxotic.jinfer.chat.ToolCallDetector detector = params.toolCallDetector().orElse(null);
+
         StringBuilder streamed = new StringBuilder();
         StopAwareTextConsumer stopAware = null;
         IntConsumer demux = null;
@@ -199,7 +216,7 @@ public final class Generator {
                             tokenizer,
                             stopAware,
                             listener.onReasoning(),
-                            listener.onToolCall(),
+                            detector,
                             params.inlineThink());
         } else if (!params.stops().textStops().isEmpty()) {
             stopAware = new StopAwareTextConsumer(params.stops().textStops(), text -> {});
@@ -251,19 +268,34 @@ public final class Generator {
                 && params.stops().tokenStops().contains(responseTokens.getLast())) {
             stopToken = responseTokens.removeLast();
         }
+        // Tool calls. Streaming already fed the detector in the demux (spans suppressed from the
+        // live text); non-streaming feeds it here over the finished reply, and the span tokens are
+        // dropped from the visible text so a call never appears as content.
+        List<com.qxotic.jinfer.chat.Part.ToolCall> toolCalls = List.of();
+        List<Integer> visible = responseTokens;
+        if (detector != null) {
+            if (listener.onContent() != null) {
+                toolCalls = detector.calls();
+            } else {
+                visible = new ArrayList<>(responseTokens.size());
+                for (int token : responseTokens) if (!detector.accept(token)) visible.add(token);
+                toolCalls = detector.calls();
+            }
+        }
         String text =
                 listener.onContent() != null
                         ? streamed.toString()
-                        : tokenizer.decode(
-                                visibleTokens(tokenizer, responseTokens, params.inlineThink()));
+                        : tokenizer.decode(visibleTokens(tokenizer, visible, params.inlineThink()));
         StopResult stopResult = applyTextStops(text, params.stops().textStops());
         boolean textStopped = stopResult.stopped() || (stopAware != null && stopAware.stopped());
         String finishReason =
-                stopToken >= 0 || textStopped
-                        ? "stop"
-                        : (deadlineHit[0] || responseTokens.size() >= actualMaxTokens
-                                ? "length"
-                                : "stop");
+                !toolCalls.isEmpty()
+                        ? "tool_calls"
+                        : stopToken >= 0 || textStopped
+                                ? "stop"
+                                : (deadlineHit[0] || responseTokens.size() >= actualMaxTokens
+                                        ? "length"
+                                        : "stop");
         String reasoning =
                 listener.onContent() == null && !params.inlineThink()
                         ? reasoningText(tokenizer, responseTokens)
@@ -273,7 +305,7 @@ public final class Generator {
                 stopToken,
                 stopResult.text(),
                 reasoning,
-                List.of(),
+                toolCalls,
                 consumedPromptTokens,
                 responseTokens.size(),
                 0,
@@ -385,22 +417,22 @@ public final class Generator {
             GgufTokenizer tokenizer,
             Consumer<String> onText,
             Consumer<String> onReasoning,
-            Consumer<String> onToolCall,
+            com.qxotic.jinfer.chat.ToolCallDetector detector,
             boolean inlineThink) {
         Integer thinkOpen = tokenizer.getSpecialTokens().get("<think>");
         Integer thinkClose = tokenizer.getSpecialTokens().get("</think>");
-        Integer tcOpen = tokenizer.getSpecialTokens().get("<|tool_call_start|>");
-        Integer tcClose = tokenizer.getSpecialTokens().get("<|tool_call_end|>");
         boolean[] inThink = {false};
-        boolean[] inToolCall = {false};
         Utf8TokenDecoder textDecoder = new Utf8TokenDecoder(onText);
         Utf8TokenDecoder reasoningDecoder =
                 onReasoning != null && !inlineThink ? new Utf8TokenDecoder(onReasoning) : null;
-        Utf8TokenDecoder toolCallDecoder =
-                onToolCall != null && tcOpen != null && tcClose != null
-                        ? new Utf8TokenDecoder(onToolCall)
-                        : null;
         return token -> {
+            // The model's detector claims tool-call spans first, on token ids, so a call never
+            // reaches the visible text or reasoning stream (and never leaks mid-call to the
+            // client).
+            if (detector != null && detector.accept(token)) {
+                textDecoder.flushPending();
+                return;
+            }
             if (tokenizer.isSpecialToken(token)) {
                 if (thinkOpen != null && token == thinkOpen) {
                     inThink[0] = true;
@@ -412,18 +444,6 @@ public final class Generator {
                     textDecoder.flushPending();
                     if (reasoningDecoder != null) reasoningDecoder.flushPending();
                 }
-                if (tcOpen != null && token == tcOpen) {
-                    inToolCall[0] = true;
-                    textDecoder.flushPending();
-                }
-                if (tcClose != null && token == tcClose) {
-                    inToolCall[0] = false;
-                    if (toolCallDecoder != null) toolCallDecoder.flushPending();
-                }
-                return;
-            }
-            if (inToolCall[0] && toolCallDecoder != null) {
-                toolCallDecoder.accept(tokenizer.decodeTokenBytes(token));
                 return;
             }
             if (inThink[0] && !inlineThink) {

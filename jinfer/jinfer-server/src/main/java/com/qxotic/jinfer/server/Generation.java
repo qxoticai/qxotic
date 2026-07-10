@@ -332,7 +332,10 @@ final class Generation {
                         maxTokens,
                         ServerFlags.SERVER_REQUEST_TIMEOUT_NANOS,
                         stops,
-                        inlineReasoning(request));
+                        inlineReasoning(request),
+                        ToolUse.offered(request)
+                                ? m.chatTemplate().flatMap(TurnTemplate::toolCallDetector)
+                                : java.util.Optional.empty());
         Generator.Listener listener =
                 new Generator.Listener(
                         onToken, sinks.onText(), sinks.onReasoning(), sinks.onToolCall());
