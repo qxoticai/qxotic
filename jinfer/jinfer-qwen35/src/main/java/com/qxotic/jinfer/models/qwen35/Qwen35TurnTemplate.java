@@ -69,6 +69,11 @@ public final class Qwen35TurnTemplate implements TurnTemplate {
         this.closeTurn = List.of(Batch.prefill(close));
     }
 
+    @Override
+    public java.util.Optional<com.qxotic.jinfer.chat.ToolCallDetector> toolCallDetector() {
+        return java.util.Optional.of(new Qwen35ToolCallDetector(tokenizer));
+    }
+
     /** Qwen3.5 emits no bos and no fixed preamble. */
     @Override
     public List<Batch> conversationStart() {
