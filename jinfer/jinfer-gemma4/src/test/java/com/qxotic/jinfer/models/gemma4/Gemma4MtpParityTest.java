@@ -8,6 +8,7 @@ package com.qxotic.jinfer.models.gemma4;
 
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.FloatTensor;
+import com.qxotic.jinfer.llm.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -135,7 +136,7 @@ public final class Gemma4MtpParityTest {
         return m;
     }
 
-    static String pieces(com.qxotic.jinfer.GgufTokenizer tk, int[] ids) {
+    static String pieces(com.qxotic.jinfer.llm.GgufTokenizer tk, int[] ids) {
         var sb = new StringBuilder();
         for (int id : ids) sb.append('|').append(tk.decode(id).replace("\n", "\\n"));
         return sb.append('|').toString();

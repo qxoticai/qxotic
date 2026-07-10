@@ -7,12 +7,13 @@ package com.qxotic.jinfer.testkit;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.Batch;
-import com.qxotic.jinfer.CompiledTemplate;
-import com.qxotic.jinfer.GgufTokenizer;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.jinja.JinjaRenderer;
 import com.qxotic.jinfer.kernels.*;
+import com.qxotic.jinfer.llm.*;
+import com.qxotic.jinfer.llm.CompiledTemplate;
+import com.qxotic.jinfer.llm.GgufTokenizer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;

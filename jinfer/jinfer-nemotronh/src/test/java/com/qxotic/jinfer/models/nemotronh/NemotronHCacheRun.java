@@ -5,6 +5,7 @@
 //   java ... com.qxotic.jinfer.models.nemotronh.NemotronHCacheRun [model.gguf]
 package com.qxotic.jinfer.models.nemotronh;
 
+import com.qxotic.jinfer.llm.*;
 import com.qxotic.jinfer.testkit.CacheScenario;
 import com.qxotic.jinfer.testkit.Harness;
 import com.qxotic.jinfer.testkit.Stories;
@@ -18,7 +19,7 @@ public final class NemotronHCacheRun {
                                 ? args[0]
                                 : "/home/mukel/Desktop/playground/models/bartowski/nvidia_Nemotron-Cascade-2-30B-A3B-Q8_0.gguf");
         Harness<NemotronH.State> h =
-                new Harness<>(NemotronH.loadModel(path, 4096), path, 4096, false);
+                new Harness<>(NemotronH.loadModel(path, 4096).loaded(), path, 4096, false);
         new CacheScenario<>(
                         h,
                         CacheScenario.Config.of(

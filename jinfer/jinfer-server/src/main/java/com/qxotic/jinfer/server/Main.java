@@ -16,6 +16,7 @@ import com.qxotic.jinfer.*;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.kernels.*;
+import com.qxotic.jinfer.llm.*;
 import java.io.BufferedOutputStream;
 import java.io.BufferedReader;
 import java.io.FileDescriptor;
@@ -119,7 +120,7 @@ public class Main {
      * converted to the generator's completion budget here.
      */
     private static <S extends RuntimeState> Generator.GenerationResult generateCli(
-            LanguageModel<?, ?, S> model,
+            LoadedModel<S> model,
             S state,
             List<Integer> promptTokens,
             Set<Integer> stopTokens,
@@ -156,7 +157,7 @@ public class Main {
                 for (int id : ids) System.err.print(replaceControlCharacters(tokenizer.decode(id)));
             }
             long t0 = System.nanoTime();
-            model.ingest(state, Batch.prefill(ids));
+            model.model().ingest(state, Batch.prefill(ids));
             chunkNanos += System.nanoTime() - t0;
             promptTokens = promptTokens.subList(cap, promptTokens.size());
         }
@@ -169,7 +170,8 @@ public class Main {
                         options.think());
         Generator.GenerationResult result =
                 Generator.generate(
-                        model,
+                        model.model(),
+                        model.tokenizer(),
                         state,
                         promptTokens,
                         params,
@@ -181,7 +183,7 @@ public class Main {
                 "%n%scontext: %d/%d prompt: %.2f tokens/s (%d) generation: %.2f tokens/s (%d)%s%n",
                 timingPrefix,
                 startPosition + totalPrompt + generated,
-                model.config().contextLength(),
+                model.model().config().contextLength(),
                 totalPrompt / (chunkNanos / 1e6 / 1000.0 + result.promptMillis() / 1000.0),
                 totalPrompt,
                 generated / (result.predictedMillis() / 1000.0),
@@ -426,8 +428,7 @@ public class Main {
             System.exit(-1);
             return;
         }
-        LanguageModel<?, ?, ?> model =
-                AOT.tryUsePreLoaded(options.modelPath(), options.maxTokens());
+        LoadedModel<?> model = AOT.tryUsePreLoaded(options.modelPath(), options.maxTokens());
         if (model == null) {
             model = Models.load(options.modelPath(), options.maxTokens());
         }
@@ -437,7 +438,8 @@ public class Main {
         }
         Sampler sampler =
                 Generator.configuredSampler(
-                        model,
+                        model.model(),
+                        model.tokenizer(),
                         options.think(),
                         options.temperature(),
                         options.topp(),
@@ -452,8 +454,8 @@ public class Main {
      * else falls back to the whole-render Jinja path with a fresh state per turn.
      */
     static <S extends RuntimeState> void runGeneric(
-            LanguageModel<?, ?, S> model, Sampler sampler, LLMOptions options) throws IOException {
-        TurnTemplate template = options.rawPrompt() ? null : model.turnTemplate().orElse(null);
+            LoadedModel<S> model, Sampler sampler, LLMOptions options) throws IOException {
+        TurnTemplate template = options.rawPrompt() ? null : model.chatTemplate().orElse(null);
         if (!options.interactive()) {
             runInstruct(model, template, sampler, options);
         } else if (template != null) {
@@ -464,10 +466,7 @@ public class Main {
     }
 
     private static <S extends RuntimeState> void runInstruct(
-            LanguageModel<?, ?, S> model,
-            TurnTemplate template,
-            Sampler sampler,
-            LLMOptions options)
+            LoadedModel<S> model, TurnTemplate template, Sampler sampler, LLMOptions options)
             throws IOException {
         Set<Integer> stops = model.stopTokens();
         List<Integer> promptTokens;
@@ -496,11 +495,12 @@ public class Main {
                             new ChatContext(messages, null, true, options.think(), Map.of()));
         }
         S state =
-                model.newState(
-                        model.config().contextLength(),
-                        Math.min(
-                                Math.max(promptTokens.size(), 16),
-                                RuntimeFlags.BATCH_CAPACITY)); // ports chunk long prompts
+                model.model()
+                        .newState(
+                                model.model().config().contextLength(),
+                                Math.min(
+                                        Math.max(promptTokens.size(), 16),
+                                        RuntimeFlags.BATCH_CAPACITY)); // ports chunk long prompts
 
         // --sealed: restore the (system+prompt) prefix from the sealed file (instant TTFT), or
         // create it
@@ -514,9 +514,9 @@ public class Main {
         // as-of-P-1
         // to as-of-P). Any mismatch (different prompt/model) falls back to a plain prefill.
         if (options.sealedPrompt() != null
-                && model.stateCodec().isPresent()
+                && model.model().stateCodec().isPresent()
                 && promptTokens.size() >= 2) {
-            var codec = model.stateCodec().get();
+            var codec = model.model().stateCodec().get();
             int last = promptTokens.get(promptTokens.size() - 1);
             long[] fp = new long[promptTokens.size() - 1];
             for (int i = 0; i < fp.length; i++) fp[i] = promptTokens.get(i);
@@ -536,7 +536,7 @@ public class Main {
                     System.err.println("sealed prompt mismatch: prefilling normally");
                 }
             } else {
-                model.ingest(state, Batch.prefill(fpToIds(fp)));
+                model.model().ingest(state, Batch.prefill(fpToIds(fp)));
                 com.qxotic.jinfer.cache.SealedPrompt.compile(
                         options.sealedPrompt(), "cli", codec, state, fp, seed);
                 System.err.println(
@@ -568,13 +568,14 @@ public class Main {
      * generation prompt. The reply tokens are already in the KV from decoding.
      */
     private static <S extends RuntimeState> void runChatIncremental(
-            LanguageModel<?, ?, S> model,
-            TurnTemplate template,
-            Sampler sampler,
-            LLMOptions options)
+            LoadedModel<S> model, TurnTemplate template, Sampler sampler, LLMOptions options)
             throws IOException {
         Set<Integer> stops = model.stopTokens();
-        S state = model.newState(model.config().contextLength(), RuntimeFlags.BATCH_CAPACITY);
+        S state =
+                model.model()
+                        .newState(
+                                model.model().config().contextLength(),
+                                RuntimeFlags.BATCH_CAPACITY);
         boolean first = true;
         try (BufferedReader reader =
                 new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8))) {
@@ -586,7 +587,7 @@ public class Main {
                 if ("/context".equals(userText)) {
                     System.out.printf(
                             "context: %d/%d tokens%n",
-                            state.position(), model.config().contextLength());
+                            state.position(), model.model().config().contextLength());
                     continue;
                 }
                 List<Batch> batches = new ArrayList<>();
@@ -621,7 +622,7 @@ public class Main {
      * through the Jinja template each turn, fresh state.
      */
     private static <S extends RuntimeState> void runChatWholeRender(
-            LanguageModel<?, ?, S> model, Sampler sampler, LLMOptions options) throws IOException {
+            LoadedModel<S> model, Sampler sampler, LLMOptions options) throws IOException {
         Set<Integer> stops = model.stopTokens();
         List<Object> history = new ArrayList<>();
         if (options.systemPrompt() != null) {
@@ -642,11 +643,12 @@ public class Main {
                 Generator.GenerationResult result =
                         generateCli(
                                 model,
-                                model.newState(
-                                        model.config().contextLength(),
-                                        Math.min(
-                                                Math.max(promptTokens.size(), 16),
-                                                RuntimeFlags.BATCH_CAPACITY)),
+                                model.model()
+                                        .newState(
+                                                model.model().config().contextLength(),
+                                                Math.min(
+                                                        Math.max(promptTokens.size(), 16),
+                                                        RuntimeFlags.BATCH_CAPACITY)),
                                 promptTokens,
                                 stops,
                                 sampler,
@@ -702,8 +704,7 @@ final class AOT {
      * back to {@link Models#load(Path, int)}). Reuses the baked GGUF, so only the tensor data is
      * read.
      */
-    static LanguageModel<?, ?, ?> tryUsePreLoaded(Path modelPath, int contextLength)
-            throws IOException {
+    static LoadedModel<?> tryUsePreLoaded(Path modelPath, int contextLength) throws IOException {
         PartialModel preLoaded = PRELOADED_GGUF;
         if (preLoaded == null) {
             return null;

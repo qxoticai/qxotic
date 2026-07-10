@@ -1,33 +1,17 @@
 package com.qxotic.jinfer;
 
 import com.qxotic.jinfer.cache.StateCodec;
-import com.qxotic.jinfer.chat.TurnTemplate;
 import java.util.Optional;
 
 /**
  * An LLM: a {@link com.qxotic.jinfer.Model} backbone whose head projects retained hidden states to
  * a vocabulary distribution (of width {@code config().vocabularySize()}).
+ *
+ * <p>Tokens in, logits out. This interface knows nothing of text: no tokenizer, no stop tokens, no
+ * chat framing. Those live one layer up, on {@code com.qxotic.jinfer.llm.LoadedModel}, the record
+ * the architecture-dispatching loaders return.
  */
 public interface LanguageModel<C extends Config, W, S extends RuntimeState> extends Model<C, W, S> {
-
-    /**
-     * GGUF-loaded tokenizer: vocabulary, special tokens and the (optional) chat template. Needed by
-     * the generation driver to detokenize the stream, match text stops, and detect stop tokens.
-     */
-    GgufTokenizer tokenizer();
-
-    /** The end-of-turn / eos ids that terminate generation (the model's default stop tokens). */
-    java.util.Set<Integer> stopTokens();
-
-    /**
-     * The curated chat framing for this model, when one has been written: turn-stable, byte-exact
-     * with the model's official chat template, the exact-caching path. Empty means the caller falls
-     * back to a generic (template-rendered) format. Stateless - implementations may construct per
-     * call.
-     */
-    default Optional<TurnTemplate> turnTemplate() {
-        return Optional.empty();
-    }
 
     /** The prompt-cache resume-state codec for this model, when caching is supported. Stateless. */
     default Optional<StateCodec<S>> stateCodec() {

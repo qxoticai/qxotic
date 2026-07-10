@@ -8,11 +8,12 @@
     <version>0.1.0</version>
   </parent>
 
-  <artifactId>jinfer-qwen35</artifactId>
+  <artifactId>jinfer-llm</artifactId>
   <packaging>jar</packaging>
 
-  <name>jinfer-qwen35</name>
-  <description>Qwen 3.5 + Qwen3 embedding model port (new com.qxotic.jinfer.models API)</description>
+  <name>jinfer-llm</name>
+  <description>The layer that knows a token means text: tokenizer, stop tokens, chat templates and
+    the generation driver. jinfer-core turns state into logits and knows none of this.</description>
 
   <dependencies>
     <dependency>
@@ -21,26 +22,16 @@
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-llm</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-kernels</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-jinja</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
       <artifactId>gguf</artifactId>
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-kernels</artifactId>
-      <version>${project.version}</version>
-      <type>test-jar</type>
-      <scope>test</scope>
+      <artifactId>toknroll-core</artifactId>
+      <!-- GgufTokenizer: the text seam -->
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>toknroll-gguf</artifactId>
     </dependency>
   </dependencies>
 </project>

@@ -4,6 +4,7 @@
 //   java ... com.qxotic.jinfer.models.gemma4.Gemma4CacheRun [model.gguf]
 package com.qxotic.jinfer.models.gemma4;
 
+import com.qxotic.jinfer.llm.*;
 import com.qxotic.jinfer.testkit.CacheScenario;
 import com.qxotic.jinfer.testkit.Harness;
 import com.qxotic.jinfer.testkit.Stories;
@@ -16,7 +17,7 @@ public final class Gemma4CacheRun {
                         args.length > 0
                                 ? args[0]
                                 : "/home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-Q8_0.gguf");
-        Harness<Gemma4.State> h = new Harness<>(Gemma4.loadModel(path, 8192), path, 8192);
+        Harness<Gemma4.State> h = new Harness<>(Gemma4.loadModel(path, 8192).loaded(), path, 8192);
         new CacheScenario<>(
                         h,
                         CacheScenario.Config.of(

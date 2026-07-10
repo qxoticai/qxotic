@@ -20,6 +20,7 @@ import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.*;
 import com.qxotic.jinfer.jinja.JinjaRenderer;
 import com.qxotic.jinfer.kernels.*;
+import com.qxotic.jinfer.llm.*;
 import java.io.IOException;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
@@ -136,7 +137,14 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
     private com.qxotic.jinfer.chat.TurnTemplate
             turnTemplate; // memoized: stateless, model-lifetime (pins any construction-time state)
 
-    @Override
+    /**
+     * This model bundled with the three text facts its GGUF carries - what an
+     * architecture-dispatching loader hands to a caller that does not know the family.
+     */
+    public LoadedModel<Lfm2.State> loaded() {
+        return new LoadedModel<>(this, tokenizer(), stopTokens(), turnTemplate());
+    }
+
     public java.util.Optional<com.qxotic.jinfer.chat.TurnTemplate> turnTemplate() {
         if (turnTemplate == null) turnTemplate = new Lfm2TurnTemplate(tokenizer());
         return java.util.Optional.of(turnTemplate);

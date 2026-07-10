@@ -46,7 +46,8 @@ public final class FrozenScenario<S extends RuntimeState> {
         long prev = 0;
         long[] delta = new long[prompts.size()];
         for (int i = 0; i < prompts.size(); i++) {
-            CachedSession<S> s = CachedSession.resume(h.model, build, h.newState(), new long[0]);
+            CachedSession<S> s =
+                    CachedSession.resume(h.model.model(), build, h.newState(), new long[0]);
             s.ingest(shared);
             s.ingest(prompts.get(i));
             delta[i] = store.usedBytes() - prev;
@@ -78,7 +79,7 @@ public final class FrozenScenario<S extends RuntimeState> {
             long[] fp = Harness.concatFp(sharedFp, Harness.flatten(prompts.get(i)));
 
             long t1 = System.nanoTime();
-            CachedSession<S> hot = CachedSession.resume(h.model, frozen, h.newState(), fp);
+            CachedSession<S> hot = CachedSession.resume(h.model.model(), frozen, h.newState(), fp);
             double resumeMs = (System.nanoTime() - t1) / 1e6;
             h.check(
                     hot.position() == fp.length,
@@ -91,7 +92,7 @@ public final class FrozenScenario<S extends RuntimeState> {
 
             // gate: the frozen file reproduces the LIVE cache's resume-state byte-for-byte
             S live = h.newState();
-            CachedSession.resume(h.model, build, live, fp);
+            CachedSession.resume(h.model.model(), build, live, fp);
             h.check(
                     h.statesEqual(hot.state(), live, fp.length),
                     domains[i] + ": frozen-restored state byte-identical to the live cache");
@@ -100,7 +101,7 @@ public final class FrozenScenario<S extends RuntimeState> {
             // determinism property (threaded reductions vary run to run), reported, not gated.
             CachedSession<S> cold =
                     CachedSession.resume(
-                            h.model,
+                            h.model.model(),
                             new PromptCache<>(h.codec, CacheStore.inMemory(), budget, h.seed),
                             h.newState(),
                             new long[0]);
@@ -128,7 +129,7 @@ public final class FrozenScenario<S extends RuntimeState> {
 
         // ---- unseen prompt: partial hit on the shared prefix only ----
         long[] fp4 = Harness.concatFp(sharedFp, Harness.flatten(unseen));
-        CachedSession<S> partial = CachedSession.resume(h.model, frozen, h.newState(), fp4);
+        CachedSession<S> partial = CachedSession.resume(h.model.model(), frozen, h.newState(), fp4);
         h.check(
                 partial.position() > 0 && partial.position() < fp4.length,
                 "unseen prompt resumes only the shared prefix ("

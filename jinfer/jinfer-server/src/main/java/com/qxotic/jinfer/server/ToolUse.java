@@ -1,7 +1,8 @@
 package com.qxotic.jinfer.server;
 
 import com.qxotic.jinfer.*;
-import com.qxotic.jinfer.Generator.GenerationResult;
+import com.qxotic.jinfer.llm.*;
+import com.qxotic.jinfer.llm.Generator.GenerationResult;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -74,7 +75,7 @@ final class ToolUse {
      * original result when none parsed).
      */
     static GenerationResult parse(
-            LanguageModel<?, ?, ?> model, GenerationResult result, Map<String, Object> request) {
+            LoadedModel<?> model, GenerationResult result, Map<String, Object> request) {
         // Parse from the FULL generated text (think span included). result.text() is the
         // think-STRIPPED content, so a call the model emits before it closes </think> (or in an
         // unterminated think span) would be deleted before we ever see it. Decoding the raw

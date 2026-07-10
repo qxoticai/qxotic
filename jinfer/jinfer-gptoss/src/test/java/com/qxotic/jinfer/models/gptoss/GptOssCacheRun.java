@@ -4,6 +4,7 @@
 //   java -Xmx24g ... com.qxotic.jinfer.models.gptoss.GptOssCacheRun [model.gguf]
 package com.qxotic.jinfer.models.gptoss;
 
+import com.qxotic.jinfer.llm.*;
 import com.qxotic.jinfer.testkit.CacheScenario;
 import com.qxotic.jinfer.testkit.Harness;
 import com.qxotic.jinfer.testkit.Stories;
@@ -18,7 +19,7 @@ public final class GptOssCacheRun {
                                 : "/home/mukel/Desktop/playground/models/unsloth/gpt-oss-20b-Q8_0.gguf");
         Harness<GptOss.State> h =
                 new Harness<>(
-                        GptOss.loadModel(path, 8192),
+                        GptOss.loadModel(path, 8192).loaded(),
                         path,
                         8192,
                         false); // all-MoE: not byte-deterministic

@@ -2,6 +2,7 @@ package com.qxotic.jinfer.server;
 
 import com.qxotic.jinfer.*;
 import com.qxotic.jinfer.kernels.*;
+import com.qxotic.jinfer.llm.*;
 import com.sun.net.httpserver.HttpServer;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -43,7 +44,7 @@ public final class ServerIntegrationTest {
             System.exit(failures > 0 ? 1 : 0);
             return;
         }
-        LanguageModel<?, ?, ?> llama = Models.load(model, 2048);
+        LoadedModel<?> llama = Models.load(model, 2048);
         StringBuilder manual = new StringBuilder("Agent operating manual.");
         for (int i = 1; i <= 50; i++) {
             manual.append(" Directive ")
@@ -1054,7 +1055,7 @@ public final class ServerIntegrationTest {
      * Wall-clock deadline: Params.timeoutNanos aborts a long generation through the per-token abort
      * path, reporting finish_reason "length". Engine-level so it needs no global flag.
      */
-    private static <S extends RuntimeState> void generationDeadline(LanguageModel<?, ?, S> model) {
+    private static <S extends RuntimeState> void generationDeadline(LoadedModel<S> model) {
         List<Integer> prompt = model.tokenizer().encode("Write a very long, detailed story.");
         Generator.Params params =
                 new Generator.Params(
@@ -1064,10 +1065,15 @@ public final class ServerIntegrationTest {
                         new Generator.StopSpec(Set.of(), List.of()),
                         false);
         long start = System.nanoTime();
-        S state = model.newState(model.config().contextLength(), Math.max(prompt.size(), 16));
+        S state =
+                model.model()
+                        .newState(
+                                model.model().config().contextLength(),
+                                Math.max(prompt.size(), 16));
         Generator.GenerationResult result =
                 Generator.generate(
-                        model,
+                        model.model(),
+                        model.tokenizer(),
                         state,
                         prompt,
                         params,

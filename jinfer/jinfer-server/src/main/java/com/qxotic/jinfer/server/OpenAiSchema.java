@@ -4,7 +4,8 @@
 package com.qxotic.jinfer.server;
 
 import com.qxotic.jinfer.*;
-import com.qxotic.jinfer.Generator.GenerationResult;
+import com.qxotic.jinfer.llm.*;
+import com.qxotic.jinfer.llm.Generator.GenerationResult;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;

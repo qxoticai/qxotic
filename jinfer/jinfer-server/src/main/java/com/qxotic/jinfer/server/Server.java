@@ -1,8 +1,9 @@
 package com.qxotic.jinfer.server;
 
 import com.qxotic.jinfer.*;
-import com.qxotic.jinfer.Generator.GenerationResult;
 import com.qxotic.jinfer.kernels.*;
+import com.qxotic.jinfer.llm.*;
+import com.qxotic.jinfer.llm.Generator.GenerationResult;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -34,8 +35,7 @@ public final class Server {
      * warming, if configured, completes before this returns. This is the only public API of the
      * module — load a model (jinfer-core), then hand it here to serve it.
      */
-    public static HttpServer start(LanguageModel<?, ?, ?> model, LLMOptions options)
-            throws IOException {
+    public static HttpServer start(LoadedModel<?> model, LLMOptions options) throws IOException {
         HttpServer server =
                 HttpServer.create(new InetSocketAddress(options.host(), options.port()), 0);
         String servedId = options.modelPath().getFileName().toString();
@@ -88,9 +88,9 @@ public final class Server {
                 request ->
                         Map.of(
                                 "model", options.modelPath().getFileName().toString(),
-                                "n_ctx", model.config().contextLength(),
+                                "n_ctx", model.model().config().contextLength(),
                                 "n_batch", RuntimeFlags.MAX_PROMPT_SEQUENCE_LENGTH,
-                                "n_vocab", model.config().vocabularySize(),
+                                "n_vocab", model.model().config().vocabularySize(),
                                 "prompt_cache", Map.of("enabled", false)));
         Function<Map<String, Object>, Object> tokenize =
                 request ->

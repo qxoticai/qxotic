@@ -3,6 +3,7 @@
 // [model.gguf]
 package com.qxotic.jinfer.models.llama;
 
+import com.qxotic.jinfer.llm.*;
 import com.qxotic.jinfer.testkit.CacheScenario;
 import com.qxotic.jinfer.testkit.Harness;
 import com.qxotic.jinfer.testkit.Stories;
@@ -15,7 +16,7 @@ public final class LlamaCacheRun {
                         args.length > 0
                                 ? args[0]
                                 : "/home/mukel/Desktop/playground/models/unsloth/Llama-3.2-1B-Instruct-Q8_0.gguf");
-        Harness<Llama.State> h = new Harness<>(Llama.loadModel(path, 8192), path, 8192);
+        Harness<Llama.State> h = new Harness<>(Llama.loadModel(path, 8192).loaded(), path, 8192);
         new CacheScenario<>(
                         h,
                         CacheScenario.Config.of(

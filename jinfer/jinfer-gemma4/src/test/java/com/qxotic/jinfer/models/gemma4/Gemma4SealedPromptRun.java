@@ -3,6 +3,7 @@
 // layers.   java ... com.qxotic.jinfer.models.gemma4.Gemma4SealedPromptRun [model.gguf]
 package com.qxotic.jinfer.models.gemma4;
 
+import com.qxotic.jinfer.llm.*;
 import com.qxotic.jinfer.testkit.Harness;
 import com.qxotic.jinfer.testkit.SealedScenario;
 import java.nio.file.Path;
@@ -14,7 +15,7 @@ public final class Gemma4SealedPromptRun {
                         args.length > 0
                                 ? args[0]
                                 : "/home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-Q8_0.gguf");
-        new SealedScenario<>(new Harness<>(Gemma4.loadModel(path, 8192), path, 8192))
+        new SealedScenario<>(new Harness<>(Gemma4.loadModel(path, 8192).loaded(), path, 8192))
                 .run("Gemma4SealedPromptRun");
     }
 }

@@ -22,14 +22,6 @@
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
-      <artifactId>toknroll-core</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>toknroll-gguf</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
       <artifactId>jam-core</artifactId>
       <!-- the JAM interface + dtype tags -->
     </dependency>
