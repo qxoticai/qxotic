@@ -1,15 +1,13 @@
-// Whole-render chat template: renders the model's own Jinja chat_template over the OpenAI request
-// and re-scans the string into tokens. The fallback ChatTemplate - used when a model has no
-// hand-written TurnTemplate, or for a request a TurnTemplate cannot yet frame turn-stably (tools on
-// a model without supportsTools(), a forced tool_choice, arbitrary chat_template_kwargs). Unlike a
+// Whole-render chat renderer: renders the model's own Jinja chat_template over the OpenAI request
+// and re-scans the string into tokens. The server's fallback when a request cannot be framed
+// turn-stably by the model's TurnTemplate - a model with no hand-written template, tools on a model
+// without supportsTools(), a forced tool_choice, or arbitrary chat_template_kwargs. Unlike a
 // TurnTemplate it re-scans a rendered String and bakes in the generation prompt, so it is one
 // prompt, not turn groups - no incremental caching. Plain chat on covered models goes through the
 // model's TurnTemplate instead.
 package com.qxotic.jinfer.server;
 
 import com.qxotic.jinfer.*;
-import com.qxotic.jinfer.chat.ChatTemplate;
-import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.llm.*;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -17,34 +15,17 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * The whole-render {@link ChatTemplate}: the one place a rendered String is re-scanned into tokens
- * (encodeWithSpecialTokens); the {@link com.qxotic.jinfer.chat.TurnTemplate} path emits token ids
- * directly. Constructed per model with its tokenizer (which carries the compiled Jinja template).
+ * Renders a chat request to prompt tokens through the model's Jinja chat_template - the one place a
+ * rendered String is re-scanned into tokens (encodeWithSpecialTokens); the {@code TurnTemplate}
+ * path emits token ids directly. Constructed per model with its tokenizer (which carries the
+ * compiled Jinja template).
  */
-final class JinjaChatTemplate implements ChatTemplate {
+final class JinjaChatTemplate {
 
     private final GgufTokenizer tokenizer;
 
     JinjaChatTemplate(GgufTokenizer tokenizer) {
         this.tokenizer = tokenizer;
-    }
-
-    /**
-     * The {@link ChatTemplate} entry: render a structured conversation (no tools, generation prompt
-     * included) to a single prefill batch. The server drives the richer {@link #render} directly
-     * for tool/kwargs requests; this exists so a model with no TurnTemplate is still a
-     * ChatTemplate.
-     */
-    @Override
-    public List<Batch> encode(List<Message> conversation) {
-        List<Object> messages = new ArrayList<>();
-        for (Message m : conversation) {
-            Map<String, Object> map = new LinkedHashMap<>();
-            map.put("role", m.role().name());
-            map.put("content", m.text());
-            messages.add(map);
-        }
-        return List.of(Batch.prefill(render(messages, null, true, true, null)));
     }
 
     /**
