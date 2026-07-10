@@ -3,6 +3,7 @@ package com.qxotic.jinfer.chat;
 import com.qxotic.jinfer.Batch;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * The precise chat contract for curated models: encodes one turn at a time, deterministically and
@@ -39,7 +40,7 @@ public interface TurnTemplate extends ChatTemplate {
      * message (if any) and the offered tools. Both are fixed for the life of the conversation, so
      * the preamble stays a stable cache prefix as turns are appended.
      */
-    record Preamble(java.util.Optional<Message> system, List<Tool> tools) {
+    record Preamble(Optional<Message> system, List<Tool> tools) {
         public Preamble {
             tools = List.copyOf(tools);
         }
@@ -90,8 +91,8 @@ public interface TurnTemplate extends ChatTemplate {
      * (encode-side) tool rendering, and it is per-model because the call format is - see {@link
      * ToolCallDetector}.
      */
-    default java.util.Optional<ToolCallDetector> toolCallDetector() {
-        return java.util.Optional.empty();
+    default Optional<ToolCallDetector> toolCallDetector() {
+        return Optional.empty();
     }
 
     /**

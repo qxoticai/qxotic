@@ -69,11 +69,8 @@ public final class Generator {
      * for it is emitted.
      */
     public record Listener(
-            IntConsumer onToken,
-            Consumer<String> onContent,
-            Consumer<String> onReasoning,
-            Consumer<String> onToolCall) {
-        static final Listener NONE = new Listener(null, null, null, null);
+            IntConsumer onToken, Consumer<String> onContent, Consumer<String> onReasoning) {
+        static final Listener NONE = new Listener(null, null, null);
     }
 
     /**

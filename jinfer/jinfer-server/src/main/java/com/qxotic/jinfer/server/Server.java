@@ -356,12 +356,11 @@ public final class Server {
                                                                 modelId,
                                                                 Map.of("reasoning_content", t),
                                                                 null));
-                        Consumer<String> toolCallSink = hasTools || forcedTool ? DISCARD : null;
                         GenerationResult result =
                                 GENERATION.chat(
                                         request,
                                         messages,
-                                        new Sinks(contentSink, reasoningSink, toolCallSink, usage));
+                                        new Sinks(contentSink, reasoningSink, usage));
                         if (!result.toolCalls().isEmpty()) {
                             sse.emit(
                                     OpenAiSchema.chatCompletionChunk(

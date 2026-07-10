@@ -1,6 +1,9 @@
 package com.qxotic.jinfer.chat;
 
 import com.qxotic.jinfer.Media;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * One piece of a message's content: text, or a decoded media payload. The sealed {@link Media}
@@ -33,11 +36,10 @@ public sealed interface Part {
      * A tool call the assistant emitted, or that the caller replays in a history turn. {@code
      * arguments} is the parsed argument object (the model's detector produces it structurally, so
      * the wire layer is the only place that ever serializes it back to a JSON string). {@code id}
-     * correlates the call with its {@link ToolResult}; it may be blank for models that do not mint
-     * one, in which case the caller assigns it.
+     * correlates a call with its result (a {@code tool}-role turn); it may be blank for models that
+     * do not mint one, in which case the caller assigns it.
      */
-    record ToolCall(String id, String name, java.util.Map<String, Object> arguments)
-            implements Part {
+    record ToolCall(String id, String name, Map<String, Object> arguments) implements Part {
         public ToolCall {
             if (name == null || name.isEmpty())
                 throw new IllegalArgumentException("empty tool name");
@@ -47,19 +49,8 @@ public sealed interface Part {
             // (Map.copyOf does not).
             arguments =
                     arguments == null
-                            ? java.util.Map.of()
-                            : java.util.Collections.unmodifiableMap(
-                                    new java.util.LinkedHashMap<>(arguments));
-        }
-    }
-
-    /**
-     * The result of a tool call, replayed by the caller in the next turn. {@code callId} matches
-     * the {@link ToolCall#id()} it answers; {@code name} is the tool that produced it.
-     */
-    record ToolResult(String callId, String name, String content) implements Part {
-        public ToolResult {
-            if (content == null) throw new IllegalArgumentException("null tool result content");
+                            ? Map.of()
+                            : Collections.unmodifiableMap(new LinkedHashMap<>(arguments));
         }
     }
 }

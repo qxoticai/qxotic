@@ -1077,7 +1077,7 @@ public final class ServerIntegrationTest {
                         state,
                         prompt,
                         params,
-                        new Generator.Listener(null, null, null, null));
+                        new Generator.Listener(null, null, null));
         long elapsedMs = (System.nanoTime() - start) / 1_000_000;
         check(
                 "length".equals(result.finishReason()),

@@ -20,9 +20,6 @@ public final class Lfm2ToolOracle {
     static final Tool WEATHER =
             new Tool(
                     "get_weather",
-                    "Get current weather for a city",
-                    "{\"type\": \"object\", \"properties\": {\"city\": {\"type\": \"string\"}},"
-                            + " \"required\": [\"city\"]}",
                     "{\"type\": \"function\", \"function\": {\"name\": \"get_weather\","
                         + " \"description\": \"Get current weather for a city\", \"parameters\":"
                         + " {\"type\": \"object\", \"properties\": {\"city\": {\"type\":"
@@ -31,9 +28,6 @@ public final class Lfm2ToolOracle {
     static final Tool SEARCH =
             new Tool(
                     "web_search",
-                    "Search the web",
-                    "{\"type\": \"object\", \"properties\": {\"q\": {\"type\": \"string\"},"
-                            + " \"top_k\": {\"type\": \"integer\"}}}",
                     "{\"type\": \"function\", \"function\": {\"name\": \"web_search\","
                         + " \"description\": \"Search the web\", \"parameters\": {\"type\":"
                         + " \"object\", \"properties\": {\"q\": {\"type\": \"string\"}, \"top_k\":"

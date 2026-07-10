@@ -10,17 +10,13 @@ import java.util.function.Consumer;
  * common non-streaming case ({@link #NONE}). Any channel may be null (e.g. completions have no
  * reasoning or tool-call sink); {@code usage} is null when running usage is not tracked.
  */
-record Sinks(
-        Consumer<String> onText,
-        Consumer<String> onReasoning,
-        Consumer<String> onToolCall,
-        OpenAiSchema.Usage usage) {
+record Sinks(Consumer<String> onText, Consumer<String> onReasoning, OpenAiSchema.Usage usage) {
 
     /** No streaming: the result carries the full text/usage, so every channel is absent. */
-    static final Sinks NONE = new Sinks(null, null, null, null);
+    static final Sinks NONE = new Sinks(null, null, null);
 
     /** A single text channel with usage tracking (completions and the Responses API). */
     static Sinks text(Consumer<String> onText, OpenAiSchema.Usage usage) {
-        return new Sinks(onText, null, null, usage);
+        return new Sinks(onText, null, usage);
     }
 }
