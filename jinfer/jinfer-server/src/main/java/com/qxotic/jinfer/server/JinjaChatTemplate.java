@@ -1,11 +1,15 @@
-// The legacy whole-render chat fallback: renders the model's Jinja chat_template over the raw
-// OpenAI request and re-scans the string into tokens. Kept as the ONE seam for what the per-turn
-// chat API cannot represent yet: tool-calling requests (templates read arbitrary message fields)
-// and models without a hand-written TurnTemplate. Plain chat on covered models goes through
-// com.qxotic.jinfer.chat (TurnTemplate + PromptCache) instead.
+// Whole-render chat template: renders the model's own Jinja chat_template over the OpenAI request
+// and re-scans the string into tokens. The fallback ChatTemplate - used when a model has no
+// hand-written TurnTemplate, or for a request a TurnTemplate cannot yet frame turn-stably (tools on
+// a model without supportsTools(), a forced tool_choice, arbitrary chat_template_kwargs). Unlike a
+// TurnTemplate it re-scans a rendered String and bakes in the generation prompt, so it is one
+// prompt, not turn groups - no incremental caching. Plain chat on covered models goes through the
+// model's TurnTemplate instead.
 package com.qxotic.jinfer.server;
 
 import com.qxotic.jinfer.*;
+import com.qxotic.jinfer.chat.ChatTemplate;
+import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.llm.*;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -13,27 +17,61 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Renders a chat request to prompt tokens through the model's Jinja chat_template — the one place a
- * rendered String is re-scanned into tokens (encodeWithSpecialTokens); the TurnTemplate path emits
- * token ids directly. Internal — never exposed by the OpenAI layer.
+ * The whole-render {@link ChatTemplate}: the one place a rendered String is re-scanned into tokens
+ * (encodeWithSpecialTokens); the {@link com.qxotic.jinfer.chat.TurnTemplate} path emits token ids
+ * directly. Constructed per model with its tokenizer (which carries the compiled Jinja template).
  */
-final class ChatFormat {
-    private ChatFormat() {}
+final class JinjaChatTemplate implements ChatTemplate {
 
-    static List<Integer> encode(GgufTokenizer tokenizer, ChatContext ctx) {
+    private final GgufTokenizer tokenizer;
+
+    JinjaChatTemplate(GgufTokenizer tokenizer) {
+        this.tokenizer = tokenizer;
+    }
+
+    /**
+     * The {@link ChatTemplate} entry: render a structured conversation (no tools, generation prompt
+     * included) to a single prefill batch. The server drives the richer {@link #render} directly
+     * for tool/kwargs requests; this exists so a model with no TurnTemplate is still a
+     * ChatTemplate.
+     */
+    @Override
+    public List<Batch> encode(List<Message> conversation) {
+        List<Object> messages = new ArrayList<>();
+        for (Message m : conversation) {
+            Map<String, Object> map = new LinkedHashMap<>();
+            map.put("role", m.role().name());
+            map.put("content", m.text());
+            messages.add(map);
+        }
+        return List.of(Batch.prefill(render(messages, null, true, true, null)));
+    }
+
+    /**
+     * Render the OpenAI request maps to prompt tokens. {@code messages}/{@code tools} stay as raw
+     * maps because Jinja templates read arbitrary fields; {@code kwargs} merges extra template
+     * variables (chat_template_kwargs). Falls back to a best-effort ChatML framing when the GGUF
+     * has no compilable template.
+     */
+    List<Integer> render(
+            List<Object> messages,
+            List<Object> tools,
+            boolean addGenerationPrompt,
+            boolean enableThinking,
+            Map<String, Object> kwargs) {
         CompiledTemplate tpl = tokenizer.chatTemplate();
         if (tpl == null) {
-            return chatMl(tokenizer, ctx); // no (or uncompilable) template: best-effort ChatML
+            return chatMl(messages, tools, addGenerationPrompt);
         }
         var vars = new LinkedHashMap<String, Object>();
-        vars.put("messages", preprocessToolCalls(ctx.messages()));
-        vars.put("add_generation_prompt", ctx.addGenerationPrompt());
+        vars.put("messages", preprocessToolCalls(messages));
+        vars.put("add_generation_prompt", addGenerationPrompt);
         vars.put("bos_token", firstSpecialString(tokenizer, "<bos>", "<|startoftext|>"));
         vars.put("eos_token", firstSpecialString(tokenizer, "<eos>", "<|endoftext|>"));
-        vars.put("tools", ctx.tools());
-        vars.put("enable_thinking", ctx.enableThinking());
+        vars.put("tools", tools);
+        vars.put("enable_thinking", enableThinking);
         vars.put("preserve_thinking", false);
-        if (ctx.kwargs() != null) vars.putAll(ctx.kwargs());
+        if (kwargs != null) vars.putAll(kwargs);
         return tokenizer.encodeWithSpecialTokens(tpl.render(vars));
     }
 
@@ -43,14 +81,15 @@ final class ChatFormat {
      * flattened into the system turn, tool results/calls rendered as text. The string is re-scanned
      * with special-token awareness, so the turn markers become real ids when the vocab has them.
      */
-    private static List<Integer> chatMl(GgufTokenizer tokenizer, ChatContext ctx) {
+    private List<Integer> chatMl(
+            List<Object> messages, List<Object> tools, boolean addGenerationPrompt) {
         StringBuilder sb = new StringBuilder();
         StringBuilder system = new StringBuilder();
-        if (ctx.tools() != null && !ctx.tools().isEmpty()) {
-            system.append("List of tools: ").append(JsonCodec.stringify(ctx.tools()));
+        if (tools != null && !tools.isEmpty()) {
+            system.append("List of tools: ").append(JsonCodec.stringify(tools));
         }
         List<Object> body = new ArrayList<>();
-        for (Object raw : ctx.messages()) {
+        for (Object raw : messages) {
             if (raw instanceof Map<?, ?> m && "system".equals(m.get("role"))) {
                 String text = Values.messageContent(m.get("content"));
                 if (!text.isEmpty()) system.insert(0, system.isEmpty() ? text : text + "\n");
@@ -81,7 +120,7 @@ final class ChatFormat {
                     .append(content)
                     .append("<|im_end|>\n");
         }
-        if (ctx.addGenerationPrompt()) sb.append("<|im_start|>assistant\n");
+        if (addGenerationPrompt) sb.append("<|im_start|>assistant\n");
         return tokenizer.encodeWithSpecialTokens(sb.toString());
     }
 
@@ -156,14 +195,3 @@ final class ChatFormat {
         return null;
     }
 }
-
-/**
- * The normalized inputs a chat render needs, built once per request. {@code messages} and {@code
- * tools} stay as raw OpenAI maps because Jinja templates read arbitrary fields.
- */
-record ChatContext(
-        List<Object> messages,
-        List<Object> tools,
-        boolean addGenerationPrompt,
-        boolean enableThinking,
-        Map<String, Object> kwargs) {}

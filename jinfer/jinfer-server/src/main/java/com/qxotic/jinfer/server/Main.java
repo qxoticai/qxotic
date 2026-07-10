@@ -491,9 +491,8 @@ public class Main {
             }
             messages.add(Map.of("role", "user", "content", options.prompt()));
             promptTokens =
-                    ChatFormat.encode(
-                            model.tokenizer(),
-                            new ChatContext(messages, null, true, options.think(), Map.of()));
+                    new JinjaChatTemplate(model.tokenizer())
+                            .render(messages, null, true, options.think(), null);
         }
         S state =
                 model.model()
@@ -638,9 +637,8 @@ public class Main {
                 if (userText == null || "/quit".equals(userText) || "/exit".equals(userText)) break;
                 history.add(Map.of("role", "user", "content", userText));
                 List<Integer> promptTokens =
-                        ChatFormat.encode(
-                                model.tokenizer(),
-                                new ChatContext(history, null, true, options.think(), Map.of()));
+                        new JinjaChatTemplate(model.tokenizer())
+                                .render(history, null, true, options.think(), null);
                 Generator.GenerationResult result =
                         generateCli(
                                 model,

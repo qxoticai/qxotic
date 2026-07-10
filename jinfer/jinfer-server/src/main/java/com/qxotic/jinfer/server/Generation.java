@@ -93,17 +93,21 @@ final class Generation {
                 return chatTemplated(model, request, conversation, toolList, sinks);
             }
         }
-        ChatContext chatContext =
-                new ChatContext(
-                        messages,
-                        tools ? Values.asArray(request.get("tools"), "tools") : null,
-                        true,
-                        requestThink(request),
-                        request.get("chat_template_kwargs") instanceof Map<?, ?> kwargs
-                                ? (Map<String, Object>) kwargs
-                                : null);
+        Map<String, Object> kwargs =
+                request.get("chat_template_kwargs") instanceof Map<?, ?> kw
+                        ? (Map<String, Object>) kw
+                        : null;
         List<Integer> promptTokens =
-                new ArrayList<>(ChatFormat.encode(model.tokenizer(), chatContext));
+                new ArrayList<>(
+                        new JinjaChatTemplate(model.tokenizer())
+                                .render(
+                                        messages,
+                                        tools
+                                                ? Values.asArray(request.get("tools"), "tools")
+                                                : null,
+                                        true,
+                                        requestThink(request),
+                                        kwargs));
         ToolUse.seedForced(model.tokenizer(), request, promptTokens);
         if (System.getProperty("jinfer.debugPrompt") != null) {
             System.err.println("[prompt] " + model.tokenizer().decode(promptTokens));
