@@ -1,7 +1,8 @@
 package com.qxotic.jinfer.jinja;
 
 import com.qxotic.format.json.Json;
-import com.qxotic.jinfer.CompiledTemplate;
+import com.qxotic.jinfer.llm.*;
+import com.qxotic.jinfer.llm.CompiledTemplate;
 import java.time.LocalDateTime;
 import java.time.format.TextStyle;
 import java.util.ArrayList;
@@ -1062,7 +1063,7 @@ public final class JinjaRenderer {
      * CompiledTemplate} prompt generator — parse once, render many times. Returns {@code null} if
      * the source fails to parse. Suitable as a {@code Function<String, CompiledTemplate>} method
      * reference ({@code JinjaRenderer::template}, e.g. for {@link
-     * com.qxotic.jinfer.GgufTokenizer}). The AST and parser behind the returned template stay
+     * com.qxotic.jinfer.llm.GgufTokenizer}). The AST and parser behind the returned template stay
      * internal — callers only ever see a render-only template.
      */
     public static CompiledTemplate template(String source) {

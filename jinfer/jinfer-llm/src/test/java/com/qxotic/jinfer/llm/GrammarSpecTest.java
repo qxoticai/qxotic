@@ -1,5 +1,6 @@
-package com.qxotic.jinfer;
+package com.qxotic.jinfer.llm;
 
+import com.qxotic.jinfer.*;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;

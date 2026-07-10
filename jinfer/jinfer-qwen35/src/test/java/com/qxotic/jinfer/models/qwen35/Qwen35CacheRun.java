@@ -4,6 +4,7 @@
 //   java ... com.qxotic.jinfer.models.qwen35.Qwen35CacheRun [model.gguf]
 package com.qxotic.jinfer.models.qwen35;
 
+import com.qxotic.jinfer.llm.*;
 import com.qxotic.jinfer.testkit.CacheScenario;
 import com.qxotic.jinfer.testkit.Harness;
 import com.qxotic.jinfer.testkit.Stories;
@@ -18,7 +19,7 @@ public final class Qwen35CacheRun {
                                 : "/home/mukel/Desktop/playground/models/unsloth/Qwen3.5-2B-GGUF/Qwen3.5-2B-Q8_0.gguf");
         Harness<Qwen35.State> h =
                 new Harness<>(
-                        Qwen35.loadModel(path, 8192),
+                        Qwen35.loadModel(path, 8192).loaded(),
                         path,
                         8192,
                         false); // jam threaded FFN-gemm is not run-deterministic on this arch (see

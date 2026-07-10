@@ -2,6 +2,7 @@ package com.qxotic.jinfer.bench;
 
 import com.qxotic.jinfer.*;
 import com.qxotic.jinfer.kernels.*;
+import com.qxotic.jinfer.llm.*;
 import com.qxotic.jinfer.models.gemma4.Gemma4;
 import com.qxotic.jinfer.models.gptoss.GptOss;
 import com.qxotic.jinfer.models.lfm2.Lfm2;
@@ -60,7 +61,7 @@ public final class JinferBench {
         List<Row> rows = new ArrayList<>();
         for (String path : models) {
             System.err.printf("loading %s (ctx=%d) via com.qxotic.jinfer.models ...%n", path, ctx);
-            LanguageModel<?, ?, ?> model = loadAny(Path.of(path), ctx);
+            LoadedModel<?> model = loadAny(Path.of(path), ctx);
             String name = name(path);
             if (p > 0) rows.add(measure(model, name, threads, "pp" + p, p, true, warmup, reps));
             if (n > 0) rows.add(measure(model, name, threads, "tg" + n, n, false, warmup, reps));
@@ -69,23 +70,25 @@ public final class JinferBench {
     }
 
     /**
-     * Dispatch on general.architecture to the matching new-API port (all implement LanguageModel).
+     * Dispatch on general.architecture to the matching new-API port (each bundles itself via
+     * loaded()).
      */
-    private static LanguageModel<?, ?, ?> loadAny(Path path, int ctx) throws Exception {
+    private static LoadedModel<?> loadAny(Path path, int ctx) throws Exception {
         String arch;
         try (FileChannel fc = FileChannel.open(path, StandardOpenOption.READ)) {
             arch = ModelLoader.readGguf(fc, path.toString()).getString("general.architecture");
         }
         return switch (arch) {
-            case "gemma4" -> Gemma4.loadModel(path, ctx);
-            case "gpt-oss" -> GptOss.loadModel(path, ctx);
-            case "qwen35", "qwen35moe" -> Qwen35.loadModel(path, ctx);
-            case "nemotron_h", "nemotron_h_moe" -> NemotronH.loadModel(path, ctx);
+            case "gemma4" -> Gemma4.loadModel(path, ctx).loaded();
+            case "gpt-oss" -> GptOss.loadModel(path, ctx).loaded();
+            case "qwen35", "qwen35moe" -> Qwen35.loadModel(path, ctx).loaded();
+            case "nemotron_h", "nemotron_h_moe" -> NemotronH.loadModel(path, ctx).loaded();
             case "llama", "minicpm", "mistral3", "smollm3" ->
-                    Llama.loadModel(path, ctx); // same-graph Llama variants (metadata-driven)
-            case "granite" -> Granite.loadModel(path, ctx);
+                    Llama.loadModel(path, ctx)
+                            .loaded(); // same-graph Llama variants (metadata-driven)
+            case "granite" -> Granite.loadModel(path, ctx).loaded();
             default -> {
-                if (arch.startsWith("lfm")) yield Lfm2.loadModel(path, ctx);
+                if (arch.startsWith("lfm")) yield Lfm2.loadModel(path, ctx).loaded();
                 throw new IllegalArgumentException(
                         "JinferBench: unsupported architecture '" + arch + "'");
             }
@@ -100,7 +103,7 @@ public final class JinferBench {
      * {@code reps} timed passes reported as throughput mean ± stddev.
      */
     private static <S extends RuntimeState> Row measure(
-            LanguageModel<?, ?, S> model,
+            LoadedModel<S> model,
             String name,
             int threads,
             String test,
@@ -108,8 +111,8 @@ public final class JinferBench {
             boolean prefill,
             int minWarmup,
             int reps) {
-        int ctx = model.config().contextLength();
-        int vocab = model.config().vocabularySize();
+        int ctx = model.model().config().contextLength();
+        int vocab = model.model().config().vocabularySize();
         int[] prompt = fillerTokens(vocab, prefill ? count : 1);
 
         // Adaptive warmup: run until the last WINDOW passes agree within TOL (JIT/GC settled).
@@ -148,26 +151,21 @@ public final class JinferBench {
      * work.
      */
     private static <S extends RuntimeState> double runOnce(
-            LanguageModel<?, ?, S> model,
-            int ctx,
-            int[] prompt,
-            int count,
-            boolean prefill,
-            int vocab) {
-        S s = model.newState(ctx, Math.max(prompt.length, 16));
+            LoadedModel<S> model, int ctx, int[] prompt, int count, boolean prefill, int vocab) {
+        S s = model.model().newState(ctx, Math.max(prompt.length, 16));
         if (prefill) {
             // pp: one batched prefill of `count` tokens
             long t0 = System.nanoTime();
-            model.ingest(s, Batch.prefill(prompt));
+            model.model().ingest(s, Batch.prefill(prompt));
             return count / ((System.nanoTime() - t0) / 1e9);
         }
         // tg: prime with one token, then time `count` single-token decode steps
-        model.ingest(s, Batch.prefill(prompt));
-        int tok = argmax(model.logits(s), vocab);
+        model.model().ingest(s, Batch.prefill(prompt));
+        int tok = argmax(model.model().logits(s), vocab);
         long t0 = System.nanoTime();
         for (int g = 0; g < count; g++) {
-            model.ingest(s, Batch.step(tok));
-            tok = argmax(model.logits(s), vocab);
+            model.model().ingest(s, Batch.step(tok));
+            tok = argmax(model.model().logits(s), vocab);
         }
         return count / ((System.nanoTime() - t0) / 1e9);
     }

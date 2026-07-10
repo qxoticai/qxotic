@@ -5,8 +5,9 @@
 // the
 // now-removed legacy Engine). Token/text stops, streaming demux with think-span routing, wall-clock
 // deadline, timing. NOTE: prompt caching / prefix resume is not (yet) supported on this path.
-package com.qxotic.jinfer;
+package com.qxotic.jinfer.llm;
 
+import com.qxotic.jinfer.*;
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
@@ -129,7 +130,12 @@ public final class Generator {
      * the {@code <think>}/{@code </think>} markers when reasoning is disabled.
      */
     public static Sampler configuredSampler(
-            LanguageModel<?, ?, ?> model, boolean think, float temperature, float topp, long seed) {
+            LanguageModel<?, ?, ?> model,
+            GgufTokenizer tokenizer,
+            boolean think,
+            float temperature,
+            float topp,
+            long seed) {
         require(
                 Float.isFinite(temperature) && 0 <= temperature,
                 "Invalid argument: temperature must be a finite non-negative number");
@@ -138,7 +144,6 @@ public final class Generator {
                 "Invalid argument: top_p must be within [0, 1]");
         Sampler sampler = Sampler.select(model.config().vocabularySize(), temperature, topp, seed);
         if (!think) {
-            GgufTokenizer tokenizer = model.tokenizer();
             Integer thinkStart = tokenizer.getSpecialTokens().get("<think>");
             Integer thinkEnd = tokenizer.getSpecialTokens().get("</think>");
             Set<Integer> banned = new HashSet<>();
@@ -158,11 +163,11 @@ public final class Generator {
      */
     public static <S extends RuntimeState> GenerationResult generate(
             LanguageModel<?, ?, S> model,
+            GgufTokenizer tokenizer,
             S state,
             List<Integer> promptTokens,
             Params params,
             Listener listener) {
-        GgufTokenizer tokenizer = model.tokenizer();
         int contextLength = model.config().contextLength();
         int consumedPromptTokens = consumedPromptTokens(tokenizer, promptTokens);
         int promptPositions =

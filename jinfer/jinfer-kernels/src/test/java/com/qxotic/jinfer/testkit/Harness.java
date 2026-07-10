@@ -5,14 +5,15 @@
 package com.qxotic.jinfer.testkit;
 
 import com.qxotic.jinfer.Batch;
-import com.qxotic.jinfer.GgufTokenizer;
-import com.qxotic.jinfer.LanguageModel;
 import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.jinfer.cache.CachedSession;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.cache.StateCodec;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.TurnTemplate;
+import com.qxotic.jinfer.llm.*;
+import com.qxotic.jinfer.llm.GgufTokenizer;
+import com.qxotic.jinfer.llm.LoadedModel;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.nio.file.Path;
@@ -22,7 +23,7 @@ import java.util.Set;
 
 public final class Harness<S extends RuntimeState> {
 
-    public final LanguageModel<?, ?, S> model;
+    public final LoadedModel<S> model;
     public final TurnTemplate template;
     public final StateCodec<S> codec;
     public final GgufTokenizer tokenizer;
@@ -40,15 +41,15 @@ public final class Harness<S extends RuntimeState> {
 
     private final Checks checks = new Checks();
 
-    public Harness(LanguageModel<?, ?, S> model, Path path, int ctx) {
+    public Harness(LoadedModel<S> model, Path path, int ctx) {
         this(model, path, ctx, true);
     }
 
-    public Harness(LanguageModel<?, ?, S> model, Path path, int ctx, boolean deterministicDecode) {
+    public Harness(LoadedModel<S> model, Path path, int ctx, boolean deterministicDecode) {
         this.deterministicDecode = deterministicDecode;
         this.model = model;
-        this.template = model.turnTemplate().orElseThrow();
-        this.codec = model.stateCodec().orElseThrow();
+        this.template = model.chatTemplate().orElseThrow();
+        this.codec = model.model().stateCodec().orElseThrow();
         this.tokenizer = model.tokenizer();
         this.stops = model.stopTokens();
         this.path = path;
@@ -57,7 +58,7 @@ public final class Harness<S extends RuntimeState> {
     }
 
     public S newState() {
-        return model.newState(ctx, 512);
+        return model.model().newState(ctx, 512);
     }
 
     /** A decoded reply: the text plus how many tokens produced it (for tok/s). */
@@ -75,7 +76,7 @@ public final class Harness<S extends RuntimeState> {
     public String serve(S state, Message user, int maxTokens) {
         ingest(state, template.encodeTurn(user));
         ingest(state, template.generationPrompt(true));
-        return greedy(state, tok -> model.ingest(state, Batch.step(tok)), maxTokens).text();
+        return greedy(state, tok -> model.model().ingest(state, Batch.step(tok)), maxTokens).text();
     }
 
     /**
@@ -84,12 +85,12 @@ public final class Harness<S extends RuntimeState> {
      */
     private Reply greedy(S state, java.util.function.IntConsumer step, int maxTokens) {
         StringBuilder out = new StringBuilder();
-        int tok = model.logits(state).argmax();
+        int tok = model.model().logits(state).argmax();
         int n = 0;
         for (; n < maxTokens && !stops.contains(tok); n++) {
             out.append(tokenizer.decode(tok));
             step.accept(tok);
-            tok = model.logits(state).argmax();
+            tok = model.model().logits(state).argmax();
         }
         return new Reply(out.toString(), Math.max(n, 1));
     }
@@ -97,7 +98,7 @@ public final class Harness<S extends RuntimeState> {
     /** Plain chunked ingest (no cache); returns the ingested fingerprints. */
     public long[] ingest(S state, List<Batch> batches) {
         List<Batch> prepared = Batch.prepare(batches, state.batchCapacity());
-        for (Batch b : prepared) model.ingest(state, b);
+        for (Batch b : prepared) model.model().ingest(state, b);
         int[] ids = Batch.tokenIds(prepared);
         long[] fp = new long[ids.length];
         for (int i = 0; i < fp.length; i++) fp[i] = ids[i];

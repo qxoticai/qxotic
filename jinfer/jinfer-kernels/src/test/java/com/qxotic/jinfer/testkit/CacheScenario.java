@@ -64,7 +64,8 @@ public final class CacheScenario<S extends RuntimeState> {
 
     public void run(String runName) {
         // ---- short conversation: two turns, committed as it goes ----
-        CachedSession<S> a = CachedSession.resume(h.model, cache, h.newState(), new long[0]);
+        CachedSession<S> a =
+                CachedSession.resume(h.model.model(), cache, h.newState(), new long[0]);
         a.ingest(h.template.conversationStart());
         if (cfg.systemPrompt() != null)
             a.ingest(h.template.encodeTurn(Message.system(cfg.systemPrompt())));
@@ -92,7 +93,7 @@ public final class CacheScenario<S extends RuntimeState> {
             PromptCache<S> longCache =
                     new PromptCache<>(h.codec, CacheStore.inMemory(), budget, h.seed);
             CachedSession<S> b =
-                    CachedSession.resume(h.model, longCache, h.newState(), new long[0]);
+                    CachedSession.resume(h.model.model(), longCache, h.newState(), new long[0]);
             b.ingest(h.template.conversationStart());
             b.ingest(h.template.encodeTurn(Message.user(cfg.longCase().story())));
             System.out.println("long turn 1: " + log(h.decode(b, cfg.maxTokens()).text()));
@@ -116,7 +117,7 @@ public final class CacheScenario<S extends RuntimeState> {
         // ---- divergent tail resumes only the shared prefix ----
         long[] mutated = shortHist.clone();
         mutated[mutated.length - 1] = -1;
-        CachedSession<S> d = CachedSession.resume(h.model, cache, h.newState(), mutated);
+        CachedSession<S> d = CachedSession.resume(h.model.model(), cache, h.newState(), mutated);
         h.check(
                 d.position() > 0 && d.position() < shortHist.length,
                 "divergent tail resumes a shorter prefix ("
@@ -158,7 +159,8 @@ public final class CacheScenario<S extends RuntimeState> {
     private Bench validate(
             PromptCache<S> cache, String name, long[] history, S liveState, Message probe) {
         long t0 = System.nanoTime();
-        CachedSession<S> cached = CachedSession.resume(h.model, cache, h.newState(), history);
+        CachedSession<S> cached =
+                CachedSession.resume(h.model.model(), cache, h.newState(), history);
         double resumeMs = (System.nanoTime() - t0) / 1e6;
         h.check(
                 cached.position() == history.length,
@@ -178,7 +180,8 @@ public final class CacheScenario<S extends RuntimeState> {
         double decodeSec = (System.nanoTime() - t1) / 1e9;
 
         PromptCache<S> scratch = new PromptCache<>(h.codec, CacheStore.inMemory(), budget, h.seed);
-        CachedSession<S> plain = CachedSession.resume(h.model, scratch, h.newState(), new long[0]);
+        CachedSession<S> plain =
+                CachedSession.resume(h.model.model(), scratch, h.newState(), new long[0]);
         long t2 = System.nanoTime();
         plain.ingest(List.of(Batch.prefill(Harness.toInts(history))));
         double replayMs = (System.nanoTime() - t2) / 1e6;

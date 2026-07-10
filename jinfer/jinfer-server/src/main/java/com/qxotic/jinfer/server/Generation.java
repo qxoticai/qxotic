@@ -1,14 +1,15 @@
 package com.qxotic.jinfer.server;
 
 import com.qxotic.jinfer.*;
-import com.qxotic.jinfer.Generator.GenerationResult;
-import com.qxotic.jinfer.Generator.StopSpec;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.cache.SessionPool;
 import com.qxotic.jinfer.cache.StateCodec;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.TurnTemplate;
+import com.qxotic.jinfer.llm.*;
+import com.qxotic.jinfer.llm.Generator.GenerationResult;
+import com.qxotic.jinfer.llm.Generator.StopSpec;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -31,7 +32,7 @@ import java.util.function.IntConsumer;
  */
 final class Generation {
 
-    private final LanguageModel<?, ?, ?> model;
+    private final LoadedModel<?> model;
     private final LLMOptions options;
     private final Worker worker;
     private final Map<GgufTokenizer, int[]> newlineCache =
@@ -43,11 +44,11 @@ final class Generation {
     private final SessionPool<?>
             sessionPool; // tier 1: last-N live conversations (append-only reuse)
 
-    Generation(LanguageModel<?, ?, ?> model, LLMOptions options, Worker worker) {
+    Generation(LoadedModel<?> model, LLMOptions options, Worker worker) {
         this.model = model;
         this.options = options;
         this.worker = worker;
-        this.template = model.turnTemplate().orElse(null);
+        this.template = model.chatTemplate().orElse(null);
         this.stopTokens = model.stopTokens();
         this.promptCache =
                 RuntimeFlags.PROMPT_CACHE ? buildCache(model, options.modelPath()) : null;
@@ -55,8 +56,8 @@ final class Generation {
     }
 
     private static <S extends RuntimeState> PromptCache<S> buildCache(
-            LanguageModel<?, ?, S> m, java.nio.file.Path modelPath) {
-        StateCodec<S> codec = m.stateCodec().orElse(null);
+            LoadedModel<S> m, java.nio.file.Path modelPath) {
+        StateCodec<S> codec = m.model().stateCodec().orElse(null);
         if (codec == null) return null;
         return new PromptCache<>(
                 codec,
@@ -143,7 +144,7 @@ final class Generation {
      * prefix.
      */
     private <S extends RuntimeState> GenerationResult chatTemplated(
-            LanguageModel<?, ?, S> m,
+            LoadedModel<S> m,
             Map<String, Object> request,
             List<Message> conversation,
             Sinks sinks) {
@@ -170,10 +171,10 @@ final class Generation {
         @SuppressWarnings("unchecked")
         PromptCache<S> cache = (PromptCache<S>) promptCache;
         if (cache == null) {
-            S state = m.newState(m.config().contextLength());
+            S state = m.model().newState(m.model().config().contextLength());
             List<Batch> all = new ArrayList<>(); // uncached: plain ingest, framing unchanged
             for (List<Batch> group : groups) all.addAll(group);
-            for (Batch b : Batch.prepare(all, state.batchCapacity())) m.ingest(state, b);
+            for (Batch b : Batch.prepare(all, state.batchCapacity())) m.model().ingest(state, b);
             return generateFrom(m, state, request, sinks, 0).withUsage(total, 0);
         }
         long[] fingerprints = new long[total];
@@ -188,9 +189,9 @@ final class Generation {
         SessionPool<S> pool = (SessionPool<S>) sessionPool;
         int billed = total;
         return pool.withSession(
-                m,
+                m.model(),
                 cache,
-                () -> m.newState(m.config().contextLength()),
+                () -> m.model().newState(m.model().config().contextLength()),
                 fingerprints,
                 total,
                 total - groupLen[groupLen.length - 1],
@@ -245,11 +246,7 @@ final class Generation {
      * cursor); {@code cachedTokens} is the restored prefix length billed to the client.
      */
     private <S extends RuntimeState> GenerationResult generateFrom(
-            LanguageModel<?, ?, S> m,
-            S state,
-            Map<String, Object> request,
-            Sinks sinks,
-            int cachedTokens) {
+            LoadedModel<S> m, S state, Map<String, Object> request, Sinks sinks, int cachedTokens) {
         return runGeneration(m, state, request, List.of(), sinks, cachedTokens);
     }
 
@@ -259,7 +256,7 @@ final class Generation {
      * the trailing stop token removed from the result.
      */
     private <S extends RuntimeState> GenerationResult runGeneration(
-            LanguageModel<?, ?, S> m,
+            LoadedModel<S> m,
             S resumedState,
             Map<String, Object> request,
             List<Integer> promptTokens,
@@ -287,7 +284,9 @@ final class Generation {
         LLMOptions.require(0 <= maxTokens, "Invalid argument: max_tokens must be non-negative");
         StopSpec stops = stopSpec(request.get("stop"), stopTokens);
         boolean think = requestThink(request);
-        Sampler sampler = Generator.configuredSampler(m, think, temperature, topp, seed);
+        Sampler sampler =
+                Generator.configuredSampler(
+                        m.model(), m.tokenizer(), think, temperature, topp, seed);
         if (think) {
             // thinking models starve the answer under tight budgets: cap the think span, by default
             // at half the completion budget (request reasoning_max_tokens overrides; -1 = uncapped)
@@ -340,8 +339,12 @@ final class Generation {
         S state =
                 resumedState != null
                         ? resumedState
-                        : m.newState(m.config().contextLength(), Math.max(promptTokens.size(), 16));
-        GenerationResult result = Generator.generate(m, state, promptTokens, params, listener);
+                        : m.model()
+                                .newState(
+                                        m.model().config().contextLength(),
+                                        Math.max(promptTokens.size(), 16));
+        GenerationResult result =
+                Generator.generate(m.model(), m.tokenizer(), state, promptTokens, params, listener);
         Metrics.record(result);
         return result;
     }

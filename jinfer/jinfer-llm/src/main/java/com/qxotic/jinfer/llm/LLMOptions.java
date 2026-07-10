@@ -1,5 +1,6 @@
-package com.qxotic.jinfer;
+package com.qxotic.jinfer.llm;
 
+import com.qxotic.jinfer.*;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;

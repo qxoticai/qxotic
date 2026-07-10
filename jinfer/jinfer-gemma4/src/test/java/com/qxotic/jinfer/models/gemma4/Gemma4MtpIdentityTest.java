@@ -21,6 +21,7 @@ import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.CacheStore;
 import com.qxotic.jinfer.cache.CachedSession;
 import com.qxotic.jinfer.cache.PromptCache;
+import com.qxotic.jinfer.llm.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -144,7 +145,7 @@ public final class Gemma4MtpIdentityTest {
         return ids;
     }
 
-    static void diff(List<Integer> a, List<Integer> b, com.qxotic.jinfer.GgufTokenizer tk) {
+    static void diff(List<Integer> a, List<Integer> b, com.qxotic.jinfer.llm.GgufTokenizer tk) {
         int i = 0;
         while (i < Math.min(a.size(), b.size()) && a.get(i).equals(b.get(i))) i++;
         System.out.println(

@@ -14,6 +14,7 @@ import com.qxotic.jinfer.cache.SealedPrompt;
 import com.qxotic.jinfer.cache.StateCodec;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.TurnTemplate;
+import com.qxotic.jinfer.llm.*;
 import com.qxotic.jinfer.models.gemma4.Gemma4;
 import com.qxotic.jinfer.models.lfm2.Lfm2;
 import java.nio.file.Files;
@@ -65,13 +66,13 @@ public final class TtftBench {
         }
     }
 
-    static LanguageModel<?, ?, ?> load(String path) throws Exception {
+    static LoadedModel<?> load(String path) throws Exception {
         long t0 = System.nanoTime();
         String lower = path.toLowerCase();
-        LanguageModel<?, ?, ?> m =
+        LoadedModel<?> m =
                 lower.contains("gemma")
-                        ? Gemma4.loadModel(Path.of(path), 4096)
-                        : Lfm2.loadModel(Path.of(path), 4096);
+                        ? Gemma4.loadModel(Path.of(path), 4096).loaded()
+                        : Lfm2.loadModel(Path.of(path), 4096).loaded();
         System.err.printf("model load: %.0f ms%n", (System.nanoTime() - t0) / 1e6);
         return m;
     }
@@ -80,16 +81,17 @@ public final class TtftBench {
      * Builds the cached history (story turn + generated reply), then benches: cold full-prefill
      * TTFT vs warm resume TTFT for the follow-up question.
      */
-    static <S extends RuntimeState> void warm(LanguageModel<?, ?, S> model, Path gguf, int reps) {
-        TurnTemplate tpl = model.turnTemplate().orElseThrow();
-        StateCodec<S> codec = model.stateCodec().orElseThrow();
+    static <S extends RuntimeState> void warm(LoadedModel<S> model, Path gguf, int reps) {
+        TurnTemplate tpl = model.chatTemplate().orElseThrow();
+        StateCodec<S> codec = model.model().stateCodec().orElseThrow();
         PromptCache<S> cache =
                 new PromptCache<>(
                         codec, CacheStore.inMemory(), 8L << 30, PromptCache.modelSeed(gguf));
 
         // history: [start][user: story][genPrompt] -> reply -> closeTurn, all committed
         CachedSession<S> a =
-                CachedSession.resume(model, cache, model.newState(4096, 512), new long[0]);
+                CachedSession.resume(
+                        model.model(), cache, model.model().newState(4096, 512), new long[0]);
         a.ingest(concat(tpl.conversationStart(), tpl.encodeTurn(Message.user(story()))));
         String reply = decode(model, a, tpl, REPLY_BUDGET);
         long[] history = a.fingerprints();
@@ -106,7 +108,8 @@ public final class TtftBench {
         List<CachedSession<S>> live = new ArrayList<>();
         for (int r = 0; r < reps; r++) {
             CachedSession<S> s =
-                    CachedSession.resume(model, cache, model.newState(4096, 512), history);
+                    CachedSession.resume(
+                            model.model(), cache, model.model().newState(4096, 512), history);
             if (s.position() != history.length)
                 throw new IllegalStateException("live resume " + s.position());
             live.add(s);
@@ -116,21 +119,21 @@ public final class TtftBench {
         String firstTok = "";
         for (int r = 0; r < reps; r++) {
             // cold: full prefill of history + follow-up
-            S s1 = model.newState(4096, 512);
+            S s1 = model.model().newState(4096, 512);
             long t0 = System.nanoTime();
             for (Batch b : Batch.prepare(concat(List.of(Batch.prefill(historyIds)), followUp), 512))
-                model.ingest(s1, b);
-            int tok1 = model.logits(s1).argmax();
+                model.model().ingest(s1, b);
+            int tok1 = model.model().logits(s1).argmax();
             cold[r] = (System.nanoTime() - t0) / 1e6;
 
             // warm: cache resume + follow-up only
-            S s2 = model.newState(4096, 512);
+            S s2 = model.model().newState(4096, 512);
             long t1 = System.nanoTime();
-            CachedSession<S> b2 = CachedSession.resume(model, cache, s2, history);
+            CachedSession<S> b2 = CachedSession.resume(model.model(), cache, s2, history);
             if (b2.position() != history.length)
                 throw new IllegalStateException("resume " + b2.position());
             b2.ingest(followUp);
-            int tok2 = model.logits(s2).argmax();
+            int tok2 = model.model().logits(s2).argmax();
             warmMs[r] = (System.nanoTime() - t1) / 1e6;
             if (tok1 != tok2)
                 System.err.println(
@@ -141,7 +144,7 @@ public final class TtftBench {
             CachedSession<S> p = live.get(r);
             long t2 = System.nanoTime();
             p.ingest(followUp);
-            int tok3 = model.logits(p.state()).argmax();
+            int tok3 = model.model().logits(p.state()).argmax();
             tier1[r] = (System.nanoTime() - t2) / 1e6;
             if (tok3 != tok2)
                 System.err.println(
@@ -163,38 +166,38 @@ public final class TtftBench {
      * Seals the STATIC prefix (conversationStart + the story turn - fully deterministic, no
      * generated tokens) so the serve side can rebuild the exact fingerprints from text.
      */
-    static <S extends RuntimeState> void sealedCompile(
-            LanguageModel<?, ?, S> model, Path gguf, Path out) throws Exception {
-        TurnTemplate tpl = model.turnTemplate().orElseThrow();
-        StateCodec<S> codec = model.stateCodec().orElseThrow();
+    static <S extends RuntimeState> void sealedCompile(LoadedModel<S> model, Path gguf, Path out)
+            throws Exception {
+        TurnTemplate tpl = model.chatTemplate().orElseThrow();
+        StateCodec<S> codec = model.model().stateCodec().orElseThrow();
         List<Batch> prefix = concat(tpl.conversationStart(), tpl.encodeTurn(Message.user(story())));
         int[] ids = Batch.tokenIds(prefix);
         long[] fp = new long[ids.length];
         for (int i = 0; i < ids.length; i++) fp[i] = ids[i];
-        S state = model.newState(4096, 512);
-        for (Batch b : Batch.prepare(prefix, 512)) model.ingest(state, b);
+        S state = model.model().newState(4096, 512);
+        for (Batch b : Batch.prepare(prefix, 512)) model.model().ingest(state, b);
         SealedPrompt.compile(out, "ttft-bench", codec, state, fp, PromptCache.modelSeed(gguf));
         System.out.printf(
                 "sealed %d positions -> %s (%.1f MB)%n", fp.length, out, Files.size(out) / 1e6);
     }
 
     /** Fresh-JVM serve: open + tryRestore + follow-up prefill + first token. */
-    static <S extends RuntimeState> void sealedServe(
-            LanguageModel<?, ?, S> model, Path gguf, Path file) throws Exception {
-        TurnTemplate tpl = model.turnTemplate().orElseThrow();
-        StateCodec<S> codec = model.stateCodec().orElseThrow();
+    static <S extends RuntimeState> void sealedServe(LoadedModel<S> model, Path gguf, Path file)
+            throws Exception {
+        TurnTemplate tpl = model.chatTemplate().orElseThrow();
+        StateCodec<S> codec = model.model().stateCodec().orElseThrow();
         List<Batch> followUp =
                 concat(tpl.encodeTurn(Message.user(QUESTION)), tpl.generationPrompt(true));
 
         // JIT warmup on a throwaway state (a running server / native image has warm code; without
         // this the first forward pays ~2.5s of compilation, which is JVM startup, not cache cost)
-        S w = model.newState(4096, 512);
+        S w = model.model().newState(4096, 512);
         int[] warmIds = new int[256];
         java.util.Arrays.fill(warmIds, 5);
         for (int i = 0; i < 2; i++) {
-            S ws = model.newState(4096, 512);
-            model.ingest(ws, Batch.prefill(warmIds));
-            model.logits(ws).argmax();
+            S ws = model.model().newState(4096, 512);
+            model.model().ingest(ws, Batch.prefill(warmIds));
+            model.model().logits(ws).argmax();
         }
 
         long t0 = System.nanoTime();
@@ -202,7 +205,7 @@ public final class TtftBench {
         double openMs = (System.nanoTime() - t0) / 1e6;
 
         // request fingerprints: re-derived from the same static text (deterministic template)
-        S state = model.newState(4096, 512);
+        S state = model.model().newState(4096, 512);
         long t1 = System.nanoTime();
         int[] ids =
                 Batch.tokenIds(
@@ -211,20 +214,20 @@ public final class TtftBench {
         for (int i = 0; i < ids.length; i++) fp[i] = ids[i];
         int restored = sealed.tryRestore(state, codec, fp);
         if (restored == 0) throw new IllegalStateException("sealed restore missed");
-        for (Batch b : Batch.prepare(followUp, 512)) model.ingest(state, b);
-        int tok = model.logits(state).argmax();
+        for (Batch b : Batch.prepare(followUp, 512)) model.model().ingest(state, b);
+        int tok = model.model().logits(state).argmax();
         double ttft = (System.nanoTime() - t1) / 1e6;
         System.out.printf(
                 "sealed open: %.1f ms;  first-serve TTFT: %.1f ms;  restored=%d  firstTok=%s%n",
                 openMs, ttft, restored, model.tokenizer().decode(tok).strip());
         // steady state (long-running server): re-serve in-process
         for (int r = 0; r < 3; r++) {
-            S s2 = model.newState(4096, 512);
+            S s2 = model.model().newState(4096, 512);
             long t2 = System.nanoTime();
             SealedPrompt sp2 = SealedPrompt.open(file, PromptCache.modelSeed(gguf));
             int n2 = sp2.tryRestore(s2, codec, fp);
-            for (Batch b : Batch.prepare(followUp, 512)) model.ingest(s2, b);
-            model.logits(s2).argmax();
+            for (Batch b : Batch.prepare(followUp, 512)) model.model().ingest(s2, b);
+            model.model().logits(s2).argmax();
             System.out.printf(
                     "steady serve TTFT (open+restore+followUp+token): %.1f ms (restored %d)%n",
                     (System.nanoTime() - t2) / 1e6, n2);
@@ -232,15 +235,15 @@ public final class TtftBench {
     }
 
     static <S extends RuntimeState> String decode(
-            LanguageModel<?, ?, S> model, CachedSession<S> s, TurnTemplate tpl, int max) {
+            LoadedModel<S> model, CachedSession<S> s, TurnTemplate tpl, int max) {
         s.ingest(tpl.generationPrompt(true));
         Set<Integer> stops = model.stopTokens();
         StringBuilder out = new StringBuilder();
-        int tok = model.logits(s.state()).argmax();
+        int tok = model.model().logits(s.state()).argmax();
         for (int n = 0; n < max && !stops.contains(tok); n++) {
             out.append(model.tokenizer().decode(tok));
             s.step(tok);
-            tok = model.logits(s.state()).argmax();
+            tok = model.model().logits(s.state()).argmax();
         }
         s.ingest(tpl.closeTurn());
         return out.toString();

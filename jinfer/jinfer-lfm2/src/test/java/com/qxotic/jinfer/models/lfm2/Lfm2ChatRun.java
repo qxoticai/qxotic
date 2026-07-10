@@ -7,6 +7,7 @@ package com.qxotic.jinfer.models.lfm2;
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.TurnTemplate;
+import com.qxotic.jinfer.llm.*;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -77,7 +78,7 @@ public final class Lfm2ChatRun {
             Lfm2.State s,
             TurnTemplate template,
             List<Batch> turn,
-            com.qxotic.jinfer.GgufTokenizer tk,
+            com.qxotic.jinfer.llm.GgufTokenizer tk,
             Set<Integer> stops,
             int maxTokens) {
         List<Batch> ready = new ArrayList<>(turn);

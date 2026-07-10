@@ -31,6 +31,7 @@ import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.*;
 import com.qxotic.jinfer.jinja.JinjaRenderer;
 import com.qxotic.jinfer.kernels.*;
+import com.qxotic.jinfer.llm.*;
 import java.io.IOException;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
@@ -68,7 +69,14 @@ public final class NemotronH
 
     private com.qxotic.jinfer.chat.TurnTemplate turnTemplate; // memoized: stateless, model-lifetime
 
-    @Override
+    /**
+     * This model bundled with the three text facts its GGUF carries - what an
+     * architecture-dispatching loader hands to a caller that does not know the family.
+     */
+    public LoadedModel<NemotronH.State> loaded() {
+        return new LoadedModel<>(this, tokenizer(), stopTokens(), turnTemplate());
+    }
+
     public java.util.Optional<com.qxotic.jinfer.chat.TurnTemplate> turnTemplate() {
         if (turnTemplate == null) turnTemplate = new NemotronHTurnTemplate(tokenizer());
         return java.util.Optional.of(turnTemplate);

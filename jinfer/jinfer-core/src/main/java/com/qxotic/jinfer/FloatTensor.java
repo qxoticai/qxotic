@@ -565,7 +565,8 @@ public abstract class FloatTensor {
         return this;
     }
 
-    FloatTensor divideInPlace(long thisOffset, int size, float value) {
+    /** {@code this[off .. off+size] /= value} - the sampler's temperature scaling. */
+    public FloatTensor divideInPlace(long thisOffset, int size, float value) {
         return mapInPlace(thisOffset, size, f -> f / value);
     }
 

@@ -1,8 +1,9 @@
 // The LFM2 tokenizer component: GGUF-loaded vocabulary + special-token handling + the
 // chat-template program, kept separate from the GGUF model/tensor loader (ModelLoader).
-package com.qxotic.jinfer;
+package com.qxotic.jinfer.llm;
 
 import com.qxotic.format.gguf.GGUF;
+import com.qxotic.jinfer.*;
 import com.qxotic.toknroll.Normalizer;
 import com.qxotic.toknroll.Specials;
 import com.qxotic.toknroll.Splitter;

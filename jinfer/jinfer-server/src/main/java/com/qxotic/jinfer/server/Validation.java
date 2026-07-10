@@ -3,6 +3,7 @@
 package com.qxotic.jinfer.server;
 
 import com.qxotic.jinfer.*;
+import com.qxotic.jinfer.llm.*;
 import java.util.List;
 import java.util.Map;
 
