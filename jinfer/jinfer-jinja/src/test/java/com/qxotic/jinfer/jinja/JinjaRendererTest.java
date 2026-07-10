@@ -642,6 +642,17 @@ public final class JinjaRendererTest {
         eq(
                 "{% for k, v in obj.items() %}{{ k }}={{ v }};{% endfor %}",
                 map("obj", map("a", 1, "b", 2)), "a=1;b=2;");
+        // iterating an object directly yields its KEYS (Python/Jinja), not [key, value] pairs
+        eq("{% for k in obj %}{{ k }};{% endfor %}", map("obj", map("a", 1, "b", 2)), "a;b;");
+        // loop.previtem / loop.nextitem: undefined (empty) at the ends, the neighbour otherwise
+        eq(
+                "{% for x in xs %}[{{ loop.previtem }}<{{ x }}>{{ loop.nextitem }}]{% endfor %}",
+                map("xs", list("a", "b", "c")), "[<a>b][a<b>c][b<c>]");
+        // the previtem guard idiom used by tool templates (skip on the first iteration)
+        eq(
+                "{% for x in xs %}{% if loop.previtem %}{{ loop.previtem }}->{% endif %}{{ x }};"
+                        + "{% endfor %}",
+                map("xs", list("a", "b", "c")), "a;a->b;b->c;");
         // nested loops
         eq(
                 "{% for r in rows %}{% for c in r %}{{ c }}{% endfor %}|{% endfor %}",

@@ -1765,13 +1765,11 @@ public final class JinjaRenderer {
                             switch (iter) {
                                 case Val.Arr a -> a.v();
                                 case Val.Obj o -> {
+                                    // `for x in dict` iterates KEYS (Python/Jinja); pairs come from
+                                    // dict.items(), which yields [key, value] Arrs unpacked via
+                                    // var2.
                                     var arr = new ArrayList<Val>();
-                                    for (var e : o.v.entrySet())
-                                        arr.add(
-                                                new Val.Arr(
-                                                        List.of(
-                                                                new Val.Str(e.getKey()),
-                                                                e.getValue())));
+                                    for (String k : o.v.keySet()) arr.add(new Val.Str(k));
                                     yield arr;
                                 }
                                 default -> {
@@ -1797,6 +1795,14 @@ public final class JinjaRenderer {
                         loop.put("first", new Val.Bool(idx == 0));
                         loop.put("last", new Val.Bool(idx == items.size() - 1));
                         loop.put("length", new Val.Int(items.size()));
+                        loop.put(
+                                "previtem",
+                                idx > 0 ? items.get(idx - 1) : new Val.Undef("loop.previtem"));
+                        loop.put(
+                                "nextitem",
+                                idx < items.size() - 1
+                                        ? items.get(idx + 1)
+                                        : new Val.Undef("loop.nextitem"));
                         lf.set("__loop__", new Val.Obj(loop, false));
                         try {
                             stack.addLast(lf);
