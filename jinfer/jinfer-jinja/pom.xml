@@ -12,18 +12,11 @@
   <packaging>jar</packaging>
 
   <name>jinfer-jinja</name>
-  <description>Jinja chat-template engine for prompt generation. Public API is prompt generation
-        only (JinjaRenderer.compiler -&gt; ChatTemplate); the lexer/parser/AST stay internal.</description>
+  <description>Standalone Jinja chat-template engine: template source in, rendered String out.
+        Public API is JinjaRenderer.template(String) -&gt; CompiledTemplate; the lexer/parser/AST
+        stay internal. Depends on no other jinfer module.</description>
 
   <dependencies>
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-core</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-llm</artifactId>
-    </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>json</artifactId>
