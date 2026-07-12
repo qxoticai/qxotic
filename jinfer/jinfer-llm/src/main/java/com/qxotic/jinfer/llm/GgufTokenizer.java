@@ -1,29 +1,27 @@
-// The LFM2 tokenizer component: GGUF-loaded vocabulary + special-token handling + the
-// chat-template program, kept separate from the GGUF model/tensor loader (ModelLoader).
+// The LFM2 tokenizer component: GGUF-loaded vocabulary + special-token handling + the raw
+// chat-template source, kept separate from the GGUF model/tensor loader (ModelLoader).
 package com.qxotic.jinfer.llm;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.*;
+import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Normalizer;
 import com.qxotic.toknroll.Specials;
 import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.StandardTokenType;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
-import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Function;
 import java.util.regex.Pattern;
 
 /**
- * The universal GGUF tokenizer (toknroll-backed): vocabulary, special tokens, and the optional
- * compiled chat template. Model-family pre-tokenizers (e.g. lfm2) are registered internally; the
- * template compiler is injected because jinfer-core does not depend on jinfer-jinja.
+ * The universal GGUF tokenizer (toknroll-backed): vocabulary, special tokens, and the raw chat
+ * template source. Model-family pre-tokenizers (e.g. lfm2) are registered internally. This layer
+ * never compiles or renders the template — that is the Jinja engine's job, one layer up.
  */
 public class GgufTokenizer {
 
@@ -39,14 +37,9 @@ public class GgufTokenizer {
     private final Tokenizer tokenizer;
     private final Map<String, Integer> specialTokens;
     private Specials specialsEncoder;
-    private final CompiledTemplate chatTemplate;
+    private final String chatTemplateSource;
 
-    /**
-     * Tokenizer with the GGUF's chat template compiled through {@code templateCompiler} (typically
-     * {@code JinjaRenderer::template} — injected because jinfer-core doesn't depend on
-     * jinfer-jinja).
-     */
-    public GgufTokenizer(GGUF gguf, Function<String, CompiledTemplate> templateCompiler) {
+    public GgufTokenizer(GGUF gguf) {
         this.tokenizer =
                 GGUFTokenizerLoader.createBuilderWithBuiltins()
                         .registerPreTokenizer(
@@ -54,8 +47,7 @@ public class GgufTokenizer {
                         .registerNormalizer("lfm2", g -> Normalizer.identity())
                         .build()
                         .fromGGUF(gguf);
-        String raw = gguf.getStringOrDefault("tokenizer.chat_template", "");
-        this.chatTemplate = !raw.isEmpty() ? templateCompiler.apply(raw) : null;
+        this.chatTemplateSource = gguf.getStringOrDefault("tokenizer.chat_template", "");
         this.specialTokens = new HashMap<>();
         for (int id = 0; id < vocabularySize(); id++) {
             if (isSpecialToken(id)) {
@@ -80,11 +72,12 @@ public class GgufTokenizer {
     }
 
     /**
-     * The compiled chat template, or null when the GGUF carries none (or it failed to compile) —
-     * chat requests then fail with a descriptive error; raw prompts still work.
+     * The GGUF's raw {@code tokenizer.chat_template} Jinja source, or {@code ""} when it carries
+     * none. The tokenizer only transports the string; compiling and rendering it belongs to the
+     * Jinja engine.
      */
-    public CompiledTemplate chatTemplate() {
-        return chatTemplate;
+    public String chatTemplateSource() {
+        return chatTemplateSource;
     }
 
     public boolean isSpecialToken(int token) {
@@ -93,19 +86,19 @@ public class GgufTokenizer {
                 && !tokenizer.vocabulary().isTokenOfType(token, StandardTokenType.NORMAL);
     }
 
-    public List<Integer> encode(String text) {
-        return tokenizer.encode(text).toList();
+    public IntSequence encode(String text) {
+        return tokenizer.encode(text);
     }
 
     /**
      * Encode mapping special-token strings in the text to their ids (plain {@link #encode} never
      * maps them); the --raw-prompt path uses this to author templated streams as text.
      */
-    public List<Integer> encodeWithSpecialTokens(String text) {
+    public IntSequence encodeWithSpecialTokens(String text) {
         if (specialsEncoder == null) {
             specialsEncoder = Specials.compile(tokenizer.vocabulary(), specialMatchSet());
         }
-        return specialsEncoder.encode(tokenizer, text).toList();
+        return specialsEncoder.encode(tokenizer, text);
     }
 
     /**
@@ -138,11 +131,7 @@ public class GgufTokenizer {
         return new String(decodeTokenBytes(token), StandardCharsets.UTF_8);
     }
 
-    public String decode(List<Integer> tokens) {
-        var buf = new ByteArrayOutputStream();
-        for (int token : tokens) {
-            buf.writeBytes(tokenizer.decodeBytes(new int[] {token}));
-        }
-        return buf.toString(StandardCharsets.UTF_8);
+    public String decode(IntSequence tokens) {
+        return new String(tokenizer.decodeBytes(tokens), StandardCharsets.UTF_8);
     }
 }
