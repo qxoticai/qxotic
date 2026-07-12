@@ -6,22 +6,23 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * The precise chat contract for curated models: encodes one turn at a time, deterministically and
- * verbatim. Turn-stability (a turn's batches never change when later turns are appended) is what
- * makes incremental ingestion and exact prompt caching sound — hand-written implementations
- * guarantee it by construction, and are validated byte-exact against the model's official Jinja
- * chat template offline.
+ * TRANSITIONAL per-turn chat contract for curated models: encodes one turn at a time,
+ * deterministically and verbatim. Turn-stability (a turn's batches never change when later turns
+ * are appended) is what makes incremental ingestion and exact prompt caching sound — hand-written
+ * implementations guarantee it by construction, and are validated byte-exact against the model's
+ * official Jinja chat template offline.
  *
  * <p>Two tokenization domains, enforced by every implementation: turn scaffolding (role headers,
  * turn and media markers) is emitted as trusted special-token ids; conversation text is tokenized
  * plainly, so content can never mint control tokens.
  *
- * <p>Discovery is {@code model.turnTemplate()} — the Optional capability accessor on {@code
- * LanguageModel} is THE mechanism for finding a model's template (models without one fall back to
- * whole-render). {@code instanceof} is only for refining an already-obtained {@link ChatTemplate}
- * to its per-turn form.
+ * <p>This is the porting substrate for the {@link ChatTemplate} codec: unported models expose their
+ * TurnTemplate through {@link TurnTemplateAdapter}; a native codec port (whole-conversation encode
+ * + {@link ReplyDecoder}) replaces it per model, and the interface goes away with the last port.
+ * Per-turn encoding cannot express position-dependent templates (Qwen's last-query rules, Harmony
+ * channels) — that is why the codec is whole-conversation.
  */
-public interface TurnTemplate extends ChatTemplate {
+public interface TurnTemplate {
 
     /**
      * One turn, lowered to batches. Stateless, deterministic, turn-stable. Conversation-start
@@ -44,6 +45,22 @@ public interface TurnTemplate extends ChatTemplate {
         public Preamble {
             tools = List.copyOf(tools);
         }
+    }
+
+    /**
+     * Welds the tools and the leading system message into the preamble: appends {@code
+     * template.conversationStart(Preamble)} to {@code out} (the whole tool block stays one
+     * turn-stable prefix) and returns the remaining turns - the system turn, when consumed by the
+     * preamble, is skipped.
+     */
+    static List<Message> encodePreamble(
+            TurnTemplate template, List<Message> messages, List<Tool> tools, List<Batch> out) {
+        Optional<Message> system =
+                !messages.isEmpty() && messages.get(0).role().equals(Role.SYSTEM)
+                        ? Optional.of(messages.get(0))
+                        : Optional.empty();
+        out.addAll(template.conversationStart(new Preamble(system, tools)));
+        return system.isPresent() ? messages.subList(1, messages.size()) : messages;
     }
 
     /**
@@ -107,7 +124,6 @@ public interface TurnTemplate extends ChatTemplate {
     }
 
     /** A whole conversation is its normalized turns, concatenated after the conversation start. */
-    @Override
     default List<Batch> encode(List<Message> conversation) {
         List<Batch> out = new ArrayList<>(conversationStart());
         for (Message m : normalize(conversation)) out.addAll(encodeTurn(m));
