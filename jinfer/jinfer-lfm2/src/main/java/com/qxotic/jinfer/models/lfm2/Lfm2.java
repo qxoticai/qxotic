@@ -18,7 +18,6 @@ import static com.qxotic.jinfer.Norms.rmsnorm;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.*;
-import com.qxotic.jinfer.jinja.JinjaRenderer;
 import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
 import java.io.IOException;
@@ -134,20 +133,30 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
         return stops;
     }
 
-    private com.qxotic.jinfer.chat.TurnTemplate
-            turnTemplate; // memoized: stateless, model-lifetime (pins any construction-time state)
+    private Lfm2ChatTemplate
+            chatTemplate; // memoized: stateless, model-lifetime (pins any construction-time state)
 
     /**
      * This model bundled with the three text facts its GGUF carries - what an
      * architecture-dispatching loader hands to a caller that does not know the family.
      */
     public LoadedModel<Lfm2.State> loaded() {
-        return new LoadedModel<>(this, tokenizer(), stopTokens(), turnTemplate());
+        return new LoadedModel<>(this, tokenizer(), stopTokens());
     }
 
+    /** The chat-layer binding: the NATIVE codec, no adapter - LFM2 is the reference port. */
+    public com.qxotic.jinfer.chat.ChatModel<Lfm2.State> chatModel() {
+        return new com.qxotic.jinfer.chat.ChatModel<>(loaded(), java.util.Optional.of(template()));
+    }
+
+    /** The per-turn view of the same template (turn-aligned cache scenarios refine through it). */
     public java.util.Optional<com.qxotic.jinfer.chat.TurnTemplate> turnTemplate() {
-        if (turnTemplate == null) turnTemplate = new Lfm2TurnTemplate(tokenizer());
-        return java.util.Optional.of(turnTemplate);
+        return java.util.Optional.of(template());
+    }
+
+    private Lfm2ChatTemplate template() {
+        if (chatTemplate == null) chatTemplate = new Lfm2ChatTemplate(tokenizer());
+        return chatTemplate;
     }
 
     @Override
@@ -803,7 +812,7 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
     public static Lfm2 loadModel(
             FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeightsFlag)
             throws IOException {
-        GgufTokenizer tokenizer = new GgufTokenizer(gguf, JinjaRenderer::template);
+        GgufTokenizer tokenizer = new GgufTokenizer(gguf);
         String arch = gguf.getString("general.architecture");
 
         int modelContextLength = gguf.getValue(int.class, arch + ".context_length");
