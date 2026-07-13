@@ -15,7 +15,6 @@ import static com.qxotic.jinfer.Norms.rmsnorm;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.*;
-import com.qxotic.jinfer.jinja.JinjaRenderer;
 import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
 import java.io.IOException;
@@ -138,7 +137,12 @@ public final class Granite
      * architecture-dispatching loader hands to a caller that does not know the family.
      */
     public LoadedModel<Granite.State> loaded() {
-        return new LoadedModel<>(this, tokenizer(), stopTokens(), turnTemplate());
+        return new LoadedModel<>(this, tokenizer(), stopTokens());
+    }
+
+    /** The chat-layer binding: token-level facts plus this model's chat framing. */
+    public com.qxotic.jinfer.chat.ChatModel<Granite.State> chatModel() {
+        return com.qxotic.jinfer.chat.ChatModel.adapt(loaded(), turnTemplate());
     }
 
     public java.util.Optional<com.qxotic.jinfer.chat.TurnTemplate> turnTemplate() {
@@ -446,7 +450,7 @@ public final class Granite
     public static Granite loadModel(
             FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeightsFlag)
             throws IOException {
-        GgufTokenizer tokenizer = new GgufTokenizer(gguf, JinjaRenderer::template);
+        GgufTokenizer tokenizer = new GgufTokenizer(gguf);
         String arch = gguf.getString("general.architecture"); // "granite"
 
         int modelContextLength = gguf.getValue(int.class, arch + ".context_length");

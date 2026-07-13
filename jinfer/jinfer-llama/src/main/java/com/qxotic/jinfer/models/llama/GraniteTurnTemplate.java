@@ -5,6 +5,7 @@ import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.llm.*;
 import com.qxotic.jinfer.llm.GgufTokenizer;
+import com.qxotic.toknroll.IntSequence;
 import java.util.List;
 
 /**
@@ -32,7 +33,7 @@ public final class GraniteTurnTemplate implements TurnTemplate {
     private final int startRole; // <|start_of_role|>
     private final int endRole; // <|end_of_role|>
     private final int endText; // <|end_of_text|>
-    private final List<Integer> newline; // encode("\n"), constant
+    private final IntSequence newline; // encode("\n"), constant
     private final List<Batch>
             generationPrompt; // <|start_of_role|>assistant<|end_of_role|>, constant
     private final List<Batch> closeTurn; // <|end_of_text|>\n, constant
@@ -43,13 +44,13 @@ public final class GraniteTurnTemplate implements TurnTemplate {
         this.endRole = tokenizer.requiredSpecial("<|end_of_role|>");
         this.endText = tokenizer.requiredSpecial("<|end_of_text|>");
         this.newline = tokenizer.encode("\n");
-        List<Integer> gen = new java.util.ArrayList<>(List.of(startRole));
-        gen.addAll(tokenizer.encode("assistant"));
-        gen.add(endRole);
-        this.generationPrompt = List.of(Batch.prefill(gen));
-        List<Integer> close = new java.util.ArrayList<>(List.of(endText));
-        close.addAll(newline);
-        this.closeTurn = List.of(Batch.prefill(close));
+        IntSequence gen =
+                IntSequence.of(startRole)
+                        .concat(tokenizer.encode("assistant"))
+                        .concat(IntSequence.of(endRole));
+        this.generationPrompt = List.of(Batch.prefill(gen.toArray()));
+        IntSequence close = IntSequence.of(endText).concat(newline);
+        this.closeTurn = List.of(Batch.prefill(close.toArray()));
     }
 
     @Override
@@ -60,13 +61,14 @@ public final class GraniteTurnTemplate implements TurnTemplate {
     @Override
     public List<Batch> encodeTurn(Message message) {
         // <|start_of_role|> {role} <|end_of_role|> {content} <|end_of_text|> \n
-        List<Integer> ids = new java.util.ArrayList<>(List.of(startRole));
-        ids.addAll(tokenizer.encode(message.role().name()));
-        ids.add(endRole);
-        ids.addAll(tokenizer.encode(message.textOnly()));
-        ids.add(endText);
-        ids.addAll(newline);
-        return List.of(Batch.prefill(ids));
+        IntSequence ids =
+                IntSequence.of(startRole)
+                        .concat(tokenizer.encode(message.role().name()))
+                        .concat(IntSequence.of(endRole))
+                        .concat(tokenizer.encode(message.textOnly()))
+                        .concat(IntSequence.of(endText))
+                        .concat(newline);
+        return List.of(Batch.prefill(ids.toArray()));
     }
 
     @Override

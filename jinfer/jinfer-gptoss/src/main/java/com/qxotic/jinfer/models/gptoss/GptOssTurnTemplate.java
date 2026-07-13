@@ -6,9 +6,9 @@ import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.llm.*;
 import com.qxotic.jinfer.llm.GgufTokenizer;
+import com.qxotic.toknroll.IntSequence;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -71,13 +71,13 @@ public final class GptOssTurnTemplate implements TurnTemplate {
                         + "\n\n"
                         + "# Valid channels: analysis, commentary, final. Channel must be included"
                         + " for every message.";
-        List<Integer> ids = new ArrayList<>();
+        IntSequence.Builder ids = IntSequence.newBuilder();
         ids.add(start);
         ids.addAll(tokenizer.encode("system"));
         ids.add(message);
         ids.addAll(tokenizer.encode(systemText));
         ids.add(end);
-        this.conversationStart = List.of(Batch.prefill(ids));
+        this.conversationStart = List.of(Batch.prefill(ids.build().toArray()));
     }
 
     /** The fixed Harmony system preamble: {@code <|start|>system<|message|>{...}<|end|>}. */
@@ -88,7 +88,7 @@ public final class GptOssTurnTemplate implements TurnTemplate {
 
     @Override
     public List<Batch> encodeTurn(Message m) {
-        List<Integer> ids = new ArrayList<>();
+        IntSequence.Builder ids = IntSequence.newBuilder();
         ids.add(start);
         if (m.role().equals(Role.SYSTEM)) { // conversation system -> developer block
             ids.addAll(tokenizer.encode("developer"));
@@ -106,16 +106,16 @@ public final class GptOssTurnTemplate implements TurnTemplate {
             ids.addAll(tokenizer.encode(m.textOnly()));
         }
         ids.add(end);
-        return List.of(Batch.prefill(ids));
+        return List.of(Batch.prefill(ids.build().toArray()));
     }
 
     /** {@code <|start|>assistant} - the model emits its own channel tokens from here. */
     @Override
     public List<Batch> generationPrompt(boolean thinking) {
-        List<Integer> ids = new ArrayList<>();
+        IntSequence.Builder ids = IntSequence.newBuilder();
         ids.add(start);
         ids.addAll(tokenizer.encode("assistant"));
-        return List.of(Batch.prefill(ids));
+        return List.of(Batch.prefill(ids.build().toArray()));
     }
 
     /** Closes the open message: {@code <|end|>} (the {@code <|return|>} stop is never ingested). */
