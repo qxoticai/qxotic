@@ -6,7 +6,7 @@ import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.llm.*;
 import com.qxotic.jinfer.llm.GgufTokenizer;
-import java.util.ArrayList;
+import com.qxotic.toknroll.IntSequence;
 import java.util.List;
 
 /**
@@ -38,7 +38,7 @@ public final class Qwen35TurnTemplate implements TurnTemplate {
     private final int imEnd; // <|im_end|>
     private final int think; // <think>
     private final int endThink; // </think>
-    private final List<Integer> newline; // encode("\n"), constant
+    private final IntSequence newline; // encode("\n"), constant
     private final List<Batch> genThinking, genDirect; // generation prompts, encoded once
     private final List<Batch> closeTurn; // <|im_end|>\n, constant
 
@@ -51,27 +51,27 @@ public final class Qwen35TurnTemplate implements TurnTemplate {
         this.newline = tokenizer.encode("\n");
         // <|im_start|>assistant\n<think>\n            (reasoning)
         // <|im_start|>assistant\n<think>\n\n</think>\n\n   (direct answer)
-        List<Integer> head = new ArrayList<>();
-        head.add(imStart);
-        head.addAll(tokenizer.encode("assistant\n"));
-        List<Integer> thinking = new ArrayList<>(head);
-        thinking.add(think);
-        thinking.addAll(tokenizer.encode("\n"));
-        this.genThinking = List.of(Batch.prefill(thinking));
-        List<Integer> direct = new ArrayList<>(head);
-        direct.add(think);
-        direct.addAll(tokenizer.encode("\n\n"));
-        direct.add(endThink);
-        direct.addAll(tokenizer.encode("\n\n"));
-        this.genDirect = List.of(Batch.prefill(direct));
-        List<Integer> close = new ArrayList<>(List.of(imEnd));
-        close.addAll(newline);
-        this.closeTurn = List.of(Batch.prefill(close));
+        IntSequence head = IntSequence.of(imStart).concat(tokenizer.encode("assistant\n"));
+        IntSequence thinking = head.concat(IntSequence.of(think)).concat(tokenizer.encode("\n"));
+        this.genThinking = List.of(Batch.prefill(thinking.toArray()));
+        IntSequence direct =
+                head.concat(IntSequence.of(think))
+                        .concat(tokenizer.encode("\n\n"))
+                        .concat(IntSequence.of(endThink))
+                        .concat(tokenizer.encode("\n\n"));
+        this.genDirect = List.of(Batch.prefill(direct.toArray()));
+        IntSequence close = IntSequence.of(imEnd).concat(newline);
+        this.closeTurn = List.of(Batch.prefill(close.toArray()));
     }
 
     @Override
     public java.util.Optional<com.qxotic.jinfer.chat.ToolCallDetector> toolCallDetector() {
-        return java.util.Optional.of(new Qwen35ToolCallDetector(tokenizer));
+        return java.util.Optional.of(
+                new com.qxotic.jinfer.chat.SpanToolCallDetector(
+                        tokenizer,
+                        "<tool_call>",
+                        "</tool_call>",
+                        Qwen35ToolCallDetector::parsePayload));
     }
 
     /** Qwen3.5 emits no bos and no fixed preamble. */
@@ -84,12 +84,12 @@ public final class Qwen35TurnTemplate implements TurnTemplate {
     public List<Batch> encodeTurn(Message message) {
         String content = message.textOnly().strip(); // template: content|trim
         if (message.role().equals(Role.ASSISTANT)) content = stripThinking(content);
-        List<Integer> ids = new ArrayList<>();
-        ids.add(imStart);
-        ids.addAll(tokenizer.encode(message.role().name() + "\n" + content)); // one contiguous run
-        ids.add(imEnd);
-        ids.addAll(newline);
-        return List.of(Batch.prefill(ids));
+        IntSequence ids =
+                IntSequence.of(imStart)
+                        .concat(tokenizer.encode(message.role().name() + "\n" + content))
+                        .concat(IntSequence.of(imEnd))
+                        .concat(newline);
+        return List.of(Batch.prefill(ids.toArray()));
     }
 
     @Override

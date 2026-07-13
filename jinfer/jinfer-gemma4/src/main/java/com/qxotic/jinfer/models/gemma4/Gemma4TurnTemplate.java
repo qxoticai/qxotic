@@ -43,6 +43,9 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
     private final int bos; // <bos>
     private final int turnOpen; // <|turn>
     private final int turnClose; // <turn|>
+    private final List<Integer> newline; // encode("\n"), constant
+    private final List<Batch> generationPrompt; // <|turn>model\n, constant
+    private final List<Batch> closeTurn; // <turn|>\n, constant
 
     public Gemma4TurnTemplate(GgufTokenizer tokenizer) {
         this(tokenizer, null, 0);
@@ -55,6 +58,15 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
         this.bos = tokenizer.requiredSpecial("<bos>");
         this.turnOpen = tokenizer.requiredSpecial("<|turn>");
         this.turnClose = tokenizer.requiredSpecial("<turn|>");
+        this.newline = List.copyOf(tokenizer.encode("\n").toList());
+        List<Integer> gen = new ArrayList<>();
+        gen.add(turnOpen);
+        gen.addAll(tokenizer.encode("model\n").toList());
+        this.generationPrompt = List.of(Batch.prefill(gen));
+        List<Integer> close = new ArrayList<>();
+        close.add(turnClose);
+        close.addAll(newline);
+        this.closeTurn = List.of(Batch.prefill(close));
     }
 
     @Override
@@ -89,7 +101,7 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
             flushText(text, ids);
         }
         ids.add(turnClose);
-        ids.addAll(tokenizer.encode("\n"));
+        ids.addAll(newline);
         out.add(Batch.prefill(ids));
         return out;
     }
@@ -128,7 +140,9 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
                 for (int i = 0; i < frames.length; i++) {
                     int sec = (int) (i / Math.max(vid.fps(), 1f));
                     ids.addAll(
-                            tokenizer.encode(String.format("%n%02d:%02d%n", sec / 60, sec % 60)));
+                            tokenizer
+                                    .encode(String.format("%n%02d:%02d%n", sec / 60, sec % 60))
+                                    .toList());
                     encodeMedia(frames[i], ids, out);
                 }
             }
@@ -176,18 +190,12 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
 
     @Override
     public List<Batch> generationPrompt(boolean thinking) {
-        List<Integer> ids = new ArrayList<>();
-        ids.add(turnOpen);
-        ids.addAll(tokenizer.encode("model\n"));
-        return List.of(Batch.prefill(ids));
+        return generationPrompt;
     }
 
     @Override
     public List<Batch> closeTurn() {
-        List<Integer> ids = new ArrayList<>();
-        ids.add(turnClose);
-        ids.addAll(tokenizer.encode("\n"));
-        return List.of(Batch.prefill(ids));
+        return closeTurn;
     }
 
     /** Gemma's template names the assistant turn {@code model}. */
@@ -197,7 +205,7 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
 
     private void flushText(StringBuilder text, List<Integer> ids) {
         if (text.isEmpty()) return;
-        ids.addAll(tokenizer.encode(text.toString()));
+        ids.addAll(tokenizer.encode(text.toString()).toList());
         text.setLength(0);
     }
 }

@@ -6,6 +6,7 @@ import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.llm.*;
 import com.qxotic.jinfer.llm.GgufTokenizer;
+import com.qxotic.toknroll.IntSequence;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -40,8 +41,8 @@ public final class NemotronHTurnTemplate implements TurnTemplate {
     private final int imEnd; // <|im_end|>
     private final int think; // <think>
     private final int endThink; // </think>
-    private final List<Integer> newline; // encode("\n"), constant
-    private final List<Integer> assistantNl; // encode("assistant\n"), constant
+    private final IntSequence newline; // encode("\n"), constant
+    private final IntSequence assistantNl; // encode("assistant\n"), constant
     private final List<Batch> genThinking, genDirect; // generation prompts, encoded once
     private final List<Batch> closeTurn; // <|im_end|>\n, constant
 
@@ -53,18 +54,15 @@ public final class NemotronHTurnTemplate implements TurnTemplate {
         this.endThink = tokenizer.requiredSpecial("</think>");
         this.newline = tokenizer.encode("\n");
         this.assistantNl = tokenizer.encode("assistant\n");
-        List<Integer> head = new ArrayList<>(List.of(imStart));
-        head.addAll(assistantNl);
-        head.add(think);
-        List<Integer> thinking = new ArrayList<>(head);
-        thinking.addAll(newline); // <|im_start|>assistant\n<think>\n
-        this.genThinking = List.of(Batch.prefill(thinking));
-        List<Integer> direct = new ArrayList<>(head);
-        direct.add(endThink); // <|im_start|>assistant\n<think></think>  (no newline)
-        this.genDirect = List.of(Batch.prefill(direct));
-        List<Integer> close = new ArrayList<>(List.of(imEnd));
-        close.addAll(newline);
-        this.closeTurn = List.of(Batch.prefill(close));
+        IntSequence head =
+                IntSequence.of(imStart).concat(assistantNl).concat(IntSequence.of(think));
+        IntSequence thinking = head.concat(newline); // <|im_start|>assistant\n<think>\n
+        this.genThinking = List.of(Batch.prefill(thinking.toArray()));
+        // <|im_start|>assistant\n<think></think>  (no newline)
+        IntSequence direct = head.concat(IntSequence.of(endThink));
+        this.genDirect = List.of(Batch.prefill(direct.toArray()));
+        IntSequence close = IntSequence.of(imEnd).concat(newline);
+        this.closeTurn = List.of(Batch.prefill(close.toArray()));
     }
 
     /**
@@ -92,7 +90,7 @@ public final class NemotronHTurnTemplate implements TurnTemplate {
 
     @Override
     public List<Batch> encodeTurn(Message m) {
-        List<Integer> ids = new ArrayList<>();
+        IntSequence.Builder ids = IntSequence.newBuilder();
         ids.add(imStart);
         if (m.role().equals(Role.ASSISTANT)) {
             String c = m.textOnly();
@@ -119,7 +117,7 @@ public final class NemotronHTurnTemplate implements TurnTemplate {
         }
         ids.add(imEnd);
         ids.addAll(newline);
-        return List.of(Batch.prefill(ids));
+        return List.of(Batch.prefill(ids.build().toArray()));
     }
 
     @Override

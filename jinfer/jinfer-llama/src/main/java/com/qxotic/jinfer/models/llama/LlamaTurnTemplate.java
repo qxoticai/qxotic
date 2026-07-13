@@ -6,6 +6,7 @@ import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.llm.*;
 import com.qxotic.jinfer.llm.GgufTokenizer;
+import com.qxotic.toknroll.IntSequence;
 import java.util.List;
 import java.util.Map;
 
@@ -86,29 +87,23 @@ public final class LlamaTurnTemplate implements TurnTemplate {
         String content = message.textOnly().strip();
         if (message.role().equals(Role.SYSTEM)) content = systemPreamble + content;
         // <|start_header_id|> {role} <|end_header_id|> \n\n{content} <|eot_id|>
-        List<Integer> role = tokenizer.encode(message.role().name());
-        List<Integer> body = tokenizer.encode("\n\n" + content);
-        int[] ids = new int[1 + role.size() + 1 + body.size() + 1];
-        int i = 0;
-        ids[i++] = startHeader;
-        for (int id : role) ids[i++] = id;
-        ids[i++] = endHeader;
-        for (int id : body) ids[i++] = id;
-        ids[i++] = eot;
-        return List.of(Batch.prefill(ids));
+        IntSequence ids =
+                IntSequence.of(startHeader)
+                        .concat(tokenizer.encode(message.role().name()))
+                        .concat(IntSequence.of(endHeader))
+                        .concat(tokenizer.encode("\n\n" + content))
+                        .concat(IntSequence.of(eot));
+        return List.of(Batch.prefill(ids.toArray()));
     }
 
     @Override
     public List<Batch> generationPrompt(boolean thinking) {
-        List<Integer> role = tokenizer.encode("assistant");
-        List<Integer> sep = tokenizer.encode("\n\n");
-        int[] ids = new int[1 + role.size() + 1 + sep.size()];
-        int i = 0;
-        ids[i++] = startHeader;
-        for (int id : role) ids[i++] = id;
-        ids[i++] = endHeader;
-        for (int id : sep) ids[i++] = id;
-        return List.of(Batch.prefill(ids));
+        IntSequence ids =
+                IntSequence.of(startHeader)
+                        .concat(tokenizer.encode("assistant"))
+                        .concat(IntSequence.of(endHeader))
+                        .concat(tokenizer.encode("\n\n"));
+        return List.of(Batch.prefill(ids.toArray()));
     }
 
     @Override
