@@ -1,4 +1,4 @@
-// Oracle: Lfm2TurnTemplate's tool encoding (tools in the system turn, assistant tool-call turns,
+// Oracle: Lfm2ChatTemplate's tool encoding (tools in the system turn, assistant tool-call turns,
 // tool-result turns) must be token-exact with the GGUF's own Jinja chat_template rendered with a
 // `tools` var.   java ... com.qxotic.jinfer.models.lfm2.Lfm2ToolOracle [model.gguf]
 package com.qxotic.jinfer.models.lfm2;
@@ -7,7 +7,7 @@ import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.Tool;
-import com.qxotic.jinfer.testkit.OracleScenario;
+import com.qxotic.jinfer.testkit.CodecOracleScenario;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -33,6 +33,8 @@ public final class Lfm2ToolOracle {
                         + " \"object\", \"properties\": {\"q\": {\"type\": \"string\"}, \"top_k\":"
                         + " {\"type\": \"integer\"}}}}}");
 
+    static final String GEN_PROMPT = "<|im_start|>assistant\n";
+
     static Message assistantCall(String name, Map<String, Object> args) {
         return new Message(Role.ASSISTANT, List.of(new Part.ToolCall("", name, args)));
     }
@@ -51,30 +53,27 @@ public final class Lfm2ToolOracle {
             System.out.println("Lfm2ToolOracle: model not found (" + model + "), skipping");
             return;
         }
-        OracleScenario o =
-                new OracleScenario(
+        CodecOracleScenario o =
+                new CodecOracleScenario(
                         model,
-                        Lfm2TurnTemplate::new,
+                        Lfm2ChatTemplate::new,
                         Map.of("bos_token", "<|startoftext|>", "eos_token", "<|im_end|>"));
 
         o.compareTools(
-                "tools, no system",
-                true,
-                List.of(WEATHER),
-                List.of(Message.user("Weather in Paris?")));
+                "tools, no system", List.of(WEATHER), List.of(Message.user("Weather in Paris?")));
 
         o.compareTools(
                 "system + tools",
-                true,
                 List.of(WEATHER),
                 List.of(
                         Message.system("You are a concise assistant."),
                         Message.user("Weather in Paris?")));
 
-        o.compareTools("two tools", true, List.of(WEATHER, SEARCH), List.of(Message.user("Hi")));
+        o.compareTools("two tools", List.of(WEATHER, SEARCH), List.of(Message.user("Hi")));
 
         // Tool-CALL turns are validated against the known-correct rendered string: jinfer-jinja
-        // cannot evaluate LFM2's render_tool_calls macro (see OracleScenario.compareToolsExpected).
+        // cannot evaluate LFM2's render_tool_calls macro (see compareToolsExpected). The codec
+        // always ends generate-ready, so every expected string carries the generation prompt.
         String sys =
                 "<|startoftext|><|im_start|>system\nList of tools: ["
                         + WEATHER.rawJson()
@@ -85,8 +84,8 @@ public final class Lfm2ToolOracle {
                         + "<|im_start|>user\n"
                         + "Weather in Paris?<|im_end|>\n"
                         + "<|im_start|>assistant\n"
-                        + "<|tool_call_start|>[get_weather(city='Paris')]<|tool_call_end|><|im_end|>\n",
-                false,
+                        + "<|tool_call_start|>[get_weather(city='Paris')]<|tool_call_end|><|im_end|>\n"
+                        + GEN_PROMPT,
                 List.of(WEATHER),
                 List.of(
                         Message.user("Weather in Paris?"),
@@ -101,8 +100,7 @@ public final class Lfm2ToolOracle {
                         + "<|tool_call_start|>[get_weather(city='Paris')]<|tool_call_end|><|im_end|>\n"
                         + "<|im_start|>tool\n"
                         + "18C, sunny<|im_end|>\n"
-                        + "<|im_start|>assistant\n",
-                true,
+                        + GEN_PROMPT,
                 List.of(WEATHER),
                 List.of(
                         Message.user("Weather in Paris?"),
@@ -121,8 +119,8 @@ public final class Lfm2ToolOracle {
                         + "search<|im_end|>\n"
                         + "<|im_start|>assistant\n"
                         + "<|tool_call_start|>[web_search(q='rivers',"
-                        + " top_k=3)]<|tool_call_end|><|im_end|>\n",
-                false,
+                        + " top_k=3)]<|tool_call_end|><|im_end|>\n"
+                        + GEN_PROMPT,
                 List.of(SEARCH),
                 List.of(Message.user("search"), assistantCall("web_search", searchArgs)));
 
