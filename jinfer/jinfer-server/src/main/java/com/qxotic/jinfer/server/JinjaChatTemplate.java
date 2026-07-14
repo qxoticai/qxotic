@@ -8,7 +8,10 @@
 package com.qxotic.jinfer.server;
 
 import com.qxotic.jinfer.*;
+import com.qxotic.jinfer.jinja.CompiledTemplate;
+import com.qxotic.jinfer.jinja.JinjaRenderer;
 import com.qxotic.jinfer.llm.*;
+import com.qxotic.toknroll.IntSequence;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -17,15 +20,19 @@ import java.util.Map;
 /**
  * Renders a chat request to prompt tokens through the model's Jinja chat_template - the one place a
  * rendered String is re-scanned into tokens (encodeWithSpecialTokens); the {@code TurnTemplate}
- * path emits token ids directly. Constructed per model with its tokenizer (which carries the
- * compiled Jinja template).
+ * path emits token ids directly. Constructed per model with its tokenizer; compiles the GGUF's
+ * template source once at construction (parse once, render many times) - hold one instance per
+ * model, not per request.
  */
 final class JinjaChatTemplate {
 
     private final GgufTokenizer tokenizer;
+    private final CompiledTemplate template; // null: GGUF carries none or it failed to parse
 
     JinjaChatTemplate(GgufTokenizer tokenizer) {
         this.tokenizer = tokenizer;
+        String source = tokenizer.chatTemplateSource();
+        this.template = source.isEmpty() ? null : JinjaRenderer.template(source);
     }
 
     /**
@@ -34,13 +41,13 @@ final class JinjaChatTemplate {
      * variables (chat_template_kwargs). Falls back to a best-effort ChatML framing when the GGUF
      * has no compilable template.
      */
-    List<Integer> render(
+    IntSequence render(
             List<Object> messages,
             List<Object> tools,
             boolean addGenerationPrompt,
             boolean enableThinking,
             Map<String, Object> kwargs) {
-        CompiledTemplate tpl = tokenizer.chatTemplate();
+        CompiledTemplate tpl = template;
         if (tpl == null) {
             return chatMl(messages, tools, addGenerationPrompt);
         }
@@ -62,7 +69,7 @@ final class JinjaChatTemplate {
      * flattened into the system turn, tool results/calls rendered as text. The string is re-scanned
      * with special-token awareness, so the turn markers become real ids when the vocab has them.
      */
-    private List<Integer> chatMl(
+    private IntSequence chatMl(
             List<Object> messages, List<Object> tools, boolean addGenerationPrompt) {
         StringBuilder sb = new StringBuilder();
         StringBuilder system = new StringBuilder();

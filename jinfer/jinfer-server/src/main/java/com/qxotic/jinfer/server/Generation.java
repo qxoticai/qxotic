@@ -4,15 +4,20 @@ import com.qxotic.jinfer.*;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.cache.SessionPool;
 import com.qxotic.jinfer.cache.StateCodec;
+import com.qxotic.jinfer.chat.ChatModel;
+import com.qxotic.jinfer.chat.ChatTemplate;
+import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
+import com.qxotic.jinfer.chat.ReplyDecoder;
 import com.qxotic.jinfer.chat.Role;
+import com.qxotic.jinfer.chat.SpanReplyDecoder;
+import com.qxotic.jinfer.chat.Thinking;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.chat.ToolCallSyntax;
-import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.llm.*;
 import com.qxotic.jinfer.llm.Generator.GenerationResult;
-import com.qxotic.jinfer.llm.Generator.StopSpec;
+import com.qxotic.toknroll.IntSequence;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -20,19 +25,21 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.WeakHashMap;
-import java.util.function.IntConsumer;
+import java.util.function.Consumer;
 
 /**
- * The inference service: turns a parsed request into a {@link GenerationResult}, with streaming
- * sinks for the live channels. Owns the model and drives generation through the new-API {@link
- * Generator}: sampler / grammar / think wiring, stop conditions, tool-call seeding/parsing.
- * Transport-agnostic - endpoint handlers and SSE streaming live in {@link Server}.
+ * The inference service: turns a parsed request into a {@link Reply}, with streaming sinks for the
+ * live channels. Owns the model and drives generation through the tokens-only {@link Generator}:
+ * sampler / grammar / think wiring, stop conditions, tool-call seeding/parsing. The reply token
+ * stream is structured by the model's {@link ReplyDecoder} (text / reasoning / tool-call parts);
+ * transport - endpoint handlers and SSE streaming - lives in {@link Server}.
  *
- * <p>Plain chat on a model with a {@link TurnTemplate} is lowered through the hand-written template
+ * <p>Plain chat on a model with a {@link ChatTemplate} is lowered through the hand-written codec
  * (injection-inert, oracle-validated framing); when the model also has a {@link StateCodec} and
  * caching is enabled, the conversation is served through a per-model {@link PromptCache}, so a
  * follow-up request that echoes the prior turns resumes their KV instead of re-prefilling. Requests
- * with tools, and models without a template, take the whole-render fallback.
+ * with tools the template cannot frame, and models without a template, take the whole-render
+ * fallback.
  */
 final class Generation {
 
@@ -41,18 +48,20 @@ final class Generation {
     private final Worker worker;
     private final Map<GgufTokenizer, int[]> newlineCache =
             Collections.synchronizedMap(new WeakHashMap<>());
-    private final TurnTemplate template; // memoized model framing, null when the model has none
+    private final ChatTemplate template; // memoized model framing, null when the model has none
+    private final JinjaChatTemplate jinjaTemplate; // whole-render fallback, compiled once
     private final Set<Integer> stopTokens; // memoized model stops
     private final PromptCache<?>
             promptCache; // per-model cache; null without a StateCodec or when disabled
     private final SessionPool<?>
             sessionPool; // tier 1: last-N live conversations (append-only reuse)
 
-    Generation(LoadedModel<?> model, LLMOptions options, Worker worker) {
-        this.model = model;
+    Generation(ChatModel<?> chatModel, LLMOptions options, Worker worker) {
+        this.model = chatModel.base();
         this.options = options;
         this.worker = worker;
-        this.template = model.chatTemplate().orElse(null);
+        this.template = chatModel.template().orElse(null);
+        this.jinjaTemplate = new JinjaChatTemplate(model.tokenizer());
         this.stopTokens = model.stopTokens();
         this.promptCache =
                 RuntimeFlags.PROMPT_CACHE ? buildCache(model, options.modelPath()) : null;
@@ -73,52 +82,50 @@ final class Generation {
     // ---- chat / completion -------------------------------------------------
 
     @SuppressWarnings("unchecked")
-    GenerationResult chat(Map<String, Object> request, List<Object> messages, Sinks sinks) {
+    Reply chat(Map<String, Object> request, List<Object> messages, Sinks sinks) {
         boolean tools = ToolUse.offered(request);
-        // TurnTemplate path: the model's own framing, for plain chat and - when the template can
-        // frame tools byte-exactly and the request does not FORCE a specific call (forcing seeds
-        // the
-        // prompt, still a whole-render concern) - for tool conversations too. Caching is a
-        // separate,
-        // optional layer on top (the framing does not depend on it).
-        boolean toolTemplated =
-                tools
-                        && template != null
-                        && template.supportsTools()
-                        && ToolUse.forced(request) == null;
-        if ((!tools || toolTemplated) && template != null && onlyKnownKwargs(request)) {
-            List<Message> conversation = toConversation(messages);
-            if (conversation != null) {
-                List<Tool> toolList = toolTemplated ? buildTools(request) : List.of();
-                return chatTemplated(model, request, conversation, toolList, sinks);
+        // Codec path: the model's own framing, whenever the template supports the conversation
+        // byte-exactly and the request does not FORCE a specific call (forcing seeds the prompt,
+        // still a whole-render concern). Caching is a separate, optional layer on top (the
+        // framing does not depend on it).
+        if (template != null && ToolUse.forced(request) == null && onlyKnownKwargs(request)) {
+            List<Message> turns = toConversation(messages);
+            if (turns != null) {
+                Conversation conversation =
+                        new Conversation(
+                                turns,
+                                tools ? buildTools(request) : List.of(),
+                                requestThink(request),
+                                "");
+                if (template.supports(conversation)) {
+                    return chatTemplated(model, request, conversation, sinks);
+                }
             }
         }
         Map<String, Object> kwargs =
                 request.get("chat_template_kwargs") instanceof Map<?, ?> kw
                         ? (Map<String, Object>) kw
                         : null;
-        List<Integer> promptTokens =
-                new ArrayList<>(
-                        new JinjaChatTemplate(model.tokenizer())
-                                .render(
-                                        messages,
-                                        tools
-                                                ? Values.asArray(request.get("tools"), "tools")
-                                                : null,
-                                        true,
-                                        requestThink(request),
-                                        kwargs));
-        ToolUse.seedForced(model.tokenizer(), request, promptTokens);
+        IntSequence promptTokens =
+                ToolUse.seedForced(
+                        model.tokenizer(),
+                        request,
+                        jinjaTemplate.render(
+                                messages,
+                                tools ? Values.asArray(request.get("tools"), "tools") : null,
+                                true,
+                                requestThink(request),
+                                kwargs));
         if (System.getProperty("jinfer.debugPrompt") != null) {
             System.err.println("[prompt] " + model.tokenizer().decode(promptTokens));
         }
-        GenerationResult result = generate(request, promptTokens, sinks);
-        return tools ? ToolUse.parse(model, result, request) : result;
+        Reply reply = generate(request, promptTokens, sinks);
+        return tools ? ToolUse.parse(model, reply, request) : reply;
     }
 
     /**
      * Maps OpenAI messages to {@link Message}s, or null when a message can't be represented on the
-     * TurnTemplate path (tool role / tool_calls / non-text content) - the caller falls back.
+     * codec path (tool role / tool_calls / non-text content) - the caller falls back.
      */
     private List<Message> toConversation(List<Object> messages) {
         List<Message> out = new ArrayList<>(messages.size());
@@ -212,47 +219,20 @@ final class Generation {
     }
 
     /**
-     * The TurnTemplate chat path: lower the conversation to the model's own framing and, when the
-     * prompt cache is available, resume the longest cached prefix into the state (skipping that
-     * prefill) and ingest only the delta, caching it for the next turn. Assistant history is
-     * re-tokenized from text - best-effort, but the framing is byte-exact with the model's Jinja
-     * template (validated by the per-model oracle), so a stable client echo reuses the whole
-     * prefix.
+     * The codec chat path: lower the conversation to the model's own framing and, when the prompt
+     * cache is available, resume the longest cached prefix into the state (skipping that prefill)
+     * and ingest only the delta, caching it for the next turn. Assistant history is re-tokenized
+     * from text - best-effort, but the framing is byte-exact with the model's Jinja template
+     * (validated by the per-model oracle), so a stable client echo reuses the whole prefix.
      */
-    private <S extends RuntimeState> GenerationResult chatTemplated(
-            LoadedModel<S> m,
-            Map<String, Object> request,
-            List<Message> conversation,
-            List<Tool> tools,
-            Sinks sinks) {
-        boolean think = requestThink(request);
-        conversation = template.normalize(conversation); // the template's own framing may inject
-        // a mandatory system turn (NemotronH, Llama)
-        // Turn-aligned blocks: conversation-start, each turn, and the generation prompt are
-        // separate
-        // groups, so a follow-up request that diverges after turn k still reuses turns 0..k-1
-        // (blocks
-        // match completely, so one giant block would be unusable the moment the conversation
-        // grows).
+    private <S extends RuntimeState> Reply chatTemplated(
+            LoadedModel<S> m, Map<String, Object> request, Conversation conversation, Sinks sinks) {
+        // Batch-aligned blocks: the codec's batch boundaries are its turn-stable cache boundaries
+        // (preamble, each turn, scaffold last) - so a follow-up request that diverges after turn
+        // k still reuses turns 0..k-1 (blocks match completely, so one giant block would be
+        // unusable the moment the conversation grows).
         List<List<Batch>> groups = new ArrayList<>();
-        List<Message> turns = conversation;
-        if (!tools.isEmpty()) {
-            // Tools weld into the preamble with the leading system message; encode them together so
-            // the whole tool-block stays one turn-stable prefix, then skip the system turn below.
-            java.util.Optional<Message> system =
-                    !conversation.isEmpty() && conversation.get(0).role().equals(Role.SYSTEM)
-                            ? java.util.Optional.of(conversation.get(0))
-                            : java.util.Optional.empty();
-            groups.add(template.conversationStart(new TurnTemplate.Preamble(system, tools)));
-            turns =
-                    system.isPresent()
-                            ? conversation.subList(1, conversation.size())
-                            : conversation;
-        } else {
-            groups.add(template.conversationStart());
-        }
-        for (Message msg : turns) groups.add(template.encodeTurn(msg));
-        groups.add(template.generationPrompt(think));
+        for (Batch b : template.encode(conversation)) groups.add(List.of(b));
 
         int[] groupLen = new int[groups.size()];
         int total = 0;
@@ -304,7 +284,7 @@ final class Generation {
                     // decode from the retained logits (empty prompt continues at the cursor); the
                     // whole
                     // prompt was billed, of which `restored` came from the cache.
-                    GenerationResult result =
+                    Reply result =
                             generateFrom(m, session.state(), request, sinks, restored)
                                     .withUsage(billed, restored);
                     // Bring the decode back into the session (the generator stepped the state
@@ -313,23 +293,23 @@ final class Generation {
                     // returns
                     // to the pool ready for the next echo to continue append-only.
                     int ingested = session.state().position() - billed;
-                    if (ingested > 0) session.adopt(result.tokens().subList(0, ingested));
+                    if (ingested > 0)
+                        session.adopt(result.tokens().subSequence(0, ingested).toList());
                     return result;
                 });
     }
 
-    GenerationResult completion(Map<String, Object> request, String prompt, Sinks sinks) {
+    Reply completion(Map<String, Object> request, String prompt, Sinks sinks) {
         GgufTokenizer tokenizer = model.tokenizer();
-        List<Integer> promptTokens =
+        IntSequence promptTokens =
                 options.rawPrompt()
-                        ? new ArrayList<>(tokenizer.encodeWithSpecialTokens(prompt))
-                        : new ArrayList<>(tokenizer.encode(prompt));
+                        ? tokenizer.encodeWithSpecialTokens(prompt)
+                        : tokenizer.encode(prompt);
         return generate(request, promptTokens, sinks);
     }
 
-    /** One pass through the new-API {@link Generator}: a fresh state prefills the prompt. */
-    private GenerationResult generate(
-            Map<String, Object> request, List<Integer> promptTokens, Sinks sinks) {
+    /** One pass through the tokens-only {@link Generator}: a fresh state prefills the prompt. */
+    private Reply generate(Map<String, Object> request, IntSequence promptTokens, Sinks sinks) {
         return runGeneration(model, null, request, promptTokens, sinks, 0);
     }
 
@@ -337,21 +317,23 @@ final class Generation {
      * Decode a request onto an already-resumed state (empty prompt, the state continues at its
      * cursor); {@code cachedTokens} is the restored prefix length billed to the client.
      */
-    private <S extends RuntimeState> GenerationResult generateFrom(
+    private <S extends RuntimeState> Reply generateFrom(
             LoadedModel<S> m, S state, Map<String, Object> request, Sinks sinks, int cachedTokens) {
-        return runGeneration(m, state, request, List.of(), sinks, cachedTokens);
+        return runGeneration(m, state, request, IntSequence.empty(), sinks, cachedTokens);
     }
 
     /**
-     * Request fields to {@link Generator.Params}/{@link Generator.Listener}, then one generation
-     * pass. Streaming counters mirror the final usage: generated tokens are counted unless they are
-     * the trailing stop token removed from the result.
+     * Request fields to {@link Generator.Params} plus the decode-side plumbing, then one generation
+     * pass. The model's {@link ReplyDecoder} structures the raw token stream into text / reasoning
+     * / tool-call parts, routed to the streaming sinks live and coalesced into the {@link Reply}.
+     * Streaming counters mirror the final usage: generated tokens are counted unless they are the
+     * trailing stop token removed from the result.
      */
-    private <S extends RuntimeState> GenerationResult runGeneration(
+    private <S extends RuntimeState> Reply runGeneration(
             LoadedModel<S> m,
             S resumedState,
             Map<String, Object> request,
-            List<Integer> promptTokens,
+            IntSequence promptTokens,
             Sinks sinks,
             int cachedTokens) {
         GgufTokenizer tokenizer = m.tokenizer();
@@ -374,11 +356,9 @@ final class Generation {
         // handler thread; these guards keep the method safe for any future non-HTTP caller
         LLMOptions.require(Values.intValue(request.get("n"), 1) == 1, "Only n=1 is supported");
         LLMOptions.require(0 <= maxTokens, "Invalid argument: max_tokens must be non-negative");
-        StopSpec stops = stopSpec(request.get("stop"), stopTokens);
+        List<String> textStops = textStops(request.get("stop"));
         boolean think = requestThink(request);
-        Sampler sampler =
-                Generator.configuredSampler(
-                        m.model(), m.tokenizer(), think, temperature, topp, seed);
+        Sampler sampler = Generator.configuredSampler(m.model(), temperature, topp, seed);
         if (think) {
             // thinking models starve the answer under tight budgets: cap the think span, by default
             // at half the completion budget (request reasoning_max_tokens overrides; -1 = uncapped)
@@ -386,7 +366,9 @@ final class Generation {
                     Values.intValue(
                             request.get("reasoning_max_tokens"),
                             maxTokens >= 0 ? Math.max(1, maxTokens / 2) : -1);
-            sampler = Generator.withThinkBudget(sampler, tokenizer, reasoningBudget);
+            sampler = Thinking.capBudget(sampler, tokenizer, reasoningBudget);
+        } else {
+            sampler = Thinking.banMarkers(sampler, tokenizer);
         }
         Grammar.Cursor grammarCursor = buildGrammarCursor(tokenizer, request);
         if (grammarCursor != null) {
@@ -410,37 +392,130 @@ final class Generation {
                 resumedState != null
                         ? resumedState.position()
                         : Generator.consumedPromptTokens(tokenizer, promptTokens);
-        IntConsumer onToken =
-                usageCounts == null
-                        ? null
-                        : token -> {
-                            usageCounts.cachedTokens = cachedTokens;
-                            if (!stops.tokenStops().contains(token)) usageCounts.completionTokens++;
-                        };
         if (usageCounts != null) usageCounts.promptTokens = billedPrompt;
-        Generator.Params params =
-                new Generator.Params(
-                        sampler,
-                        maxTokens,
-                        ServerFlags.SERVER_REQUEST_TIMEOUT_NANOS,
-                        stops,
-                        inlineReasoning(request),
-                        ToolUse.offered(request)
-                                ? m.chatTemplate().flatMap(TurnTemplate::toolCallDetector)
-                                : java.util.Optional.empty());
-        Generator.Listener listener =
-                new Generator.Listener(onToken, sinks.onText(), sinks.onReasoning());
+
+        // Decode side: the model's decoder structures the reply. Without tools a plain decoder
+        // (no call claimer) keeps the pre-decoder behavior: markers drop as specials, payload text
+        // stays visible.
+        ReplyDecoder decoder =
+                ToolUse.offered(request) && template != null
+                        ? template.decoder()
+                        : new SpanReplyDecoder(tokenizer, null);
+        DeltaRouter router =
+                new DeltaRouter(
+                        textStops, sinks.onText(), sinks.onReasoning(), inlineReasoning(request));
+        Generator.TokenSink sink =
+                token -> {
+                    if (usageCounts != null) {
+                        usageCounts.cachedTokens = cachedTokens;
+                        if (!stopTokens.contains(token)) usageCounts.completionTokens++;
+                    }
+                    for (Part part : decoder.feed(token)) router.route(part);
+                    return !router.stopped();
+                };
         S state =
                 resumedState != null
                         ? resumedState
                         : m.model()
                                 .newState(
                                         m.model().config().contextLength(),
-                                        Math.max(promptTokens.size(), 16));
+                                        Math.max(promptTokens.length(), 16));
         GenerationResult result =
-                Generator.generate(m.model(), m.tokenizer(), state, promptTokens, params, listener);
+                Generator.generate(
+                        m.model(),
+                        state,
+                        promptTokens,
+                        new Generator.Params(
+                                sampler,
+                                maxTokens,
+                                ServerFlags.SERVER_REQUEST_TIMEOUT_NANOS,
+                                stopTokens),
+                        sink);
+        for (Part part : decoder.finish()) router.route(part);
+        router.flush();
+        // The loop reports the raw ingested prompt; billing (BOS discount, cache restores) is
+        // server policy, so restamp before anything reads the counts.
+        result = result.withUsage(billedPrompt, cachedTokens);
         Metrics.record(result);
-        return result;
+        return router.reply(result, textStops);
+    }
+
+    /**
+     * Routes the decoder's delta parts to the live sinks and accumulates the coalesced reply: text
+     * through the stop-string holdback, reasoning to its channel (or bracketed inline as {@code
+     * <think>...</think>} content for reasoning_format "none"), tool calls collected.
+     */
+    private static final class DeltaRouter {
+        private final StringBuilder text = new StringBuilder();
+        private final StringBuilder reasoning = new StringBuilder();
+        private final List<Part.ToolCall> toolCalls = new ArrayList<>();
+        private final TextStops.Holdback holdback; // null when neither streaming nor text stops
+        private final java.util.function.Consumer<String> onReasoning;
+        private final InlineThink inline; // null when reasoning routes to its own channel
+
+        DeltaRouter(
+                List<String> textStops,
+                Consumer<String> onText,
+                Consumer<String> onReasoning,
+                boolean inline) {
+            this.holdback =
+                    onText != null || !textStops.isEmpty()
+                            ? new TextStops.Holdback(textStops, onText != null ? onText : t -> {})
+                            : null;
+            this.onReasoning = onReasoning;
+            this.inline = inline ? new InlineThink() : null;
+        }
+
+        void route(Part part) {
+            if (part instanceof Part.Text t) {
+                content(t.text());
+            } else if (part instanceof Part.Reasoning r) {
+                if (inline != null) {
+                    inline.project(r, this::content);
+                    return;
+                }
+                if (r.content().isEmpty()) return; // the span-close event
+                StringBuilder frag = new StringBuilder();
+                for (Part inner : r.content()) {
+                    if (inner instanceof Part.Text t) frag.append(t.text());
+                }
+                reasoning.append(frag);
+                if (onReasoning != null) onReasoning.accept(frag.toString());
+            } else if (part instanceof Part.ToolCall c) {
+                toolCalls.add(c);
+            }
+        }
+
+        private void content(String fragment) {
+            text.append(fragment);
+            if (holdback != null) holdback.accept(fragment);
+        }
+
+        boolean stopped() {
+            return holdback != null && holdback.stopped();
+        }
+
+        void flush() {
+            if (holdback != null) holdback.flush();
+        }
+
+        /** The coalesced {@link Reply}, with stop strings applied and finish_reason mapped. */
+        Reply reply(GenerationResult result, List<String> textStops) {
+            TextStops.Result stopResult = TextStops.apply(text.toString(), textStops);
+            boolean textStopped = stopResult.stopped() || stopped();
+            String finishReason =
+                    !toolCalls.isEmpty()
+                            ? "tool_calls"
+                            : result.stopToken() >= 0 || textStopped
+                                    ? "stop"
+                                    : "length".equals(result.finishReason()) ? "length" : "stop";
+            return new Reply(
+                    result,
+                    stopResult.text(),
+                    reasoning.isEmpty() ? null : reasoning.toString(),
+                    toolCalls,
+                    finishReason);
+        }
     }
 
     // ---- sampler / grammar / stop / think wiring ---------------------------
@@ -496,7 +571,7 @@ final class Generation {
      * User stop strings stay TEXT stops only: token stops end generation anywhere, including inside
      * the think span, while text stops are matched against content alone.
      */
-    private static StopSpec stopSpec(Object value, Set<Integer> baseStopTokens) {
+    private static List<String> textStops(Object value) {
         List<String> textStops = new ArrayList<>();
         if (value instanceof String s) {
             if (!s.isEmpty()) textStops.add(s);
@@ -508,7 +583,7 @@ final class Generation {
         } else if (value != null) {
             throw new IllegalArgumentException("stop must be a string or an array of strings");
         }
-        return new StopSpec(Collections.unmodifiableSet(baseStopTokens), List.copyOf(textStops));
+        return List.copyOf(textStops);
     }
 
     /**

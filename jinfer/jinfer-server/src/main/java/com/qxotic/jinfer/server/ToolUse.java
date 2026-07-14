@@ -2,7 +2,7 @@ package com.qxotic.jinfer.server;
 
 import com.qxotic.jinfer.*;
 import com.qxotic.jinfer.llm.*;
-import com.qxotic.jinfer.llm.Generator.GenerationResult;
+import com.qxotic.toknroll.IntSequence;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -58,39 +58,40 @@ final class ToolUse {
      * call instead of merely being asked to make one. The open paren is deliberately NOT seeded: a
      * bare trailing "(" lands on a tokenization boundary the model never saw (it merges with the
      * first argument in training data) and greedy decoding stops dead. No-op when the vocabulary
-     * lacks the marker (the prompted fallback keeps its text hint).
+     * lacks the marker (the prompted fallback keeps its text hint). Pure: returns the (possibly
+     * extended) prompt.
      */
-    static void seedForced(
-            GgufTokenizer tokenizer, Map<String, Object> request, List<Integer> promptTokens) {
+    static IntSequence seedForced(
+            GgufTokenizer tokenizer, Map<String, Object> request, IntSequence promptTokens) {
         String choice = forced(request);
-        if (choice == null) return;
+        if (choice == null) return promptTokens;
         Integer marker = tokenizer.getSpecialTokens().get("<|tool_call_start|>");
-        if (marker == null) return;
-        promptTokens.add(marker);
-        if (!choice.isEmpty()) promptTokens.addAll(tokenizer.encode("[" + choice));
+        if (marker == null) return promptTokens;
+        IntSequence seeded = promptTokens.concat(IntSequence.of(marker));
+        if (!choice.isEmpty()) seeded = seeded.concat(tokenizer.encode("[" + choice));
+        return seeded;
     }
 
     /**
-     * Parses tool calls out of a finished reply, returning the result re-tagged with them (or the
-     * original result when none parsed).
+     * Parses tool calls out of a finished reply, returning the reply re-tagged with them (or the
+     * original reply when none parsed).
      */
-    static GenerationResult parse(
-            LoadedModel<?> model, GenerationResult result, Map<String, Object> request) {
-        // The model's own detector already ran during generation (structured calls on token ids);
+    static Reply parse(LoadedModel<?> model, Reply reply, Map<String, Object> request) {
+        // The model's own decoder already ran during generation (structured calls on token ids);
         // when it produced calls they are authoritative, so this string-scan fallback is only for
-        // models with no native tool-call format (whole-render / no TurnTemplate).
-        if (!result.toolCalls().isEmpty()) return result;
-        // Parse from the FULL generated text (think span included). result.text() is the
+        // models with no native tool-call format (whole-render / no template).
+        if (!reply.toolCalls().isEmpty()) return reply;
+        // Parse from the FULL generated text (think span included). reply.text() is the
         // think-STRIPPED content, so a call the model emits before it closes </think> (or in an
         // unterminated think span) would be deleted before we ever see it. Decoding the raw
         // response tokens renders special tokens (<|tool_call_start|>, <think>) as literal text.
         String text = forcedPrefix(request);
-        String decoded = model.tokenizer().decode(result.tokens());
+        String decoded = model.tokenizer().decode(reply.tokens());
         text +=
                 !decoded.strip().isEmpty()
                         ? decoded
-                        : (result.reasoning() != null ? result.reasoning() + "\n" : "")
-                                + result.text();
+                        : (reply.reasoning() != null ? reply.reasoning() + "\n" : "")
+                                + reply.text();
         boolean debug = System.getProperty("jinfer.debugToolCalls") != null;
         List<Map<String, Object>> toolCalls = ToolCalls.parseToolCalls(text, names(request));
         if (toolCalls.isEmpty()) {
@@ -102,7 +103,7 @@ final class ToolUse {
                         "[tool-parse] tools offered but parsed 0 calls from reply: "
                                 + t.replace("\n", "\\n"));
             }
-            return result;
+            return reply;
         }
         if (debug)
             System.err.println(
@@ -111,7 +112,7 @@ final class ToolUse {
                             + " call(s) in: "
                             + text.strip().replace("\n", "\\n"));
         int marker = text.indexOf(ToolCalls.TC_START);
-        return result.asToolCalls(
+        return reply.asToolCalls(
                 ToolCalls.fromWire(toolCalls), marker > 0 ? text.substring(0, marker).strip() : "");
     }
 

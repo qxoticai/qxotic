@@ -1,11 +1,10 @@
 // OpenAI-compatible wire shapes: the JSON envelopes for chat/completions/responses (full and
-// streaming chunks), usage, and llama.cpp-style timings. Pure builders from a GenerationResult
+// streaming chunks), usage, and llama.cpp-style timings. Pure builders from a Reply
 // or running Usage counters — no transport, no generation logic.
 package com.qxotic.jinfer.server;
 
 import com.qxotic.jinfer.*;
 import com.qxotic.jinfer.llm.*;
-import com.qxotic.jinfer.llm.Generator.GenerationResult;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -36,7 +35,7 @@ final class OpenAiSchema {
                 Map.of("cached_tokens", usage.cachedTokens));
     }
 
-    static Map<String, Object> usage(GenerationResult result) {
+    static Map<String, Object> usage(Reply result) {
         return Map.of(
                 "prompt_tokens", result.promptTokens(),
                 "completion_tokens", result.completionTokens(),
@@ -45,7 +44,7 @@ final class OpenAiSchema {
     }
 
     /** llama.cpp-compatible timings extension: per-phase durations and rates. */
-    static Map<String, Object> timings(GenerationResult result) {
+    static Map<String, Object> timings(Reply result) {
         Map<String, Object> timings = new LinkedHashMap<>();
         timings.put("prompt_n", result.promptTokens());
         timings.put("prompt_ms", Math.round(result.promptMillis() * 100.0) / 100.0);
@@ -72,8 +71,7 @@ final class OpenAiSchema {
 
     // ---- chat completions ----
 
-    static Map<String, Object> chatCompletionResponse(
-            String id, String modelId, GenerationResult result) {
+    static Map<String, Object> chatCompletionResponse(String id, String modelId, Reply result) {
         Map<String, Object> message = new LinkedHashMap<>();
         message.put("role", "assistant");
         message.put("content", result.toolCalls().isEmpty() ? result.text() : null);
@@ -116,8 +114,7 @@ final class OpenAiSchema {
 
     // ---- text completions ----
 
-    static Map<String, Object> completionResponse(
-            String id, String modelId, GenerationResult result) {
+    static Map<String, Object> completionResponse(String id, String modelId, Reply result) {
         return Map.of(
                 "id",
                 id,
@@ -168,8 +165,7 @@ final class OpenAiSchema {
         return delta;
     }
 
-    static Map<String, Object> responseResponse(
-            String id, String modelId, GenerationResult result) {
+    static Map<String, Object> responseResponse(String id, String modelId, Reply result) {
         List<Map<String, Object>> output =
                 result.toolCalls().isEmpty()
                         ? List.of(responseMessageItem("msg_" + id, "completed", result.text()))
@@ -210,7 +206,7 @@ final class OpenAiSchema {
                 List.of(Map.of("type", "output_text", "text", text, "annotations", List.of())));
     }
 
-    private static Map<String, Object> responseUsage(GenerationResult result) {
+    private static Map<String, Object> responseUsage(Reply result) {
         return Map.of(
                 "input_tokens", result.promptTokens(),
                 "output_tokens", result.completionTokens(),

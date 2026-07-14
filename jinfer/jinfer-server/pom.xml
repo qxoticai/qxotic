@@ -31,7 +31,15 @@
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-chat</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
       <artifactId>jinfer-kernels</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-jinja</artifactId>
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
