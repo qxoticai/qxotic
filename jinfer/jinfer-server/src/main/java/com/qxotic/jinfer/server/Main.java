@@ -13,10 +13,18 @@ package com.qxotic.jinfer.server;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.*;
+import com.qxotic.jinfer.chat.ChatModel;
+import com.qxotic.jinfer.chat.ChatTemplate;
+import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.chat.Part;
+import com.qxotic.jinfer.chat.SpanReplyDecoder;
+import com.qxotic.jinfer.chat.Thinking;
 import com.qxotic.jinfer.chat.TurnTemplate;
+import com.qxotic.jinfer.chat.TurnTemplateAdapter;
 import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
+import com.qxotic.toknroll.IntSequence;
 import java.io.BufferedOutputStream;
 import java.io.BufferedReader;
 import java.io.FileDescriptor;
@@ -115,22 +123,29 @@ public class Main {
     }
 
     /**
+     * A CLI generation outcome: the raw result, the display text the decoder assembled, and the
+     * decoder's structured reply message (verbatim ids - what a codec chat loop appends).
+     */
+    private record CliReply(Generator.GenerationResult result, String text, Message message) {}
+
+    /**
      * One generation pass plus CLI presentation: prompt echo, token streaming through the printer,
      * and the stderr timing summary line. --max-tokens is a TOTAL context cap in the CLI, so it is
-     * converted to the generator's completion budget here.
+     * converted to the generator's completion budget here. The display text is assembled by a plain
+     * {@link SpanReplyDecoder} (the CLI offers no tools): think content is bracketed inline when
+     * thinking is shown, dropped otherwise.
      */
-    private static <S extends RuntimeState> Generator.GenerationResult generateCli(
+    private static <S extends RuntimeState> CliReply generateCli(
             LoadedModel<S> model,
             S state,
-            List<Integer> promptTokens,
+            IntSequence promptTokens,
             Set<Integer> stopTokens,
             Sampler sampler,
             LLMOptions options) {
         GgufTokenizer tokenizer = model.tokenizer();
         if (options.echo()) {
-            for (int token : promptTokens) {
-                System.err.print(replaceControlCharacters(tokenizer.decode(token)));
-            }
+            promptTokens.forEachInt(
+                    token -> System.err.print(replaceControlCharacters(tokenizer.decode(token))));
         }
         IntConsumer printer = streamingPrinter(tokenizer, options);
         IntConsumer onToken =
@@ -144,40 +159,49 @@ public class Main {
         int budget =
                 options.maxTokens() < 0
                         ? -1
-                        : options.maxTokens() - (startPosition + promptTokens.size());
+                        : options.maxTokens() - (startPosition + promptTokens.length());
         // Chunk long prompts to the state's batch capacity; the final chunk rides through the
         // Generator (which needs >=1 prompt token for fresh logits).
-        int totalPrompt = promptTokens.size();
+        int totalPrompt = promptTokens.length();
         long chunkNanos = 0;
         int cap = state.batchCapacity();
-        while (promptTokens.size() > cap) {
-            int[] ids = new int[cap];
-            for (int i = 0; i < cap; i++) ids[i] = promptTokens.get(i);
+        while (promptTokens.length() > cap) {
+            int[] ids = promptTokens.subSequence(0, cap).toArray();
             if (options.echo()) {
                 for (int id : ids) System.err.print(replaceControlCharacters(tokenizer.decode(id)));
             }
             long t0 = System.nanoTime();
             model.model().ingest(state, Batch.prefill(ids));
             chunkNanos += System.nanoTime() - t0;
-            promptTokens = promptTokens.subList(cap, promptTokens.size());
+            promptTokens = promptTokens.subSequence(cap, promptTokens.length());
         }
-        Generator.Params params =
-                new Generator.Params(
-                        sampler,
-                        budget,
-                        0, // CLI: no generation deadline
-                        new Generator.StopSpec(stopTokens, List.of()),
-                        options.think(),
-                        model.chatTemplate().flatMap(TurnTemplate::toolCallDetector));
+        SpanReplyDecoder decoder = new SpanReplyDecoder(tokenizer, null);
+        StringBuilder text = new StringBuilder();
+        InlineThink inlineThink = new InlineThink();
+        java.util.function.Consumer<Part> collect =
+                part -> {
+                    if (part instanceof Part.Text t) {
+                        text.append(t.text());
+                    } else if (part instanceof Part.Reasoning r && options.think()) {
+                        // thinking shown: bracket it inline in the display text (the old
+                        // visible-tokens rendering kept think spans when --think is on)
+                        inlineThink.project(r, text::append);
+                    }
+                };
         Generator.GenerationResult result =
                 Generator.generate(
                         model.model(),
-                        model.tokenizer(),
                         state,
                         promptTokens,
-                        params,
-                        new Generator.Listener(onToken, null, null));
-        int generated = result.tokens().size() + (result.stopToken() >= 0 ? 1 : 0);
+                        new Generator.Params(sampler, budget, 0 /* CLI: no deadline */, stopTokens),
+                        token -> {
+                            onToken.accept(token);
+                            for (Part part : decoder.feed(token)) collect.accept(part);
+                            return true;
+                        });
+        for (Part part : decoder.finish()) collect.accept(part);
+        Message message = decoder.message();
+        int generated = result.tokens().length() + (result.stopToken() >= 0 ? 1 : 0);
         String timingPrefix = options.colors() ? ANSI_CYAN : "";
         String timingSuffix = options.colors() ? ANSI_RESET : "";
         System.err.printf(
@@ -190,7 +214,7 @@ public class Main {
                 generated / (result.predictedMillis() / 1000.0),
                 generated,
                 timingSuffix);
-        return result;
+        return new CliReply(result, text.toString(), message);
     }
 
     /** Escape control characters (except newline) so token echo cannot distort the terminal. */
@@ -429,7 +453,7 @@ public class Main {
             System.exit(-1);
             return;
         }
-        LoadedModel<?> model = AOT.tryUsePreLoaded(options.modelPath(), options.maxTokens());
+        ChatModel<?> model = AOT.tryUsePreLoaded(options.modelPath(), options.maxTokens());
         if (model == null) {
             model = Models.load(options.modelPath(), options.maxTokens());
         }
@@ -439,51 +463,58 @@ public class Main {
         }
         Sampler sampler =
                 Generator.configuredSampler(
-                        model.model(),
-                        model.tokenizer(),
-                        options.think(),
+                        model.base().model(),
                         options.temperature(),
                         options.topp(),
                         options.seed());
+        if (!options.think()) {
+            sampler = Thinking.banMarkers(sampler, model.base().tokenizer());
+        }
         runGeneric(model, sampler, options);
     }
 
     /**
      * CLI driver: a one-shot {@code --prompt} or an interactive {@code --chat} loop. Models
-     * exposing a {@link TurnTemplate} run INCREMENTALLY - one persistent state, only each new turn
-     * ingested (the validated turn-by-turn framing; replies stay in the KV verbatim); everything
-     * else falls back to the whole-render Jinja path with a fresh state per turn.
+     * exposing a {@link ChatTemplate} run through the model's own codec framing - native codecs
+     * incrementally via whole-conversation re-encode + longest-common-prefix reuse (the verbatim
+     * splice keeps generated turns in the common prefix), adapter-backed models via the per-turn
+     * closeTurn flow; everything else falls back to the whole-render Jinja path with a fresh state
+     * per turn.
      */
     static <S extends RuntimeState> void runGeneric(
-            LoadedModel<S> model, Sampler sampler, LLMOptions options) throws IOException {
-        TurnTemplate template = options.rawPrompt() ? null : model.chatTemplate().orElse(null);
+            ChatModel<S> chatModel, Sampler sampler, LLMOptions options) throws IOException {
+        LoadedModel<S> model = chatModel.base();
+        ChatTemplate template = options.rawPrompt() ? null : chatModel.template().orElse(null);
         if (!options.interactive()) {
             runInstruct(model, template, sampler, options);
+        } else if (template instanceof TurnTemplateAdapter adapted) {
+            // Per-turn incremental chat needs closeTurn + verbatim reply KV reuse - a TurnTemplate
+            // capability the codec deliberately does not expose; a native codec port replaces
+            // this with verbatim-splice re-encoding (runChatCodec).
+            runChatIncremental(model, adapted.turnTemplate(), sampler, options);
         } else if (template != null) {
-            runChatIncremental(model, template, sampler, options);
+            runChatCodec(model, template, sampler, options);
         } else {
             runChatWholeRender(model, sampler, options);
         }
     }
 
     private static <S extends RuntimeState> void runInstruct(
-            LoadedModel<S> model, TurnTemplate template, Sampler sampler, LLMOptions options)
+            LoadedModel<S> model, ChatTemplate template, Sampler sampler, LLMOptions options)
             throws IOException {
         Set<Integer> stops = model.stopTokens();
-        List<Integer> promptTokens;
+        IntSequence promptTokens;
         if (options.rawPrompt()) {
-            promptTokens =
-                    new ArrayList<>(model.tokenizer().encodeWithSpecialTokens(options.prompt()));
+            promptTokens = model.tokenizer().encodeWithSpecialTokens(options.prompt());
         } else if (template != null) {
             List<Message> turns = new ArrayList<>();
             if (options.systemPrompt() != null) {
                 turns.add(Message.system(options.systemPrompt()));
             }
             turns.add(Message.user(options.prompt()));
-            List<Batch> batches = new ArrayList<>(template.encode(template.normalize(turns)));
-            batches.addAll(template.generationPrompt(options.think()));
-            promptTokens = new ArrayList<>();
-            for (int id : Batch.tokenIds(batches)) promptTokens.add(id);
+            List<Batch> batches =
+                    template.encode(new Conversation(turns, List.of(), options.think(), ""));
+            promptTokens = IntSequence.wrap(Batch.tokenIds(batches));
         } else {
             List<Object> messages = new ArrayList<>();
             if (options.systemPrompt() != null) {
@@ -499,7 +530,7 @@ public class Main {
                         .newState(
                                 model.model().config().contextLength(),
                                 Math.min(
-                                        Math.max(promptTokens.size(), 16),
+                                        Math.max(promptTokens.length(), 16),
                                         RuntimeFlags.BATCH_CAPACITY)); // ports chunk long prompts
 
         // --sealed: restore the (system+prompt) prefix from the sealed file (instant TTFT), or
@@ -515,11 +546,11 @@ public class Main {
         // to as-of-P). Any mismatch (different prompt/model) falls back to a plain prefill.
         if (options.sealedPrompt() != null
                 && model.model().stateCodec().isPresent()
-                && promptTokens.size() >= 2) {
+                && promptTokens.length() >= 2) {
             var codec = model.model().stateCodec().get();
-            int last = promptTokens.get(promptTokens.size() - 1);
-            long[] fp = new long[promptTokens.size() - 1];
-            for (int i = 0; i < fp.length; i++) fp[i] = promptTokens.get(i);
+            int last = promptTokens.getLast();
+            long[] fp = new long[promptTokens.length() - 1];
+            for (int i = 0; i < fp.length; i++) fp[i] = promptTokens.intAt(i);
             byte[] seed = com.qxotic.jinfer.cache.PromptCache.modelSeed(options.modelPath());
             if (Files.exists(options.sealedPrompt())) {
                 long t0 = System.nanoTime();
@@ -530,8 +561,8 @@ public class Main {
                     System.err.printf(
                             "sealed prompt restored: %d positions in %.1f ms%n",
                             restored, (System.nanoTime() - t0) / 1e6);
-                    promptTokens =
-                            List.of(last); // re-ingest the last token to rebuild the hidden state
+                    // re-ingest the last token to rebuild the hidden state
+                    promptTokens = IntSequence.of(last);
                 } else {
                     System.err.println("sealed prompt mismatch: prefilling normally");
                 }
@@ -545,14 +576,13 @@ public class Main {
                                 + " ("
                                 + fp.length
                                 + " positions)");
-                promptTokens = List.of(last);
+                promptTokens = IntSequence.of(last);
             }
         }
 
-        Generator.GenerationResult result =
-                generateCli(model, state, promptTokens, stops, sampler, options);
+        CliReply reply = generateCli(model, state, promptTokens, stops, sampler, options);
         if (!options.stream()) {
-            System.out.println(result.text());
+            System.out.println(reply.text());
         }
     }
 
@@ -605,16 +635,81 @@ public class Main {
                     batches.addAll(template.encodeTurn(m));
                 }
                 batches.addAll(template.generationPrompt(options.think()));
-                List<Integer> delta = new ArrayList<>();
-                for (int id : Batch.tokenIds(batches)) delta.add(id);
-                Generator.GenerationResult result =
-                        generateCli(model, state, delta, stops, sampler, options);
+                IntSequence delta = IntSequence.wrap(Batch.tokenIds(batches));
+                CliReply reply = generateCli(model, state, delta, stops, sampler, options);
                 if (!options.stream()) {
-                    System.out.println(result.text());
+                    System.out.println(reply.text());
                 }
                 first = false;
             }
         }
+    }
+
+    /**
+     * Interactive chat on a NATIVE codec: ONE running {@link Conversation}, re-encoded whole each
+     * turn; the longest common prefix with the token stream the KV already holds is skipped and
+     * only the suffix is ingested. Replies are appended as the decoder's structured message
+     * (verbatim ids), so the codec's verbatim splice keeps every generated turn inside the common
+     * prefix - the append-only happy path ingests exactly closeTurn + the user turn + the scaffold,
+     * like the per-turn flow. Any divergence rebuilds the state from scratch (correctness first;
+     * the splice makes it rare).
+     */
+    private static <S extends RuntimeState> void runChatCodec(
+            LoadedModel<S> model, ChatTemplate template, Sampler sampler, LLMOptions options)
+            throws IOException {
+        Set<Integer> stops = model.stopTokens();
+        int contextLength = model.model().config().contextLength();
+        S state = model.model().newState(contextLength, RuntimeFlags.BATCH_CAPACITY);
+        List<Message> opening = new ArrayList<>();
+        if (options.systemPrompt() != null) {
+            opening.add(Message.system(options.systemPrompt()));
+        }
+        Conversation conversation = new Conversation(opening, List.of(), options.think(), "");
+        IntSequence ingested = IntSequence.empty(); // the token stream the KV holds
+        try (BufferedReader reader =
+                new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8))) {
+            while (true) {
+                System.out.print("> ");
+                System.out.flush();
+                String userText = reader.readLine();
+                if (userText == null || "/quit".equals(userText) || "/exit".equals(userText)) break;
+                if ("/context".equals(userText)) {
+                    System.out.printf("context: %d/%d tokens%n", state.position(), contextLength);
+                    continue;
+                }
+                conversation = conversation.append(Message.user(userText));
+                IntSequence prompt =
+                        IntSequence.wrap(Batch.tokenIds(template.encode(conversation)));
+                int lcp = commonPrefix(ingested, prompt);
+                IntSequence delta;
+                if (lcp < ingested.length()) {
+                    state = model.model().newState(contextLength, RuntimeFlags.BATCH_CAPACITY);
+                    delta = prompt;
+                } else {
+                    delta = prompt.subSequence(lcp, prompt.length());
+                }
+                CliReply reply = generateCli(model, state, delta, stops, sampler, options);
+                if (!options.stream()) {
+                    System.out.println(reply.text());
+                }
+                conversation = conversation.append(reply.message());
+                // The KV holds the prompt plus every INGESTED reply token: all of them when a
+                // stop token ended the turn, all but the last otherwise (the decode loop never
+                // ingests the final sampled token).
+                IntSequence generated = reply.result().tokens();
+                if (reply.result().stopToken() < 0 && !generated.isEmpty()) {
+                    generated = generated.subSequence(0, generated.length() - 1);
+                }
+                ingested = prompt.concat(generated);
+            }
+        }
+    }
+
+    private static int commonPrefix(IntSequence a, IntSequence b) {
+        int n = Math.min(a.length(), b.length());
+        int i = 0;
+        while (i < n && a.intAt(i) == b.intAt(i)) i++;
+        return i;
     }
 
     /**
@@ -624,6 +719,7 @@ public class Main {
     private static <S extends RuntimeState> void runChatWholeRender(
             LoadedModel<S> model, Sampler sampler, LLMOptions options) throws IOException {
         Set<Integer> stops = model.stopTokens();
+        JinjaChatTemplate jinja = new JinjaChatTemplate(model.tokenizer());
         List<Object> history = new ArrayList<>();
         if (options.systemPrompt() != null) {
             history.add(Map.of("role", "system", "content", options.systemPrompt()));
@@ -636,26 +732,24 @@ public class Main {
                 String userText = reader.readLine();
                 if (userText == null || "/quit".equals(userText) || "/exit".equals(userText)) break;
                 history.add(Map.of("role", "user", "content", userText));
-                List<Integer> promptTokens =
-                        new JinjaChatTemplate(model.tokenizer())
-                                .render(history, null, true, options.think(), null);
-                Generator.GenerationResult result =
+                IntSequence promptTokens = jinja.render(history, null, true, options.think(), null);
+                CliReply reply =
                         generateCli(
                                 model,
                                 model.model()
                                         .newState(
                                                 model.model().config().contextLength(),
                                                 Math.min(
-                                                        Math.max(promptTokens.size(), 16),
+                                                        Math.max(promptTokens.length(), 16),
                                                         RuntimeFlags.BATCH_CAPACITY)),
                                 promptTokens,
                                 stops,
                                 sampler,
                                 options);
                 if (!options.stream()) {
-                    System.out.println(result.text());
+                    System.out.println(reply.text());
                 }
-                history.add(Map.of("role", "assistant", "content", result.text()));
+                history.add(Map.of("role", "assistant", "content", reply.text()));
             }
         }
     }
@@ -703,7 +797,7 @@ final class AOT {
      * back to {@link Models#load(Path, int)}). Reuses the baked GGUF, so only the tensor data is
      * read.
      */
-    static LoadedModel<?> tryUsePreLoaded(Path modelPath, int contextLength) throws IOException {
+    static ChatModel<?> tryUsePreLoaded(Path modelPath, int contextLength) throws IOException {
         PartialModel preLoaded = PRELOADED_GGUF;
         if (preLoaded == null) {
             return null;
