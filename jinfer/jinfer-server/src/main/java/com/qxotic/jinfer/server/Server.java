@@ -1,9 +1,9 @@
 package com.qxotic.jinfer.server;
 
 import com.qxotic.jinfer.*;
+import com.qxotic.jinfer.chat.ChatModel;
 import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
-import com.qxotic.jinfer.llm.Generator.GenerationResult;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -35,7 +35,8 @@ public final class Server {
      * warming, if configured, completes before this returns. This is the only public API of the
      * module — load a model (jinfer-core), then hand it here to serve it.
      */
-    public static HttpServer start(LoadedModel<?> model, LLMOptions options) throws IOException {
+    public static HttpServer start(ChatModel<?> chatModel, LLMOptions options) throws IOException {
+        LoadedModel<?> model = chatModel.base();
         HttpServer server =
                 HttpServer.create(new InetSocketAddress(options.host(), options.port()), 0);
         String servedId = options.modelPath().getFileName().toString();
@@ -106,7 +107,9 @@ public final class Server {
                             request.get("tokens") instanceof List<?> list
                                     ? list.stream().map(v -> ((Number) v).intValue()).toList()
                                     : List.<Integer>of();
-                    return Map.of("content", model.tokenizer().decode(tokens));
+                    return Map.of(
+                            "content",
+                            model.tokenizer().decode(com.qxotic.toknroll.IntSequence.wrap(tokens)));
                 };
         jsonRoute(server, "/tokenize", "POST", tokenize); // llama.cpp paths and the
         jsonRoute(server, "/v1/tokenize", "POST", tokenize); // /v1-prefixed aliases
@@ -119,7 +122,7 @@ public final class Server {
                     if (Http.preamble(exchange)) return;
                     Http.sendError(exchange, 404, "Not found");
                 });
-        GENERATION = new Generation(model, options, WORKER);
+        GENERATION = new Generation(chatModel, options, WORKER);
         WORKER.start();
         GENERATION.warm(); // blocks until warmed: instant resume from request one
         Sse.startReaper();
@@ -241,7 +244,7 @@ public final class Server {
                     if (Values.booleanValue(request.get("stream"), false)) {
                         streamChatCompletion(exchange, request, messages, modelId, id);
                     } else {
-                        GenerationResult result =
+                        Reply result =
                                 GENERATION.chat(
                                         request, messages, Sinks.NONE); // non-streaming, no tools
                         respond(
@@ -269,7 +272,7 @@ public final class Server {
                     if (Values.booleanValue(request.get("stream"), false)) {
                         streamCompletion(exchange, request, prompt, modelId, id);
                     } else {
-                        GenerationResult result =
+                        Reply result =
                                 GENERATION.completion(request, prompt, Sinks.NONE); // non-streaming
                         respond(
                                 exchange,
@@ -297,7 +300,7 @@ public final class Server {
                     if (Values.booleanValue(request.get("stream"), false)) {
                         streamResponse(exchange, request, messages, modelId, id);
                     } else {
-                        GenerationResult result =
+                        Reply result =
                                 GENERATION.chat(
                                         request, messages, Sinks.NONE); // non-streaming, no tools
                         respond(
@@ -356,7 +359,7 @@ public final class Server {
                                                                 modelId,
                                                                 Map.of("reasoning_content", t),
                                                                 null));
-                        GenerationResult result =
+                        Reply result =
                                 GENERATION.chat(
                                         request,
                                         messages,
@@ -390,7 +393,7 @@ public final class Server {
     private static void endStream(
             Sse.Stream sse,
             Map<String, Object> request,
-            GenerationResult result,
+            Reply result,
             Map<String, Object> finalChunk,
             Map<String, Object> usageOnlyChunk) {
         Map<String, Object> usage = OpenAiSchema.usage(result);
@@ -431,7 +434,7 @@ public final class Server {
                                         sse,
                                         usage,
                                         t -> OpenAiSchema.completionChunk(id, modelId, t, null));
-                        GenerationResult result =
+                        Reply result =
                                 GENERATION.completion(request, prompt, Sinks.text(sink, usage));
                         endStream(
                                 sse,
@@ -481,8 +484,7 @@ public final class Server {
                                         usage,
                                         "response.output_text.delta",
                                         t -> OpenAiSchema.responseTextDelta(itemId, t));
-                        GenerationResult result =
-                                GENERATION.chat(request, messages, Sinks.text(sink, usage));
+                        Reply result = GENERATION.chat(request, messages, Sinks.text(sink, usage));
                         sse.emit(
                                 "response.output_text.done",
                                 Map.of(
@@ -567,13 +569,13 @@ public final class Server {
         Http.sendText(exchange, 200, Metrics.CONTENT_TYPE, Metrics.exposition(WORKER));
     }
 
-    private static void setTimingHeader(HttpExchange exchange, GenerationResult result) {
+    private static void setTimingHeader(HttpExchange exchange, Reply result) {
         exchange.getResponseHeaders()
                 .set("X-LFM2-Timing", JsonCodec.stringify(OpenAiSchema.timings(result)));
     }
 
     /** Non-streaming reply: attach the timing header, then send the schema body as JSON. */
-    private static void respond(HttpExchange exchange, GenerationResult result, Object body)
+    private static void respond(HttpExchange exchange, Reply result, Object body)
             throws IOException {
         setTimingHeader(exchange, result);
         Http.sendJson(exchange, 200, body);
