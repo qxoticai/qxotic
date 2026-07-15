@@ -30,6 +30,12 @@
       <artifactId>jinfer-llm</artifactId>
       <scope>test</scope>
     </dependency>
+    <!-- test-only: the testkit OracleScenario/Harness speak Message/TurnTemplate -->
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-chat</artifactId>
+      <scope>test</scope>
+    </dependency>
     <!-- test-only: TokenizerParityTest builds an LFMTokenizer with the Jinja chat template -->
     <dependency>
       <groupId>com.qxotic</groupId>

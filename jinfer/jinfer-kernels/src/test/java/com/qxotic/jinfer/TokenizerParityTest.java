@@ -1,7 +1,6 @@
 package com.qxotic.jinfer;
 
 import com.qxotic.format.gguf.GGUF;
-import com.qxotic.jinfer.jinja.JinjaRenderer;
 import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
 import java.nio.channels.FileChannel;
@@ -87,12 +86,12 @@ public final class TokenizerParityTest {
         try (FileChannel channel = FileChannel.open(model, StandardOpenOption.READ)) {
             gguf = ModelLoader.readGguf(channel, model.toString());
         }
-        GgufTokenizer tokenizer = new GgufTokenizer(gguf, JinjaRenderer::template);
+        GgufTokenizer tokenizer = new GgufTokenizer(gguf);
 
         for (Object[] testCase : EXPECTED) {
             String text = (String) testCase[0];
             int[] expected = (int[]) testCase[1];
-            int[] actual = tokenizer.encode(text).stream().mapToInt(Integer::intValue).toArray();
+            int[] actual = tokenizer.encode(text).toArray();
             if (!Arrays.equals(expected, actual)) {
                 failures++;
                 System.err.printf(
@@ -109,7 +108,7 @@ public final class TokenizerParityTest {
         }
 
         if (Files.exists(Path.of("prompt.txt"))) {
-            List<Integer> ids = tokenizer.encode(Files.readString(Path.of("prompt.txt")));
+            List<Integer> ids = tokenizer.encode(Files.readString(Path.of("prompt.txt"))).toList();
             int[] first =
                     ids.subList(0, PROMPT_FIRST.length).stream()
                             .mapToInt(Integer::intValue)
@@ -151,9 +150,9 @@ public final class TokenizerParityTest {
         // encodeWithSpecialTokens (--raw-prompt): specials map to their ids, ordinary text
         // between them encodes exactly as plain encode would
         List<Integer> raw =
-                tokenizer.encodeWithSpecialTokens("<|im_start|>Hello, world!<|im_end|>");
+                tokenizer.encodeWithSpecialTokens("<|im_start|>Hello, world!<|im_end|>").toList();
         List<Integer> expectedRaw = new ArrayList<>(List.of(imStart));
-        expectedRaw.addAll(tokenizer.encode("Hello, world!"));
+        expectedRaw.addAll(tokenizer.encode("Hello, world!").toList());
         expectedRaw.add(specials.get("<|im_end|>"));
         if (!raw.equals(expectedRaw)) {
             failures++;

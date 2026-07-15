@@ -5,29 +5,23 @@
 // the weights.
 package com.qxotic.jinfer.testkit;
 
-import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.TurnTemplate;
-import com.qxotic.jinfer.jinja.JinjaRenderer;
 import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
-import com.qxotic.jinfer.llm.CompiledTemplate;
 import com.qxotic.jinfer.llm.GgufTokenizer;
-import java.nio.channels.FileChannel;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 public final class OracleScenario {
 
     public final GgufTokenizer tokenizer;
-    private final CompiledTemplate jinja;
+    private final OracleSupport support;
     private final TurnTemplate mine;
     private final Map<String, Object> renderVars;
     private final Checks checks = new Checks();
@@ -41,13 +35,8 @@ public final class OracleScenario {
             java.util.function.Function<GgufTokenizer, TurnTemplate> template,
             Map<String, Object> renderVars)
             throws Exception {
-        GGUF g;
-        try (FileChannel channel = FileChannel.open(gguf, StandardOpenOption.READ)) {
-            g = ModelLoader.readGguf(channel, gguf.toString());
-        }
-        this.tokenizer = new GgufTokenizer(g, JinjaRenderer::template);
-        this.jinja = tokenizer.chatTemplate();
-        if (jinja == null) throw new IllegalStateException("GGUF chat_template failed to compile");
+        this.support = new OracleSupport(gguf);
+        this.tokenizer = support.tokenizer;
         this.mine = template.apply(tokenizer);
         this.renderVars = renderVars;
     }
@@ -69,37 +58,20 @@ public final class OracleScenario {
             Map<String, Object> extraVars,
             List<Message> conversation) {
         List<Object> maps = new ArrayList<>();
-        for (Message m : conversation) {
-            Map<String, Object> map = new LinkedHashMap<>();
-            map.put("role", m.role().name());
-            map.put("content", m.text());
-            maps.add(map);
-        }
+        for (Message m : conversation) maps.add(OracleSupport.oracleMessage(m));
         Map<String, Object> vars = new HashMap<>(renderVars);
         vars.putAll(extraVars);
         vars.put("messages", maps);
         vars.put("add_generation_prompt", generationPrompt);
-        String rendered = jinja.render(vars);
-        List<Integer> oracle = tokenizer.encodeWithSpecialTokens(rendered);
+        String rendered = support.jinja.render(vars);
+        List<Integer> oracle = tokenizer.encodeWithSpecialTokens(rendered).toList();
 
         List<Batch> batches = new ArrayList<>(mine.encode(conversation));
         if (generationPrompt) batches.addAll(mine.generationPrompt(thinking));
         List<Integer> ours = new ArrayList<>();
         for (int id : Batch.tokenIds(batches)) ours.add(id);
 
-        boolean equal = oracle.equals(ours);
-        checks.check(equal, name + " (" + ours.size() + " tokens)");
-        if (equal) return;
-        int at = 0;
-        while (at < Math.min(oracle.size(), ours.size()) && oracle.get(at).equals(ours.get(at)))
-            at++;
-        System.out.println(
-                "  diverge at " + at + "/" + oracle.size() + " (ours " + ours.size() + ")");
-        System.out.println(
-                "  oracle: " + window(oracle, at) + "  |" + decode(window(oracle, at)) + "|");
-        System.out.println(
-                "  ours:   " + window(ours, at) + "  |" + decode(window(ours, at)) + "|");
-        System.out.println("  rendered: " + rendered.replace("\n", "\\n"));
+        support.diff(checks, name, oracle, ours, rendered);
     }
 
     /**
@@ -117,7 +89,7 @@ public final class OracleScenario {
             List<com.qxotic.jinfer.chat.Tool> tools,
             List<Message> conversation) {
         List<Object> maps = new ArrayList<>();
-        for (Message m : conversation) maps.add(oracleMessage(m));
+        for (Message m : conversation) maps.add(OracleSupport.oracleMessage(m));
         List<Object> toolVars = new ArrayList<>();
         for (com.qxotic.jinfer.chat.Tool t : tools)
             toolVars.add(com.qxotic.format.json.Json.parse(t.rawJson()));
@@ -126,23 +98,11 @@ public final class OracleScenario {
         vars.put("messages", maps);
         vars.put("tools", toolVars);
         vars.put("add_generation_prompt", generationPrompt);
-        String rendered = jinja.render(vars);
-        List<Integer> oracle = tokenizer.encodeWithSpecialTokens(rendered);
+        String rendered = support.jinja.render(vars);
+        List<Integer> oracle = tokenizer.encodeWithSpecialTokens(rendered).toList();
         List<Integer> ours = encodeWithPreamble(tools, conversation, generationPrompt);
 
-        boolean equal = oracle.equals(ours);
-        checks.check(equal, name + " (" + ours.size() + " tokens)");
-        if (equal) return;
-        int at = 0;
-        while (at < Math.min(oracle.size(), ours.size()) && oracle.get(at).equals(ours.get(at)))
-            at++;
-        System.out.println(
-                "  diverge at " + at + "/" + oracle.size() + " (ours " + ours.size() + ")");
-        System.out.println(
-                "  oracle: " + window(oracle, at) + "  |" + decode(window(oracle, at)) + "|");
-        System.out.println(
-                "  ours:   " + window(ours, at) + "  |" + decode(window(ours, at)) + "|");
-        System.out.println("  rendered: " + rendered.replace("\n", "\\n"));
+        support.diff(checks, name, oracle, ours, rendered);
     }
 
     /**
@@ -158,20 +118,9 @@ public final class OracleScenario {
             boolean generationPrompt,
             List<com.qxotic.jinfer.chat.Tool> tools,
             List<Message> conversation) {
-        List<Integer> oracle = tokenizer.encodeWithSpecialTokens(expectedRendered);
+        List<Integer> oracle = tokenizer.encodeWithSpecialTokens(expectedRendered).toList();
         List<Integer> ours = encodeWithPreamble(tools, conversation, generationPrompt);
-        boolean equal = oracle.equals(ours);
-        checks.check(equal, name + " (" + ours.size() + " tokens)");
-        if (equal) return;
-        int at = 0;
-        while (at < Math.min(oracle.size(), ours.size()) && oracle.get(at).equals(ours.get(at)))
-            at++;
-        System.out.println(
-                "  diverge at " + at + "/" + oracle.size() + " (ours " + ours.size() + ")");
-        System.out.println(
-                "  oracle: " + window(oracle, at) + "  |" + decode(window(oracle, at)) + "|");
-        System.out.println(
-                "  ours:   " + window(ours, at) + "  |" + decode(window(ours, at)) + "|");
+        support.diff(checks, name, oracle, ours, null);
     }
 
     /** The preamble-path encoding: conversationStart(Preamble) + non-system turns + gen prompt. */
@@ -194,29 +143,6 @@ public final class OracleScenario {
         return ours;
     }
 
-    /** A Message to the OpenAI-shaped map the Jinja template reads (text + tool_calls). */
-    private static Map<String, Object> oracleMessage(Message m) {
-        Map<String, Object> map = new LinkedHashMap<>();
-        map.put("role", m.role().name());
-        StringBuilder text = new StringBuilder();
-        List<Object> toolCalls = new ArrayList<>();
-        for (com.qxotic.jinfer.chat.Part p : m.content()) {
-            if (p instanceof com.qxotic.jinfer.chat.Part.Text t) text.append(t.text());
-            else if (p instanceof com.qxotic.jinfer.chat.Part.ToolCall c) {
-                Map<String, Object> fn = new LinkedHashMap<>();
-                fn.put("name", c.name());
-                fn.put("arguments", c.arguments());
-                Map<String, Object> call = new LinkedHashMap<>();
-                call.put("type", "function");
-                call.put("function", fn);
-                toolCalls.add(call);
-            }
-        }
-        map.put("content", text.toString());
-        if (!toolCalls.isEmpty()) map.put("tool_calls", toolCalls);
-        return map;
-    }
-
     // ---- helpers for the per-model injection-inertness checks ----
 
     /** The hand-written encoding of one turn, flattened to ids. */
@@ -236,18 +162,14 @@ public final class OracleScenario {
     }
 
     public int special(String name) {
-        return tokenizer.getSpecialTokens().get(name);
+        return support.special(name);
     }
 
     public long count(List<Integer> ids, int id) {
-        return java.util.Collections.frequency(ids, id);
+        return support.count(ids, id);
     }
 
     public String decode(List<Integer> ids) {
-        return tokenizer.decode(ids).replace("\n", "\\n");
-    }
-
-    private static List<Integer> window(List<Integer> ids, int at) {
-        return ids.subList(Math.max(0, at - 2), Math.min(ids.size(), at + 6));
+        return support.decode(ids);
     }
 }
