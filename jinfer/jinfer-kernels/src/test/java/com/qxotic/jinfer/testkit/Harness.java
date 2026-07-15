@@ -41,14 +41,19 @@ public final class Harness<S extends RuntimeState> {
 
     private final Checks checks = new Checks();
 
-    public Harness(LoadedModel<S> model, Path path, int ctx) {
-        this(model, path, ctx, true);
+    public Harness(LoadedModel<S> model, TurnTemplate template, Path path, int ctx) {
+        this(model, template, path, ctx, true);
     }
 
-    public Harness(LoadedModel<S> model, Path path, int ctx, boolean deterministicDecode) {
+    public Harness(
+            LoadedModel<S> model,
+            TurnTemplate template,
+            Path path,
+            int ctx,
+            boolean deterministicDecode) {
         this.deterministicDecode = deterministicDecode;
         this.model = model;
-        this.template = model.chatTemplate().orElseThrow();
+        this.template = template;
         this.codec = model.model().stateCodec().orElseThrow();
         this.tokenizer = model.tokenizer();
         this.stops = model.stopTokens();
