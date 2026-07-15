@@ -85,7 +85,9 @@ public final class LlamaTurnTemplateOracle {
                         && ids.get(0) == sh
                         && ids.get(ids.size() - 1) == eot
                         && o.tokenizer
-                                .decode(ids.subList(ids.indexOf(eh) + 1, ids.size() - 1))
+                                .decode(
+                                        com.qxotic.toknroll.IntSequence.wrap(
+                                                ids.subList(ids.indexOf(eh) + 1, ids.size() - 1)))
                                 .equals("\n\n" + hostile.text().strip());
         o.check(inert, "special-token text is inert (content cannot mint control tokens)");
 

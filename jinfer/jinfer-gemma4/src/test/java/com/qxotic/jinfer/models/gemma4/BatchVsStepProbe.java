@@ -40,7 +40,7 @@ public final class BatchVsStepProbe {
                     "List the first ten prime numbers:",
                     "Once upon a time, in a quiet village by the mountains,"
                 }) {
-            int[] ids = withBos(bos, tk.encode(prompt));
+            int[] ids = withBos(bos, tk.encode(prompt).toList());
 
             // reference: plain greedy, single-step KV
             Gemma4.State a = m.newState(4096, Math.max(16, ids.length));

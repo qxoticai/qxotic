@@ -60,7 +60,7 @@ public final class Gemma4MtpIdentityTest {
         int maxTokens = 120;
 
         for (String prompt : PROMPTS) {
-            int[] ids = withBos(bos, tk.encode(prompt));
+            int[] ids = withBos(bos, tk.encode(prompt).toList());
             List<Integer> plain = plainGreedy(m, ids, maxTokens, stops);
 
             for (int depth : new int[] {1, 2}) {
@@ -105,7 +105,7 @@ public final class Gemma4MtpIdentityTest {
                             PromptCache.modelSeed(model));
             CachedSession<Gemma4.State> session =
                     CachedSession.resume(m, cache, m.newState(4096, 64), new long[0]);
-            int[] ids = withBos(bos, tk.encode(PROMPTS[0]));
+            int[] ids = withBos(bos, tk.encode(PROMPTS[0]).toList());
             session.ingest(List.of(Batch.prefill(ids)));
             Gemma4Speculative.Result r =
                     Gemma4Speculative.generate(m, session.state(), 40, stops, 2);
@@ -159,10 +159,16 @@ public final class Gemma4MtpIdentityTest {
                         + (i < b.size() ? b.get(i) : -1));
         System.out.println(
                 "  plain: "
-                        + tk.decode(a.subList(0, Math.min(a.size(), i + 3))).replace("\n", "\\n"));
+                        + tk.decode(
+                                        com.qxotic.toknroll.IntSequence.wrap(
+                                                a.subList(0, Math.min(a.size(), i + 3))))
+                                .replace("\n", "\\n"));
         System.out.println(
                 "  spec:  "
-                        + tk.decode(b.subList(0, Math.min(b.size(), i + 3))).replace("\n", "\\n"));
+                        + tk.decode(
+                                        com.qxotic.toknroll.IntSequence.wrap(
+                                                b.subList(0, Math.min(b.size(), i + 3))))
+                                .replace("\n", "\\n"));
     }
 
     static String head(String s) {

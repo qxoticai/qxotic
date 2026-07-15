@@ -17,9 +17,11 @@ public final class Qwen35CacheRun {
                         args.length > 0
                                 ? args[0]
                                 : "/home/mukel/Desktop/playground/models/unsloth/Qwen3.5-2B-GGUF/Qwen3.5-2B-Q8_0.gguf");
+        Qwen35 m = Qwen35.loadModel(path, 8192);
         Harness<Qwen35.State> h =
                 new Harness<>(
-                        Qwen35.loadModel(path, 8192).loaded(),
+                        m.loaded(),
+                        m.turnTemplate().orElseThrow(),
                         path,
                         8192,
                         false); // jam threaded FFN-gemm is not run-deterministic on this arch (see

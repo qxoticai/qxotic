@@ -32,7 +32,7 @@ public final class Qwen3BatchRun {
             List<String> lines = java.nio.file.Files.readAllLines(Path.of(promptsFile));
             int[][] qs = new int[lines.size()][];
             for (int i = 0; i < lines.size(); i++) {
-                List<Integer> t = new ArrayList<>(tk.encode(lines.get(i)));
+                List<Integer> t = new ArrayList<>(tk.encode(lines.get(i)).toList());
                 t.add(eos);
                 qs[i] = t.stream().mapToInt(Integer::intValue).toArray();
             }
@@ -71,7 +71,7 @@ public final class Qwen3BatchRun {
         };
         int[][] seqs = new int[texts.length][];
         for (int i = 0; i < texts.length; i++) {
-            List<Integer> t = new ArrayList<>(tk.encode(texts[i]));
+            List<Integer> t = new ArrayList<>(tk.encode(texts[i]).toList());
             t.add(eos);
             seqs[i] = t.stream().mapToInt(Integer::intValue).toArray();
         }

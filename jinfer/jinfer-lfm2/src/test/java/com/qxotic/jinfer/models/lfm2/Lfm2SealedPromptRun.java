@@ -14,7 +14,8 @@ public final class Lfm2SealedPromptRun {
                         args.length > 0
                                 ? args[0]
                                 : "/home/mukel/Desktop/playground/models/LiquidAI/LFM2.5-8B-A1B-Q8_0.gguf");
-        new SealedScenario<>(new Harness<>(Lfm2.loadModel(path, 8192).loaded(), path, 8192))
+        Lfm2 m = Lfm2.loadModel(path, 8192);
+        new SealedScenario<>(new Harness<>(m.loaded(), m.turnTemplate().orElseThrow(), path, 8192))
                 .run("Lfm2SealedPromptRun");
     }
 }

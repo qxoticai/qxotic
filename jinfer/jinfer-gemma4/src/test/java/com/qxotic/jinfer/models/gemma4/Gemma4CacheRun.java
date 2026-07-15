@@ -17,7 +17,9 @@ public final class Gemma4CacheRun {
                         args.length > 0
                                 ? args[0]
                                 : "/home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-Q8_0.gguf");
-        Harness<Gemma4.State> h = new Harness<>(Gemma4.loadModel(path, 8192).loaded(), path, 8192);
+        Gemma4 m = Gemma4.loadModel(path, 8192);
+        Harness<Gemma4.State> h =
+                new Harness<>(m.loaded(), m.turnTemplate().orElseThrow(), path, 8192);
         new CacheScenario<>(
                         h,
                         CacheScenario.Config.of(

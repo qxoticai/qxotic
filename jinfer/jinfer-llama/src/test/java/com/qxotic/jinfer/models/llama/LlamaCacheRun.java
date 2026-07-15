@@ -16,7 +16,9 @@ public final class LlamaCacheRun {
                         args.length > 0
                                 ? args[0]
                                 : "/home/mukel/Desktop/playground/models/unsloth/Llama-3.2-1B-Instruct-Q8_0.gguf");
-        Harness<Llama.State> h = new Harness<>(Llama.loadModel(path, 8192).loaded(), path, 8192);
+        Llama m = Llama.loadModel(path, 8192);
+        Harness<Llama.State> h =
+                new Harness<>(m.loaded(), m.turnTemplate().orElseThrow(), path, 8192);
         new CacheScenario<>(
                         h,
                         CacheScenario.Config.of(

@@ -16,8 +16,9 @@ public final class GraniteCacheRun {
                         args.length > 0
                                 ? args[0]
                                 : "/home/mukel/Desktop/playground/models/ibm-granite/granite-4.1-3b-Q8_0.gguf");
+        Granite m = Granite.loadModel(path, 8192);
         Harness<Granite.State> h =
-                new Harness<>(Granite.loadModel(path, 8192).loaded(), path, 8192);
+                new Harness<>(m.loaded(), m.turnTemplate().orElseThrow(), path, 8192);
         new CacheScenario<>(
                         h,
                         CacheScenario.Config.of(

@@ -3,7 +3,6 @@ package com.qxotic.jinfer.models.gemma4;
 import com.qxotic.jinfer.FloatTensor;
 import java.nio.file.Path;
 import java.util.Arrays;
-import java.util.List;
 
 /**
  * Diagnostic: for each seqLen, compare the last-token logits from a single batched prefill against
@@ -54,13 +53,13 @@ public final class SeqBisect {
 
     private static int[] filler(Gemma4 model, int n) {
         StringBuilder sb = new StringBuilder();
-        List<Integer> all;
+        com.qxotic.toknroll.IntSequence all;
         do {
             sb.append("The quick brown fox jumps over the lazy dog. ");
             all = model.tokenizer().encodeWithSpecialTokens(sb.toString());
-        } while (all.size() < n);
+        } while (all.length() < n);
         int[] ids = new int[n];
-        for (int i = 0; i < n; i++) ids[i] = all.get(i);
+        for (int i = 0; i < n; i++) ids[i] = all.intAt(i);
         return ids;
     }
 }

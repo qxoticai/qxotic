@@ -43,19 +43,19 @@ public final class LlamaRun {
             int eot = tk.getSpecialTokens().getOrDefault("<|eot_id|>", -1);
             if (sh >= 0 && eh >= 0 && eot >= 0) {
                 promptTokens.add(sh);
-                promptTokens.addAll(tk.encode("user"));
+                promptTokens.addAll(tk.encode("user").toList());
                 promptTokens.add(eh);
-                promptTokens.addAll(tk.encode("\n\n" + promptStr.strip()));
+                promptTokens.addAll(tk.encode("\n\n" + promptStr.strip()).toList());
                 promptTokens.add(eot);
                 promptTokens.add(sh);
-                promptTokens.addAll(tk.encode("assistant"));
+                promptTokens.addAll(tk.encode("assistant").toList());
                 promptTokens.add(eh);
-                promptTokens.addAll(tk.encode("\n\n"));
+                promptTokens.addAll(tk.encode("\n\n").toList());
             } else {
-                promptTokens.addAll(tk.encode(promptStr));
+                promptTokens.addAll(tk.encode(promptStr).toList());
             }
         } else {
-            promptTokens.addAll(tk.encode(promptStr));
+            promptTokens.addAll(tk.encode(promptStr).toList());
         }
         int[] ids = promptTokens.stream().mapToInt(Integer::intValue).toArray();
         System.err.println("prompt tokens: " + promptTokens);

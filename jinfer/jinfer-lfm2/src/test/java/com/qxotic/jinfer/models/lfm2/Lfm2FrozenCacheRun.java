@@ -14,7 +14,8 @@ public final class Lfm2FrozenCacheRun {
                         args.length > 0
                                 ? args[0]
                                 : "/home/mukel/Desktop/playground/models/LiquidAI/LFM2.5-8B-A1B-Q8_0.gguf");
-        new FrozenScenario<>(new Harness<>(Lfm2.loadModel(path, 4096).loaded(), path, 4096))
+        Lfm2 m = Lfm2.loadModel(path, 4096);
+        new FrozenScenario<>(new Harness<>(m.loaded(), m.turnTemplate().orElseThrow(), path, 4096))
                 .run("Lfm2FrozenCacheRun");
     }
 }

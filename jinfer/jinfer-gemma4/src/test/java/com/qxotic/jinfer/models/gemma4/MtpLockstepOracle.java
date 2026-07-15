@@ -53,7 +53,7 @@ public final class MtpLockstepOracle {
         int totalDiv = 0, nearTie = 0, confident = 0;
         double maxOracleRel = 0;
         for (String prompt : PROMPTS) {
-            int[] ids = withBos(bos, tk.encode(prompt));
+            int[] ids = withBos(bos, tk.encode(prompt).toList());
 
             // spec run with recorder
             List<Emit> emits = new ArrayList<>();

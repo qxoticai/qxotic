@@ -73,7 +73,9 @@ public final class GraniteTurnTemplateOracle {
                         && ids.get(0) == sr
                         && ids.get(ids.size() - 2) == et
                         && o.tokenizer
-                                .decode(ids.subList(ids.indexOf(er) + 1, ids.size() - 2))
+                                .decode(
+                                        com.qxotic.toknroll.IntSequence.wrap(
+                                                ids.subList(ids.indexOf(er) + 1, ids.size() - 2)))
                                 .equals(hostile.text());
         o.check(inert, "special-token text is inert (content cannot mint control tokens)");
 

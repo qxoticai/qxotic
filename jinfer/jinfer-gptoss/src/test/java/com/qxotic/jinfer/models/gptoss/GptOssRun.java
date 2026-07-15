@@ -39,7 +39,7 @@ public final class GptOssRun {
         int bos = tk.getSpecialTokens().getOrDefault("<|startoftext|>", 199998);
         List<Integer> promptTokens = new ArrayList<>();
         promptTokens.add(bos);
-        promptTokens.addAll(tk.encode(promptStr));
+        promptTokens.addAll(tk.encode(promptStr).toList());
         int[] ids = promptTokens.stream().mapToInt(Integer::intValue).toArray();
         System.err.println("prompt tokens: " + promptTokens);
 
