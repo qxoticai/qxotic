@@ -31,7 +31,7 @@ public final class Qwen3EmbedRun {
         } else {
             String text =
                     args.length > 1 ? args[1] : "The quick brown fox jumps over the lazy dog.";
-            List<Integer> t = new java.util.ArrayList<>(tk.encode(text));
+            List<Integer> t = new java.util.ArrayList<>(tk.encode(text).toList());
             t.add(
                     tk.getSpecialTokens()
                             .getOrDefault(

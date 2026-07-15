@@ -45,7 +45,7 @@ public final class Gemma4MtpParityTest {
         int bos = tk.getSpecialTokens().getOrDefault("<bos>", 2);
         List<Integer> ids = new ArrayList<>();
         ids.add(bos);
-        ids.addAll(tk.encode("The capital of France is"));
+        ids.addAll(tk.encode("The capital of France is").toList());
         int[] prompt = ids.stream().mapToInt(Integer::intValue).toArray();
         System.out.println("prompt ids (with bos): " + java.util.Arrays.toString(prompt));
         Gemma4.State s = backbone.newState(4096, Math.max(16, prompt.length));

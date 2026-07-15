@@ -18,8 +18,9 @@ public final class NemotronHCacheRun {
                         args.length > 0
                                 ? args[0]
                                 : "/home/mukel/Desktop/playground/models/bartowski/nvidia_Nemotron-Cascade-2-30B-A3B-Q8_0.gguf");
+        NemotronH m = NemotronH.loadModel(path, 4096);
         Harness<NemotronH.State> h =
-                new Harness<>(NemotronH.loadModel(path, 4096).loaded(), path, 4096, false);
+                new Harness<>(m.loaded(), m.turnTemplate().orElseThrow(), path, 4096, false);
         new CacheScenario<>(
                         h,
                         CacheScenario.Config.of(

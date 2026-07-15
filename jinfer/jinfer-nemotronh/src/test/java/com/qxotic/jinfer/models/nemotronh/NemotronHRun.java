@@ -27,7 +27,7 @@ public final class NemotronHRun {
                 c.expertCount());
 
         var tk = model.tokenizer();
-        List<Integer> pt = tk.encode(promptStr); // add_bos=false: no leading BOS
+        List<Integer> pt = tk.encode(promptStr).toList(); // add_bos=false: no leading BOS
         int[] ids = pt.stream().mapToInt(Integer::intValue).toArray();
         System.err.println("prompt tokens: " + pt);
 

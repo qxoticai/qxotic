@@ -75,7 +75,9 @@ public final class GptOssTurnTemplateOracle {
                         && ids.get(0) == start
                         && ids.get(ids.size() - 1) == end
                         && o.tokenizer
-                                .decode(ids.subList(ids.indexOf(msg) + 1, ids.size() - 1))
+                                .decode(
+                                        com.qxotic.toknroll.IntSequence.wrap(
+                                                ids.subList(ids.indexOf(msg) + 1, ids.size() - 1)))
                                 .equals(hostile.text());
         o.check(inert, "special-token text is inert (content cannot mint control tokens)");
 

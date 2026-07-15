@@ -11,7 +11,6 @@ import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.FloatTensor;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
 
 public final class Qwen35PrefillCheck {
 
@@ -27,7 +26,7 @@ public final class Qwen35PrefillCheck {
         }
         Qwen35 model = Qwen35.loadModel(path, 4096);
         int vocab = model.config().vocabularySize();
-        List<Integer> prompt =
+        com.qxotic.toknroll.IntSequence prompt =
                 model.tokenizer()
                         .encode(
                                 "The expedition logged river depth, canopy density and soil acidity"
@@ -35,7 +34,7 @@ public final class Qwen35PrefillCheck {
                                     + " held clear. Summarize the day in one sentence, then"
                                     + " estimate how many stations a four-person team could cover"
                                     + " before dusk.");
-        int[] ids = prompt.stream().mapToInt(Integer::intValue).toArray();
+        int[] ids = prompt.toArray();
         int failures = 0;
 
         // (1) same-path determinism: repeated batched prefills within the FP-parallel floor

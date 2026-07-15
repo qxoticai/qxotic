@@ -30,7 +30,7 @@ public final class GraniteRun {
         var tk = model.tokenizer();
         List<Integer> promptTokens = new ArrayList<>();
         if (c.addBos()) promptTokens.add(c.bosTokenId());
-        promptTokens.addAll(tk.encode(promptStr));
+        promptTokens.addAll(tk.encode(promptStr).toList());
         int[] ids = promptTokens.stream().mapToInt(Integer::intValue).toArray();
         System.err.println("prompt tokens: " + promptTokens);
 

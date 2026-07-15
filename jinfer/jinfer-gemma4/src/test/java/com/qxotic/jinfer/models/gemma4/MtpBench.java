@@ -49,7 +49,7 @@ public final class MtpBench {
                 "%-20s %-9s %8s %8s %10s %10s %9s%n",
                 "case", "mode", "tokens", "tok/s", "accept", "tok/fwd", "speedup");
         for (Case c : cases) {
-            int[] ids = withBos(bos, tk.encode(c.prompt));
+            int[] ids = withBos(bos, tk.encode(c.prompt).toList());
 
             // plain greedy baseline (best of reps)
             double plainBest = 0;

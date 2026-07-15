@@ -1,4 +1,4 @@
-// E2E coherence check for Lfm2TurnTemplate: drive real chat turns through the template
+// E2E coherence check for the LFM2 chat framing: drive real chat turns through the template
 // (encode -> Batch.prepare -> ingest -> generationPrompt -> greedy decode) and print the replies.
 // Multi-turn: the assistant reply tokens stay in the KV verbatim; only the delta is ingested.
 //   java ... com.qxotic.jinfer.models.lfm2.Lfm2ChatRun [model.gguf]
@@ -99,7 +99,7 @@ public final class Lfm2ChatRun {
         // close the assistant turn in the KV: <|im_end|> \n (the turn framing encodeTurn would
         // emit)
         List<Integer> close = new ArrayList<>(List.of(imEnd));
-        close.addAll(tk.encode("\n"));
+        close.addAll(tk.encode("\n").toList());
         model.ingest(s, Batch.prefill(close.stream().mapToInt(Integer::intValue).toArray()));
         System.err.printf("[%d tokens, %.1f tok/s]%n", n, n / secs);
         return out.toString();

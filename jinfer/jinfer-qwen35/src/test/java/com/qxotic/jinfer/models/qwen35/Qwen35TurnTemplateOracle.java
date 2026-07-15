@@ -95,7 +95,9 @@ public final class Qwen35TurnTemplateOracle {
                         && ids.get(0) == imStart
                         && ids.get(ids.size() - 2) == imEnd
                         && o.tokenizer
-                                .decode(ids.subList(1, ids.size() - 2))
+                                .decode(
+                                        com.qxotic.toknroll.IntSequence.wrap(
+                                                ids.subList(1, ids.size() - 2)))
                                 .equals("user\n" + hostile.text().strip());
         o.check(inert, "special-token text is inert (content cannot mint control tokens)");
 

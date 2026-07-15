@@ -36,13 +36,13 @@ public final class Lfm2Run {
             int imStart = tk.getSpecialTokens().getOrDefault("<|im_start|>", bos);
             int imEnd = tk.getSpecialTokens().getOrDefault("<|im_end|>", -1);
             promptTokens.add(imStart);
-            promptTokens.addAll(tk.encode("user\n" + promptStr.strip()));
+            promptTokens.addAll(tk.encode("user\n" + promptStr.strip()).toList());
             if (imEnd >= 0) promptTokens.add(imEnd);
-            promptTokens.addAll(tk.encode("\n"));
+            promptTokens.addAll(tk.encode("\n").toList());
             promptTokens.add(imStart);
-            promptTokens.addAll(tk.encode("assistant\n"));
+            promptTokens.addAll(tk.encode("assistant\n").toList());
         } else {
-            promptTokens.addAll(tk.encode(promptStr));
+            promptTokens.addAll(tk.encode(promptStr).toList());
         }
         int[] ids = promptTokens.stream().mapToInt(Integer::intValue).toArray();
         System.err.println("prompt tokens: " + promptTokens);

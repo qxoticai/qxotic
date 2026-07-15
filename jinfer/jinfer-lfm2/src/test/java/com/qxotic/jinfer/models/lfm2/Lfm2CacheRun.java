@@ -14,9 +14,11 @@ public final class Lfm2CacheRun {
                         args.length > 0
                                 ? args[0]
                                 : "/home/mukel/Desktop/playground/models/LiquidAI/LFM2.5-8B-A1B-Q8_0.gguf");
+        Lfm2 m = Lfm2.loadModel(path, 4096);
         Harness<Lfm2.State> h =
                 new Harness<>(
-                        Lfm2.loadModel(path, 4096).loaded(),
+                        m.loaded(),
+                        m.turnTemplate().orElseThrow(),
                         path,
                         4096,
                         false); // MoE: threaded decode is not byte-deterministic

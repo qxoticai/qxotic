@@ -141,14 +141,14 @@ public final class Gemma4VisionRun {
         List<Integer> pre = new ArrayList<>();
         pre.add(bos);
         if (sot >= 0) pre.add(sot);
-        pre.addAll(tk.encode("user\n"));
+        pre.addAll(tk.encode("user\n").toList());
         if (soi >= 0) pre.add(soi);
         List<Integer> post = new ArrayList<>();
         if (eoi >= 0) post.add(eoi);
-        post.addAll(tk.encode("\n" + prompt));
+        post.addAll(tk.encode("\n" + prompt).toList());
         if (eot >= 0) post.add(eot);
         if (sot >= 0) post.add(sot);
-        post.addAll(tk.encode("model\n"));
+        post.addAll(tk.encode("model\n").toList());
 
         int cap = model.config().contextLength();
         Gemma4.State s = model.newState(cap, Math.max(nImg, Math.max(pre.size(), post.size())) + 4);

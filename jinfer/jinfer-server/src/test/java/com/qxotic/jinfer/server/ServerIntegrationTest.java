@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.server;
 
 import com.qxotic.jinfer.*;
+import com.qxotic.jinfer.chat.ChatModel;
 import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
 import com.sun.net.httpserver.HttpServer;
@@ -44,7 +45,7 @@ public final class ServerIntegrationTest {
             System.exit(failures > 0 ? 1 : 0);
             return;
         }
-        LoadedModel<?> llama = Models.load(model, 2048);
+        ChatModel<?> llama = Models.load(model, 2048);
         StringBuilder manual = new StringBuilder("Agent operating manual.");
         for (int i = 1; i <= 50; i++) {
             manual.append(" Directive ")
@@ -1055,29 +1056,21 @@ public final class ServerIntegrationTest {
      * Wall-clock deadline: Params.timeoutNanos aborts a long generation through the per-token abort
      * path, reporting finish_reason "length". Engine-level so it needs no global flag.
      */
-    private static <S extends RuntimeState> void generationDeadline(LoadedModel<S> model) {
-        List<Integer> prompt = model.tokenizer().encode("Write a very long, detailed story.");
+    private static <S extends RuntimeState> void generationDeadline(ChatModel<S> chat) {
+        LoadedModel<S> model = chat.base();
+        com.qxotic.toknroll.IntSequence prompt =
+                model.tokenizer().encode("Write a very long, detailed story.");
         Generator.Params params =
                 new Generator.Params(
-                        Sampler.ARGMAX,
-                        100_000,
-                        TimeUnit.MILLISECONDS.toNanos(300),
-                        new Generator.StopSpec(Set.of(), List.of()),
-                        false);
+                        Sampler.ARGMAX, 100_000, TimeUnit.MILLISECONDS.toNanos(300), Set.of());
         long start = System.nanoTime();
         S state =
                 model.model()
                         .newState(
                                 model.model().config().contextLength(),
-                                Math.max(prompt.size(), 16));
+                                Math.max(prompt.length(), 16));
         Generator.GenerationResult result =
-                Generator.generate(
-                        model.model(),
-                        model.tokenizer(),
-                        state,
-                        prompt,
-                        params,
-                        new Generator.Listener(null, null, null));
+                Generator.generate(model.model(), state, prompt, params, null);
         long elapsedMs = (System.nanoTime() - start) / 1_000_000;
         check(
                 "length".equals(result.finishReason()),

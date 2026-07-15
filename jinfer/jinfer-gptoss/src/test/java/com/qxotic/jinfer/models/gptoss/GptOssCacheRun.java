@@ -17,9 +17,11 @@ public final class GptOssCacheRun {
                         args.length > 0
                                 ? args[0]
                                 : "/home/mukel/Desktop/playground/models/unsloth/gpt-oss-20b-Q8_0.gguf");
+        GptOss m = GptOss.loadModel(path, 8192);
         Harness<GptOss.State> h =
                 new Harness<>(
-                        GptOss.loadModel(path, 8192).loaded(),
+                        m.loaded(),
+                        m.turnTemplate().orElseThrow(),
                         path,
                         8192,
                         false); // all-MoE: not byte-deterministic

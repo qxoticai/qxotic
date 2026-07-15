@@ -127,14 +127,14 @@ public final class Gemma4AudioRun {
         List<Integer> pre = new ArrayList<>();
         pre.add(bos);
         if (sot >= 0) pre.add(sot);
-        pre.addAll(tk.encode("user\n"));
+        pre.addAll(tk.encode("user\n").toList());
         if (soa >= 0) pre.add(soa);
         List<Integer> post = new ArrayList<>();
         if (eoa >= 0) post.add(eoa);
-        post.addAll(tk.encode("\n" + prompt));
+        post.addAll(tk.encode("\n" + prompt).toList());
         if (eot >= 0) post.add(eot);
         if (sot >= 0) post.add(sot);
-        post.addAll(tk.encode("model\n"));
+        post.addAll(tk.encode("model\n").toList());
 
         int cap = model.config().contextLength();
         Gemma4.State s = model.newState(cap, Math.max(n, Math.max(pre.size(), post.size())) + 4);

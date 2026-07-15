@@ -33,7 +33,7 @@ public final class PrefillDeterminism {
         int bos = tk.getSpecialTokens().getOrDefault("<bos>", 2);
         List<Integer> pt = new ArrayList<>();
         pt.add(bos);
-        pt.addAll(tk.encode(promptStr));
+        pt.addAll(tk.encode(promptStr).toList());
         int[] ids = pt.stream().mapToInt(Integer::intValue).toArray();
         System.err.printf(
                 "model=%s  prompt tokens=%d  reps=%d%n",
