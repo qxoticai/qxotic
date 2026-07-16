@@ -269,7 +269,13 @@ public enum GGMLType {
      * Layout: [{d: uint8[4], qs: uint8[32]}]. 4 sub-blocks of 16 elements: 4 UE4M3 scales (1 per
      * sub-block) + 64 packed 4-bit E2M1 values (2 per byte). 4.5 bpw.
      */
-    NVFP4(36, 64);
+    NVFP4(36, 64),
+
+    /**
+     * Layout: [{d: fp16, qs: uint8[16]}]. 1-bit sign quantization: fp16 scale + 128 sign bits
+     * (LSB-first within each byte); element = bit set ? +d : -d. 1.125 bpw.
+     */
+    Q1_0(18, 128);
 
     // ============================================================
     // Fields
