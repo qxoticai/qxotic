@@ -66,23 +66,31 @@ public final class TtftBench {
         }
     }
 
-    static LoadedModel<?> load(String path) throws Exception {
+    /** A loaded model paired with its per-turn template (the cache benches drive turns). */
+    record Bench<S extends RuntimeState>(LoadedModel<S> model, TurnTemplate tpl) {}
+
+    static Bench<?> load(String path) throws Exception {
         long t0 = System.nanoTime();
         String lower = path.toLowerCase();
-        LoadedModel<?> m =
-                lower.contains("gemma")
-                        ? Gemma4.loadModel(Path.of(path), 4096).loaded()
-                        : Lfm2.loadModel(Path.of(path), 4096).loaded();
+        Bench<?> b;
+        if (lower.contains("gemma")) {
+            var m = Gemma4.loadModel(Path.of(path), 4096);
+            b = new Bench<>(m.loaded(), m.turnTemplate().orElseThrow());
+        } else {
+            var m = Lfm2.loadModel(Path.of(path), 4096);
+            b = new Bench<>(m.loaded(), m.turnTemplate().orElseThrow());
+        }
         System.err.printf("model load: %.0f ms%n", (System.nanoTime() - t0) / 1e6);
-        return m;
+        return b;
     }
 
     /**
      * Builds the cached history (story turn + generated reply), then benches: cold full-prefill
      * TTFT vs warm resume TTFT for the follow-up question.
      */
-    static <S extends RuntimeState> void warm(LoadedModel<S> model, Path gguf, int reps) {
-        TurnTemplate tpl = model.chatTemplate().orElseThrow();
+    static <S extends RuntimeState> void warm(Bench<S> bench, Path gguf, int reps) {
+        LoadedModel<S> model = bench.model();
+        TurnTemplate tpl = bench.tpl();
         StateCodec<S> codec = model.model().stateCodec().orElseThrow();
         PromptCache<S> cache =
                 new PromptCache<>(
@@ -166,9 +174,10 @@ public final class TtftBench {
      * Seals the STATIC prefix (conversationStart + the story turn - fully deterministic, no
      * generated tokens) so the serve side can rebuild the exact fingerprints from text.
      */
-    static <S extends RuntimeState> void sealedCompile(LoadedModel<S> model, Path gguf, Path out)
+    static <S extends RuntimeState> void sealedCompile(Bench<S> bench, Path gguf, Path out)
             throws Exception {
-        TurnTemplate tpl = model.chatTemplate().orElseThrow();
+        LoadedModel<S> model = bench.model();
+        TurnTemplate tpl = bench.tpl();
         StateCodec<S> codec = model.model().stateCodec().orElseThrow();
         List<Batch> prefix = concat(tpl.conversationStart(), tpl.encodeTurn(Message.user(story())));
         int[] ids = Batch.tokenIds(prefix);
@@ -182,9 +191,10 @@ public final class TtftBench {
     }
 
     /** Fresh-JVM serve: open + tryRestore + follow-up prefill + first token. */
-    static <S extends RuntimeState> void sealedServe(LoadedModel<S> model, Path gguf, Path file)
+    static <S extends RuntimeState> void sealedServe(Bench<S> bench, Path gguf, Path file)
             throws Exception {
-        TurnTemplate tpl = model.chatTemplate().orElseThrow();
+        LoadedModel<S> model = bench.model();
+        TurnTemplate tpl = bench.tpl();
         StateCodec<S> codec = model.model().stateCodec().orElseThrow();
         List<Batch> followUp =
                 concat(tpl.encodeTurn(Message.user(QUESTION)), tpl.generationPrompt(true));
