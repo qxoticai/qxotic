@@ -108,7 +108,7 @@ public final class Q4KKernel {
      * 512-bit.
      */
     static void dequantizeRow(
-            MemorySegment w, long rowElemOffset, int dim1, float[] dst, int dstOffset) {
+            MemorySegment w, long rowElemOffset, int dim1, MemorySegment dst, long dstBase) {
         int kblocks = dim1 / BLOCK;
         long firstBlock = rowElemOffset / BLOCK;
         for (int blk = 0; blk < kblocks; blk++) {
@@ -117,7 +117,7 @@ public final class Q4KKernel {
             float dmin = readFloat16(w, b + 2);
             long packedSc = packedScales(w, b + 4);
             long packedMn = packedMins(w, b + 4);
-            int blockBase = dstOffset + blk * BLOCK;
+            long blockBase = dstBase + (long) blk * BLOCK * 4;
             for (int g = 0; g < 4; g++) {
                 var vdsc0 =
                         FloatVector.broadcast(
@@ -139,13 +139,17 @@ public final class Q4KKernel {
                                     b + 16 + (long) g * 32 + c * 16,
                                     ByteOrder.LITTLE_ENDIAN);
                     VectorSupport.storeAffine(
-                            wb.and((byte) 0xF), vdsc0, vnegm0, dst, blockBase + g * 64 + c * 16);
+                            wb.and((byte) 0xF),
+                            vdsc0,
+                            vnegm0,
+                            dst,
+                            blockBase + (g * 64 + c * 16) * 4L);
                     VectorSupport.storeAffine(
                             wb.lanewise(VectorOperators.LSHR, 4),
                             vdsc1,
                             vnegm1,
                             dst,
-                            blockBase + g * 64 + 32 + c * 16);
+                            blockBase + (g * 64 + 32 + c * 16) * 4L);
                 }
             }
         }

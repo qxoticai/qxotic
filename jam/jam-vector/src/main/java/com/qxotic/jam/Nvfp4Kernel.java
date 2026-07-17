@@ -1,6 +1,7 @@
 package com.qxotic.jam;
 
 import static com.qxotic.jam.VectorSupport.readByte;
+import static java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED;
 
 import java.lang.foreign.MemorySegment;
 
@@ -54,19 +55,24 @@ public final class Nvfp4Kernel {
      * order.
      */
     private static void dequantizeRow(
-            MemorySegment w, long rowElemOffset, int dim1, float[] dst, int dstOffset) {
+            MemorySegment w, long rowElemOffset, int dim1, MemorySegment dst, long dstBase) {
         int kblocks = dim1 / QK;
         long firstBlock = rowElemOffset / QK;
         for (int blk = 0; blk < kblocks; blk++) {
             long bo = (firstBlock + blk) * BYTES;
-            int base = dstOffset + blk * QK;
+            long base = dstBase + (long) blk * QK * 4;
             for (int s = 0; s < 4; s++) {
                 float d = ue4m3ToFp32(Byte.toUnsignedInt(readByte(w, bo + s)));
                 for (int j = 0; j < 8; j++) {
                     int packed = Byte.toUnsignedInt(readByte(w, bo + 4 + s * 8 + j));
-                    dst[base + s * 16 + j] = NVFP4_VALUES[packed & 0x0F] * d; // low  -> elem j
-                    dst[base + s * 16 + 8 + j] =
-                            NVFP4_VALUES[packed >>> 4] * d; // high -> elem j + 8
+                    dst.set(
+                            JAVA_FLOAT_UNALIGNED,
+                            base + (s * 16 + j) * 4L,
+                            NVFP4_VALUES[packed & 0x0F] * d); // low  -> elem j
+                    dst.set(
+                            JAVA_FLOAT_UNALIGNED,
+                            base + (s * 16 + 8 + j) * 4L,
+                            NVFP4_VALUES[packed >>> 4] * d); // high -> elem j + 8
                 }
             }
         }

@@ -57,7 +57,7 @@ public final class Q5KKernel {
      * 512-bit.
      */
     static void dequantizeRow(
-            MemorySegment w, long rowElemOffset, int dim1, float[] dst, int dstOffset) {
+            MemorySegment w, long rowElemOffset, int dim1, MemorySegment dst, long dstBase) {
         int kblocks = dim1 / BLOCK;
         long firstBlock = rowElemOffset / BLOCK;
         for (int blk = 0; blk < kblocks; blk++) {
@@ -70,7 +70,7 @@ public final class Q5KKernel {
             var qh1 =
                     ByteVector.fromMemorySegment(
                             ByteVector.SPECIES_128, w, b + 32, ByteOrder.LITTLE_ENDIAN);
-            int blockBase = dstOffset + blk * BLOCK;
+            long blockBase = dstBase + (long) blk * BLOCK * 4;
             for (int g = 0; g < 4; g++) {
                 var vd0 =
                         FloatVector.broadcast(F_SPECIES, d * getScaleMinK4(g * 2, w, b + 4, false));
@@ -104,8 +104,10 @@ public final class Q5KKernel {
                                             qhb.lanewise(VectorOperators.LSHR, bitHi)
                                                     .and((byte) 1)
                                                     .lanewise(VectorOperators.LSHL, 4));
-                    VectorSupport.storeAffine(loB, vd0, vm0, dst, blockBase + g * 64 + c * 16);
-                    VectorSupport.storeAffine(hiB, vd1, vm1, dst, blockBase + g * 64 + 32 + c * 16);
+                    VectorSupport.storeAffine(
+                            loB, vd0, vm0, dst, blockBase + (g * 64 + c * 16) * 4L);
+                    VectorSupport.storeAffine(
+                            hiB, vd1, vm1, dst, blockBase + (g * 64 + 32 + c * 16) * 4L);
                 }
             }
         }

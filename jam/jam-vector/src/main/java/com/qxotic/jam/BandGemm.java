@@ -9,21 +9,27 @@ import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.VectorOperators;
 
 /**
- * Shared decode-free F32 band gemm — the back half of every dequant-to-scratch kernel (MXFP4,
+ * Shared decode-free F32 band gemm - the back half of every dequant-to-scratch kernel (Q1_0, MXFP4,
  * NVFP4, and the k-quants Q4_K/Q5_K/Q6_K). The dtype kernel dequantizes a group of {@link #MR}
  * weight rows into an F32 scratch ({@code dequantizeRow} per row), then the columns sweep this band
- * with no per-element decode — so the expensive part of a quant (its scale/nibble unpack) is
+ * with no per-element decode - so the expensive part of a quant (its scale/nibble unpack) is
  * amortized once per row, not per column tile.
+ *
+ * <p>The scratch is a native segment read through the {@link VectorSupport#GLOBAL} pinned route
+ * ((vectorSegment, vectorBase + byteOffset): one compile-time-constant segment, absolute
+ * addresses), the same load path as the activations - so the sweep's loads carry no per-load
+ * bounds/liveness overhead.
  */
 final class BandGemm {
 
     private BandGemm() {}
 
     /**
-     * Band register-tile shape: 4x4 (16 F32 accumulators, ~+22% prefill) on JITs that keep it
-     * spill-free, else 3x3 (9 accumulators) — the same wide-tile gate as the Q8_0 4x4 tile.
-     * Override with {@code -Djam.vector.band=3x3|4x4}. The dtype kernel dequantizes MR rows per
-     * band; the column sweep then holds MR*NR F32 accumulators with no per-element decode.
+     * Band register-tile shape: 4x4 (16 F32 accumulators) only where measured to win - C2 hides the
+     * spills, a jvmci JIT does not (Q4_K java-only pp512: Graal 3x3 441 vs 4x4 302; C2 4x4 351 vs
+     * 3x3 319 - see {@link VectorSupport#WIDE_TILE}). Override with {@code
+     * -Djam.vector.band=3x3|4x4}. The dtype kernel dequantizes MR rows per band; the column sweep
+     * then holds MR*NR F32 accumulators with no per-element decode.
      */
     static final String BAND =
             VectorSupport.jamProp(
@@ -37,21 +43,23 @@ final class BandGemm {
 
     /**
      * Decode one weight row ({@code dim1} elements at element offset {@code rowElemOffset}) into
-     * {@code dst} at {@code dstOffset} — the ONLY part that differs between the dequant-to-scratch
-     * dtypes.
+     * the scratch at byte offset {@code dstBase} of {@code dst} - the ONLY part that differs
+     * between the dequant-to-scratch dtypes. {@code dst} is pre-routed through {@link
+     * VectorSupport#vectorSegment}; {@code dstBase} is the matching routed byte base.
      */
     @FunctionalInterface
     interface RowDequant {
-        void dequantize(MemorySegment w, long rowElemOffset, int dim1, float[] dst, int dstOffset);
+        void dequantize(
+                MemorySegment w, long rowElemOffset, int dim1, MemorySegment dst, long dstBase);
     }
 
     /**
-     * The dequant-to-scratch band gemm, shared by every such dtype (k-quants + FP4). Tiles {@code
-     * m} into {@link #MR}-row groups (parallel), dequantizes each group's rows ONCE via {@code
-     * deq}, sweeps the columns with {@link #band}, and finishes the n/m remainders with per-column
-     * {@link #dotDeq} dots. A dtype kernel is exactly this driver bound to its own {@code
-     * dequantizeRow}. The {@code deq} call is per-row (m total) so its dispatch is free against the
-     * row's decode work.
+     * The dequant-to-scratch band gemm, shared by every such dtype (Q1_0 + k-quants + FP4). Tiles
+     * {@code m} into {@link #MR}-row groups (parallel), dequantizes each group's rows ONCE via
+     * {@code deq}, sweeps the columns with {@link #band}, and finishes the n/m remainders with
+     * per-column {@link #dotDeq} dots. A dtype kernel is exactly this driver bound to its own
+     * {@code dequantizeRow}. The {@code deq} call is per-row (m total) so its dispatch is free
+     * against the row's decode work.
      */
     static void gemm(
             MemorySegment w,
@@ -71,34 +79,49 @@ final class BandGemm {
         VectorSupport.parallelChunks(
                 groups,
                 (gLo, gHi) -> {
-                    float[] band =
-                            scratch.acquire(MR * k); // one per worker; reused across mm, freed with
-                    // the context
+                    MemorySegment raw =
+                            scratch.acquire(MR * k); // one per worker; reused across mm, freed
+                    // with the context
+                    MemorySegment sv = VectorSupport.vectorSegment(raw);
+                    long sb = VectorSupport.vectorBase(raw);
                     try {
                         for (int g = gLo; g < gHi; g++) {
                             int row0 = g * MR;
                             for (int i = 0; i < MR; i++)
-                                deq.dequantize(w, wOff + (long) (row0 + i) * k, k, band, i * k);
+                                deq.dequantize(
+                                        w,
+                                        wOff + (long) (row0 + i) * k,
+                                        k,
+                                        sv,
+                                        sb + (long) i * k * Float.BYTES);
                             int s = 0;
                             for (; s + NR <= n; s += NR)
-                                band(band, k, a, aBase, o, oBase, aStride, oStride, row0, s);
+                                band(sv, sb, k, a, aBase, o, oBase, aStride, oStride, row0, s);
                             for (; s < n; s++)
                                 for (int i = 0; i < MR; i++)
                                     store(
                                             o,
                                             oBase,
                                             (long) s * oStride + row0 + i,
-                                            dotDeq(band, i * k, k, a, aBase, (long) s * aStride));
+                                            dotDeq(
+                                                    sv,
+                                                    sb + (long) i * k * Float.BYTES,
+                                                    k,
+                                                    a,
+                                                    aBase,
+                                                    (long) s * aStride));
                         }
                     } finally {
-                        scratch.release(band);
+                        scratch.release(raw);
                     }
                 });
         int rem0 = groups * MR;
         if (rem0 < m) { // trailing rows (m % MR): cheap per-column dots
-            float[] band = scratch.acquire(k);
+            MemorySegment raw = scratch.acquire(k);
+            MemorySegment sv = VectorSupport.vectorSegment(raw);
+            long sb = VectorSupport.vectorBase(raw);
             for (int row = rem0; row < m; row++) {
-                deq.dequantize(w, wOff + (long) row * k, k, band, 0);
+                deq.dequantize(w, wOff + (long) row * k, k, sv, sb);
                 int rr = row;
                 VectorSupport.parallelFor(
                         0,
@@ -108,17 +131,19 @@ final class BandGemm {
                                         o,
                                         oBase,
                                         (long) s * oStride + rr,
-                                        dotDeq(band, 0, k, a, aBase, (long) s * aStride)));
+                                        dotDeq(sv, sb, k, a, aBase, (long) s * aStride)));
             }
-            scratch.release(band);
+            scratch.release(raw);
         }
     }
 
     /**
      * Sweep one MR x NR band; constant-folds to the selected shape ({@link #BAND} is static final).
+     * {@code w}/{@code wBase} are the routed scratch segment and its byte base.
      */
     static void band(
-            float[] w,
+            MemorySegment w,
+            long wBase,
             int dim1,
             MemorySegment a,
             long aBase,
@@ -129,12 +154,13 @@ final class BandGemm {
             int row0,
             int s0) {
         if (BAND.equals("3x3"))
-            gemm512Band3x3(w, dim1, a, aBase, o, oBase, aStride, oStride, row0, s0);
-        else gemm512Band4x4(w, dim1, a, aBase, o, oBase, aStride, oStride, row0, s0);
+            gemm512Band3x3(w, wBase, dim1, a, aBase, o, oBase, aStride, oStride, row0, s0);
+        else gemm512Band4x4(w, wBase, dim1, a, aBase, o, oBase, aStride, oStride, row0, s0);
     }
 
     static void gemm512Band4x4(
-            float[] w,
+            MemorySegment w,
+            long wBase,
             int dim1,
             MemorySegment a,
             long aBase,
@@ -145,6 +171,8 @@ final class BandGemm {
             int row0,
             int s0) {
         long b0 = (long) s0 * aStride, b1 = b0 + aStride, b2 = b1 + aStride, b3 = b2 + aStride;
+        long w0b = wBase, w1b = wBase + (long) dim1 * 4;
+        long w2b = w1b + (long) dim1 * 4, w3b = w2b + (long) dim1 * 4;
         FloatVector c00 = FloatVector.zero(F_SPECIES),
                 c01 = FloatVector.zero(F_SPECIES),
                 c02 = FloatVector.zero(F_SPECIES),
@@ -163,10 +191,9 @@ final class BandGemm {
                 c33 = FloatVector.zero(F_SPECIES);
         int len = F_SPECIES.length();
         for (int kk = 0; kk < dim1; kk += len) {
-            FloatVector w0 = FloatVector.fromArray(F_SPECIES, w, kk),
-                    w1 = FloatVector.fromArray(F_SPECIES, w, dim1 + kk);
-            FloatVector w2 = FloatVector.fromArray(F_SPECIES, w, 2 * dim1 + kk),
-                    w3 = FloatVector.fromArray(F_SPECIES, w, 3 * dim1 + kk);
+            long kb = (long) kk * 4;
+            FloatVector w0 = wv(w, w0b + kb), w1 = wv(w, w1b + kb);
+            FloatVector w2 = wv(w, w2b + kb), w3 = wv(w, w3b + kb);
             FloatVector x0 = av(a, aBase, b0 + kk),
                     x1 = av(a, aBase, b1 + kk),
                     x2 = av(a, aBase, b2 + kk),
@@ -211,7 +238,8 @@ final class BandGemm {
      * MR=3 rows x NR=3 cols decode-free F32 band: 9 accumulators + 3 weight + 3 activation vectors.
      */
     static void gemm512Band3x3(
-            float[] w,
+            MemorySegment w,
+            long wBase,
             int dim1,
             MemorySegment a,
             long aBase,
@@ -223,6 +251,7 @@ final class BandGemm {
             int s0) {
         int row1 = row0 + 1, row2 = row0 + 2;
         long b0 = (long) s0 * aStride, b1 = b0 + aStride, b2 = b1 + aStride;
+        long w0b = wBase, w1b = wBase + (long) dim1 * 4, w2b = w1b + (long) dim1 * 4;
         FloatVector c00 = FloatVector.zero(F_SPECIES),
                 c01 = FloatVector.zero(F_SPECIES),
                 c02 = FloatVector.zero(F_SPECIES);
@@ -234,9 +263,10 @@ final class BandGemm {
                 c22 = FloatVector.zero(F_SPECIES);
         int len = F_SPECIES.length();
         for (int kk = 0; kk < dim1; kk += len) {
-            FloatVector w0 = FloatVector.fromArray(F_SPECIES, w, kk);
-            FloatVector w1 = FloatVector.fromArray(F_SPECIES, w, dim1 + kk);
-            FloatVector w2 = FloatVector.fromArray(F_SPECIES, w, 2 * dim1 + kk);
+            long kb = (long) kk * 4;
+            FloatVector w0 = wv(w, w0b + kb);
+            FloatVector w1 = wv(w, w1b + kb);
+            FloatVector w2 = wv(w, w2b + kb);
             FloatVector x0 = av(a, aBase, b0 + kk);
             FloatVector x1 = av(a, aBase, b1 + kk);
             FloatVector x2 = av(a, aBase, b2 + kk);
@@ -262,18 +292,22 @@ final class BandGemm {
     }
 
     /**
-     * Flat F32 dot of a dequantized weight row (at {@code w[wOffset..]}) against one activation
-     * column.
+     * Flat F32 dot of a dequantized weight row (scratch bytes at {@code wBase}) against one
+     * activation column.
      */
-    static float dotDeq(float[] w, int wOffset, int dim1, MemorySegment a, long aBase, long xbase) {
+    static float dotDeq(
+            MemorySegment w, long wBase, int dim1, MemorySegment a, long aBase, long xbase) {
         FloatVector acc = FloatVector.zero(F_SPECIES);
         int len = F_SPECIES.length();
         for (int kk = 0; kk < dim1; kk += len) {
-            acc =
-                    FloatVector.fromArray(F_SPECIES, w, wOffset + kk)
-                            .fma(av(a, aBase, xbase + kk), acc);
+            acc = wv(w, wBase + (long) kk * 4).fma(av(a, aBase, xbase + kk), acc);
         }
         return acc.reduceLanes(VectorOperators.ADD);
+    }
+
+    /** Scratch weight-row load at absolute byte offset (pinned route: checks fold). */
+    private static FloatVector wv(MemorySegment w, long byteOff) {
+        return FloatVector.fromMemorySegment(F_SPECIES, w, byteOff, ByteOrder.LITTLE_ENDIAN);
     }
 
     private static FloatVector av(MemorySegment a, long aBase, long elem) {
