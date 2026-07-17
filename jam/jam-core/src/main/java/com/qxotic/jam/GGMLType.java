@@ -23,7 +23,8 @@ enum GGMLType {
     Q5_K(13, 256, 176),
     Q6_K(14, 256, 210),
     MXFP4(39, 32, 17),
-    NVFP4(40, 64, 36);
+    NVFP4(40, 64, 36),
+    Q1_0(41, 128, 18);
 
     final int ggml; // ggml_type code (the GGUF on-disk tag)
     final int blockElems; // elements per quant block
@@ -56,7 +57,7 @@ enum GGMLType {
     }
 
     private static final GGMLType[] BY_CODE =
-            new GGMLType[41]; // codes 0..40 (NVFP4); gaps stay null
+            new GGMLType[42]; // codes 0..41 (Q1_0); gaps stay null
 
     static {
         for (GGMLType q : values()) BY_CODE[q.ggml] = q;
