@@ -60,7 +60,7 @@ public final class Mxfp4Kernel {
      * 512-bit.
      */
     private static void dequantizeRow(
-            MemorySegment w, long rowElemOffset, int dim1, float[] dst, int dstOffset) {
+            MemorySegment w, long rowElemOffset, int dim1, MemorySegment dst, long dstBase) {
         int kblocks = dim1 / QK;
         long firstBlock = rowElemOffset / QK;
         for (int blk = 0; blk < kblocks; blk++) {
@@ -69,7 +69,7 @@ public final class Mxfp4Kernel {
             ByteVector packed =
                     ByteVector.fromMemorySegment(
                             ByteVector.SPECIES_128, w, blockOffset + 1, ByteOrder.LITTLE_ENDIAN);
-            int base = dstOffset + blk * QK;
+            long base = dstBase + (long) blk * QK * 4;
             FloatVector vd = FloatVector.broadcast(F_SPECIES, d);
             VectorSupport.storeScaled(
                     mxfp4Decode(packed.and((byte) 0x0F)), vd, dst, base); // elems 0..15
@@ -77,7 +77,7 @@ public final class Mxfp4Kernel {
                     mxfp4Decode(packed.lanewise(VectorOperators.LSHR, 4)),
                     vd,
                     dst,
-                    base + QK / 2); // 16..31
+                    base + QK / 2 * 4L); // 16..31
         }
     }
 

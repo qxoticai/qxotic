@@ -56,14 +56,14 @@ public final class Q6KKernel {
      * 512-bit.
      */
     static void dequantizeRow(
-            MemorySegment w, long rowElemOffset, int dim1, float[] dst, int dstOffset) {
+            MemorySegment w, long rowElemOffset, int dim1, MemorySegment dst, long dstBase) {
         int kblocks = dim1 / BLOCK;
         long firstBlock = rowElemOffset / BLOCK;
         for (int blk = 0; blk < kblocks; blk++) {
             long b = (firstBlock + blk) * TYPE;
             long qlOff = b, qhOff = b + 128, scOff = b + 192;
             float d = readFloat16(w, b + 208);
-            int blockBase = dstOffset + blk * BLOCK;
+            long blockBase = dstBase + (long) blk * BLOCK * 4;
             for (int h = 0; h < 2; h++) {
                 long qlBase = qlOff + h * 64;
                 long qhBase = qhOff + h * 32;
@@ -111,7 +111,7 @@ public final class Q6KKernel {
                                                     .and((byte) 3)
                                                     .lanewise(VectorOperators.LSHL, 4))
                                     .sub((byte) 32);
-                    int hb = blockBase + h * 128 + c * 16;
+                    long hb = blockBase + (h * 128 + c * 16) * 4L;
                     VectorSupport.storeScaled(
                             q0,
                             FloatVector.broadcast(F_SPECIES, d * readByte(w, scOff + h * 8 + c)),
@@ -122,19 +122,19 @@ public final class Q6KKernel {
                             FloatVector.broadcast(
                                     F_SPECIES, d * readByte(w, scOff + h * 8 + 2 + c)),
                             dst,
-                            hb + 32);
+                            hb + 32 * 4L);
                     VectorSupport.storeScaled(
                             q2,
                             FloatVector.broadcast(
                                     F_SPECIES, d * readByte(w, scOff + h * 8 + 4 + c)),
                             dst,
-                            hb + 64);
+                            hb + 64 * 4L);
                     VectorSupport.storeScaled(
                             q3,
                             FloatVector.broadcast(
                                     F_SPECIES, d * readByte(w, scOff + h * 8 + 6 + c)),
                             dst,
-                            hb + 96);
+                            hb + 96 * 4L);
                 }
             }
         }

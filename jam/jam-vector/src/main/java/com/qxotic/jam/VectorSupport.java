@@ -10,7 +10,6 @@ import com.oracle.svm.shared.AlwaysInline;
 import java.lang.foreign.MemorySegment;
 import java.util.Locale;
 import java.util.function.IntConsumer;
-import java.util.regex.Pattern;
 import java.util.stream.IntStream;
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.FloatVector;
@@ -66,24 +65,28 @@ final class VectorSupport {
             ByteVector.SPECIES_128.length() / F_LEN; // constant-folded: 1 | 2 | 4
 
     /**
-     * Affine decode of a 16-quant byte chunk into {@code dst[off..]}: value = q*scale + neg, any
-     * vector width.
+     * Affine decode of a 16-quant byte chunk into scratch bytes at {@code offBytes}: value =
+     * q*scale + neg, any vector width.
      */
     static void storeAffine(
-            ByteVector q, FloatVector scale, FloatVector neg, float[] dst, int off) {
+            ByteVector q, FloatVector scale, FloatVector neg, MemorySegment dst, long offBytes) {
         for (int p = 0; p < DECODE_PARTS; p++)
             ((FloatVector) q.castShape(F_SPECIES, p))
                     .fma(scale, neg)
-                    .intoArray(dst, off + p * F_LEN);
+                    .intoMemorySegment(
+                            dst, offBytes + (long) p * F_LEN * 4, java.nio.ByteOrder.LITTLE_ENDIAN);
     }
 
     /**
-     * Scaled decode of a 16-quant byte chunk into {@code dst[off..]}: value = q*scale, any vector
-     * width.
+     * Scaled decode of a 16-quant byte chunk into scratch bytes at {@code offBytes}: value =
+     * q*scale, any vector width.
      */
-    static void storeScaled(ByteVector q, FloatVector scale, float[] dst, int off) {
+    static void storeScaled(ByteVector q, FloatVector scale, MemorySegment dst, long offBytes) {
         for (int p = 0; p < DECODE_PARTS; p++)
-            ((FloatVector) q.castShape(F_SPECIES, p)).mul(scale).intoArray(dst, off + p * F_LEN);
+            ((FloatVector) q.castShape(F_SPECIES, p))
+                    .mul(scale)
+                    .intoMemorySegment(
+                            dst, offBytes + (long) p * F_LEN * 4, java.nio.ByteOrder.LITTLE_ENDIAN);
     }
 
     /**
@@ -147,13 +150,21 @@ final class VectorSupport {
             };
 
     /**
-     * Optimistic "the JIT keeps wide vector tiles (>=16 live vectors) spill-free" — gates only the
-     * {@link BandGemm} 4x4 default now (the Q8_0 register tile defaults to the spill-free 3x2
-     * regardless; see {@link #autoTileCode}). NOTE: stock C2 and Oracle GraalVM actually allocate
-     * only zmm0-15, so this over-reports for BandGemm too; revisit if BandGemm 4x4-vs-3x3 is
-     * measured on those JITs.
+     * MEASURED gate for the {@link BandGemm} 4x4 default (its only consumer; the Q8_0 register tile
+     * defaults to the spill-free 3x2 regardless, see {@link #autoTileCode}). LFM2.5-8B Q4_K
+     * java-only prefill, pp512: Oracle GraalVM 25.1.3 (jvmci) 3x3 441 vs 4x4 302 t/s - Graal's JIT
+     * allocates only zmm0-15 for this shape, so the 4x4 band spills; OpenJDK 26 C2 4x4 351 vs 3x3
+     * 319 - C2's ILP hides the spills. So: wide only on non-jvmci HotSpot; a jvmci JIT (any Graal)
+     * takes 3x3; native-image keeps the wide-tile compilability opt-in.
      */
-    static final boolean WIDE_TILE = jitHandlesWideTile();
+    static final boolean WIDE_TILE = bandWideDefault();
+
+    private static boolean bandWideDefault() {
+        if (IN_NATIVE_IMAGE) return WIDE_TILES_COMPILABLE;
+        if (System.getProperty("java.vm.version", "").contains("jvmci")) return false;
+        String name = System.getProperty("java.vm.name", "");
+        return name.contains("HotSpot") || name.contains("OpenJDK");
+    }
 
     private static int autoTileCode() {
         String arch = System.getProperty("os.arch", "").toLowerCase();
@@ -179,26 +190,6 @@ final class VectorSupport {
         }
         if (width >= 256) return 6; // AVX2 2x4
         return 12; // scalar
-    }
-
-    // 4x4 needs 16 accumulators in registers: Graal spill-free only from jvmci-25.1; HotSpot C2
-    // spills but
-    // they're bandwidth-hidden so 4x4 still wins; unknown VM -> safe 3x2.
-    private static boolean jitHandlesWideTile() {
-        if (IN_NATIVE_IMAGE)
-            return WIDE_TILES_COMPILABLE; // stock Graal AOT fails wide-tile VEX encoding; 32-ZMM
-        // builders opt in
-        String version = System.getProperty("java.vm.version", "");
-        if (version.contains("jvmci")) {
-            var v = Pattern.compile("jvmci-(\\d+)\\.(\\d+)").matcher(version);
-            if (v.find()) {
-                int major = Integer.parseInt(v.group(1)), minor = Integer.parseInt(v.group(2));
-                return major > 25 || (major == 25 && minor >= 1);
-            }
-            return false; // "jvmci-bNN" (25.0-era Graal) caps at zmm0-15
-        }
-        String name = System.getProperty("java.vm.name", "");
-        return name.contains("HotSpot") || name.contains("OpenJDK");
     }
 
     /**
