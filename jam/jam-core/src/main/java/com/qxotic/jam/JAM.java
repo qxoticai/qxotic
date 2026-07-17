@@ -23,7 +23,8 @@ public interface JAM {
             Q5_K = 13,
             Q6_K = 14,
             MXFP4 = 39,
-            NVFP4 = 40;
+            NVFP4 = 40,
+            Q1_0 = 41;
 
     // ── jam_status ──
     int OK = 0, EINVAL = 1, EUNSUPPORTED = 2, EBUSY = 3;
