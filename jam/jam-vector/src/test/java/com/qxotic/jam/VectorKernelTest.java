@@ -116,6 +116,11 @@ class VectorKernelTest {
         eachShape("NVFP4", VectorKernelTest::nvfp4, withScratch(Nvfp4Kernel::gemm));
     }
 
+    @Test
+    void q1_0() {
+        eachShape("Q1_0", VectorKernelTest::q1_0, withScratch(Q1Kernel::gemm));
+    }
+
     /**
      * Check one dtype's kernel against ScalarJAM at n in {8,13,16} (full tile + both remainders).
      */
@@ -331,6 +336,24 @@ class VectorKernelTest {
                 }
             }
         return new Weight(JAM.NVFP4, s, v);
+    }
+
+    private static Weight q1_0(int m, int k) { // 18B/128-elem; d=1 -> value = bit ? +1 : -1
+        int nb = k / 128;
+        float[] v = new float[m * k];
+        MemorySegment s = A.allocate((long) m * nb * 18, 64);
+        for (int r = 0; r < m; r++)
+            for (int b = 0; b < nb; b++) {
+                long blk = (long) (r * nb + b) * 18;
+                s.set(JAVA_SHORT_UNALIGNED, blk, floatToF16(1f));
+                for (int e = 0; e < 16; e++) {
+                    int bits = RNG.nextInt(256);
+                    s.set(JAVA_BYTE, blk + 2 + e, (byte) bits);
+                    for (int bit = 0; bit < 8; bit++)
+                        v[r * k + b * 128 + e * 8 + bit] = ((bits >> bit) & 1) != 0 ? 1f : -1f;
+                }
+            }
+        return new Weight(JAM.Q1_0, s, v);
     }
 
     // ---- helpers (copied from ScalarJamTest) ----

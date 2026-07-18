@@ -38,16 +38,44 @@ class JamBackendParityTest {
 
     /** Dtypes with a VectorJAM register-tiled / band gemm (the rest decline on VectorJAM). */
     private static final int[] TILEABLE = {
-        JAM.Q8_0, JAM.Q4_0, JAM.Q4_K, JAM.Q5_K, JAM.Q6_K, JAM.MXFP4, JAM.NVFP4
+        JAM.Q8_0, JAM.Q4_0, JAM.Q4_K, JAM.Q5_K, JAM.Q6_K, JAM.MXFP4, JAM.NVFP4, JAM.Q1_0
     };
 
     /**
      * All JAM weight dtypes (tileable + the dense floats handled only by the dot floor / native).
      */
     private static final int[] ALL = {
-        JAM.Q8_0, JAM.Q4_0, JAM.Q4_K, JAM.Q5_K, JAM.Q6_K, JAM.MXFP4, JAM.NVFP4, JAM.F16, JAM.BF16,
-        JAM.F32
+        JAM.Q8_0, JAM.Q4_0, JAM.Q4_K, JAM.Q5_K, JAM.Q6_K, JAM.MXFP4, JAM.NVFP4, JAM.Q1_0, JAM.F16,
+        JAM.BF16, JAM.F32
     };
+
+    /**
+     * The dtypes the native backend runs. Q1_0 requires a libjam with the jam_mm_q1_0 kernels, so
+     * it joins the sweep via a one-shot capability probe: a stale library declines it with
+     * EUNSUPPORTED and the sweeps leave it to the VectorJAM tile (exactly what Dispatch does).
+     */
+    private static final int[] NATIVE_ALL = nativeTypes();
+
+    private static int[] nativeTypes() {
+        int[] base = {
+            JAM.Q8_0, JAM.Q4_0, JAM.Q4_K, JAM.Q5_K, JAM.Q6_K, JAM.MXFP4, JAM.NVFP4, JAM.F16,
+            JAM.BF16, JAM.F32
+        };
+        if (NATIVE == null || q1_0ProbeStatus() == JAM.EUNSUPPORTED) return base;
+        int[] all = java.util.Arrays.copyOf(base, base.length + 1);
+        all[base.length] = JAM.Q1_0;
+        return all;
+    }
+
+    /** One tiny probe mm's status: does the loaded libjam carry the jam_mm_q1_0 kernels? */
+    private static int q1_0ProbeStatus() {
+        java.util.Random rng = new java.util.Random(SEED);
+        QuantWeights.Weight w = QuantWeights.encode(JAM.Q1_0, 8, 128, A, rng);
+        java.lang.foreign.MemorySegment a = A.allocate(2 * 128 * 4L, 64);
+        java.lang.foreign.MemorySegment r = A.allocate(2 * 8 * 4L, 64);
+        return NATIVE.mm(
+                w.seg(), 0L, JAM.Q1_0, 128, a, 0L, JAM.F32, 128, r, 0L, JAM.F32, 8, 8, 2, 128);
+    }
 
     private static JAM tryNative() {
         try {
@@ -132,7 +160,7 @@ class JamBackendParityTest {
     @Test
     void nativeGemmEveryDtype() {
         org.junit.jupiter.api.Assumptions.assumeTrue(NATIVE != null, "libjam not loaded");
-        for (int t : ALL)
+        for (int t : NATIVE_ALL)
             for (int n : new int[] {7, 8, 13, 16})
                 parity(NATIVE, "NativeJAM " + name(t), t, 104, n, blockK(t), tol(NATIVE));
     }
@@ -148,7 +176,7 @@ class JamBackendParityTest {
     @Test
     void nativeGemvEveryDtype() {
         org.junit.jupiter.api.Assumptions.assumeTrue(NATIVE != null, "libjam not loaded");
-        for (int t : ALL)
+        for (int t : NATIVE_ALL)
             parity(NATIVE, "NativeJAM.gemv " + name(t), t, 512, 1, blockK(t), tol(NATIVE));
     }
 
@@ -209,7 +237,7 @@ class JamBackendParityTest {
         org.junit.jupiter.api.Assumptions.assumeTrue(NATIVE != null, "libjam not loaded");
         for (int[] mk : SWEEP_SHAPES)
             for (int n = 1; n <= MAX_SEQ; n++)
-                for (int t : ALL)
+                for (int t : NATIVE_ALL)
                     parity(
                             NATIVE,
                             "NativeJAM " + name(t) + " m=" + mk[0] + " n=" + n,
@@ -232,7 +260,7 @@ class JamBackendParityTest {
         for (int[] mk : SWEEP_SHAPES) {
             int m = mk[0], k = mk[1];
             for (int n = 1; n <= MAX_SEQ; n++)
-                for (int t : ALL) {
+                for (int t : NATIVE_ALL) {
                     Random rng =
                             new Random(SEED ^ t ^ ((long) m << 20) ^ ((long) n << 8) ^ k ^ 0xDE7L);
                     QuantWeights.Weight w = QuantWeights.encode(t, m, k, A, rng);
@@ -338,7 +366,7 @@ class JamBackendParityTest {
         for (int r0 : ROW_OFFSETS)
             for (int[] mk : SWEEP_SHAPES)
                 for (int n = 1; n <= MAX_SEQ; n++)
-                    for (int t : ALL)
+                    for (int t : NATIVE_ALL)
                         parityOffset(
                                 NATIVE,
                                 "NativeJAM " + name(t) + " r0=" + r0 + " m=" + mk[0] + " n=" + n,
@@ -388,7 +416,7 @@ class JamBackendParityTest {
         for (int[] mk : BIG_SHAPES) {
             int m = mk[0], k = mk[1];
             for (int n : new int[] {2, 4, 6, 7, 13})
-                for (int t : ALL) {
+                for (int t : NATIVE_ALL) {
                     Random rng =
                             new Random(SEED ^ t ^ ((long) m << 20) ^ ((long) n << 8) ^ k ^ 0xB16L);
                     QuantWeights.Weight w = QuantWeights.encode(t, m, k, A, rng);
@@ -427,7 +455,7 @@ class JamBackendParityTest {
         for (int[] mk : BIG_SHAPES) {
             int m = mk[0], k = mk[1];
             for (int n : new int[] {2, 4, 6, 7, 13})
-                for (int t : ALL) {
+                for (int t : NATIVE_ALL) {
                     Random rng =
                             new Random(
                                     SEED ^ t ^ ((long) m << 20) ^ ((long) n << 8) ^ k ^ 0xB16F5L);
@@ -746,6 +774,21 @@ class JamBackendParityTest {
                 "IS_512 implies a 512-bit tile code (<=5)");
     }
 
+    /**
+     * The native-backend Q1_0 contract: a libjam carrying the jam_mm_q1_0 kernels accepts the call
+     * (JAM.OK - full parity is covered by the NATIVE_ALL sweeps); a stale library must decline with
+     * EUNSUPPORTED, never crash or corrupt (Dispatch then falls to the VectorJAM tile).
+     */
+    @Test
+    void nativeRunsQ1_0() {
+        org.junit.jupiter.api.Assumptions.assumeTrue(NATIVE != null, "libjam not loaded");
+        int st = q1_0ProbeStatus();
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                st != JAM.EUNSUPPORTED,
+                "stale libjam without jam_mm_q1_0: decline is the contract");
+        org.junit.jupiter.api.Assertions.assertEquals(JAM.OK, st, "jam-native q1_0 must run");
+    }
+
     // ---- helpers ----
 
     /**
@@ -772,6 +815,7 @@ class JamBackendParityTest {
             case JAM.Q6_K -> "Q6_K";
             case JAM.MXFP4 -> "MXFP4";
             case JAM.NVFP4 -> "NVFP4";
+            case JAM.Q1_0 -> "Q1_0";
             default -> "tag" + tag;
         };
     }

@@ -186,6 +186,56 @@ static void suite_nvfp4(int m, int n, int k) {     /* k a multiple of 64; GGUF b
     free(W);free(A);free(C);free(RE);free(RR);free(WQ);
 }
 
+static void suite_q1_0(int m, int n, int k) {     /* k a multiple of 128; GGML block_q1_0 {fp16 d; qs[16]} */
+    int nblk = k/128;
+    float* W = malloc(4*(size_t)m*k); float* A = malloc(4*(size_t)n*k); float* C = malloc(4*(size_t)m*n);
+    double* RE = malloc(8*(size_t)m*n); double* RR = malloc(8*(size_t)m*n); double* RB = malloc(8*(size_t)m*n);
+    jam_ref_fill(W,(size_t)m*k,11); jam_ref_fill(A,(size_t)n*k,12);
+    jam_ref_q1_0_blk* WQ = (jam_ref_q1_0_blk*) jam_ref_quant_q1_0(W,m,k);
+    /* THREE references, all valid roundings of the same dot (the check is vs the NEAREST):
+     *   RE — exact float;  RR — the vec_dot int path (per-32 int8 acts through the products);
+     *   RB — the VNNI band's deferred-offset math: d·(2·dA·Σ bit·q − Σx_float) per 32-block, the
+     *        Q4_0-style scheme where the −Σx term uses the exact float sums, not dA·Σq. */
+    for (int i=0;i<m;i++) for (int j=0;j<n;j++) {
+        double se=0, sr=0, sb=0;
+        for (int blk32=0; blk32<k/32; blk32++) {       /* per-32 activation block = quarter Q1_0 block */
+            int bb = blk32/4, K = blk32%4;
+            jam_ref_q1_0_blk* w = &WQ[(size_t)i*nblk + bb];
+            float d = jam_ref_h2f(w->d);
+            const float* aa = A + (size_t)j*k + (size_t)blk32*32;
+            float amax=0; for (int e=0;e<32;e++){ float v=fabsf(aa[e]); if(v>amax)amax=v; }
+            float dA=amax/127.f, id=dA>0?1.f/dA:0.f;
+            double sum_bq=0, sum_a=0;
+            for (int e=0;e<32;e++) {
+                int bit = (w->qs[K*4 + e/8] >> (e%8)) & 1;
+                float wv = bit ? d : -d;
+                se += (double)wv*aa[e];
+                int q=(int)lrintf(aa[e]*id); if(q>127)q=127; else if(q<-128)q=-128;
+                sr += (double)wv*((float)q*dA);
+                if (bit) sum_bq += q;
+                sum_a += aa[e];
+            }
+            sb += (double)d * (2.0*(double)dA*sum_bq - sum_a);
+        }
+        RE[(size_t)i*n+j]=se; RR[(size_t)i*n+j]=sr; RB[(size_t)i*n+j]=sb;
+    }
+    for (int c=0;c<NCTX;c++) {
+        ++g_checks; memset(C,0,4*(size_t)m*n);
+        int st = jam_mm(CTX[c].c, WQ, JAM_Q1_0, k, A, JAM_F32, k, C, JAM_F32, m, m, n, k);
+        int bad=0;
+        for (int i=0;i<m;i++) for (int j=0;j<n;j++) {
+            double kr=C[(size_t)j*m+i], de=fabs(kr-RE[(size_t)i*n+j]), dr=fabs(kr-RR[(size_t)i*n+j]);
+            double db=fabs(kr-RB[(size_t)i*n+j]);
+            double best=de<dr?de:dr; double ref=de<dr?RE[(size_t)i*n+j]:RR[(size_t)i*n+j];
+            if (db<best){ best=db; ref=RB[(size_t)i*n+j]; }
+            track_prec("Q1_0", best, ref);
+            if (best > 1e-2 + 1e-3*fabs(ref)) ++bad;
+        }
+        if (st||bad){ printf("  [FAIL] Q1_0 %-15s %4dx%4dx%4d  bad=%d st=%d\n",CTX[c].lbl,m,n,k,bad,st); ++g_fail; }
+    }
+    free(W);free(A);free(C);free(RE);free(RR);free(RB);free(WQ);
+}
+
 typedef uint8_t* (*kq_build)(int, int, unsigned, float*, float*);
 static void suite_kquant(kq_build build, int dtype, const char* name, int m, int n, int k) {  /* k%256 */
     float* Wdq = malloc(4*(size_t)m*k); float* Wmin = malloc(4*(size_t)m*k);
@@ -284,6 +334,7 @@ static void* build_weight(int dtype, int m, int k, int* be, int* bb) {
         case JAM_Q8_0:  *be=32; *bb=(int)sizeof(jam_ref_blk);       WQ=jam_ref_quant_q8_0(W,m,k);  break;
         case JAM_MXFP4: *be=32; *bb=(int)sizeof(jam_ref_mxfp4_blk); WQ=jam_ref_quant_mxfp4(W,m,k); break;
         case JAM_NVFP4: *be=64; *bb=(int)sizeof(jam_ref_nvfp4_blk); WQ=jam_ref_quant_nvfp4(W,m,k); break;
+        case JAM_Q1_0:  *be=128; *bb=(int)sizeof(jam_ref_q1_0_blk); WQ=jam_ref_quant_q1_0(W,m,k);  break;
         default: {   /* GGUF block builders: Q4_K/Q5_K/Q6_K (k%256, 256-elem) and Q4_0 (k%32) */
             float* dq=malloc(4llu*(size_t)m*k); float* mn=malloc(4llu*(size_t)m*k);
             if      (dtype==JAM_Q4_K) { *be=256; *bb=144; WQ=jam_ref_make_q4k(m,k,7,dq,mn); }
@@ -584,6 +635,10 @@ int main(void) {
     for (unsigned s=0;s<sizeof Q/sizeof*Q;++s) suite_mxfp4(Q[s][0],Q[s][1],Q[s][2]);   /* same shapes */
     int NV[][3] = {{1,1,64},{4,4,128},{7,5,64},{5,7,192},{13,9,256},{64,64,256},{100,99,128},{257,33,64},{129,127,512},{512,512,512}};
     for (unsigned s=0;s<sizeof NV/sizeof*NV;++s) suite_nvfp4(NV[s][0],NV[s][1],NV[s][2]);   /* NVFP4 GGUF (k%64) */
+    int Q1[][3] = {{1,1,128},{4,4,128},{7,5,128},{5,7,384},{13,9,256},{64,64,256},{100,99,128},{257,33,128},{129,127,512},{512,512,512},
+                   {7,16,5120},{16,512,5120},{33,64,5120},{49,512,128},{2,9,384},{31,8,1280},{104,7,512}};
+                   /* band shapes: k=5120 (Bonsai), n=16/64/512, m tails 1..15 (scalar-tail + partial bands) */
+    for (unsigned s=0;s<sizeof Q1/sizeof*Q1;++s) suite_q1_0(Q1[s][0],Q1[s][1],Q1[s][2]);   /* Q1_0 GGML (k%128) */
     int KQ[][3] = {{16,8,256},{32,16,512},{64,33,256},{17,5,256},{128,64,768},{257,40,256}};  /* k%256, n</≥8, m tail */
     for (unsigned s=0;s<sizeof KQ/sizeof*KQ;++s) suite_kquant(jam_ref_make_q4k, JAM_Q4_K, "Q4_K", KQ[s][0],KQ[s][1],KQ[s][2]);
     for (unsigned s=0;s<sizeof KQ/sizeof*KQ;++s) suite_kquant(jam_ref_make_q6k, JAM_Q6_K, "Q6_K", KQ[s][0],KQ[s][1],KQ[s][2]);
@@ -602,6 +657,7 @@ int main(void) {
         suite_layout(JAM_Q4_0,  "Q4_0",  37, nn, 64);
         suite_layout(JAM_MXFP4, "MXFP4", 37, nn, 64);
         suite_layout(JAM_NVFP4, "NVFP4", 37, nn, 128);
+        suite_layout(JAM_Q1_0,  "Q1_0",  37, nn, 128);
         suite_layout(JAM_Q4_K,  "Q4_K",  37, nn, 256);
         suite_layout(JAM_Q5_K,  "Q5_K",  37, nn, 256);
         suite_layout(JAM_Q6_K,  "Q6_K",  37, nn, 256);
@@ -635,7 +691,7 @@ int main(void) {
      * handling, f16 instead of f32 accumulation, a wrong rounding) fails here long before it'd trip the floor.
      * Observed on a 9950X (deterministic int math + IEEE f16; ~2-3x slack for FMA contraction differences). */
     static const struct { const char* nm; double abs, rel; } PREC_MAX[] = {
-        {"F32",3e-3,2e-4}, {"Q8_0",5e-4,5e-5}, {"MXFP4",5e-4,5e-5}, {"NVFP4",5e-4,5e-5},
+        {"F32",3e-3,2e-4}, {"Q8_0",5e-4,5e-5}, {"MXFP4",5e-4,5e-5}, {"NVFP4",5e-4,5e-5}, {"Q1_0",5e-3,5e-5},
         {"Q4_K",4e-3,1.5e-3}, {"Q5_K",5e-3,2e-3}, {"Q6_K",6e-3,1.5e-3}, {"Q4_0",5e-4,5e-5},
         {"F16",1e-3,1e-4}, {"BF16",1e-3,1e-4},
     };

@@ -7,6 +7,7 @@
 #include <math.h>     /* fabsf, lrintf */
 #include "jam_mxfp4.h"
 #include "jam_nvfp4.h"
+#include "jam_q1_0.h"
 #include "jam_kquant.h"
 #include "jam_fp16.h"   /* jam_half2float (shared software fp16->fp32) */
 #include <string.h>     /* memcpy (NVFP4 global-scale header) */
@@ -220,6 +221,24 @@ void jam_mm_nvfp4_f32_generic(void* arg, int rb, int re, int tid) {
             }
             C[(size_t) j*ldc+i] = acc;
         }
+    }
+}
+
+/* Q1_0 (1-bit sign) float floor: dequant-on-the-fly against F32 activations via the shared exact
+ * scalar dot (jam_q1_0.h); the SIMD kernels use the int8 pipeline instead. */
+void jam_mm_q1_0_f32_generic(void* arg, int rb, int re, int tid) {
+    (void) tid;
+    const jam_q8_job* J = (const jam_q8_job*) arg;
+    const char*  W = (const char*)  J->a;
+    const float* A = (const float*) J->b;
+    float* C = (float*) J->c;
+    const int ldc = J->ldc, ldb = J->ldb, n = J->n, k = J->k;
+    const int nblk = k / JAM_Q1_0_QK;
+    const size_t wrow = (size_t)(J->lda / JAM_Q1_0_QK) * sizeof(jam_blk_q1_0);   /* row stride honors lda (ldw) */
+    for (int i = rb; i < re; ++i) {
+        const uint8_t* wr = (const uint8_t*) (W + (size_t) i * wrow);
+        for (int j = 0; j < n; ++j)
+            C[(size_t) j*ldc + i] = jam_q1_0_dot_f32(wr, nblk, A + (size_t) j * ldb);
     }
 }
 

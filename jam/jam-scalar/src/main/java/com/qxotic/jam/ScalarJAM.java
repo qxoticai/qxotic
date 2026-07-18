@@ -74,8 +74,7 @@ public final class ScalarJAM implements JAM {
 
     private static boolean decodable(GGMLType t) {
         return switch (t) {
-            case F32, F16, BF16, Q4_0, Q8_0, Q4_K, Q5_K, Q6_K, MXFP4, NVFP4 -> true;
-            default -> false;
+            case F32, F16, BF16, Q4_0, Q8_0, Q4_K, Q5_K, Q6_K, MXFP4, NVFP4, Q1_0 -> true;
         };
     }
 
@@ -165,6 +164,14 @@ public final class ScalarJAM implements JAM {
                     int qb = w.get(JAVA_BYTE, blk + 1 + (within & 15)) & 0xFF;
                     int nib = within < 16 ? (qb & 0xF) : (qb >> 4);
                     return dhalf * FP4_KV[nib];
+                }
+            case Q1_0:
+                { // 18B: f16 d, sign bits qs[16]; 128 elems, LSB-first; v = bit ? +d : -d
+                    long blk = rowBase + (long) (l >> 7) * 18;
+                    float d = Float.float16ToFloat(w.get(JAVA_SHORT_UNALIGNED, blk));
+                    int within = l & 127;
+                    int bits = w.get(JAVA_BYTE, blk + 2 + (within >> 3)) & 0xFF;
+                    return ((bits >> (within & 7)) & 1) != 0 ? d : -d;
                 }
             case NVFP4:
                 { // 36B: ue4m3 d[4], fp4 qs[32]; 64 elems, per-16 scale

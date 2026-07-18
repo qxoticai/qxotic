@@ -63,7 +63,8 @@ public final class VectorJAM implements JAM {
                 || wt == Q5_K
                 || wt == Q6_K
                 || wt == MXFP4
-                || wt == NVFP4;
+                || wt == NVFP4
+                || wt == Q1_0;
     }
 
     @Override
@@ -104,6 +105,7 @@ public final class VectorJAM implements JAM {
             case Q6_K -> Q6KKernel.gemm(ws, g, ab, g, ob, lda, ldr, n, m, k, 0L, scratch);
             case MXFP4 -> Mxfp4Kernel.gemm(ws, g, ab, g, ob, lda, ldr, n, m, k, 0L, scratch);
             case NVFP4 -> Nvfp4Kernel.gemm(ws, g, ab, g, ob, lda, ldr, n, m, k, 0L, scratch);
+            case Q1_0 -> Q1Kernel.gemm(ws, g, ab, g, ob, lda, ldr, n, m, k, 0L, scratch);
             default -> {
                 return EUNSUPPORTED;
             }

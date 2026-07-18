@@ -59,7 +59,7 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
     target_compile_definitions(jam PRIVATE JAM_HAVE_SSSE3=1)
 
     # AVX2 (Haswell 2013+): F32 + Q8_0 via maddubs (no VNNI). Covers consumer/older CPUs.
-    add_library(jam_avx2 OBJECT src/kernels/jam_kernels_avx2.c src/kernels/jam_kernels_kquant_avx2.c src/kernels/jam_kernels_nvfp4_avx2.c)
+    add_library(jam_avx2 OBJECT src/kernels/jam_kernels_avx2.c src/kernels/jam_kernels_kquant_avx2.c src/kernels/jam_kernels_nvfp4_avx2.c src/kernels/jam_kernels_q1_0_avx2.c)
     target_include_directories(jam_avx2 PRIVATE include src)
     target_compile_options(jam_avx2 PRIVATE -mavx2 -mfma -mf16c)
     target_compile_definitions(jam_avx2 PRIVATE JAM_HAVE_AVX2=1)
@@ -105,14 +105,14 @@ endif()
 
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64")
     # ARM Q8_0 + K-quant kernels: NEON baseline (vmull+vpadal), DOTPROD (sdot), I8MM (smmla). Each its own -march.
-    add_library(jam_neon OBJECT src/kernels/jam_kernels_neon.c src/kernels/jam_kernels_kquant_neon.c src/kernels/jam_kernels_nvfp4_neon.c)
+    add_library(jam_neon OBJECT src/kernels/jam_kernels_neon.c src/kernels/jam_kernels_kquant_neon.c src/kernels/jam_kernels_nvfp4_neon.c src/kernels/jam_kernels_q1_0_neon.c)
     target_include_directories(jam_neon PRIVATE include src)
     target_compile_options(jam_neon PRIVATE -march=armv8-a)
     target_compile_definitions(jam_neon PRIVATE JAM_HAVE_NEON=1)
     target_sources(jam PRIVATE $<TARGET_OBJECTS:jam_neon>)
     target_compile_definitions(jam PRIVATE JAM_HAVE_NEON=1)
 
-    add_library(jam_dotprod OBJECT src/kernels/jam_kernels_dotprod.c src/kernels/jam_kernels_kquant_dotprod.c src/kernels/jam_kernels_nvfp4_dotprod.c)
+    add_library(jam_dotprod OBJECT src/kernels/jam_kernels_dotprod.c src/kernels/jam_kernels_kquant_dotprod.c src/kernels/jam_kernels_nvfp4_dotprod.c src/kernels/jam_kernels_q1_0_dotprod.c)
     target_include_directories(jam_dotprod PRIVATE include src)
     target_compile_options(jam_dotprod PRIVATE -march=armv8.2-a+dotprod)
     target_compile_definitions(jam_dotprod PRIVATE JAM_HAVE_DOTPROD=1)
