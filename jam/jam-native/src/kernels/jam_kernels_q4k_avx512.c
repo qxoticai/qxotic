@@ -572,6 +572,117 @@ void jam_q4_0_repack_band(void* arg, int t0, int t1, int tid) {
     }
 }
 
+/* ================= Q1_0 16-row VNNI repack — packed SIGN-BIT band (1 bit/weight in scratch) =========
+ * block_q1_0 = { fp16 d; uint8_t qs[16] } = 18B / 128 elems; value = d·(2b-1), b ∈ {0,1} (LSB-first).
+ * The bit is the UNSIGNED vpdpbusd operand — expanded to 0/1 bytes IN-REGISTER via one kmov +
+ * vmovdqu8{k}{z} of a hoisted all-ones vector per 16-row×4-elem group — and the s8 activation
+ * broadcast is the signed one:
+ *     d·Σ(2b-1)·x  =  d·( 2·dx·Σ b·x_q  −  Σx )
+ * where −Σx uses the exact per-16 float activation sums: the same deferred-offset scheme as Q4_0's
+ * −8 (offset 1 ⇒ a smaller correction). The repack stores 8 permuted 64-bit masks per 32-elem block
+ * (bit r*4+e = row r, elem g*4+e): 64 B/block/16rows — 8× smaller than the Q8_0 band, L1-resident —
+ * plus one d per row/block (mw is not needed: the offset scale IS d). */
+#include "jam_q1_0.h"   /* jam_blk_q1_0 layout + the shared exact scalar dot */
+
+static void repack_q1_0_group16(const uint8_t* wbase, int64_t w_stride, int nb,
+                                uint8_t* qs, float* dw) {
+    uint64_t* m = (uint64_t*) qs;                 /* [nb][8] masks (the scratch is 64-aligned) */
+    for (int B = 0; B < nb; B++, m += 8, dw += 16) {
+        uint64_t mg[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+        for (int r = 0; r < 16; r++) {
+            const uint8_t* blk = wbase + r * w_stride + (B >> 2) * JAM_Q1_0_BYTES;
+            uint32_t bits = *(const uint32_t*) (blk + 2 + (B & 3) * 4);   /* 32 sign bits, LSB-first */
+            for (int g = 0; g < 8; g++)
+                mg[g] |= (uint64_t)((bits >> (g * 4)) & 0xF) << (r * 4);
+            dw[r] = q4k_h2f(*(const uint16_t*) blk);
+        }
+        for (int g = 0; g < 8; g++) m[g] = mg[g];
+    }
+}
+
+/* 16-row dot of the packed sign bits against one activation column -> 16 f32 partials. */
+static inline __m512 q1_0_block16(const uint8_t* qs, const float* dw,
+                                  const int8_t* x, const float* dx, const float* xs, int nb) {
+    const __m512i one = _mm512_set1_epi8(1);
+    const uint64_t* m = (const uint64_t*) qs;
+    __m512 f = _mm512_setzero_ps();
+    for (int b = 0; b < nb; b++) {
+        __m512i acc = _mm512_setzero_si512();
+        for (int g = 0; g < 8; g++)
+            acc = _mm512_dpbusd_epi32(acc, _mm512_maskz_mov_epi8((__mmask64) m[g], one),
+                                      _mm512_set1_epi32(((const int*) x)[g]));
+        __m512 dwv = _mm512_load_ps(dw);
+        f = _mm512_fmadd_ps(_mm512_cvtepi32_ps(acc), _mm512_mul_ps(dwv, _mm512_set1_ps(2.0f * dx[b])), f);
+        f = _mm512_fnmadd_ps(dwv, _mm512_set1_ps(xs[2 * b] + xs[2 * b + 1]), f);
+        m += 8; dw += 16; x += JAM_QK;
+    }
+    return f;
+}
+
+/* Column register-tiled: each mask expanded ONCE (kmov + masked move), vpdpbusd'd against JAM_VNNI_NR
+ * activation columns — the weight side of this band is so small that the expands are the only weight
+ * cost, amortized across the NR columns like the other bands' decodes. */
+static inline void q1_0_block16_nr(const uint8_t* qs, const float* dw, const int8_t* xq,
+                                   const float* dx, const float* xs, int s0, int nb,
+                                   int64_t ldc, float* out, int r) {
+    const __m512i one = _mm512_set1_epi8(1);
+    const uint64_t* m = (const uint64_t*) qs;
+    __m512 f[JAM_VNNI_NR];
+    const int8_t* x[JAM_VNNI_NR];
+    for (int c = 0; c < JAM_VNNI_NR; c++) {
+        f[c] = _mm512_setzero_ps();
+        x[c] = xq + (int64_t)(s0 + c) * nb * JAM_QK;
+    }
+    for (int b = 0; b < nb; b++) {
+        __m512i acc[JAM_VNNI_NR];
+        for (int c = 0; c < JAM_VNNI_NR; c++) acc[c] = _mm512_setzero_si512();
+        for (int g = 0; g < 8; g++) {
+            __m512i w = _mm512_maskz_mov_epi8((__mmask64) m[g], one);   /* expand once, reuse NR cols */
+            for (int c = 0; c < JAM_VNNI_NR; c++)
+                acc[c] = _mm512_dpbusd_epi32(acc[c], w, _mm512_set1_epi32(((const int*) x[c])[g]));
+        }
+        __m512 dwv = _mm512_load_ps(dw);
+        for (int c = 0; c < JAM_VNNI_NR; c++) {
+            int64_t idx = (int64_t)(s0 + c) * nb + b;
+            f[c] = _mm512_fmadd_ps(_mm512_cvtepi32_ps(acc[c]),
+                                   _mm512_mul_ps(dwv, _mm512_set1_ps(2.0f * dx[idx])), f[c]);
+            f[c] = _mm512_fnmadd_ps(dwv, _mm512_set1_ps(xs[idx * 2] + xs[idx * 2 + 1]), f[c]);
+            x[c] += JAM_QK;
+        }
+        m += 8; dw += 16;
+    }
+    for (int c = 0; c < JAM_VNNI_NR; c++) q4k_store16(f[c], out, ldc, r, s0 + c);
+}
+
+void jam_q1_0_repack_band(void* arg, int t0, int t1, int tid) {
+    const jam_q4k_job* J = (const jam_q4k_job*) arg;
+    const int nb = J->kblocks, seq = J->seq;           /* nb = k/32 activation blocks; k % 128 == 0 */
+    const int64_t ldc = J->out_stride;
+    jam_repack* rp = &J->repack[tid];
+    for (int tile = t0; tile < t1; tile++) {
+        int row = tile * JAM_VNNI_BAND, row_end = row + JAM_VNNI_BAND;
+        if (row_end > J->dim0) row_end = J->dim0;
+        int group = 0;
+        for (int r = row; r + 15 < row_end; r += 16, group++) {
+            uint8_t* qs = rp->qs + (int64_t) group * nb * 64;   /* packed bits: 64 B/block */
+            float* dw = rp->dw + (int64_t) group * nb * 16;
+            repack_q1_0_group16(J->w + (int64_t) r * J->w_stride, J->w_stride, nb, qs, dw);
+            int s = 0;
+            for (; s + JAM_VNNI_NR <= seq; s += JAM_VNNI_NR)
+                q1_0_block16_nr(qs, dw, J->xq, J->dx, J->xsum, s, nb, ldc, J->out, r);
+            for (; s < seq; s++)               /* column tail (< NR) */
+                q4k_store16(q1_0_block16(qs, dw, J->xq + (int64_t) s * nb * JAM_QK,
+                                         J->dx + (int64_t) s * nb, J->xsum + (int64_t) s * nb * 2, nb),
+                            J->out, ldc, r, s);
+        }
+        for (int r = row + group * 16; r < row_end; r++)        /* <16-row tail: scalar exact dot */
+            for (int s = 0; s < seq; s++)
+                J->out[(int64_t) s * ldc + r] =
+                    jam_q1_0_dot_f32(J->w + (int64_t) r * J->w_stride, J->dim1 / 128,
+                                     J->rhs + (int64_t) s * J->rhs_stride);
+    }
+}
+
 /* ================= MXFP4 16-row VNNI repack (gpt-oss experts) — Q4_0 packing + Q8_0 +128/cw + vpshufb ===
  * Block = { e8m0; nibble qs[16] } = 17B; nibble -> SIGNED int8 code (LUT). value = code · dhalf(e). The
  * codes are signed so (like Q8_0) the unsigned vpdpbusd operand is the activation (a^0x80=+128) and the

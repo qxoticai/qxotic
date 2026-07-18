@@ -45,6 +45,7 @@ final class QuantWeights {
             case JAM.Q6_K -> q6_k(m, k, a, rng);
             case JAM.MXFP4 -> mxfp4(m, k, a, rng);
             case JAM.NVFP4 -> nvfp4(m, k, a, rng);
+            case JAM.Q1_0 -> q1_0(m, k, a, rng);
             default -> throw new IllegalArgumentException("no encoder for dtype tag " + tag);
         };
     }
@@ -124,6 +125,27 @@ final class QuantWeights {
                 }
             }
         return new Weight(JAM.Q8_0, s, v);
+    }
+
+    private static Weight q1_0(
+            int m, int k, Arena a, Random rng) { // f16 d in [0.5,1), random sign bits, LSB-first
+        int nb = k / 128;
+        float[] v = new float[m * k];
+        MemorySegment s = a.allocate((long) m * nb * 18, 64);
+        for (int r = 0; r < m; r++)
+            for (int b = 0; b < nb; b++) {
+                long blk = (long) (r * nb + b) * 18;
+                short dBits = (short) (0x3800 | (rng.nextInt() & 0x3FF));
+                s.set(JAVA_SHORT_UNALIGNED, blk, dBits);
+                float d = Float.float16ToFloat(dBits);
+                for (int e = 0; e < 16; e++) {
+                    int bits = rng.nextInt(256);
+                    s.set(JAVA_BYTE, blk + 2 + e, (byte) bits);
+                    for (int bit = 0; bit < 8; bit++)
+                        v[r * k + b * 128 + e * 8 + bit] = ((bits >> bit) & 1) != 0 ? d : -d;
+                }
+            }
+        return new Weight(JAM.Q1_0, s, v);
     }
 
     private static Weight q4_0(

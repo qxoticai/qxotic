@@ -90,6 +90,25 @@ static inline jam_ref_mxfp4_blk* jam_ref_quant_mxfp4(const float* X, int rows, i
     return o;
 }
 
+/* ---- Q1_0 (1-bit sign) - GGML block_q1_0 { fp16 d; uint8_t qs[16] } = 18 bytes, 128 elems.
+ * Mirrors quantize_row_q1_0_ref: d = mean(|x|), bit = x >= 0 (LSB-first). */
+typedef struct { uint16_t d; uint8_t qs[16]; } jam_ref_q1_0_blk;
+
+static inline void* jam_ref_quant_q1_0(const float* X, int rows, int k) {
+    int nblk = k / 128;
+    jam_ref_q1_0_blk* o = (jam_ref_q1_0_blk*) malloc((size_t) rows * nblk * sizeof(jam_ref_q1_0_blk));
+    for (int i = 0; i < rows; ++i) for (int bb = 0; bb < nblk; ++bb) {
+        jam_ref_q1_0_blk* p = &o[(size_t) i * nblk + bb];
+        const float* x = X + (size_t) i * k + (size_t) bb * 128;
+        float sum_abs = 0.0f;
+        for (int j = 0; j < 128; ++j) sum_abs += fabsf(x[j]);
+        p->d = jam_ref_f2h(sum_abs / 128.0f);
+        for (int b = 0; b < 16; ++b) p->qs[b] = 0;
+        for (int j = 0; j < 128; ++j) if (x[j] >= 0.0f) p->qs[j / 8] |= (uint8_t)(1u << (j % 8));
+    }
+    return o;
+}
+
 /* ---- NVFP4 (NVIDIA FP4) — GGUF block_nvfp4 { uint8_t d[4] (UE4M3 per-16); uint8_t qs[32] } = 36 bytes,
  * 64 elements. value = kvalues_mxfp4[nibble] · ue4m3(d[s]); no global scale. Mirrors ggml's quant/dequant. */
 typedef struct { uint8_t d[4]; uint8_t qs[32]; } jam_ref_nvfp4_blk;

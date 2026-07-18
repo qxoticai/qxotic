@@ -58,6 +58,7 @@ struct jam_ctx {
                                       * by explicit feature check — AVX-VNNI is orthogonal to the ladder. */
     jam_task_fn      mxfp4_kernel;   /* best MXFP4 matmul; NULL -> generic (float). Same int8 pipeline. */
     jam_task_fn      nvfp4_kernel;   /* best NVFP4 matmul; NULL -> generic (float). No SIMD kernel yet. */
+    jam_task_fn      q1_0_kernel;    /* best Q1_0 (1-bit sign) matmul; NULL -> generic (float). Int8 pipeline. */
     jam_task_fn      q4_0_kernel;    /* best Q4_0 matmul; NULL -> generic. Same int8 pipeline. */
     jam_kquant       kq[JAM_KQ_N];   /* Q4_K/Q5_K/Q6_K ISA-bound {kernel,requant,repack}; consts in kquant_info[] */
     struct jam_rpentry { const void* w; int m, k; jam_repack_fn repack; void* buf; } *rp_cache;
@@ -135,6 +136,7 @@ typedef struct {
 void jam_mm_q8_0_f32_generic(void* job, int row_begin, int row_end, int tid);  /* portable floor */
 void jam_mm_mxfp4_f32_generic(void* job, int row_begin, int row_end, int tid); /* portable floor */
 void jam_mm_nvfp4_f32_generic(void* job, int row_begin, int row_end, int tid); /* portable floor (NVFP4) */
+void jam_mm_q1_0_f32_generic(void* job, int row_begin, int row_end, int tid);  /* portable floor (Q1_0) */
 void jam_mm_q4k_f32_generic(void* job, int row_begin, int row_end, int tid);   /* portable floor (q8_job) */
 
 /* ---- Q4_K @ F32 (AVX-512-VNNI; ported from jinferjni.c). repack scratch is PER WORKER (jam tid). ---- */
@@ -151,6 +153,7 @@ void jam_q4k_quant(void* job, int s0, int s1, int tid);   /* phase 1: quantize a
 void jam_q4k_band(void* job, int t0, int t1, int tid);    /* phase 2: Q4_K repack + VNNI matmul */
 void jam_q6k_band(void* job, int t0, int t1, int tid);    /* phase 2: Q6_K repack + VNNI matmul */
 void jam_q8_0_repack_band(void* job, int t0, int t1, int tid); /* phase 2: Q8_0 16-row VNNI repack matmul */
+void jam_q1_0_repack_band(void* job, int t0, int t1, int tid); /* phase 2: Q1_0 packed-sign-bit VNNI band */
 void jam_q4_0_repack_band(void* job, int t0, int t1, int tid); /* phase 2: Q4_0 16-row VNNI repack matmul */
 void jam_mxfp4_repack_band(void* job, int t0, int t1, int tid); /* phase 2: MXFP4 16-row VNNI repack matmul */
 void jam_q5k_repack_band(void* job, int t0, int t1, int tid);  /* phase 2: Q5_K 16-row VNNI repack matmul */
@@ -197,6 +200,7 @@ void jam_mm_q4_0_rp1_avx2(void* job, int rb, int re, int tid);           /* cach
 void jam_q8k_requant(void* job, int rb, int re, int tid);                 /* per-256 (Q8_K) activation requant, per-32 sums */
 void jam_q6k_requant(void* job, int rb, int re, int tid);                 /* per-256 requant with per-16 sums (Q6_K bias) */
 void jam_mm_nvfp4_avx2(void* job, int rb, int re, int tid);                /* NVFP4: FP4 LUT + per-16 E4M3 */
+void jam_mm_q1_0_avx2(void* job, int rb, int re, int tid);                 /* Q1_0: sign-mask xor-negate maddubs */
 #endif
 #ifdef JAM_HAVE_AVXVNNI
 void jam_mm_mxfp4_avxvnni(void* job, int a_begin, int a_end, int tid);     /* vpdpbusd + FP4 decode */
@@ -241,11 +245,13 @@ void jam_mm_q4k_neon(void* job, int rb, int re, int tid);                 /* K-q
 void jam_mm_q5k_neon(void* job, int rb, int re, int tid);
 void jam_mm_q6k_neon(void* job, int rb, int re, int tid);
 void jam_mm_nvfp4_neon(void* job, int rb, int re, int tid);               /* NVFP4: FP4 LUT + per-16 E4M3 */
+void jam_mm_q1_0_neon(void* job, int rb, int re, int tid);                /* Q1_0: b2b sign expand, vmull dot */
 #endif
 #ifdef JAM_HAVE_DOTPROD
 void jam_mm_q8_0_dotprod(void* job, int a_begin, int a_end, int tid);      /* vdotq_s32 (sdot) */
 void jam_mm_q4_0_dotprod(void* job, int rb, int re, int tid);
 void jam_mm_nvfp4_dotprod(void* job, int rb, int re, int tid);            /* NVFP4 sdot */
+void jam_mm_q1_0_dotprod(void* job, int rb, int re, int tid);             /* Q1_0 sdot */
 void jam_mm_mxfp4_dotprod(void* job, int rb, int re, int tid);
 void jam_mm_q4k_dotprod(void* job, int rb, int re, int tid);              /* K-quant sdot */
 void jam_mm_q5k_dotprod(void* job, int rb, int re, int tid);

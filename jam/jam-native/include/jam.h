@@ -74,6 +74,7 @@ typedef enum {
     JAM_BF16  = 30,
     JAM_MXFP4 = 39,   /* == GGML_TYPE_MXFP4 — verify the value against the ggml.h you target */
     JAM_NVFP4 = 40,   /* == GGML_TYPE_NVFP4 (llama.cpp): {d[4] UE4M3; qs[32]} interleaved, 64-elem, no global */
+    JAM_Q1_0  = 41,   /* == GGML_TYPE_Q1_0 (llama.cpp): {fp16 d; 16 sign bytes}, 128-elem, bit ? +d : -d */
 } jam_dtype;
 
 typedef enum {
