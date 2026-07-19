@@ -9,6 +9,7 @@ import java.lang.foreign.MemorySegment;
 import java.nio.ByteOrder;
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.FloatVector;
+import jdk.incubator.vector.IntVector;
 import jdk.incubator.vector.ShortVector;
 import jdk.incubator.vector.VectorOperators;
 import jdk.incubator.vector.VectorSpecies;
@@ -276,6 +277,9 @@ final class Q4_1FloatTensor extends SegmentFloatTensor {
         return FloatTensor.scalarDot(this, thisOffset, that, thatOffset, size);
     }
 
+    private static final java.lang.foreign.ValueLayout.OfLong LONG_LE =
+            java.lang.foreign.ValueLayout.JAVA_LONG_UNALIGNED.withOrder(ByteOrder.LITTLE_ENDIAN);
+
     private static float vectorDot(
             Q4_1FloatTensor thiz, long thisOffset, F32FloatTensor that, long thatOffset, int size) {
         float result = 0f;
@@ -459,6 +463,9 @@ final class Q5_1FloatTensor extends SegmentFloatTensor {
         }
         return FloatTensor.scalarDot(this, thisOffset, that, thatOffset, size);
     }
+
+    private static final java.lang.foreign.ValueLayout.OfLong LONG_LE =
+            java.lang.foreign.ValueLayout.JAVA_LONG_UNALIGNED.withOrder(ByteOrder.LITTLE_ENDIAN);
 
     private static float vectorDot(
             Q5_1FloatTensor thiz, long thisOffset, F32FloatTensor that, long thatOffset, int size) {
@@ -646,6 +653,9 @@ final class Q4_KFloatTensor extends SegmentFloatTensor {
         }
         return FloatTensor.scalarDot(this, thisOffset, that, thatOffset, size);
     }
+
+    private static final java.lang.foreign.ValueLayout.OfLong LONG_LE =
+            java.lang.foreign.ValueLayout.JAVA_LONG_UNALIGNED.withOrder(ByteOrder.LITTLE_ENDIAN);
 
     private static float vectorDot(
             Q4_KFloatTensor thiz, long thisOffset, F32FloatTensor that, long thatOffset, int size) {
@@ -841,6 +851,9 @@ final class Q5_KFloatTensor extends SegmentFloatTensor {
         }
         return FloatTensor.scalarDot(this, thisOffset, that, thatOffset, size);
     }
+
+    private static final java.lang.foreign.ValueLayout.OfLong LONG_LE =
+            java.lang.foreign.ValueLayout.JAVA_LONG_UNALIGNED.withOrder(ByteOrder.LITTLE_ENDIAN);
 
     private static float vectorDot(
             Q5_KFloatTensor thiz, long thisOffset, F32FloatTensor that, long thatOffset, int size) {
@@ -1285,6 +1298,148 @@ final class Q6_KFloatTensor extends SegmentFloatTensor {
     }
 }
 
+/**
+ * Q1_0: 1-bit sign quantization. Block = fp16 scale {@code d} + 16 bytes of sign bits (128
+ * elements, LSB-first within each byte); element = bit set ? +d : -d. Mirrors llama.cpp's {@code
+ * dequantize_row_q1_0} exactly.
+ */
+final class Q1_0FloatTensor extends SegmentFloatTensor {
+
+    final MemorySegment memorySegment;
+
+    public Q1_0FloatTensor(long size, MemorySegment memorySegment) {
+        super(size, memorySegment);
+        this.memorySegment = memorySegment;
+    }
+
+    @Override
+    public void setFloat(long index, float value) {
+        throw new UnsupportedOperationException("setFloat");
+    }
+
+    @Override
+    FloatVector getFloatVector(VectorSpecies<Float> species, long index) {
+        throw new UnsupportedOperationException("getFloatVector");
+    }
+
+    @Override
+    public GGMLType type() {
+        return GGMLType.Q1_0;
+    }
+
+    @Override
+    public float getFloat(long index) {
+        long blockIndex = index / GGMLType.Q1_0.getElementsPerBlock();
+        int withinBlockIndex = (int) (index % GGMLType.Q1_0.getElementsPerBlock());
+        long blockOffset = blockIndex * GGMLType.Q1_0.getBlockByteSize();
+        byte bits = readByte(memorySegment, blockOffset + Float16.BYTES + (withinBlockIndex / 8));
+        float scale = readFloat16(memorySegment, blockOffset);
+        return ((bits >> (withinBlockIndex % 8)) & 1) != 0 ? scale : -scale;
+    }
+
+    @Override
+    public float dot(long thisOffset, FloatTensor that, long thatOffset, int size) {
+        if (FloatTensor.USE_VECTOR_API && that instanceof F32FloatTensor f32) {
+            return vectorDot(this, thisOffset, f32, thatOffset, size);
+        }
+        return FloatTensor.scalarDot(this, thisOffset, that, thatOffset, size);
+    }
+
+    private static final java.lang.foreign.ValueLayout.OfLong LONG_LE =
+            java.lang.foreign.ValueLayout.JAVA_LONG_UNALIGNED.withOrder(ByteOrder.LITTLE_ENDIAN);
+
+    private static final VectorSpecies<Integer> I_SPECIES =
+            VectorSpecies.of(int.class, F_SPECIES.vectorShape());
+    private static final IntVector LANE_IOTA = IntVector.zero(I_SPECIES).addIndex(1);
+
+    /**
+     * Q1_0·F32 dot: a block's 128 sign bits (two little-endian longs) are applied branchlessly -
+     * per lane, {@code ((~(bits >>> lane)) & 1) << 31} XORed onto the activation's float bits flips
+     * its sign exactly where the weight bit is clear - the direct analogue of llama.cpp's AVX2
+     * xor-negate kernel, against f32 activations. Sums accumulate unscaled and fold in the block
+     * scale {@code d} once via fma. Lane counts of 4/8/16 all divide 64, so a bit chunk never
+     * straddles the two longs.
+     */
+    static float vectorDot(
+            Q1_0FloatTensor thiz, long thisOffset, F32FloatTensor that, long thatOffset, int size) {
+        final int blockSize = GGMLType.Q1_0.getElementsPerBlock();
+        final int typeSize = GGMLType.Q1_0.getBlockByteSize();
+        final MemorySegment w = thiz.memorySegment;
+        final MemorySegment x = that.vseg;
+        final long xBase = that.vbase;
+        final int lanes = F_SPECIES.length();
+        float result = 0f;
+        int j = 0;
+
+        int alignmentBound = (int) Math.min(size, -thisOffset & (blockSize - 1));
+        if (alignmentBound > 0) {
+            result += FloatTensor.scalarDot(thiz, thisOffset, that, thatOffset, alignmentBound);
+            j += alignmentBound;
+        }
+        assert (thisOffset + j) % blockSize == 0;
+
+        long b0 = (thisOffset + j) / blockSize * (long) typeSize;
+        int upperBound = j + (size - j) / blockSize * blockSize;
+        FloatVector acc0 = FloatVector.zero(F_SPECIES);
+        FloatVector acc1 = FloatVector.zero(F_SPECIES);
+        for (; j < upperBound; j += blockSize, b0 += typeSize) {
+            FloatVector vd = FloatVector.broadcast(F_SPECIES, readFloat16(w, b0));
+            // MEASURED: the shared readLong helper compiles ~20% slower in this loop (17.7 vs
+            // 22 Gelem/s single-thread; e2e Bonsai decode 9.4 vs 11.3 t/s) - keep the local
+            // little-endian layout read.
+            long lo = w.get(LONG_LE, b0 + Float16.BYTES);
+            long hi = w.get(LONG_LE, b0 + Float16.BYTES + 8);
+            FloatVector sum0 = FloatVector.zero(F_SPECIES);
+            FloatVector sum1 = FloatVector.zero(F_SPECIES);
+            for (int g = 0; g < blockSize; g += 2 * lanes) {
+                int g1 = g + lanes;
+                IntVector sign0 =
+                        IntVector.broadcast(I_SPECIES, (int) (g < 64 ? lo >>> g : hi >>> (g - 64)))
+                                .lanewise(VectorOperators.LSHR, LANE_IOTA)
+                                .not()
+                                .and(1)
+                                .lanewise(VectorOperators.LSHL, 31);
+                IntVector sign1 =
+                        IntVector.broadcast(
+                                        I_SPECIES, (int) (g1 < 64 ? lo >>> g1 : hi >>> (g1 - 64)))
+                                .lanewise(VectorOperators.LSHR, LANE_IOTA)
+                                .not()
+                                .and(1)
+                                .lanewise(VectorOperators.LSHL, 31);
+                FloatVector x0 =
+                        FloatVector.fromMemorySegment(
+                                F_SPECIES,
+                                x,
+                                xBase + 4L * (thatOffset + j + g),
+                                ByteOrder.LITTLE_ENDIAN);
+                FloatVector x1 =
+                        FloatVector.fromMemorySegment(
+                                F_SPECIES,
+                                x,
+                                xBase + 4L * (thatOffset + j + g1),
+                                ByteOrder.LITTLE_ENDIAN);
+                sum0 =
+                        sum0.add(
+                                x0.reinterpretAsInts()
+                                        .lanewise(VectorOperators.XOR, sign0)
+                                        .reinterpretAsFloats());
+                sum1 =
+                        sum1.add(
+                                x1.reinterpretAsInts()
+                                        .lanewise(VectorOperators.XOR, sign1)
+                                        .reinterpretAsFloats());
+            }
+            acc0 = sum0.fma(vd, acc0);
+            acc1 = sum1.fma(vd, acc1);
+        }
+        result += acc0.add(acc1).reduceLanes(VectorOperators.ADD);
+        if (j < size) {
+            result += FloatTensor.scalarDot(thiz, thisOffset + j, that, thatOffset + j, size - j);
+        }
+        return result;
+    }
+}
+
 final class Q8_0FloatTensor extends SegmentFloatTensor {
 
     final MemorySegment memorySegment;
@@ -1644,6 +1799,9 @@ final class MXFP4FloatTensor extends SegmentFloatTensor {
         return FloatTensor.scalarDot(this, thisOffset, that, thatOffset, size);
     }
 
+    private static final java.lang.foreign.ValueLayout.OfLong LONG_LE =
+            java.lang.foreign.ValueLayout.JAVA_LONG_UNALIGNED.withOrder(ByteOrder.LITTLE_ENDIAN);
+
     private static float vectorDot(
             MXFP4FloatTensor thiz,
             long thisOffset,
@@ -1948,6 +2106,9 @@ final class BF16FloatTensor extends SegmentFloatTensor {
         }
         return FloatTensor.scalarDot(this, thisOffset, that, thatOffset, size);
     }
+
+    private static final java.lang.foreign.ValueLayout.OfLong LONG_LE =
+            java.lang.foreign.ValueLayout.JAVA_LONG_UNALIGNED.withOrder(ByteOrder.LITTLE_ENDIAN);
 
     private static float vectorDot(
             BF16FloatTensor thiz, long thisOffset, F32FloatTensor that, long thatOffset, int size) {

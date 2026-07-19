@@ -33,6 +33,7 @@ public final class KernelParityTest {
             GGMLType.Q6_K,
             GGMLType.MXFP4,
             GGMLType.NVFP4,
+            GGMLType.Q1_0,
             GGMLType.F16,
             GGMLType.BF16,
             GGMLType.F32
@@ -51,6 +52,7 @@ public final class KernelParityTest {
                     GGMLType.Q4_1,
                     GGMLType.MXFP4,
                     GGMLType.NVFP4,
+                    GGMLType.Q1_0,
                     GGMLType.BF16,
                     GGMLType.F16,
                     GGMLType.F32
@@ -109,7 +111,7 @@ public final class KernelParityTest {
         for (int b = 0; b < blocks; b++) {
             long off = (long) b * typeSize;
             switch (type) {
-                case Q4_0, Q8_0 -> putScaleF16(seg, off, rng); // d
+                case Q4_0, Q8_0, Q1_0 -> putScaleF16(seg, off, rng); // d
                 case Q4_1, Q5_1, Q4_K, Q5_K -> {
                     putScaleF16(seg, off, rng);
                     putScaleF16(seg, off + 2, rng);
@@ -137,6 +139,7 @@ public final class KernelParityTest {
             case Q6_K -> new Q6_KFloatTensor(numElements, seg);
             case MXFP4 -> new MXFP4FloatTensor(numElements, seg);
             case NVFP4 -> new NVFP4FloatTensor(numElements, seg);
+            case Q1_0 -> new Q1_0FloatTensor(numElements, seg);
             default -> throw new UnsupportedOperationException(type.toString());
         };
     }

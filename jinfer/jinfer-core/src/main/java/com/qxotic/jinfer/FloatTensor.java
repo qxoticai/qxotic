@@ -261,6 +261,7 @@ public abstract class FloatTensor {
             case BF16 -> new BF16FloatTensor(numElements, segment);
             case MXFP4 -> new MXFP4FloatTensor(numElements, segment);
             case NVFP4 -> new NVFP4FloatTensor(numElements, segment);
+            case Q1_0 -> new Q1_0FloatTensor(numElements, segment);
             default -> throw new UnsupportedOperationException("Quantization format " + type);
         };
     }
