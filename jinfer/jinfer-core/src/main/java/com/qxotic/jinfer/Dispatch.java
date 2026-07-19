@@ -42,7 +42,13 @@ final class Dispatch implements MatMul {
         // the floor.
         MatMul vector = VectorJAM.isAvailable() ? new JamMatMul(new VectorJAM(), scalar) : null;
         JAM nativeJam = loadNative();
-        MatMul jam = nativeJam != null ? new JamMatMul(nativeJam, scalar) : null;
+        // A native runtime decline (EBUSY, or an older libjam without a dtype's kernel) falls to
+        // the Vector tile when one exists - VectorJAM re-gates per call and itself declines to the
+        // floor - so a stale native library degrades to the fast Java path, never the scalar floor.
+        MatMul jam =
+                nativeJam != null
+                        ? new JamMatMul(nativeJam, vector != null ? vector : scalar)
+                        : null;
         return new Dispatch(jam, vector, scalar);
     }
 
@@ -52,8 +58,7 @@ final class Dispatch implements MatMul {
      * lookup needs registration on native image and would silently disable jam there.
      */
     private static JAM loadNative() {
-        if (Boolean.getBoolean("jinfer.disableJam"))
-            return null; // force the Java backends (testing)
+        if (boolFlag("jinfer.disableJam")) return null; // force the Java backends (testing)
         try {
             return NativeJAM.global();
         } catch (Throwable t) {
@@ -61,6 +66,20 @@ final class Dispatch implements MatMul {
                     "jam native library unavailable (" + t + "); using the Java backends.");
             return null;
         }
+    }
+
+    /**
+     * Strict boolean system property: true/false (any case) parse; anything else warns and reads as
+     * false - Boolean.getBoolean silently treats "1"/"yes"/typos as false, which has already cost a
+     * mis-measured benchmark.
+     */
+    private static boolean boolFlag(String name) {
+        String v = System.getProperty(name);
+        if (v == null) return false;
+        if (v.equalsIgnoreCase("true")) return true;
+        if (v.equalsIgnoreCase("false")) return false;
+        System.err.println("[jinfer] ignoring -D" + name + "=" + v + " (expected true or false)");
+        return false;
     }
 
     // --- per-shape matmul byte attribution (-Djinfer.mmTrace) ---
@@ -128,6 +147,10 @@ final class Dispatch implements MatMul {
                             ? scalar
                             : (jam != null && f32io && jamSupports(t, k) ? jam : scalar);
         } else {
+            // Measured prefill policy: the native repack/VNNI band kernels beat the Java tile for
+            // every dtype, Q1_0 included since its packed-sign-bit 16-row VNNI band landed
+            // (jam_q1_0_repack_band; the earlier per-row vec_dot lost ~15% to the Java tile and
+            // was demoted to the sub-band rungs).
             chosen =
                     jam != null && f32io && jamSupports(t, k)
                             ? jam
@@ -142,7 +165,7 @@ final class Dispatch implements MatMul {
      */
     private static boolean jamSupports(GGMLType t, int k) {
         return switch (t) {
-            case Q8_0, Q4_0, Q4_K, Q5_K, Q6_K, MXFP4, NVFP4, F16, BF16, F32 ->
+            case Q8_0, Q4_0, Q4_K, Q5_K, Q6_K, MXFP4, NVFP4, Q1_0, F16, BF16, F32 ->
                     k % t.getElementsPerBlock() == 0;
             default -> false;
         };
@@ -158,7 +181,7 @@ final class Dispatch implements MatMul {
     /** dtypes with a register-tiled Vector prefill kernel (the rest fall to the scalar floor). */
     private static boolean hasGemmTile(GGMLType t) {
         return switch (t) {
-            case Q8_0, Q4_0, Q4_K, Q5_K, Q6_K, MXFP4, NVFP4 -> true;
+            case Q8_0, Q4_0, Q4_K, Q5_K, Q6_K, MXFP4, NVFP4, Q1_0 -> true;
             default -> false; // F16, BF16, F32 -> dot floor
         };
     }

@@ -66,6 +66,7 @@ final class JamMatMul implements MatMul {
             case Q6_K -> JAM.Q6_K;
             case MXFP4 -> JAM.MXFP4;
             case NVFP4 -> JAM.NVFP4;
+            case Q1_0 -> JAM.Q1_0;
             case F16 -> JAM.F16;
             case BF16 -> JAM.BF16;
             case F32 -> JAM.F32;
