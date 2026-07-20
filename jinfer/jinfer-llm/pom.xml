@@ -12,8 +12,9 @@
   <packaging>jar</packaging>
 
   <name>jinfer-llm</name>
-  <description>The layer that knows a token means text: tokenizer, stop tokens, chat templates and
-    the generation driver. jinfer-core turns state into logits and knows none of this.</description>
+  <description>The token driver: tokenizer, stop tokens, sampling and the generation loop -
+    tokens in, tokens out. jinfer-core below turns state into logits; jinfer-chat above turns
+    conversations into tokens. This layer knows neither chat structure nor model weights.</description>
 
   <dependencies>
     <dependency>
@@ -32,11 +33,6 @@
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>toknroll-gguf</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>json</artifactId>
-      <!-- tool-call payloads: the JSON branch of ToolCallSyntax -->
     </dependency>
   </dependencies>
 </project>
