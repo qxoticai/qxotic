@@ -8,6 +8,7 @@ import com.qxotic.jinfer.RuntimeState;
 import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;
 import java.util.List;
+import org.junit.jupiter.api.Test;
 
 /**
  * Regression: a cache hit ends on a BLOCK boundary, which need not be a GROUP boundary — the
@@ -76,18 +77,19 @@ public final class CachedSessionPartialGroupTest {
 
     static final class FakeCodec implements StateCodec<FakeState> {
         @Override
-        public long rowBytes(int positions) {
+        public long blockBytes(int positions) {
             return positions * 8L;
         }
 
         @Override
-        public void saveRows(FakeState s, int from, int to, MemorySegment dst) {}
+        public void save(FakeState s, int from, int to, MemorySegment dst) {}
 
         @Override
-        public void restoreRows(FakeState s, int from, int to, MemorySegment src) {}
+        public void restore(FakeState s, int from, int to, MemorySegment src) {}
     }
 
-    public static void main(String[] args) {
+    @Test
+    void run() {
         FakeModel model = new FakeModel();
         PromptCache<FakeState> cache =
                 new PromptCache<>(new FakeCodec(), CacheStore.inMemory(), 1 << 20, new byte[] {1});
@@ -145,7 +147,7 @@ public final class CachedSessionPartialGroupTest {
 
         if (failures > 0) {
             System.out.println(failures + " failure(s)");
-            System.exit(1);
+            throw new AssertionError("failure(s) - see output above");
         }
         System.out.println("CachedSessionPartialGroupTest: all checks passed");
     }
