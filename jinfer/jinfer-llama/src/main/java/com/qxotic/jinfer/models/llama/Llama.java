@@ -154,8 +154,16 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
     }
 
     public java.util.Optional<com.qxotic.jinfer.chat.TurnTemplate> turnTemplate() {
-        if (turnTemplate == null) turnTemplate = new LlamaTurnTemplate(tokenizer());
-        return java.util.Optional.of(turnTemplate);
+        // same-graph variants (minicpm et al.) lack the Llama 3 scaffold specials: no native
+        // framing for that GGUF - chat falls back to the whole-render Jinja path
+        if (turnTemplate == null
+                && com.qxotic.jinfer.llm.SpecialTokens.find(tokenizer(), "<|begin_of_text|>")
+                        .isPresent()
+                && com.qxotic.jinfer.llm.SpecialTokens.find(tokenizer(), "<|start_header_id|>")
+                        .isPresent()) {
+            turnTemplate = new LlamaTurnTemplate(tokenizer());
+        }
+        return java.util.Optional.ofNullable(turnTemplate);
     }
 
     @Override
