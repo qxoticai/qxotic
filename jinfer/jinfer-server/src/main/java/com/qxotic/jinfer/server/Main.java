@@ -19,6 +19,7 @@ import com.qxotic.jinfer.chat.ChatModel;
 import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Thinking;
 import com.qxotic.jinfer.kernels.*;

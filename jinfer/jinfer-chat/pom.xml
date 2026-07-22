@@ -20,6 +20,11 @@
   <dependencies>
     <dependency>
       <groupId>com.qxotic</groupId>
+      <artifactId>gguf</artifactId>
+      <!-- Models.load parses the GGUF header for arch dispatch -->
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
       <artifactId>jinfer-core</artifactId>
     </dependency>
     <dependency>
