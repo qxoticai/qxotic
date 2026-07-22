@@ -158,6 +158,15 @@ public final class PromptCache<S extends RuntimeState> {
     public static byte[] modelSeed(java.nio.file.Path gguf) {
         try (var ch =
                 java.nio.channels.FileChannel.open(gguf, java.nio.file.StandardOpenOption.READ)) {
+            return modelSeed(ch);
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException("modelSeed(" + gguf + ")", e);
+        }
+    }
+
+    /** As {@link #modelSeed(java.nio.file.Path)} on an already-open channel (positional reads). */
+    public static byte[] modelSeed(java.nio.channels.FileChannel ch) {
+        try {
             MessageDigest d = MessageDigest.getInstance("SHA-256");
             long size = ch.size();
             ByteBuffer len = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN).putLong(0, size);
@@ -174,7 +183,7 @@ public final class PromptCache<S extends RuntimeState> {
             }
             return d.digest();
         } catch (java.io.IOException | NoSuchAlgorithmException e) {
-            throw new IllegalStateException("modelSeed(" + gguf + ")", e);
+            throw new IllegalStateException("modelSeed(channel)", e);
         }
     }
 
