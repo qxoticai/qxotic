@@ -64,20 +64,15 @@ final class Generation {
         this.template = chatModel.template().orElse(null);
         this.jinjaTemplate = new JinjaChatTemplate(model.tokenizer(), model.chatTemplateSource());
         this.stopTokens = model.stopTokens();
-        this.promptCache =
-                RuntimeFlags.PROMPT_CACHE ? buildCache(model, options.modelPath()) : null;
+        this.promptCache = RuntimeFlags.PROMPT_CACHE ? buildCache(model) : null;
         this.sessionPool = promptCache != null ? new SessionPool<>(RuntimeFlags.SESSIONS) : null;
     }
 
-    private static <S extends RuntimeState> PromptCache<S> buildCache(
-            LoadedModel<S> m, java.nio.file.Path modelPath) {
+    private static <S extends RuntimeState> PromptCache<S> buildCache(LoadedModel<S> m) {
         StateCodec<S> codec = m.model().stateCodec().orElse(null);
         if (codec == null) return null;
         return new PromptCache<>(
-                codec,
-                CacheStore.inMemory(),
-                RuntimeFlags.PROMPT_CACHE_BUDGET_BYTES,
-                PromptCache.modelSeed(modelPath));
+                codec, CacheStore.inMemory(), RuntimeFlags.PROMPT_CACHE_BUDGET_BYTES, m.seed());
     }
 
     // ---- chat / completion -------------------------------------------------

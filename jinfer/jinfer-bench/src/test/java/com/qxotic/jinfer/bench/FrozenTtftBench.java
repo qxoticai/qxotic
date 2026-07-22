@@ -8,7 +8,6 @@ import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.jinfer.cache.CachedSession;
 import com.qxotic.jinfer.cache.FrozenBlocks;
-import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.llm.LoadedModel;
 import com.qxotic.toknroll.IntSequence;
 import java.nio.file.Files;
@@ -88,7 +87,7 @@ public final class FrozenTtftBench {
         }
 
         // COMPILE: FrozenBlocks.compile owns the last-token-as-own-block convention
-        byte[] seed = PromptCache.modelSeed(gguf);
+        byte[] seed = m.seed();
         Path artifact = Files.createTempFile("frozen-" + name, ".jkv");
         artifact.toFile().deleteOnExit();
         long tFreeze = System.nanoTime();
@@ -96,7 +95,7 @@ public final class FrozenTtftBench {
                 FrozenBlocks.compile(
                         artifact,
                         m.model(),
-                        m.model().stateCodec().orElseThrow(),
+                        m.codec(),
                         seed,
                         m.model().newState(CTX, 512),
                         List.of(Batch.prefill(prompt)));
@@ -108,14 +107,7 @@ public final class FrozenTtftBench {
         double openMs = (System.nanoTime() - t1) / 1e6;
         S state = m.model().newState(CTX, 512);
         long t2 = System.nanoTime();
-        CachedSession<S> w =
-                frozen.serve(
-                        m.model(),
-                        m.model().stateCodec().orElseThrow(),
-                        seed,
-                        state,
-                        fp,
-                        fp.length - 1);
+        CachedSession<S> w = frozen.serve(m.model(), m.codec(), seed, state, fp, fp.length - 1);
         double resumeMs = (System.nanoTime() - t2) / 1e6;
         int restored = w.position();
         long t3 = System.nanoTime();

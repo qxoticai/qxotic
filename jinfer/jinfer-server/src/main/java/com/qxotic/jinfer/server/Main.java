@@ -165,22 +165,7 @@ public class Main {
                 options.maxTokens() < 0
                         ? -1
                         : options.maxTokens() - (startPosition + promptTokens.length());
-        // Chunk long prompts to the state's batch capacity; the final chunk rides through the
-        // Generator (which needs >=1 prompt token for fresh logits).
         int totalPrompt = promptTokens.length();
-        long chunkNanos = 0;
-        int cap = state.batchCapacity();
-        while (promptTokens.length() > cap) {
-            int[] ids = promptTokens.subSequence(0, cap).toArray();
-            if (options.echo()) {
-                for (int id : ids)
-                    System.err.print(replaceControlCharacters(tokenizer.decode(new int[] {id})));
-            }
-            long t0 = System.nanoTime();
-            model.model().ingest(state, Batch.prefill(ids));
-            chunkNanos += System.nanoTime() - t0;
-            promptTokens = promptTokens.subSequence(cap, promptTokens.length());
-        }
         ReplyParser parser = ReplyParser.spans(tokenizer);
         StringBuilder text = new StringBuilder();
         InlineThink inlineThink = new InlineThink();
@@ -219,7 +204,7 @@ public class Main {
                 timingPrefix,
                 startPosition + totalPrompt + generated,
                 model.model().config().contextLength(),
-                totalPrompt / ((chunkNanos + result.promptNanos()) / 1e9),
+                totalPrompt / (result.promptNanos() / 1e9),
                 totalPrompt,
                 generated / (result.predictedNanos() / 1e9),
                 generated,
@@ -535,13 +520,7 @@ public class Main {
                     new JinjaChatTemplate(model.tokenizer(), model.chatTemplateSource())
                             .render(messages, null, true, options.think(), null);
         }
-        S state =
-                model.model()
-                        .newState(
-                                model.model().config().contextLength(),
-                                Math.min(
-                                        Math.max(promptTokens.length(), 16),
-                                        RuntimeFlags.BATCH_CAPACITY)); // ports chunk long prompts
+        S state = Generator.stateFor(model.model(), promptTokens.length());
 
         // --cache / --cache-ro: the prompt cache as a file. Matching prefixes restore from
         // the artifact (the media/text blocks are self-contained; the compile convention keeps
@@ -551,13 +530,10 @@ public class Main {
         if (options.promptCache() != null
                 && model.model().stateCodec().isPresent()
                 && promptTokens.length() >= 2) {
-            var codec = model.model().stateCodec().get();
-            long[] fp = new long[promptTokens.length()];
-            for (int i = 0; i < fp.length; i++) fp[i] = promptTokens.intAt(i);
-            byte[] seed = PromptCache.modelSeed(options.modelPath());
+            int[] ids = promptTokens.toArray();
             FrozenBlocks base =
                     Files.exists(options.promptCache())
-                            ? FrozenBlocks.open(options.promptCache(), seed)
+                            ? FrozenBlocks.open(options.promptCache(), model.seed())
                             : null;
             if (options.promptCacheReadOnly()) {
                 if (base == null) {
@@ -565,33 +541,45 @@ public class Main {
                             "read-only cache missing (" + options.promptCache() + "): prefilling");
                 } else {
                     long t0 = System.nanoTime();
-                    var session = base.serve(model.model(), codec, seed, state, fp, fp.length - 1);
+                    var session =
+                            base.serve(
+                                    model.model(),
+                                    model.codec(),
+                                    model.seed(),
+                                    state,
+                                    ids,
+                                    ids.length - 1);
                     System.err.printf(
                             "cache: %d/%d positions restored in %.1f ms%n",
-                            session.position(), fp.length, (System.nanoTime() - t0) / 1e6);
-                    promptTokens = promptTokens.subSequence(session.position(), fp.length);
+                            session.position(), ids.length, (System.nanoTime() - t0) / 1e6);
+                    promptTokens = promptTokens.subSequence(session.position(), ids.length);
                 }
             } else {
                 long t0 = System.nanoTime();
                 var cache =
-                        new PromptCache<>(codec, CacheStore.inMemory(), Long.MAX_VALUE, seed, base);
+                        new PromptCache<>(
+                                model.codec(),
+                                CacheStore.inMemory(),
+                                Long.MAX_VALUE,
+                                model.seed(),
+                                base);
                 var session =
                         com.qxotic.jinfer.cache.CachedSession.resume(
-                                model.model(), cache, state, fp, fp.length - 1);
+                                model.model(), cache, state, ids, ids.length - 1);
                 int restored = session.position();
-                if (restored == fp.length - 1) {
+                if (restored == ids.length - 1) {
                     System.err.printf(
                             "cache: %d/%d positions restored in %.1f ms%n",
-                            restored, fp.length, (System.nanoTime() - t0) / 1e6);
+                            restored, ids.length, (System.nanoTime() - t0) / 1e6);
                     promptTokens = IntSequence.of(promptTokens.getLast());
                 } else {
                     // unseen (or partially shared) prompt: ingest the rest through the session
                     // and append only the new blocks to the catalog
-                    session.ingestSplitLast(promptTokens.toArray(), restored);
+                    session.ingestSplitLast(ids, restored);
                     cache.appendTo(options.promptCache());
                     System.err.printf(
                             "cache: %d/%d restored, %d added, catalog appended (%s)%n",
-                            restored, fp.length, fp.length - restored, options.promptCache());
+                            restored, ids.length, ids.length - restored, options.promptCache());
                     // the session's final 1-token ingest left fresh logits: decode directly
                     promptTokens = IntSequence.empty();
                 }
@@ -602,12 +590,6 @@ public class Main {
         if (!options.stream()) {
             System.out.println(reply.text());
         }
-    }
-
-    private static int[] fpToIds(long[] fp) {
-        int[] ids = new int[fp.length];
-        for (int i = 0; i < fp.length; i++) ids[i] = (int) fp[i];
-        return ids;
     }
 
     /**
@@ -702,12 +684,7 @@ public class Main {
                 CliReply reply =
                         generateCli(
                                 model,
-                                model.model()
-                                        .newState(
-                                                model.model().config().contextLength(),
-                                                Math.min(
-                                                        Math.max(promptTokens.length(), 16),
-                                                        RuntimeFlags.BATCH_CAPACITY)),
+                                Generator.stateFor(model.model(), promptTokens.length()),
                                 promptTokens,
                                 stops,
                                 sampler,

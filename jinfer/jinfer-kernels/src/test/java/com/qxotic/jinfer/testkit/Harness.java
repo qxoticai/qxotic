@@ -7,7 +7,6 @@ package com.qxotic.jinfer.testkit;
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.jinfer.cache.CachedSession;
-import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.cache.StateCodec;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.TurnTemplate;
@@ -54,11 +53,11 @@ public final class Harness<S extends RuntimeState> {
         this.deterministicDecode = deterministicDecode;
         this.model = model;
         this.template = template;
-        this.codec = model.model().stateCodec().orElseThrow();
+        this.codec = model.codec();
         this.tokenizer = model.tokenizer();
         this.stops = model.stopTokens();
         this.path = path;
-        this.seed = PromptCache.modelSeed(path);
+        this.seed = model.seed();
         this.ctx = ctx;
     }
 
