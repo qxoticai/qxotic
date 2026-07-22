@@ -222,7 +222,7 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
 
     /* If the caller did not supply an executor, own an internal pool. */
     if (!c->parallel_for) {
-        c->ipool = jam_pool_create(c->nthreads, pin);
+        c->ipool = jam_pool_create(c->nthreads, pin, c->nthreads_bw);
         if (!c->ipool) { free(c); return NULL; }
     }
 
