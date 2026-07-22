@@ -2,7 +2,6 @@ package com.qxotic.jinfer.server;
 
 import com.qxotic.jinfer.*;
 import com.qxotic.jinfer.llm.*;
-import com.qxotic.jinfer.llm.Generator.GenerationResult;
 
 /**
  * Server observability: lifetime request/token counters and the Prometheus text exposition
@@ -20,10 +19,10 @@ final class Metrics {
     private static volatile long sessionPoolHits, cachedTokens;
 
     /** Record one finished generation (called on the worker thread). */
-    static void record(GenerationResult result) {
+    static void record(Reply reply) {
         requests++;
-        promptTokens += result.promptTokens();
-        completionTokens += result.completionTokens();
+        promptTokens += reply.promptTokens();
+        completionTokens += reply.completionTokens();
     }
 
     /**

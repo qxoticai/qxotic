@@ -3,6 +3,7 @@ package com.qxotic.jinfer.server;
 import com.qxotic.jinfer.*;
 import com.qxotic.jinfer.llm.*;
 import com.qxotic.toknroll.IntSequence;
+import com.qxotic.toknroll.Tokenizer;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -62,10 +63,11 @@ final class ToolUse {
      * extended) prompt.
      */
     static IntSequence seedForced(
-            GgufTokenizer tokenizer, Map<String, Object> request, IntSequence promptTokens) {
+            Tokenizer tokenizer, Map<String, Object> request, IntSequence promptTokens) {
         String choice = forced(request);
         if (choice == null) return promptTokens;
-        Integer marker = tokenizer.getSpecialTokens().get("<|tool_call_start|>");
+        java.util.OptionalInt markerId = SpecialTokens.find(tokenizer, "<|tool_call_start|>");
+        Integer marker = markerId.isPresent() ? markerId.getAsInt() : null;
         if (marker == null) return promptTokens;
         IntSequence seeded = promptTokens.concat(IntSequence.of(marker));
         if (!choice.isEmpty()) seeded = seeded.concat(tokenizer.encode("[" + choice));
