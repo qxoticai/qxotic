@@ -23,7 +23,7 @@ static inline void  jam_aligned_free(void* p) { free(p); }
 
 /* ---- internal thread pool (used when no host parallel_for is supplied, e.g. the global ctx) ---- */
 typedef struct jam_pool jam_pool;
-jam_pool* jam_pool_create(int nthreads, const int* cpu); /* nthreads participants incl. the submitter;
+jam_pool* jam_pool_create(int nthreads, const int* cpu, int nprimary); /* nthreads participants incl. the submitter;
                                                           * cpu[] (len nthreads, or NULL) pins worker k to
                                                           * cpu[k+1] best-effort (cpu[0] = unpinned submitter) */
 void      jam_pool_destroy(jam_pool* pool);
