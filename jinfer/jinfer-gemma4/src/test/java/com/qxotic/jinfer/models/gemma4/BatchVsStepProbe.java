@@ -8,15 +8,29 @@ package com.qxotic.jinfer.models.gemma4;
 
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.FloatTensor;
+import com.qxotic.jinfer.llm.SpecialTokens;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 
 public final class BatchVsStepProbe {
 
-    public static void main(String[] args) throws Exception {
+    @Test
+    @Tag("driver")
+    void run() throws Exception {
+        main(testArgs());
+    }
+
+    private static String[] testArgs() {
+        String argv = System.getProperty("jinfer.args", "");
+        return argv.isBlank() ? new String[0] : argv.trim().split("\\s+");
+    }
+
+    private static void main(String[] args) throws Exception {
         int chunk = args.length > 0 ? Integer.parseInt(args[0]) : 3; // = MTP depth+1
         Path model =
                 Path.of("/home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-Q8_0.gguf");
@@ -26,7 +40,7 @@ public final class BatchVsStepProbe {
         }
         Gemma4 m = Gemma4.loadModel(model, 4096);
         var tk = m.tokenizer();
-        int bos = tk.getSpecialTokens().getOrDefault("<bos>", 2);
+        int bos = SpecialTokens.find(tk, "<bos>").orElse(2);
         Set<Integer> stops = m.stopTokens();
         int vocab = m.config().vocabularySize();
 
@@ -100,9 +114,9 @@ public final class BatchVsStepProbe {
                                                     + " stepRel=%.2e batchTop=%.3f%n",
                                             i + j,
                                             bAm,
-                                            esc(tk.decode(bAm)),
+                                            esc(tk.decode(new int[] {bAm})),
                                             oAm,
-                                            esc(tk.decode(oAm)),
+                                            esc(tk.decode(new int[] {oAm})),
                                             rel,
                                             bTop));
                         }

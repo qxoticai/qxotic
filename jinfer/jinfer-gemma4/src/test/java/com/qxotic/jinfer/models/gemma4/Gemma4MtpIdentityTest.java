@@ -27,6 +27,9 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 
 public final class Gemma4MtpIdentityTest {
 
@@ -40,7 +43,19 @@ public final class Gemma4MtpIdentityTest {
         "Once upon a time, in a quiet village by the mountains,",
     };
 
-    public static void main(String[] args) throws Exception {
+    @Test
+    @Tag("driver")
+    void run() throws Exception {
+        Assumptions.assumeTrue(
+                java.nio.file.Files.exists(
+                        java.nio.file.Path.of(
+                                "/home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-Q8_0.gguf")),
+                "model not found:"
+                    + " /home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-Q8_0.gguf");
+        main();
+    }
+
+    private static void main() throws Exception {
         // shape-invariant engine BEFORE any model class initializes (JamMatMul reads it lazily,
         // but set it first to be independent of class-init order)
         System.setProperty("jinfer.disableJam", "true");
@@ -55,7 +70,7 @@ public final class Gemma4MtpIdentityTest {
         }
         Gemma4 m = Gemma4.loadModel(model, 4096, sidecar);
         var tk = m.tokenizer();
-        int bos = tk.getSpecialTokens().getOrDefault("<bos>", 2);
+        int bos = SpecialTokens.find(tk, "<bos>").orElse(2);
         Set<Integer> stops = m.stopTokens();
         int maxTokens = 120;
 
@@ -117,7 +132,7 @@ public final class Gemma4MtpIdentityTest {
 
         if (failures > 0) {
             System.out.println(failures + " failure(s)");
-            System.exit(1);
+            throw new AssertionError("failure(s) - see output above");
         }
         System.out.println(
                 "Gemma4MtpIdentityTest: all identical - speculative greedy == plain greedy"
@@ -145,7 +160,7 @@ public final class Gemma4MtpIdentityTest {
         return ids;
     }
 
-    static void diff(List<Integer> a, List<Integer> b, com.qxotic.jinfer.llm.GgufTokenizer tk) {
+    static void diff(List<Integer> a, List<Integer> b, com.qxotic.toknroll.Tokenizer tk) {
         int i = 0;
         while (i < Math.min(a.size(), b.size()) && a.get(i).equals(b.get(i))) i++;
         System.out.println(

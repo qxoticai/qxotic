@@ -1,9 +1,8 @@
 // The codec round-trip law + decode parity, on the real LFM2 tokenizer (no weights): a reply
-// token stream fed through the codec's ReplyDecoder and appended to the conversation must
+// token stream fed through the codec's ReplyParser and appended to the conversation must
 // re-encode to EXACTLY encode(conversation) ++ reply ++ closeTurn ++ generationPrompt (verbatim
-// splice = KV continuity), and the decoder must structure the reply identically to the retired
+// splice = KV continuity), and the parser must structure the reply identically to the retired
 // Lfm2ToolCallDetector + think-demux path.
-//   java ... com.qxotic.jinfer.models.lfm2.Lfm2CodecLawOracle [model.gguf]
 package com.qxotic.jinfer.models.lfm2;
 
 import com.qxotic.format.gguf.GGUF;
@@ -11,13 +10,15 @@ import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
-import com.qxotic.jinfer.chat.ReplyDecoder;
+import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.chat.ToolCallSyntax;
 import com.qxotic.jinfer.kernels.ModelLoader;
-import com.qxotic.jinfer.llm.GgufTokenizer;
+import com.qxotic.jinfer.llm.SpecialTokens;
+import com.qxotic.jinfer.llm.Tokenizers;
 import com.qxotic.jinfer.testkit.Checks;
 import com.qxotic.toknroll.IntSequence;
+import com.qxotic.toknroll.Tokenizer;
 import java.io.ByteArrayOutputStream;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
@@ -26,36 +27,33 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Test;
 
 public final class Lfm2CodecLawOracle {
 
     private static final Checks checks = new Checks();
 
-    public static void main(String[] args) throws Exception {
+    @Test
+    void oracle() throws Exception {
         Path model =
-                Path.of(
-                        args.length > 0
-                                ? args[0]
-                                : "/home/mukel/Desktop/playground/models/LiquidAI/LFM2.5-8B-A1B-Q8_0.gguf");
-        if (!Files.exists(model)) {
-            System.out.println("Lfm2CodecLawOracle: model not found (" + model + "), skipping");
-            return;
-        }
+                Path.of("/home/mukel/Desktop/playground/models/LiquidAI/LFM2.5-8B-A1B-Q8_0.gguf");
+        Assumptions.assumeTrue(Files.exists(model), "model not found: " + model);
         GGUF g;
         try (FileChannel channel = FileChannel.open(model, StandardOpenOption.READ)) {
             g = ModelLoader.readGguf(channel, model.toString());
         }
-        GgufTokenizer tok = new GgufTokenizer(g);
+        Tokenizer tok = Tokenizers.fromGGUF(g);
         Lfm2ChatTemplate template = new Lfm2ChatTemplate(tok);
-        int thinkOpen = tok.requiredSpecial("<think>");
-        int thinkClose = tok.requiredSpecial("</think>");
-        int tcStart = tok.requiredSpecial("<|tool_call_start|>");
-        int tcEnd = tok.requiredSpecial("<|tool_call_end|>");
+        int thinkOpen = SpecialTokens.require(tok, "<think>");
+        int thinkClose = SpecialTokens.require(tok, "</think>");
+        int tcStart = SpecialTokens.require(tok, "<|tool_call_start|>");
+        int tcEnd = SpecialTokens.require(tok, "<|tool_call_end|>");
         IntSequence scaffold =
-                IntSequence.of(tok.requiredSpecial("<|im_start|>"))
+                IntSequence.of(SpecialTokens.require(tok, "<|im_start|>"))
                         .concat(tok.encode("assistant\n"));
         IntSequence close =
-                IntSequence.of(tok.requiredSpecial("<|im_end|>")).concat(tok.encode("\n"));
+                IntSequence.of(SpecialTokens.require(tok, "<|im_end|>")).concat(tok.encode("\n"));
 
         // reply A: a thinking reply
         IntSequence replyA =
@@ -130,10 +128,7 @@ public final class Lfm2CodecLawOracle {
     }
 
     private static Message decode(Lfm2ChatTemplate template, IntSequence reply) {
-        ReplyDecoder d = template.decoder();
-        reply.forEachInt(d::feed);
-        d.finish();
-        return d.message();
+        return ReplyParser.parse(template.parser(), reply);
     }
 
     /** encode(conv + reply-message) == encode(conv) ++ reply ++ closeTurn ++ scaffold. */
@@ -186,10 +181,9 @@ public final class Lfm2CodecLawOracle {
     }
 
     /** The retired Lfm2ToolCallDetector, inlined verbatim as the parity reference. */
-    private static List<Part.ToolCall> oldDetectorCalls(
-            GgufTokenizer tokenizer, IntSequence reply) {
-        int startMarker = tokenizer.requiredSpecial("<|tool_call_start|>");
-        int endMarker = tokenizer.requiredSpecial("<|tool_call_end|>");
+    private static List<Part.ToolCall> oldDetectorCalls(Tokenizer tokenizer, IntSequence reply) {
+        int startMarker = SpecialTokens.require(tokenizer, "<|tool_call_start|>");
+        int endMarker = SpecialTokens.require(tokenizer, "<|tool_call_end|>");
         ByteArrayOutputStream span = new ByteArrayOutputStream();
         List<Part.ToolCall> calls = new ArrayList<>();
         boolean[] inSpan = {false};
@@ -207,7 +201,7 @@ public final class Lfm2CodecLawOracle {
                             inSpan[0] = false;
                         }
                     } else if (inSpan[0]) {
-                        byte[] bytes = tokenizer.decodeTokenBytes(token);
+                        byte[] bytes = tokenizer.decodeBytes(new int[] {token});
                         span.write(bytes, 0, bytes.length);
                     }
                 });

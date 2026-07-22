@@ -6,16 +6,34 @@ package com.qxotic.jinfer.models.qwen35;
 
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.FloatTensor;
+import com.qxotic.jinfer.llm.SpecialTokens;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 
 public final class Qwen3BatchRun {
-    public static void main(String[] args) throws Exception {
+    @Test
+    @Tag("driver")
+    void run() throws Exception {
+        Assumptions.assumeTrue(
+                !System.getProperty("jinfer.args", "").isBlank(),
+                "set -Djinfer.args=\"<model.gguf> ...\" to run this tool");
+        main(testArgs());
+    }
+
+    private static String[] testArgs() {
+        String argv = System.getProperty("jinfer.args", "");
+        return argv.isBlank() ? new String[0] : argv.trim().split("\\s+");
+    }
+
+    private static void main(String[] args) throws Exception {
         int ctx = 8192;
         Qwen3 model = Qwen3.loadModel(Path.of(args[0]), ctx);
         var tk = model.tokenizer();
-        int eos = tk.getSpecialTokens().getOrDefault("<|endoftext|>", 151643);
+        int eos = SpecialTokens.find(tk, "<|endoftext|>").orElse(151643);
         int dim = model.config().embeddingLength();
         int vocab = model.config().vocabularySize();
 

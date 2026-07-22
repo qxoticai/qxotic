@@ -10,7 +10,8 @@ import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Tool;
-import com.qxotic.jinfer.llm.GgufTokenizer;
+import com.qxotic.jinfer.llm.SpecialTokens;
+import com.qxotic.toknroll.Tokenizer;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -19,7 +20,8 @@ import java.util.Map;
 
 public final class CodecOracleScenario {
 
-    public final GgufTokenizer tokenizer;
+    public final Tokenizer tokenizer;
+    private final com.qxotic.toknroll.Specials specials;
     public final ChatTemplate template;
     private final OracleSupport support;
     private final Map<String, Object> renderVars;
@@ -31,11 +33,12 @@ public final class CodecOracleScenario {
      */
     public CodecOracleScenario(
             Path gguf,
-            java.util.function.Function<GgufTokenizer, ChatTemplate> template,
+            java.util.function.Function<Tokenizer, ChatTemplate> template,
             Map<String, Object> renderVars)
             throws Exception {
         this.support = new OracleSupport(gguf);
         this.tokenizer = support.tokenizer;
+        this.specials = SpecialTokens.encoder(tokenizer);
         this.template = template.apply(tokenizer);
         this.renderVars = renderVars;
     }
@@ -61,7 +64,7 @@ public final class CodecOracleScenario {
         vars.put("messages", maps);
         vars.put("add_generation_prompt", true);
         String rendered = support.jinja.render(vars);
-        List<Integer> oracle = tokenizer.encodeWithSpecialTokens(rendered).toList();
+        List<Integer> oracle = specials.encode(tokenizer, rendered).toList();
         List<Integer> ours = encodeIds(new Conversation(conversation, List.of(), thinking, ""));
         support.diff(checks, name, oracle, ours, rendered);
     }
@@ -81,7 +84,7 @@ public final class CodecOracleScenario {
         vars.put("tools", toolVars);
         vars.put("add_generation_prompt", true);
         String rendered = support.jinja.render(vars);
-        List<Integer> oracle = tokenizer.encodeWithSpecialTokens(rendered).toList();
+        List<Integer> oracle = specials.encode(tokenizer, rendered).toList();
         List<Integer> ours = encodeIds(new Conversation(conversation, tools, true, ""));
         support.diff(checks, name, oracle, ours, rendered);
     }
@@ -93,7 +96,7 @@ public final class CodecOracleScenario {
      */
     public void compareToolsExpected(
             String name, String expectedRendered, List<Tool> tools, List<Message> conversation) {
-        List<Integer> oracle = tokenizer.encodeWithSpecialTokens(expectedRendered).toList();
+        List<Integer> oracle = specials.encode(tokenizer, expectedRendered).toList();
         List<Integer> ours = encodeIds(new Conversation(conversation, tools, true, ""));
         support.diff(checks, name, oracle, ours, expectedRendered);
     }

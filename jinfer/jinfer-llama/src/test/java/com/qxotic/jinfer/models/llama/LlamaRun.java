@@ -5,13 +5,31 @@
 // CHAT=1 wraps the prompt in the Llama-3 header chat format.
 package com.qxotic.jinfer.models.llama;
 
+import com.qxotic.jinfer.llm.SpecialTokens;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 
 public final class LlamaRun {
-    public static void main(String[] args) throws Exception {
+    @Test
+    @Tag("driver")
+    void run() throws Exception {
+        Assumptions.assumeTrue(
+                !System.getProperty("jinfer.args", "").isBlank(),
+                "set -Djinfer.args=\"<model.gguf> ...\" to run this tool");
+        main(testArgs());
+    }
+
+    private static String[] testArgs() {
+        String argv = System.getProperty("jinfer.args", "");
+        return argv.isBlank() ? new String[0] : argv.trim().split("\\s+");
+    }
+
+    private static void main(String[] args) throws Exception {
         String path = args[0];
         String promptStr = args.length > 1 ? args[1] : "The capital of France is";
         int nTokens = args.length > 2 ? Integer.parseInt(args[2]) : 32;
@@ -28,19 +46,20 @@ public final class LlamaRun {
                 c.contextLength());
 
         var tk = model.tokenizer();
-        var specials = tk.getSpecialTokens();
         int bos =
-                specials.getOrDefault(
-                        "<bos>",
-                        specials.getOrDefault(
-                                "<|begin_of_text|>", specials.getOrDefault("<|startoftext|>", 1)));
+                SpecialTokens.find(tk, "<bos>")
+                        .orElse(
+                                SpecialTokens.find(tk, "<|begin_of_text|>")
+                                        .orElse(
+                                                SpecialTokens.find(tk, "<|startoftext|>")
+                                                        .orElse(1)));
         List<Integer> promptTokens = new ArrayList<>();
         if (model.config().addBos()) promptTokens.add(bos);
         if (System.getenv("CHAT") != null) { // Llama-3:
             // <|start_header_id|>user<|end_header_id|>\n\n{p}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n
-            int sh = tk.getSpecialTokens().getOrDefault("<|start_header_id|>", -1);
-            int eh = tk.getSpecialTokens().getOrDefault("<|end_header_id|>", -1);
-            int eot = tk.getSpecialTokens().getOrDefault("<|eot_id|>", -1);
+            int sh = SpecialTokens.find(tk, "<|start_header_id|>").orElse(-1);
+            int eh = SpecialTokens.find(tk, "<|end_header_id|>").orElse(-1);
+            int eot = SpecialTokens.find(tk, "<|eot_id|>").orElse(-1);
             if (sh >= 0 && eh >= 0 && eot >= 0) {
                 promptTokens.add(sh);
                 promptTokens.addAll(tk.encode("user").toList());
@@ -69,7 +88,7 @@ public final class LlamaRun {
         int n = 0;
         long t0 = System.nanoTime();
         for (; n < nTokens && !stops.contains(tok); n++) {
-            out.append(tk.decode(tok));
+            out.append(tk.decode(new int[] {tok}));
             model.ingest(s, com.qxotic.jinfer.Batch.step(tok));
             tok = model.logits(s).argmax();
         }

@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.random.RandomGenerator;
 import java.util.random.RandomGeneratorFactory;
+import org.junit.jupiter.api.Test;
 
 /**
  * Comprehensive, dependency-free tests for the pushdown grammar engine ({@link Grammar}).
@@ -145,7 +146,8 @@ public final class GrammarSpecTest {
         }
     }
 
-    public static void main(String[] args) {
+    @Test
+    void grammarSpecs() {
         testJsonValid();
         testJsonInvalid();
         testJsonPreciseRejection();
@@ -174,7 +176,7 @@ public final class GrammarSpecTest {
         testFuzzRoundtrip();
 
         System.out.println("\nGrammarSpecTest: " + checks + " checks, " + failures + " failures");
-        if (failures > 0) System.exit(1);
+        if (failures > 0) throw new AssertionError("GrammarSpecTest: " + failures + " failures");
     }
 
     // ========================================================================

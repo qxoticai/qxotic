@@ -8,6 +8,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.Test;
 
 /**
  * Behavioral tests for {@link JinjaRenderer}, the minimal Jinja2 engine used to apply GGUF {@code
@@ -24,7 +25,8 @@ public final class JinjaRendererTest {
 
     static int failures;
 
-    public static void main(String[] args) {
+    @Test
+    void run() {
         literalsAndOutput();
         arithmetic();
         comparisonsAndLogic();
@@ -52,7 +54,7 @@ public final class JinjaRendererTest {
 
         if (failures > 0) {
             System.err.println("\nJinjaRendererTest: " + failures + " failures");
-            System.exit(1);
+            throw new AssertionError("failure(s) - see output above");
         }
         System.out.println("\nJinjaRendererTest: 0 failures");
     }
@@ -802,7 +804,7 @@ public final class JinjaRendererTest {
                 "{% if true %}\n    {# c #}\n            {{- 'B' }}{% endif %}",
                 map(), "B"); // comment then dash-out
         // keep_trailing_newline=false: exactly one trailing newline is dropped - at the
-        // template() entry point (what GgufTokenizer renders through), not the raw render()
+        // template() entry point (what Tokenizer renders through), not the raw render()
         eqTemplate("A\n", "A");
         eqTemplate("A\n\n", "A\n");
     }

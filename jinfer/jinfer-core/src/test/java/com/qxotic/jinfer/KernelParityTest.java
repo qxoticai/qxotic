@@ -5,6 +5,7 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.Random;
+import org.junit.jupiter.api.Test;
 
 /**
  * Kernel parity harness: every quantized dot/gemv/gemm and the rmsnorm vector path are checked
@@ -22,7 +23,8 @@ public final class KernelParityTest {
     private static int checks = 0;
     private static int failures = 0;
 
-    public static void main(String[] args) {
+    @Test
+    void run() {
         GGMLType[] quants = {
             GGMLType.Q4_0,
             GGMLType.Q4_1,
@@ -63,7 +65,7 @@ public final class KernelParityTest {
 
         System.out.printf("%d checks, %d failures%n", checks, failures);
         if (failures > 0) {
-            System.exit(1);
+            throw new AssertionError("failure(s) - see output above");
         }
     }
 

@@ -13,6 +13,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 
 public final class Gemma4MtpParityTest {
 
@@ -20,7 +23,19 @@ public final class Gemma4MtpParityTest {
         236761, 236764, 568, 15245, 528, 236888, 657, 951, 236793, 236881
     };
 
-    public static void main(String[] args) throws Exception {
+    @Test
+    @Tag("integration")
+    void run() throws Exception {
+        Assumptions.assumeTrue(
+                java.nio.file.Files.exists(
+                        java.nio.file.Path.of(
+                                "/home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-Q8_0.gguf")),
+                "model not found:"
+                    + " /home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-Q8_0.gguf");
+        main();
+    }
+
+    private static void main() throws Exception {
         Path model =
                 Path.of("/home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-Q8_0.gguf");
         Path sidecar =
@@ -42,7 +57,7 @@ public final class Gemma4MtpParityTest {
         // decode step and match the "." (id 236761 top-1) step. The draft input is (hidden of the
         // position
         // that produced the sampled token, that token); rope position = that token's position.
-        int bos = tk.getSpecialTokens().getOrDefault("<bos>", 2);
+        int bos = SpecialTokens.find(tk, "<bos>").orElse(2);
         List<Integer> ids = new ArrayList<>();
         ids.add(bos);
         ids.addAll(tk.encode("The capital of France is").toList());
@@ -69,9 +84,9 @@ public final class Gemma4MtpParityTest {
                     "step %d: backbone tok=%d |%s|  draft top1=%d |%s|  top10=%s%n",
                     step,
                     tok,
-                    tk.decode(tok).replace("\n", "\\n"),
+                    tk.decode(new int[] {tok}).replace("\n", "\\n"),
                     top[0],
-                    tk.decode(top[0]).replace("\n", "\\n"),
+                    tk.decode(new int[] {top[0]}).replace("\n", "\\n"),
                     java.util.Arrays.toString(top));
             if (top[0] == ANCHOR_TOP[0]) { // the "." step the anchor captured
                 int m = prefixMatch(top, ANCHOR_TOP);
@@ -93,7 +108,7 @@ public final class Gemma4MtpParityTest {
                     "PASS: MTP draft reproduces the anchor distribution at the captured step");
         } else {
             System.out.println("FAIL: draft top-1/top-2 did not match the anchor at the '.' step");
-            System.exit(1);
+            throw new AssertionError("failure(s) - see output above");
         }
     }
 
@@ -136,9 +151,9 @@ public final class Gemma4MtpParityTest {
         return m;
     }
 
-    static String pieces(com.qxotic.jinfer.llm.GgufTokenizer tk, int[] ids) {
+    static String pieces(com.qxotic.toknroll.Tokenizer tk, int[] ids) {
         var sb = new StringBuilder();
-        for (int id : ids) sb.append('|').append(tk.decode(id).replace("\n", "\\n"));
+        for (int id : ids) sb.append('|').append(tk.decode(new int[] {id}).replace("\n", "\\n"));
         return sb.append('|').toString();
     }
 }

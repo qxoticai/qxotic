@@ -4,13 +4,27 @@
 //   java ... com.qxotic.jinfer.models.gemma4.GemmaRun [model.gguf] [prompt] [nTokens]
 package com.qxotic.jinfer.models.gemma4;
 
+import com.qxotic.jinfer.llm.SpecialTokens;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 
 public final class GemmaRun {
-    public static void main(String[] args) throws Exception {
+    @Test
+    @Tag("driver")
+    void run() throws Exception {
+        main(testArgs());
+    }
+
+    private static String[] testArgs() {
+        String argv = System.getProperty("jinfer.args", "");
+        return argv.isBlank() ? new String[0] : argv.trim().split("\\s+");
+    }
+
+    private static void main(String[] args) throws Exception {
         String path =
                 args.length > 0
                         ? args[0]
@@ -33,7 +47,7 @@ public final class GemmaRun {
                 c.embeddingLengthPerLayer());
 
         var tk = model.tokenizer();
-        int bos = tk.getSpecialTokens().getOrDefault("<bos>", 2);
+        int bos = SpecialTokens.find(tk, "<bos>").orElse(2);
         List<Integer> promptTokens = new ArrayList<>();
         promptTokens.add(bos);
         promptTokens.addAll(tk.encode(promptStr).toList());
@@ -55,7 +69,7 @@ public final class GemmaRun {
         int tok = model.logits(s).argmax();
         int n = 0;
         for (; n < nTokens && !stops.contains(tok); n++) {
-            out.append(tk.decode(tok));
+            out.append(tk.decode(new int[] {tok}));
             model.ingest(s, com.qxotic.jinfer.Batch.step(tok));
             tok = model.logits(s).argmax();
         }

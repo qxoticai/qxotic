@@ -1,7 +1,6 @@
 // Oracle: Lfm2ChatTemplate.encode must be token-exact with the GGUF's own Jinja chat_template
 // (rendered by jinfer-jinja with add_generation_prompt=true, rescanned with
 // encodeWithSpecialTokens) over a battery of conversations, via the shared codec scenario.
-//   java ... com.qxotic.jinfer.models.lfm2.Lfm2ChatTemplateOracle [model.gguf]
 package com.qxotic.jinfer.models.lfm2;
 
 import com.qxotic.jinfer.chat.Message;
@@ -10,19 +9,16 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Test;
 
 public final class Lfm2ChatTemplateOracle {
 
-    public static void main(String[] args) throws Exception {
+    @Test
+    void oracle() throws Exception {
         Path model =
-                Path.of(
-                        args.length > 0
-                                ? args[0]
-                                : "/home/mukel/Desktop/playground/models/LiquidAI/LFM2.5-8B-A1B-Q8_0.gguf");
-        if (!Files.exists(model)) {
-            System.out.println("Lfm2ChatTemplateOracle: model not found (" + model + "), skipping");
-            return;
-        }
+                Path.of("/home/mukel/Desktop/playground/models/LiquidAI/LFM2.5-8B-A1B-Q8_0.gguf");
+        Assumptions.assumeTrue(Files.exists(model), "model not found: " + model);
         CodecOracleScenario o =
                 new CodecOracleScenario(
                         model,

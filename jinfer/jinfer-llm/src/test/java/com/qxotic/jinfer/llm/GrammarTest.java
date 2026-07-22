@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.random.RandomGenerator;
 import java.util.random.RandomGeneratorFactory;
+import org.junit.jupiter.api.Test;
 
 public final class GrammarTest {
 
@@ -142,7 +143,8 @@ public final class GrammarTest {
         return n;
     }
 
-    public static void main(String[] args) {
+    @Test
+    void grammar() {
         testParser();
         testCursor();
         testJsonDFA();
@@ -181,8 +183,7 @@ public final class GrammarTest {
         testStripCommentEdgeCases();
 
         if (failures > 0) {
-            System.err.println("\nGrammarTest: " + failures + " failures");
-            System.exit(1);
+            throw new AssertionError("GrammarTest: " + failures + " failures");
         }
         System.out.println("\nGrammarTest: 0 failures");
     }

@@ -1,7 +1,6 @@
 // Oracle: NemotronHTurnTemplate must be token-exact with the GGUF's own Jinja chat_template
 // (rendered by jinfer-jinja, rescanned with encodeWithSpecialTokens) over a battery of
 // conversations, via the shared testkit scenario. Loads only the tokenizer, never the weights.
-//   java ... com.qxotic.jinfer.models.nemotronh.NemotronHTurnTemplateOracle [model.gguf]
 package com.qxotic.jinfer.models.nemotronh;
 
 import com.qxotic.jinfer.chat.Message;
@@ -10,20 +9,17 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Test;
 
 public final class NemotronHTurnTemplateOracle {
 
-    public static void main(String[] args) throws Exception {
+    @Test
+    void oracle() throws Exception {
         Path model =
                 Path.of(
-                        args.length > 0
-                                ? args[0]
-                                : "/home/mukel/Desktop/playground/models/bartowski/nvidia_Nemotron-Cascade-2-30B-A3B-Q8_0.gguf");
-        if (!Files.exists(model)) {
-            System.out.println(
-                    "NemotronHTurnTemplateOracle: model not found (" + model + "), skipping");
-            return;
-        }
+                        "/home/mukel/Desktop/playground/models/bartowski/nvidia_Nemotron-Cascade-2-30B-A3B-Q8_0.gguf");
+        Assumptions.assumeTrue(Files.exists(model), "model not found: " + model);
         // template defaults: enable_thinking=true, truncate_history_thinking=true (pinned
         // explicitly)
         OracleScenario o =

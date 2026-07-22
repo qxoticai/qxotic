@@ -5,6 +5,7 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import org.junit.jupiter.api.Test;
 
 public final class CacheStoreTest {
 
@@ -287,7 +288,8 @@ public final class CacheStoreTest {
     // main
     // ========================================================================
 
-    public static void main(String[] args) {
+    @Test
+    void run() {
         testInMemoryBasic();
         testInMemoryRealloc();
         testInMemoryFreeUnknown();
@@ -311,7 +313,7 @@ public final class CacheStoreTest {
 
         if (failures > 0) {
             System.err.println("\nCacheStoreTest: " + failures + " failures");
-            System.exit(1);
+            throw new AssertionError("failure(s) - see output above");
         }
         System.out.println("\nCacheStoreTest: 0 failures");
     }
