@@ -2,13 +2,14 @@ package com.qxotic.jinfer.models.llama;
 
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.llm.*;
-import com.qxotic.jinfer.llm.GgufTokenizer;
+import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.toknroll.IntSequence;
+import com.qxotic.toknroll.Tokenizer;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Hand-written Llama 3 chat framing, token-exact with the GGUF's Jinja {@code
@@ -30,7 +31,7 @@ import java.util.Map;
  * deterministic across runs.
  *
  * <p>Two domains: header/turn markers are emitted as trusted ids; everything else goes through
- * plain {@link GgufTokenizer#encode} so conversation text can never mint control tokens.
+ * plain {@link Tokenizer#encode} so conversation text can never mint control tokens.
  */
 public final class LlamaTurnTemplate implements TurnTemplate {
 
@@ -40,26 +41,25 @@ public final class LlamaTurnTemplate implements TurnTemplate {
      */
     public static final String DEFAULT_DATE = "26 Jul 2024";
 
-    private final GgufTokenizer tokenizer;
+    private final Tokenizer tokenizer;
     private final String systemPreamble;
     private final int bos; // <|begin_of_text|>
     private final int startHeader; // <|start_header_id|>
     private final int endHeader; // <|end_header_id|>
     private final int eot; // <|eot_id|>
 
-    public LlamaTurnTemplate(GgufTokenizer tokenizer) {
+    public LlamaTurnTemplate(Tokenizer tokenizer) {
         this(tokenizer, DEFAULT_DATE);
     }
 
-    public LlamaTurnTemplate(GgufTokenizer tokenizer, String dateString) {
+    public LlamaTurnTemplate(Tokenizer tokenizer, String dateString) {
         this.tokenizer = tokenizer;
         this.systemPreamble =
                 "Cutting Knowledge Date: December 2023\nToday Date: " + dateString + "\n\n";
-        Map<String, Integer> special = tokenizer.getSpecialTokens();
-        this.bos = tokenizer.requiredSpecial("<|begin_of_text|>");
-        this.startHeader = tokenizer.requiredSpecial("<|start_header_id|>");
-        this.endHeader = tokenizer.requiredSpecial("<|end_header_id|>");
-        this.eot = tokenizer.requiredSpecial("<|eot_id|>");
+        this.bos = SpecialTokens.require(tokenizer, "<|begin_of_text|>");
+        this.startHeader = SpecialTokens.require(tokenizer, "<|start_header_id|>");
+        this.endHeader = SpecialTokens.require(tokenizer, "<|end_header_id|>");
+        this.eot = SpecialTokens.require(tokenizer, "<|eot_id|>");
     }
 
     @Override
@@ -109,5 +109,10 @@ public final class LlamaTurnTemplate implements TurnTemplate {
     @Override
     public List<Batch> closeTurn() {
         return List.of(Batch.prefill(new int[] {eot}));
+    }
+
+    @Override
+    public ReplyParser parser() {
+        return ReplyParser.spans(tokenizer);
     }
 }

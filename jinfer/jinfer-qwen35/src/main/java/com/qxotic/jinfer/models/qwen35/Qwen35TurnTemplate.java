@@ -2,11 +2,13 @@ package com.qxotic.jinfer.models.qwen35;
 
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.llm.*;
-import com.qxotic.jinfer.llm.GgufTokenizer;
+import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.toknroll.IntSequence;
+import com.qxotic.toknroll.Tokenizer;
 import java.util.List;
 
 /**
@@ -27,13 +29,13 @@ import java.util.List;
  * is defined and false) - the scaffolds themselves are identical, only the default flag differs, so
  * this template serves both.
  *
- * <p>Each text run between specials is ONE contiguous plain {@link GgufTokenizer#encode};
- * conversation content never goes through special-aware encoding, so text cannot mint control
- * tokens ({@code <think>}/{@code </think>} in the scaffold are emitted as trusted ids).
+ * <p>Each text run between specials is ONE contiguous plain {@link Tokenizer#encode}; conversation
+ * content never goes through special-aware encoding, so text cannot mint control tokens ({@code
+ * <think>}/{@code </think>} in the scaffold are emitted as trusted ids).
  */
 public final class Qwen35TurnTemplate implements TurnTemplate {
 
-    private final GgufTokenizer tokenizer;
+    private final Tokenizer tokenizer;
     private final int imStart; // <|im_start|>
     private final int imEnd; // <|im_end|>
     private final int think; // <think>
@@ -42,12 +44,12 @@ public final class Qwen35TurnTemplate implements TurnTemplate {
     private final List<Batch> genThinking, genDirect; // generation prompts, encoded once
     private final List<Batch> closeTurn; // <|im_end|>\n, constant
 
-    public Qwen35TurnTemplate(GgufTokenizer tokenizer) {
+    public Qwen35TurnTemplate(Tokenizer tokenizer) {
         this.tokenizer = tokenizer;
-        this.imStart = tokenizer.requiredSpecial("<|im_start|>");
-        this.imEnd = tokenizer.requiredSpecial("<|im_end|>");
-        this.think = tokenizer.requiredSpecial("<think>");
-        this.endThink = tokenizer.requiredSpecial("</think>");
+        this.imStart = SpecialTokens.require(tokenizer, "<|im_start|>");
+        this.imEnd = SpecialTokens.require(tokenizer, "<|im_end|>");
+        this.think = SpecialTokens.require(tokenizer, "<think>");
+        this.endThink = SpecialTokens.require(tokenizer, "</think>");
         this.newline = tokenizer.encode("\n");
         // <|im_start|>assistant\n<think>\n            (reasoning)
         // <|im_start|>assistant\n<think>\n\n</think>\n\n   (direct answer)
@@ -62,16 +64,6 @@ public final class Qwen35TurnTemplate implements TurnTemplate {
         this.genDirect = List.of(Batch.prefill(direct.toArray()));
         IntSequence close = IntSequence.of(imEnd).concat(newline);
         this.closeTurn = List.of(Batch.prefill(close.toArray()));
-    }
-
-    @Override
-    public java.util.Optional<com.qxotic.jinfer.chat.ToolCallDetector> toolCallDetector() {
-        return java.util.Optional.of(
-                new com.qxotic.jinfer.chat.SpanToolCallDetector(
-                        tokenizer,
-                        "<tool_call>",
-                        "</tool_call>",
-                        Qwen35ToolCallDetector::parsePayload));
     }
 
     /** Qwen3.5 emits no bos and no fixed preamble. */
@@ -113,5 +105,11 @@ public final class Qwen35TurnTemplate implements TurnTemplate {
         int i = 0;
         while (i < tail.length() && tail.charAt(i) == '\n') i++;
         return tail.substring(i);
+    }
+
+    @Override
+    public ReplyParser parser() {
+        return ReplyParser.spans(
+                tokenizer, "<tool_call>", "</tool_call>", Qwen35ToolCallDetector::parsePayload);
     }
 }

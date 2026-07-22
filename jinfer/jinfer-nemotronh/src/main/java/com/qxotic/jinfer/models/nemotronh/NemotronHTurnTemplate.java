@@ -2,11 +2,13 @@ package com.qxotic.jinfer.models.nemotronh;
 
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.llm.*;
-import com.qxotic.jinfer.llm.GgufTokenizer;
+import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.toknroll.IntSequence;
+import com.qxotic.toknroll.Tokenizer;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -22,10 +24,10 @@ import java.util.List;
  * <p>Historical assistant turns match the template's truncation: content with neither think marker
  * is prefixed with an empty {@code <think></think>}; content with both keeps only the text after
  * the LAST {@code </think>} behind the empty pair; the result is trimmed. The think pair is emitted
- * as trusted special ids; everything else is ONE contiguous plain {@link GgufTokenizer#encode} run
- * per span between specials (that is how a rendered template tokenizes), so conversation text
- * cannot mint control tokens. Unclosed-{@code <think>} content (the template's "broken thought"
- * path) is passed through plain-encoded - a documented divergence from the render+rescan oracle.
+ * as trusted special ids; everything else is ONE contiguous plain {@link Tokenizer#encode} run per
+ * span between specials (that is how a rendered template tokenizes), so conversation text cannot
+ * mint control tokens. Unclosed-{@code <think>} content (the template's "broken thought" path) is
+ * passed through plain-encoded - a documented divergence from the render+rescan oracle.
  *
  * <p>Generation prompt: {@code <|im_start|>assistant\n<think>\n} (thinking) or {@code
  * <|im_start|>assistant\n<think></think>} - no trailing newline - matching the template's {@code
@@ -36,7 +38,7 @@ public final class NemotronHTurnTemplate implements TurnTemplate {
     public static final String DEFAULT_SYSTEM =
             "You are a helpful and harmless assistant.\n\nYou are not allowed to use any tools.";
 
-    private final GgufTokenizer tokenizer;
+    private final Tokenizer tokenizer;
     private final int imStart; // <|im_start|>
     private final int imEnd; // <|im_end|>
     private final int think; // <think>
@@ -46,12 +48,12 @@ public final class NemotronHTurnTemplate implements TurnTemplate {
     private final List<Batch> genThinking, genDirect; // generation prompts, encoded once
     private final List<Batch> closeTurn; // <|im_end|>\n, constant
 
-    public NemotronHTurnTemplate(GgufTokenizer tokenizer) {
+    public NemotronHTurnTemplate(Tokenizer tokenizer) {
         this.tokenizer = tokenizer;
-        this.imStart = tokenizer.requiredSpecial("<|im_start|>");
-        this.imEnd = tokenizer.requiredSpecial("<|im_end|>");
-        this.think = tokenizer.requiredSpecial("<think>");
-        this.endThink = tokenizer.requiredSpecial("</think>");
+        this.imStart = SpecialTokens.require(tokenizer, "<|im_start|>");
+        this.imEnd = SpecialTokens.require(tokenizer, "<|im_end|>");
+        this.think = SpecialTokens.require(tokenizer, "<think>");
+        this.endThink = SpecialTokens.require(tokenizer, "</think>");
         this.newline = tokenizer.encode("\n");
         this.assistantNl = tokenizer.encode("assistant\n");
         IntSequence head =
@@ -129,5 +131,10 @@ public final class NemotronHTurnTemplate implements TurnTemplate {
     @Override
     public List<Batch> closeTurn() {
         return closeTurn;
+    }
+
+    @Override
+    public ReplyParser parser() {
+        return ReplyParser.spans(tokenizer);
     }
 }
