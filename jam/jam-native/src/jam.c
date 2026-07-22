@@ -285,7 +285,8 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
 #ifdef JAM_HAVE_AVX512BF16
     /* orthogonal to the ladder (like AVX-VNNI): needs the explicit feature, not just the level */
     if (cpu >= JAM_ISA_AVX512 && __builtin_cpu_supports("avx512bf16")) {
-        c->bf16z_kernel = jam_mm_bf16_avx512bf16; c->bf16z_cvt = jam_bf16_cvt_avx512bf16; }
+        c->bf16z_kernel = jam_mm_bf16_avx512bf16; c->bf16z_cvt = jam_bf16_cvt_avx512bf16;
+        c->bf16zp_kernel = jam_mm_bf16p_avx512bf16; c->bf16zp_pack = jam_bf16_pack_avx512bf16; }
 #endif
     c->q4k_avail = (cpu >= JAM_ISA_AVX512_VNNI);                               /* Q4_K is VNNI-only */
 #endif
@@ -639,6 +640,24 @@ static jam_status jam_mm_run(jam_ctx* ctx,
         jam_task_fn fastd = (ctx->dense_f32_kernel && (k % 8 == 0)) ? ctx->dense_f32_kernel : ctx->f32_kernel;
         jam_run(ctx, m, fastd, &job);   /* pool fans the row-range kernel over m weight rows */
         return JAM_OK;
+    }
+
+    /* packed-panel BF16 (vdpbf16ps microkernel): the structure of the packed F32 path at twice
+     * the MAC rate. Prefill shapes only; decode and odd-k fall through to the direct tile. */
+    if (wt == JAM_BF16 && at == JAM_F32 && ct == JAM_F32 && ctx->bf16zp_kernel
+            && n >= 8 && (k % 2 == 0)) {
+        int npanels = (n + 31) / 32;
+        size_t need = (size_t) npanels * 32 * (size_t) k * sizeof(uint16_t);
+        if (need > ctx->bf_x_cap) {
+            free(ctx->bf_x); ctx->bf_x = malloc(need); ctx->bf_x_cap = ctx->bf_x ? need : 0;
+        }
+        if (ctx->bf_x) {
+            jam_bf16_job job = { (const uint16_t*) w, ldw, (const float*) a, lda,
+                                 (uint16_t*) ctx->bf_x, c, ldc, n, k };
+            jam_run(ctx, npanels, ctx->bf16zp_pack, &job);
+            jam_run(ctx, m, ctx->bf16zp_kernel, &job);
+            return JAM_OK;
+        }
     }
 
     /* BF16 via native vdpbf16ps (Zen4+/CPX): convert activations to bf16 once, then the dp tile —
