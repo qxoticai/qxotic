@@ -79,6 +79,25 @@ public final class CachedSession<S extends RuntimeState> {
         return new CachedSession<>(model, state, cache, tip, fp, tip.to);
     }
 
+    /** As {@link #resume(Model, PromptCache, Object, long[])} for a plain token-id prompt. */
+    public static <S extends RuntimeState> CachedSession<S> resume(
+            Model<?, ?, S> model, PromptCache<S> cache, S state, int[] tokens) {
+        return resume(model, cache, state, fingerprints(tokens), tokens.length);
+    }
+
+    /** As {@link #resume(Model, PromptCache, Object, long[], int)} for a plain token-id prompt. */
+    public static <S extends RuntimeState> CachedSession<S> resume(
+            Model<?, ?, S> model, PromptCache<S> cache, S state, int[] tokens, int maxPositions) {
+        return resume(model, cache, state, fingerprints(tokens), maxPositions);
+    }
+
+    /** Token ids widened to the fingerprint stream they are (media rows fingerprint by hash). */
+    public static long[] fingerprints(int[] tokens) {
+        long[] fp = new long[tokens.length];
+        for (int i = 0; i < tokens.length; i++) fp[i] = tokens[i];
+        return fp;
+    }
+
     /**
      * Ingests batches (chunked at the state's batch capacity), committing each chunk: token ids
      * fingerprint as themselves, embeddings by rows content hash (one block per media group).

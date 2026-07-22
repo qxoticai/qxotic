@@ -187,6 +187,18 @@ public final class FrozenBlocks {
         return serve(model, codec, modelSeed, state, fp, fp.length);
     }
 
+    /** As {@link #serve} for a plain token-id prompt. */
+    public <S extends com.qxotic.jinfer.RuntimeState> CachedSession<S> serve(
+            com.qxotic.jinfer.Model<?, ?, S> model,
+            StateCodec<S> codec,
+            byte[] modelSeed,
+            S state,
+            int[] tokens,
+            int maxPositions) {
+        return serve(
+                model, codec, modelSeed, state, CachedSession.fingerprints(tokens), maxPositions);
+    }
+
     /** The one index-entry field order, shared by every writer ({@code open} is its reader). */
     static void putEntry(
             ByteBuffer idx,
