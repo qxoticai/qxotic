@@ -1,4 +1,4 @@
-package com.qxotic.jinfer.llm;
+package com.qxotic.jinfer.server;
 
 import com.qxotic.jinfer.*;
 import java.nio.file.Path;
