@@ -22,6 +22,9 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 
 public final class Gemma4MultimodalCacheRun {
 
@@ -45,7 +48,24 @@ public final class Gemma4MultimodalCacheRun {
     static long budget;
     static byte[] seed;
 
-    public static void main(String[] args) throws Exception {
+    @Test
+    @Tag("integration")
+    void run() throws Exception {
+        Assumptions.assumeTrue(
+                java.nio.file.Files.exists(
+                        java.nio.file.Path.of(
+                                "/home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-Q8_0.gguf")),
+                "model not found:"
+                    + " /home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-Q8_0.gguf");
+        main(testArgs());
+    }
+
+    private static String[] testArgs() {
+        String argv = System.getProperty("jinfer.args", "");
+        return argv.isBlank() ? new String[0] : argv.trim().split("\\s+");
+    }
+
+    private static void main(String[] args) throws Exception {
         boolean big = args.length > 0 && args[0].equals("12b");
         Path text = big ? B12 : E2B, mmproj = big ? B12_MMPROJ : E2B_MMPROJ;
         budget = big ? 14L << 30 : 4L << 30; // 12B SWA checkpoints are ~hundreds of MB per block
@@ -60,7 +80,7 @@ public final class Gemma4MultimodalCacheRun {
                         + " modalities="
                         + model.modalities()
                         + " blockBytes(1)="
-                        + ((codec.rowBytes(1) + codec.checkpointBytes()) >> 20)
+                        + (codec.blockBytes(1) >> 20)
                         + "MB");
 
         battery(
@@ -82,7 +102,7 @@ public final class Gemma4MultimodalCacheRun {
 
         if (failures > 0) {
             System.out.println(failures + " failure(s)");
-            System.exit(1);
+            throw new AssertionError("failure(s) - see output above");
         }
         System.out.println("Gemma4MultimodalCacheRun: all checks passed");
     }
@@ -177,6 +197,20 @@ public final class Gemma4MultimodalCacheRun {
                                 : "misses; servers retain the fingerprint stream")
                         + ")");
 
+        // -- the DOUBLE WIN: same media, different question resumes at/after the media block
+        // end - both the media encode and the media prefill are skipped --
+        long[] sameMediaFp = java.util.Arrays.copyOf(all, bounds[1]);
+        CachedSession<Gemma4.State> dw =
+                CachedSession.resume(model, cache, model.newState(4096, 512), sameMediaFp);
+        check(
+                dw.position() >= bounds[1],
+                name
+                        + ": same media, different question resumes at/after media end ("
+                        + dw.position()
+                        + " >= "
+                        + bounds[1]
+                        + ")");
+
         // -- a genuinely different media on the SAME cache: shares the text prefix, answers
         // differently --
         Message otherTurn = new Message(Role.USER, List.of(otherMedia, new Part.Text(question)));
@@ -223,7 +257,7 @@ public final class Gemma4MultimodalCacheRun {
         StringBuilder out = new StringBuilder();
         int tok = model.logits(s.state()).argmax();
         for (int n = 0; n < maxTokens && !stops.contains(tok); n++) {
-            out.append(model.tokenizer().decode(tok));
+            out.append(model.tokenizer().decode(new int[] {tok}));
             s.step(tok);
             tok = model.logits(s.state()).argmax();
         }
@@ -255,15 +289,12 @@ public final class Gemma4MultimodalCacheRun {
     }
 
     static boolean statesEqual(Gemma4.State x, Gemma4.State y, int positions) {
-        long rowBytes = codec.rowBytes(positions);
-        long bytes = rowBytes + codec.checkpointBytes();
+        long bytes = codec.blockBytes(positions);
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment sx = arena.allocate(bytes, 64);
             MemorySegment sy = arena.allocate(bytes, 64);
-            codec.saveRows(x, 0, positions, sx);
-            codec.saveCheckpoint(x, positions, sx.asSlice(rowBytes));
-            codec.saveRows(y, 0, positions, sy);
-            codec.saveCheckpoint(y, positions, sy.asSlice(rowBytes));
+            codec.save(x, 0, positions, sx);
+            codec.save(y, 0, positions, sy);
             return MemorySegment.mismatch(sx, 0, bytes, sy, 0, bytes) == -1;
         }
     }
