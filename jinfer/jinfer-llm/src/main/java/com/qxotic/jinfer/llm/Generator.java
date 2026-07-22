@@ -18,6 +18,17 @@ public final class Generator {
     private Generator() {}
 
     /**
+     * A state sized for one generation over a {@code promptLen}-token prompt: full context, batch
+     * capacity clamped to the prompt (min 16 rows - the loop needs a tail token with fresh logits;
+     * max {@link RuntimeFlags#BATCH_CAPACITY}). Owns the sizing policy consumers used to hand-roll.
+     */
+    public static <S extends RuntimeState> S stateFor(LanguageModel<?, ?, S> model, int promptLen) {
+        return model.newState(
+                model.config().contextLength(),
+                Math.min(Math.max(promptLen, 16), RuntimeFlags.BATCH_CAPACITY));
+    }
+
+    /**
      * The generated-token stream: sees EVERY sampled token in order, the trailing stop token
      * included, before the loop acts on it. Return false to abort the pass (the aborting token is
      * recorded but not ingested; finishReason "abort").
