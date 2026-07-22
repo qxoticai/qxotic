@@ -4,7 +4,6 @@
 // Gemma has <bos> once, per-turn <|turn>{role}\n{content}<turn|>\n, assistant named "model"; a
 // leading
 // system turn renders inline and the template trims every message's content.
-//   java ... com.qxotic.jinfer.models.gemma4.Gemma4TurnTemplateOracle [model.gguf]
 package com.qxotic.jinfer.models.gemma4;
 
 import com.qxotic.jinfer.chat.Message;
@@ -13,19 +12,15 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Test;
 
 public final class Gemma4TurnTemplateOracle {
-    public static void main(String[] args) throws Exception {
+    @Test
+    void oracle() throws Exception {
         Path model =
-                Path.of(
-                        args.length > 0
-                                ? args[0]
-                                : "/home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-Q8_0.gguf");
-        if (!Files.exists(model)) {
-            System.out.println(
-                    "Gemma4TurnTemplateOracle: model not found (" + model + "), skipping");
-            return;
-        }
+                Path.of("/home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-Q8_0.gguf");
+        Assumptions.assumeTrue(Files.exists(model), "model not found: " + model);
         OracleScenario o =
                 new OracleScenario(model, Gemma4TurnTemplate::new, Map.of("bos_token", "<bos>"));
 
