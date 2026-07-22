@@ -1,4 +1,4 @@
-// Shared driver core for the per-model validation harnesses (cache/sealed/frozen/oracle): one
+// Shared driver core for the per-model validation harnesses (cache/frozen/oracle): one
 // model + its S1 seams (turnTemplate/stateCodec) + the check/finish protocol every run uses. The
 // scenarios (CacheScenario, SealedScenario, FrozenScenario, OracleScenario) are parameterized by
 // this; per-model entry points shrink to wiring.
@@ -12,8 +12,8 @@ import com.qxotic.jinfer.cache.StateCodec;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.llm.*;
-import com.qxotic.jinfer.llm.GgufTokenizer;
 import com.qxotic.jinfer.llm.LoadedModel;
+import com.qxotic.toknroll.Tokenizer;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.nio.file.Path;
@@ -26,7 +26,7 @@ public final class Harness<S extends RuntimeState> {
     public final LoadedModel<S> model;
     public final TurnTemplate template;
     public final StateCodec<S> codec;
-    public final GgufTokenizer tokenizer;
+    public final Tokenizer tokenizer;
     public final Set<Integer> stops;
     public final Path path;
     public final byte[] seed;
@@ -93,7 +93,7 @@ public final class Harness<S extends RuntimeState> {
         int tok = model.model().logits(state).argmax();
         int n = 0;
         for (; n < maxTokens && !stops.contains(tok); n++) {
-            out.append(tokenizer.decode(tok));
+            out.append(tokenizer.decode(new int[] {tok}));
             step.accept(tok);
             tok = model.model().logits(state).argmax();
         }
@@ -117,15 +117,12 @@ public final class Harness<S extends RuntimeState> {
      * reductions are not byte-deterministic, near-tie greedy picks can flip).
      */
     public boolean statesEqual(S a, S b, int positions) {
-        long rowBytes = codec.rowBytes(positions);
-        long bytes = rowBytes + codec.checkpointBytes();
+        long bytes = codec.blockBytes(positions);
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment sa = arena.allocate(bytes, 64);
             MemorySegment sb = arena.allocate(bytes, 64);
-            codec.saveRows(a, 0, positions, sa);
-            codec.saveCheckpoint(a, positions, sa.asSlice(rowBytes));
-            codec.saveRows(b, 0, positions, sb);
-            codec.saveCheckpoint(b, positions, sb.asSlice(rowBytes));
+            codec.save(a, 0, positions, sa);
+            codec.save(b, 0, positions, sb);
             return MemorySegment.mismatch(sa, 0, bytes, sb, 0, bytes) == -1;
         }
     }
