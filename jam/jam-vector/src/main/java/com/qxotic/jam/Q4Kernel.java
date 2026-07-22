@@ -26,6 +26,10 @@ public final class Q4Kernel {
             TYPE = 18,
             HALF = BLOCK / 2; // Q4_0: 32 elems, 18 bytes/block
 
+    // tile2x4 hardcodes 512-bit geometry (one F_SPECIES load = 16 decoded nibbles, aHi at +64 B);
+    // at 128/256-bit the per-column dot() path below carries the whole gemm instead.
+    private static final boolean TILE512 = VectorSupport.F_SPECIES.vectorBitSize() == 512;
+
     public static void gemm(
             MemorySegment w,
             MemorySegment a,
@@ -59,7 +63,7 @@ public final class Q4Kernel {
                         int row = rowStart;
                         for (; row + 1 < rowEnd; row += 2) {
                             int s = s0;
-                            for (; s + 3 < seqEnd; s += 4) {
+                            for (; TILE512 && s + 3 < seqEnd; s += 4) {
                                 tile2x4(w, a, aBase, o, oBase, aStride, oStride, k, wOff, row, s);
                             }
                             for (; s < seqEnd; s++) {
