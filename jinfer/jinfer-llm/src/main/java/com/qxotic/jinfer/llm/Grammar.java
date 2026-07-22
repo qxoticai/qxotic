@@ -50,7 +50,7 @@ public final class Grammar {
 
     private Grammar() {}
 
-    public interface Vocab {
+    interface Vocab {
         int size();
 
         byte[] bytes(int tokenId);
@@ -91,7 +91,7 @@ public final class Grammar {
         return json(vocab(t));
     }
 
-    public static Spec json(Vocab v) {
+    static Spec json(Vocab v) {
         if (!RuntimeFlags.GRAMMAR) return Spec.DISABLED;
         return cache(v).computeIfAbsent("__json__", k -> build(JSON_GRAMMAR, v));
     }
@@ -105,7 +105,7 @@ public final class Grammar {
         return jsonCompact(vocab(t));
     }
 
-    public static Spec jsonCompact(Vocab v) {
+    static Spec jsonCompact(Vocab v) {
         if (!RuntimeFlags.GRAMMAR) return Spec.DISABLED;
         return cache(v).computeIfAbsent("__json_compact__", k -> build(JSON_COMPACT_GRAMMAR, v));
     }
@@ -114,7 +114,7 @@ public final class Grammar {
         return of(g, vocab(t));
     }
 
-    public static Spec of(String g, Vocab v) {
+    static Spec of(String g, Vocab v) {
         if (!RuntimeFlags.GRAMMAR) return Spec.DISABLED;
         return cache(v).computeIfAbsent(g, k -> build(k, v));
     }
@@ -635,7 +635,7 @@ public final class Grammar {
      * A grammar accepting exactly one of {@code options}, emitted as raw (unquoted) literals — e.g.
      * {@code choice(v, "yes", "no")} forces the model to answer yes or no.
      */
-    public static Spec choice(Vocab v, String... options) {
+    static Spec choice(Vocab v, String... options) {
         if (!RuntimeFlags.GRAMMAR) return Spec.DISABLED;
         StringBuilder sb = new StringBuilder("root ::= ");
         for (int i = 0; i < options.length; i++) {
@@ -662,7 +662,7 @@ public final class Grammar {
      * ({@code patternProperties}, {@code $ref}, numeric/length bounds, …) are ignored — the result
      * is always valid JSON satisfying the supported constraints, never a broken grammar.
      */
-    public static Spec fromSchema(Map<String, Object> schema, Vocab v) {
+    static Spec fromSchema(Map<String, Object> schema, Vocab v) {
         if (!RuntimeFlags.GRAMMAR) return Spec.DISABLED;
         return of(Schema.toGbnf(schema), v);
     }
