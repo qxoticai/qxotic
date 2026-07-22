@@ -493,6 +493,9 @@ static inline __m512 q4_0_block16(const uint8_t* qs, const float* dw, const floa
     return f;
 }
 
+#ifndef JAM_Q40_NR
+#define JAM_Q40_NR JAM_VNNI_NR   /* Q4_0's own column-tile width (tunable via -DJAM_Q40_NR) */
+#endif
 /* Column register-tiled variant: load+decode each weight block ONCE, vpdpbusd it against JAM_VNNI_NR
  * activation columns into NR accumulators — amortizes the weight load + nibble decode (and/srli) + the
  * float scale across NR columns, so vpdpbusd stops being ~1/3 of the inner loop. Stores all NR results. */
@@ -500,23 +503,23 @@ static inline void q4_0_block16_nr(const uint8_t* qs, const float* dw, const flo
                                    const int8_t* xq, const float* dx, const float* xs,
                                    int s0, int nb, int64_t ldc, float* out, int r) {
     const __m512i m4 = _mm512_set1_epi8(0x0F);
-    __m512 f[JAM_VNNI_NR];
-    const int8_t* x[JAM_VNNI_NR];
-    for (int c = 0; c < JAM_VNNI_NR; c++) { f[c] = _mm512_setzero_ps(); x[c] = xq + (int64_t)(s0 + c) * nb * JAM_QK; }
+    __m512 f[JAM_Q40_NR];
+    const int8_t* x[JAM_Q40_NR];
+    for (int c = 0; c < JAM_Q40_NR; c++) { f[c] = _mm512_setzero_ps(); x[c] = xq + (int64_t)(s0 + c) * nb * JAM_QK; }
     for (int b = 0; b < nb; b++) {
-        __m512i acc[JAM_VNNI_NR];
-        for (int c = 0; c < JAM_VNNI_NR; c++) acc[c] = _mm512_setzero_si512();
+        __m512i acc[JAM_Q40_NR];
+        for (int c = 0; c < JAM_Q40_NR; c++) acc[c] = _mm512_setzero_si512();
         for (int i = 0; i < 4; i++) {
             __m512i pk = _mm512_load_si512((const void*) (qs + i * 64));
             __m512i lo = _mm512_and_si512(pk, m4);                          /* decode ONCE, reuse across NR cols */
             __m512i hi = _mm512_and_si512(_mm512_srli_epi16(pk, 4), m4);
-            for (int c = 0; c < JAM_VNNI_NR; c++) {
+            for (int c = 0; c < JAM_Q40_NR; c++) {
                 acc[c] = _mm512_dpbusd_epi32(acc[c], lo, _mm512_set1_epi32(((const int*) x[c])[2 * i]));
                 acc[c] = _mm512_dpbusd_epi32(acc[c], hi, _mm512_set1_epi32(((const int*) x[c])[2 * i + 1]));
             }
         }
         __m512 dwv = _mm512_load_ps(dw), mwv = _mm512_load_ps(mw);
-        for (int c = 0; c < JAM_VNNI_NR; c++) {
+        for (int c = 0; c < JAM_Q40_NR; c++) {
             __m512 da = _mm512_set1_ps(dx[(int64_t)(s0 + c) * nb + b]);
             float xsum = xs[((int64_t)(s0 + c) * nb + b) * 2] + xs[((int64_t)(s0 + c) * nb + b) * 2 + 1];
             f[c] = _mm512_fmadd_ps(_mm512_cvtepi32_ps(acc[c]), _mm512_mul_ps(dwv, da), f[c]);
@@ -525,7 +528,7 @@ static inline void q4_0_block16_nr(const uint8_t* qs, const float* dw, const flo
         }
         qs += 256; dw += 16; mw += 16;
     }
-    for (int c = 0; c < JAM_VNNI_NR; c++) q4k_store16(f[c], out, ldc, r, s0 + c);
+    for (int c = 0; c < JAM_Q40_NR; c++) q4k_store16(f[c], out, ldc, r, s0 + c);
 }
 
 static float q4_0_scalar_dot(const uint8_t* w, int nb, const float* x) {   /* <16-row tail: exact float dot */
@@ -558,7 +561,7 @@ void jam_q4_0_repack_band(void* arg, int t0, int t1, int tid) {
             float* mw = rp->mw + (int64_t) group * nb * 16;
             repack_q4_0_group16(J->w + (int64_t) r * J->w_stride, J->w_stride, nb, qs, dw, mw);
             int s = 0;
-            for (; s + JAM_VNNI_NR <= seq; s += JAM_VNNI_NR)
+            for (; s + JAM_Q40_NR <= seq; s += JAM_Q40_NR)
                 q4_0_block16_nr(qs, dw, mw, J->xq, J->dx, J->xsum, s, nb, ldc, J->out, r);
             for (; s < seq; s++)               /* column tail (< NR) */
                 q4k_store16(q4_0_block16(qs, dw, mw, J->xq + (int64_t) s * nb * JAM_QK,
