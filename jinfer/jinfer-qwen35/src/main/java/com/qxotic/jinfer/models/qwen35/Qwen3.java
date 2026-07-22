@@ -610,8 +610,7 @@ public final class Qwen3
             return new Qwen3(config, tokenizer, Tokenizers.chatTemplateSource(gguf), null);
         Map<String, GGMLTensorEntry> tensors = ModelLoader.loadTensors(fileChannel, gguf);
         int ropeDim = Math.min(config.ropeDimensionCount, config.headSize);
-        Pair<float[], float[]> rope =
-                RoPE.precomputeFreqsCis(config.contextLength, ropeDim, config.ropeTheta);
+        RoPE.Freqs rope = RoPE.precomputeFreqsCis(config.contextLength, ropeDim, config.ropeTheta);
         return new Qwen3(
                 config,
                 tokenizer,
@@ -620,9 +619,7 @@ public final class Qwen3
     }
 
     static Weights loadWeights(
-            Map<String, GGMLTensorEntry> tensors,
-            Configuration config,
-            Pair<float[], float[]> rope) {
+            Map<String, GGMLTensorEntry> tensors, Configuration config, RoPE.Freqs rope) {
         int n = config.numberOfLayers;
         return new Weights(
                 ModelLoader.loadQuantized(tensors.get("token_embd.weight")),
@@ -638,7 +635,7 @@ public final class Qwen3
                 ModelLoader.quantArray(n, i -> tensors.get("blk." + i + ".ffn_gate.weight")),
                 ModelLoader.quantArray(n, i -> tensors.get("blk." + i + ".ffn_up.weight")),
                 ModelLoader.quantArray(n, i -> tensors.get("blk." + i + ".ffn_down.weight")),
-                rope.first(),
-                rope.second());
+                rope.cos(),
+                rope.sin());
     }
 }

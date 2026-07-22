@@ -195,7 +195,7 @@ public final class GptOss
             double ropeTheta,
             float ropeScalingFactor,
             int originalContextLength) {
-        Pair<float[], float[]> rope =
+        RoPE.Freqs rope =
                 RoPE.precomputeFreqsCisYarn(
                         contextLength,
                         headSize,
@@ -206,7 +206,7 @@ public final class GptOss
                         1f,
                         1f,
                         1f);
-        return new float[][] {rope.first(), rope.second()};
+        return new float[][] {rope.cos(), rope.sin()};
     }
 
     // === Forward ===

@@ -13,6 +13,9 @@ public final class RoPE {
      * {@code cr}/{@code ci} are a {@link #precomputeFreqsCis}-family table at stride {@code
      * ropeHalf}.
      */
+    /** Precomputed rotary tables: cos and sin per (position, frequency). */
+    public record Freqs(float[] cos, float[] sin) {}
+
     public static void applyInterleaved(
             FloatTensor q, int headOffset, int position, float[] cr, float[] ci, int ropeHalf) {
         int base = position * ropeHalf;
@@ -72,8 +75,7 @@ public final class RoPE {
         }
     }
 
-    public static Pair<float[], float[]> precomputeFreqsCis(
-            int contextLength, int headSize, double theta) {
+    public static Freqs precomputeFreqsCis(int contextLength, int headSize, double theta) {
         assert headSize % 2 == 0;
         int halfHead = headSize / 2;
         float[] cr = new float[contextLength * halfHead];
@@ -89,10 +91,10 @@ public final class RoPE {
             }
         }
         assert contextLength * halfHead == n;
-        return new Pair<>(cr, ci);
+        return new Freqs(cr, ci);
     }
 
-    public static Pair<float[], float[]> precomputeFreqsCisFromFreqs(
+    public static Freqs precomputeFreqsCisFromFreqs(
             int contextLength, int headSize, double ropeTheta, float[] ropeFreqFactors) {
         // freq_factors are divisors on top of the standard RoPE base frequencies:
         // theta_i = pos * (1 / (ropeTheta^(2i/headSize))) / freqFactors[i]
@@ -111,7 +113,7 @@ public final class RoPE {
             }
         }
         assert contextLength * halfHead == n;
-        return new Pair<>(cr, ci);
+        return new Freqs(cr, ci);
     }
 
     static double yarnCorrDim(int nDims, int nCtxOrig, float nRot, float base) {
@@ -132,7 +134,7 @@ public final class RoPE {
      * 1.0 for the plain YaRN magnitude (gpt-oss); pass 1/(kernel mscale) to net a magnitude of 1.0
      * (mistral3, whose yarn_log_multiplier cancels the kernel mscale).
      */
-    public static Pair<float[], float[]> precomputeFreqsCisYarn(
+    public static Freqs precomputeFreqsCisYarn(
             int contextLength,
             int headSize,
             double ropeTheta,
@@ -186,6 +188,6 @@ public final class RoPE {
             }
         }
         assert contextLength * halfHead == n;
-        return new Pair<>(cr, ci);
+        return new Freqs(cr, ci);
     }
 }

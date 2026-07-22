@@ -521,7 +521,7 @@ public final class Granite
         if (!loadWeightsFlag)
             return new Granite(config, tokenizer, Tokenizers.chatTemplateSource(gguf), seed, null);
         Map<String, GGMLTensorEntry> tensors = ModelLoader.loadTensors(fileChannel, gguf);
-        Pair<float[], float[]> rope = buildRope(config, tensors);
+        RoPE.Freqs rope = buildRope(config, tensors);
         return new Granite(
                 config,
                 tokenizer,
@@ -534,8 +534,7 @@ public final class Granite
      * Plain RoPE for granite (freq base + dimension count); honors a rope_freqs.weight
      * per-frequency scaling tensor if present. No YaRN. Returns the interleaved cos/sin tables.
      */
-    static Pair<float[], float[]> buildRope(
-            Configuration config, Map<String, GGMLTensorEntry> tensors) {
+    static RoPE.Freqs buildRope(Configuration config, Map<String, GGMLTensorEntry> tensors) {
         int ropeDim = Math.min(config.ropeDimensionCount, config.headSize);
         float[] ropeFreqs = ModelLoader.ropeFreqFactors(tensors);
         return ropeFreqs != null
@@ -545,9 +544,7 @@ public final class Granite
     }
 
     static Weights loadWeights(
-            Map<String, GGMLTensorEntry> tensors,
-            Configuration config,
-            Pair<float[], float[]> rope) {
+            Map<String, GGMLTensorEntry> tensors, Configuration config, RoPE.Freqs rope) {
         int n = config.numberOfLayers;
         FloatTensor tokenEmbeddingTable =
                 ModelLoader.loadQuantized(tensors.get("token_embd.weight"));
@@ -568,7 +565,7 @@ public final class Granite
                 ModelLoader.quantArray(n, i -> tensors.get("blk." + i + ".ffn_gate.weight")),
                 ModelLoader.quantArray(n, i -> tensors.get("blk." + i + ".ffn_up.weight")),
                 ModelLoader.quantArray(n, i -> tensors.get("blk." + i + ".ffn_down.weight")),
-                rope.first(),
-                rope.second());
+                rope.cos(),
+                rope.sin());
     }
 }

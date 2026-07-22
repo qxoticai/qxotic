@@ -1343,11 +1343,11 @@ public final class Gemma4
 
     static Weights loadWeights(Map<String, GGMLTensorEntry> tensors, Configuration config) {
         int n = config.numberOfLayers();
-        Pair<float[], float[]> ropeSwa =
+        RoPE.Freqs ropeSwa =
                 RoPE.precomputeFreqsCis(
                         config.contextLength(), config.headSizeSWA(), config.ropeThetaSWA());
         float[] freqs = ModelLoader.ropeFreqFactors(tensors);
-        Pair<float[], float[]> ropeFull =
+        RoPE.Freqs ropeFull =
                 freqs != null
                         ? RoPE.precomputeFreqsCisFromFreqs(
                                 config.contextLength(),
@@ -1444,10 +1444,10 @@ public final class Gemma4
                 ModelLoader.f32Array(n, i -> tensors.get("blk." + i + ".post_ffw_norm.weight")),
                 ModelLoader.toF32Tensor(tensors.get("output_norm.weight")),
                 layerOutputScales,
-                F32FloatTensor.of(ropeFull.first()),
-                F32FloatTensor.of(ropeFull.second()),
-                F32FloatTensor.of(ropeSwa.first()),
-                F32FloatTensor.of(ropeSwa.second()),
+                F32FloatTensor.of(ropeFull.cos()),
+                F32FloatTensor.of(ropeFull.sin()),
+                F32FloatTensor.of(ropeSwa.cos()),
+                F32FloatTensor.of(ropeSwa.sin()),
                 tensors.containsKey("output.weight")
                         ? ModelLoader.loadQuantized(tensors.get("output.weight"))
                         : tokenEmbeddings,
