@@ -28,6 +28,7 @@ jam_pool* jam_pool_create(int nthreads, const int* cpu); /* nthreads participant
                                                           * cpu[k+1] best-effort (cpu[0] = unpinned submitter) */
 void      jam_pool_destroy(jam_pool* pool);
 void      jam_pool_parallel_for(jam_pool* pool, int n, jam_task_fn fn, void* arg);  /* blocks till done */
+void      jam_pool_parallel_for_capped(jam_pool* pool, int n, jam_task_fn fn, void* arg, int cap);
 int       jam_pool_is_spin(const jam_pool* pool);        /* 1 if JAM_POOL=spin (spin-then-park barrier) */
 int       jam_pool_spin_budget(const jam_pool* pool);    /* pauses before a spinning worker parks */
 
@@ -49,6 +50,7 @@ struct jam_ctx {
     void*            pool;           /* opaque handle for parallel_for */
     jam_pool*        ipool;          /* jam-owned pool (NULL if a host executor was supplied) */
     int              nthreads;
+    int              nthreads_bw;    /* fan cap for bandwidth-bound phases (one per physical core) */
     jam_cpu_plan     cpu;            /* the core-selection plan used to size + pin the pool (for the log) */
     jam_isa          active;         /* the bound ISA level (reported by jam_active_isa) */
     char             name[48];       /* optional label for JAM_DEBUG ("" if unnamed) */

@@ -34,6 +34,7 @@ struct jam_pool {
     jam_task_fn     fn;
     void*           arg;
     int             n;
+    int             participants; /* fan width for the current job (<= nworkers+1); see _capped */
     _Atomic int     seq;          /* job counter; workers compare to detect new work */
     _Atomic int     remaining;    /* workers still running the current job */
     _Atomic int     parked;       /* workers currently parked (spin mode: gate the wakeup broadcast) */
@@ -79,7 +80,8 @@ static void* worker_main(void* p) {
         if (atomic_load(&pool->stop)) break;
         my_seq = atomic_load_explicit(&pool->seq, memory_order_acquire);
 
-        run_range(pool->fn, pool->arg, pool->n, w->idx, pool->nworkers + 1, w->idx);
+        if (w->idx < pool->participants)
+            run_range(pool->fn, pool->arg, pool->n, w->idx, pool->participants, w->idx);
 
         /* completion: spin mode -> submitter polls `remaining`; condvar -> last worker signals cv_done */
         if (atomic_fetch_sub_explicit(&pool->remaining, 1, memory_order_acq_rel) == 1 && !pool->spin) {
@@ -121,9 +123,17 @@ int jam_pool_is_spin(const jam_pool* pool)     { return pool ? pool->spin : 0; }
 int jam_pool_spin_budget(const jam_pool* pool) { return pool ? pool->spin_budget : 0; }
 
 void jam_pool_parallel_for(jam_pool* pool, int n, jam_task_fn fn, void* arg) {
+    jam_pool_parallel_for_capped(pool, n, fn, arg, 0);
+}
+
+/* As parallel_for, but at most `cap` participants share the range (0 = all). Workers beyond the cap
+ * still cycle the barrier (empty range) so join accounting is unchanged. Bandwidth-bound phases cap
+ * to one participant per physical core (the pinned-primary prefix). */
+void jam_pool_parallel_for_capped(jam_pool* pool, int n, jam_task_fn fn, void* arg, int cap) {
     if (!pool || pool->nworkers == 0 || n <= 1) { fn(arg, 0, n, 0); return; }
 
     pool->fn = fn; pool->arg = arg; pool->n = n;
+    pool->participants = (cap > 0 && cap <= pool->nworkers) ? cap : pool->nworkers + 1;
     atomic_store_explicit(&pool->remaining, pool->nworkers, memory_order_relaxed);
 
     if (pool->spin) {
@@ -133,7 +143,7 @@ void jam_pool_parallel_for(jam_pool* pool, int n, jam_task_fn fn, void* arg) {
             pthread_cond_broadcast(&pool->cv_work);                       /* wake any parked workers */
             pthread_mutex_unlock(&pool->mtx);
         }
-        run_range(fn, arg, n, 0, pool->nworkers + 1, 0);                  /* submitter = participant 0 */
+        run_range(fn, arg, n, 0, pool->participants, 0);                  /* submitter = participant 0 */
         while (atomic_load_explicit(&pool->remaining, memory_order_acquire) > 0) JAM_PAUSE();  /* spin-join */
     } else {
         pthread_mutex_lock(&pool->mtx);
@@ -141,7 +151,7 @@ void jam_pool_parallel_for(jam_pool* pool, int n, jam_task_fn fn, void* arg) {
         pthread_cond_broadcast(&pool->cv_work);
         pthread_mutex_unlock(&pool->mtx);
 
-        run_range(fn, arg, n, 0, pool->nworkers + 1, 0);
+        run_range(fn, arg, n, 0, pool->participants, 0);
 
         pthread_mutex_lock(&pool->mtx);
         while (atomic_load(&pool->remaining) > 0) pthread_cond_wait(&pool->cv_done, &pool->mtx);

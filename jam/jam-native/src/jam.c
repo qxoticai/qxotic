@@ -217,6 +217,7 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
     const int* pin = NULL;
     if (c->nthreads <= 0) { c->nthreads = c->cpu.n; pin = c->cpu.cpu; }
     else if (c->nthreads <= c->cpu.n)              pin = c->cpu.cpu;
+    c->nthreads_bw = c->cpu.n_primary < c->nthreads ? c->cpu.n_primary : c->nthreads;
     c->cpu.pinned = (pin != NULL) && jam_cpu_can_pin();
 
     /* If the caller did not supply an executor, own an internal pool. */
@@ -438,6 +439,14 @@ static void jam_run(jam_ctx* c, int n, jam_task_fn fn, void* arg) {
     else                 fn(arg, 0, n, 0);
 }
 
+/* As jam_run for BANDWIDTH-BOUND phases (decode gemv): fan only one thread per physical core -
+ * SMT siblings fight over the same load ports and LLC and measure ~15% SLOWER on n==1. */
+static void jam_run_bw(jam_ctx* c, int n, jam_task_fn fn, void* arg) {
+    if (c->parallel_for) c->parallel_for(c->pool, n, fn, arg);   /* host executor: host's policy */
+    else if (c->ipool)   jam_pool_parallel_for_capped(c->ipool, n, fn, arg, c->nthreads_bw);
+    else                 fn(arg, 0, n, 0);
+}
+
 /* ---- the op ---- */
 
 /* Shared quantized dispatch: every quant-weight @ F32 path is "requant activations -> int8, then the
@@ -448,7 +457,8 @@ static jam_status run_quant(jam_ctx* ctx, jam_q8_job* q, int m, jam_task_fn simd
         q->aq = (int8_t*) ctx->q_aq; q->ad = (float*) ctx->q_ad; q->asum = (float*) ctx->q_asum;
         if (q->n == 1) jam_q8_0_requant(q, 0, 1, 0);          /* gemv (n==1): requant the lone column inline */
         else           jam_run(ctx, q->n, jam_q8_0_requant, q);  /* phase 1: activations A -> int8 (shared) */
-        jam_run(ctx, m, simd, q);                  /* phase 2: decode-W + int8 dot, fanned over m weight rows */
+        if (q->n == 1) jam_run_bw(ctx, m, simd, q);   /* gemv is DRAM-bound: one thread per core */
+        else           jam_run(ctx, m, simd, q);   /* phase 2: decode-W + int8 dot, fanned over m weight rows */
     } else {
         jam_run(ctx, m, floor_, q);                /* portable float floor */
     }
@@ -494,9 +504,11 @@ static int try_repack_run(jam_ctx* ctx, jam_q8_job* q, const void* w, int m, int
                           int block_elems, size_t block_bytes, size_t w_stride,
                           jam_repack_fn repack, jam_task_fn kernel) {
     void* rp = rpcache_get(ctx, w, m, k, block_elems, block_bytes, w_stride, repack);
+    /* (fan below caps to one thread/core for n==1: the rp1 gemv kernels are DRAM-bound) */
     if (!rp) return 0;
     q->a = rp;
-    jam_run(ctx, (m + 7) / 8, kernel, q);
+    if (q->n == 1) jam_run_bw(ctx, (m + 7) / 8, kernel, q);
+    else           jam_run(ctx, (m + 7) / 8, kernel, q);
     return 1;
 }
 
@@ -555,7 +567,8 @@ static jam_status dispatch_kquant(jam_ctx* ctx, const void* w, int ldw, const vo
                                (size_t)(ldw / JAM_QKK) * kbytes, repack, simd)) return JAM_OK;
             return run_quant(ctx, &q, m, NULL, floor_);   /* repack alloc failed -> float floor (simd is the group-indexed rp kernel, can't run on the raw weight) */
         }
-        jam_run(ctx, m, simd, &q);
+        if (n == 1) jam_run_bw(ctx, m, simd, &q);
+        else        jam_run(ctx, m, simd, &q);
         return JAM_OK;
     }
     return run_quant(ctx, &q, m, simd, floor_);   /* int8 (ARM / avx2) or float floor */
@@ -638,7 +651,8 @@ static jam_status jam_mm_run(jam_ctx* ctx,
     if (wt == JAM_F32 && at == JAM_F32 && ct == JAM_F32) {
         jam_mm_job job = { w, wt, ldw, a, at, lda, c, ct, ldc, n, k };
         jam_task_fn fastd = (ctx->dense_f32_kernel && (k % 8 == 0)) ? ctx->dense_f32_kernel : ctx->f32_kernel;
-        jam_run(ctx, m, fastd, &job);   /* pool fans the row-range kernel over m weight rows */
+        if (n == 1) jam_run_bw(ctx, m, fastd, &job);   /* gemv: DRAM-bound */
+        else        jam_run(ctx, m, fastd, &job);   /* pool fans the row-range kernel over m weight rows */
         return JAM_OK;
     }
 
@@ -681,7 +695,8 @@ static jam_status jam_mm_run(jam_ctx* ctx,
         jam_mm_job job = { w, wt, ldw, a, at, lda, c, ct, ldc, n, k };
         jam_task_fn fast = (wt == JAM_F16) ? ctx->dense_f16_kernel : ctx->dense_bf16_kernel;
         jam_task_fn slow = (wt == JAM_F16) ? jam_mm_f16_f32_generic : jam_mm_bf16_f32_generic;
-        jam_run(ctx, m, (fast && (k % 16 == 0)) ? fast : slow, &job);
+        if (n == 1) jam_run_bw(ctx, m, (fast && (k % 16 == 0)) ? fast : slow, &job);
+        else        jam_run(ctx, m, (fast && (k % 16 == 0)) ? fast : slow, &job);
         return JAM_OK;
     }
 
