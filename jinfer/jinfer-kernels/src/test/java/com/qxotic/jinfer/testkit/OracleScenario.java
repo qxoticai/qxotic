@@ -11,7 +11,8 @@ import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
-import com.qxotic.jinfer.llm.GgufTokenizer;
+import com.qxotic.jinfer.llm.SpecialTokens;
+import com.qxotic.toknroll.Tokenizer;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -20,7 +21,8 @@ import java.util.Map;
 
 public final class OracleScenario {
 
-    public final GgufTokenizer tokenizer;
+    public final Tokenizer tokenizer;
+    private final com.qxotic.toknroll.Specials specials;
     private final OracleSupport support;
     private final TurnTemplate mine;
     private final Map<String, Object> renderVars;
@@ -32,11 +34,12 @@ public final class OracleScenario {
      */
     public OracleScenario(
             Path gguf,
-            java.util.function.Function<GgufTokenizer, TurnTemplate> template,
+            java.util.function.Function<Tokenizer, TurnTemplate> template,
             Map<String, Object> renderVars)
             throws Exception {
         this.support = new OracleSupport(gguf);
         this.tokenizer = support.tokenizer;
+        this.specials = SpecialTokens.encoder(tokenizer);
         this.mine = template.apply(tokenizer);
         this.renderVars = renderVars;
     }
@@ -64,9 +67,10 @@ public final class OracleScenario {
         vars.put("messages", maps);
         vars.put("add_generation_prompt", generationPrompt);
         String rendered = support.jinja.render(vars);
-        List<Integer> oracle = tokenizer.encodeWithSpecialTokens(rendered).toList();
+        List<Integer> oracle = specials.encode(tokenizer, rendered).toList();
 
-        List<Batch> batches = new ArrayList<>(mine.encode(conversation));
+        List<Batch> batches = new ArrayList<>(mine.conversationStart());
+        for (Message m : mine.normalize(conversation)) batches.addAll(mine.encodeTurn(m));
         if (generationPrompt) batches.addAll(mine.generationPrompt(thinking));
         List<Integer> ours = new ArrayList<>();
         for (int id : Batch.tokenIds(batches)) ours.add(id);
@@ -99,7 +103,7 @@ public final class OracleScenario {
         vars.put("tools", toolVars);
         vars.put("add_generation_prompt", generationPrompt);
         String rendered = support.jinja.render(vars);
-        List<Integer> oracle = tokenizer.encodeWithSpecialTokens(rendered).toList();
+        List<Integer> oracle = specials.encode(tokenizer, rendered).toList();
         List<Integer> ours = encodeWithPreamble(tools, conversation, generationPrompt);
 
         support.diff(checks, name, oracle, ours, rendered);
@@ -118,7 +122,7 @@ public final class OracleScenario {
             boolean generationPrompt,
             List<com.qxotic.jinfer.chat.Tool> tools,
             List<Message> conversation) {
-        List<Integer> oracle = tokenizer.encodeWithSpecialTokens(expectedRendered).toList();
+        List<Integer> oracle = specials.encode(tokenizer, expectedRendered).toList();
         List<Integer> ours = encodeWithPreamble(tools, conversation, generationPrompt);
         support.diff(checks, name, oracle, ours, null);
     }

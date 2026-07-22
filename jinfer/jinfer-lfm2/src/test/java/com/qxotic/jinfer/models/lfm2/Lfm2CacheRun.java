@@ -6,9 +6,22 @@ import com.qxotic.jinfer.llm.*;
 import com.qxotic.jinfer.testkit.CacheScenario;
 import com.qxotic.jinfer.testkit.Harness;
 import java.nio.file.Path;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 
 public final class Lfm2CacheRun {
-    public static void main(String[] args) throws Exception {
+    @Test
+    @Tag("driver")
+    void run() throws Exception {
+        main(testArgs());
+    }
+
+    private static String[] testArgs() {
+        String argv = System.getProperty("jinfer.args", "");
+        return argv.isBlank() ? new String[0] : argv.trim().split("\\s+");
+    }
+
+    private static void main(String[] args) throws Exception {
         Path path =
                 Path.of(
                         args.length > 0

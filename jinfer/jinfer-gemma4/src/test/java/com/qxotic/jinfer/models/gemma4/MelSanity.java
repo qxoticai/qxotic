@@ -1,7 +1,10 @@
 package com.qxotic.jinfer.models.gemma4;
 
+import org.junit.jupiter.api.Test;
+
 public class MelSanity {
-    public static void main(String[] a) {
+    @Test
+    void run() {
         int sr = 16000, n = sr;
         float[] pcm = new float[n];
         for (int i = 0; i < n; i++) pcm[i] = (float) (0.5 * Math.sin(2 * Math.PI * 440 * i / sr));

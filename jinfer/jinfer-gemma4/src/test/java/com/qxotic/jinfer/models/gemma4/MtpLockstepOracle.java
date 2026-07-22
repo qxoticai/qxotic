@@ -9,11 +9,15 @@ package com.qxotic.jinfer.models.gemma4;
 
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.FloatTensor;
+import com.qxotic.jinfer.llm.SpecialTokens;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 
 public final class MtpLockstepOracle {
 
@@ -27,7 +31,24 @@ public final class MtpLockstepOracle {
 
     record Emit(int token, int top1, float l1, int top2, float l2) {}
 
-    public static void main(String[] args) throws Exception {
+    @Test
+    @Tag("driver")
+    void run() throws Exception {
+        Assumptions.assumeTrue(
+                java.nio.file.Files.exists(
+                        java.nio.file.Path.of(
+                                "/home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-Q8_0.gguf")),
+                "model not found:"
+                    + " /home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-Q8_0.gguf");
+        main(testArgs());
+    }
+
+    private static String[] testArgs() {
+        String argv = System.getProperty("jinfer.args", "");
+        return argv.isBlank() ? new String[0] : argv.trim().split("\\s+");
+    }
+
+    private static void main(String[] args) throws Exception {
         int depth = args.length > 0 ? Integer.parseInt(args[0]) : 2;
         Path model =
                 Path.of("/home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-Q8_0.gguf");
@@ -39,7 +60,7 @@ public final class MtpLockstepOracle {
         }
         Gemma4 m = Gemma4.loadModel(model, 4096, sidecar);
         var tk = m.tokenizer();
-        int bos = tk.getSpecialTokens().getOrDefault("<bos>", 2);
+        int bos = SpecialTokens.find(tk, "<bos>").orElse(2);
         Set<Integer> stops = m.stopTokens();
         int vocab = m.config().vocabularySize();
 
@@ -102,9 +123,9 @@ public final class MtpLockstepOracle {
                                                 + " specTop2=%d specRel=%.2e swap=%b%n",
                                         emits.indexOf(e),
                                         e.token,
-                                        esc(tk.decode(e.token)),
+                                        esc(tk.decode(new int[] {e.token})),
                                         oam,
-                                        esc(tk.decode(oam)),
+                                        esc(tk.decode(new int[] {oam})),
                                         oracleRel,
                                         e.top2,
                                         specRel,

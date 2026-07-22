@@ -12,6 +12,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Test;
 
 public final class Lfm2ToolOracle {
 
@@ -43,16 +45,11 @@ public final class Lfm2ToolOracle {
         return new Message(Role.TOOL, content);
     }
 
-    public static void main(String[] args) throws Exception {
+    @Test
+    void oracle() throws Exception {
         Path model =
-                Path.of(
-                        args.length > 0
-                                ? args[0]
-                                : "/home/mukel/Desktop/playground/models/LiquidAI/LFM2.5-8B-A1B-Q8_0.gguf");
-        if (!Files.exists(model)) {
-            System.out.println("Lfm2ToolOracle: model not found (" + model + "), skipping");
-            return;
-        }
+                Path.of("/home/mukel/Desktop/playground/models/LiquidAI/LFM2.5-8B-A1B-Q8_0.gguf");
+        Assumptions.assumeTrue(Files.exists(model), "model not found: " + model);
         CodecOracleScenario o =
                 new CodecOracleScenario(
                         model,

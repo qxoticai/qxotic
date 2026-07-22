@@ -2,6 +2,8 @@ package com.qxotic.jinfer;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 
 /**
  * Measures the Q8_0 decode gemv kernel's peak DRAM bandwidth in isolation: one large weight matrix
@@ -12,7 +14,18 @@ import java.lang.foreign.MemorySegment;
  * <p>java ... com.qxotic.GemvBench [dim0=16384] [dim1=8192] [iters=2000]
  */
 public final class GemvBench {
-    public static void main(String[] args) {
+    @Test
+    @Tag("bench")
+    void run() throws Exception {
+        main(testArgs());
+    }
+
+    private static String[] testArgs() {
+        String argv = System.getProperty("jinfer.args", "");
+        return argv.isBlank() ? new String[0] : argv.trim().split("\\s+");
+    }
+
+    private static void main(String[] args) {
         int dim0 = args.length > 0 ? Integer.parseInt(args[0]) : 16384;
         int dim1 = args.length > 1 ? Integer.parseInt(args[1]) : 8192;
         int iters = args.length > 2 ? Integer.parseInt(args[2]) : 2000;

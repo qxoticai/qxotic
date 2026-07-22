@@ -5,16 +5,30 @@
 package com.qxotic.jinfer.models.gemma4;
 
 import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.llm.SpecialTokens;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Set;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 
 public final class MtpBench {
 
     record Case(String name, String prompt) {}
 
-    public static void main(String[] args) throws Exception {
+    @Test
+    @Tag("bench")
+    void run() throws Exception {
+        main(testArgs());
+    }
+
+    private static String[] testArgs() {
+        String argv = System.getProperty("jinfer.args", "");
+        return argv.isBlank() ? new String[0] : argv.trim().split("\\s+");
+    }
+
+    private static void main(String[] args) throws Exception {
         int maxTokens = args.length > 0 ? Integer.parseInt(args[0]) : 128;
         int reps = args.length > 1 ? Integer.parseInt(args[1]) : 3;
         Path model =
@@ -27,7 +41,7 @@ public final class MtpBench {
         }
         Gemma4 m = Gemma4.loadModel(model, 4096, sidecar);
         var tk = m.tokenizer();
-        int bos = tk.getSpecialTokens().getOrDefault("<bos>", 2);
+        int bos = SpecialTokens.find(tk, "<bos>").orElse(2);
         Set<Integer> stops = m.stopTokens();
         int vocab = m.config().vocabularySize();
 

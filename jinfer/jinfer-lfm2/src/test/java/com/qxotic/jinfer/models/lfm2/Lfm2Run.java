@@ -8,9 +8,26 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 
 public final class Lfm2Run {
-    public static void main(String[] args) throws Exception {
+    @Test
+    @Tag("driver")
+    void run() throws Exception {
+        Assumptions.assumeTrue(
+                !System.getProperty("jinfer.args", "").isBlank(),
+                "set -Djinfer.args=\"<model.gguf> ...\" to run this tool");
+        main(testArgs());
+    }
+
+    private static String[] testArgs() {
+        String argv = System.getProperty("jinfer.args", "");
+        return argv.isBlank() ? new String[0] : argv.trim().split("\\s+");
+    }
+
+    private static void main(String[] args) throws Exception {
         String path = args[0];
         String promptStr = args.length > 1 ? args[1] : "The capital of France is";
         int nTokens = args.length > 2 ? Integer.parseInt(args[2]) : 32;
@@ -28,13 +45,13 @@ public final class Lfm2Run {
                 c.expertCount());
 
         var tk = model.tokenizer();
-        int bos = tk.getSpecialTokens().getOrDefault("<bos>", 1);
+        int bos = com.qxotic.jinfer.llm.SpecialTokens.find(tk, "<bos>").orElse(1);
         List<Integer> promptTokens = new ArrayList<>();
         promptTokens.add(bos);
         if (System.getenv("CHAT") != null) { // LFM2 ChatML:
             // <|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n
-            int imStart = tk.getSpecialTokens().getOrDefault("<|im_start|>", bos);
-            int imEnd = tk.getSpecialTokens().getOrDefault("<|im_end|>", -1);
+            int imStart = com.qxotic.jinfer.llm.SpecialTokens.find(tk, "<|im_start|>").orElse(bos);
+            int imEnd = com.qxotic.jinfer.llm.SpecialTokens.find(tk, "<|im_end|>").orElse(-1);
             promptTokens.add(imStart);
             promptTokens.addAll(tk.encode("user\n" + promptStr.strip()).toList());
             if (imEnd >= 0) promptTokens.add(imEnd);
@@ -56,7 +73,7 @@ public final class Lfm2Run {
         int n = 0;
         long t0 = System.nanoTime();
         for (; n < nTokens && !stops.contains(tok); n++) {
-            out.append(tk.decode(tok));
+            out.append(tk.decode(new int[] {tok}));
             model.ingest(s, com.qxotic.jinfer.Batch.step(tok));
             tok = model.logits(s).argmax();
         }

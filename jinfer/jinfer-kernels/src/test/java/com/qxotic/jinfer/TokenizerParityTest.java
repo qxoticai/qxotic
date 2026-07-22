@@ -3,6 +3,7 @@ package com.qxotic.jinfer;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
+import com.qxotic.toknroll.Tokenizer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -11,14 +12,15 @@ import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Test;
 
 /**
- * Tokenizer ground-truth test: GgufTokenizer (com.qxotic:toknroll with the lfm2 pre-tokenizer) vs
- * token ids captured from {@code llama-tokenize} (llama.cpp) on the LFM2.5-8B GGUF — the reference
- * implementation the model was built against. Also checks round-trip fidelity, that special-token
- * strings embedded in text are NOT mapped by encode, and that decode renders special tokens as
- * their literal text. Requires the model file; skips cleanly when absent.
+ * Tokenizer ground-truth test: the jinfer tokenizer (com.qxotic:toknroll with the lfm2
+ * pre-tokenizer) vs token ids captured from {@code llama-tokenize} (llama.cpp) on the LFM2.5-8B
+ * GGUF — the reference implementation the model was built against. Also checks round-trip fidelity,
+ * that special-token strings embedded in text are NOT mapped by encode, and that decode renders
+ * special tokens as their literal text. Requires the model file; skips cleanly when absent.
  */
 public final class TokenizerParityTest {
 
@@ -75,18 +77,17 @@ public final class TokenizerParityTest {
     private static final int[] PROMPT_FIRST = {6427, 207, 2603, 2494, 278, 2272, 2803, 34};
     private static final int[] PROMPT_LAST = {2347, 48672, 284, 8};
 
-    public static void main(String[] args) throws Exception {
+    @Test
+    void oracle() throws Exception {
         Path model =
-                Path.of(args.length > 0 ? args[0] : "../models/LiquidAI/LFM2.5-8B-A1B-Q8_0.gguf");
-        if (!Files.exists(model)) {
-            System.out.println("TokenizerParityTest: model not found (" + model + "), skipping");
-            return;
-        }
+                Path.of("/home/mukel/Desktop/playground/models/LiquidAI/LFM2.5-8B-A1B-Q8_0.gguf");
+        Assumptions.assumeTrue(Files.exists(model), "model not found: " + model);
+        failures = 0;
         GGUF gguf;
         try (FileChannel channel = FileChannel.open(model, StandardOpenOption.READ)) {
             gguf = ModelLoader.readGguf(channel, model.toString());
         }
-        GgufTokenizer tokenizer = new GgufTokenizer(gguf);
+        Tokenizer tokenizer = Tokenizers.fromGGUF(gguf);
 
         for (Object[] testCase : EXPECTED) {
             String text = (String) testCase[0];
@@ -128,21 +129,25 @@ public final class TokenizerParityTest {
         }
 
         // specials: encode must NOT map them; decode must render them literally
-        Map<String, Integer> specials = tokenizer.getSpecialTokens();
-        int imStart = specials.get("<|im_start|>");
+
+        int imStart = SpecialTokens.find(tokenizer, "<|im_start|>").getAsInt();
         String embedded = "<|im_start|>not special here<|im_end|>";
         for (int id : tokenizer.encode(embedded)) {
-            if (tokenizer.isSpecialToken(id)) {
+            if (SpecialTokens.isSpecial(tokenizer, id)) {
                 failures++;
                 System.err.println("SPECIALS MAPPED BY ENCODE: id " + id);
             }
         }
         if (!"<|im_start|>"
-                .equals(new String(tokenizer.decodeTokenBytes(imStart), StandardCharsets.UTF_8))) {
+                .equals(
+                        new String(
+                                tokenizer.decodeBytes(new int[] {imStart}),
+                                StandardCharsets.UTF_8))) {
             failures++;
             System.err.println("SPECIAL DECODE MISMATCH for <|im_start|>");
         }
-        if (!tokenizer.isSpecialToken(imStart) || tokenizer.isSpecialToken(35808)) {
+        if (!SpecialTokens.isSpecial(tokenizer, imStart)
+                || SpecialTokens.isSpecial(tokenizer, 35808)) {
             failures++;
             System.err.println("isSpecialToken misclassification");
         }
@@ -150,10 +155,10 @@ public final class TokenizerParityTest {
         // encodeWithSpecialTokens (--raw-prompt): specials map to their ids, ordinary text
         // between them encodes exactly as plain encode would
         List<Integer> raw =
-                tokenizer.encodeWithSpecialTokens("<|im_start|>Hello, world!<|im_end|>").toList();
+                SpecialTokens.encode(tokenizer, "<|im_start|>Hello, world!<|im_end|>").toList();
         List<Integer> expectedRaw = new ArrayList<>(List.of(imStart));
         expectedRaw.addAll(tokenizer.encode("Hello, world!").toList());
-        expectedRaw.add(specials.get("<|im_end|>"));
+        expectedRaw.add(SpecialTokens.find(tokenizer, "<|im_end|>").getAsInt());
         if (!raw.equals(expectedRaw)) {
             failures++;
             System.err.println("encodeWithSpecialTokens mismatch: " + raw + " vs " + expectedRaw);
@@ -161,11 +166,11 @@ public final class TokenizerParityTest {
 
         System.out.println(
                 "TokenizerParityTest: vocab="
-                        + tokenizer.vocabularySize()
+                        + tokenizer.vocabulary().size()
                         + ", failures="
                         + failures);
         if (failures > 0) {
-            System.exit(1);
+            throw new AssertionError(failures + " failure(s) - see FAIL lines above");
         }
     }
 }

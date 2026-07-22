@@ -3,7 +3,6 @@
 // conversations, via the shared testkit scenario. The battery renders with enable_thinking=true
 // (Harness drives generationPrompt(true)); the non-thinking generation prompt is validated
 // separately against the template's default branch.
-//   java ... com.qxotic.jinfer.models.qwen35.Qwen35TurnTemplateOracle [model.gguf]
 package com.qxotic.jinfer.models.qwen35;
 
 import com.qxotic.jinfer.chat.Message;
@@ -12,20 +11,17 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Test;
 
 public final class Qwen35TurnTemplateOracle {
 
-    public static void main(String[] args) throws Exception {
+    @Test
+    void oracle() throws Exception {
         Path model =
                 Path.of(
-                        args.length > 0
-                                ? args[0]
-                                : "/home/mukel/Desktop/playground/models/unsloth/Qwen3.5-2B-GGUF/Qwen3.5-2B-Q8_0.gguf");
-        if (!Files.exists(model)) {
-            System.out.println(
-                    "Qwen35TurnTemplateOracle: model not found (" + model + "), skipping");
-            return;
-        }
+                        "/home/mukel/Desktop/playground/models/unsloth/Qwen3.5-2B-GGUF/Qwen3.5-2B-Q8_0.gguf");
+        Assumptions.assumeTrue(Files.exists(model), "model not found: " + model);
         OracleScenario o =
                 new OracleScenario(model, Qwen35TurnTemplate::new, Map.of("enable_thinking", true));
 

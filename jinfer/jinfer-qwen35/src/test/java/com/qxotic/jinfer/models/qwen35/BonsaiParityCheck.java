@@ -17,6 +17,9 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 
 public final class BonsaiParityCheck {
 
@@ -44,16 +47,13 @@ public final class BonsaiParityCheck {
     private static final int N_TOKENS = 32;
     private static final int MIN_MATCH = 24;
 
-    public static void main(String[] args) throws Exception {
+    @Test
+    @Tag("integration")
+    void greedyParity() throws Exception {
         Path model =
                 Path.of(
-                        args.length > 0
-                                ? args[0]
-                                : "/home/mukel/Desktop/playground/models/prism-ml/Bonsai-27B-gguf/Bonsai-27B-Q1_0.gguf");
-        if (!Files.exists(model)) {
-            System.out.println("BonsaiParityCheck: model not found (" + model + "), skipping");
-            return;
-        }
+                        "/home/mukel/Desktop/playground/models/prism-ml/Bonsai-27B-gguf/Bonsai-27B-Q1_0.gguf");
+        Assumptions.assumeTrue(Files.exists(model), "model not found: " + model);
         Qwen35 model35 = Qwen35.loadModel(model, 4096);
         var tokenizer = model35.tokenizer();
         Set<Integer> stops = model35.stopTokens();
@@ -83,7 +83,7 @@ public final class BonsaiParityCheck {
             int matched = 0;
             StringBuilder text = new StringBuilder();
             for (int t : generated) {
-                text.append(tokenizer.decode(t));
+                text.append(tokenizer.decode(new int[] {t}));
                 if (!isPrefix(text, c.reference())) break;
                 matched++;
             }

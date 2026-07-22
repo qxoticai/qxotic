@@ -12,10 +12,23 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 
 public final class Lfm2ChatRun {
 
-    public static void main(String[] args) throws Exception {
+    @Test
+    @Tag("driver")
+    void run() throws Exception {
+        main(testArgs());
+    }
+
+    private static String[] testArgs() {
+        String argv = System.getProperty("jinfer.args", "");
+        return argv.isBlank() ? new String[0] : argv.trim().split("\\s+");
+    }
+
+    private static void main(String[] args) throws Exception {
         Path path =
                 Path.of(
                         args.length > 0
@@ -78,7 +91,7 @@ public final class Lfm2ChatRun {
             Lfm2.State s,
             TurnTemplate template,
             List<Batch> turn,
-            com.qxotic.jinfer.llm.GgufTokenizer tk,
+            com.qxotic.toknroll.Tokenizer tk,
             Set<Integer> stops,
             int maxTokens) {
         List<Batch> ready = new ArrayList<>(turn);
@@ -86,12 +99,12 @@ public final class Lfm2ChatRun {
         for (Batch b : Batch.prepare(ready, 512)) model.ingest(s, b);
 
         StringBuilder out = new StringBuilder();
-        int imEnd = tk.getSpecialTokens().get("<|im_end|>");
+        int imEnd = com.qxotic.jinfer.llm.SpecialTokens.require(tk, "<|im_end|>");
         int tok = model.logits(s).argmax();
         int n = 0;
         long t0 = System.nanoTime();
         for (; n < maxTokens && !stops.contains(tok); n++) {
-            out.append(tk.decode(tok));
+            out.append(tk.decode(new int[] {tok}));
             model.ingest(s, Batch.step(tok));
             tok = model.logits(s).argmax();
         }

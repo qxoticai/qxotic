@@ -5,12 +5,30 @@ package com.qxotic.jinfer.models.qwen35;
 
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.FloatTensor;
+import com.qxotic.jinfer.llm.SpecialTokens;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 
 public final class Qwen3EmbedRun {
-    public static void main(String[] args) throws Exception {
+    @Test
+    @Tag("driver")
+    void run() throws Exception {
+        Assumptions.assumeTrue(
+                !System.getProperty("jinfer.args", "").isBlank(),
+                "set -Djinfer.args=\"...\" to run this tool");
+        main(testArgs());
+    }
+
+    private static String[] testArgs() {
+        String argv = System.getProperty("jinfer.args", "");
+        return argv.isBlank() ? new String[0] : argv.trim().split("\\s+");
+    }
+
+    private static void main(String[] args) throws Exception {
         int ctx = 2048;
         Qwen3 model = Qwen3.loadModel(Path.of(args[0]), ctx);
         var tk = model.tokenizer();
@@ -33,10 +51,8 @@ public final class Qwen3EmbedRun {
                     args.length > 1 ? args[1] : "The quick brown fox jumps over the lazy dog.";
             List<Integer> t = new java.util.ArrayList<>(tk.encode(text).toList());
             t.add(
-                    tk.getSpecialTokens()
-                            .getOrDefault(
-                                    "<|endoftext|>",
-                                    151643)); // last-token pooling: append EOS, like llama.cpp
+                    SpecialTokens.find(tk, "<|endoftext|>")
+                            .orElse(151643)); // last-token pooling: append EOS, like llama.cpp
             ids = t.stream().mapToInt(Integer::intValue).toArray();
         }
         System.err.println("tokens(" + ids.length + "): " + Arrays.toString(ids));

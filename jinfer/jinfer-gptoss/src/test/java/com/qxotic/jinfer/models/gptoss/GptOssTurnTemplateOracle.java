@@ -12,20 +12,15 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Test;
 
 public final class GptOssTurnTemplateOracle {
 
-    public static void main(String[] args) throws Exception {
-        Path model =
-                Path.of(
-                        args.length > 0
-                                ? args[0]
-                                : "/home/mukel/Desktop/playground/models/unsloth/gpt-oss-20b-Q8_0.gguf");
-        if (!Files.exists(model)) {
-            System.out.println(
-                    "GptOssTurnTemplateOracle: model not found (" + model + "), skipping");
-            return;
-        }
+    @Test
+    void oracle() throws Exception {
+        Path model = Path.of("/home/mukel/Desktop/playground/models/unsloth/gpt-oss-20b-Q8_0.gguf");
+        Assumptions.assumeTrue(Files.exists(model), "model not found: " + model);
         String today = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
         OracleScenario o =
                 new OracleScenario(model, tk -> new GptOssTurnTemplate(tk, today), Map.of());

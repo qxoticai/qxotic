@@ -13,9 +13,26 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 
 public final class Gemma4VisionRun {
-    public static void main(String[] args) throws Exception {
+    @Test
+    @Tag("driver")
+    void run() throws Exception {
+        Assumptions.assumeTrue(
+                !System.getProperty("jinfer.args", "").isBlank(),
+                "set -Djinfer.args=\"...\" to run this tool");
+        main(testArgs());
+    }
+
+    private static String[] testArgs() {
+        String argv = System.getProperty("jinfer.args", "");
+        return argv.isBlank() ? new String[0] : argv.trim().split("\\s+");
+    }
+
+    private static void main(String[] args) throws Exception {
         if (args.length > 0 && args[0].equals("e2e")) {
             e2e(args[1], args[2], args[3], args.length > 4 ? args[4] : "Describe this image.");
             return;
@@ -115,12 +132,13 @@ public final class Gemma4VisionRun {
             throws Exception {
         Gemma4 model = Gemma4.loadModel(Path.of(textGguf), Path.of(mmproj), 4096);
         var tk = model.tokenizer();
-        var sp = tk.getSpecialTokens();
-        int bos = sp.getOrDefault("<bos>", 2),
-                sot = sp.getOrDefault("<|turn>", -1),
-                eot = sp.getOrDefault("<turn|>", -1); // gemma4 turn markers (NOT <start_of_turn>)
-        int soi = sp.getOrDefault("<|image>", -1),
-                eoi = sp.getOrDefault("<image|>", -1); // gemma4 open/close image wrappers
+        java.util.function.ToIntBiFunction<String, Integer> spFind =
+                (n, d) -> com.qxotic.jinfer.llm.SpecialTokens.find(tk, n).orElse(d);
+        int bos = spFind.applyAsInt("<bos>", 2),
+                sot = spFind.applyAsInt("<|turn>", -1),
+                eot = spFind.applyAsInt("<turn|>", -1); // gemma4 turn markers (NOT <start_of_turn>)
+        int soi = spFind.applyAsInt("<|image>", -1),
+                eoi = spFind.applyAsInt("<image|>", -1); // gemma4 open/close image wrappers
         System.err.printf(
                 "modalities=%s  special: bos=%d sot=%d eot=%d soi=%d eoi=%d%n",
                 model.modalities(), bos, sot, eot, soi, eoi);
@@ -161,7 +179,7 @@ public final class Gemma4VisionRun {
         StringBuilder out = new StringBuilder();
         int tok = model.logits(s).argmax();
         for (int i = 0; i < 220 && !stops.contains(tok); i++) {
-            out.append(tk.decode(tok));
+            out.append(tk.decode(new int[] {tok}));
             model.ingest(s, Batch.step(tok));
             tok = model.logits(s).argmax();
         }

@@ -7,6 +7,9 @@ package com.qxotic.jinfer.models.gemma4;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 
 public final class Gemma4MtpLoadTest {
 
@@ -21,7 +24,24 @@ public final class Gemma4MtpLoadTest {
         }
     }
 
-    public static void main(String[] args) throws Exception {
+    @Test
+    @Tag("integration")
+    void run() throws Exception {
+        Assumptions.assumeTrue(
+                java.nio.file.Files.exists(
+                        java.nio.file.Path.of(
+                                "/home/mukel/Desktop/playground/models/unsloth/mtp-gemma-4-E2B-it.gguf")),
+                "model not found:"
+                        + " /home/mukel/Desktop/playground/models/unsloth/mtp-gemma-4-E2B-it.gguf");
+        main(testArgs());
+    }
+
+    private static String[] testArgs() {
+        String argv = System.getProperty("jinfer.args", "");
+        return argv.isBlank() ? new String[0] : argv.trim().split("\\s+");
+    }
+
+    private static void main(String[] args) throws Exception {
         Path sidecar =
                 Path.of(
                         args.length > 0
@@ -70,7 +90,7 @@ public final class Gemma4MtpLoadTest {
 
         if (failures > 0) {
             System.out.println(failures + " failure(s)");
-            System.exit(1);
+            throw new AssertionError("failure(s) - see output above");
         }
         System.out.println(
                 "Gemma4MtpLoadTest: all checks passed (sidecar loads, geometry + 49 tensors"

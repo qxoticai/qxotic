@@ -8,9 +8,26 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 
 public final class GraniteRun {
-    public static void main(String[] args) throws Exception {
+    @Test
+    @Tag("driver")
+    void run() throws Exception {
+        Assumptions.assumeTrue(
+                !System.getProperty("jinfer.args", "").isBlank(),
+                "set -Djinfer.args=\"<model.gguf> ...\" to run this tool");
+        main(testArgs());
+    }
+
+    private static String[] testArgs() {
+        String argv = System.getProperty("jinfer.args", "");
+        return argv.isBlank() ? new String[0] : argv.trim().split("\\s+");
+    }
+
+    private static void main(String[] args) throws Exception {
         String path = args[0];
         String promptStr = args.length > 1 ? args[1] : "The capital of France is";
         int nTokens = args.length > 2 ? Integer.parseInt(args[2]) : 32;
@@ -43,7 +60,7 @@ public final class GraniteRun {
         int n = 0;
         long t0 = System.nanoTime();
         for (; n < nTokens && !stops.contains(tok); n++) {
-            out.append(tk.decode(tok));
+            out.append(tk.decode(new int[] {tok}));
             model.ingest(s, com.qxotic.jinfer.Batch.step(tok));
             tok = model.logits(s).argmax();
         }

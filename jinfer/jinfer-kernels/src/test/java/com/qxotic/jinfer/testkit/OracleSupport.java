@@ -9,7 +9,9 @@ import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.jinja.CompiledTemplate;
 import com.qxotic.jinfer.jinja.JinjaRenderer;
 import com.qxotic.jinfer.kernels.ModelLoader;
-import com.qxotic.jinfer.llm.GgufTokenizer;
+import com.qxotic.jinfer.llm.SpecialTokens;
+import com.qxotic.jinfer.llm.Tokenizers;
+import com.qxotic.toknroll.Tokenizer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -20,7 +22,7 @@ import java.util.Map;
 
 final class OracleSupport {
 
-    final GgufTokenizer tokenizer;
+    final Tokenizer tokenizer;
     final CompiledTemplate jinja;
 
     /** Loads the GGUF's tokenizer and compiles its own chat template (never the weights). */
@@ -29,8 +31,8 @@ final class OracleSupport {
         try (FileChannel channel = FileChannel.open(gguf, StandardOpenOption.READ)) {
             g = ModelLoader.readGguf(channel, gguf.toString());
         }
-        this.tokenizer = new GgufTokenizer(g);
-        String source = tokenizer.chatTemplateSource();
+        this.tokenizer = Tokenizers.fromGGUF(g);
+        String source = Tokenizers.chatTemplateSource(g);
         this.jinja = source.isEmpty() ? null : JinjaRenderer.template(source);
         if (jinja == null) throw new IllegalStateException("GGUF chat_template failed to compile");
     }
@@ -81,7 +83,7 @@ final class OracleSupport {
     }
 
     int special(String name) {
-        return tokenizer.getSpecialTokens().get(name);
+        return SpecialTokens.find(tokenizer, name).getAsInt();
     }
 
     long count(List<Integer> ids, int id) {

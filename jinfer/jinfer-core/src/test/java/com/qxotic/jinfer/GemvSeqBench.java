@@ -2,6 +2,8 @@ package com.qxotic.jinfer;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 
 /**
  * Walks a large (&gt; L3) Q8_0 matrix in {@code rowsPerGemv}-row slices, running each slice through
@@ -13,7 +15,18 @@ import java.lang.foreign.MemorySegment;
  * <p>java ... com.qxotic.GemvSeqBench [totalRows=65536] [dim1=4096] [rowsPerGemv=2048] [iters=200]
  */
 public final class GemvSeqBench {
-    public static void main(String[] args) {
+    @Test
+    @Tag("bench")
+    void run() throws Exception {
+        main(testArgs());
+    }
+
+    private static String[] testArgs() {
+        String argv = System.getProperty("jinfer.args", "");
+        return argv.isBlank() ? new String[0] : argv.trim().split("\\s+");
+    }
+
+    private static void main(String[] args) {
         int totalRows = args.length > 0 ? Integer.parseInt(args[0]) : 65536;
         int dim1 = args.length > 1 ? Integer.parseInt(args[1]) : 4096;
         int rowsPerGemv = args.length > 2 ? Integer.parseInt(args[2]) : 2048;

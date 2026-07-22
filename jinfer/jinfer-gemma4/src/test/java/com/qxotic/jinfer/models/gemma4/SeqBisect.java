@@ -1,8 +1,12 @@
 package com.qxotic.jinfer.models.gemma4;
 
 import com.qxotic.jinfer.FloatTensor;
+import com.qxotic.jinfer.llm.SpecialTokens;
 import java.nio.file.Path;
 import java.util.Arrays;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 
 /**
  * Diagnostic: for each seqLen, compare the last-token logits from a single batched prefill against
@@ -12,7 +16,21 @@ import java.util.Arrays;
  * <pre>SeqBisect &lt;model.gguf&gt; [maxSeq]</pre>
  */
 public final class SeqBisect {
-    public static void main(String[] args) throws Exception {
+    @Test
+    @Tag("driver")
+    void run() throws Exception {
+        Assumptions.assumeTrue(
+                !System.getProperty("jinfer.args", "").isBlank(),
+                "set -Djinfer.args=\"...\" to run this tool");
+        main(testArgs());
+    }
+
+    private static String[] testArgs() {
+        String argv = System.getProperty("jinfer.args", "");
+        return argv.isBlank() ? new String[0] : argv.trim().split("\\s+");
+    }
+
+    private static void main(String[] args) throws Exception {
         Gemma4 model = Gemma4.loadModel(Path.of(args[0]), 4096);
         int vocab = model.config().vocabularySize();
         int maxSeq = args.length > 1 ? Integer.parseInt(args[1]) : 24;
@@ -56,7 +74,7 @@ public final class SeqBisect {
         com.qxotic.toknroll.IntSequence all;
         do {
             sb.append("The quick brown fox jumps over the lazy dog. ");
-            all = model.tokenizer().encodeWithSpecialTokens(sb.toString());
+            all = SpecialTokens.encode(model.tokenizer(), sb.toString());
         } while (all.length() < n);
         int[] ids = new int[n];
         for (int i = 0; i < n; i++) ids[i] = all.intAt(i);

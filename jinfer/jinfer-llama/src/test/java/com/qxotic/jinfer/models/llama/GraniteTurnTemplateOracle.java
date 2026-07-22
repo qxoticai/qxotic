@@ -1,7 +1,6 @@
 // Oracle: GraniteTurnTemplate must be token-exact with the GGUF's own Jinja chat_template via the
 // shared testkit scenario. No bos, no default system, no thinking scaffold; empty system messages
 // are omitted by callers (the template drops them).
-//   java ... com.qxotic.jinfer.models.llama.GraniteTurnTemplateOracle [model.gguf]
 package com.qxotic.jinfer.models.llama;
 
 import com.qxotic.jinfer.chat.Message;
@@ -10,20 +9,17 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Test;
 
 public final class GraniteTurnTemplateOracle {
 
-    public static void main(String[] args) throws Exception {
+    @Test
+    void oracle() throws Exception {
         Path model =
                 Path.of(
-                        args.length > 0
-                                ? args[0]
-                                : "/home/mukel/Desktop/playground/models/ibm-granite/granite-4.1-3b-Q8_0.gguf");
-        if (!Files.exists(model)) {
-            System.out.println(
-                    "GraniteTurnTemplateOracle: model not found (" + model + "), skipping");
-            return;
-        }
+                        "/home/mukel/Desktop/playground/models/ibm-granite/granite-4.1-3b-Q8_0.gguf");
+        Assumptions.assumeTrue(Files.exists(model), "model not found: " + model);
         OracleScenario o = new OracleScenario(model, GraniteTurnTemplate::new, Map.of());
 
         o.compare("single user", false, List.of(Message.user("What is the capital of France?")));
