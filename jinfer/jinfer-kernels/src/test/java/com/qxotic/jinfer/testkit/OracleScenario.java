@@ -7,7 +7,6 @@ package com.qxotic.jinfer.testkit;
 
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.chat.Message;
-import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
@@ -76,75 +75,6 @@ public final class OracleScenario {
         for (int id : Batch.tokenIds(batches)) ours.add(id);
 
         support.diff(checks, name, oracle, ours, rendered);
-    }
-
-    /**
-     * Tool-aware comparison: the conversation may carry {@link
-     * com.qxotic.jinfer.chat.Part.ToolCall} parts (assistant turns) and {@link
-     * com.qxotic.jinfer.chat.Role#TOOL} turns, and {@code tools} is the offered tool list. The
-     * Jinja side gets {@code tools} (parsed from each Tool's rawJson, so its own {@code tojson}
-     * renders them) plus messages carrying {@code tool_calls}; our side runs the preamble path:
-     * {@code conversationStart(Preamble)} folds the leading system message and tools, then the
-     * remaining turns, then the generation prompt.
-     */
-    public void compareTools(
-            String name,
-            boolean generationPrompt,
-            List<com.qxotic.jinfer.chat.Tool> tools,
-            List<Message> conversation) {
-        List<Object> maps = new ArrayList<>();
-        for (Message m : conversation) maps.add(OracleSupport.oracleMessage(m));
-        List<Object> toolVars = new ArrayList<>();
-        for (com.qxotic.jinfer.chat.Tool t : tools)
-            toolVars.add(com.qxotic.format.json.Json.parse(t.rawJson()));
-
-        Map<String, Object> vars = new HashMap<>(renderVars);
-        vars.put("messages", maps);
-        vars.put("tools", toolVars);
-        vars.put("add_generation_prompt", generationPrompt);
-        String rendered = support.jinja.render(vars);
-        List<Integer> oracle = specials.encode(tokenizer, rendered).toList();
-        List<Integer> ours = encodeWithPreamble(tools, conversation, generationPrompt);
-
-        support.diff(checks, name, oracle, ours, rendered);
-    }
-
-    /**
-     * Like {@link #compareTools} but against an explicit expected rendered string instead of the
-     * Jinja engine. Needed for the tool-CALL turns: jinfer-jinja cannot evaluate LFM2's {@code
-     * render_tool_calls} macro (nested namespace mutation + a macro call inside the loop), so the
-     * reference is the known-correct string the trained format produces, rescanned with
-     * encodeWithSpecialTokens - the same rescan the Jinja path uses.
-     */
-    public void compareToolsExpected(
-            String name,
-            String expectedRendered,
-            boolean generationPrompt,
-            List<com.qxotic.jinfer.chat.Tool> tools,
-            List<Message> conversation) {
-        List<Integer> oracle = specials.encode(tokenizer, expectedRendered).toList();
-        List<Integer> ours = encodeWithPreamble(tools, conversation, generationPrompt);
-        support.diff(checks, name, oracle, ours, null);
-    }
-
-    /** The preamble-path encoding: conversationStart(Preamble) + non-system turns + gen prompt. */
-    private List<Integer> encodeWithPreamble(
-            List<com.qxotic.jinfer.chat.Tool> tools,
-            List<Message> conversation,
-            boolean generationPrompt) {
-        java.util.Optional<Message> system =
-                !conversation.isEmpty() && conversation.get(0).role().equals(Role.SYSTEM)
-                        ? java.util.Optional.of(conversation.get(0))
-                        : java.util.Optional.empty();
-        List<Message> turns =
-                system.isPresent() ? conversation.subList(1, conversation.size()) : conversation;
-        List<Batch> batches =
-                new ArrayList<>(mine.conversationStart(new TurnTemplate.Preamble(system, tools)));
-        for (Message m : turns) batches.addAll(mine.encodeTurn(m));
-        if (generationPrompt) batches.addAll(mine.generationPrompt(true));
-        List<Integer> ours = new ArrayList<>();
-        for (int id : Batch.tokenIds(batches)) ours.add(id);
-        return ours;
     }
 
     // ---- helpers for the per-model injection-inertness checks ----

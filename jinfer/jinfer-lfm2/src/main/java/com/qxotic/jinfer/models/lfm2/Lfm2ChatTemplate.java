@@ -87,7 +87,12 @@ public final class Lfm2ChatTemplate implements TurnTemplate {
         List<Batch> out = new ArrayList<>();
         List<Message> turns = conversation.messages();
         if (!conversation.tools().isEmpty()) {
-            turns = TurnTemplate.encodePreamble(this, turns, conversation.tools(), out);
+            boolean leadingSystem = !turns.isEmpty() && turns.get(0).role().equals(Role.SYSTEM);
+            out.addAll(
+                    preamble(
+                            leadingSystem ? turns.get(0).text() : "",
+                            conversation.tools())); // welds tools into the system turn
+            if (leadingSystem) turns = turns.subList(1, turns.size());
         } else {
             out.addAll(conversationStart());
         }
@@ -197,22 +202,20 @@ public final class Lfm2ChatTemplate implements TurnTemplate {
      * The template welds tools into the system turn: {@code system_prompt = {system content}\nList
      * of tools: [{tool0 json}, {tool1 json}]}, rendered once as a system turn. When tools are
      * present but there is no system message, a system turn is still emitted with only the tool
-     * list. Each tool is its raw request JSON verbatim (Jinja {@code tool | tojson}).
+     * list. Each tool is its raw request JSON verbatim (Jinja {@code tool | tojson}). One
+     * turn-stable batch: bos + the welded system turn.
      */
-    @Override
-    public List<Batch> conversationStart(TurnTemplate.Preamble preamble) {
+    private List<Batch> preamble(String system, List<Tool> tools) {
         IntSequence.Builder ids = IntSequence.newBuilder();
         ids.add(bos);
-        String system = preamble.system().map(Message::text).orElse("");
-        if (!preamble.tools().isEmpty()) {
-            StringBuilder tools = new StringBuilder("List of tools: [");
-            List<Tool> list = preamble.tools();
-            for (int t = 0; t < list.size(); t++) {
-                if (t > 0) tools.append(", ");
-                tools.append(list.get(t).rawJson());
+        if (!tools.isEmpty()) {
+            StringBuilder list = new StringBuilder("List of tools: [");
+            for (int t = 0; t < tools.size(); t++) {
+                if (t > 0) list.append(", ");
+                list.append(tools.get(t).rawJson());
             }
-            tools.append(']');
-            system = system.isEmpty() ? tools.toString() : system + "\n" + tools;
+            list.append(']');
+            system = system.isEmpty() ? list.toString() : system + "\n" + list;
         }
         if (!system.isEmpty()) {
             ids.add(imStart);

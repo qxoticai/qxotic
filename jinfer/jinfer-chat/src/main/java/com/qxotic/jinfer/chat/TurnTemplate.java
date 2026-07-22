@@ -3,7 +3,6 @@ package com.qxotic.jinfer.chat;
 import com.qxotic.jinfer.Batch;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 
 /**
  * The per-turn chat contract for curated models: encodes one turn at a time, deterministically and
@@ -38,47 +37,6 @@ public interface TurnTemplate extends ChatTemplate {
     List<Batch> conversationStart();
 
     /**
-     * The conversation-scoped, turn-stable inputs the preamble is built from: the leading system
-     * message (if any) and the offered tools. Both are fixed for the life of the conversation, so
-     * the preamble stays a stable cache prefix as turns are appended.
-     */
-    record Preamble(Optional<Message> system, List<Tool> tools) {
-        public Preamble {
-            tools = List.copyOf(tools);
-        }
-    }
-
-    /**
-     * Welds the tools and the leading system message into the preamble: appends {@code
-     * template.conversationStart(Preamble)} to {@code out} (the whole tool block stays one
-     * turn-stable prefix) and returns the remaining turns - the system turn, when consumed by the
-     * preamble, is skipped.
-     */
-    static List<Message> encodePreamble(
-            TurnTemplate template, List<Message> messages, List<Tool> tools, List<Batch> out) {
-        Optional<Message> system =
-                !messages.isEmpty() && messages.get(0).role().equals(Role.SYSTEM)
-                        ? Optional.of(messages.get(0))
-                        : Optional.empty();
-        out.addAll(template.conversationStart(new Preamble(system, tools)));
-        return system.isPresent() ? messages.subList(1, messages.size()) : messages;
-    }
-
-    /**
-     * The preamble including tools: bos plus the model's system/tool framing (for LFM2, one system
-     * turn merging the system message and the tool list). Emitted once before the first turn,
-     * REPLACING {@link #conversationStart()} AND the leading system turn - the driver must not also
-     * encode the system message. The default ignores tools and simply appends the system message as
-     * its own turn, which is byte-exact only for templates that do not weld tools into the system
-     * turn; a template that welds tools overrides this.
-     */
-    default List<Batch> conversationStart(Preamble preamble) {
-        List<Batch> out = new ArrayList<>(conversationStart());
-        preamble.system().ifPresent(sys -> out.addAll(encodeTurn(sys)));
-        return out;
-    }
-
-    /**
      * The assistant generation prefix, appended after the last turn to start decoding. {@code
      * thinking} toggles the model's reasoning scaffold where one exists (matching the template's
      * {@code enable_thinking}); models without one ignore it.
@@ -94,10 +52,9 @@ public interface TurnTemplate extends ChatTemplate {
 
     /**
      * The conversation as the model's own template would frame it - e.g. a template that
-     * unconditionally renders a system turn injects its default here when the conversation lacks
-     * one. Identity by default. EVERY caller that encodes turn-by-turn (incremental drivers, the
-     * server) must normalize first, or its framing silently drifts from the oracle-validated
-     * whole-conversation encoding.
+     * unconditionally renders a system turn (Llama) injects its default here when the conversation
+     * lacks one. Identity by default. EVERY caller that encodes turn-by-turn must normalize first,
+     * or its framing silently drifts from the oracle-validated whole-conversation encoding.
      */
     default List<Message> normalize(List<Message> conversation) {
         return conversation;
