@@ -243,6 +243,68 @@ public final class Gemma4MultimodalCacheRun {
                         + " %.0fms  (%.0fx)%n",
                 fullTtft, encodeMs, ingestMs, best, fullTtft / best);
         check(best < fullTtft, name + ": resume TTFT beats the full path");
+
+        // -- FROZEN artifact with MEDIA: freeze the whole tree (both conversations, both
+        // images), reopen from disk, and serve the catalog - image KV blocks travel as opaque
+        // frozen blobs, content-hash fingerprints and all --
+        try {
+            java.nio.file.Path artifact = java.nio.file.Files.createTempFile("mm-frozen", ".jkv");
+            artifact.toFile().deleteOnExit();
+            cache.freeze(artifact);
+            com.qxotic.jinfer.cache.FrozenBlocks fz =
+                    com.qxotic.jinfer.cache.FrozenBlocks.open(artifact, seed);
+            System.out.println("      frozen catalog: " + fz);
+
+            // 1. the first image's turn serves fully from disk, and greedy decode from the
+            // restored KV matches the live session's reply (the encode was skipped entirely)
+            CachedSession<Gemma4.State> fa =
+                    fz.serve(model, codec, seed, model.newState(4096, 512), turnFp);
+            check(
+                    fa.position() == turnFp.length,
+                    name + ": frozen serve restores the media turn (" + fa.position() + ")");
+            fa.ingest(template.generationPrompt(true));
+            check(
+                    decode(fa, 16).equals(reply),
+                    name + ": frozen greedy reply identical to the live session");
+
+            // 2. the SECOND image's conversation serves from the same artifact (catalog)
+            CachedSession<Gemma4.State> fc =
+                    fz.serve(model, codec, seed, model.newState(4096, 512), c.fingerprints());
+            check(
+                    fc.position() >= bounds[1],
+                    name + ": second image serves from the same catalog (" + fc.position() + ")");
+
+            // 3. double win from disk: same media, different question resumes past media end
+            CachedSession<Gemma4.State> fd =
+                    fz.serve(
+                            model,
+                            codec,
+                            seed,
+                            model.newState(4096, 512),
+                            java.util.Arrays.copyOf(all, bounds[1]));
+            check(
+                    fd.position() >= bounds[1],
+                    name
+                            + ": frozen double win (media encode + prefill skipped, "
+                            + fd.position()
+                            + " >= "
+                            + bounds[1]
+                            + ")");
+
+            // 4. divergent media against the artifact resumes only the text prefix
+            CachedSession<Gemma4.State> fm =
+                    fz.serve(model, codec, seed, model.newState(4096, 512), mutated);
+            check(
+                    fm.position() == bounds[0],
+                    name
+                            + ": frozen divergent media resumes the text prefix ("
+                            + fm.position()
+                            + "/"
+                            + all.length
+                            + ")");
+        } catch (java.io.IOException ioe) {
+            throw new RuntimeException(ioe);
+        }
     }
 
     /** genPrompt ingest + first argmax on the session. */
