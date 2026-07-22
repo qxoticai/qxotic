@@ -90,26 +90,29 @@ int main(int argc, char** argv) {
 
     float* Wf = malloc(4*(size_t)M*K); float* B = malloc(4*(size_t)N*K); float* C = malloc(4*(size_t)M*N);
     jam_ref_fill(Wf,(size_t)M*K,1); jam_ref_fill(B,(size_t)N*K,2);
-    uint16_t* Wf16 = malloc(2*(size_t)M*K); uint16_t* Wbf16 = malloc(2*(size_t)M*K);
-    for (size_t i=0;i<(size_t)M*K;i++) { Wf16[i] = jam_ref_f2h(Wf[i]);
-        union { float f; uint32_t u; } x; x.f = Wf[i]; Wbf16[i] = (uint16_t)(x.u >> 16); }
-    jam_ref_blk* Wq = jam_ref_quant_q8_0(Wf,M,K);
-    float* dq1 = malloc(4*(size_t)M*K); float* dq2 = malloc(4*(size_t)M*K);
-    uint8_t* Wq40 = jam_ref_make_q4_0(M,K,1,dq1,dq2); free(dq1); free(dq2);
+    #define BW_WANT(nm) (!wantdt || strcmp(wantdt, nm) == 0)   /* skip building unselected weights */
+    uint16_t* Wf16 = BW_WANT("F16") ? malloc(2*(size_t)M*K) : NULL;
+    uint16_t* Wbf16 = BW_WANT("BF16") ? malloc(2*(size_t)M*K) : NULL;
+    for (size_t i=0;i<(size_t)M*K && (Wf16 || Wbf16);i++) { if (Wf16) Wf16[i] = jam_ref_f2h(Wf[i]);
+        union { float f; uint32_t u; } x; x.f = Wf[i]; if (Wbf16) Wbf16[i] = (uint16_t)(x.u >> 16); }
+    jam_ref_blk* Wq = BW_WANT("Q8_0") ? jam_ref_quant_q8_0(Wf,M,K) : NULL;
+    uint8_t* Wq40 = NULL;
+    if (BW_WANT("Q4_0")) { float* dq1 = malloc(4*(size_t)M*K); float* dq2 = malloc(4*(size_t)M*K);
+        Wq40 = jam_ref_make_q4_0(M,K,1,dq1,dq2); free(dq1); free(dq2); }
 
     /* K-quants are 256-element super-blocks (only when k%256==0). The makers also emit dequant scratch
      * (wdq/wmin) the bench doesn't need — one reused pair, freed after. */
     uint8_t *Wq4k=NULL, *Wq5k=NULL, *Wq6k=NULL;
-    if (K % 256 == 0) {
+    if (K % 256 == 0 && (BW_WANT("Q4_K") || BW_WANT("Q5_K") || BW_WANT("Q6_K"))) {
         float* wdq = malloc(4*(size_t)M*K); float* wmin = malloc(4*(size_t)M*K);
-        Wq4k = jam_ref_make_q4k(M, K, 1, wdq, wmin);
-        Wq5k = jam_ref_make_q5k(M, K, 1, wdq, wmin);
-        Wq6k = jam_ref_make_q6k(M, K, 1, wdq, wmin);
+        if (BW_WANT("Q4_K")) Wq4k = jam_ref_make_q4k(M, K, 1, wdq, wmin);
+        if (BW_WANT("Q5_K")) Wq5k = jam_ref_make_q5k(M, K, 1, wdq, wmin);
+        if (BW_WANT("Q6_K")) Wq6k = jam_ref_make_q6k(M, K, 1, wdq, wmin);
         free(wdq); free(wmin);
     }
-    void* Wmx = (K % 32 == 0) ? jam_ref_quant_mxfp4(Wf, M, K) : NULL;
-    void* Wnv = (K % 64 == 0) ? jam_ref_quant_nvfp4(Wf, M, K) : NULL;
-    void* Wq1 = (K % 128 == 0) ? jam_ref_quant_q1_0(Wf, M, K) : NULL;
+    void* Wmx = (K % 32 == 0 && BW_WANT("MXFP4")) ? jam_ref_quant_mxfp4(Wf, M, K) : NULL;
+    void* Wnv = (K % 64 == 0 && BW_WANT("NVFP4")) ? jam_ref_quant_nvfp4(Wf, M, K) : NULL;
+    void* Wq1 = (K % 128 == 0 && BW_WANT("Q1_0")) ? jam_ref_quant_q1_0(Wf, M, K) : NULL;
     struct { int at; const void* W; const char* nm; } QS[] = {
         { JAM_F32, Wf, "F32" }, { JAM_F16, Wf16, "F16" }, { JAM_BF16, Wbf16, "BF16" }, { JAM_Q8_0, Wq, "Q8_0" }, { JAM_Q4_0, Wq40, "Q4_0" },
         { JAM_Q4_K, Wq4k, "Q4_K" }, { JAM_Q5_K, Wq5k, "Q5_K" }, { JAM_Q6_K, Wq6k, "Q6_K" },
@@ -132,6 +135,7 @@ int main(int argc, char** argv) {
         for (unsigned Q=0; Q<sizeof QS/sizeof*QS; ++Q) {
             if (!QS[Q].W) continue;                                              /* K-quant skipped (k%256) */
             if (wantdt && strcmp(wantdt, QS[Q].nm) != 0) continue;                 /* JAM_DTYPE filter */
+            if (!QS[Q].W) continue;                                                 /* weight not built */
             usleep(300000);   /* cooldown so back-to-back kernels aren't thermally coupled */
             perf p = bench(c, QS[Q].W, QS[Q].at, B, C, M, N, K, iters);
             printf("  %-10s %-6s %12.1f %9.1f\n", jam_isa_name(lvl), QS[Q].nm, p.gmac, p.gbs);
