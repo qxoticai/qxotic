@@ -185,3 +185,110 @@ void jam_mm_bf16_avx512bf16(void* arg, int rb, int re, int tid) {
             C[(size_t) s * ldc + r] = bf16_dot(w, X + (size_t) s * k, k);
     }
 }
+
+/* ======================= packed-panel BF16 (vdpbf16ps microkernel) =======================
+ * Same structure as the packed F32 path, doubled by the instruction: activations convert AND
+ * transpose once into k-pair-major token panels (xp[p][t/2][32 tokens x pair]), and the 8x32
+ * microkernel broadcasts a 32-bit WEIGHT PAIR (two adjacent bf16) against 2 panel vectors -
+ * each vdpbf16ps covers two k-steps for 16 tokens. 16 dp per ~10 load-uops. */
+
+static inline uint16_t jam_f2bf_rne(float v) {   /* round-to-nearest-even, matches vcvtneps2bf16 */
+    union { float f; uint32_t u; } x; x.f = v;
+    uint32_t r = x.u + 0x7FFF + ((x.u >> 16) & 1);
+    return (uint16_t) (r >> 16);
+}
+
+/* phase 1: convert+transpose token-panels of 32 into xp (uint16 pairs: [t/2][j*2 + (t&1)]). */
+void jam_bf16_pack_avx512bf16(void* arg, int pb, int pe, int tid) {
+    (void) tid;
+    const jam_bf16_job* J = (const jam_bf16_job*) arg;
+    const float* X = J->x;
+    const long k = J->k, ldx = J->ldx;
+    const int n = J->n;
+    for (int p = pb; p < pe; p++) {
+        uint16_t* out = J->xb + (size_t) p * 32 * k;
+        int j0 = p * 32;
+        int cols = n - j0 < 32 ? n - j0 : 32;
+        for (int j = 0; j < cols; j++) {
+            const float* xs = X + (size_t)(j0 + j) * ldx;
+            for (long t = 0; t < k; t++)
+                out[(size_t)(t / 2) * 64 + (size_t) j * 2 + (t & 1)] = jam_f2bf_rne(xs[t]);
+        }
+        for (int j = cols; j < 32; j++)
+            for (long t = 0; t < k; t++)
+                out[(size_t)(t / 2) * 64 + (size_t) j * 2 + (t & 1)] = 0;
+    }
+}
+
+/* phase 2: 8 weight rows x one 32-token panel. Broadcast the row's bf16 pair, dp both halves. */
+void jam_mm_bf16p_avx512bf16(void* arg, int rb, int re, int tid) {
+    (void) tid;
+    const jam_bf16_job* J = (const jam_bf16_job*) arg;
+    const uint16_t* W = J->w;
+    float* C = (float*) J->c;
+    const long ldw = J->ldw, ldc = J->ldc, k = J->k;
+    const int n = J->n, npanels = (n + 31) / 32;
+    for (int p = 0; p < npanels; p++) {
+        const uint16_t* xp = J->xb + (size_t) p * 32 * k;
+        int j0 = p * 32;
+        int cols = n - j0 < 32 ? n - j0 : 32;
+        int r = rb;
+        for (; r + 8 <= re; r += 8) {
+            const uint16_t* w[8];
+            for (int a = 0; a < 8; ++a) w[a] = W + (size_t)(r + a) * ldw;
+            __m512 c0a = _mm512_setzero_ps(), c0b = c0a, c1a = c0a, c1b = c0a,
+                   c2a = c0a, c2b = c0a, c3a = c0a, c3b = c0a,
+                   c4a = c0a, c4b = c0a, c5a = c0a, c5b = c0a,
+                   c6a = c0a, c6b = c0a, c7a = c0a, c7b = c0a;
+            for (long t = 0; t + 2 <= k; t += 2) {
+                const uint16_t* xr = xp + (size_t)(t / 2) * 64;
+                __m512bh xa = (__m512bh) _mm512_loadu_si512((const void*) xr);
+                __m512bh xb = (__m512bh) _mm512_loadu_si512((const void*) (xr + 32));
+                __m512bh b0 = (__m512bh) _mm512_set1_epi32(*(const int*) (w[0] + t));
+                __m512bh b1 = (__m512bh) _mm512_set1_epi32(*(const int*) (w[1] + t));
+                c0a = _mm512_dpbf16_ps(c0a, b0, xa); c0b = _mm512_dpbf16_ps(c0b, b0, xb);
+                c1a = _mm512_dpbf16_ps(c1a, b1, xa); c1b = _mm512_dpbf16_ps(c1b, b1, xb);
+                __m512bh b2 = (__m512bh) _mm512_set1_epi32(*(const int*) (w[2] + t));
+                __m512bh b3 = (__m512bh) _mm512_set1_epi32(*(const int*) (w[3] + t));
+                c2a = _mm512_dpbf16_ps(c2a, b2, xa); c2b = _mm512_dpbf16_ps(c2b, b2, xb);
+                c3a = _mm512_dpbf16_ps(c3a, b3, xa); c3b = _mm512_dpbf16_ps(c3b, b3, xb);
+                __m512bh b4 = (__m512bh) _mm512_set1_epi32(*(const int*) (w[4] + t));
+                __m512bh b5 = (__m512bh) _mm512_set1_epi32(*(const int*) (w[5] + t));
+                c4a = _mm512_dpbf16_ps(c4a, b4, xa); c4b = _mm512_dpbf16_ps(c4b, b4, xb);
+                c5a = _mm512_dpbf16_ps(c5a, b5, xa); c5b = _mm512_dpbf16_ps(c5b, b5, xb);
+                __m512bh b6 = (__m512bh) _mm512_set1_epi32(*(const int*) (w[6] + t));
+                __m512bh b7 = (__m512bh) _mm512_set1_epi32(*(const int*) (w[7] + t));
+                c6a = _mm512_dpbf16_ps(c6a, b6, xa); c6b = _mm512_dpbf16_ps(c6b, b6, xb);
+                c7a = _mm512_dpbf16_ps(c7a, b7, xa); c7b = _mm512_dpbf16_ps(c7b, b7, xb);
+            }
+            /* lane j of the "a" accumulators = token j0+j (pairs interleave j*2, j*2+1 across the
+             * two halves: lanes 0..15 of xa are tokens 0..15's pairs; xb tokens 16..31). */
+            float tile[16][16] __attribute__((aligned(64)));
+            _mm512_store_ps(tile[0],  c0a); _mm512_store_ps(tile[1],  c0b);
+            _mm512_store_ps(tile[2],  c1a); _mm512_store_ps(tile[3],  c1b);
+            _mm512_store_ps(tile[4],  c2a); _mm512_store_ps(tile[5],  c2b);
+            _mm512_store_ps(tile[6],  c3a); _mm512_store_ps(tile[7],  c3b);
+            _mm512_store_ps(tile[8],  c4a); _mm512_store_ps(tile[9],  c4b);
+            _mm512_store_ps(tile[10], c5a); _mm512_store_ps(tile[11], c5b);
+            _mm512_store_ps(tile[12], c6a); _mm512_store_ps(tile[13], c6b);
+            _mm512_store_ps(tile[14], c7a); _mm512_store_ps(tile[15], c7b);
+            for (int j = 0; j < cols; j++) {
+                float* o = C + (size_t)(j0 + j) * ldc + r;
+                for (int a = 0; a < 8; ++a) o[a] = tile[a * 2 + (j >> 4)][j & 15];
+            }
+        }
+        for (; r < re; r++) {                        /* row tail: 1 x 32 */
+            const uint16_t* w = W + (size_t) r * ldw;
+            __m512 ca = _mm512_setzero_ps(), cb = ca;
+            for (long t = 0; t + 2 <= k; t += 2) {
+                const uint16_t* xr = xp + (size_t)(t / 2) * 64;
+                __m512bh b = (__m512bh) _mm512_set1_epi32(*(const int*) (w + t));
+                ca = _mm512_dpbf16_ps(ca, b, (__m512bh) _mm512_loadu_si512((const void*) xr));
+                cb = _mm512_dpbf16_ps(cb, b, (__m512bh) _mm512_loadu_si512((const void*) (xr + 32)));
+            }
+            float tile[32] __attribute__((aligned(64)));
+            _mm512_store_ps(tile, ca); _mm512_store_ps(tile + 16, cb);
+            for (int j = 0; j < cols; j++) C[(size_t)(j0 + j) * ldc + r] = tile[j >> 4 ? 16 + (j & 15) : j];
+        }
+    }
+}

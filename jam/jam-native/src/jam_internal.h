@@ -74,6 +74,8 @@ struct jam_ctx {
     jam_task_fn      dense_bf16_kernel;  /* AVX-512 BF16 dense (k%16==0); NULL -> generic floor */
     jam_task_fn      bf16z_kernel;       /* AVX512-BF16 vdpbf16ps tile (k%32==0); NULL -> dense_bf16 */
     jam_task_fn      bf16z_cvt;          /* its phase 1: F32 activations -> bf16 scratch */
+    jam_task_fn      bf16zp_kernel;      /* packed-panel vdpbf16ps microkernel (k%2==0, n>=8) */
+    jam_task_fn      bf16zp_pack;        /* its phase 1: convert+transpose into token panels */
 
     /* Q8_0 VNNI activation-requant scratch (context-owned, grown lazily). Assumes a context is used
      * serially (the global ctx by jinfer's forward thread); concurrent jam_mm on ONE ctx would race
@@ -137,6 +139,8 @@ typedef struct {
 #ifdef JAM_HAVE_AVX512BF16
 void jam_bf16_cvt_avx512bf16(void* job, int row_begin, int row_end, int tid);  /* F32 -> bf16 scratch */
 void jam_mm_bf16_avx512bf16(void* job, int row_begin, int row_end, int tid);   /* vdpbf16ps 4×4 tile */
+void jam_bf16_pack_avx512bf16(void* job, int p_begin, int p_end, int tid);     /* panel convert+transpose */
+void jam_mm_bf16p_avx512bf16(void* job, int row_begin, int row_end, int tid);  /* packed broadcast 8x32 */
 #endif
 
 /* ---- BF16 (weight) @ F32 (activation) via vdpbf16ps: phase 1 converts activations into xb ---- */
