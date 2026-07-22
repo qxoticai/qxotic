@@ -1,11 +1,8 @@
 /* Comprehensive correctness: exercises EVERY kernel the current CPU supports by creating one context
  * per ISA level (capped via max_isa), at 1 and 3 threads, plus the global (NULL) context. Each output
- * is checked against a double-precision reference computed ONCE per size. Levels the hardware can't
- * provide are simply absent from the context list (jam_active_isa != requested cap -> skipped).
- *
- * F32 is checked vs an exact double dot (allclose). Q8_0 is checked vs BOTH an exact-B and a
- * requant-B reference (the kernel matches whichever path it took) — tight, tolerates only the int8
- * activation error. Sizes include non-aligned m/n/k (mnpack edges) and odd nb (the 512-bit pair tail). */
+ * is checked against double-precision references computed ONCE per size (each suite documents its own
+ * reference set). Levels the hardware can't provide are simply absent from the context list
+ * (jam_active_isa != requested cap -> skipped). */
 #include "jam.h"
 #include "jam_ref.h"
 #include <stdio.h>
@@ -46,6 +43,30 @@ static void add_ctx(jam_isa cap, int nth) {
     CTX[NCTX++].c = c;
 }
 
+/* Shared suite tail: run jam_mm on EVERY context and check the token-major output against the
+ * NEAREST of `nrefs` feature-major double references (each a valid rounding of the same dot -
+ * the kernel matches whichever path it took), with tolerance |err| <= at + rt*|ref|. */
+static void check_all_ctxs(const void* W, int dtype, const char* name,
+                           const float* A, float* C, int m, int n, int k,
+                           const double* const* refs, int nrefs, double at, double rt) {
+    for (int c = 0; c < NCTX; c++) {
+        ++g_checks; memset(C, 0, 4*(size_t)m*n);
+        int st = jam_mm(CTX[c].c, W, dtype, k, A, JAM_F32, k, C, JAM_F32, m, m, n, k);
+        int bad = 0;
+        for (int i=0;i<m;i++) for (int j=0;j<n;j++) {
+            double kr = C[(size_t)j*m+i];   /* C token-major; refs feature-major */
+            double best = fabs(kr - refs[0][(size_t)i*n+j]), ref = refs[0][(size_t)i*n+j];
+            for (int r = 1; r < nrefs; r++) {
+                double d = fabs(kr - refs[r][(size_t)i*n+j]);
+                if (d < best) { best = d; ref = refs[r][(size_t)i*n+j]; }
+            }
+            track_prec(name, best, ref);
+            if (best > at + rt*fabs(ref)) ++bad;
+        }
+        if (st||bad){ printf("  [FAIL] %-5s %-15s %4dx%4dx%4d  bad=%d st=%d\n",name,CTX[c].lbl,m,n,k,bad,st); ++g_fail; }
+    }
+}
+
 static void suite_f32(int m, int n, int k) {
     float* A = malloc(4*(size_t)m*k); float* B = malloc(4*(size_t)n*k); float* C = malloc(4*(size_t)m*n);
     double* R = malloc(8*(size_t)m*n);
@@ -54,17 +75,8 @@ static void suite_f32(int m, int n, int k) {
         double s=0; for (int t=0;t<k;t++) s += (double)A[(size_t)i*k+t]*B[(size_t)j*k+t];
         R[(size_t)i*n+j]=s;
     }
-    for (int c=0;c<NCTX;c++) {
-        ++g_checks; memset(C,0,4*(size_t)m*n);
-        int st = jam_mm(CTX[c].c, A, JAM_F32, k, B, JAM_F32, k, C, JAM_F32, m, m, n, k);
-        int bad=0;
-        for (int i=0;i<m;i++) for (int j=0;j<n;j++) {
-            double e = fabs(R[(size_t)i*n+j]-C[(size_t)j*m+i]);
-            track_prec("F32", e, R[(size_t)i*n+j]);
-            if (e > 1e-3 + 1e-2*fabs(R[(size_t)i*n+j])) ++bad;
-        }
-        if (st||bad){ printf("  [FAIL] F32  %-16s %4dx%4dx%4d  bad=%d st=%d\n",CTX[c].lbl,m,n,k,bad,st); ++g_fail; }
-    }
+    const double* refs[] = { R };
+    check_all_ctxs(A, JAM_F32, "F32", B, C, m, n, k, refs, 1, 1e-3, 1e-2);
     free(A);free(B);free(C);free(R);
 }
 
@@ -86,18 +98,8 @@ static void suite_q8(int m, int n, int k) {        /* k a multiple of 32 */
         }
         RE[(size_t)i*n+j]=se; RR[(size_t)i*n+j]=sr;
     }
-    for (int c=0;c<NCTX;c++) {
-        ++g_checks; memset(C,0,4*(size_t)m*n);
-        int st = jam_mm(CTX[c].c, WQ, JAM_Q8_0, k, B, JAM_F32, k, C, JAM_F32, m, m, n, k);
-        int bad=0;
-        for (int i=0;i<m;i++) for (int j=0;j<n;j++) {
-            double kr=C[(size_t)j*m+i], de=fabs(kr-RE[(size_t)i*n+j]), dr=fabs(kr-RR[(size_t)i*n+j]);
-            double best=de<dr?de:dr, ref=de<dr?RE[(size_t)i*n+j]:RR[(size_t)i*n+j];
-            track_prec("Q8_0", best, ref);
-            if (best > 1e-2 + 1e-3*fabs(ref)) ++bad;
-        }
-        if (st||bad){ printf("  [FAIL] Q8_0 %-16s %4dx%4dx%4d  bad=%d st=%d\n",CTX[c].lbl,m,n,k,bad,st); ++g_fail; }
-    }
+    const double* refs[] = { RE, RR };
+    check_all_ctxs(WQ, JAM_Q8_0, "Q8_0", B, C, m, n, k, refs, 2, 1e-2, 1e-3);
     free(W);free(B);free(C);free(RE);free(RR);free(WQ);
 }
 
@@ -124,18 +126,8 @@ static void suite_mxfp4(int m, int n, int k) {     /* k a multiple of 32 */
         }
         RE[(size_t)i*n+j]=se; RR[(size_t)i*n+j]=sr;
     }
-    for (int c=0;c<NCTX;c++) {
-        ++g_checks; memset(C,0,4*(size_t)m*n);
-        int st = jam_mm(CTX[c].c, WQ, JAM_MXFP4, k, A, JAM_F32, k, C, JAM_F32, m, m, n, k);
-        int bad=0;
-        for (int i=0;i<m;i++) for (int j=0;j<n;j++) {
-            double kr=C[(size_t)j*m+i], de=fabs(kr-RE[(size_t)i*n+j]), dr=fabs(kr-RR[(size_t)i*n+j]);
-            double best=de<dr?de:dr, ref=de<dr?RE[(size_t)i*n+j]:RR[(size_t)i*n+j];
-            track_prec("MXFP4", best, ref);
-            if (best > 1e-2 + 1e-3*fabs(ref)) ++bad;
-        }
-        if (st||bad){ printf("  [FAIL] MXFP4 %-15s %4dx%4dx%4d  bad=%d st=%d\n",CTX[c].lbl,m,n,k,bad,st); ++g_fail; }
-    }
+    const double* refs[] = { RE, RR };
+    check_all_ctxs(WQ, JAM_MXFP4, "MXFP4", A, C, m, n, k, refs, 2, 1e-2, 1e-3);
     free(W);free(A);free(C);free(RE);free(RR);free(WQ);
 }
 
@@ -171,18 +163,8 @@ static void suite_nvfp4(int m, int n, int k) {     /* k a multiple of 64; GGUF b
         }
         RE[(size_t)i*n+j]=se; RR[(size_t)i*n+j]=sr;
     }
-    for (int c=0;c<NCTX;c++) {
-        ++g_checks; memset(C,0,4*(size_t)m*n);
-        int st = jam_mm(CTX[c].c, WQ, JAM_NVFP4, k, A, JAM_F32, k, C, JAM_F32, m, m, n, k);
-        int bad=0;
-        for (int i=0;i<m;i++) for (int j=0;j<n;j++) {
-            double kr=C[(size_t)j*m+i], de=fabs(kr-RE[(size_t)i*n+j]), dr=fabs(kr-RR[(size_t)i*n+j]);
-            double best=de<dr?de:dr, ref=de<dr?RE[(size_t)i*n+j]:RR[(size_t)i*n+j];
-            track_prec("NVFP4", best, ref);
-            if (best > 1e-2 + 1e-3*fabs(ref)) ++bad;
-        }
-        if (st||bad){ printf("  [FAIL] NVFP4 %-15s %4dx%4dx%4d  bad=%d st=%d\n",CTX[c].lbl,m,n,k,bad,st); ++g_fail; }
-    }
+    const double* refs[] = { RE, RR };
+    check_all_ctxs(WQ, JAM_NVFP4, "NVFP4", A, C, m, n, k, refs, 2, 1e-2, 1e-3);
     free(W);free(A);free(C);free(RE);free(RR);free(WQ);
 }
 
@@ -219,20 +201,8 @@ static void suite_q1_0(int m, int n, int k) {     /* k a multiple of 128; GGML b
         }
         RE[(size_t)i*n+j]=se; RR[(size_t)i*n+j]=sr; RB[(size_t)i*n+j]=sb;
     }
-    for (int c=0;c<NCTX;c++) {
-        ++g_checks; memset(C,0,4*(size_t)m*n);
-        int st = jam_mm(CTX[c].c, WQ, JAM_Q1_0, k, A, JAM_F32, k, C, JAM_F32, m, m, n, k);
-        int bad=0;
-        for (int i=0;i<m;i++) for (int j=0;j<n;j++) {
-            double kr=C[(size_t)j*m+i], de=fabs(kr-RE[(size_t)i*n+j]), dr=fabs(kr-RR[(size_t)i*n+j]);
-            double db=fabs(kr-RB[(size_t)i*n+j]);
-            double best=de<dr?de:dr; double ref=de<dr?RE[(size_t)i*n+j]:RR[(size_t)i*n+j];
-            if (db<best){ best=db; ref=RB[(size_t)i*n+j]; }
-            track_prec("Q1_0", best, ref);
-            if (best > 1e-2 + 1e-3*fabs(ref)) ++bad;
-        }
-        if (st||bad){ printf("  [FAIL] Q1_0 %-15s %4dx%4dx%4d  bad=%d st=%d\n",CTX[c].lbl,m,n,k,bad,st); ++g_fail; }
-    }
+    const double* refs[] = { RE, RR, RB };
+    check_all_ctxs(WQ, JAM_Q1_0, "Q1_0", A, C, m, n, k, refs, 3, 1e-2, 1e-3);
     free(W);free(A);free(C);free(RE);free(RR);free(RB);free(WQ);
 }
 
@@ -271,20 +241,8 @@ static void suite_kquant(kq_build build, int dtype, const char* name, int m, int
         }
         RE[(size_t)i*n+j]=se; RR[(size_t)i*n+j]=sr; RF[(size_t)i*n+j]=sf; RP[(size_t)i*n+j]=sp;
     }
-    for (int c=0;c<NCTX;c++) {
-        ++g_checks; memset(C,0,4*(size_t)m*n);
-        int st = jam_mm(CTX[c].c, WQ, dtype, k, A, JAM_F32, k, C, JAM_F32, m, m, n, k);
-        int bad=0;
-        for (int f=0;f<m;f++) for (int t=0;t<n;t++) {
-            double kr=C[(size_t)t*m+f]; size_t ri=(size_t)f*n+t;   /* C token-major, refs feature-major */
-            double de=fabs(kr-RE[ri]), dr=fabs(kr-RR[ri]), df=fabs(kr-RF[ri]), dp=fabs(kr-RP[ri]);
-            double best=de, ref=RE[ri];
-            if (dr<best){best=dr;ref=RR[ri];} if (df<best){best=df;ref=RF[ri];} if (dp<best){best=dp;ref=RP[ri];}
-            track_prec(name, best, ref);
-            if (best > 2e-2 + 2e-2*fabs(ref)) ++bad;
-        }
-        if (st||bad){ printf("  [FAIL] %-5s %-15s %4dx%4dx%4d  bad=%d st=%d\n",name,CTX[c].lbl,m,n,k,bad,st); ++g_fail; }
-    }
+    const double* refs[] = { RE, RR, RF, RP };
+    check_all_ctxs(WQ, dtype, name, A, C, m, n, k, refs, 4, 2e-2, 2e-2);
     free(Wdq); free(Wmin); free(WQ); free(A); free(C); free(RE); free(RR); free(RF); free(RP);
 }
 
@@ -303,20 +261,11 @@ static void suite_dense(int dtype, const char* name, int m, int n, int k) {
             acc += (double)wv * X[(size_t)s*k+t]; }
         R[(size_t)r*n+s]=acc;
     }
-    for (int c=0;c<NCTX;c++) {
-        ++g_checks; memset(C,0,4*(size_t)m*n);
-        int st = jam_mm(CTX[c].c, W, dtype, k, X, JAM_F32, k, C, JAM_F32, m, m, n, k);
-        int bad=0;
-        /* BF16's vdpbf16ps path rounds activations to bf16 (see PREC_MAX note): both operands at
-         * ~8 mantissa bits puts unlucky dots past 1e-2 relative - that is the format, not a bug. */
-        double at = (dtype==JAM_BF16) ? 5e-2 : 1e-3, rt = (dtype==JAM_BF16) ? 2e-2 : 1e-2;
-        for (int r=0;r<m;r++) for (int s=0;s<n;s++) {
-            double e=fabs(R[(size_t)r*n+s]-C[(size_t)s*m+r]);
-            track_prec(name, e, R[(size_t)r*n+s]);
-            if (e > at + rt*fabs(R[(size_t)r*n+s])) ++bad;
-        }
-        if (st||bad){ printf("  [FAIL] %-5s %-15s %4dx%4dx%4d  bad=%d st=%d\n",name,CTX[c].lbl,m,n,k,bad,st); ++g_fail; }
-    }
+    /* BF16's vdpbf16ps path rounds activations to bf16 (see PREC_MAX note): both operands at
+     * ~8 mantissa bits puts unlucky dots past 1e-2 relative - that is the format, not a bug. */
+    const double* refs[] = { R };
+    check_all_ctxs(W, dtype, name, X, C, m, n, k, refs, 1,
+                   dtype==JAM_BF16 ? 5e-2 : 1e-3, dtype==JAM_BF16 ? 2e-2 : 1e-2);
     free(W); free(X); free(C); free(R); free(tmp);
 }
 
@@ -576,7 +525,7 @@ static void suite_contract(void) {
 
 /* Leak gate: create -> USE (so every lazy per-context buffer allocates: pool, requant scratch, K-quant
  * band scratch + per-worker repack, the rp_cache) -> destroy, in a loop. Under LeakSanitizer (the ASan
- * build) any byte destroy forgets becomes unreachable at exit and is reported, amplified 64x by the loop.
+ * build) any byte destroy forgets becomes unreachable at exit and is reported, amplified 128x by the loop.
  * In the normal build we ALSO gate on mallinfo2: heap-in-use must return to its pre-loop value (a per-cycle
  * leak grows it linearly). Two ISA caps per cycle so BOTH the avx512 band scratch AND the avx2 rp_cache run. */
 static size_t heap_inuse(void) {
@@ -615,7 +564,7 @@ static void suite_leak(void) {
     free(w8); free(w4k); free(w6k); free(B); free(C);
 #if !defined(__SANITIZE_ADDRESS__)   /* under ASan, LeakSanitizer is authoritative; mallinfo2 reflects its allocator */
     ++g_checks;
-    if (growth > 256*1024) { printf("  [FAIL] leak: heap +%ld B over 64 create/use/destroy cycles\n", growth); ++g_fail; }
+    if (growth > 256*1024) { printf("  [FAIL] leak: heap +%ld B over 128 create/use/destroy cycles\n", growth); ++g_fail; }
     else printf("  leak: heap stable over 128 create/use/destroy cycles (Δ=%+ld B)\n", growth);
 #else
     (void) growth; printf("  leak: 128 create/use/destroy cycles done (LeakSanitizer checks at exit)\n");

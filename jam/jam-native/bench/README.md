@@ -10,6 +10,7 @@ Side-by-side benchmark of jam's quantized matmul against llama.cpp's tinyBLAS
   (`cmake -B build -DGGML_NATIVE=ON && cmake --build build --target ggml-cpu -j`)
 
 If your llama.cpp lives elsewhere, set `LLAMA=/path/to/llama.cpp` before `./build.sh`.
+To link against a different llama.cpp build dir (e.g. an AVX2-only build), set `LLAMA_BUILD=build-avx2`.
 
 ## Build & run
 

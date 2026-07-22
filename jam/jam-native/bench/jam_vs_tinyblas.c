@@ -163,7 +163,7 @@ int main(int argc, char** argv) {
         int wblk   = at==JAM_Q8_0 ? 34 : 18;             /* weight block bytes: block_q8_0 / block_q4_0 */
         double bytes = (double)M*K*wbytes_per_val(at) + (double)N*K*4.0 + (double)M*N*4.0;
 
-        /* jam: warm (repack cache + JIT), then time (requant is inside jam_mm). */
+        /* jam: warm (repack cache), then time (requant is inside jam_mm). */
         jam_mm(ctx, W, at, K, B, JAM_F32, K, Cj, JAM_F32, M, M, N, K);
         double tj = 0;
         for (int i=0;i<iters;i++) { scrub_caches(); double t0 = now();

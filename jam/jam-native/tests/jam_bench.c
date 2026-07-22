@@ -59,7 +59,7 @@ static double wbytes_per_val(int at) {
 }
 
 static perf bench(jam_ctx* ctx, const void* A, int at, const float* B, float* C, int m, int n, int k, int iters) {
-    jam_mm(ctx, A, at, k, B, JAM_F32, k, C, JAM_F32, m, m, n, k);                 /* warm (alloc/JIT paths) */
+    jam_mm(ctx, A, at, k, B, JAM_F32, k, C, JAM_F32, m, m, n, k);                 /* warm (scratch alloc + repack cache) */
     double dt = 0;
     for (int i=0;i<iters;i++) {
         scrub_caches();                                                          /* evict A/B/C -> cold DRAM read */
@@ -133,15 +133,15 @@ int main(int argc, char** argv) {
         if (!c) continue;
         if (jam_active_isa(c) != lvl) { jam_ctx_destroy(c); continue; }           /* hw lacks this level */
         for (unsigned Q=0; Q<sizeof QS/sizeof*QS; ++Q) {
-            if (!QS[Q].W) continue;                                              /* K-quant skipped (k%256) */
             if (wantdt && strcmp(wantdt, QS[Q].nm) != 0) continue;                 /* JAM_DTYPE filter */
-            if (!QS[Q].W) continue;                                                 /* weight not built */
+            if (!QS[Q].W) continue;                                                 /* weight not built (dtype filter / k alignment) */
             usleep(300000);   /* cooldown so back-to-back kernels aren't thermally coupled */
             perf p = bench(c, QS[Q].W, QS[Q].at, B, C, M, N, K, iters);
             printf("  %-10s %-6s %12.1f %9.1f\n", jam_isa_name(lvl), QS[Q].nm, p.gmac, p.gbs);
         }
         jam_ctx_destroy(c);
     }
-    free(Wf); free(B); free(C); free(Wq); free(Wq4k); free(Wq5k); free(Wq6k); free(g_scrub);
+    free(Wf); free(B); free(C); free(Wf16); free(Wbf16); free(Wq); free(Wq40);
+    free(Wq4k); free(Wq5k); free(Wq6k); free(Wmx); free(Wnv); free(Wq1); free(g_scrub);
     return 0;
 }
