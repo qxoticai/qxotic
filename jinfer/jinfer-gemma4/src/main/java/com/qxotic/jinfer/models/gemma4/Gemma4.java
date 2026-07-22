@@ -41,6 +41,7 @@ public final class Gemma4
     private final Configuration configuration;
     private final Tokenizer tokenizer;
     private final String chatTemplateSource;
+    private final byte[] modelSeed;
     private final Weights weights;
     private Embedder<Media.Image>
             vision; // image encoder; null on text-only loads (set by loadModel(text, mmproj, ctx))
@@ -53,10 +54,12 @@ public final class Gemma4
             Configuration configuration,
             Tokenizer tokenizer,
             String chatTemplateSource,
+            byte[] modelSeed,
             Weights weights) {
         this.configuration = configuration;
         this.tokenizer = tokenizer;
         this.chatTemplateSource = chatTemplateSource;
+        this.modelSeed = modelSeed;
         this.weights = weights;
     }
 
@@ -255,7 +258,7 @@ public final class Gemma4
      * architecture-dispatching loader hands to a caller that does not know the family.
      */
     public LoadedModel<Gemma4.State> loaded() {
-        return new LoadedModel<>(this, tokenizer(), chatTemplateSource, stopTokens());
+        return new LoadedModel<>(this, tokenizer(), chatTemplateSource, stopTokens(), modelSeed);
     }
 
     /** The chat-layer binding: token-level facts plus this model's chat framing. */
@@ -1201,6 +1204,7 @@ public final class Gemma4
     public static Gemma4 loadModel(
             FileChannel fileChannel, GGUF gguf, int maxContextLength, boolean loadWeightsFlag)
             throws IOException {
+        byte[] seed = com.qxotic.jinfer.cache.PromptCache.modelSeed(fileChannel);
         Tokenizer tokenizer = Tokenizers.fromGGUF(gguf);
 
         int modelContextLength = gguf.getValue(int.class, "gemma4.context_length");
@@ -1325,13 +1329,14 @@ public final class Gemma4
         }
 
         if (!loadWeightsFlag) {
-            return new Gemma4(config, tokenizer, Tokenizers.chatTemplateSource(gguf), null);
+            return new Gemma4(config, tokenizer, Tokenizers.chatTemplateSource(gguf), seed, null);
         }
         Map<String, GGMLTensorEntry> tensors = ModelLoader.loadTensors(fileChannel, gguf);
         return new Gemma4(
                 config,
                 tokenizer,
                 Tokenizers.chatTemplateSource(gguf),
+                seed,
                 loadWeights(tensors, config));
     }
 

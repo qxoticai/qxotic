@@ -32,16 +32,19 @@ public final class Granite
     private final Configuration configuration;
     private final Tokenizer tokenizer;
     private final String chatTemplateSource;
+    private final byte[] modelSeed;
     private final Weights weights;
 
     Granite(
             Configuration configuration,
             Tokenizer tokenizer,
             String chatTemplateSource,
+            byte[] modelSeed,
             Weights weights) {
         this.configuration = configuration;
         this.tokenizer = tokenizer;
         this.chatTemplateSource = chatTemplateSource;
+        this.modelSeed = modelSeed;
         this.weights = weights;
     }
 
@@ -143,7 +146,7 @@ public final class Granite
      * architecture-dispatching loader hands to a caller that does not know the family.
      */
     public LoadedModel<Granite.State> loaded() {
-        return new LoadedModel<>(this, tokenizer(), chatTemplateSource, stopTokens());
+        return new LoadedModel<>(this, tokenizer(), chatTemplateSource, stopTokens(), modelSeed);
     }
 
     /** The chat-layer binding: token-level facts plus this model's chat framing. */
@@ -457,6 +460,7 @@ public final class Granite
     public static Granite loadModel(
             FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeightsFlag)
             throws IOException {
+        byte[] seed = com.qxotic.jinfer.cache.PromptCache.modelSeed(fileChannel);
         Tokenizer tokenizer = Tokenizers.fromGGUF(gguf);
         String arch = gguf.getString("general.architecture"); // "granite"
 
@@ -514,13 +518,14 @@ public final class Granite
                         attentionScale);
 
         if (!loadWeightsFlag)
-            return new Granite(config, tokenizer, Tokenizers.chatTemplateSource(gguf), null);
+            return new Granite(config, tokenizer, Tokenizers.chatTemplateSource(gguf), seed, null);
         Map<String, GGMLTensorEntry> tensors = ModelLoader.loadTensors(fileChannel, gguf);
         Pair<float[], float[]> rope = buildRope(config, tensors);
         return new Granite(
                 config,
                 tokenizer,
                 Tokenizers.chatTemplateSource(gguf),
+                seed,
                 loadWeights(tensors, config, rope));
     }
 
