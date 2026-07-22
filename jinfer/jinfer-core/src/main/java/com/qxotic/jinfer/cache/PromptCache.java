@@ -70,6 +70,8 @@ public final class PromptCache<S extends RuntimeState> {
     private final byte[] modelSeed;
     private final Map<BlockKey, Block> blocks = new HashMap<>();
     private final Set<Block> leaves = new HashSet<>();
+    private final List<Block> freshBlocks = new ArrayList<>(); // committed here, not yet on disk
+    private FrozenBlocks base; // the grafted artifact, target of appendTo; null when standalone
     private final Block sentinel;
     private final Block DETACHED;
     private final MessageDigest sha;
@@ -85,7 +87,8 @@ public final class PromptCache<S extends RuntimeState> {
      * A writable cache layered over a read-only {@link FrozenBlocks} base: the artifact's blocks
      * graft into this cache's key space (resume matches through them, commits dedup against them)
      * but never count against the budget and are never evicted or freed. The artifact must have
-     * been built with the SAME model seed - chained keys only line up when the roots agree.
+     * been built with the SAME model seed - chained keys only line up when the roots agree. A null
+     * {@code base} is a plain standalone cache.
      */
     public PromptCache(
             StateCodec<S> codec,
@@ -94,6 +97,8 @@ public final class PromptCache<S extends RuntimeState> {
             byte[] modelSeed,
             FrozenBlocks base) {
         this(codec, store, budgetBytes, modelSeed);
+        if (base == null) return;
+        this.base = base;
         for (FrozenBlocks.Entry e : base.entries()) { // BFS: parents precede children
             Block parent =
                     e.parentKey().equals(sentinel.key) ? sentinel : blocks.get(e.parentKey());
@@ -252,6 +257,7 @@ public final class PromptCache<S extends RuntimeState> {
         store.validate(mem);
         Block block = new Block(key, tip, tip.to, to, mem);
         blocks.put(key, block);
+        freshBlocks.add(block); // creation order is parents-first: a tip precedes its children
         leaves.remove(tip);
         leaves.add(block);
         tip.children.add(block);
@@ -275,6 +281,7 @@ public final class PromptCache<S extends RuntimeState> {
         b.live = false;
         blocks.remove(b.key);
         leaves.remove(b);
+        freshBlocks.remove(b); // its blob is about to be freed; never write it
         b.parent.children.remove(b);
         if (b.parent != sentinel
                 && b.parent.live
@@ -373,14 +380,50 @@ public final class PromptCache<S extends RuntimeState> {
             for (int i = 0; i < order.size(); i++) {
                 Block b = order.get(i);
                 MemorySegment.copy(b.mem, 0, map, offsets[i], b.mem.byteSize());
-                FrozenBlocks.putKey(idx, b.key);
-                FrozenBlocks.putKey(idx, b.parent.key);
-                idx.putInt(b.from).putInt(b.to).putLong(offsets[i]).putLong(b.mem.byteSize());
-                idx.putInt(FrozenBlocks.crc32c(map.asSlice(offsets[i], b.mem.byteSize())));
-                idx.putInt(0); // pad
+                FrozenBlocks.putEntry(
+                        idx,
+                        b.key,
+                        b.parent.key,
+                        b.from,
+                        b.to,
+                        offsets[i],
+                        b.mem.byteSize(),
+                        FrozenBlocks.crc32c(map.asSlice(offsets[i], b.mem.byteSize())));
             }
             map.force();
         }
+    }
+
+    /**
+     * Appends this cache's blocks committed since the last append to {@code out} - see {@link
+     * FrozenBlocks#append} for the on-disk protocol and its cost. Creates the file (plain {@link
+     * #freeze}) when it does not exist; otherwise the cache must be layered over the artifact at
+     * {@code out}, so keys line up and grafted blocks are already on disk. Partial state (an
+     * uncommitted span, the live session tail) never touches disk - blocks only exist complete.
+     */
+    public void appendTo(java.nio.file.Path out) throws java.io.IOException {
+        if (!java.nio.file.Files.exists(out)) {
+            freeze(out);
+            return;
+        }
+        if (base == null || !java.nio.file.Files.isSameFile(base.file(), out)) {
+            throw new IllegalStateException(
+                    "appendTo(" + out + ") needs this cache layered over that artifact");
+        }
+        List<FrozenBlocks.Entry> fresh = new ArrayList<>(freshBlocks.size());
+        for (Block b : freshBlocks) {
+            fresh.add(
+                    new FrozenBlocks.Entry(
+                            b.key,
+                            b.parent.key,
+                            b.from,
+                            b.to,
+                            -1,
+                            b.mem,
+                            FrozenBlocks.crc32c(b.mem)));
+        }
+        base.append(fresh);
+        freshBlocks.clear();
     }
 
     public String stats() {
