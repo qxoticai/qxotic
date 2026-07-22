@@ -46,6 +46,12 @@
 
     <!-- native builder opt-in: wide 512-bit register tiles (needs a 32-ZMM Graal, GR-13757) -->
     <jam.wideTiles>false</jam.wideTiles>
+
+    <!-- Tagged suites excluded from the default build:
+         integration = model-loading gates (run: mvn test -Dsurefire.excludedGroups= -Dgroups=integration)
+         bench       = measurement harnesses (run by name: mvn test -Dtest=GemvBench -Dsurefire.excludedGroups=)
+         driver      = hand tools (run by name, args via -Djinfer.args="...") -->
+    <surefire.excludedGroups>integration,bench,driver</surefire.excludedGroups>
     <jinfer.PreloadGGUF />
   </properties>
 
@@ -109,6 +115,15 @@
     </dependencies>
   </dependencyManagement>
 
+  <!-- The one test framework, inherited by every module (version managed by the qxotic parent). -->
+  <dependencies>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
   <build>
     <pluginManagement>
       <plugins>
@@ -127,9 +142,15 @@
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-surefire-plugin</artifactId>
           <configuration>
-            <!-- jinfer has no JUnit suite: every src/test class is a main() harness driven by hand
-                 or by the bench scripts. Nothing for surefire to run. -->
-            <skipTests>true</skipTests>
+            <!-- Every src/test class is JUnit; discovery scans all classes (non-@Test helpers are
+                 ignored). Unit tests + weights-free oracles run in every build (oracles skip via
+                 assumptions when their GGUF is absent); integration/bench/driver tags are opt-in -
+                 see surefire.excludedGroups above. -->
+            <argLine>--add-modules jdk.incubator.vector,jdk.httpserver --enable-preview --enable-native-access=ALL-UNNAMED</argLine>
+            <excludedGroups>${surefire.excludedGroups}</excludedGroups>
+            <includes>
+              <include>**/*.java</include>
+            </includes>
           </configuration>
         </plugin>
 
