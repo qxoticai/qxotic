@@ -31,6 +31,7 @@ import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.*;
 import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
+import com.qxotic.toknroll.Tokenizer;
 import java.io.IOException;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
@@ -43,12 +44,18 @@ public final class NemotronH
         implements LanguageModel<NemotronH.Configuration, NemotronH.Weights, NemotronH.State> {
 
     private final Configuration configuration;
-    private final GgufTokenizer tokenizer;
+    private final Tokenizer tokenizer;
+    private final String chatTemplateSource;
     private final Weights weights;
 
-    NemotronH(Configuration configuration, GgufTokenizer tokenizer, Weights weights) {
+    NemotronH(
+            Configuration configuration,
+            Tokenizer tokenizer,
+            String chatTemplateSource,
+            Weights weights) {
         this.configuration = configuration;
         this.tokenizer = tokenizer;
+        this.chatTemplateSource = chatTemplateSource;
         this.weights = weights;
     }
 
@@ -62,7 +69,7 @@ public final class NemotronH
         return weights;
     }
 
-    public GgufTokenizer tokenizer() {
+    public Tokenizer tokenizer() {
         return tokenizer;
     }
 
@@ -73,12 +80,13 @@ public final class NemotronH
      * architecture-dispatching loader hands to a caller that does not know the family.
      */
     public LoadedModel<NemotronH.State> loaded() {
-        return new LoadedModel<>(this, tokenizer(), stopTokens());
+        return new LoadedModel<>(this, tokenizer(), chatTemplateSource, stopTokens());
     }
 
     /** The chat-layer binding: token-level facts plus this model's chat framing. */
     public com.qxotic.jinfer.chat.ChatModel<NemotronH.State> chatModel() {
-        return com.qxotic.jinfer.chat.ChatModel.adapt(loaded(), turnTemplate());
+        return new com.qxotic.jinfer.chat.ChatModel<>(
+                loaded(), turnTemplate().map(t -> (com.qxotic.jinfer.chat.ChatTemplate) t));
     }
 
     public java.util.Optional<com.qxotic.jinfer.chat.TurnTemplate> turnTemplate() {
@@ -88,7 +96,10 @@ public final class NemotronH
 
     @Override
     public java.util.Optional<com.qxotic.jinfer.cache.StateCodec<State>> stateCodec() {
-        return java.util.Optional.of(new NemotronHStateCodec(config()));
+        // Mamba SSM state is a LARGE true recurrence (MBs per SSM layer) - neither per-position
+        // rows nor a small residue, so this family offers no block caching; live sessions
+        // (SessionPool) still give append-only reuse.
+        return java.util.Optional.empty();
     }
 
     @Override
@@ -151,8 +162,7 @@ public final class NemotronH
         Set<Integer> stops = new HashSet<>();
         if (configuration.eosTokenId >= 0) stops.add(configuration.eosTokenId);
         for (String name : new String[] {"<|im_end|>", "<|endoftext|>"}) {
-            Integer id = tokenizer.getSpecialTokens().get(name);
-            if (id != null) stops.add(id);
+            SpecialTokens.find(tokenizer, name).ifPresent(stops::add);
         }
         return stops;
     }
@@ -921,7 +931,7 @@ public final class NemotronH
 
     public static NemotronH loadModel(FileChannel fileChannel, GGUF gguf, int contextLength)
             throws IOException {
-        GgufTokenizer tokenizer = new GgufTokenizer(gguf);
+        Tokenizer tokenizer = Tokenizers.fromGGUF(gguf);
         String arch = gguf.getString("general.architecture");
 
         int modelContextLength = gguf.getValue(int.class, arch + ".context_length");
@@ -979,7 +989,7 @@ public final class NemotronH
                         numberOfHeads,
                         kvHeads,
                         headSize,
-                        tokenizer.vocabularySize(),
+                        tokenizer.vocabulary().size(),
                         contextLength,
                         rmsNormEps,
                         layerTypes,
@@ -998,7 +1008,11 @@ public final class NemotronH
                         eosTokenId);
 
         Map<String, GGMLTensorEntry> tensors = ModelLoader.loadTensors(fileChannel, gguf);
-        return new NemotronH(config, tokenizer, loadWeights(tensors, config));
+        return new NemotronH(
+                config,
+                tokenizer,
+                Tokenizers.chatTemplateSource(gguf),
+                loadWeights(tensors, config));
     }
 
     static Weights loadWeights(Map<String, GGMLTensorEntry> tensors, Configuration config) {

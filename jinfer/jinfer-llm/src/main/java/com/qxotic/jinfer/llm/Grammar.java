@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.llm;
 
 import com.qxotic.jinfer.*;
+import com.qxotic.toknroll.Tokenizer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -42,7 +43,7 @@ public final class Grammar {
     /** Cap on cached masks per Spec, bounding memory for long-lived / deeply nested grammars. */
     static final int MASK_CACHE_CAP = 1 << 13;
 
-    private static final Map<GgufTokenizer, Vocab> WRAPPERS =
+    private static final Map<Tokenizer, Vocab> WRAPPERS =
             Collections.synchronizedMap(new WeakHashMap<>());
     private static final Map<Vocab, Map<String, Spec>> CACHES =
             Collections.synchronizedMap(new WeakHashMap<>());
@@ -55,17 +56,17 @@ public final class Grammar {
         byte[] bytes(int tokenId);
     }
 
-    static Vocab vocab(GgufTokenizer tok) {
+    static Vocab vocab(Tokenizer tok) {
         return WRAPPERS.computeIfAbsent(
                 tok,
                 t ->
                         new Vocab() {
                             public int size() {
-                                return t.vocabularySize();
+                                return t.vocabulary().size();
                             }
 
                             public byte[] bytes(int id) {
-                                return t.decodeTokenBytes(id);
+                                return t.decodeBytes(new int[] {id});
                             }
                         });
     }
@@ -86,7 +87,7 @@ public final class Grammar {
                 });
     }
 
-    public static Spec json(GgufTokenizer t) {
+    public static Spec json(Tokenizer t) {
         return json(vocab(t));
     }
 
@@ -100,7 +101,7 @@ public final class Grammar {
      * (no spaces/newlines between tokens, none at top level) — forces compact, token-efficient
      * output.
      */
-    public static Spec jsonCompact(GgufTokenizer t) {
+    public static Spec jsonCompact(Tokenizer t) {
         return jsonCompact(vocab(t));
     }
 
@@ -109,7 +110,7 @@ public final class Grammar {
         return cache(v).computeIfAbsent("__json_compact__", k -> build(JSON_COMPACT_GRAMMAR, v));
     }
 
-    public static Spec of(String g, GgufTokenizer t) {
+    public static Spec of(String g, Tokenizer t) {
         return of(g, vocab(t));
     }
 
@@ -644,7 +645,7 @@ public final class Grammar {
         return of(sb.toString(), v);
     }
 
-    public static Spec choice(GgufTokenizer t, String... options) {
+    public static Spec choice(Tokenizer t, String... options) {
         return choice(vocab(t), options);
     }
 
@@ -666,7 +667,7 @@ public final class Grammar {
         return of(Schema.toGbnf(schema), v);
     }
 
-    public static Spec fromSchema(Map<String, Object> schema, GgufTokenizer t) {
+    public static Spec fromSchema(Map<String, Object> schema, Tokenizer t) {
         return fromSchema(schema, vocab(t));
     }
 

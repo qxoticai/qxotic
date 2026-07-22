@@ -19,6 +19,7 @@ import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.*;
 import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
+import com.qxotic.toknroll.Tokenizer;
 import java.io.IOException;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
@@ -30,12 +31,18 @@ import java.util.Set;
 public final class Llama implements LanguageModel<Llama.Configuration, Llama.Weights, Llama.State> {
 
     private final Configuration configuration;
-    private final GgufTokenizer tokenizer;
+    private final Tokenizer tokenizer;
+    private final String chatTemplateSource;
     private final Weights weights;
 
-    Llama(Configuration configuration, GgufTokenizer tokenizer, Weights weights) {
+    Llama(
+            Configuration configuration,
+            Tokenizer tokenizer,
+            String chatTemplateSource,
+            Weights weights) {
         this.configuration = configuration;
         this.tokenizer = tokenizer;
+        this.chatTemplateSource = chatTemplateSource;
         this.weights = weights;
     }
 
@@ -49,7 +56,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
         return weights;
     }
 
-    public GgufTokenizer tokenizer() {
+    public Tokenizer tokenizer() {
         return tokenizer;
     }
 
@@ -120,8 +127,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
         if (configuration.eosTokenId >= 0) stops.add(configuration.eosTokenId);
         for (String name :
                 new String[] {"<|eot_id|>", "<|im_end|>", "<|endoftext|>", "<|end_of_text|>"}) {
-            Integer id = tokenizer.getSpecialTokens().get(name);
-            if (id != null) stops.add(id);
+            SpecialTokens.find(tokenizer, name).ifPresent(stops::add);
         }
         return stops;
     }
@@ -134,12 +140,13 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
      * architecture-dispatching loader hands to a caller that does not know the family.
      */
     public LoadedModel<Llama.State> loaded() {
-        return new LoadedModel<>(this, tokenizer(), stopTokens());
+        return new LoadedModel<>(this, tokenizer(), chatTemplateSource, stopTokens());
     }
 
     /** The chat-layer binding: token-level facts plus this model's chat framing. */
     public com.qxotic.jinfer.chat.ChatModel<Llama.State> chatModel() {
-        return com.qxotic.jinfer.chat.ChatModel.adapt(loaded(), turnTemplate());
+        return new com.qxotic.jinfer.chat.ChatModel<>(
+                loaded(), turnTemplate().map(t -> (com.qxotic.jinfer.chat.ChatTemplate) t));
     }
 
     public java.util.Optional<com.qxotic.jinfer.chat.TurnTemplate> turnTemplate() {
@@ -618,7 +625,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
     public static Llama loadModel(
             FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeightsFlag)
             throws IOException {
-        GgufTokenizer tokenizer = new GgufTokenizer(gguf);
+        Tokenizer tokenizer = Tokenizers.fromGGUF(gguf);
         String arch = gguf.getString("general.architecture");
 
         int modelContextLength = gguf.getValue(int.class, arch + ".context_length");
@@ -679,7 +686,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                         numberOfHeads,
                         numberOfKeyValueHeads,
                         headSize,
-                        tokenizer.vocabularySize(),
+                        tokenizer.vocabulary().size(),
                         contextLength,
                         rmsNormEps,
                         ropeTheta,
@@ -696,10 +703,15 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                         attentionScale,
                         noRopeLayerStep);
 
-        if (!loadWeightsFlag) return new Llama(config, tokenizer, null);
+        if (!loadWeightsFlag)
+            return new Llama(config, tokenizer, Tokenizers.chatTemplateSource(gguf), null);
         Map<String, GGMLTensorEntry> tensors = ModelLoader.loadTensors(fileChannel, gguf);
         Pair<float[], float[]> rope = buildRope(gguf, arch, config, tensors);
-        return new Llama(config, tokenizer, loadWeights(tensors, config, rope));
+        return new Llama(
+                config,
+                tokenizer,
+                Tokenizers.chatTemplateSource(gguf),
+                loadWeights(tensors, config, rope));
     }
 
     /**

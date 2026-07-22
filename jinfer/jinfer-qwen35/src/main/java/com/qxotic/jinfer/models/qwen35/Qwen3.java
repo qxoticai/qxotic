@@ -16,6 +16,7 @@ import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.*;
 import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
+import com.qxotic.toknroll.Tokenizer;
 import java.io.IOException;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
@@ -26,12 +27,18 @@ public final class Qwen3
         implements EmbeddingModel<Qwen3.Configuration, Qwen3.Weights, Qwen3.State> {
 
     private final Configuration configuration;
-    private final GgufTokenizer tokenizer;
+    private final Tokenizer tokenizer;
+    private final String chatTemplateSource;
     private final Weights weights;
 
-    Qwen3(Configuration configuration, GgufTokenizer tokenizer, Weights weights) {
+    Qwen3(
+            Configuration configuration,
+            Tokenizer tokenizer,
+            String chatTemplateSource,
+            Weights weights) {
         this.configuration = configuration;
         this.tokenizer = tokenizer;
+        this.chatTemplateSource = chatTemplateSource;
         this.weights = weights;
     }
 
@@ -45,7 +52,7 @@ public final class Qwen3
         return weights;
     }
 
-    public GgufTokenizer tokenizer() {
+    public Tokenizer tokenizer() {
         return tokenizer;
     }
 
@@ -562,7 +569,7 @@ public final class Qwen3
     static Qwen3 loadModel(
             FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeightsFlag)
             throws IOException {
-        GgufTokenizer tokenizer = new GgufTokenizer(gguf);
+        Tokenizer tokenizer = Tokenizers.fromGGUF(gguf);
         String arch = gguf.getString("general.architecture");
 
         int modelContextLength = gguf.getValue(int.class, arch + ".context_length");
@@ -592,19 +599,24 @@ public final class Qwen3
                         numberOfHeads,
                         numberOfKeyValueHeads,
                         headSize,
-                        tokenizer.vocabularySize(),
+                        tokenizer.vocabulary().size(),
                         contextLength,
                         rmsNormEps,
                         ropeTheta,
                         ropeDimensionCount,
                         hiddenDim);
 
-        if (!loadWeightsFlag) return new Qwen3(config, tokenizer, null);
+        if (!loadWeightsFlag)
+            return new Qwen3(config, tokenizer, Tokenizers.chatTemplateSource(gguf), null);
         Map<String, GGMLTensorEntry> tensors = ModelLoader.loadTensors(fileChannel, gguf);
         int ropeDim = Math.min(config.ropeDimensionCount, config.headSize);
         Pair<float[], float[]> rope =
                 RoPE.precomputeFreqsCis(config.contextLength, ropeDim, config.ropeTheta);
-        return new Qwen3(config, tokenizer, loadWeights(tensors, config, rope));
+        return new Qwen3(
+                config,
+                tokenizer,
+                Tokenizers.chatTemplateSource(gguf),
+                loadWeights(tensors, config, rope));
     }
 
     static Weights loadWeights(

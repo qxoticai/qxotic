@@ -22,6 +22,7 @@ import com.qxotic.format.gguf.TensorEntry;
 import com.qxotic.jinfer.*;
 import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
+import com.qxotic.toknroll.Tokenizer;
 import java.io.IOException;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
@@ -38,7 +39,8 @@ public final class Gemma4
                 MultiToken<Gemma4.State> {
 
     private final Configuration configuration;
-    private final GgufTokenizer tokenizer;
+    private final Tokenizer tokenizer;
+    private final String chatTemplateSource;
     private final Weights weights;
     private Embedder<Media.Image>
             vision; // image encoder; null on text-only loads (set by loadModel(text, mmproj, ctx))
@@ -47,9 +49,14 @@ public final class Gemma4
     private Gemma4Mtp mtp; // MTP draft sidecar; null unless loadModel(..., mtpSidecar) loaded one
     private Gemma4MtpDecoder mtpDecoder; // paired draft forward (single-threaded scratch)
 
-    Gemma4(Configuration configuration, GgufTokenizer tokenizer, Weights weights) {
+    Gemma4(
+            Configuration configuration,
+            Tokenizer tokenizer,
+            String chatTemplateSource,
+            Weights weights) {
         this.configuration = configuration;
         this.tokenizer = tokenizer;
+        this.chatTemplateSource = chatTemplateSource;
         this.weights = weights;
     }
 
@@ -65,7 +72,7 @@ public final class Gemma4
         return weights;
     }
 
-    public GgufTokenizer tokenizer() {
+    public Tokenizer tokenizer() {
         return tokenizer;
     }
 
@@ -111,7 +118,7 @@ public final class Gemma4
                 if (vision == null && audio == null)
                     throw new UnsupportedOperationException(
                             "no media encoder loaded — use loadModel(text, mmproj, ctx)");
-                int pad = tokenizer.getSpecialTokens().getOrDefault("<pad>", 0);
+                int pad = SpecialTokens.find(tokenizer, "<pad>").orElse(0);
                 forwardEmbeddings(s, e.rows(), pad, from, n, e.bidirectional());
             }
             case com.qxotic.jinfer.Batch.Input.Sequences seq ->
@@ -235,8 +242,7 @@ public final class Gemma4
     public java.util.Set<Integer> stopTokens() {
         java.util.Set<Integer> stops = new java.util.HashSet<>();
         for (String name : new String[] {"<turn|>", "<end_of_turn>", "<eos>", "<|endoftext|>"}) {
-            Integer id = tokenizer.getSpecialTokens().get(name);
-            if (id != null) stops.add(id);
+            SpecialTokens.find(tokenizer, name).ifPresent(stops::add);
         }
         return stops;
     }
@@ -249,12 +255,13 @@ public final class Gemma4
      * architecture-dispatching loader hands to a caller that does not know the family.
      */
     public LoadedModel<Gemma4.State> loaded() {
-        return new LoadedModel<>(this, tokenizer(), stopTokens());
+        return new LoadedModel<>(this, tokenizer(), chatTemplateSource, stopTokens());
     }
 
     /** The chat-layer binding: token-level facts plus this model's chat framing. */
     public com.qxotic.jinfer.chat.ChatModel<Gemma4.State> chatModel() {
-        return com.qxotic.jinfer.chat.ChatModel.adapt(loaded(), turnTemplate());
+        return new com.qxotic.jinfer.chat.ChatModel<>(
+                loaded(), turnTemplate().map(t -> (com.qxotic.jinfer.chat.ChatTemplate) t));
     }
 
     public java.util.Optional<com.qxotic.jinfer.chat.TurnTemplate> turnTemplate() {
@@ -1194,7 +1201,7 @@ public final class Gemma4
     public static Gemma4 loadModel(
             FileChannel fileChannel, GGUF gguf, int maxContextLength, boolean loadWeightsFlag)
             throws IOException {
-        GgufTokenizer tokenizer = new GgufTokenizer(gguf);
+        Tokenizer tokenizer = Tokenizers.fromGGUF(gguf);
 
         int modelContextLength = gguf.getValue(int.class, "gemma4.context_length");
         if (maxContextLength < 0 || modelContextLength < maxContextLength) {
@@ -1283,7 +1290,7 @@ public final class Gemma4
                         numberOfLayers,
                         numberOfHeads,
                         numberOfKeyValueHeadsPerLayer,
-                        tokenizer.vocabularySize(),
+                        tokenizer.vocabulary().size(),
                         maxContextLength,
                         rmsNormEps,
                         ropeThetaFull,
@@ -1318,10 +1325,14 @@ public final class Gemma4
         }
 
         if (!loadWeightsFlag) {
-            return new Gemma4(config, tokenizer, null);
+            return new Gemma4(config, tokenizer, Tokenizers.chatTemplateSource(gguf), null);
         }
         Map<String, GGMLTensorEntry> tensors = ModelLoader.loadTensors(fileChannel, gguf);
-        return new Gemma4(config, tokenizer, loadWeights(tensors, config));
+        return new Gemma4(
+                config,
+                tokenizer,
+                Tokenizers.chatTemplateSource(gguf),
+                loadWeights(tensors, config));
     }
 
     static Weights loadWeights(Map<String, GGMLTensorEntry> tensors, Configuration config) {
