@@ -1,39 +1,41 @@
-// The SealedPrompt (use case A) validation scenario: compile a long static prompt (system rules +
-// few-shot examples - the detailed prompts small models need) to a sealed file, then serve from a
-// fresh state. Checks: full restore; sealed vs uncached greedy replies IDENTICAL; prompt mismatch
-// falls through to plain prefill (same reply); wrong model seed fails with the descriptive error.
+// The frozen single-prompt (use case A) validation scenario: compile a long static prompt
+// (system rules + few-shot examples - the detailed prompts small models need) into a one-chain
+// FrozenBlocks artifact, then serve from a fresh state. Checks: full restore; frozen vs uncached
+// greedy replies IDENTICAL; prompt mismatch falls through to plain prefill (same reply); wrong
+// model seed fails with the descriptive error.
 package com.qxotic.jinfer.testkit;
 
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.RuntimeState;
-import com.qxotic.jinfer.cache.SealedPrompt;
+import com.qxotic.jinfer.cache.CachedSession;
+import com.qxotic.jinfer.cache.FrozenBlocks;
 import com.qxotic.jinfer.chat.Message;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
-public final class SealedScenario<S extends RuntimeState> {
+public final class FrozenPromptScenario<S extends RuntimeState> {
 
     private final Harness<S> h;
 
-    public SealedScenario(Harness<S> h) {
+    public FrozenPromptScenario(Harness<S> h) {
         this.h = h;
     }
 
     public void run(String runName) throws Exception {
-        Path sealed = Files.createTempFile("sealed-prompt", ".jkvs");
+        Path artifact = Files.createTempFile("frozen-prompt", ".jkv");
 
-        // ---- build: prefill the static prompt once, seal it ----
+        // ---- build: compile the static prompt into the artifact (one prefill) ----
         List<Batch> staticPrompt = staticPrompt();
-        S build = h.newState();
         long t0 = System.nanoTime();
-        long[] fp = h.ingest(build, staticPrompt);
+        long[] fp =
+                FrozenBlocks.compile(
+                        artifact, h.model.model(), h.codec, h.seed, h.newState(), staticPrompt);
         double prefillMs = (System.nanoTime() - t0) / 1e6;
-        SealedPrompt.compile(sealed, "support-bot", h.codec, build, fp, h.seed);
         System.out.printf(
                 "compiled: %d positions, %.1f MB (%s)%n",
-                fp.length, Files.size(sealed) / 1e6, sealed);
+                fp.length, Files.size(artifact) / 1e6, artifact);
 
         // ---- reference: uncached full prefill + user turn ----
         Message user =
@@ -45,26 +47,29 @@ public final class SealedScenario<S extends RuntimeState> {
         String refReply = h.serve(ref, user, 200);
         System.out.println("reference reply: " + refReply.strip());
 
-        // ---- serve: open + restore from the sealed file (fresh state) ----
+        // ---- serve: open + restore from the frozen artifact (fresh state) ----
         long t1 = System.nanoTime();
-        SealedPrompt prompt = SealedPrompt.open(sealed, h.seed);
+        FrozenBlocks frozen = FrozenBlocks.open(artifact, h.seed);
         S hot = h.newState();
-        int restored = prompt.tryRestore(hot, h.codec, fp);
+        CachedSession<S> hs = frozen.serve(h.model.model(), h.codec, h.seed, hot, fp);
         double restoreMs = (System.nanoTime() - t1) / 1e6;
         h.check(
-                restored == fp.length,
-                "sealed restore covers all " + fp.length + " positions (got " + restored + ")");
+                hs.position() == fp.length,
+                "frozen restore covers all "
+                        + fp.length
+                        + " positions (got "
+                        + hs.position()
+                        + ")");
         h.check(
                 h.serve(hot, user, 200).equals(refReply),
-                "sealed and uncached greedy replies identical");
+                "frozen and uncached greedy replies identical");
 
-        // ---- mismatch: a different prompt discards the seal, plain prefill still serves ----
+        // ---- mismatch: a diverged prompt restores nothing, plain prefill still serves ----
         long[] other = fp.clone();
         other[3] ^= 1;
         S cold = h.newState();
-        h.check(
-                prompt.tryRestore(cold, h.codec, other) == 0,
-                "different prompt is discarded (restore 0)");
+        CachedSession<S> cs = frozen.serve(h.model.model(), h.codec, h.seed, cold, other);
+        h.check(cs.position() == 0, "diverged prompt is discarded (restore 0)");
         h.ingest(cold, staticPrompt);
         h.check(
                 h.serve(cold, user, 200).equals(refReply),
@@ -74,23 +79,22 @@ public final class SealedScenario<S extends RuntimeState> {
         byte[] wrong = h.seed.clone();
         wrong[0] ^= 1;
         try {
-            SealedPrompt.open(sealed, wrong);
+            FrozenBlocks.open(artifact, wrong);
             h.check(false, "wrong-seed open must throw");
         } catch (IllegalStateException e) {
             h.check(
-                    e.getMessage().contains("different model")
-                            && e.getMessage().contains("support-bot"),
+                    e.getMessage().contains("different model"),
                     "wrong model rejected: "
                             + e.getMessage().substring(0, Math.min(100, e.getMessage().length())));
         }
 
-        System.out.printf("%n=== benchmark: sealed restore vs static-prompt prefill ===%n");
+        System.out.printf("%n=== benchmark: frozen restore vs static-prompt prefill ===%n");
         System.out.printf(
                 "%-34s %10.1f ms%n", "static prompt prefill (" + fp.length + " tok)", prefillMs);
         System.out.printf(
                 "%-34s %10.1f ms   (%.0fx)%n",
-                "sealed open+restore", restoreMs, prefillMs / restoreMs);
-        Files.deleteIfExists(sealed);
+                "frozen open+restore", restoreMs, prefillMs / restoreMs);
+        Files.deleteIfExists(artifact);
         h.finish(runName);
     }
 
