@@ -112,7 +112,7 @@ typedef struct {
 } jam_mm_job;
 
 /* Portable-C floor — always built, always available. Per-ISA kernels (jam_kernels_avx2.c,
- * jam_kernels_avx512.c, jam_kernels_neon.c, jam_kernels_sme.c, ...) live in their own TUs compiled
+ * jam_kernels_avx512.c, jam_kernels_neon.c, ...) live in their own TUs compiled
  * with their -m flags and bound at create; this scalar one is the fallback and the reference. */
 void jam_mm_f32_generic(void* job, int row_begin, int row_end, int tid);
 
@@ -196,8 +196,7 @@ void jam_mxfp4_repack_band(void* job, int t0, int t1, int tid); /* phase 2: MXFP
 void jam_q5k_repack_band(void* job, int t0, int t1, int tid);  /* phase 2: Q5_K 16-row VNNI repack matmul */
 #endif
 /* 256-bit AVX-VNNI Q8_0 band (8-row groups) — the no-AVX-512 client path. Defined in the avxvnni TU;
- * shares the jam_q4k_job + per-worker repack scratch with the AVX-512 band. Dispatch wiring (activation
- * requant + try-band for active==AVX_VNNI) is the next step. */
+ * shares the jam_q4k_job + per-worker repack scratch with the AVX-512 band. */
 void jam_q8_0_repack_band_avxvnni(void* job, int t0, int t1, int tid);
 void jam_q8_0_requant_256(void* job, int s0, int s1, int tid);   /* pure-256 phase-1 requant for the band */
 void jam_q4_0_repack_band_avxvnni(void* job, int t0, int t1, int tid);

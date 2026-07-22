@@ -1,13 +1,13 @@
 #ifndef JAM_H
 #define JAM_H
 
-/* jam — the fastest multithreaded CPU matmul. One job: C = A @ Bᵀ, with quantized weights.
+/* jam — the fastest multithreaded CPU matmul. One job: C = W @ Aᵀ, with quantized weights.
  *
- *   op       : ONE call, jam_mm. C = A @ Bᵀ (ggml mul_mat convention — k is the CONTIGUOUS last axis
- *              of both operands, so each output is a dot of two contiguous k-vectors). n==1 (B a
+ *   op       : ONE call, jam_mm. C = W @ Aᵀ (ggml mul_mat convention — k is the CONTIGUOUS last axis
+ *              of both operands, so each output is a dot of two contiguous k-vectors). n==1 (A a
  *              single row — decode) -> dedicated streaming gemv; else register-tiled gemm.
  *   dtypes   : values mirror GGML's ggml_type, so a GGUF loader passes a tensor's type straight
- *              through. A (weight) may be any format and selects the kernel; B and C are float. jam
+ *              through. W (weight) may be any format and selects the kernel; A and C are float. jam
  *              MULTIPLIES quantized weights (decode + requant happen in the kernel); it never
  *              CONVERTS formats — quantization is done in the host (Java).
  *   context  : jam_mm(NULL, ...) uses the process-global context — lazily built on first use from
@@ -26,14 +26,17 @@
  *   targets  : x86 (SSE2..AVX-512/VNNI/AMX), ARM (NEON..SVE), and a portable-C floor — one fat lib,
  *              best kernel chosen at runtime; builds and runs anywhere. No dependencies.
  *
- *   == Environment (configure the GLOBAL context — read ONCE, lazily, on first jam_mm(NULL,...)) ==
- *     JAM_NUM_THREADS   pool size           (unset or 0 = physical cores)
- *     JAM_ISA           cap the kernel ISA  (a capability name below; unset = best available)
- *   An explicit context (jam_ctx_create) ignores the environment and uses its jam_config.
+ *   == Environment ==
+ *     JAM_NUM_THREADS   GLOBAL context pool size (unset or 0 = auto); explicit contexts use jam_config
+ *     JAM_ISA           HARD CEILING on the kernel ISA for EVERY context, global or explicit
+ *                       (a capability name below; unset = best available)
+ *     JAM_POOL/JAM_SPIN internal-pool wait mode for any context (spin vs condvar) + spin budget
+ *     JAM_DEBUG         one-line dispatch/kernel diagnostics to stderr
  *
  *   == Capability names (the user-facing strings for JAM_ISA and jam_isa_name) ==
- *     "auto" "generic" "sse2" "avx2" "avx512" "avx512_vnni" "amx"      (x86)
- *     "neon" "dotprod" "i8mm" "sve"                                    (arm)
+ *     "auto" "generic" "sse2" "sse3" "ssse3" "avx2" "avx_vnni" "avx512" "avx512_vnni" "amx"  (x86)
+ *     "neon" "dotprod" "i8mm" "sve"                                                          (arm)
+ *     "metal"                                    (GPU backend, explicit opt-in via JAM_ISA/max_isa)
  */
 
 #include <stdint.h>
@@ -41,8 +44,6 @@
 #ifdef __cplusplus
 extern "C" {            /* for C++ CALLERS only — the API is pure C11 */
 #endif
-
-#define JAM_ABI_VERSION 1u   /* feeds the soname (libjam.so.1); the loader enforces ABI match */
 
 /* Public-symbol export. On ELF/Mach-O every non-static symbol is exported by default, so JAM_API is empty
  * there. On Windows (PE) nothing is exported once ANY symbol is __declspec(dllexport) — and jam_jni.c's
@@ -55,8 +56,8 @@ extern "C" {            /* for C++ CALLERS only — the API is pure C11 */
 #  define JAM_API
 #endif
 
-/* dtype tags — numerically identical to GGML's ggml_type (drop-in for GGUF). A may be any of these;
- * B and C are float (F32/F16/BF16). */
+/* dtype tags — numerically identical to GGML's ggml_type (drop-in for GGUF). W may be any of these;
+ * A and C are float (F32/F16/BF16). */
 typedef enum {
     JAM_F32   = 0,
     JAM_F16   = 1,

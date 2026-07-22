@@ -34,7 +34,6 @@ struct jam_pool {
     jam_task_fn     fn;
     void*           arg;
     int             n;
-    int             participants; /* fan width for the current job (<= nworkers+1); see _capped */
     _Atomic uint32_t seq;         /* (generation << 16) | participants; change signals new work */
     _Atomic int     remaining;    /* workers still running the current job */
     _Atomic int     parked;       /* workers currently parked (spin mode: gate the wakeup broadcast) */

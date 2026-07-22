@@ -26,4 +26,8 @@ static inline float jam_ue4m3_to_float(uint8_t x) {
     return e ? ldexpf(1.0f + (float) m / 8.0f, e - 7) : ldexpf((float) m, -9);
 }
 
+/* Hot-loop form: ldexpf is a libm call (profiled as scalbnf dominating the NVFP4 kernels), so the
+ * per-16 scales come from this 256-entry table instead. Defined + filled (constructor) in jam.c. */
+extern __attribute__((visibility("hidden"))) float jam_ue4m3_lut[256];
+
 #endif /* JAM_NVFP4_H */

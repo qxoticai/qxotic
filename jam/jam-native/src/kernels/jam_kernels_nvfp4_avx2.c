@@ -1,8 +1,8 @@
 /* AVX2 NVFP4 kernel — GGUF block_nvfp4 ({d[4] UE4M3; qs[32]}, 64 elems = 4 sub-blocks of 16, no global
  * scale). Decode = MXFP4's pshufb LUT; the sub-block nibble order (byte s*8+j: low=elem j, high=elem j+8)
  * means a 32-element span (2 sub-blocks, 16 bytes) decodes interleaved, so an unpacklo/hi_epi64 reorders it
- * to two contiguous 16-element halves. Per-16 UE4M3 scale via a 256-entry LUT (ldexpf is a libm call — it
- * profiled as scalbnf in the hot loop). Activations are int8-requantized (J->aq/ad).
+ * to two contiguous 16-element halves. Per-16 UE4M3 scale via the shared 256-entry
+ * LUT (jam_ue4m3_lut; ldexpf is a libm call that profiled as scalbnf in the hot loop). Activations are int8-requantized (J->aq/ad).
  *
  * Structure mirrors the q256 engine: 4 activation columns share one decoded weight span (decode and |w|
  * amortized 4x), and the per-16 scales are applied to a VECTOR accumulator (one fmadd per span-column) so
@@ -13,11 +13,6 @@
 #include "jam_decode_x86_256.h"   /* jam_hsum8_256; JAM_MXFP4_CODES via jam_mxfp4.h */
 
 #define KDOT(u, s) _mm256_cvtepi32_ps(_mm256_madd_epi16(_mm256_maddubs_epi16(u, s), _mm256_set1_epi16(1)))
-
-static float jam_ue4m3_lut[256];
-__attribute__((constructor)) static void jam_ue4m3_lut_init(void) {
-    for (int i = 0; i < 256; ++i) jam_ue4m3_lut[i] = jam_ue4m3_to_float((uint8_t) i);
-}
 
 /* Decode one 32-element span (sub-blocks 2sp, 2sp+1) of block w to int8 codes + its per-16 scale vector. */
 #define NVFP4_SPAN(w, sp, lut, m4, wq, scv) do {                                                  \

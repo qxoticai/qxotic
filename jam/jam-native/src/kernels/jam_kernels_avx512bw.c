@@ -9,7 +9,7 @@
  *   2. AVX-512 has no vpsignb. The abs/sign identity (dpbusd(|qa|, sign(qb,qa)) = Σ qa·qb) is kept by
  *      negating qb where qa<0 via movepi8_mask + mask_sub; qa==0 is nulled by |qa|=0. */
 #include "jam_internal.h"
-#include "jam_nvfp4.h"   /* jam_nvfp4_blk, jam_ue4m3_to_float, JAM_MXFP4_CODES (for the NVFP4 kernel below) */
+#include "jam_nvfp4.h"   /* jam_nvfp4_blk, jam_ue4m3_lut, JAM_MXFP4_CODES (for the NVFP4 kernel below) */
 #include <stddef.h>
 #include <stdint.h>
 #include <immintrin.h>
@@ -131,8 +131,8 @@ void jam_mm_nvfp4_avx512(void* arg, int rb, int re, int tid) {
                 __m512i av = _mm512_loadu_si512((const __m512i*) (aq + (size_t) bb * 64));
                 __m512 prod = dotpair(_mm512_abs_epi8(wq), sign_fold(av, wq));          /* 16 lanes (4×4) */
                 float a0 = ad[2*bb], a1 = ad[2*bb + 1];
-                float s0 = jam_ue4m3_to_float(w->d[0]) * a0, s1 = jam_ue4m3_to_float(w->d[1]) * a0;
-                float s2 = jam_ue4m3_to_float(w->d[2]) * a1, s3 = jam_ue4m3_to_float(w->d[3]) * a1;
+                float s0 = jam_ue4m3_lut[w->d[0]] * a0, s1 = jam_ue4m3_lut[w->d[1]] * a0;
+                float s2 = jam_ue4m3_lut[w->d[2]] * a1, s3 = jam_ue4m3_lut[w->d[3]] * a1;
                 __m512 scv = _mm512_setr_ps(s0,s0,s0,s0, s1,s1,s1,s1, s2,s2,s2,s2, s3,s3,s3,s3);
                 acc = _mm512_fmadd_ps(prod, scv, acc);
             }

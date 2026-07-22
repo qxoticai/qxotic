@@ -2,6 +2,7 @@
  * The actual multiply lives in the per-ISA kernel TUs (scalar floor in jam_kernels_generic.c). */
 #include "jam_internal.h"
 #include "kernels/jam_mxfp4.h"
+#include "kernels/jam_nvfp4.h"
 #include "jam_kquant.h"
 
 #include <stdlib.h>
@@ -12,6 +13,12 @@
 #include <stdatomic.h>
 
 /* ---- helpers ---- */
+
+/* UE4M3 -> float table (jam_nvfp4.h): ldexpf is a libm call, too slow for the NVFP4 hot loops. */
+__attribute__((visibility("hidden"))) float jam_ue4m3_lut[256];
+__attribute__((constructor)) static void jam_ue4m3_lut_init(void) {
+    for (int i = 0; i < 256; ++i) jam_ue4m3_lut[i] = jam_ue4m3_to_float((uint8_t) i);
+}
 
 /* Essential, always-on: one line so the user can SEE the auto-selected cores/ISA/pinning without JAM_DEBUG. */
 static void cpu_report(const jam_ctx* c) {
@@ -128,6 +135,9 @@ static const char* q8_kernel_name(jam_task_fn k) {
     if (!k) return "generic (dequant + float dot)";
 #ifdef JAM_HAVE_SSE3
     if (k == jam_mm_q8_0_sse3)     return "sse3 (128-bit sign-extend+madd, sw fp16)";
+#endif
+#ifdef JAM_HAVE_SSSE3
+    if (k == jam_mm_q8_0_ssse3)    return "ssse3 (128-bit maddubs sign-trick)";
 #endif
 #ifdef JAM_HAVE_AVX2
     if (k == jam_mm_q8_0_avx2)     return "avx2 (maddubs+madd)";
@@ -467,8 +477,8 @@ static jam_status run_quant(jam_ctx* ctx, jam_q8_job* q, int m, jam_task_fn simd
 
 /* Repacked-weight cache for the avx2 Q4_K 8x8 gemm: repack each weight ONCE (keyed on its pointer+shape),
  * reuse forever. Accessed under the per-context busy lock (jam_mm), so no extra locking.
- * TWO preconditions, both satisfied by jinfer's mmap'd model weights (the only consumer):
- *   1. PINNED: the cache auto-invalidates nothing, so the bytes at `w` must stay live + unchanged for the
+ * ONE precondition, satisfied by jinfer's mmap'd model weights (the only consumer):
+ *    PINNED: the cache auto-invalidates nothing, so the bytes at `w` must stay live + unchanged for the
  *      ctx lifetime, OR the caller must jam_forget_weight(ctx, w) before freeing/replacing it — else a new
  *      weight reusing the address returns the STALE repack. Model weights are pinned for the model's life.
  * The repack honors the weight's row stride (the caller passes w_stride derived from ldw), so a strided /
@@ -527,53 +537,6 @@ void jam_forget_weight(jam_ctx* ctx, const void* w) {
     }
 }
 
-/* K-quant (256-element super-block) dispatch, shared by Q4_K/Q5_K/Q6_K — they differ only in the byte
- * size, the phase-2 VNNI band kernel, the bound int8 kernel, and the float floor. Above AVX-512-VNNI:
- * the 2-phase repack (shared quant + per-quant band). Else: run_quant routes to the int8 kernel (ARM /
- * avx2) or the float floor. JAM_BAND resolves to NULL off AVX-512 (where the band symbols don't exist). */
-#ifdef JAM_HAVE_AVX512
-#define JAM_BAND(fn) (fn)
-#else
-#define JAM_BAND(fn) ((jam_task_fn) 0)
-#endif
-static jam_status dispatch_kquant(jam_ctx* ctx, const void* w, int ldw, const void* a, int lda,
-                                  void* c, int ldc, int m, int n, int k, size_t kbytes,
-                                  jam_task_fn band, jam_task_fn requant,
-                                  jam_repack_fn repack, size_t rp_sbbytes,
-                                  jam_task_fn simd, jam_task_fn floor_) {
-    int kblocks = k / JAM_QK;
-    (void) band;
-#ifdef JAM_HAVE_AVX512
-    if (ctx->q4k_avail && n >= JAM_VNNI_MIN_SEQ && ensure_kquant(ctx, n, kblocks)) {
-        jam_q4k_job job = { (const uint8_t*) w, (int64_t)(ldw / JAM_QKK) * (int64_t) kbytes,   /* row stride honors ldw */
-                            (const float*) a, lda, ctx->kq_xq, ctx->kq_dx, ctx->kq_xsum,
-                            (float*) c, ldc, m, k, n, kblocks, ctx->kq_repack };
-        jam_run(ctx, n, jam_q4k_quant, &job);                                   /* phase 1 (shared) */
-        jam_run(ctx, (m + JAM_VNNI_BAND - 1) / JAM_VNNI_BAND, band, &job);       /* phase 2 (per-quant) */
-        return JAM_OK;
-    }
-#endif
-    jam_q8_job q = { w, ldw, a, lda, c, ldc, n, k, kblocks, NULL, NULL }; q.m = m;
-    if (requant && simd) {                         /* per-256 (Q8_K) requant + int-scale kernel (avx2) */
-        if (!ensure_qscratch(ctx, n, k)) return JAM_EINVAL;
-        q.aq = (int8_t*) ctx->q_aq; q.ad = (float*) ctx->q_ad; q.asum = (float*) ctx->q_asum;
-        if (n == 1) requant(&q, 0, 1, 0); else jam_run(ctx, n, requant, &q);
-        if (repack) {
-#ifdef JAM_HAVE_AVX2
-            if (n == 1 && simd == jam_mm_q5k_rp_avx2) simd = jam_mm_q5k_rp1_avx2;   /* n==1 rp1 swap is AVX2-only (no NEON rp1 kernels) */
-            if (n == 1 && simd == jam_mm_q6k_rp_avx2) simd = jam_mm_q6k_rp1_avx2;
-#endif
-            if (try_repack_run(ctx, &q, w, m, k, JAM_QKK, rp_sbbytes,
-                               (size_t)(ldw / JAM_QKK) * kbytes, repack, simd)) return JAM_OK;
-            return run_quant(ctx, &q, m, NULL, floor_);   /* repack alloc failed -> float floor (simd is the group-indexed rp kernel, can't run on the raw weight) */
-        }
-        if (n == 1) jam_run_bw(ctx, m, simd, &q);
-        else        jam_run(ctx, m, simd, &q);
-        return JAM_OK;
-    }
-    return run_quant(ctx, &q, m, simd, floor_);   /* int8 (ARM / avx2) or float floor */
-}
-
 #ifdef JAM_HAVE_AVX512
 /* AVX-512-VNNI 16-row-repack prefill band, shared by the 32-element-block quants (Q8_0/Q4_0/MXFP4). They
  * differ only in the weight block size (34/18/17 bytes -> the row stride) and the per-quant band kernel;
@@ -598,6 +561,48 @@ static int try_vnni_band(jam_ctx* ctx, const void* w, int ldw, const void* a, in
 }
 
 #endif  /* JAM_HAVE_AVX512 (try_vnni_band) */
+
+/* K-quant (256-element super-block) dispatch, shared by Q4_K/Q5_K/Q6_K — they differ only in the byte
+ * size, the phase-2 VNNI band kernel, the bound int8 kernel, and the float floor. Above AVX-512-VNNI:
+ * the 2-phase repack (shared quant + per-quant band). Else: run_quant routes to the int8 kernel (ARM /
+ * avx2) or the float floor. JAM_BAND resolves to NULL off AVX-512 (where the band symbols don't exist). */
+#ifdef JAM_HAVE_AVX512
+#define JAM_BAND(fn) (fn)
+#else
+#define JAM_BAND(fn) ((jam_task_fn) 0)
+#endif
+static jam_status dispatch_kquant(jam_ctx* ctx, const void* w, int ldw, const void* a, int lda,
+                                  void* c, int ldc, int m, int n, int k, size_t kbytes,
+                                  jam_task_fn band, jam_task_fn requant,
+                                  jam_repack_fn repack, size_t rp_sbbytes,
+                                  jam_task_fn simd, jam_task_fn floor_) {
+    int kblocks = k / JAM_QK;
+    (void) band;
+#ifdef JAM_HAVE_AVX512
+    if (try_vnni_band_stride(ctx, w, (int64_t)(ldw / JAM_QKK) * (int64_t) kbytes,   /* row stride honors ldw */
+                             a, lda, c, ldc, m, n, k, band)) return JAM_OK;
+#endif
+    jam_q8_job q = { w, ldw, a, lda, c, ldc, n, k, kblocks, NULL, NULL }; q.m = m;
+    if (requant && simd) {                         /* per-256 (Q8_K) requant + int-scale kernel (avx2) */
+        if (!ensure_qscratch(ctx, n, k)) return JAM_EINVAL;
+        q.aq = (int8_t*) ctx->q_aq; q.ad = (float*) ctx->q_ad; q.asum = (float*) ctx->q_asum;
+        if (n == 1) requant(&q, 0, 1, 0); else jam_run(ctx, n, requant, &q);
+        if (repack) {
+#ifdef JAM_HAVE_AVX2
+            if (n == 1 && simd == jam_mm_q5k_rp_avx2) simd = jam_mm_q5k_rp1_avx2;   /* n==1 rp1 swap is AVX2-only (no NEON rp1 kernels) */
+            if (n == 1 && simd == jam_mm_q6k_rp_avx2) simd = jam_mm_q6k_rp1_avx2;
+#endif
+            if (try_repack_run(ctx, &q, w, m, k, JAM_QKK, rp_sbbytes,
+                               (size_t)(ldw / JAM_QKK) * kbytes, repack, simd)) return JAM_OK;
+            return run_quant(ctx, &q, m, NULL, floor_);   /* repack alloc failed -> float floor (simd is the group-indexed rp kernel, can't run on the raw weight) */
+        }
+        if (n == 1) jam_run_bw(ctx, m, simd, &q);
+        else        jam_run(ctx, m, simd, &q);
+        return JAM_OK;
+    }
+    return run_quant(ctx, &q, m, simd, floor_);   /* int8 (ARM / avx2) or float floor */
+}
+
 
 #ifdef JAM_HAVE_AVXVNNI
 /* 256-bit AVX-VNNI sibling of try_vnni_band: same q4k_job + per-worker repack scratch, but fed by the pure

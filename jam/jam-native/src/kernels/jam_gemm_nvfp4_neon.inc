@@ -34,7 +34,7 @@ void JAM_MM_NAME(void* arg, int rb, int re, int tid) {
                     const int8_t* a = aq + (size_t) blk32 * 32;
                     int d0 = JAM_NVFP4_DOT16(wl, vld1q_s8(a));
                     int d1 = JAM_NVFP4_DOT16(wh, vld1q_s8(a + 16));
-                    float s0 = jam_ue4m3_to_float(w->d[2*sp]), s1 = jam_ue4m3_to_float(w->d[2*sp + 1]);
+                    float s0 = jam_ue4m3_lut[w->d[2*sp]], s1 = jam_ue4m3_lut[w->d[2*sp + 1]];
                     acc += ad[blk32] * (s0 * (float) d0 + s1 * (float) d1);
                 }
             }
