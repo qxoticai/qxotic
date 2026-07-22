@@ -49,28 +49,132 @@ static void gemm_5x5(const float* A, long lda, const float* B, long ldb,
                      float* C, long ldc, long i0, long iend, long j0, long jend, long k) {
     for (long i = i0; i + 5 <= iend; i += 5) {
         for (long j = j0; j + 5 <= jend; j += 5) {
-            __m512 acc[5][5];
-            for (int b = 0; b < 5; ++b) for (int a = 0; a < 5; ++a) acc[b][a] = _mm512_setzero_ps();
+            __m512 c00 = _mm512_setzero_ps();
+            __m512 c01 = c00;
+            __m512 c02 = c00;
+            __m512 c03 = c00;
+            __m512 c04 = c00;
+            __m512 c10 = c00;
+            __m512 c11 = c00;
+            __m512 c12 = c00;
+            __m512 c13 = c00;
+            __m512 c14 = c00;
+            __m512 c20 = c00;
+            __m512 c21 = c00;
+            __m512 c22 = c00;
+            __m512 c23 = c00;
+            __m512 c24 = c00;
+            __m512 c30 = c00;
+            __m512 c31 = c00;
+            __m512 c32 = c00;
+            __m512 c33 = c00;
+            __m512 c34 = c00;
+            __m512 c40 = c00;
+            __m512 c41 = c00;
+            __m512 c42 = c00;
+            __m512 c43 = c00;
+            __m512 c44 = c00;
             long t = 0;
             for (; t + 16 <= k; t += 16) {
-                __m512 av[5];
-                for (int a = 0; a < 5; ++a) av[a] = _mm512_loadu_ps(A + (i + a) * lda + t);
-                for (int b = 0; b < 5; ++b) {
-                    __m512 bv = _mm512_loadu_ps(B + (j + b) * ldb + t);
-                    for (int a = 0; a < 5; ++a) acc[b][a] = _mm512_fmadd_ps(av[a], bv, acc[b][a]);
-                }
+                __m512 a0 = _mm512_loadu_ps(A + (i + 0) * lda + t);
+                __m512 a1 = _mm512_loadu_ps(A + (i + 1) * lda + t);
+                __m512 a2 = _mm512_loadu_ps(A + (i + 2) * lda + t);
+                __m512 a3 = _mm512_loadu_ps(A + (i + 3) * lda + t);
+                __m512 a4 = _mm512_loadu_ps(A + (i + 4) * lda + t);
+                __m512 b0 = _mm512_loadu_ps(B + (j + 0) * ldb + t);
+                c00 = _mm512_fmadd_ps(a0, b0, c00);
+                c01 = _mm512_fmadd_ps(a1, b0, c01);
+                c02 = _mm512_fmadd_ps(a2, b0, c02);
+                c03 = _mm512_fmadd_ps(a3, b0, c03);
+                c04 = _mm512_fmadd_ps(a4, b0, c04);
+                __m512 b1 = _mm512_loadu_ps(B + (j + 1) * ldb + t);
+                c10 = _mm512_fmadd_ps(a0, b1, c10);
+                c11 = _mm512_fmadd_ps(a1, b1, c11);
+                c12 = _mm512_fmadd_ps(a2, b1, c12);
+                c13 = _mm512_fmadd_ps(a3, b1, c13);
+                c14 = _mm512_fmadd_ps(a4, b1, c14);
+                __m512 b2 = _mm512_loadu_ps(B + (j + 2) * ldb + t);
+                c20 = _mm512_fmadd_ps(a0, b2, c20);
+                c21 = _mm512_fmadd_ps(a1, b2, c21);
+                c22 = _mm512_fmadd_ps(a2, b2, c22);
+                c23 = _mm512_fmadd_ps(a3, b2, c23);
+                c24 = _mm512_fmadd_ps(a4, b2, c24);
+                __m512 b3 = _mm512_loadu_ps(B + (j + 3) * ldb + t);
+                c30 = _mm512_fmadd_ps(a0, b3, c30);
+                c31 = _mm512_fmadd_ps(a1, b3, c31);
+                c32 = _mm512_fmadd_ps(a2, b3, c32);
+                c33 = _mm512_fmadd_ps(a3, b3, c33);
+                c34 = _mm512_fmadd_ps(a4, b3, c34);
+                __m512 b4 = _mm512_loadu_ps(B + (j + 4) * ldb + t);
+                c40 = _mm512_fmadd_ps(a0, b4, c40);
+                c41 = _mm512_fmadd_ps(a1, b4, c41);
+                c42 = _mm512_fmadd_ps(a2, b4, c42);
+                c43 = _mm512_fmadd_ps(a3, b4, c43);
+                c44 = _mm512_fmadd_ps(a4, b4, c44);
             }
             if (t < k) {
                 __mmask16 mk = (__mmask16) ((1u << (k - t)) - 1);
-                __m512 av[5];
-                for (int a = 0; a < 5; ++a) av[a] = _mm512_maskz_loadu_ps(mk, A + (i + a) * lda + t);
-                for (int b = 0; b < 5; ++b) {
-                    __m512 bv = _mm512_maskz_loadu_ps(mk, B + (j + b) * ldb + t);
-                    for (int a = 0; a < 5; ++a) acc[b][a] = _mm512_fmadd_ps(av[a], bv, acc[b][a]);
-                }
+                __m512 a0 = _mm512_maskz_loadu_ps(mk, A + (i + 0) * lda + t);
+                __m512 a1 = _mm512_maskz_loadu_ps(mk, A + (i + 1) * lda + t);
+                __m512 a2 = _mm512_maskz_loadu_ps(mk, A + (i + 2) * lda + t);
+                __m512 a3 = _mm512_maskz_loadu_ps(mk, A + (i + 3) * lda + t);
+                __m512 a4 = _mm512_maskz_loadu_ps(mk, A + (i + 4) * lda + t);
+                __m512 b0 = _mm512_maskz_loadu_ps(mk, B + (j + 0) * ldb + t);
+                c00 = _mm512_fmadd_ps(a0, b0, c00);
+                c01 = _mm512_fmadd_ps(a1, b0, c01);
+                c02 = _mm512_fmadd_ps(a2, b0, c02);
+                c03 = _mm512_fmadd_ps(a3, b0, c03);
+                c04 = _mm512_fmadd_ps(a4, b0, c04);
+                __m512 b1 = _mm512_maskz_loadu_ps(mk, B + (j + 1) * ldb + t);
+                c10 = _mm512_fmadd_ps(a0, b1, c10);
+                c11 = _mm512_fmadd_ps(a1, b1, c11);
+                c12 = _mm512_fmadd_ps(a2, b1, c12);
+                c13 = _mm512_fmadd_ps(a3, b1, c13);
+                c14 = _mm512_fmadd_ps(a4, b1, c14);
+                __m512 b2 = _mm512_maskz_loadu_ps(mk, B + (j + 2) * ldb + t);
+                c20 = _mm512_fmadd_ps(a0, b2, c20);
+                c21 = _mm512_fmadd_ps(a1, b2, c21);
+                c22 = _mm512_fmadd_ps(a2, b2, c22);
+                c23 = _mm512_fmadd_ps(a3, b2, c23);
+                c24 = _mm512_fmadd_ps(a4, b2, c24);
+                __m512 b3 = _mm512_maskz_loadu_ps(mk, B + (j + 3) * ldb + t);
+                c30 = _mm512_fmadd_ps(a0, b3, c30);
+                c31 = _mm512_fmadd_ps(a1, b3, c31);
+                c32 = _mm512_fmadd_ps(a2, b3, c32);
+                c33 = _mm512_fmadd_ps(a3, b3, c33);
+                c34 = _mm512_fmadd_ps(a4, b3, c34);
+                __m512 b4 = _mm512_maskz_loadu_ps(mk, B + (j + 4) * ldb + t);
+                c40 = _mm512_fmadd_ps(a0, b4, c40);
+                c41 = _mm512_fmadd_ps(a1, b4, c41);
+                c42 = _mm512_fmadd_ps(a2, b4, c42);
+                c43 = _mm512_fmadd_ps(a3, b4, c43);
+                c44 = _mm512_fmadd_ps(a4, b4, c44);
             }
-            for (int b = 0; b < 5; ++b) for (int a = 0; a < 5; ++a)
-                C[(size_t)(j + b) * ldc + (i + a)] = _mm512_reduce_add_ps(acc[b][a]);
+            C[(size_t)(j + 0) * ldc + (i + 0)] = _mm512_reduce_add_ps(c00);
+            C[(size_t)(j + 0) * ldc + (i + 1)] = _mm512_reduce_add_ps(c01);
+            C[(size_t)(j + 0) * ldc + (i + 2)] = _mm512_reduce_add_ps(c02);
+            C[(size_t)(j + 0) * ldc + (i + 3)] = _mm512_reduce_add_ps(c03);
+            C[(size_t)(j + 0) * ldc + (i + 4)] = _mm512_reduce_add_ps(c04);
+            C[(size_t)(j + 1) * ldc + (i + 0)] = _mm512_reduce_add_ps(c10);
+            C[(size_t)(j + 1) * ldc + (i + 1)] = _mm512_reduce_add_ps(c11);
+            C[(size_t)(j + 1) * ldc + (i + 2)] = _mm512_reduce_add_ps(c12);
+            C[(size_t)(j + 1) * ldc + (i + 3)] = _mm512_reduce_add_ps(c13);
+            C[(size_t)(j + 1) * ldc + (i + 4)] = _mm512_reduce_add_ps(c14);
+            C[(size_t)(j + 2) * ldc + (i + 0)] = _mm512_reduce_add_ps(c20);
+            C[(size_t)(j + 2) * ldc + (i + 1)] = _mm512_reduce_add_ps(c21);
+            C[(size_t)(j + 2) * ldc + (i + 2)] = _mm512_reduce_add_ps(c22);
+            C[(size_t)(j + 2) * ldc + (i + 3)] = _mm512_reduce_add_ps(c23);
+            C[(size_t)(j + 2) * ldc + (i + 4)] = _mm512_reduce_add_ps(c24);
+            C[(size_t)(j + 3) * ldc + (i + 0)] = _mm512_reduce_add_ps(c30);
+            C[(size_t)(j + 3) * ldc + (i + 1)] = _mm512_reduce_add_ps(c31);
+            C[(size_t)(j + 3) * ldc + (i + 2)] = _mm512_reduce_add_ps(c32);
+            C[(size_t)(j + 3) * ldc + (i + 3)] = _mm512_reduce_add_ps(c33);
+            C[(size_t)(j + 3) * ldc + (i + 4)] = _mm512_reduce_add_ps(c34);
+            C[(size_t)(j + 4) * ldc + (i + 0)] = _mm512_reduce_add_ps(c40);
+            C[(size_t)(j + 4) * ldc + (i + 1)] = _mm512_reduce_add_ps(c41);
+            C[(size_t)(j + 4) * ldc + (i + 2)] = _mm512_reduce_add_ps(c42);
+            C[(size_t)(j + 4) * ldc + (i + 3)] = _mm512_reduce_add_ps(c43);
+            C[(size_t)(j + 4) * ldc + (i + 4)] = _mm512_reduce_add_ps(c44);
         }
     }
 }
@@ -130,6 +234,107 @@ void jam_mm_f32_avx512(void* arg, int row_begin, int row_end, int tid) {
         long jend = jc + nc < J->n ? jc + nc : J->n;
         mnpack((const float*) J->a, J->lda, (const float*) J->b, J->ldb, (float*) J->c, J->ldc,
                row_begin, row_end, jc, jend, k);
+    }
+}
+
+
+/* ======================= packed-panel F32 (BLIS-style microkernel) =======================
+ * The vector-along-k tiles above are load-bound: every FMA consumes two fresh k-vectors, so the
+ * shape saturates L2/L3 long before the FMA ports. This path restructures F32 into the classic
+ * GEMM form: activations are TRANSPOSED once into token-major panels (xp[panel][t][32 tokens]),
+ * and the microkernel broadcasts 8 weight scalars per k-element against 2 panel vectors -
+ * 16 FMAs per ~10 load-uops, all panel traffic L2-resident (32 tokens x k x 4B <= 256KB @ k=2048).
+ * Weights stream row-major (8 sequential streams, prefetcher-friendly). Output goes through a
+ * small stack tile then scalar stores (amortized over the whole k loop). */
+
+/* phase 1: transpose activation token-panels of 32 into xp. One task per panel. */
+void jam_f32_pack_avx512(void* arg, int pb, int pe, int tid) {
+    (void) tid;
+    const jam_f32p_job* J = (const jam_f32p_job*) arg;
+    const float* X = J->x;
+    const long k = J->k, ldx = J->ldx;
+    const int n = J->n;
+    for (int p = pb; p < pe; p++) {
+        float* out = J->xp + (size_t) p * 32 * k;   /* panel layout: [t][32] */
+        int j0 = p * 32;
+        int cols = n - j0 < 32 ? n - j0 : 32;
+        /* column-at-a-time scatter: each source row is read sequentially (streams well); the
+         * strided stores land in the L2-resident panel. The pack touches n*k floats ONCE against
+         * a k-deep reuse in phase 2 - not worth an in-register transpose. */
+        for (int j = 0; j < cols; j++) {
+            const float* xs = X + (size_t)(j0 + j) * ldx;
+            float* o = out + j;
+            for (long t = 0; t < k; t++) o[(size_t) t * 32] = xs[t];
+        }
+        for (int j = cols; j < 32; j++) {
+            float* o = out + j;
+            for (long t = 0; t < k; t++) o[(size_t) t * 32] = 0.f;
+        }
+    }
+}
+
+/* phase 2: 8 weight rows x one 32-token panel; 16 accumulators, broadcast-FMA at full port rate. */
+void jam_mm_f32p_avx512(void* arg, int rb, int re, int tid) {
+    (void) tid;
+    const jam_f32p_job* J = (const jam_f32p_job*) arg;
+    const float* W = J->w;
+    float* C = (float*) J->c;
+    const long ldw = J->ldw, ldc = J->ldc, k = J->k;
+    const int n = J->n, npanels = (n + 31) / 32;
+    for (int p = 0; p < npanels; p++) {
+        const float* xp = J->xp + (size_t) p * 32 * k;
+        int j0 = p * 32;
+        int cols = n - j0 < 32 ? n - j0 : 32;
+        int r = rb;
+        for (; r + 8 <= re; r += 8) {
+            const float* w[8];
+            for (int a = 0; a < 8; ++a) w[a] = W + (size_t)(r + a) * ldw;
+            __m512 c0a = _mm512_setzero_ps(), c0b = c0a, c1a = c0a, c1b = c0a,
+                   c2a = c0a, c2b = c0a, c3a = c0a, c3b = c0a,
+                   c4a = c0a, c4b = c0a, c5a = c0a, c5b = c0a,
+                   c6a = c0a, c6b = c0a, c7a = c0a, c7b = c0a;
+            for (long t = 0; t < k; t++) {
+                __m512 xa = _mm512_loadu_ps(xp + (size_t) t * 32);
+                __m512 xb = _mm512_loadu_ps(xp + (size_t) t * 32 + 16);
+                __m512 b0 = _mm512_set1_ps(w[0][t]), b1 = _mm512_set1_ps(w[1][t]);
+                c0a = _mm512_fmadd_ps(b0, xa, c0a); c0b = _mm512_fmadd_ps(b0, xb, c0b);
+                c1a = _mm512_fmadd_ps(b1, xa, c1a); c1b = _mm512_fmadd_ps(b1, xb, c1b);
+                __m512 b2 = _mm512_set1_ps(w[2][t]), b3 = _mm512_set1_ps(w[3][t]);
+                c2a = _mm512_fmadd_ps(b2, xa, c2a); c2b = _mm512_fmadd_ps(b2, xb, c2b);
+                c3a = _mm512_fmadd_ps(b3, xa, c3a); c3b = _mm512_fmadd_ps(b3, xb, c3b);
+                __m512 b4 = _mm512_set1_ps(w[4][t]), b5 = _mm512_set1_ps(w[5][t]);
+                c4a = _mm512_fmadd_ps(b4, xa, c4a); c4b = _mm512_fmadd_ps(b4, xb, c4b);
+                c5a = _mm512_fmadd_ps(b5, xa, c5a); c5b = _mm512_fmadd_ps(b5, xb, c5b);
+                __m512 b6 = _mm512_set1_ps(w[6][t]), b7 = _mm512_set1_ps(w[7][t]);
+                c6a = _mm512_fmadd_ps(b6, xa, c6a); c6b = _mm512_fmadd_ps(b6, xb, c6b);
+                c7a = _mm512_fmadd_ps(b7, xa, c7a); c7b = _mm512_fmadd_ps(b7, xb, c7b);
+            }
+            float tile[8][32] __attribute__((aligned(64)));
+            _mm512_store_ps(tile[0], c0a); _mm512_store_ps(tile[0] + 16, c0b);
+            _mm512_store_ps(tile[1], c1a); _mm512_store_ps(tile[1] + 16, c1b);
+            _mm512_store_ps(tile[2], c2a); _mm512_store_ps(tile[2] + 16, c2b);
+            _mm512_store_ps(tile[3], c3a); _mm512_store_ps(tile[3] + 16, c3b);
+            _mm512_store_ps(tile[4], c4a); _mm512_store_ps(tile[4] + 16, c4b);
+            _mm512_store_ps(tile[5], c5a); _mm512_store_ps(tile[5] + 16, c5b);
+            _mm512_store_ps(tile[6], c6a); _mm512_store_ps(tile[6] + 16, c6b);
+            _mm512_store_ps(tile[7], c7a); _mm512_store_ps(tile[7] + 16, c7b);
+            for (int j = 0; j < cols; j++) {
+                float* o = C + (size_t)(j0 + j) * ldc + r;
+                for (int a = 0; a < 8; ++a) o[a] = tile[a][j];
+            }
+        }
+        for (; r < re; r++) {                        /* row tail: 1 x 32 */
+            const float* w = W + (size_t) r * ldw;
+            __m512 ca = _mm512_setzero_ps(), cb = ca;
+            for (long t = 0; t < k; t++) {
+                __m512 b = _mm512_set1_ps(w[t]);
+                ca = _mm512_fmadd_ps(b, _mm512_loadu_ps(xp + (size_t) t * 32), ca);
+                cb = _mm512_fmadd_ps(b, _mm512_loadu_ps(xp + (size_t) t * 32 + 16), cb);
+            }
+            float tile[32] __attribute__((aligned(64)));
+            _mm512_store_ps(tile, ca); _mm512_store_ps(tile + 16, cb);
+            for (int j = 0; j < cols; j++) C[(size_t)(j0 + j) * ldc + r] = tile[j];
+        }
     }
 }
 

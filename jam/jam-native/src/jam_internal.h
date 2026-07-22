@@ -84,6 +84,8 @@ struct jam_ctx {
 
     /* BF16 activation-conversion scratch (vdpbf16ps path) — same serial-stream contract as q_aq. */
     void*  bf_x;   size_t bf_x_cap;   /* bf16 [n*k] converted activations */
+    void*  f32_xp; size_t f32_xp_cap; /* f32 [npanels*32*k] transposed activation panels */
+    jam_task_fn f32p_kernel, f32p_pack;  /* packed-panel F32 path (avx512); NULL -> mnpack */
 
     void*  metal;                    /* jam_metal* GPU backend, or NULL (Apple, opt-in). Routes before CPU. */
 
@@ -120,7 +122,18 @@ void jam_mm_bf16_avx2(void* job, int row_begin, int row_end, int tid);      /* B
 void jam_mm_f32_avx512(void* job, int row_begin, int row_end, int tid);
 void jam_mm_f16_avx512(void* job, int row_begin, int row_end, int tid);     /* F16 dense, 4×4 tile */
 void jam_mm_bf16_avx512(void* job, int row_begin, int row_end, int tid);    /* BF16 dense, 4×4 tile */
+void jam_f32_pack_avx512(void* job, int p_begin, int p_end, int tid);       /* token-panel transpose */
+void jam_mm_f32p_avx512(void* job, int row_begin, int row_end, int tid);    /* packed broadcast 8x32 */
 #endif
+
+/* ---- packed-panel F32: phase 1 transposes activations into xp, phase 2 broadcast-FMAs ---- */
+typedef struct {
+    const float* w; long ldw;
+    const float* x; long ldx;
+    float*       xp;             /* [ceil(n/32)*32*k] token-major panels */
+    void*        c; long ldc;
+    int n; long k;
+} jam_f32p_job;
 #ifdef JAM_HAVE_AVX512BF16
 void jam_bf16_cvt_avx512bf16(void* job, int row_begin, int row_end, int tid);  /* F32 -> bf16 scratch */
 void jam_mm_bf16_avx512bf16(void* job, int row_begin, int row_end, int tid);   /* vdpbf16ps 4×4 tile */
