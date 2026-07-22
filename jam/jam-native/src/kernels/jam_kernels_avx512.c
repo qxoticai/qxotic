@@ -42,6 +42,39 @@ static void gemm_##RM##x##RN(const float* A, long lda, const float* B, long ldb,
     }                                                                                               \
 }
 
+/* 5x5: 25 acc + 5 A-rows + 1 live B-row = 31 zmm. Per k-step: 10 loads for 25 FMAs - higher
+ * flops-per-L2-byte than 4x4 (16 FMAs per 8 loads), which is the difference on Zen 5 where the
+ * 4x4 shape sits exactly at the L2 load-bandwidth limit. Mirrors tinyBLAS's AVX-512 tile. */
+static void gemm_5x5(const float* A, long lda, const float* B, long ldb,
+                     float* C, long ldc, long i0, long iend, long j0, long jend, long k) {
+    for (long i = i0; i + 5 <= iend; i += 5) {
+        for (long j = j0; j + 5 <= jend; j += 5) {
+            __m512 acc[5][5];
+            for (int b = 0; b < 5; ++b) for (int a = 0; a < 5; ++a) acc[b][a] = _mm512_setzero_ps();
+            long t = 0;
+            for (; t + 16 <= k; t += 16) {
+                __m512 av[5];
+                for (int a = 0; a < 5; ++a) av[a] = _mm512_loadu_ps(A + (i + a) * lda + t);
+                for (int b = 0; b < 5; ++b) {
+                    __m512 bv = _mm512_loadu_ps(B + (j + b) * ldb + t);
+                    for (int a = 0; a < 5; ++a) acc[b][a] = _mm512_fmadd_ps(av[a], bv, acc[b][a]);
+                }
+            }
+            if (t < k) {
+                __mmask16 mk = (__mmask16) ((1u << (k - t)) - 1);
+                __m512 av[5];
+                for (int a = 0; a < 5; ++a) av[a] = _mm512_maskz_loadu_ps(mk, A + (i + a) * lda + t);
+                for (int b = 0; b < 5; ++b) {
+                    __m512 bv = _mm512_maskz_loadu_ps(mk, B + (j + b) * ldb + t);
+                    for (int a = 0; a < 5; ++a) acc[b][a] = _mm512_fmadd_ps(av[a], bv, acc[b][a]);
+                }
+            }
+            for (int b = 0; b < 5; ++b) for (int a = 0; a < 5; ++a)
+                C[(size_t)(j + b) * ldc + (i + a)] = _mm512_reduce_add_ps(acc[b][a]);
+        }
+    }
+}
+
 JAM_GEMM_TILE(4,4) JAM_GEMM_TILE(4,2) JAM_GEMM_TILE(4,1)
 JAM_GEMM_TILE(2,4) JAM_GEMM_TILE(2,2) JAM_GEMM_TILE(2,1)
 JAM_GEMM_TILE(1,4) JAM_GEMM_TILE(1,2) JAM_GEMM_TILE(1,1)
@@ -52,10 +85,13 @@ static void mnpack(const float* A, long lda, const float* B, long ldb, float* C,
                    long i0, long iend, long j0, long jend, long k) {
     long mrem = iend - i0, nrem = jend - j0;
     if (mrem <= 0 || nrem <= 0) return;
-    long mc = mrem >= 4 ? 4 : mrem >= 2 ? 2 : 1;
-    long nc = nrem >= 4 ? 4 : nrem >= 2 ? 2 : 1;
+    long mc = mrem >= 5 ? 5 : mrem >= 4 ? 4 : mrem >= 2 ? 2 : 1;
+    long nc = nrem >= 5 ? 5 : nrem >= 4 ? 4 : nrem >= 2 ? 2 : 1;
+    if (mc == 5 && nc != 5) mc = 4;   /* only the 5x5 pairing exists; degrade to the 4-ladder */
+    if (nc == 5 && mc != 5) nc = 4;
 
     switch (mc * 10 + nc) {
+        case 55: gemm_5x5(A,lda,B,ldb,C,ldc,i0,iend,j0,jend,k); break;
         case 44: gemm_4x4(A,lda,B,ldb,C,ldc,i0,iend,j0,jend,k); break;
         case 42: gemm_4x2(A,lda,B,ldb,C,ldc,i0,iend,j0,jend,k); break;
         case 41: gemm_4x1(A,lda,B,ldb,C,ldc,i0,iend,j0,jend,k); break;
@@ -73,18 +109,19 @@ static void mnpack(const float* A, long lda, const float* B, long ldb, float* C,
 }
 
 /* Row-range kernel (jam_task_fn): the engine pool hands each thread output rows [row_begin,row_end).
- * We block the N (activation-column) loop into panels whose k-vectors fit ~half of L2, so each B-panel
- * stays resident and is reused across every M-tile in the band instead of the whole B (which exceeds L2)
- * being re-streamed from L3 per M-tile. A is re-read once per panel — a small cost against the large drop
- * in B traffic. Panel width is kept a multiple of the 4-wide register tile. */
+ * We block the N (activation-column) loop into panels whose k-vectors fit most of L3: B (activations)
+ * stays L3-resident and is re-read per M-tile from there, while A (the WEIGHTS - the far larger
+ * operand in LLM shapes) streams from DRAM exactly once per panel. The old ~half-L2 panel had that
+ * backwards: with ~10 panels the whole multi-GB weight matrix was re-streamed 10x, which is why F32
+ * prefill sat at ~half of llama.cpp. Panel width stays a multiple of the 4-wide register tile. */
 void jam_mm_f32_avx512(void* arg, int row_begin, int row_end, int tid) {
     (void) tid;
     const jam_mm_job* J = (const jam_mm_job*) arg;
     long k = J->k;
     static long panel_bytes = 0;                           /* one-time read; benign race (idempotent) */
     if (!panel_bytes) {
-        const char* pk = getenv("JAM_F32_PANEL_KB");       /* tunable per-uarch; ~half of L2 works well */
-        panel_bytes = (pk ? atoi(pk) : 384) * 1024L;
+        const char* pk = getenv("JAM_F32_PANEL_KB");       /* tunable per-uarch; ~3/4 of L3 by default */
+        panel_bytes = (pk ? atoi(pk) : 24576) * 1024L;
     }
     long nc = panel_bytes / (k * (long) sizeof(float));    /* cols whose k-vectors fill the panel */
     nc &= ~3L;                                             /* align to the register-tile width */

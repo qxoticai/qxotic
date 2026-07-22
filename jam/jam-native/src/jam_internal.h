@@ -72,6 +72,8 @@ struct jam_ctx {
     jam_task_fn      dense_f16_kernel;   /* AVX-512 F16 dense (k%16==0); NULL -> generic floor */
     jam_task_fn      dense_f32_kernel;   /* row-blocked dense F32 (avx2, k%8==0); NULL where mnpack wins (avx512) */
     jam_task_fn      dense_bf16_kernel;  /* AVX-512 BF16 dense (k%16==0); NULL -> generic floor */
+    jam_task_fn      bf16z_kernel;       /* AVX512-BF16 vdpbf16ps tile (k%32==0); NULL -> dense_bf16 */
+    jam_task_fn      bf16z_cvt;          /* its phase 1: F32 activations -> bf16 scratch */
 
     /* Q8_0 VNNI activation-requant scratch (context-owned, grown lazily). Assumes a context is used
      * serially (the global ctx by jinfer's forward thread); concurrent jam_mm on ONE ctx would race
@@ -79,6 +81,9 @@ struct jam_ctx {
     void*  q_aq;   size_t q_aq_cap;   /* int8 [n*k] requantized activations */
     void*  q_ad;   size_t q_d_cap;   /* float [n*nb] per-block scales (q_asum shares this cap) */
     void*  q_asum;                    /* float [n*nb] per-block Σ int8 acts (K-quant min term) */
+
+    /* BF16 activation-conversion scratch (vdpbf16ps path) — same serial-stream contract as q_aq. */
+    void*  bf_x;   size_t bf_x_cap;   /* bf16 [n*k] converted activations */
 
     void*  metal;                    /* jam_metal* GPU backend, or NULL (Apple, opt-in). Routes before CPU. */
 
@@ -116,6 +121,19 @@ void jam_mm_f32_avx512(void* job, int row_begin, int row_end, int tid);
 void jam_mm_f16_avx512(void* job, int row_begin, int row_end, int tid);     /* F16 dense, 4×4 tile */
 void jam_mm_bf16_avx512(void* job, int row_begin, int row_end, int tid);    /* BF16 dense, 4×4 tile */
 #endif
+#ifdef JAM_HAVE_AVX512BF16
+void jam_bf16_cvt_avx512bf16(void* job, int row_begin, int row_end, int tid);  /* F32 -> bf16 scratch */
+void jam_mm_bf16_avx512bf16(void* job, int row_begin, int row_end, int tid);   /* vdpbf16ps 4×4 tile */
+#endif
+
+/* ---- BF16 (weight) @ F32 (activation) via vdpbf16ps: phase 1 converts activations into xb ---- */
+typedef struct {
+    const uint16_t* w; long ldw;    /* BF16 weight [m×k] */
+    const float*    x; long ldx;    /* F32 activation [n×k] */
+    uint16_t*       xb;             /* [n*k] bf16-converted activations (phase-1 output) */
+    void*           c; long ldc;    /* F32 output, token-major */
+    int n; long k;
+} jam_bf16_job;
 
 /* ---- Q8_0 (weight) @ F32 (activation) -> F32 ----
  * aq/ad/asum are the requantized-B scratch used ONLY by the VNNI path (requant phase fills them, the
