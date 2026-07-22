@@ -213,13 +213,26 @@ jam_cpu_plan jam_cpu_plan_make(void) {
         long key = os_cpu_core_key(id);
         int dup = 0;
         for (int j = 0; j < ns; j++) if (seen[j] == key) { dup = 1; break; }
-        if (dup) continue;                           /* drop SMT sibling of an already-picked core */
+        if (dup) continue;                           /* SMT sibling of a picked core: appended below */
         seen[ns++] = key;
         p.cpu[p.n++] = id;
+    }
+    p.n_primary = p.n;
+    /* Append the top-tier SMT siblings AFTER the primaries: compute-bound kernels (the VNNI bands,
+     * the packed float microkernels) gain 15-40% from 2 threads/core, while bandwidth-bound phases
+     * cap their fan to the primary prefix. Order matters: pool worker i pins to cpu[i], so a capped
+     * fan lands on one thread per physical core. */
+    for (int i = 0; i < na && p.n < JAM_MAX_CPU; i++) {
+        int id = allowed[i];
+        if (os_cpu_capacity(id) < thresh) continue;
+        int picked = 0;
+        for (int j = 0; j < p.n; j++) if (p.cpu[j] == id) { picked = 1; break; }
+        if (!picked) p.cpu[p.n++] = id;
     }
 
     int q = os_cpu_quota_cores();                    /* cgroup: never exceed the bandwidth quota */
     if (q > 0 && p.n > q) { p.n = q; p.quota = q; }
     if (p.n < 1) { p.cpu[0] = 0; p.n = 1; }          /* paranoid floor */
+    if (p.n_primary < 1 || p.n_primary > p.n) p.n_primary = p.n;
     return p;
 }

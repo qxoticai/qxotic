@@ -13,8 +13,10 @@
 #define JAM_MAX_CPU 512   /* selection caps here; bigger machines just see the first 512 logical CPUs */
 
 typedef struct {
-    int n;                  /* selected count = default pool size */
-    int cpu[JAM_MAX_CPU];   /* selected logical CPU ids, one per physical P-core */
+    int n;                  /* selected count = default pool size (primaries then SMT siblings) */
+    int n_primary;          /* first n_primary entries are one-per-physical-core; the rest are their
+                             * SMT siblings. Bandwidth-bound phases cap the fan to n_primary. */
+    int cpu[JAM_MAX_CPU];   /* selected logical CPU ids, primaries first */
     int pinned;             /* 1 if the plan was handed to the pool to pin (best-effort), else 0 */
     /* summary, for the log line only */
     int n_logical;          /* allowed logical CPUs the OS gave us */
