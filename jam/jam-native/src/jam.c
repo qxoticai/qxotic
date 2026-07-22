@@ -281,6 +281,11 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
         c->dense_f16_kernel = jam_mm_f16_avx512; c->dense_bf16_kernel = jam_mm_bf16_avx512;
         c->dense_f32_kernel = 0; /* avx512 mnpack beats the avx2 dense shape */ }
     if (cpu >= JAM_ISA_AVX512_VNNI) c->q8_kernel  = jam_mm_q8_0_avx512;    /* 512-bit VNNI (best) */
+#ifdef JAM_HAVE_AVX512BF16
+    /* orthogonal to the ladder (like AVX-VNNI): needs the explicit feature, not just the level */
+    if (cpu >= JAM_ISA_AVX512 && __builtin_cpu_supports("avx512bf16")) {
+        c->bf16z_kernel = jam_mm_bf16_avx512bf16; c->bf16z_cvt = jam_bf16_cvt_avx512bf16; }
+#endif
     c->q4k_avail = (cpu >= JAM_ISA_AVX512_VNNI);                               /* Q4_K is VNNI-only */
 #endif
     /* ARM: NEON/DOTPROD/I8MM are a clean superset chain (detect returns the highest fully present). */
@@ -322,6 +327,7 @@ void jam_ctx_destroy(jam_ctx* ctx) {
 #endif
     if (ctx->ipool) jam_pool_destroy(ctx->ipool);
     free(ctx->q_aq); free(ctx->q_ad); free(ctx->q_asum);
+    free(ctx->bf_x);
     free(ctx->kq_xq); free(ctx->kq_dx); free(ctx->kq_xsum);
     for (int i = 0; i < ctx->kq_repack_n; i++) { jam_aligned_free(ctx->kq_repack[i].qs); jam_aligned_free(ctx->kq_repack[i].dw); jam_aligned_free(ctx->kq_repack[i].mw); }
     free(ctx->kq_repack);
@@ -615,6 +621,22 @@ static jam_status jam_mm_run(jam_ctx* ctx,
         jam_task_fn fastd = (ctx->dense_f32_kernel && (k % 8 == 0)) ? ctx->dense_f32_kernel : ctx->f32_kernel;
         jam_run(ctx, m, fastd, &job);   /* pool fans the row-range kernel over m weight rows */
         return JAM_OK;
+    }
+
+    /* BF16 via native vdpbf16ps (Zen4+/CPX): convert activations to bf16 once, then the dp tile —
+     * twice the MAC rate of the convert-FMA tile below. Falls through when unavailable/misaligned. */
+    if (wt == JAM_BF16 && at == JAM_F32 && ct == JAM_F32 && ctx->bf16z_kernel && (k % 32 == 0)) {
+        size_t need = (size_t) n * (size_t) k * sizeof(uint16_t);
+        if (need > ctx->bf_x_cap) {
+            free(ctx->bf_x); ctx->bf_x = malloc(need); ctx->bf_x_cap = ctx->bf_x ? need : 0;
+        }
+        if (ctx->bf_x) {
+            jam_bf16_job job = { (const uint16_t*) w, ldw, (const float*) a, lda,
+                                 (uint16_t*) ctx->bf_x, c, ldc, n, k };
+            jam_run(ctx, n, ctx->bf16z_cvt, &job);      /* phase 1: rows of A -> bf16 scratch */
+            jam_run(ctx, m, ctx->bf16z_kernel, &job);   /* phase 2: weight-row range tile */
+            return JAM_OK;
+        }
     }
 
     /* F16 / BF16 DENSE weight @ F32 -> F32. AVX-512 4×4 tile when k%16==0, else the portable floor. */

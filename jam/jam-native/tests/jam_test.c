@@ -307,10 +307,13 @@ static void suite_dense(int dtype, const char* name, int m, int n, int k) {
         ++g_checks; memset(C,0,4*(size_t)m*n);
         int st = jam_mm(CTX[c].c, W, dtype, k, X, JAM_F32, k, C, JAM_F32, m, m, n, k);
         int bad=0;
+        /* BF16's vdpbf16ps path rounds activations to bf16 (see PREC_MAX note): both operands at
+         * ~8 mantissa bits puts unlucky dots past 1e-2 relative - that is the format, not a bug. */
+        double at = (dtype==JAM_BF16) ? 5e-2 : 1e-3, rt = (dtype==JAM_BF16) ? 2e-2 : 1e-2;
         for (int r=0;r<m;r++) for (int s=0;s<n;s++) {
             double e=fabs(R[(size_t)r*n+s]-C[(size_t)s*m+r]);
             track_prec(name, e, R[(size_t)r*n+s]);
-            if (e > 1e-3 + 1e-2*fabs(R[(size_t)r*n+s])) ++bad;
+            if (e > at + rt*fabs(R[(size_t)r*n+s])) ++bad;
         }
         if (st||bad){ printf("  [FAIL] %-5s %-15s %4dx%4dx%4d  bad=%d st=%d\n",name,CTX[c].lbl,m,n,k,bad,st); ++g_fail; }
     }
@@ -693,7 +696,11 @@ int main(void) {
     static const struct { const char* nm; double abs, rel; } PREC_MAX[] = {
         {"F32",3e-3,2e-4}, {"Q8_0",5e-4,5e-5}, {"MXFP4",5e-4,5e-5}, {"NVFP4",5e-4,5e-5}, {"Q1_0",5e-3,5e-5},
         {"Q4_K",4e-3,1.5e-3}, {"Q5_K",5e-3,2e-3}, {"Q6_K",6e-3,1.5e-3}, {"Q4_0",5e-4,5e-5},
-        {"F16",1e-3,1e-4}, {"BF16",1e-3,1e-4},
+        {"F16",1e-3,1e-4},
+        /* BF16: the vdpbf16ps path (Zen4+/CPX) rounds the ACTIVATIONS to bf16 too (llama.cpp's
+         * tinyBLAS contract) - ~8 mantissa bits on both operands, so ~1e-2 relative on a dot is the
+         * format's honest noise floor, not a kernel regression. */
+        {"BF16",5e-2,2e-2},
     };
     printf("\nprecision — worst error vs nearest reference (max over all contexts + sizes; bound = ~10x observed):\n");
     for (int i=0;i<g_prec_n;i++) {

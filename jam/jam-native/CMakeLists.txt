@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
+include(CheckCCompilerFlag)
 project(jam C)
 
 set(CMAKE_C_STANDARD 11)
@@ -93,6 +94,19 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
         $<$<BOOL:${JAM_Q8_RN}>:JAM_Q8_RN=${JAM_Q8_RN}>)
     target_sources(jam PRIVATE $<TARGET_OBJECTS:jam_avx512>)
     target_compile_definitions(jam PRIVATE JAM_HAVE_AVX512=1)   # so the dispatcher binds the symbols
+
+    # AVX512-BF16 (Zen 4+/Cooper Lake): vdpbf16ps dense BF16 tile. Own TU so the flag can't leak;
+    # bound at create only when the CPU reports avx512bf16.
+    check_c_compiler_flag(-mavx512bf16 JAM_CC_AVX512BF16)
+    if (JAM_CC_AVX512BF16)
+        add_library(jam_bf16z OBJECT src/kernels/jam_kernels_bf16_avx512bf16.c)
+        target_include_directories(jam_bf16z PRIVATE include src)
+        target_compile_options(jam_bf16z PRIVATE
+            -mavx512f -mavx512bw -mavx512dq -mavx512vl -mavx512bf16 -mfma)
+        target_compile_definitions(jam_bf16z PRIVATE JAM_HAVE_AVX512BF16=1)
+        target_sources(jam PRIVATE $<TARGET_OBJECTS:jam_bf16z>)
+        target_compile_definitions(jam PRIVATE JAM_HAVE_AVX512BF16=1)
+    endif()
 
     # Q4_K (and future K-quants) — AVX-512-VNNI, ported from jinferjni.c (16-row repack scheme).
     add_library(jam_q4k OBJECT src/kernels/jam_kernels_q4k_avx512.c)
