@@ -12,6 +12,7 @@ import com.qxotic.jinfer.jinja.CompiledTemplate;
 import com.qxotic.jinfer.jinja.JinjaRenderer;
 import com.qxotic.jinfer.llm.*;
 import com.qxotic.toknroll.IntSequence;
+import com.qxotic.toknroll.Tokenizer;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -26,13 +27,24 @@ import java.util.Map;
  */
 final class JinjaChatTemplate {
 
-    private final GgufTokenizer tokenizer;
+    private final Tokenizer tokenizer;
     private final CompiledTemplate template; // null: GGUF carries none or it failed to parse
+    private final com.qxotic.toknroll.Specials specials; // compiled once per model
+    private final List<String> specialNames; // longest-first, for the content scrub
 
-    JinjaChatTemplate(GgufTokenizer tokenizer) {
+    JinjaChatTemplate(Tokenizer tokenizer, String source) {
         this.tokenizer = tokenizer;
-        String source = tokenizer.chatTemplateSource();
         this.template = source.isEmpty() ? null : JinjaRenderer.template(source);
+        this.specials = SpecialTokens.encoder(tokenizer);
+        // Think markers are exempt from the scrub: templates legitimately PROCESS them as text in
+        // echoed history (content.split("</think>")), and a content-minted think id toggles
+        // reasoning display, not roles - the injection vectors that matter are the turn/role
+        // scaffold.
+        this.specialNames =
+                specials.tokens().stream()
+                        .filter(n -> !n.equals("<think>") && !n.equals("</think>"))
+                        .sorted((a, b) -> b.length() - a.length())
+                        .toList();
     }
 
     /**
@@ -47,6 +59,12 @@ final class JinjaChatTemplate {
             boolean addGenerationPrompt,
             boolean enableThinking,
             Map<String, Object> kwargs) {
+        // The whole-render path re-scans the rendered string with special-token awareness, so
+        // content could otherwise mint control ids (llama.cpp ships this hole unmitigated).
+        // Scrub special-token strings out of every request-supplied string first; the template's
+        // own scaffold is added AFTER the scrub and re-scans as intended.
+        messages = scrubbed(messages);
+        tools = tools == null ? null : scrubbed(tools);
         CompiledTemplate tpl = template;
         if (tpl == null) {
             return chatMl(messages, tools, addGenerationPrompt);
@@ -59,8 +77,32 @@ final class JinjaChatTemplate {
         vars.put("tools", tools);
         vars.put("enable_thinking", enableThinking);
         vars.put("preserve_thinking", false);
-        if (kwargs != null) vars.putAll(kwargs);
-        return tokenizer.encodeWithSpecialTokens(tpl.render(vars));
+        if (PROPERTY_KWARGS != null) vars.putAll(PROPERTY_KWARGS);
+        if (kwargs != null) vars.putAll(kwargs); // per-request kwargs win over the property
+        return specials.encode(tokenizer, tpl.render(vars));
+    }
+
+    /** Raw-prompt authoring: specials map to ids (the compiled per-model encoder, reused). */
+    IntSequence encodeRaw(String text) {
+        return specials.encode(tokenizer, text);
+    }
+
+    /**
+     * Extra template variables from {@code -Djinfer.chatTemplateKwargs} (a JSON object, e.g. {@code
+     * {"keep_past_thinking": true}}), applied to every whole-render request under any per-request
+     * {@code chat_template_kwargs}. Parsed once; a malformed value fails fast at startup.
+     */
+    private static final Map<String, Object> PROPERTY_KWARGS = propertyKwargs();
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> propertyKwargs() {
+        String json = System.getProperty("jinfer.chatTemplateKwargs");
+        if (json == null || json.isBlank()) return null;
+        Object parsed = JsonCodec.parse(json);
+        if (!(parsed instanceof Map))
+            throw new IllegalArgumentException(
+                    "-Djinfer.chatTemplateKwargs must be a JSON object: " + json);
+        return (Map<String, Object>) parsed;
     }
 
     /**
@@ -109,7 +151,7 @@ final class JinjaChatTemplate {
                     .append("<|im_end|>\n");
         }
         if (addGenerationPrompt) sb.append("<|im_start|>assistant\n");
-        return tokenizer.encodeWithSpecialTokens(sb.toString());
+        return specials.encode(tokenizer, sb.toString());
     }
 
     /**
@@ -165,21 +207,66 @@ final class JinjaChatTemplate {
         return out;
     }
 
-    /** The text representation of a special token, or null if absent. */
-    private static String specialTokenString(GgufTokenizer t, String name) {
-        Integer id = t.getSpecialTokens().get(name);
-        return id != null ? t.decode(id) : null;
-    }
-
     /**
      * The text of the first present special token among {@code names} (preferred name first), or
      * null if none exist — e.g. {@code <bos>} with a {@code <|startoftext|>} fallback.
      */
-    private static String firstSpecialString(GgufTokenizer t, String... names) {
-        for (String name : names) {
-            String text = specialTokenString(t, name);
-            if (text != null) return text;
+    private static String firstSpecialString(Tokenizer t, String... names) {
+        java.util.OptionalInt id = SpecialTokens.findFirst(t, names);
+        return id.isPresent() ? t.decode(new int[] {id.getAsInt()}) : null;
+    }
+
+    /**
+     * A deep copy of {@code values} with every String scrubbed: any embedded special-token string
+     * gets a zero-width space after its first character, breaking the longest-match rescan without
+     * visibly changing the text. Content can then never mint control ids through the whole-render
+     * path. Keys and non-string scalars pass through untouched.
+     */
+    @SuppressWarnings("unchecked")
+    private <T> List<T> scrubbed(List<T> values) {
+        return (List<T>) scrubValue(values, specialNames);
+    }
+
+    static Object scrubValue(Object value, List<String> names) {
+        // Identity fast path: the common clean request allocates nothing - a node is copied only
+        // when a descendant string actually changed.
+        if (value instanceof String s) return scrub(s, names);
+        if (value instanceof List<?> list) {
+            ArrayList<Object> out = null;
+            for (int i = 0; i < list.size(); i++) {
+                Object scrubbed = scrubValue(list.get(i), names);
+                if (out == null && scrubbed != list.get(i)) {
+                    out = new ArrayList<>(list.subList(0, i));
+                }
+                if (out != null) out.add(scrubbed);
+            }
+            return out != null ? out : value;
         }
-        return null;
+        if (value instanceof Map<?, ?> map) {
+            LinkedHashMap<Object, Object> out = null;
+            for (Map.Entry<?, ?> e : map.entrySet()) {
+                Object scrubbed = scrubValue(e.getValue(), names);
+                if (out == null && scrubbed != e.getValue()) {
+                    out = new LinkedHashMap<>();
+                    for (Map.Entry<?, ?> prior : map.entrySet()) {
+                        if (prior.getKey().equals(e.getKey())) break;
+                        out.put(prior.getKey(), prior.getValue());
+                    }
+                }
+                if (out != null) out.put(e.getKey(), scrubbed);
+            }
+            return out != null ? out : value;
+        }
+        return value;
+    }
+
+    static String scrub(String text, List<String> names) {
+        String out = text;
+        for (String name : names) {
+            if (out.contains(name)) {
+                out = out.replace(name, name.charAt(0) + "\u200b" + name.substring(1));
+            }
+        }
+        return out; // == text (same reference) when nothing matched
     }
 }

@@ -27,7 +27,7 @@ public record LLMOptions(
         boolean rawPrompt,
         List<String> warmPrompts,
         boolean noGrammar,
-        Path sealedPrompt) {
+        Path frozenPrompt) {
 
     public LLMOptions {
         require(modelPath != null, "Missing argument: --model <path> is required");
