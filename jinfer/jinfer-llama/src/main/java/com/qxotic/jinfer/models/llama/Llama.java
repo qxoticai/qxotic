@@ -711,7 +711,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
         if (!loadWeightsFlag)
             return new Llama(config, tokenizer, Tokenizers.chatTemplateSource(gguf), seed, null);
         Map<String, GGMLTensorEntry> tensors = ModelLoader.loadTensors(fileChannel, gguf);
-        Pair<float[], float[]> rope = buildRope(gguf, arch, config, tensors);
+        RoPE.Freqs rope = buildRope(gguf, arch, config, tensors);
         return new Llama(
                 config,
                 tokenizer,
@@ -725,7 +725,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
      * (rope_freqs.weight), or plain RoPE (Llama/MiniCPM). Returns the interleaved cos/sin tables
      * applyInterleaved consumes.
      */
-    static Pair<float[], float[]> buildRope(
+    static RoPE.Freqs buildRope(
             GGUF gguf, String arch, Configuration config, Map<String, GGMLTensorEntry> tensors) {
         int ropeDim = Math.min(config.ropeDimensionCount, config.headSize);
         String scalingType = gguf.getValueOrDefault(String.class, arch + ".rope.scaling.type", "");
@@ -760,9 +760,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
     }
 
     static Weights loadWeights(
-            Map<String, GGMLTensorEntry> tensors,
-            Configuration config,
-            Pair<float[], float[]> rope) {
+            Map<String, GGMLTensorEntry> tensors, Configuration config, RoPE.Freqs rope) {
         int n = config.numberOfLayers;
         FloatTensor tokenEmbeddingTable =
                 ModelLoader.loadQuantized(tensors.get("token_embd.weight"));
@@ -783,7 +781,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                 ModelLoader.quantArray(n, i -> tensors.get("blk." + i + ".ffn_gate.weight")),
                 ModelLoader.quantArray(n, i -> tensors.get("blk." + i + ".ffn_up.weight")),
                 ModelLoader.quantArray(n, i -> tensors.get("blk." + i + ".ffn_down.weight")),
-                rope.first(),
-                rope.second());
+                rope.cos(),
+                rope.sin());
     }
 }

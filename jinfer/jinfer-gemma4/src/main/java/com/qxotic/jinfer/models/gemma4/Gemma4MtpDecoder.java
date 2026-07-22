@@ -6,7 +6,6 @@ import com.qxotic.jinfer.Activations;
 import com.qxotic.jinfer.F32FloatTensor;
 import com.qxotic.jinfer.FlashAttention;
 import com.qxotic.jinfer.FloatTensor;
-import com.qxotic.jinfer.Pair;
 import com.qxotic.jinfer.RoPE;
 
 /**
@@ -49,17 +48,16 @@ public final class Gemma4MtpDecoder {
         this.backboneOwnKv = backbone.config().ownKvLayers();
         int ctx = backbone.config().contextLength();
 
-        Pair<float[], float[]> swa =
-                RoPE.precomputeFreqsCis(ctx, cfg.headSizeSWA(), cfg.ropeThetaSWA());
-        Pair<float[], float[]> full =
+        RoPE.Freqs swa = RoPE.precomputeFreqsCis(ctx, cfg.headSizeSWA(), cfg.ropeThetaSWA());
+        RoPE.Freqs full =
                 w.ropeFreqFactors != null
                         ? RoPE.precomputeFreqsCisFromFreqs(
                                 ctx, cfg.headSizeFull(), cfg.ropeThetaFull(), w.ropeFreqFactors)
                         : RoPE.precomputeFreqsCis(ctx, cfg.headSizeFull(), cfg.ropeThetaFull());
-        this.realSWA = F32FloatTensor.of(swa.first());
-        this.imagSWA = F32FloatTensor.of(swa.second());
-        this.realFull = F32FloatTensor.of(full.first());
-        this.imagFull = F32FloatTensor.of(full.second());
+        this.realSWA = F32FloatTensor.of(swa.cos());
+        this.imagSWA = F32FloatTensor.of(swa.sin());
+        this.realFull = F32FloatTensor.of(full.cos());
+        this.imagFull = F32FloatTensor.of(full.sin());
 
         int dim = cfg.embeddingLength();
         int maxQ = cfg.numberOfHeads() * cfg.headSizeFull();

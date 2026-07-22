@@ -902,11 +902,11 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
 
     static Weights loadWeights(Map<String, GGMLTensorEntry> tensors, Configuration config) {
         int n = config.numberOfLayers;
-        Pair<float[], float[]> rope =
+        RoPE.Freqs rope =
                 RoPE.precomputeFreqsCis(
                         config.contextLength(), config.headSizeFull, config.ropeTheta);
-        F32FloatTensor ropeReal = F32FloatTensor.of(rope.first());
-        F32FloatTensor ropeImag = F32FloatTensor.of(rope.second());
+        F32FloatTensor ropeReal = F32FloatTensor.of(rope.cos());
+        F32FloatTensor ropeImag = F32FloatTensor.of(rope.sin());
 
         FloatTensor tokenEmbeddings = ModelLoader.loadQuantized(tensors.get("token_embd.weight"));
         FloatTensor wcls =

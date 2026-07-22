@@ -1515,7 +1515,7 @@ public final class Qwen35
                         : tokenEmbeddingTable;
 
         int ropeDim = Math.max(0, Math.min(config.ropeDimensionCount, config.headSize) & ~1);
-        Pair<float[], float[]> rope =
+        RoPE.Freqs rope =
                 ropeDim > 0
                         ? RoPE.precomputeFreqsCis(config.contextLength, ropeDim, config.ropeTheta)
                         : null;
@@ -1583,8 +1583,8 @@ public final class Qwen35
                                         tensors,
                                         "blk." + i + ".ffn_gate_inp_shexp.weight",
                                         "blk." + i + ".ffn_shared_expert_gate_inp.weight")),
-                rope != null ? rope.first() : null,
-                rope != null ? rope.second() : null,
+                rope != null ? rope.cos() : null,
+                rope != null ? rope.sin() : null,
                 ropeDim / 2);
     }
 }
