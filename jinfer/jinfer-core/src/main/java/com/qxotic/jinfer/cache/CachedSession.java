@@ -106,6 +106,21 @@ public final class CachedSession<S extends RuntimeState> {
     }
 
     /**
+     * Ingests {@code ids[from..)} with the final token committed as its own block - the
+     * PROMPT-COMPILER CONVENTION shared by {@link FrozenBlocks#compile} and the accumulating CLI
+     * cache: a later resume capped at N-1 lands exactly one token short, and the single-token
+     * re-ingest materializes fresh logits.
+     */
+    public void ingestSplitLast(int[] ids, int from) {
+        if (from >= ids.length) return;
+        int n = ids.length;
+        if (n - from > 1) {
+            ingest(List.of(Batch.prefill(java.util.Arrays.copyOfRange(ids, from, n - 1))));
+        }
+        ingest(List.of(Batch.prefill(new int[] {ids[n - 1]})));
+    }
+
+    /**
      * Ingests turn-aligned groups whose flattened fingerprints formed this session's resume stream,
      * skipping what the resume already restored: whole groups before the tip, and the restored HEAD
      * of a partially-covered group. A cache hit ends on a BLOCK boundary, which need not be a group

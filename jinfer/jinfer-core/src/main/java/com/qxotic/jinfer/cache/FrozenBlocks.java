@@ -34,24 +34,36 @@ public final class FrozenBlocks {
     static final int HEADER_BYTES = 64; // 4+4+32+4+8, padded
     static final int INDEX_ENTRY_BYTES = 96; // 32+32+4+4+8+8+4(crc)+4(pad)
     static final int ALIGN = 64;
+    static final int COUNT_OFFSET = 40; // magic(4) + version(4) + seed(32): count, then indexOffset
 
-    /** One frozen block: an opaque self-contained blob plus its position in the key chain. */
+    /**
+     * One frozen block: an opaque self-contained blob plus its position in the key chain. {@code
+     * offset} is the blob's file offset for opened artifacts; fresh (RAM) entries carry -1 until
+     * {@link #append} places them.
+     */
     record Entry(
             PromptCache.BlockKey key,
             PromptCache.BlockKey parentKey,
             int from,
             int to,
+            long offset,
             MemorySegment mem,
             int crc) {}
 
     private final Path file;
     private final List<Entry> entries; // BFS order: parents precede children
     private final long kvBytes;
+    private long indexOffset; // advances as append() publishes new indexes
 
-    private FrozenBlocks(Path file, List<Entry> entries, long kvBytes) {
+    private FrozenBlocks(Path file, List<Entry> entries, long kvBytes, long indexOffset) {
         this.file = file;
         this.entries = entries;
         this.kvBytes = kvBytes;
+        this.indexOffset = indexOffset;
+    }
+
+    Path file() {
+        return file;
     }
 
     /**
@@ -105,9 +117,9 @@ public final class FrozenBlocks {
             long offset = idx.getLong(), len = idx.getLong();
             int crc = idx.getInt();
             idx.getInt(); // pad
-            entries.add(new Entry(key, parentKey, from, to, map.asSlice(offset, len), crc));
+            entries.add(new Entry(key, parentKey, from, to, offset, map.asSlice(offset, len), crc));
         }
-        return new FrozenBlocks(file, entries, indexOffset - HEADER_BYTES);
+        return new FrozenBlocks(file, entries, indexOffset - HEADER_BYTES, indexOffset);
     }
 
     List<Entry> entries() {
@@ -133,21 +145,15 @@ public final class FrozenBlocks {
                 new PromptCache<>(
                         codec, com.qxotic.jinfer.CacheStore.inMemory(), Long.MAX_VALUE, modelSeed);
         CachedSession<S> session = CachedSession.resume(model, build, state, new long[0]);
-        // split a trailing token batch so the last token commits as its own block
-        List<com.qxotic.jinfer.Batch> batches = new ArrayList<>(prompt);
-        int lastIdx = batches.size() - 1;
-        if (!batches.isEmpty()
-                && batches.get(lastIdx).input() instanceof com.qxotic.jinfer.Batch.Input.Tokens t
+        // trailing token batch: the last token commits as its own block (see ingestSplitLast)
+        int lastIdx = prompt.size() - 1;
+        if (!prompt.isEmpty()
+                && prompt.get(lastIdx).input() instanceof com.qxotic.jinfer.Batch.Input.Tokens t
                 && t.ids().length > 1) {
-            int[] ids = t.ids();
-            batches.set(
-                    lastIdx,
-                    com.qxotic.jinfer.Batch.prefill(java.util.Arrays.copyOf(ids, ids.length - 1)));
-            session.ingest(batches);
-            session.ingest(
-                    List.of(com.qxotic.jinfer.Batch.prefill(new int[] {ids[ids.length - 1]})));
+            session.ingest(prompt.subList(0, lastIdx));
+            session.ingestSplitLast(t.ids(), 0);
         } else {
-            session.ingest(batches);
+            session.ingest(prompt);
         }
         build.freeze(out);
         return session.fingerprints();
@@ -179,6 +185,95 @@ public final class FrozenBlocks {
             S state,
             long[] fp) {
         return serve(model, codec, modelSeed, state, fp, fp.length);
+    }
+
+    /** The one index-entry field order, shared by every writer ({@code open} is its reader). */
+    static void putEntry(
+            ByteBuffer idx,
+            PromptCache.BlockKey key,
+            PromptCache.BlockKey parentKey,
+            int from,
+            int to,
+            long offset,
+            long byteLen,
+            int crc) {
+        putKey(idx, key);
+        putKey(idx, parentKey);
+        idx.putInt(from).putInt(to).putLong(offset).putLong(byteLen);
+        idx.putInt(crc);
+        idx.putInt(0); // pad
+    }
+
+    /**
+     * Appends {@code fresh} entries (mem still in RAM, BFS parents-first) to THIS artifact's file
+     * without rewriting existing KV: new blobs land after the current index, a fresh full index
+     * (this artifact's entries re-serialized + the new ones) lands after them, and the header flips
+     * only once everything is forced - a torn append leaves the old catalog intact behind the old
+     * header. Blob cost is proportional to the new blocks; the index rewrite is small (96 bytes per
+     * block) but each append leaves the PREVIOUS index as dead bytes, so a long-lived catalog
+     * accumulates O(appends^2) index garbage - compact by freezing to a fresh file when that ever
+     * matters. Partial state never touches disk: blocks only exist complete.
+     */
+    void append(List<Entry> fresh) throws IOException {
+        if (fresh.isEmpty()) return;
+        try (FileChannel ch =
+                FileChannel.open(file, StandardOpenOption.READ, StandardOpenOption.WRITE)) {
+            long off = align(indexOffset + (long) entries.size() * INDEX_ENTRY_BYTES);
+            long[] offsets = new long[fresh.size()];
+            for (int i = 0; i < fresh.size(); i++) {
+                offsets[i] = off;
+                ch.write(fresh.get(i).mem().asByteBuffer(), off);
+                off = align(off + fresh.get(i).mem().byteSize());
+            }
+            long newIndexOffset = off;
+            ByteBuffer idx =
+                    ByteBuffer.allocate((entries.size() + fresh.size()) * INDEX_ENTRY_BYTES)
+                            .order(ByteOrder.LITTLE_ENDIAN);
+            for (Entry e : entries) {
+                putEntry(
+                        idx,
+                        e.key(),
+                        e.parentKey(),
+                        e.from(),
+                        e.to(),
+                        e.offset(),
+                        e.mem().byteSize(),
+                        e.crc());
+            }
+            for (int i = 0; i < fresh.size(); i++) {
+                Entry e = fresh.get(i);
+                putEntry(
+                        idx,
+                        e.key(),
+                        e.parentKey(),
+                        e.from(),
+                        e.to(),
+                        offsets[i],
+                        e.mem().byteSize(),
+                        e.crc());
+            }
+            idx.flip();
+            ch.write(idx, newIndexOffset);
+            ch.force(true); // everything durable BEFORE the header flips
+            ByteBuffer flip = ByteBuffer.allocate(12).order(ByteOrder.LITTLE_ENDIAN);
+            flip.putInt(entries.size() + fresh.size()).putLong(newIndexOffset).flip();
+            ch.write(flip, COUNT_OFFSET);
+            ch.force(false); // in-place 12-byte publish: no size change to flush
+            // keep the parsed view coherent so a later append re-serializes the right index
+            for (int i = 0; i < fresh.size(); i++) {
+                Entry e = fresh.get(i);
+                entries.add(
+                        new Entry(
+                                e.key(),
+                                e.parentKey(),
+                                e.from(),
+                                e.to(),
+                                offsets[i],
+                                e.mem(),
+                                e.crc()));
+            }
+            indexOffset = newIndexOffset;
+        }
     }
 
     /** CRC32C of a blob - the frozen-block integrity stamp (store CRCs cover only pool blobs). */

@@ -116,4 +116,90 @@ public final class FrozenBlocksTest {
                 "commit onto a frozen chain dedups: same blocks, same bytes");
         assertTrue(tip.frozen, "the deduped tip IS the frozen block");
     }
+
+    @Test
+    void appendGrowsWithoutRewriting() throws Exception {
+        byte[] seed = {7};
+        BlockResumeTest.FakeCodec codec = new BlockResumeTest.FakeCodec();
+        long[] a = fp(12, 100);
+
+        // create via appendTo on a missing file (delegates to freeze)
+        Path file = Files.createTempFile("append", ".jkv");
+        Files.delete(file);
+        file.toFile().deleteOnExit();
+        PromptCache<BlockResumeTest.FakeState> first =
+                new PromptCache<>(codec, CacheStore.inMemory(), 1 << 20, seed);
+        BlockResumeTest.FakeState s = new BlockResumeTest.FakeState();
+        PromptCache<BlockResumeTest.FakeState>.Block tip = first.resume(new long[0], 0, s);
+        s.ingestTo(12);
+        first.commit(tip, a, 0, 12, s);
+        first.appendTo(file);
+        long size1 = Files.size(file);
+        byte[] blobA = new byte[(int) codec.blockBytes(12)];
+        try (var ch = java.nio.channels.FileChannel.open(file)) {
+            ch.read(java.nio.ByteBuffer.wrap(blobA), FrozenBlocks.HEADER_BYTES);
+        }
+
+        // append prompt B (shares the first 12 as prefix, adds an 8-position tail)
+        long[] b = java.util.Arrays.copyOf(a, 20);
+        for (int i = 12; i < 20; i++) b[i] = 700 + i;
+        PromptCache<BlockResumeTest.FakeState> grow =
+                new PromptCache<>(
+                        codec, CacheStore.inMemory(), 1 << 20, seed, FrozenBlocks.open(file, seed));
+        BlockResumeTest.FakeState g = new BlockResumeTest.FakeState();
+        PromptCache<BlockResumeTest.FakeState>.Block gt = grow.resume(b, 20, g);
+        assertEquals(12, g.position, "append pass reuses the frozen prefix");
+        g.ingestTo(20);
+        grow.commit(gt, b, 12, 8, g);
+        grow.appendTo(file);
+        long size2 = Files.size(file);
+        // growth = tail blob + index bytes + alignment; block A's stored bytes are UNTOUCHED
+        assertTrue(
+                size2 - size1 <= 512,
+                "append cost is the new tail + index, not the catalog ("
+                        + (size2 - size1)
+                        + " bytes)");
+        byte[] blobAAfter = new byte[blobA.length];
+        try (var ch = java.nio.channels.FileChannel.open(file)) {
+            ch.read(java.nio.ByteBuffer.wrap(blobAAfter), FrozenBlocks.HEADER_BYTES);
+        }
+        assertTrue(
+                java.util.Arrays.equals(blobA, blobAAfter),
+                "existing blob bytes are byte-identical after append (no rewrite)");
+
+        // reopen: both prompts serve, content-exact
+        FrozenBlocks reopened = FrozenBlocks.open(file, seed);
+        assertEquals(2, reopened.blockCount());
+        for (long[] prompt : new long[][] {a, b}) {
+            PromptCache<BlockResumeTest.FakeState> serve =
+                    new PromptCache<>(codec, CacheStore.inMemory(), 0, seed, reopened);
+            BlockResumeTest.FakeState r = new BlockResumeTest.FakeState();
+            serve.resume(prompt, prompt.length, r);
+            assertEquals(prompt.length, r.position, "chain of " + prompt.length + " serves");
+            for (int px = 0; px < prompt.length; px++)
+                assertEquals(BlockResumeTest.FakeState.rowAt(px), r.rows[px]);
+        }
+
+        // crash simulation: old header + torn tail (append written, header flip lost)
+        Path torn = Files.createTempFile("append-torn", ".jkv");
+        torn.toFile().deleteOnExit();
+        Files.copy(file, torn, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        try (java.nio.channels.FileChannel ch =
+                java.nio.channels.FileChannel.open(torn, java.nio.file.StandardOpenOption.WRITE)) {
+            // restore the PRE-append header (count=1, indexOffset as after the first appendTo)
+            java.nio.ByteBuffer flip =
+                    java.nio.ByteBuffer.allocate(12).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+            long firstIndexOffset =
+                    FrozenBlocks.align(FrozenBlocks.HEADER_BYTES + codec.blockBytes(12));
+            flip.putInt(1).putLong(firstIndexOffset).flip();
+            ch.write(flip, FrozenBlocks.COUNT_OFFSET);
+        }
+        FrozenBlocks recovered = FrozenBlocks.open(torn, seed);
+        assertEquals(1, recovered.blockCount(), "torn append: the old catalog is intact");
+        PromptCache<BlockResumeTest.FakeState> serve =
+                new PromptCache<>(codec, CacheStore.inMemory(), 0, seed, recovered);
+        BlockResumeTest.FakeState r = new BlockResumeTest.FakeState();
+        serve.resume(a, 12, r);
+        assertEquals(12, r.position, "torn append: old prompt still serves");
+    }
 }
