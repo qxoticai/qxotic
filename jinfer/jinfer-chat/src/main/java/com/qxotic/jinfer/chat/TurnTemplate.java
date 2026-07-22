@@ -18,11 +18,11 @@ import java.util.Optional;
  *
  * <p>This is the porting substrate for the {@link ChatTemplate} codec: unported models expose their
  * TurnTemplate through {@link TurnTemplateAdapter}; a native codec port (whole-conversation encode
- * + {@link ReplyDecoder}) replaces it per model, and the interface goes away with the last port.
+ * + {@link ReplyParser}) replaces it per model, and the interface goes away with the last port.
  * Per-turn encoding cannot express position-dependent templates (Qwen's last-query rules, Harmony
  * channels) — that is why the codec is whole-conversation.
  */
-public interface TurnTemplate {
+public interface TurnTemplate extends ChatTemplate {
 
     /**
      * One turn, lowered to batches. Stateless, deterministic, turn-stable. Conversation-start
@@ -64,22 +64,12 @@ public interface TurnTemplate {
     }
 
     /**
-     * Whether this template can frame tool definitions and tool-call/result turns byte-exactly with
-     * the model's own chat template. Only models whose tool block is a stable prefix (tools in the
-     * system/developer preamble, not injected before the last user turn) should return true; the
-     * rest fall back to whole-render. Default false.
-     */
-    default boolean supportsTools() {
-        return false;
-    }
-
-    /**
      * The preamble including tools: bos plus the model's system/tool framing (for LFM2, one system
      * turn merging the system message and the tool list). Emitted once before the first turn,
      * REPLACING {@link #conversationStart()} AND the leading system turn - the driver must not also
      * encode the system message. The default ignores tools and simply appends the system message as
      * its own turn, which is byte-exact only for templates that do not weld tools into the system
-     * turn; a {@link #supportsTools()} template overrides this.
+     * turn; a template that welds tools overrides this.
      */
     default List<Batch> conversationStart(Preamble preamble) {
         List<Batch> out = new ArrayList<>(conversationStart());
@@ -102,17 +92,6 @@ public interface TurnTemplate {
     List<Batch> closeTurn();
 
     /**
-     * A fresh detector that turns this model's generated token ids into structured tool calls, or
-     * empty when the model has no native tool-call format. The detector is stateful and single-use;
-     * the generation driver creates one per request. This is the decode-side counterpart to the
-     * (encode-side) tool rendering, and it is per-model because the call format is - see {@link
-     * ToolCallDetector}.
-     */
-    default Optional<ToolCallDetector> toolCallDetector() {
-        return Optional.empty();
-    }
-
-    /**
      * The conversation as the model's own template would frame it - e.g. a template that
      * unconditionally renders a system turn injects its default here when the conversation lacks
      * one. Identity by default. EVERY caller that encodes turn-by-turn (incremental drivers, the
@@ -123,10 +102,27 @@ public interface TurnTemplate {
         return conversation;
     }
 
-    /** A whole conversation is its normalized turns, concatenated after the conversation start. */
-    default List<Batch> encode(List<Message> conversation) {
+    /**
+     * The shared codec face for per-turn ports: a plain-text conversation is the normalized turns
+     * folded between {@link #conversationStart()} and {@link #generationPrompt}; tools and non-text
+     * parts punt to the whole render. Ports whose template welds tools or splices verbatim history
+     * (LFM2) override this.
+     */
+    @Override
+    default List<Batch> encode(Conversation conversation) {
+        if (!conversation.tools().isEmpty())
+            throw new UnsupportedConversation("tool framing not ported: whole-render");
+        List<Message> turns = normalize(conversation.messages());
+        for (Message m : turns) {
+            for (Part part : m.content()) {
+                if (!(part instanceof Part.Text))
+                    throw new UnsupportedConversation(
+                            m.role().name() + " turn: " + part.getClass().getSimpleName());
+            }
+        }
         List<Batch> out = new ArrayList<>(conversationStart());
-        for (Message m : normalize(conversation)) out.addAll(encodeTurn(m));
+        for (Message m : turns) out.addAll(encodeTurn(m));
+        out.addAll(generationPrompt(conversation.thinking()));
         return out;
     }
 }

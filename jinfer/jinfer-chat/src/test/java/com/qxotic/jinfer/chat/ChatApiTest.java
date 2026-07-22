@@ -4,19 +4,14 @@ import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.FloatTensor;
 import java.util.ArrayList;
 import java.util.List;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
 
 /** Harness for the chat API core: Batch.prepare policy and the TurnTemplate default encode. */
 public final class ChatApiTest {
 
-    static int failures;
-
     static void check(boolean ok, String what) {
-        if (!ok) {
-            failures++;
-            System.out.println("FAIL: " + what);
-        } else {
-            System.out.println("ok:   " + what);
-        }
+        Assertions.assertTrue(ok, what);
     }
 
     static Batch toks(int... ids) {
@@ -27,21 +22,8 @@ public final class ChatApiTest {
         return ((Batch.Input.Tokens) b.input()).ids();
     }
 
-    public static void main(String[] args) {
-        prepareMergesAdjacentTokenBatches();
-        prepareSplitsAtCapacity();
-        prepareIsolatesEmbeddings();
-        prepareRejectsOversizedBidirectional();
-        turnTemplateDefaultEncode();
-        messageBasics();
-        if (failures > 0) {
-            System.out.println(failures + " failure(s)");
-            System.exit(1);
-        }
-        System.out.println("ChatApiTest: all passed");
-    }
-
-    static void prepareMergesAdjacentTokenBatches() {
+    @Test
+    void prepareMergesAdjacentTokenBatches() {
         List<Batch> out = Batch.prepare(List.of(toks(1, 2), toks(3), toks(4, 5)), 16);
         check(out.size() == 1, "merge: single fused batch");
         check(
@@ -49,7 +31,8 @@ public final class ChatApiTest {
                 "merge: fused ids in order");
     }
 
-    static void prepareSplitsAtCapacity() {
+    @Test
+    void prepareSplitsAtCapacity() {
         List<Batch> out = Batch.prepare(List.of(toks(1, 2, 3), toks(4, 5, 6, 7)), 3);
         check(out.size() == 3, "split: 7 ids at cap 3 -> 3 batches");
         check(
@@ -60,7 +43,8 @@ public final class ChatApiTest {
         check(ids(out.get(2))[0] == 7, "split: last id survives");
     }
 
-    static void prepareIsolatesEmbeddings() {
+    @Test
+    void prepareIsolatesEmbeddings() {
         FloatTensor rows = FloatTensor.allocateF32(4 * 8);
         Batch media = Batch.embeddings(rows, 4, true);
         List<Batch> out = Batch.prepare(List.of(toks(1, 2), toks(3), media, toks(4), toks(5)), 16);
@@ -74,7 +58,8 @@ public final class ChatApiTest {
                 "isolate: post-media run fused");
     }
 
-    static void prepareRejectsOversizedBidirectional() {
+    @Test
+    void prepareRejectsOversizedBidirectional() {
         FloatTensor rows = FloatTensor.allocateF32(8 * 4);
         boolean threw = false;
         try {
@@ -111,17 +96,36 @@ public final class ChatApiTest {
         public List<Batch> closeTurn() {
             return List.of(Batch.prefill(new int[] {5}));
         }
+
+        @Override
+        public ReplyParser parser() {
+            throw new UnsupportedOperationException("encode-only toy");
+        }
     }
 
-    static void turnTemplateDefaultEncode() {
+    @Test
+    void turnTemplateDefaultEncode() {
         TurnTemplate t = new ToyTemplate();
-        List<Batch> out = t.encode(List.of(Message.system("s"), Message.user("hi")));
+        List<Batch> out =
+                t.encode(new Conversation(List.of(Message.system("s"), Message.user("hi"))));
         var flat = new ArrayList<Integer>();
         for (Batch b : out) for (int id : ids(b)) flat.add(id);
-        check(flat.equals(List.of(9, 6, 1, 4, 1)), "default encode = start + turns concatenated");
+        check(
+                flat.equals(List.of(9, 6, 1, 4, 1, 8)),
+                "default encode = start + turns + generation prompt: " + flat);
+        boolean punted = false;
+        try {
+            t.encode(
+                    new Conversation(
+                            List.of(Message.user("hi")), List.of(new Tool("f", "{}")), true, ""));
+        } catch (UnsupportedConversation e) {
+            punted = true;
+        }
+        check(punted, "tools punt to the whole render");
     }
 
-    static void messageBasics() {
+    @Test
+    void messageBasics() {
         Message m = Message.user("hello");
         check(
                 m.role().equals(Role.USER) && m.text().equals("hello"),

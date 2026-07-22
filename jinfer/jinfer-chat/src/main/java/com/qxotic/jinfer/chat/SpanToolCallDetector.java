@@ -1,7 +1,8 @@
 package com.qxotic.jinfer.chat;
 
-import com.qxotic.jinfer.llm.GgufTokenizer;
+import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.toknroll.IntSequence;
+import com.qxotic.toknroll.Tokenizer;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -20,9 +21,9 @@ import java.util.function.Function;
  * exactly one call, the call carries the span's payload ids as {@code verbatim}; a multi-call span
  * cannot attribute ids per call and leaves verbatim unset.
  */
-public final class SpanToolCallDetector implements ToolCallDetector {
+final class SpanToolCallDetector implements ToolCallDetector {
 
-    private final GgufTokenizer tokenizer;
+    private final Tokenizer tokenizer;
     private final int startMarker;
     private final int endMarker;
     private final Function<String, List<Part.ToolCall>> payloadParser;
@@ -32,14 +33,14 @@ public final class SpanToolCallDetector implements ToolCallDetector {
     private IntSequence.Builder spanIds = IntSequence.newBuilder();
     private final List<Part.ToolCall> calls = new ArrayList<>();
 
-    public SpanToolCallDetector(
-            GgufTokenizer tokenizer,
+    SpanToolCallDetector(
+            Tokenizer tokenizer,
             String startMarker,
             String endMarker,
             Function<String, List<Part.ToolCall>> payloadParser) {
         this.tokenizer = tokenizer;
-        this.startMarker = tokenizer.requiredSpecial(startMarker);
-        this.endMarker = tokenizer.requiredSpecial(endMarker);
+        this.startMarker = SpecialTokens.require(tokenizer, startMarker);
+        this.endMarker = SpecialTokens.require(tokenizer, endMarker);
         this.payloadParser = payloadParser;
     }
 
@@ -69,7 +70,7 @@ public final class SpanToolCallDetector implements ToolCallDetector {
             return true;
         }
         if (inSpan) {
-            byte[] bytes = tokenizer.decodeTokenBytes(token);
+            byte[] bytes = tokenizer.decodeBytes(new int[] {token});
             span.write(bytes, 0, bytes.length);
             spanIds.add(token);
             return true;
