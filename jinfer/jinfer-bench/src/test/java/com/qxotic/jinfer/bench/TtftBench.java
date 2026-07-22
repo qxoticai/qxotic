@@ -107,10 +107,9 @@ public final class TtftBench {
     static <S extends RuntimeState> void warm(Bench<S> bench, Path gguf, int reps) {
         LoadedModel<S> model = bench.model();
         TurnTemplate tpl = bench.tpl();
-        StateCodec<S> codec = model.model().stateCodec().orElseThrow();
+        StateCodec<S> codec = model.codec();
         PromptCache<S> cache =
-                new PromptCache<>(
-                        codec, CacheStore.inMemory(), 8L << 30, PromptCache.modelSeed(gguf));
+                new PromptCache<>(codec, CacheStore.inMemory(), 8L << 30, model.seed());
 
         // history: [start][user: story][genPrompt] -> reply -> closeTurn, all committed
         CachedSession<S> a =
@@ -194,11 +193,10 @@ public final class TtftBench {
             throws Exception {
         LoadedModel<S> model = bench.model();
         TurnTemplate tpl = bench.tpl();
-        StateCodec<S> codec = model.model().stateCodec().orElseThrow();
+        StateCodec<S> codec = model.codec();
         List<Batch> prefix = concat(tpl.conversationStart(), tpl.encodeTurn(Message.user(story())));
         PromptCache<S> build =
-                new PromptCache<>(
-                        codec, CacheStore.inMemory(), Long.MAX_VALUE, PromptCache.modelSeed(gguf));
+                new PromptCache<>(codec, CacheStore.inMemory(), Long.MAX_VALUE, model.seed());
         CachedSession<S> s =
                 CachedSession.resume(
                         model.model(), build, model.model().newState(4096, 512), new long[0]);
@@ -213,7 +211,7 @@ public final class TtftBench {
             throws Exception {
         LoadedModel<S> model = bench.model();
         TurnTemplate tpl = bench.tpl();
-        StateCodec<S> codec = model.model().stateCodec().orElseThrow();
+        StateCodec<S> codec = model.codec();
         List<Batch> followUp =
                 concat(tpl.encodeTurn(Message.user(QUESTION)), tpl.generationPrompt(true));
 
@@ -230,7 +228,7 @@ public final class TtftBench {
 
         long t0 = System.nanoTime();
         com.qxotic.jinfer.cache.FrozenBlocks frozen =
-                com.qxotic.jinfer.cache.FrozenBlocks.open(file, PromptCache.modelSeed(gguf));
+                com.qxotic.jinfer.cache.FrozenBlocks.open(file, model.seed());
         double openMs = (System.nanoTime() - t0) / 1e6;
 
         // request fingerprints: re-derived from the same static text (deterministic template)
@@ -241,9 +239,7 @@ public final class TtftBench {
                         concat(tpl.conversationStart(), tpl.encodeTurn(Message.user(story()))));
         long[] fp = new long[ids.length];
         for (int i = 0; i < ids.length; i++) fp[i] = ids[i];
-        int restored =
-                frozen.serve(model.model(), codec, PromptCache.modelSeed(gguf), state, fp)
-                        .position();
+        int restored = frozen.serve(model.model(), codec, model.seed(), state, fp).position();
         if (restored == 0) throw new IllegalStateException("frozen restore missed");
         for (Batch b : Batch.prepare(followUp, 512)) model.model().ingest(state, b);
         int tok = model.model().logits(state).argmax();
@@ -256,8 +252,8 @@ public final class TtftBench {
             S s2 = model.model().newState(4096, 512);
             long t2 = System.nanoTime();
             com.qxotic.jinfer.cache.FrozenBlocks f2 =
-                    com.qxotic.jinfer.cache.FrozenBlocks.open(file, PromptCache.modelSeed(gguf));
-            int n2 = f2.serve(model.model(), codec, PromptCache.modelSeed(gguf), s2, fp).position();
+                    com.qxotic.jinfer.cache.FrozenBlocks.open(file, model.seed());
+            int n2 = f2.serve(model.model(), codec, model.seed(), s2, fp).position();
             for (Batch b : Batch.prepare(followUp, 512)) model.model().ingest(s2, b);
             model.model().logits(s2).argmax();
             System.out.printf(
