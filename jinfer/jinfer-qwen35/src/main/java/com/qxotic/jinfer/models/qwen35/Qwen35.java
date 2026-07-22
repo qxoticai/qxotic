@@ -26,6 +26,7 @@ import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.*;
 import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
+import com.qxotic.toknroll.Tokenizer;
 import java.io.IOException;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
@@ -38,12 +39,18 @@ public final class Qwen35
         implements LanguageModel<Qwen35.Configuration, Qwen35.Weights, Qwen35.State> {
 
     private final Configuration configuration;
-    private final GgufTokenizer tokenizer;
+    private final Tokenizer tokenizer;
+    private final String chatTemplateSource;
     private final Weights weights;
 
-    Qwen35(Configuration configuration, GgufTokenizer tokenizer, Weights weights) {
+    Qwen35(
+            Configuration configuration,
+            Tokenizer tokenizer,
+            String chatTemplateSource,
+            Weights weights) {
         this.configuration = configuration;
         this.tokenizer = tokenizer;
+        this.chatTemplateSource = chatTemplateSource;
         this.weights = weights;
     }
 
@@ -59,7 +66,7 @@ public final class Qwen35
         return weights;
     }
 
-    public GgufTokenizer tokenizer() {
+    public Tokenizer tokenizer() {
         return tokenizer;
     }
 
@@ -142,12 +149,13 @@ public final class Qwen35
      * architecture-dispatching loader hands to a caller that does not know the family.
      */
     public LoadedModel<Qwen35.State> loaded() {
-        return new LoadedModel<>(this, tokenizer(), stopTokens());
+        return new LoadedModel<>(this, tokenizer(), chatTemplateSource, stopTokens());
     }
 
     /** The chat-layer binding: token-level facts plus this model's chat framing. */
     public com.qxotic.jinfer.chat.ChatModel<Qwen35.State> chatModel() {
-        return com.qxotic.jinfer.chat.ChatModel.adapt(loaded(), turnTemplate());
+        return new com.qxotic.jinfer.chat.ChatModel<>(
+                loaded(), turnTemplate().map(t -> (com.qxotic.jinfer.chat.ChatTemplate) t));
     }
 
     public java.util.Optional<com.qxotic.jinfer.chat.TurnTemplate> turnTemplate() {
@@ -157,15 +165,17 @@ public final class Qwen35
 
     @Override
     public java.util.Optional<com.qxotic.jinfer.cache.StateCodec<Qwen35.State>> stateCodec() {
-        return java.util.Optional.of(new Qwen35StateCodec(config()));
+        // The gated-delta-net S matrices are a LARGE true recurrence (MBs per SSM layer) - neither
+        // per-position rows nor a small residue, so this family offers no block caching; live
+        // sessions (SessionPool) still give append-only reuse.
+        return java.util.Optional.empty();
     }
 
     /** The turn-delimiter / eos ids that terminate generation (convenience for callers/tests). */
     public Set<Integer> stopTokens() {
         Set<Integer> stops = new HashSet<>();
         for (String name : new String[] {"<|im_end|>", "<|endoftext|>"}) {
-            Integer id = tokenizer.getSpecialTokens().get(name);
-            if (id != null) stops.add(id);
+            SpecialTokens.find(tokenizer, name).ifPresent(stops::add);
         }
         return stops;
     }
@@ -1412,7 +1422,7 @@ public final class Qwen35
     public static Qwen35 loadModel(
             FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeightsFlag)
             throws IOException {
-        GgufTokenizer tokenizer = new GgufTokenizer(gguf);
+        Tokenizer tokenizer = Tokenizers.fromGGUF(gguf);
         String arch = gguf.getString("general.architecture");
 
         int modelContextLength = gguf.getValue(int.class, arch + ".context_length");
@@ -1461,7 +1471,7 @@ public final class Qwen35
                         numberOfHeads,
                         numberOfKeyValueHeads,
                         headSize,
-                        tokenizer.vocabularySize(),
+                        tokenizer.vocabulary().size(),
                         contextLength,
                         rmsNormEps,
                         ropeTheta,
@@ -1479,10 +1489,14 @@ public final class Qwen35
                         expertSharedFeedForwardLength);
 
         if (!loadWeightsFlag) {
-            return new Qwen35(config, tokenizer, null);
+            return new Qwen35(config, tokenizer, Tokenizers.chatTemplateSource(gguf), null);
         }
         Map<String, GGMLTensorEntry> tensors = ModelLoader.loadTensors(fileChannel, gguf);
-        return new Qwen35(config, tokenizer, loadWeights(tensors, config));
+        return new Qwen35(
+                config,
+                tokenizer,
+                Tokenizers.chatTemplateSource(gguf),
+                loadWeights(tensors, config));
     }
 
     static Weights loadWeights(Map<String, GGMLTensorEntry> tensors, Configuration config) {
