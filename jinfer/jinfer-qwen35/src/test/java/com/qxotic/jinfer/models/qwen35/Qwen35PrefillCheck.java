@@ -11,10 +11,30 @@ import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.FloatTensor;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 
 public final class Qwen35PrefillCheck {
 
-    public static void main(String[] args) throws Exception {
+    @Test
+    @Tag("integration")
+    void run() throws Exception {
+        Assumptions.assumeTrue(
+                java.nio.file.Files.exists(
+                        java.nio.file.Path.of(
+                                "/home/mukel/Desktop/playground/models/unsloth/Qwen3.5-2B-GGUF/Qwen3.5-2B-Q8_0.gguf")),
+                "model not found:"
+                    + " /home/mukel/Desktop/playground/models/unsloth/Qwen3.5-2B-GGUF/Qwen3.5-2B-Q8_0.gguf");
+        main(testArgs());
+    }
+
+    private static String[] testArgs() {
+        String argv = System.getProperty("jinfer.args", "");
+        return argv.isBlank() ? new String[0] : argv.trim().split("\\s+");
+    }
+
+    private static void main(String[] args) throws Exception {
         Path path =
                 Path.of(
                         args.length > 0
@@ -37,12 +57,16 @@ public final class Qwen35PrefillCheck {
         int[] ids = prompt.toArray();
         int failures = 0;
 
-        // (1) same-path determinism: repeated batched prefills within the FP-parallel floor
+        // (1) same-path determinism: repeated batched prefills within the FP-parallel floor.
+        // The first prefills run partly in lower JIT tiers whose FP reassociation differs from
+        // the final compiled code (~0.2 logit drift, deterministic once warm) - warm up before
+        // measuring, or the check gates the JVM, not the model.
         float[] ref = null;
         double repeatMax = 0;
-        for (int r = 0; r < 4; r++) {
+        for (int r = 0; r < 8; r++) {
             Qwen35.State s = model.newState(4096, 512);
             model.ingest(s, Batch.prefill(ids));
+            if (r < 4) continue; // JIT warmup
             float[] snap = snapshot(model.logits(s), vocab);
             if (ref == null) {
                 ref = snap;
@@ -74,7 +98,7 @@ public final class Qwen35PrefillCheck {
 
         if (failures > 0) {
             System.out.println(failures + " failure(s)");
-            System.exit(1);
+            throw new AssertionError("failure(s) - see output above");
         }
         System.out.println("Qwen35PrefillCheck: all checks passed");
     }
