@@ -27,32 +27,33 @@ public final class KvTransfer {
     }
 
     /**
-     * Fixed-size sliding-window checkpoint: rows {@code [max(0,to-w), to)} live at ring slots
-     * {@code pos & (w-1)} (the span wraps at most once, so at most two contiguous runs), padded to
-     * {@code w} rows in the blob. {@code elemBytes} is the ring's native element width (2 for F16).
-     * Returns the bytes covered — always {@code w * rowElems * elemBytes}, pad included — so save
-     * and restore advance identically.
+     * Per-position rows of a sliding-window layer, stored through their ring slots {@code pos &
+     * (w-1)}: one blob row per position of {@code [from,to)}, walked as contiguous slot runs.
+     *
+     * <p>Aliasing is safe by construction. A span longer than {@code w} reads a NEWER aliased row
+     * for its dead positions, but every row a resume can ever need - the last {@code w} before any
+     * block end - was live when its block was saved; and restore replays chains in ascending
+     * position order, so aliased slot writes end with the newest (correct) row. Returns the bytes
+     * covered: {@code (to-from) * rowElems * 2} (F16).
      */
-    public static long window(
+    public static long ringSpan(
             FloatTensor ring,
+            int from,
             int to,
             int w,
             long rowElems,
-            int elemBytes,
             MemorySegment blob,
             long byteOff,
             boolean out) {
-        int lo = Math.max(0, to - w);
-        int n = to - lo;
         long off = byteOff;
-        int done = 0;
+        int done = 0, n = to - from;
         while (done < n) {
-            int slot = (lo + done) & (w - 1);
+            int slot = (from + done) & (w - 1);
             int run = Math.min(n - done, w - slot); // stop at the ring edge
             off += transfer(ring, slot * rowElems, blob, off, run * rowElems, out);
             done += run;
         }
-        return (long) w * rowElems * elemBytes; // rows moved + pad
+        return off - byteOff;
     }
 
     /**
