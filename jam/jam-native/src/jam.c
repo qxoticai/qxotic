@@ -279,6 +279,7 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
 #ifdef JAM_HAVE_AVX512
     if (cpu >= JAM_ISA_AVX512) {    c->f32_kernel = jam_mm_f32_avx512;
         c->dense_f16_kernel = jam_mm_f16_avx512; c->dense_bf16_kernel = jam_mm_bf16_avx512;
+        c->f32p_kernel = jam_mm_f32p_avx512; c->f32p_pack = jam_f32_pack_avx512;
         c->dense_f32_kernel = 0; /* avx512 mnpack beats the avx2 dense shape */ }
     if (cpu >= JAM_ISA_AVX512_VNNI) c->q8_kernel  = jam_mm_q8_0_avx512;    /* 512-bit VNNI (best) */
 #ifdef JAM_HAVE_AVX512BF16
@@ -327,7 +328,7 @@ void jam_ctx_destroy(jam_ctx* ctx) {
 #endif
     if (ctx->ipool) jam_pool_destroy(ctx->ipool);
     free(ctx->q_aq); free(ctx->q_ad); free(ctx->q_asum);
-    free(ctx->bf_x);
+    free(ctx->bf_x); free(ctx->f32_xp);
     free(ctx->kq_xq); free(ctx->kq_dx); free(ctx->kq_xsum);
     for (int i = 0; i < ctx->kq_repack_n; i++) { jam_aligned_free(ctx->kq_repack[i].qs); jam_aligned_free(ctx->kq_repack[i].dw); jam_aligned_free(ctx->kq_repack[i].mw); }
     free(ctx->kq_repack);
@@ -615,6 +616,23 @@ static jam_status jam_mm_run(jam_ctx* ctx,
         if (ms != JAM_EUNSUPPORTED) return ms;
     }
 #endif
+
+    /* packed-panel F32: transpose activations once, broadcast-FMA at full port rate. Worth the
+     * pack for prefill-sized n; decode (tiny n) keeps the direct tiles. */
+    if (wt == JAM_F32 && at == JAM_F32 && ct == JAM_F32 && ctx->f32p_kernel && n >= 8) {
+        int npanels = (n + 31) / 32;
+        size_t need = (size_t) npanels * 32 * (size_t) k * sizeof(float);
+        if (need > ctx->f32_xp_cap) {
+            free(ctx->f32_xp); ctx->f32_xp = malloc(need); ctx->f32_xp_cap = ctx->f32_xp ? need : 0;
+        }
+        if (ctx->f32_xp) {
+            jam_f32p_job job = { (const float*) w, ldw, (const float*) a, lda,
+                                 (float*) ctx->f32_xp, c, ldc, n, k };
+            jam_run(ctx, npanels, ctx->f32p_pack, &job);
+            jam_run(ctx, m, ctx->f32p_kernel, &job);
+            return JAM_OK;
+        }
+    }
 
     if (wt == JAM_F32 && at == JAM_F32 && ct == JAM_F32) {
         jam_mm_job job = { w, wt, ldw, a, at, lda, c, ct, ldc, n, k };
