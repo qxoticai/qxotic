@@ -129,7 +129,8 @@ public final class ServerIntegrationTest {
                         false,
                         List.of(warmFile.toString()),
                         false,
-                        null);
+                        null,
+                        false);
         HttpServer server = Server.start(llama, options);
         base = "http://127.0.0.1:" + server.getAddress().getPort();
         client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();

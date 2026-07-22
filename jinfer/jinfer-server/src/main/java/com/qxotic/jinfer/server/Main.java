@@ -285,11 +285,11 @@ public class Main {
                 "  --raw-prompt                  bypass chat template and tokenize --prompt"
                         + " directly");
         out.println(
-                "  --frozen <file>               instruct: frozen-prompt cache for the"
-                        + " (system+prompt) prefix;");
+                "  --cache <file>                instruct: persistent prompt cache - serves"
+                        + " matching prefixes, appends new prompts");
         out.println(
-                "                                created on first run, restored (instant TTFT)"
-                        + " after");
+                "  --cache-ro <file>             instruct: like --cache but read-only - serves"
+                        + " matching prefixes, never writes");
         out.println(
                 "  --warm-prompt <file>          server: pre-ingest the file into the prompt cache"
                         + " (fully");
@@ -336,7 +336,8 @@ public class Main {
         boolean keepPastThinking = false;
         boolean rawPrompt = false;
         boolean noGrammar = false;
-        Path frozenPrompt = null;
+        Path promptCache = null;
+        boolean promptCacheReadOnly = false;
         List<String> warmPrompts = new ArrayList<>();
 
         for (int i = 0; i < args.length; i++) {
@@ -383,7 +384,11 @@ public class Main {
                                 keepPastThinking =
                                         LLMOptions.parseBooleanOption(optionName, nextArg);
                         case "--warm-prompt" -> warmPrompts.add(nextArg);
-                        case "--frozen" -> frozenPrompt = Path.of(nextArg);
+                        case "--cache" -> promptCache = Path.of(nextArg);
+                        case "--cache-ro" -> {
+                            promptCache = Path.of(nextArg);
+                            promptCacheReadOnly = true;
+                        }
                         case "--think" -> {
                             String thinkMode = nextArg.toLowerCase(Locale.ROOT);
                             thinkInline = List.of("inline", "stdout").contains(thinkMode);
@@ -430,7 +435,8 @@ public class Main {
                 rawPrompt,
                 List.copyOf(warmPrompts),
                 noGrammar,
-                frozenPrompt);
+                promptCache,
+                promptCacheReadOnly);
     }
 
     /**
@@ -537,49 +543,58 @@ public class Main {
                                         Math.max(promptTokens.length(), 16),
                                         RuntimeFlags.BATCH_CAPACITY)); // ports chunk long prompts
 
-        // --frozen: restore the (system+prompt) prefix from the frozen artifact (instant TTFT),
-        // or create it on the first run. The artifact covers every position BUT THE LAST (the
-        // prompt-compiler convention): it captures the KV/recurrent state, not the transient
-        // last-position activations that logits() reads - the final token is always ingested
-        // fresh. Any mismatch (different prompt/model) falls back to a plain prefill.
-        if (options.frozenPrompt() != null
+        // --cache / --cache-ro: the prompt cache as a file. Matching prefixes restore from
+        // the artifact (the media/text blocks are self-contained; the compile convention keeps
+        // the last token its own block so a full hit needs exactly one tail token). In
+        // read-write mode an unseen prompt's new blocks are appended - an accumulating
+        // catalog, shared prefixes stored once. Read-only mode never writes.
+        if (options.promptCache() != null
                 && model.model().stateCodec().isPresent()
                 && promptTokens.length() >= 2) {
             var codec = model.model().stateCodec().get();
             long[] fp = new long[promptTokens.length()];
             for (int i = 0; i < fp.length; i++) fp[i] = promptTokens.intAt(i);
             byte[] seed = PromptCache.modelSeed(options.modelPath());
-            if (Files.exists(options.frozenPrompt())) {
-                long t0 = System.nanoTime();
-                var session =
-                        FrozenBlocks.open(options.frozenPrompt(), seed)
-                                .serve(model.model(), codec, seed, state, fp, fp.length - 1);
-                if (session.position() == fp.length - 1) {
-                    System.err.printf(
-                            "frozen prompt restored: %d positions in %.1f ms%n",
-                            session.position(), (System.nanoTime() - t0) / 1e6);
-                    // re-ingest the last token to materialize fresh logits
-                    promptTokens = IntSequence.of(promptTokens.getLast());
+            FrozenBlocks base =
+                    Files.exists(options.promptCache())
+                            ? FrozenBlocks.open(options.promptCache(), seed)
+                            : null;
+            if (options.promptCacheReadOnly()) {
+                if (base == null) {
+                    System.err.println(
+                            "read-only cache missing (" + options.promptCache() + "): prefilling");
                 } else {
-                    System.err.println("frozen prompt mismatch: prefilling normally");
+                    long t0 = System.nanoTime();
+                    var session = base.serve(model.model(), codec, seed, state, fp, fp.length - 1);
+                    System.err.printf(
+                            "cache: %d/%d positions restored in %.1f ms%n",
+                            session.position(), fp.length, (System.nanoTime() - t0) / 1e6);
+                    promptTokens = promptTokens.subSequence(session.position(), fp.length);
                 }
             } else {
-                FrozenBlocks.compile(
-                        options.frozenPrompt(),
-                        model.model(),
-                        codec,
-                        seed,
-                        state,
-                        List.of(Batch.prefill(promptTokens.toArray())));
-                System.err.println(
-                        "frozen prompt compiled: "
-                                + options.frozenPrompt()
-                                + " ("
-                                + fp.length
-                                + " positions)");
-                // the compile ingested everything (its final 1-token block leaves fresh
-                // logits): decode directly from the retained logits, nothing left to prefill
-                promptTokens = IntSequence.empty();
+                long t0 = System.nanoTime();
+                var cache =
+                        new PromptCache<>(codec, CacheStore.inMemory(), Long.MAX_VALUE, seed, base);
+                var session =
+                        com.qxotic.jinfer.cache.CachedSession.resume(
+                                model.model(), cache, state, fp, fp.length - 1);
+                int restored = session.position();
+                if (restored == fp.length - 1) {
+                    System.err.printf(
+                            "cache: %d/%d positions restored in %.1f ms%n",
+                            restored, fp.length, (System.nanoTime() - t0) / 1e6);
+                    promptTokens = IntSequence.of(promptTokens.getLast());
+                } else {
+                    // unseen (or partially shared) prompt: ingest the rest through the session
+                    // and append only the new blocks to the catalog
+                    session.ingestSplitLast(promptTokens.toArray(), restored);
+                    cache.appendTo(options.promptCache());
+                    System.err.printf(
+                            "cache: %d/%d restored, %d added, catalog appended (%s)%n",
+                            restored, fp.length, fp.length - restored, options.promptCache());
+                    // the session's final 1-token ingest left fresh logits: decode directly
+                    promptTokens = IntSequence.empty();
+                }
             }
         }
 
