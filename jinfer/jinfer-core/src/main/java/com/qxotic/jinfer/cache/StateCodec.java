@@ -5,50 +5,31 @@ import java.lang.foreign.MemorySegment;
 
 /**
  * The one model-specific seam of the prompt cache: a pure copier between the state needed to resume
- * decoding at a position boundary and an opaque memory blob. The cache never interprets the bytes;
- * what they are is the model's business, split into two orthogonal sections:
+ * decoding at a position boundary and an opaque memory blob. The cache never interprets the bytes.
  *
- * <ul>
- *   <li><b>Rows</b> — per-position state (attention K/V rows). Every block stores its span's rows;
- *       size is proportional to the span.
- *   <li><b>Checkpoint</b> — a whole-state snapshot of position-independent size (short-conv
- *       history, SSM state, a sliding window). A checkpoint only exists at the position the state
- *       is actually at, so the cache writes one only when {@code state.position() == to} — which is
- *       why blocks match completely or not at all. Checkpoints are SPARSE: the cache decides which
- *       blocks carry one (multi-token blocks, and every {@code jinfer.checkpointStride} positions
- *       along single-token runs), so decode blocks cost rows only and a resume lands at the deepest
- *       checkpointed block, the caller re-ingesting the short tail past it. Models with no
- *       recurrent/windowed state leave {@link #checkpointBytes} at 0 and every block is a resume
- *       point.
- * </ul>
+ * <p>Every block is SELF-CONTAINED: {@code save} writes the span's per-position rows (attention K/V
+ * - windowed layers store their rows through their ring slots, so the window rebuilds from rows
+ * alone) followed by a small fixed-size RESIDUE trailer for genuinely recurrent state (short-conv
+ * FIR history). Restoring a chain of blocks in order from position 0 leaves the state live at the
+ * final {@code to} - every block boundary is a resume point, no placement policy, no walk-back.
  *
- * <p>A checkpointed block's blob is {@code [rows][checkpoint]}. Lifecycle stays out of the codec:
- * restore methods copy bytes into the state's tensors, and the cache calls {@link
- * RuntimeState#resumeAt} once after the whole chain is applied. Rows restore in chain order from
- * position 0; the checkpoint is applied once, from the resume block.
+ * <p>Two contracts: {@code save} is only valid while {@code state.position() == to} (the residue
+ * and the live window only exist at that instant - why blocks match completely or not at all), and
+ * the residue must be SMALL (KBs, duplicated per block by design). A model whose mutable state is
+ * neither per-position rows nor a small residue (large SSM recurrences) does not offer block
+ * caching - live-session reuse still applies.
+ *
+ * <p>Lifecycle stays out of the codec: {@code restore} copies bytes into the state's tensors, and
+ * the cache calls {@link RuntimeState#resumeAt} once after the whole chain is applied.
  */
 public interface StateCodec<S extends RuntimeState> {
 
-    /** Rows-section size for a span of {@code positions} — exact and deterministic. */
-    long rowBytes(int positions);
+    /** Block-blob size for a span of {@code positions}: rows plus the fixed residue trailer. */
+    long blockBytes(int positions);
 
-    /**
-     * Checkpoint-section size — fixed, position-independent; 0 = no recurrent/windowed state (every
-     * block is then a resume point at zero extra cost).
-     */
-    default long checkpointBytes() {
-        return 0;
-    }
+    /** Serialize the span {@code [from,to)} - rows then residue; {@code state.position() == to}. */
+    void save(S state, int from, int to, MemorySegment dst);
 
-    /** Serialize the span's per-position rows into {@code dst}. */
-    void saveRows(S state, int from, int to, MemorySegment dst);
-
-    /** Copy the span's per-position rows from {@code src} into the state's tensors. */
-    void restoreRows(S state, int from, int to, MemorySegment src);
-
-    /** Serialize the whole-state checkpoint as of {@code to} (== {@code state.position()}). */
-    default void saveCheckpoint(S state, int to, MemorySegment dst) {}
-
-    /** Copy the checkpoint for position {@code to} from {@code src} into the state. */
-    default void restoreCheckpoint(S state, int to, MemorySegment src) {}
+    /** Copy the span {@code [from,to)} - rows then residue - from {@code src} into the state. */
+    void restore(S state, int from, int to, MemorySegment src);
 }

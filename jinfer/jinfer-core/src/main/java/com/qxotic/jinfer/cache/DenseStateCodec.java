@@ -6,9 +6,9 @@ import java.util.function.Function;
 
 /**
  * Resume-state codec for uniform full-attention models (Llama, Granite): every layer stores
- * absolute-position K/V rows and there is no checkpoint — so a block is just the span's rows and
- * every block is a resume point. Hybrid models (windows, recurrent checkpoints) extend {@link
- * AbstractStateCodec} and add their own {@link AbstractStateCodec#checkpoint}.
+ * absolute-position K/V rows and there is no residue - a block is just the span's rows. Windowed
+ * models pass ring widths; models with small recurrent state add a {@link
+ * AbstractStateCodec#residue} trailer.
  */
 public final class DenseStateCodec<S extends RuntimeState> extends AbstractStateCodec<S> {
 
@@ -17,6 +17,6 @@ public final class DenseStateCodec<S extends RuntimeState> extends AbstractState
             long kvDim,
             Function<S, FloatTensor[]> keys,
             Function<S, FloatTensor[]> values) {
-        super(layers, l -> true, l -> kvDim, keys, values, l -> 0L);
+        super(layers, l -> true, l -> kvDim, l -> 0, keys, values, 0L);
     }
 }
