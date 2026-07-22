@@ -13,9 +13,9 @@ import java.util.List;
 /**
  * The dual representation bound to a state: the exact ingested fingerprint stream (token ids)
  * alongside the KV, with a cache commit at every ingestion boundary so the committed chain is
- * always contiguous — the protocol {@link PromptCache} requires, provided once here instead of
- * re-written by every driver. Ingestion chunks at the state's batch capacity; each chunk is one
- * block (large blocks), each decode {@link #step} is one block (single-token blocks).
+ * always contiguous. This is the cache's WRITE HANDLE — it holds the tip of the committed chain and
+ * extends it by exactly each ingested span. Ingestion chunks at the state's batch capacity; each
+ * chunk is one block (large blocks), each decode {@link #step} is one block (single-token blocks).
  *
  * <p>Attach with {@link #resume}: restores the longest cached prefix of {@code expected} into the
  * fresh state; the caller re-ingests everything past {@link #position()}.
@@ -33,15 +33,22 @@ public final class CachedSession<S extends RuntimeState> {
 
     private final Model<?, ?, S> model;
     private final S state;
-    private final PromptCache<S>.Cursor cursor;
+    private final PromptCache<S> cache;
+    private PromptCache<S>.Block tip;
     private long[] fp;
     private int len;
 
     private CachedSession(
-            Model<?, ?, S> model, S state, PromptCache<S>.Cursor cursor, long[] fp, int len) {
+            Model<?, ?, S> model,
+            S state,
+            PromptCache<S> cache,
+            PromptCache<S>.Block tip,
+            long[] fp,
+            int len) {
         this.model = model;
         this.state = state;
-        this.cursor = cursor;
+        this.cache = cache;
+        this.tip = tip;
         this.fp = fp;
         this.len = len;
     }
@@ -66,10 +73,10 @@ public final class CachedSession<S extends RuntimeState> {
             S state,
             long[] expected,
             int maxPositions) {
-        PromptCache<S>.Cursor cursor =
+        PromptCache<S>.Block tip =
                 cache.resume(expected, Math.min(expected.length, maxPositions), state);
         long[] fp = Arrays.copyOf(expected, Math.max(256, expected.length));
-        return new CachedSession<>(model, state, cursor, fp, cursor.position());
+        return new CachedSession<>(model, state, cache, tip, fp, tip.to);
     }
 
     /**
@@ -77,9 +84,7 @@ public final class CachedSession<S extends RuntimeState> {
      * fingerprint as themselves, embeddings by rows content hash (one block per media group).
      */
     public void ingest(List<Batch> batches) {
-        List<Batch> prepared = Batch.prepare(batches, state.batchCapacity());
-        for (int c = 0; c < prepared.size(); c++) {
-            Batch b = prepared.get(c);
+        for (Batch b : Batch.prepare(batches, state.batchCapacity())) {
             int off = len;
             switch (b.input()) {
                 case Batch.Input.Tokens t -> {
@@ -96,17 +101,17 @@ public final class CachedSession<S extends RuntimeState> {
                                 "CachedSession cannot fingerprint "
                                         + b.input().getClass().getSimpleName());
             }
-            cursor.commit(fp, off, len - off, state, c == prepared.size() - 1);
+            tip = cache.commit(tip, fp, off, len - off, state);
         }
     }
 
     /**
      * Ingests turn-aligned groups whose flattened fingerprints formed this session's resume stream,
-     * skipping what the resume already restored: whole groups before the cursor, and the restored
-     * HEAD of a partially-covered group. A cache hit ends on a BLOCK boundary, which need not be a
-     * group boundary (a previous generation prompt is a byte-exact prefix of the echoed assistant
-     * turn; long turns commit as several blocks) - re-ingesting the whole group there would
-     * duplicate its restored head in the context and poison the cache.
+     * skipping what the resume already restored: whole groups before the tip, and the restored HEAD
+     * of a partially-covered group. A cache hit ends on a BLOCK boundary, which need not be a group
+     * boundary (a previous generation prompt is a byte-exact prefix of the echoed assistant turn;
+     * long turns commit as several blocks) - re-ingesting the whole group there would duplicate its
+     * restored head in the context and poison the cache.
      */
     public void ingestGroups(List<List<Batch>> groups) {
         int restored = state.position();
@@ -187,12 +192,27 @@ public final class CachedSession<S extends RuntimeState> {
     public void step(int token) {
         model.ingest(state, Batch.step(token));
         append(token);
-        cursor.commit(token, state);
+        tip = cache.commit(tip, fp, len - 1, 1, state);
+    }
+
+    /**
+     * Adopts decode-loop tokens that were ingested directly on the state (the generator steps the
+     * state itself, not the session): appends their fingerprints and commits them as ONE block -
+     * the right granularity, since a block's fixed residue would otherwise be duplicated per decode
+     * token. The caller passes exactly the ingested tokens ({@code state.position() - length()} of
+     * them - a trailing stop or budget-final token is sampled but never ingested); {@code commit}'s
+     * position check enforces the accounting.
+     */
+    public void adopt(List<Integer> ingested) {
+        if (ingested.isEmpty()) return;
+        int off = len;
+        for (int id : ingested) append(id);
+        tip = cache.commit(tip, fp, off, len - off, state);
     }
 
     /**
      * Fingerprint stream length. Equals {@link #position()} while every ingestion goes through the
-     * session (decode-loop steps are brought back in lockstep via {@link #adopt}).
+     * session.
      */
     public int length() {
         return len;
@@ -205,29 +225,6 @@ public final class CachedSession<S extends RuntimeState> {
      */
     public boolean streamIsStrictPrefixOf(long[] req, int reqLen) {
         return len < reqLen && Arrays.equals(fp, 0, len, req, 0, len);
-    }
-
-    /**
-     * Adopts decode-loop tokens that were ingested directly on the state (the generator steps the
-     * state itself, not the session): appends their fingerprints and commits them as one block,
-     * keeping the stream, the cursor and the block cache in lockstep with the KV. The caller passes
-     * exactly the ingested tokens ({@code state.position() - length()} of them — a trailing stop or
-     * budget-final token is sampled but never ingested).
-     */
-    public void adopt(List<Integer> ingested) {
-        if (ingested.isEmpty()) return;
-        if (state.position() != len + ingested.size()) {
-            throw new IllegalStateException(
-                    "adopt of "
-                            + ingested.size()
-                            + " tokens at stream "
-                            + len
-                            + " but state is at "
-                            + state.position());
-        }
-        int off = len;
-        for (int id : ingested) append(id);
-        cursor.commit(fp, off, len - off, state);
     }
 
     public int position() {
