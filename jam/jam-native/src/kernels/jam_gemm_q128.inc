@@ -9,12 +9,6 @@
  *
  * Requires jam_decode_x86_128.h (jam_hsum4_sse3) and "jam_internal.h" (jam_q8_job) already included. */
 
-/* signed int8 -> int16 (low / high 8 lanes): duplicate each byte then arithmetic-shift right 8 to sign-extend. */
-#define JAM_SEXT_LO(x) _mm_srai_epi16(_mm_unpacklo_epi8((x), (x)), 8)
-#define JAM_SEXT_HI(x) _mm_srai_epi16(_mm_unpackhi_epi8((x), (x)), 8)
-/* dot of 16 signed int8 w and 16 signed int8 a -> 4 int32 partial sums (4 products per lane). */
-#define JAM_DOT16(w, a) _mm_add_epi32(_mm_madd_epi16(JAM_SEXT_LO(w), JAM_SEXT_LO(a)), \
-                                      _mm_madd_epi16(JAM_SEXT_HI(w), JAM_SEXT_HI(a)))
 /* full 32-int8 block dot (two halves) for activation pointer p -> 4 int32 (8 products per lane). */
 #define JAM_DOTBLK(wlo, whi, p) _mm_add_epi32( \
         JAM_DOT16((wlo), _mm_loadu_si128((const __m128i*) (p))), \
@@ -56,7 +50,4 @@ void JAM_MM_NAME(void* arg, int rb, int re, int tid) {
     }
 }
 
-#undef JAM_SEXT_LO
-#undef JAM_SEXT_HI
-#undef JAM_DOT16
 #undef JAM_DOTBLK

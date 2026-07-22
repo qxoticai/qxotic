@@ -1,6 +1,6 @@
 /* 128-bit x86 (SSE3) weight DECODER + reduce, for the jam_gemm_q128 engine. A *true* SSE3 floor: no SSSE3
  * (pmaddubsw/pabsb/psignb) and no F16C — so weights decode to two __m128i int8 halves plus a SOFTWARE-
- * converted float scale, and the engine does sign-extend + madd. One decoder per quant; Q8_0 only for now. */
+ * converted float scale, and the engine does sign-extend + madd. One decoder per quant (Q8_0, Q4_0, MXFP4). */
 #ifndef JAM_DECODE_X86_128_H
 #define JAM_DECODE_X86_128_H
 
@@ -9,11 +9,15 @@
 #include "jam_mxfp4.h"   /* jam_mxfp4_blk, jam_mxfp4_dhalf, JAM_MXFP4_CODES (pure C) */
 #include "jam_fp16.h"    /* jam_half2float (shared software fp16->fp32; SSE3 has no F16C) */
 
-#ifndef JAM_Q8_BLK_DEFINED
-#define JAM_Q8_BLK_DEFINED
 typedef struct __attribute__((packed)) { uint16_t d; int8_t qs[32]; } jam_q8_blk;   /* Q8_0: 34 bytes */
 typedef struct __attribute__((packed)) { uint16_t d; uint8_t qs[16]; } jam_q4_0_blk; /* Q4_0: 18 bytes */
-#endif
+
+/* signed int8 -> int16 (low / high 8 lanes): duplicate each byte then arithmetic-shift right 8 to
+ * sign-extend; dot of 16+16 int8 via madd. Shared by the q128 engine and the SSE3 K-quant kernels. */
+#define JAM_SEXT_LO(x) _mm_srai_epi16(_mm_unpacklo_epi8((x), (x)), 8)
+#define JAM_SEXT_HI(x) _mm_srai_epi16(_mm_unpackhi_epi8((x), (x)), 8)
+#define JAM_DOT16(w, a) _mm_add_epi32(_mm_madd_epi16(JAM_SEXT_LO(w), JAM_SEXT_LO(a)), \
+                                      _mm_madd_epi16(JAM_SEXT_HI(w), JAM_SEXT_HI(a)))
 
 /* Q8_0: weights are already int8 (two 16-byte halves); scale is the fp16 block delta. */
 static inline void jam_decode_q8_0_128(const void* blk, __m128i* wlo, __m128i* whi, float* dW) {

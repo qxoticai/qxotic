@@ -237,7 +237,6 @@ void jam_mm_q8_0_rp_avxvnni(void* arg, int rb, int re, int tid) {
  * ymm (8 i32 lanes = 8 rows/group, _mm256_dpbusd_avx_epi32). Same scheme: weight s8 is the signed operand,
  * activation a+128 the unsigned one, +128 bias corrected per row via cw = d·128·Σw. The per-worker repack
  * scratch is byte-for-byte the AVX-512 one (4 groups of 8 == 2 groups of 16). ================= */
-#define JAM_Q8B_BYTES 34
 #ifndef JAM_VNNI_NR
 #define JAM_VNNI_NR 4
 #endif
@@ -247,7 +246,7 @@ static void repack_q8_group8(const uint8_t* wbase, int64_t w_stride, int nb,
                              uint8_t* qs, float* dw, float* cw) {
     for (int r = 0; r < 8; r++) {
         const uint8_t* w = wbase + r * w_stride;
-        for (int B = 0; B < nb; B++, w += JAM_Q8B_BYTES) {
+        for (int B = 0; B < nb; B++, w += JAM_Q8_0_BYTES) {
             float d = q8b_h2f(*(const uint16_t*) w);
             const int8_t* q = (const int8_t*) (w + 2);
             int sumw = 0;
@@ -308,18 +307,6 @@ static inline void q8_block8_nr(const uint8_t* qs, const float* dw, const float*
     for (int c = 0; c < JAM_VNNI_NR; c++) _mm256_storeu_ps(out + (int64_t)(s0 + c) * ldc + r, f[c]);
 }
 
-static float q8_scalar_dot8(const uint8_t* w, int nb, const float* x) {
-    float acc = 0.0f;
-    for (int B = 0; B < nb; B++, w += JAM_Q8B_BYTES, x += 32) {
-        float d = q8b_h2f(*(const uint16_t*) w);
-        const int8_t* q = (const int8_t*) (w + 2);
-        float s = 0.0f;
-        for (int e = 0; e < 32; e++) s += (float) q[e] * x[e];
-        acc += d * s;
-    }
-    return acc;
-}
-
 void jam_q8_0_repack_band_avxvnni(void* arg, int t0, int t1, int tid) {
     const jam_q4k_job* J = (const jam_q4k_job*) arg;
     const int nb = J->kblocks, seq = J->seq;
@@ -344,7 +331,7 @@ void jam_q8_0_repack_band_avxvnni(void* arg, int t0, int t1, int tid) {
         for (int r = row + group * 8; r < row_end; r++)
             for (int s = 0; s < seq; s++)
                 J->out[(int64_t) s * ldc + r] =
-                    q8_scalar_dot8(J->w + (int64_t) r * J->w_stride, nb, J->rhs + (int64_t) s * J->rhs_stride);
+                    jam_q8_0_dot_f32(J->w + (int64_t) r * J->w_stride, nb, J->rhs + (int64_t) s * J->rhs_stride);
     }
 }
 
@@ -383,7 +370,7 @@ static void repack_q4_0_group8(const uint8_t* wbase, int64_t w_stride, int nb,
                                uint8_t* qs, float* dw, float* mw) {
     for (int r = 0; r < 8; r++) {
         const uint8_t* w = wbase + r * w_stride;
-        for (int B = 0; B < nb; B++, w += 18) {                  /* Q4_0 block = 18 bytes */
+        for (int B = 0; B < nb; B++, w += JAM_Q4_0_BYTES) {
             float d = q8b_h2f(*(const uint16_t*) w);
             const uint8_t* q = w + 2;
             #define Q40N(idx) ((idx) < 16 ? (q[idx] & 0xF) : (q[(idx) - 16] >> 4))
@@ -448,16 +435,6 @@ static inline void q4_0_block8_nr(const uint8_t* qs, const float* dw, const floa
     for (int c = 0; c < JAM_VNNI_NR; c++) _mm256_storeu_ps(out + (int64_t)(s0 + c) * ldc + r, f[c]);
 }
 
-static float q4_0_scalar_dot8(const uint8_t* w, int nb, const float* x) {
-    float acc = 0.0f;
-    for (int B = 0; B < nb; B++, w += 18, x += 32) {
-        float d = q8b_h2f(*(const uint16_t*) w); const uint8_t* q = w + 2; float s = 0.0f;
-        for (int e = 0; e < 16; e++) { s += (float)((q[e] & 0xF) - 8) * x[e]; s += (float)((q[e] >> 4) - 8) * x[e + 16]; }
-        acc += d * s;
-    }
-    return acc;
-}
-
 void jam_q4_0_repack_band_avxvnni(void* arg, int t0, int t1, int tid) {
     const jam_q4k_job* J = (const jam_q4k_job*) arg;
     const int nb = J->kblocks, seq = J->seq; const int64_t ldc = J->out_stride;
@@ -481,6 +458,6 @@ void jam_q4_0_repack_band_avxvnni(void* arg, int t0, int t1, int tid) {
         }
         for (int r = row + group * 8; r < row_end; r++)
             for (int s = 0; s < seq; s++)
-                J->out[(int64_t) s * ldc + r] = q4_0_scalar_dot8(J->w + (int64_t) r * J->w_stride, nb, J->rhs + (int64_t) s * J->rhs_stride);
+                J->out[(int64_t) s * ldc + r] = jam_q4_0_dot_f32(J->w + (int64_t) r * J->w_stride, nb, J->rhs + (int64_t) s * J->rhs_stride);
     }
 }

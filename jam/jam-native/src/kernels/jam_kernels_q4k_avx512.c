@@ -17,7 +17,9 @@ static inline float q4k_h2f(uint16_t h) { return _cvtsh_ss(h); }
 /* Column register-tile width: the _nr band kernels process JAM_VNNI_NR activation columns per weight-block
  * load, so the weight decode + per-block float scale amortize across them. NR=4 fits the 32 zmm; NR=8 spills.
  * Shared by the q4_0 / q6k / q5k tiled bands. */
-#define JAM_VNNI_NR 4
+#ifndef JAM_VNNI_NR
+#define JAM_VNNI_NR 4   /* tunable via -DJAM_VNNI_NR */
+#endif
 
 /* ---- phase 1: quantize one activation row to s8 + per-32 scale + per-16 sums ---- */
 static void quantize_row_q8s(const float* x, int kblocks, int8_t* xq, float* dx, float* xs) {
@@ -321,13 +323,12 @@ void jam_q6k_band(void* arg, int t0, int t1, int tid) {
  * operand is the repacked weight; the +128 bias is corrected in float per row/block via cw = d·128·Σw.
  * One vpdpbusd accumulates 16 ROWS in the 16 i32 lanes -> per-row scales are per-lane, 16 outputs store
  * contiguously (token-major), zero horizontal reductions. block_q8_0 = { fp16 d; int8 qs[32] } = 34B. */
-#define JAM_Q8_BYTES 34
 
 static void repack_q8_group16(const uint8_t* wbase, int64_t w_stride, int nb,
                               uint8_t* qs, float* dw, float* cw) {
     for (int r = 0; r < 16; r++) {
         const uint8_t* w = wbase + r * w_stride;
-        for (int B = 0; B < nb; B++, w += JAM_Q8_BYTES) {
+        for (int B = 0; B < nb; B++, w += JAM_Q8_0_BYTES) {
             float d = q4k_h2f(*(const uint16_t*) w);
             const int8_t* q = (const int8_t*) (w + 2);
             int sumw = 0;
@@ -358,18 +359,6 @@ static inline __m512 q8_block16(const uint8_t* qs, const float* dw, const float*
         qs += 512; dw += 16; cw += 16; x += JAM_QK;
     }
     return f;
-}
-
-static float q8_scalar_dot(const uint8_t* w, int nb, const float* x) {   /* <16-row tail: exact float dot */
-    float acc = 0.0f;
-    for (int B = 0; B < nb; B++, w += JAM_Q8_BYTES, x += 32) {
-        float d = q4k_h2f(*(const uint16_t*) w);
-        const int8_t* q = (const int8_t*) (w + 2);
-        float s = 0.0f;
-        for (int e = 0; e < 32; e++) s += (float) q[e] * x[e];
-        acc += d * s;
-    }
-    return acc;
 }
 
 /* Q8_0 column register-tiled: the s8 weight block is loaded once and vpdpbusd'd against JAM_VNNI_NR
@@ -428,7 +417,7 @@ void jam_q8_0_repack_band(void* arg, int t0, int t1, int tid) {
         for (int r = row + group * 16; r < row_end; r++)        /* <16-row tail: scalar exact dot */
             for (int s = 0; s < seq; s++)
                 J->out[(int64_t) s * ldc + r] =
-                    q8_scalar_dot(J->w + (int64_t) r * J->w_stride, nb, J->rhs + (int64_t) s * J->rhs_stride);
+                    jam_q8_0_dot_f32(J->w + (int64_t) r * J->w_stride, nb, J->rhs + (int64_t) s * J->rhs_stride);
     }
 }
 
@@ -446,7 +435,6 @@ void jam_q8_0_repack_band(void* arg, int t0, int t1, int tid) {
  * ~2262 (both 32 threads), and Q8_0 wins outright (~1.4x). jinfer just needs all logical CPUs — both
  * JAM_NUM_THREADS and the jinfer FJP pool. Capping either to 16 starves the GEMM + the Java non-GEMM and
  * is what makes Q4_0 *look* ~10% slow; it is the thread budget, NOT this band. */
-#define JAM_Q40_BYTES 18
 
 /* PACKED repack: keep 2 nibbles/byte (256 B/block/16rows, HALF of Q8_0) so the band stays L1-resident
  * and weight reads halve. Each byte holds two element-planes: low = element i*8+e, high = i*8+4+e, so one
@@ -455,7 +443,7 @@ static void repack_q4_0_group16(const uint8_t* wbase, int64_t w_stride, int nb,
                                 uint8_t* qs, float* dw, float* mw) {
     for (int r = 0; r < 16; r++) {
         const uint8_t* w = wbase + r * w_stride;
-        for (int B = 0; B < nb; B++, w += JAM_Q40_BYTES) {
+        for (int B = 0; B < nb; B++, w += JAM_Q4_0_BYTES) {
             float d = q4k_h2f(*(const uint16_t*) w);
             const uint8_t* q = w + 2;                              /* qs[16]; byte j: low=elem j, high=elem j+16 */
             #define Q40_NIB(idx) ((idx) < 16 ? (q[idx] & 0xF) : (q[(idx) - 16] >> 4))
@@ -496,7 +484,7 @@ static inline __m512 q4_0_block16(const uint8_t* qs, const float* dw, const floa
 #ifndef JAM_Q40_NR
 #define JAM_Q40_NR JAM_VNNI_NR   /* Q4_0's own column-tile width (tunable via -DJAM_Q40_NR) */
 #endif
-/* Column register-tiled variant: load+decode each weight block ONCE, vpdpbusd it against JAM_VNNI_NR
+/* Column register-tiled variant: load+decode each weight block ONCE, vpdpbusd it against JAM_Q40_NR
  * activation columns into NR accumulators — amortizes the weight load + nibble decode (and/srli) + the
  * float scale across NR columns, so vpdpbusd stops being ~1/3 of the inner loop. Stores all NR results. */
 static inline void q4_0_block16_nr(const uint8_t* qs, const float* dw, const float* mw,
@@ -531,21 +519,6 @@ static inline void q4_0_block16_nr(const uint8_t* qs, const float* dw, const flo
     for (int c = 0; c < JAM_Q40_NR; c++) q4k_store16(f[c], out, ldc, r, s0 + c);
 }
 
-static float q4_0_scalar_dot(const uint8_t* w, int nb, const float* x) {   /* <16-row tail: exact float dot */
-    float acc = 0.0f;
-    for (int B = 0; B < nb; B++, w += JAM_Q40_BYTES, x += 32) {
-        float d = q4k_h2f(*(const uint16_t*) w);
-        const uint8_t* q = w + 2;
-        float s = 0.0f;
-        for (int e = 0; e < 16; e++) {
-            s += (float)((q[e] & 0xF) - 8) * x[e];
-            s += (float)((q[e] >> 4)  - 8) * x[e + 16];
-        }
-        acc += d * s;
-    }
-    return acc;
-}
-
 void jam_q4_0_repack_band(void* arg, int t0, int t1, int tid) {
     const jam_q4k_job* J = (const jam_q4k_job*) arg;
     const int nb = J->kblocks, seq = J->seq;
@@ -571,7 +544,7 @@ void jam_q4_0_repack_band(void* arg, int t0, int t1, int tid) {
         for (int r = row + group * 16; r < row_end; r++)
             for (int s = 0; s < seq; s++)
                 J->out[(int64_t) s * ldc + r] =
-                    q4_0_scalar_dot(J->w + (int64_t) r * J->w_stride, nb, J->rhs + (int64_t) s * J->rhs_stride);
+                    jam_q4_0_dot_f32(J->w + (int64_t) r * J->w_stride, nb, J->rhs + (int64_t) s * J->rhs_stride);
     }
 }
 

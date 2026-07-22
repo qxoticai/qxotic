@@ -10,8 +10,11 @@
 #define JAM_KQUANT_H
 
 #include <stdint.h>
+#include "kernels/jam_fp16.h"   /* jam_half2float (for the scalar tail dots below) */
 
 #define JAM_QK          32     /* elements per 32-block (activation quant granularity) */
+#define JAM_Q8_0_BYTES  34     /* fp16 d + 32 int8 */
+#define JAM_Q4_0_BYTES  18     /* fp16 d + 16 nibble bytes */
 #define JAM_QKK         256    /* elements per K-quant super-block */
 #define JAM_Q4K_BYTES   144    /* d(f16) dmin(f16) scales[12] qs[128] */
 #define JAM_Q5K_BYTES   176    /* d(f16) dmin(f16) scales[12] qh[32] qs[128] */
@@ -27,6 +30,34 @@ static inline void jam_q4k_scales_mins(const uint8_t* b, uint8_t* sc, uint8_t* m
         sc[j + 4] = (uint8_t)((b[j + 8] & 0xF) | ((b[j] >> 6) << 4));
         mn[j + 4] = (uint8_t)((b[j + 8] >> 4) | ((b[j + 4] >> 6) << 4));
     }
+}
+
+/* Exact scalar Q8_0 / Q4_0 · f32 dots over nb consecutive 32-blocks - the VNNI bands' partial-row
+ * tails (dequant-on-the-fly; the SIMD kernels use the int8 pipeline). Same pattern as jam_q1_0_dot_f32. */
+static inline float jam_q8_0_dot_f32(const uint8_t* w, int nb, const float* x) {
+    float acc = 0.0f;
+    for (int B = 0; B < nb; B++, w += JAM_Q8_0_BYTES, x += JAM_QK) {
+        float d = jam_half2float(*(const uint16_t*) w);
+        const int8_t* q = (const int8_t*) (w + 2);
+        float s = 0.0f;
+        for (int e = 0; e < 32; e++) s += (float) q[e] * x[e];
+        acc += d * s;
+    }
+    return acc;
+}
+static inline float jam_q4_0_dot_f32(const uint8_t* w, int nb, const float* x) {
+    float acc = 0.0f;
+    for (int B = 0; B < nb; B++, w += JAM_Q4_0_BYTES, x += JAM_QK) {
+        float d = jam_half2float(*(const uint16_t*) w);
+        const uint8_t* q = w + 2;
+        float s = 0.0f;
+        for (int e = 0; e < 16; e++) {
+            s += (float)((q[e] & 0xF) - 8) * x[e];
+            s += (float)((q[e] >> 4)  - 8) * x[e + 16];
+        }
+        acc += d * s;
+    }
+    return acc;
 }
 
 #endif /* JAM_KQUANT_H */

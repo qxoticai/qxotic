@@ -8,16 +8,14 @@
 #include <pmmintrin.h>   /* SSE3 (pulls in SSE/SSE2) */
 #include <stdint.h>
 #include "jam_internal.h"
-#include "jam_kquant.h"   /* JAM_QKK, JAM_Q4K/5K/6K_BYTES, jam_q4k_scales_mins */
-#include "jam_fp16.h"     /* jam_half2float (software fp16 -> fp32; SSE3 has no F16C) */
+#include "jam_kquant.h"          /* JAM_QKK, JAM_Q4K/5K/6K_BYTES, jam_q4k_scales_mins */
+#include "jam_fp16.h"            /* jam_half2float (software fp16 -> fp32; SSE3 has no F16C) */
+#include "jam_decode_x86_128.h"  /* JAM_DOT16 (shared int8 madd dot) */
 
 #define JAM_KTN 4         /* activation columns tiled per decoded weight sub-block (matches the SSE3 4-col tile) */
 
-/* signed int8 -> int16 (low / high 8 lanes) via duplicate + arithmetic shift; K-quant nibbles are <128 so the
- * sign bit is clear (zero-extend), Q6_K weights are genuinely signed (qv-32) — both correct under sign-extend. */
-#define SEXT_LO(x) _mm_srai_epi16(_mm_unpacklo_epi8((x), (x)), 8)
-#define SEXT_HI(x) _mm_srai_epi16(_mm_unpackhi_epi8((x), (x)), 8)
-#define DOT16(w, a) _mm_add_epi32(_mm_madd_epi16(SEXT_LO(w), SEXT_LO(a)), _mm_madd_epi16(SEXT_HI(w), SEXT_HI(a)))
+/* JAM_DOT16 (jam_decode_x86_128.h): K-quant nibbles are <128 so the sign bit is clear (zero-extend),
+ * Q6_K weights are genuinely signed (qv-32) — both correct under sign-extend. */
 
 static inline int jam_hsum4_epi32(__m128i v) {
     __m128i s = _mm_add_epi32(v, _mm_shuffle_epi32(v, _MM_SHUFFLE(1, 0, 3, 2)));
@@ -26,12 +24,12 @@ static inline int jam_hsum4_epi32(__m128i v) {
 }
 /* 32-wide signed dot: two 16-byte weight halves vs 32 int8 activations -> scalar int. */
 static inline int jam_kdot32_sse3(__m128i wlo, __m128i whi, const int8_t* p) {
-    return jam_hsum4_epi32(_mm_add_epi32(DOT16(wlo, _mm_loadu_si128((const __m128i*) p)),
-                                         DOT16(whi, _mm_loadu_si128((const __m128i*) (p + 16)))));
+    return jam_hsum4_epi32(_mm_add_epi32(JAM_DOT16(wlo, _mm_loadu_si128((const __m128i*) p)),
+                                         JAM_DOT16(whi, _mm_loadu_si128((const __m128i*) (p + 16)))));
 }
 /* 16-wide signed dot (Q6_K): 16 int8 weights vs 16 int8 activations -> scalar int. */
 static inline int jam_kdot16_sse3(__m128i w, const int8_t* p) {
-    return jam_hsum4_epi32(DOT16(w, _mm_loadu_si128((const __m128i*) p)));
+    return jam_hsum4_epi32(JAM_DOT16(w, _mm_loadu_si128((const __m128i*) p)));
 }
 
 void jam_mm_q4k_sse3(void* arg, int rb, int re, int tid) {

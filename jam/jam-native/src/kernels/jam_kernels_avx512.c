@@ -352,13 +352,6 @@ typedef struct __attribute__((packed)) { uint16_t d; int8_t qs[32]; } block_q8_0
 
 static inline float h2f(uint16_t h) { return _cvtsh_ss(h); }
 
-static inline float hsum8f(__m256 v) {
-    __m128 s = _mm_add_ps(_mm256_castps256_ps128(v), _mm256_extractf128_ps(v, 1));
-    s = _mm_add_ps(s, _mm_movehl_ps(s, s));
-    s = _mm_add_ss(s, _mm_shuffle_ps(s, s, 0x1));
-    return _mm_cvtss_f32(s);
-}
-
 /* ---- 512-bit VNNI Q8_0 helpers: process a block-PAIR (64 int8 = two Q8_0 blocks) per vpdpbusd ----
  * dpbusd yields 16 i32 lanes: 0..7 = first block's partials, 8..15 = second's, so each pair is scaled
  * by scale2(dA0·dB0, dA1·dB1) and float-accumulated; reduce_add at the end. abs/sign trick keeps the

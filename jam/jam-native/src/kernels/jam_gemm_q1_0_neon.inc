@@ -19,6 +19,14 @@
 #define JAM_B8(c,s  ) JAM_B7(c,s,     c), JAM_B7(c,s,     s)
 
 static const uint64_t JAM_Q1_0_TBL[256] = { JAM_B8(00, 10) };
+#undef JAM_B1
+#undef JAM_B2
+#undef JAM_B3
+#undef JAM_B4
+#undef JAM_B5
+#undef JAM_B6
+#undef JAM_B7
+#undef JAM_B8
 
 #include "jam_q1_0.h"   /* jam_blk_q1_0 */
 

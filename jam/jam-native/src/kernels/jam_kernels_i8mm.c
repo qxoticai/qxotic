@@ -3,12 +3,8 @@
  * Highest int8 throughput on ARM (Graviton3/4, Apple M-series). Odd row/col edges fall back to a scalar
  * int dot. Same requant-B scratch + deferred-float scaling as the other Q8_0 kernels. */
 #include "jam_internal.h"
-#include <string.h>
 #include <arm_neon.h>
-
-typedef struct __attribute__((packed)) { uint16_t d; int8_t qs[32]; } jam_q8_blk;
-
-static inline float i8mm_h2f(uint16_t h) { __fp16 x; memcpy(&x, &h, 2); return (float) x; }
+#include "jam_decode_neon.h"   /* jam_q8_blk + jam_neon_h2f */
 
 /* scalar int8 block-dot of a weight row and an activation column, scaled — for the odd edges. */
 static inline float i8mm_edge(const jam_q8_blk* wr, const int8_t* qc, const float* dc, int nb) {
@@ -16,7 +12,7 @@ static inline float i8mm_edge(const jam_q8_blk* wr, const int8_t* qc, const floa
     for (int b = 0; b < nb; ++b) {
         const jam_q8_blk* w = &wr[b]; int dot = 0;
         for (int e = 0; e < 32; ++e) dot += (int) w->qs[e] * (int) qc[(size_t)b*32+e];
-        acc += i8mm_h2f(w->d) * dc[b] * (float) dot;
+        acc += jam_neon_h2f(w->d) * dc[b] * (float) dot;
     }
     return acc;
 }
@@ -45,7 +41,7 @@ void jam_mm_q8_0_i8mm(void* arg, int rb, int re, int tid) {
                     int8x16_t vb = vcombine_s8(vld1_s8(a0+(size_t)blk*32+ch), vld1_s8(a1+(size_t)blk*32+ch)); /* rows aj, aj+1 */
                     r = vmmlaq_s32(r, va, vb);                /* += [wi·aj wi·aj1 wi1·aj wi1·aj1] */
                 }
-                float dA0=i8mm_h2f(w0[blk].d), dA1=i8mm_h2f(w1[blk].d);
+                float dA0=jam_neon_h2f(w0[blk].d), dA1=jam_neon_h2f(w1[blk].d);
                 float sc[4] = { dA0*e0[blk], dA0*e1[blk], dA1*e0[blk], dA1*e1[blk] };
                 f = vfmaq_f32(f, vcvtq_f32_s32(r), vld1q_f32(sc));
             }

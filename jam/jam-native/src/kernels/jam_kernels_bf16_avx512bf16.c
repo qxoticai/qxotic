@@ -13,6 +13,12 @@
 #include "jam_internal.h"
 #include <immintrin.h>
 
+static inline uint16_t jam_f2bf_rne(float v) {   /* round-to-nearest-even, matches vcvtneps2bf16 */
+    union { float f; uint32_t u; } x; x.f = v;
+    uint32_t r = x.u + 0x7FFF + ((x.u >> 16) & 1);
+    return (uint16_t) (r >> 16);
+}
+
 /* phase 1: rows [rb,re) of the n×k F32 activation X -> bf16 scratch XB (same row order, stride k) */
 void jam_bf16_cvt_avx512bf16(void* arg, int rb, int re, int tid) {
     (void) tid;
@@ -28,10 +34,8 @@ void jam_bf16_cvt_avx512bf16(void* arg, int rb, int re, int tid) {
             __m512 lo = _mm512_loadu_ps(xs + t), hi = _mm512_loadu_ps(xs + t + 16);
             _mm512_storeu_si512((void*) (os + t), (__m512i) _mm512_cvtne2ps_pbh(hi, lo));
         }
-        for (; t < k; t++) {   /* tail (dispatch gates k%32==0, but stay correct) */
-            union { float f; uint32_t u; } v; v.f = xs[t];
-            os[t] = (uint16_t) (v.u >> 16);
-        }
+        for (; t < k; t++)   /* tail (dispatch gates k%32==0, but stay correct) */
+            os[t] = jam_f2bf_rne(xs[t]);
     }
 }
 
@@ -191,12 +195,6 @@ void jam_mm_bf16_avx512bf16(void* arg, int rb, int re, int tid) {
  * transpose once into k-pair-major token panels (xp[p][t/2][32 tokens x pair]), and the 8x32
  * microkernel broadcasts a 32-bit WEIGHT PAIR (two adjacent bf16) against 2 panel vectors -
  * each vdpbf16ps covers two k-steps for 16 tokens. 16 dp per ~10 load-uops. */
-
-static inline uint16_t jam_f2bf_rne(float v) {   /* round-to-nearest-even, matches vcvtneps2bf16 */
-    union { float f; uint32_t u; } x; x.f = v;
-    uint32_t r = x.u + 0x7FFF + ((x.u >> 16) & 1);
-    return (uint16_t) (r >> 16);
-}
 
 /* phase 1: convert+transpose token-panels of 32 into xp (uint16 pairs: [t/2][j*2 + (t&1)]). */
 void jam_bf16_pack_avx512bf16(void* arg, int pb, int pe, int tid) {

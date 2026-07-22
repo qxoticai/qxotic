@@ -10,7 +10,6 @@
 #include "jam_q1_0.h"
 #include "jam_kquant.h"
 #include "jam_fp16.h"   /* jam_half2float (shared software fp16->fp32) */
-#include <string.h>     /* memcpy (NVFP4 global-scale header) */
 
 /* C[i, :] = A[i, :] @ Bᵀ  for i in [row_begin, row_end).  C[i,j] = dot(A row i, B row j). */
 void jam_mm_f32_generic(void* arg, int row_begin, int row_end, int tid) {
