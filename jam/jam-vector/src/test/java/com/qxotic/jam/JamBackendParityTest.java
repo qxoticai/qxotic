@@ -791,16 +791,9 @@ class JamBackendParityTest {
 
     // ---- helpers ----
 
-    /**
-     * k a whole number of blocks for the dtype (256 for k-quants, also a multiple of 64/32 for
-     * FP4/Q*_0).
-     */
+    /** k: a whole number of blocks for every dtype (multiple of 256/128/64/32). */
     private static int blockK(int tag) {
-        return switch (tag) {
-            case JAM.Q4_K, JAM.Q5_K, JAM.Q6_K, JAM.NVFP4, JAM.MXFP4 ->
-                    1024; // multiple of 256/64/32
-            default -> 1024; // F*/Q*_0: any multiple of 32
-        };
+        return 1024;
     }
 
     private static String name(int tag) {

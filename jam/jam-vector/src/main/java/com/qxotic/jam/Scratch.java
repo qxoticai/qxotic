@@ -7,13 +7,12 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 /**
  * Per-context F32 dequant scratch pool for the band kernels (Q1_0, Q4_K/Q5_K/Q6_K, MXFP4, NVFP4).
  *
- * <p>Owned by the matmul context (one per {@link VectorJAM} instance, or one shared by jinfer's
- * legacy tensor path) and passed into each {@code gemm} - NOT a {@code static}/{@code ThreadLocal}.
- * This is the deliberate fix for the old {@code BandGemm.DEQUANT_BAND} ThreadLocal, whose buffers
- * were rooted in the (commonPool, JVM-lifetime) worker threads and so were never released when a
- * context was dropped. Here the buffers are reachable only through this object: reused across every
- * {@code mm} call (no per-call allocation in steady state), and collected with the context that
- * owns the pool.
+ * <p>Owned by the matmul context (one per {@link VectorJAM} instance) and passed into each {@code
+ * gemm} - NOT a {@code static}/{@code ThreadLocal}. This is the deliberate fix for the old {@code
+ * BandGemm.DEQUANT_BAND} ThreadLocal, whose buffers were rooted in the (commonPool, JVM-lifetime)
+ * worker threads and so were never released when a context was dropped. Here the buffers are
+ * reachable only through this object: reused across every {@code mm} call (no per-call allocation
+ * in steady state), and collected with the context that owns the pool.
  *
  * <p>Buffers are NATIVE segments (auto-arena, GC-managed exactly like the float[] they replaced) so
  * the band sweep reads them through the {@link VectorSupport#GLOBAL} pinned-segment route -

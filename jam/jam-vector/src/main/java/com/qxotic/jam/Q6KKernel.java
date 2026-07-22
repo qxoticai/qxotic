@@ -51,10 +51,7 @@ public final class Q6KKernel {
                 Q6KKernel::dequantizeRow);
     }
 
-    /**
-     * Dequantize one Q6_K weight row (dim1 % 256 == 0) into {@code dst} at {@code dstOffset}.
-     * 512-bit.
-     */
+    /** Dequantize one Q6_K weight row (dim1 % 256 == 0) into {@code dst} at {@code dstBase}. */
     static void dequantizeRow(
             MemorySegment w, long rowElemOffset, int dim1, MemorySegment dst, long dstBase) {
         int kblocks = dim1 / BLOCK;

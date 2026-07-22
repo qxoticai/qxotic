@@ -56,17 +56,6 @@ public final class VectorJAM implements JAM {
         return ModuleLayer.boot().findModule("jdk.incubator.vector").isPresent();
     }
 
-    private static boolean tileable(int wt) {
-        return wt == Q8_0
-                || wt == Q4_0
-                || wt == Q4_K
-                || wt == Q5_K
-                || wt == Q6_K
-                || wt == MXFP4
-                || wt == NVFP4
-                || wt == Q1_0;
-    }
-
     @Override
     public int mm(
             MemorySegment w,
@@ -87,7 +76,7 @@ public final class VectorJAM implements JAM {
         if (n <= 1 || at != F32 || rt != F32 || VectorSupport.F_SPECIES.vectorBitSize() < 128)
             return EUNSUPPORTED;
         GGMLType t = GGMLType.byCode(wt);
-        if (t == null || !tileable(wt)) return EUNSUPPORTED;
+        if (t == null) return EUNSUPPORTED; // unknown tag; untiled dtypes hit the switch default
         if (ldw != k || k % t.blockElems != 0)
             return EUNSUPPORTED; // contiguous weight rows, whole blocks
 

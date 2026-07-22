@@ -52,10 +52,7 @@ public final class Q5KKernel {
                 Q5KKernel::dequantizeRow);
     }
 
-    /**
-     * Dequantize one Q5_K weight row (dim1 % 256 == 0) into {@code dst} at {@code dstOffset}.
-     * 512-bit.
-     */
+    /** Dequantize one Q5_K weight row (dim1 % 256 == 0) into {@code dst} at {@code dstBase}. */
     static void dequantizeRow(
             MemorySegment w, long rowElemOffset, int dim1, MemorySegment dst, long dstBase) {
         int kblocks = dim1 / BLOCK;

@@ -111,7 +111,6 @@ final class VectorSupport {
     /** Register-tiling knobs (same defaults as jinfer's GEMM_* tunables). */
     static final int SEQ_TILE = jamPropInt("jam.vector.seqTile", 32);
 
-    static final int SEQ_TILE_QK = jamPropInt("jam.vector.seqTileQk", 8); // k-quants tile narrower
     static final int ROW_TILE = jamPropInt("jam.vector.rowTile", 128);
     static final int THREADS =
             jamPropInt("jam.vector.threads", Runtime.getRuntime().availableProcessors() * 4);

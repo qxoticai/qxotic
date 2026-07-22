@@ -55,10 +55,7 @@ public final class Mxfp4Kernel {
                 Mxfp4Kernel::dequantizeRow);
     }
 
-    /**
-     * Dequantize one MXFP4 weight row (dim1 % 32 == 0) into {@code dst} at {@code dstOffset}.
-     * 512-bit.
-     */
+    /** Dequantize one MXFP4 weight row (dim1 % 32 == 0) into {@code dst} at {@code dstBase}. */
     private static void dequantizeRow(
             MemorySegment w, long rowElemOffset, int dim1, MemorySegment dst, long dstBase) {
         int kblocks = dim1 / QK;

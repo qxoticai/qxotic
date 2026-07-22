@@ -13,8 +13,9 @@ import org.junit.jupiter.api.Test;
 /**
  * {@link ScalarJAM} correctness. Each implemented dtype is encoded from values it represents
  * EXACTLY (so the decode is lossless), and the matmul must equal a double-precision reference
- * computed from those same values. Covers gemm + gemv across the dtypes, strided operands, and the
- * decline contract. Self-contained in jam-scalar (no jinfer, no native).
+ * computed from those same values. Covers gemm + gemv across the dtypes and the decline contract;
+ * Q1_0 parity lives in jam-vector's JamBackendParityTest. Self-contained in jam-scalar (no jinfer,
+ * no native).
  */
 class ScalarJamTest {
 

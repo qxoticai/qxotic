@@ -103,10 +103,7 @@ public final class Q4KKernel {
                 Q4KKernel::dequantizeRow);
     }
 
-    /**
-     * Dequantize one Q4_K weight row (dim1 % 256 == 0) into {@code dst} at {@code dstOffset}.
-     * 512-bit.
-     */
+    /** Dequantize one Q4_K weight row (dim1 % 256 == 0) into {@code dst} at {@code dstBase}. */
     static void dequantizeRow(
             MemorySegment w, long rowElemOffset, int dim1, MemorySegment dst, long dstBase) {
         int kblocks = dim1 / BLOCK;

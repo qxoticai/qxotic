@@ -16,7 +16,7 @@ import java.lang.foreign.MemorySegment;
  * strides (the native convention). The weight is read block-by-block through {@link GGMLType}'s
  * geometry.
  *
- * <p>Decodes every jam weight dtype: {@code F32 F16 BF16 Q4_0 Q8_0}, the k-quants {@code
+ * <p>Decodes every jam weight dtype: {@code F32 F16 BF16 Q4_0 Q8_0 Q1_0}, the k-quants {@code
  * Q4_K/Q5_K/Q6_K}, and FP4 {@code MXFP4/NVFP4} — the dequant mirrors jam's native reference
  * (jam_ref.h).
  */
@@ -72,6 +72,11 @@ public final class ScalarJAM implements JAM {
         return OK;
     }
 
+    /**
+     * Always true today — an exhaustiveness tripwire, not a filter: the default-less switch fails
+     * to compile when a {@link GGMLType} constant is added, forcing a decision here before {@link
+     * #decode} can meet the new dtype at runtime.
+     */
     private static boolean decodable(GGMLType t) {
         return switch (t) {
             case F32, F16, BF16, Q4_0, Q8_0, Q4_K, Q5_K, Q6_K, MXFP4, NVFP4, Q1_0 -> true;

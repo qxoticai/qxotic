@@ -33,14 +33,6 @@ public final class Q8Kernel {
     private static final int BLOCK = 32,
             TYPE = 34; // Q8_0: 32 elems, 34 bytes/block (fp16 scale + 32 int8)
 
-    /**
-     * The {@code -Djam.vector.tile} string this kernel resolved (e.g. {@code auto}).
-     * Diagnostics/tests.
-     */
-    public static String tile() {
-        return VectorSupport.TILE;
-    }
-
     /** The register-tile code this kernel dispatches on (see {@link VectorSupport#TILE_CODE}). */
     public static int tileCode() {
         return VectorSupport.TILE_CODE;
@@ -391,7 +383,7 @@ public final class Q8Kernel {
         putFloat(outAddr + 4L * (s * outStride + row), c0.reduceLanes(VectorOperators.ADD));
     }
 
-    // Educational baseline (-Dllama.Q8_0GemmTile=1x1): the simplest possible 512-bit Q8_0
+    // Educational baseline (-Djam.vector.tile=1x1): the simplest possible 512-bit Q8_0
     // micro-kernel.
     // One output = one weight row dot one activation column, no tiling, no reuse. A Q8_0 block is a
     // f16
@@ -455,7 +447,7 @@ public final class Q8Kernel {
         putFloat(outAddr + 4L * (s * outStride + row), acc.reduceLanes(VectorOperators.ADD));
     }
 
-    // Pure AVX2 path (-Dllama.Q8_0GemmTile=avx256): 256-bit (YMM) vectors only, no 512-bit ops.
+    // Pure AVX2 path (-Djam.vector.tile=avx256): 256-bit (YMM) vectors only, no 512-bit ops.
     // A 256-bit FloatVector holds 8 lanes, so each Q8_0 block (32 int8) decodes to FOUR 8-lane
     // sub-vectors (vs two for the 512-bit kernels) loaded via ByteVector.SPECIES_64. Useful on
     // AVX2-only CPUs and to test whether avoiding ZMM sidesteps AVX-512 frequency throttling.
@@ -607,10 +599,11 @@ public final class Q8Kernel {
         putFloat(outAddr + 4L * (s * outStride + row), acc.reduceLanes(VectorOperators.ADD));
     }
 
-    // Non-final so Graal cannot constant-fold this bound and unroll the K-subvector loop in
-    // gemm256Tile2x3F32 -- unrolling would let the scheduler hoist all four subvecs' weight
-    // decodes,
-    // recreating the 8-weight live set we are trying to avoid. Kept rolled => only 2 weights live.
+    // Non-final so Graal cannot constant-fold this bound and unroll the 256/128-bit K-subvector
+    // loops (every gemm256Tile* and 128-bit chunk loop uses it) -- unrolling would let the
+    // scheduler
+    // hoist all four subvecs' weight decodes, recreating the 8-weight live set we are trying to
+    // avoid. Kept rolled => only 2 weights live.
     private static int Q8_KSUBVEC = 4;
 
     // 256-bit 2 rows x 3 seq, K-subvector-streamed for a 16-register (AVX2) file.
@@ -944,7 +937,7 @@ public final class Q8Kernel {
     // ultimate portable fallback for JVMs/arches where the incubator Vector API is absent or
     // disabled. The inner k-loop is kept clean so HotSpot/Graal SuperWord MAY auto-vectorize it,
     // but the source contains no Vector API -- it is plain Java arithmetic. Selected with
-    // -Dllama.Q8_0GemmTile=scalar (alias "java").
+    // -Djam.vector.tile=scalar (alias "java").
 
     // 4 weight rows x 1 seq: each activation feeds 4 scalar accumulators (4-way ILP across rows).
     // This is scalar-throughput-bound (~1/16 of AVX-512) and that is the floor in pure Java on this
