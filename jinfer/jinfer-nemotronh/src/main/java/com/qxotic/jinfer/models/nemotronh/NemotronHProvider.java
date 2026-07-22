@@ -1,7 +1,7 @@
 package com.qxotic.jinfer.models.nemotronh;
 
 import com.qxotic.format.gguf.GGUF;
-import com.qxotic.jinfer.chat.ChatModel;
+import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.ModelProvider;
 import java.io.IOException;
 import java.nio.channels.FileChannel;
@@ -15,8 +15,8 @@ public final class NemotronHProvider implements ModelProvider {
     }
 
     @Override
-    public ChatModel<?> load(FileChannel fileChannel, GGUF gguf, int contextLength)
+    public LoadedModel<?> load(FileChannel fileChannel, GGUF gguf, int contextLength)
             throws IOException {
-        return NemotronH.loadModel(fileChannel, gguf, contextLength).chatModel();
+        return NemotronH.loadModel(fileChannel, gguf, contextLength).loaded();
     }
 }

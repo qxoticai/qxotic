@@ -1,7 +1,7 @@
 package com.qxotic.jinfer.server;
 
 import com.qxotic.jinfer.*;
-import com.qxotic.jinfer.chat.ChatModel;
+import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
@@ -91,7 +91,7 @@ public final class ServerIntegrationTest {
         Path model = modelPath();
         modelId = model.getFileName().toString();
         Assumptions.assumeTrue(Files.exists(model), "model not found: " + model);
-        ChatModel<?> llama = Models.load(model, 2048);
+        LoadedModel<?> llama = Models.load(model, 2048);
         StringBuilder manual = new StringBuilder("Agent operating manual.");
         for (int i = 1; i <= 50; i++) {
             manual.append(" Directive ")
@@ -1103,8 +1103,7 @@ public final class ServerIntegrationTest {
      * Wall-clock deadline: the timeoutNanos duration aborts a long generation through the per-token
      * abort path, reporting finish_reason "length". Engine-level so it needs no global flag.
      */
-    private static <S extends RuntimeState> void generationDeadline(ChatModel<S> chat) {
-        LoadedModel<S> model = chat.base();
+    private static <S extends RuntimeState> void generationDeadline(LoadedModel<S> model) {
         com.qxotic.toknroll.IntSequence prompt =
                 model.tokenizer().encode("Write a very long, detailed story.");
         long start = System.nanoTime();

@@ -29,6 +29,7 @@ import static com.qxotic.jinfer.Norms.rmsnorm;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.*;
+import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
 import com.qxotic.toknroll.Tokenizer;
@@ -83,13 +84,13 @@ public final class NemotronH
      * architecture-dispatching loader hands to a caller that does not know the family.
      */
     public LoadedModel<NemotronH.State> loaded() {
-        return new LoadedModel<>(this, tokenizer(), chatTemplateSource, stopTokens(), modelSeed);
-    }
-
-    /** The chat-layer binding: token-level facts plus this model's chat framing. */
-    public com.qxotic.jinfer.chat.ChatModel<NemotronH.State> chatModel() {
-        return new com.qxotic.jinfer.chat.ChatModel<>(
-                loaded(), turnTemplate().map(t -> (com.qxotic.jinfer.chat.ChatTemplate) t));
+        return new LoadedModel<>(
+                this,
+                tokenizer(),
+                chatTemplateSource,
+                stopTokens(),
+                modelSeed,
+                turnTemplate().map(t -> (com.qxotic.jinfer.chat.ChatTemplate) t));
     }
 
     public java.util.Optional<com.qxotic.jinfer.chat.TurnTemplate> turnTemplate() {

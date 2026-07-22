@@ -1,17 +1,18 @@
-package com.qxotic.jinfer.llm;
+package com.qxotic.jinfer.chat;
 
 import com.qxotic.jinfer.LanguageModel;
 import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.jinfer.cache.StateCodec;
 import com.qxotic.toknroll.Tokenizer;
+import java.util.Optional;
 import java.util.Set;
 
 /**
  * A {@link LanguageModel} together with the token-level facts its container carries about text: the
  * tokenizer, the raw chat-template source (transport only - compiling it is the Jinja engine's
  * job), the ids that end a turn, and the model's cache identity ({@code seed} - the GGUF-derived
- * key every persisted prompt-cache artifact is rooted in). Everything here speaks tokens - the
- * model's chat framing lives one layer up, on {@code chat.ChatModel}.
+ * key every persisted prompt-cache artifact is rooted in), and the model's chat framing (the native
+ * {@link ChatTemplate} codec, when the port ships one).
  *
  * <p>These are data, not behaviour, so they are a record rather than an interface on the model. A
  * caller that wants different stop tokens simply builds another record; a caller that only needs
@@ -26,20 +27,22 @@ public record LoadedModel<S extends RuntimeState>(
         Tokenizer tokenizer,
         String chatTemplateSource,
         Set<Integer> stopTokens,
-        byte[] seed) {
+        byte[] seed,
+        Optional<ChatTemplate> template) {
 
     public LoadedModel {
         if (model == null) throw new IllegalArgumentException("null model");
         if (tokenizer == null) throw new IllegalArgumentException("null tokenizer");
         if (chatTemplateSource == null) throw new IllegalArgumentException("null template source");
         if (seed == null) throw new IllegalArgumentException("null seed");
+        if (template == null) throw new IllegalArgumentException("null template optional");
         stopTokens = Set.copyOf(stopTokens);
         seed = seed.clone();
     }
 
     /** The same model with a caller-supplied stop-token set (user {@code stop} overrides). */
     public LoadedModel<S> withStopTokens(Set<Integer> stops) {
-        return new LoadedModel<>(model, tokenizer, chatTemplateSource, stops, seed);
+        return new LoadedModel<>(model, tokenizer, chatTemplateSource, stops, seed, template);
     }
 
     /**

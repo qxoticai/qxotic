@@ -15,9 +15,9 @@ import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.*;
 import com.qxotic.jinfer.cache.FrozenBlocks;
 import com.qxotic.jinfer.cache.PromptCache;
-import com.qxotic.jinfer.chat.ChatModel;
 import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.Conversation;
+import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.chat.ReplyParser;
@@ -455,7 +455,7 @@ public class Main {
             System.exit(-1);
             return;
         }
-        ChatModel<?> model = AOT.tryUsePreLoaded(options.modelPath(), options.maxTokens());
+        LoadedModel<?> model = AOT.tryUsePreLoaded(options.modelPath(), options.maxTokens());
         if (model == null) {
             model = Models.load(options.modelPath(), options.maxTokens());
         }
@@ -465,12 +465,12 @@ public class Main {
         }
         Sampler sampler =
                 Sampler.select(
-                        model.base().model().config().vocabularySize(),
+                        model.model().config().vocabularySize(),
                         options.temperature(),
                         options.topp(),
                         options.seed());
         if (!options.think()) {
-            sampler = Thinking.banMarkers(sampler, model.base().tokenizer());
+            sampler = Thinking.banMarkers(sampler, model.tokenizer());
         }
         runGeneric(model, sampler, options);
     }
@@ -483,9 +483,8 @@ public class Main {
      * whole-render Jinja path with a fresh state per turn.
      */
     static <S extends RuntimeState> void runGeneric(
-            ChatModel<S> chatModel, Sampler sampler, LLMOptions options) throws IOException {
-        LoadedModel<S> model = chatModel.base();
-        ChatTemplate template = options.rawPrompt() ? null : chatModel.template().orElse(null);
+            LoadedModel<S> model, Sampler sampler, LLMOptions options) throws IOException {
+        ChatTemplate template = options.rawPrompt() ? null : model.template().orElse(null);
         if (!options.interactive()) {
             runInstruct(model, template, sampler, options);
         } else if (template != null) {
@@ -741,7 +740,7 @@ final class AOT {
      * back to {@link Models#load(Path, int)}). Reuses the baked GGUF, so only the tensor data is
      * read.
      */
-    static ChatModel<?> tryUsePreLoaded(Path modelPath, int contextLength) throws IOException {
+    static LoadedModel<?> tryUsePreLoaded(Path modelPath, int contextLength) throws IOException {
         PartialModel preLoaded = PRELOADED_GGUF;
         if (preLoaded == null) {
             return null;

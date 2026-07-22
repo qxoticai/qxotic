@@ -4,9 +4,9 @@ import com.qxotic.jinfer.*;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.cache.SessionPool;
 import com.qxotic.jinfer.cache.StateCodec;
-import com.qxotic.jinfer.chat.ChatModel;
 import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.Conversation;
+import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.ReplyParser;
@@ -57,8 +57,8 @@ final class Generation {
     private final SessionPool<?>
             sessionPool; // tier 1: last-N live conversations (append-only reuse)
 
-    Generation(ChatModel<?> chatModel, LLMOptions options, Worker worker) {
-        this.model = chatModel.base();
+    Generation(LoadedModel<?> chatModel, LLMOptions options, Worker worker) {
+        this.model = chatModel;
         this.options = options;
         this.worker = worker;
         this.template = chatModel.template().orElse(null);

@@ -8,7 +8,7 @@ import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.jinfer.cache.CachedSession;
 import com.qxotic.jinfer.cache.FrozenBlocks;
-import com.qxotic.jinfer.llm.LoadedModel;
+import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.toknroll.IntSequence;
 import java.nio.file.Files;
 import java.nio.file.Path;

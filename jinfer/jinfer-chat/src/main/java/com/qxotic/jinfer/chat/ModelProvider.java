@@ -18,5 +18,5 @@ public interface ModelProvider {
      * Loads the model from an already-parsed GGUF; {@code fileChannel} supplies the tensor data.
      * {@code contextLength} -1 means the model's full context.
      */
-    ChatModel<?> load(FileChannel fileChannel, GGUF gguf, int contextLength) throws IOException;
+    LoadedModel<?> load(FileChannel fileChannel, GGUF gguf, int contextLength) throws IOException;
 }

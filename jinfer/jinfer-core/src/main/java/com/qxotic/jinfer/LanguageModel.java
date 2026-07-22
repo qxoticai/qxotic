@@ -8,7 +8,7 @@ import java.util.Optional;
  * a vocabulary distribution (of width {@code config().vocabularySize()}).
  *
  * <p>Tokens in, logits out. This interface knows nothing of text: no tokenizer, no stop tokens, no
- * chat framing. Those live one layer up, on {@code com.qxotic.jinfer.llm.LoadedModel}, the record
+ * chat framing. Those live one layer up, on {@code com.qxotic.jinfer.chat.LoadedModel}, the record
  * the architecture-dispatching loaders return.
  */
 public interface LanguageModel<C extends Config, W, S extends RuntimeState> extends Model<C, W, S> {

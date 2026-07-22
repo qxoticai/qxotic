@@ -1,7 +1,7 @@
 package com.qxotic.jinfer.server;
 
 import com.qxotic.jinfer.*;
-import com.qxotic.jinfer.chat.ChatModel;
+import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
 import com.sun.net.httpserver.HttpExchange;
@@ -35,8 +35,9 @@ public final class Server {
      * warming, if configured, completes before this returns. This is the only public API of the
      * module — load a model (jinfer-core), then hand it here to serve it.
      */
-    public static HttpServer start(ChatModel<?> chatModel, LLMOptions options) throws IOException {
-        LoadedModel<?> model = chatModel.base();
+    public static HttpServer start(LoadedModel<?> chatModel, LLMOptions options)
+            throws IOException {
+        LoadedModel<?> model = chatModel;
         HttpServer server =
                 HttpServer.create(new InetSocketAddress(options.host(), options.port()), 0);
         String servedId = options.modelPath().getFileName().toString();

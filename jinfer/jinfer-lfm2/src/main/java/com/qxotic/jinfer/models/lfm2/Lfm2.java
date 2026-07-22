@@ -18,6 +18,7 @@ import static com.qxotic.jinfer.Norms.rmsnorm;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.*;
+import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
 import com.qxotic.toknroll.Tokenizer;
@@ -150,12 +151,13 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
      * architecture-dispatching loader hands to a caller that does not know the family.
      */
     public LoadedModel<Lfm2.State> loaded() {
-        return new LoadedModel<>(this, tokenizer(), chatTemplateSource, stopTokens(), modelSeed);
-    }
-
-    /** The chat-layer binding: the NATIVE codec, no adapter - LFM2 is the reference port. */
-    public com.qxotic.jinfer.chat.ChatModel<Lfm2.State> chatModel() {
-        return new com.qxotic.jinfer.chat.ChatModel<>(loaded(), java.util.Optional.of(template()));
+        return new LoadedModel<>(
+                this,
+                tokenizer(),
+                chatTemplateSource,
+                stopTokens(),
+                modelSeed,
+                java.util.Optional.of(template()));
     }
 
     /** The per-turn view of the same template (turn-aligned cache scenarios refine through it). */
