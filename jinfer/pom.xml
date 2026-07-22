@@ -172,6 +172,8 @@
                   <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                     <mainClass>${jinfer.image.mainClass}</mainClass>
                   </transformer>
+                  <!-- merge META-INF/services across modules (ModelProvider arch dispatch) -->
+                  <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer" />
                 </transformers>
                 <filters>
                   <filter>

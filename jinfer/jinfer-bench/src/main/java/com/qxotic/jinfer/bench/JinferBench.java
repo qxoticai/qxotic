@@ -3,17 +3,8 @@ package com.qxotic.jinfer.bench;
 import com.qxotic.jinfer.*;
 import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
-import com.qxotic.jinfer.models.gemma4.Gemma4;
-import com.qxotic.jinfer.models.gptoss.GptOss;
-import com.qxotic.jinfer.models.lfm2.Lfm2;
-import com.qxotic.jinfer.models.llama.Granite;
-import com.qxotic.jinfer.models.llama.Llama;
-import com.qxotic.jinfer.models.nemotronh.NemotronH;
-import com.qxotic.jinfer.models.qwen35.Qwen35;
 import java.io.PrintStream;
-import java.nio.channels.FileChannel;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ForkJoinPool;
@@ -69,30 +60,9 @@ public final class JinferBench {
         printTable(rows);
     }
 
-    /**
-     * Dispatch on general.architecture to the matching new-API port (each bundles itself via
-     * loaded()).
-     */
+    /** Arch dispatch via the shared ModelProvider services. */
     private static LoadedModel<?> loadAny(Path path, int ctx) throws Exception {
-        String arch;
-        try (FileChannel fc = FileChannel.open(path, StandardOpenOption.READ)) {
-            arch = ModelLoader.readGguf(fc, path.toString()).getString("general.architecture");
-        }
-        return switch (arch) {
-            case "gemma4" -> Gemma4.loadModel(path, ctx).loaded();
-            case "gpt-oss" -> GptOss.loadModel(path, ctx).loaded();
-            case "qwen35", "qwen35moe" -> Qwen35.loadModel(path, ctx).loaded();
-            case "nemotron_h", "nemotron_h_moe" -> NemotronH.loadModel(path, ctx).loaded();
-            case "llama", "minicpm", "mistral3", "smollm3" ->
-                    Llama.loadModel(path, ctx)
-                            .loaded(); // same-graph Llama variants (metadata-driven)
-            case "granite" -> Granite.loadModel(path, ctx).loaded();
-            default -> {
-                if (arch.startsWith("lfm")) yield Lfm2.loadModel(path, ctx).loaded();
-                throw new IllegalArgumentException(
-                        "JinferBench: unsupported architecture '" + arch + "'");
-            }
-        };
+        return com.qxotic.jinfer.chat.Models.load(path, ctx).base();
     }
 
     /**
