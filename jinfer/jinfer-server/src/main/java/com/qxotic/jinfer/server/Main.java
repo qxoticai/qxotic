@@ -13,6 +13,7 @@ package com.qxotic.jinfer.server;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.*;
+import com.qxotic.jinfer.cache.CacheStore;
 import com.qxotic.jinfer.cache.FrozenBlocks;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.ChatTemplate;

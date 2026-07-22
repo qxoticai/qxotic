@@ -36,5 +36,5 @@ public sealed interface Media permits Media.Image, Media.Audio, Media.Video {
      * may be null for silent video). Variable frame rate and unbounded/streaming sources are out of
      * scope — sample the frames you want before constructing this.
      */
-    record Video(Image[] frames, float fps, Audio audio) implements Media {}
+    record Video(Image[] frames, float fps, java.util.Optional<Audio> audio) implements Media {}
 }

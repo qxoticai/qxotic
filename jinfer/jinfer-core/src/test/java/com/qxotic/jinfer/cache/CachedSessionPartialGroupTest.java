@@ -1,7 +1,6 @@
 package com.qxotic.jinfer.cache;
 
 import com.qxotic.jinfer.Batch;
-import com.qxotic.jinfer.CacheStore;
 import com.qxotic.jinfer.Config;
 import com.qxotic.jinfer.Model;
 import com.qxotic.jinfer.RuntimeState;

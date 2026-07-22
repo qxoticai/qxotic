@@ -9,8 +9,8 @@
 package com.qxotic.jinfer.testkit;
 
 import com.qxotic.jinfer.Batch;
-import com.qxotic.jinfer.CacheStore;
 import com.qxotic.jinfer.RuntimeState;
+import com.qxotic.jinfer.cache.CacheStore;
 import com.qxotic.jinfer.cache.CachedSession;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.Message;

@@ -3,7 +3,6 @@ package com.qxotic.jinfer.cache;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.jinfer.CacheStore;
 import com.qxotic.jinfer.RuntimeState;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;

@@ -1,4 +1,4 @@
-package com.qxotic.jinfer;
+package com.qxotic.jinfer.cache;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;

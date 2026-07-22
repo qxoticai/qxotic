@@ -143,7 +143,10 @@ public final class FrozenBlocks {
             throws IOException {
         PromptCache<S> build =
                 new PromptCache<>(
-                        codec, com.qxotic.jinfer.CacheStore.inMemory(), Long.MAX_VALUE, modelSeed);
+                        codec,
+                        com.qxotic.jinfer.cache.CacheStore.inMemory(),
+                        Long.MAX_VALUE,
+                        modelSeed);
         CachedSession<S> session = CachedSession.resume(model, build, state, new long[0]);
         // trailing token batch: the last token commits as its own block (see ingestSplitLast)
         int lastIdx = prompt.size() - 1;
@@ -173,7 +176,7 @@ public final class FrozenBlocks {
             int maxPositions) {
         PromptCache<S> cache =
                 new PromptCache<>(
-                        codec, com.qxotic.jinfer.CacheStore.inMemory(), 0, modelSeed, this);
+                        codec, com.qxotic.jinfer.cache.CacheStore.inMemory(), 0, modelSeed, this);
         return CachedSession.resume(model, cache, state, fp, maxPositions);
     }
 

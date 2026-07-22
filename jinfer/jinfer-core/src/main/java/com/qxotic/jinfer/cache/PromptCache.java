@@ -1,6 +1,5 @@
 package com.qxotic.jinfer.cache;
 
-import com.qxotic.jinfer.CacheStore;
 import com.qxotic.jinfer.RuntimeState;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;

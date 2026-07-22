@@ -8,6 +8,7 @@
 package com.qxotic.jinfer.bench;
 
 import com.qxotic.jinfer.*;
+import com.qxotic.jinfer.cache.CacheStore;
 import com.qxotic.jinfer.cache.CachedSession;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.cache.StateCodec;

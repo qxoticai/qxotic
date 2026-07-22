@@ -36,7 +36,7 @@ public final class SessionPool<S extends RuntimeState> {
      * from the pool while in use — {@link #release} returns it. Null = no tier-1 match; resume from
      * the block cache instead.
      */
-    public CachedSession<S> acquire(long[] fingerprints, int len) {
+    CachedSession<S> acquire(long[] fingerprints, int len) {
         CachedSession<S> best = null;
         for (CachedSession<S> s : pool) {
             if (s.streamIsStrictPrefixOf(fingerprints, len)
@@ -53,7 +53,7 @@ public final class SessionPool<S extends RuntimeState> {
      * Returns a session to the pool as most-recent; past capacity the least-recent is dropped (its
      * state is freed; its blocks remain in the shared {@link PromptCache}).
      */
-    public void release(CachedSession<S> session) {
+    void release(CachedSession<S> session) {
         if (capacity == 0) return;
         pool.addLast(session);
         while (pool.size() > capacity) pool.removeFirst();

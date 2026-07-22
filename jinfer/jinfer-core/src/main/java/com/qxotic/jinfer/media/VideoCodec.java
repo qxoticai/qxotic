@@ -68,7 +68,8 @@ public final class VideoCodec {
             if (pngs.isEmpty()) throw new IOException("ffmpeg extracted no frames from " + path);
             List<Media.Image> frames = new ArrayList<>(pngs.size());
             for (Path png : pngs) frames.add(ImageCodec.load(png));
-            return new Media.Video(frames.toArray(new Media.Image[0]), fps, null);
+            return new Media.Video(
+                    frames.toArray(new Media.Image[0]), fps, java.util.Optional.empty());
         } finally {
             deleteRecursive(dir);
         }
