@@ -16,7 +16,7 @@ import java.util.List;
  * one token at a time for streaming, or feed the whole reply for one-shot. {@link #calls} returns
  * the calls completed so far.
  */
-public interface ToolCallDetector {
+interface ToolCallDetector {
 
     /**
      * Consume the next generated token.

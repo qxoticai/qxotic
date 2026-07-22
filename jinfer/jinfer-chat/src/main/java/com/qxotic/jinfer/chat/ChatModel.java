@@ -20,14 +20,4 @@ public record ChatModel<S extends RuntimeState>(
         if (base == null) throw new IllegalArgumentException("null base");
         if (template == null) throw new IllegalArgumentException("null template");
     }
-
-    /**
-     * The binding for an unported model: its per-turn {@link TurnTemplate} bridged onto the codec
-     * through {@link TurnTemplateAdapter} (models with a native codec construct directly).
-     */
-    public static <S extends RuntimeState> ChatModel<S> adapt(
-            LoadedModel<S> base, Optional<TurnTemplate> turn) {
-        return new ChatModel<>(
-                base, turn.map(t -> (ChatTemplate) new TurnTemplateAdapter(t, base.tokenizer())));
-    }
 }

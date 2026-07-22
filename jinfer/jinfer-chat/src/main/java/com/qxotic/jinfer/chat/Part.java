@@ -11,8 +11,8 @@ import java.util.Map;
  * One piece of a message's content - a span tree, not a flat run of text. Two families:
  *
  * <p><b>Model-produced</b> ({@link Text}, {@link Reasoning}, {@link ToolCall}): what {@link
- * ReplyDecoder} emits. Each may carry {@code verbatim} - the exact generated token ids of the
- * part's CONTENT PAYLOAD, never its delimiters (markers are template-emitted and may differ between
+ * ReplyParser} emits. Each may carry {@code verbatim} - the exact generated token ids of the part's
+ * CONTENT PAYLOAD, never its delimiters (markers are template-emitted and may differ between
  * generation and history). Verbatim ids give byte-drift-proof KV reuse across a tool loop; {@code
  * null} means "re-tokenize from text" (caller-authored content, or history replayed from
  * structure).

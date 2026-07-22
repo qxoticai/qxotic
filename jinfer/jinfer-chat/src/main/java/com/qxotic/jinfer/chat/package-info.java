@@ -7,7 +7,7 @@
  * {@link com.qxotic.jinfer.chat.Conversation} adds the conversation-scoped inputs (tools, effort).
  * {@link com.qxotic.jinfer.chat.ChatTemplate} is the per-model codec: {@code encode(Conversation)}
  * lowers to {@code List<Batch>}, {@code decoder()} parses the generated reply stream back into
- * Parts ({@link com.qxotic.jinfer.chat.ReplyDecoder} - subsumes tool-call detection and think-span
+ * Parts ({@link com.qxotic.jinfer.chat.ReplyParser} - subsumes tool-call detection and think-span
  * demuxing). Implementations are hand-written per model and validated token-exact against the
  * model's own GGUF Jinja template offline (the oracle tests). {@link
  * com.qxotic.jinfer.chat.TurnTemplate} is the transitional per-turn substrate, bridged by {@link
