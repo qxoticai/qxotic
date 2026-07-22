@@ -16,8 +16,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 
 /**
  * End-to-end test of the OpenAI-compatible server, run IN PROCESS on an ephemeral port (one model
@@ -35,16 +39,57 @@ public final class ServerIntegrationTest {
     private static Path warmFile;
     private static String modelId;
 
-    public static void main(String[] args) throws Exception {
-        toolCallParser(); // pure parser tests: no model required
-        Path model =
-                Path.of(args.length > 0 ? args[0] : "../models/LiquidAI/LFM2.5-8B-A1B-Q8_0.gguf");
-        modelId = model.getFileName().toString();
-        if (!Files.exists(model)) {
-            System.out.println("ServerIntegrationTest: model not found (" + model + "), skipping");
-            System.exit(failures > 0 ? 1 : 0);
-            return;
+    /** Pure tool-call parser checks: no model, runs in every build. */
+    @Test
+    void toolCallParserChecks() {
+        failures = 0;
+        toolCallParser();
+        assertClean();
+    }
+
+    /** The full server battery (one in-process model load); ceiling mode is its own test. */
+    @Test
+    @Tag("integration")
+    void serverBattery() throws Exception {
+        Assumptions.assumeTrue(
+                System.getProperty("llama.serverMaxTokens") == null,
+                "ceiling mode configured: run tokenCeilingMode instead");
+        run(false);
+    }
+
+    /**
+     * The token-ceiling check needs its own JVM config (-Dllama.serverMaxTokens is read once at
+     * class init, and the two generation limits race), so it only runs when that property is set:
+     * {@code mvn test -Dgroups=integration -Dtest=ServerIntegrationTest#tokenCeilingMode
+     * -Dllama.serverMaxTokens=48}.
+     */
+    @Test
+    @Tag("integration")
+    void tokenCeilingMode() throws Exception {
+        Assumptions.assumeTrue(
+                System.getProperty("llama.serverMaxTokens") != null,
+                "set -Dllama.serverMaxTokens to run ceiling mode");
+        run(true);
+    }
+
+    private static Path modelPath() {
+        return Path.of(
+                System.getProperty(
+                        "jinfer.testModel",
+                        "/home/mukel/Desktop/playground/models/LiquidAI/LFM2.5-8B-A1B-Q8_0.gguf"));
+    }
+
+    private static void assertClean() {
+        if (failures > 0) {
+            throw new AssertionError(failures + " failure(s) - see FAIL lines above");
         }
+    }
+
+    private static void run(boolean ceilingMode) throws Exception {
+        failures = 0;
+        Path model = modelPath();
+        modelId = model.getFileName().toString();
+        Assumptions.assumeTrue(Files.exists(model), "model not found: " + model);
         ChatModel<?> llama = Models.load(model, 2048);
         StringBuilder manual = new StringBuilder("Agent operating manual.");
         for (int i = 1; i <= 50; i++) {
@@ -89,10 +134,9 @@ public final class ServerIntegrationTest {
         base = "http://127.0.0.1:" + server.getAddress().getPort();
         client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
 
-        // "ceiling" mode runs ONLY the token-ceiling check, under a small -Dllama.serverMaxTokens
-        // (the two generation limits race — whichever is tighter fires first — so the ceiling needs
-        // its own server config; the deadline is tested Engine-level in the normal battery).
-        boolean ceilingMode = args.length > 1 && "ceiling".equals(args[1]);
+        // ceiling mode runs ONLY the token-ceiling check, under a small -Dllama.serverMaxTokens
+        // (the two generation limits race — whichever is tighter fires first — so the ceiling
+        // needs its own server config; the deadline is tested Engine-level in the normal battery).
         try {
             if (ceilingMode) {
                 tokenCeiling();
@@ -106,6 +150,7 @@ public final class ServerIntegrationTest {
                 completionsAndStops();
                 responsesEndpoint();
                 promptCacheReuse();
+                blockBoundaryResume();
                 sessionPoolReuse();
                 toolChoiceForced();
                 reasoningBudget();
@@ -113,14 +158,13 @@ public final class ServerIntegrationTest {
                 fast400WhileBusy();
                 generationDeadline(llama);
             }
-        } catch (Throwable t) {
-            // always exit: the server executor pool is non-daemon, an escaped exception
-            // would otherwise leave the JVM (and the make invocation) hanging forever
-            t.printStackTrace();
-            failures++;
+        } finally {
+            // the HTTP executor pool is non-daemon: stop it or the test JVM hangs
+            server.stop(0);
+            if (server.getExecutor() instanceof ExecutorService pool) pool.shutdownNow();
         }
         System.out.println("ServerIntegrationTest: failures=" + failures);
-        System.exit(failures > 0 ? 1 : 0);
+        assertClean();
     }
 
     // --- request plumbing: health, models, method/path errors ---
@@ -526,7 +570,8 @@ public final class ServerIntegrationTest {
         HttpResponse<String> cold = post("/v1/completions", body);
         HttpResponse<String> warm = post("/v1/completions", body);
         long cachedCold = cachedTokens(cold), cachedWarm = cachedTokens(warm);
-        // earlier requests may have left a checkpoint near the stream start (divergence right
+        // earlier requests may have left a cached block boundary near the stream start (divergence
+        // right
         // after BOS), so "cold" can legitimately resume a few tokens — but no more
         check(cachedCold <= 4, "cold run essentially uncached (got " + cachedCold + ")");
         long promptTokens = ((Number) path(json(warm), "usage").get("prompt_tokens")).longValue();
@@ -548,9 +593,9 @@ public final class ServerIntegrationTest {
     }
 
     /**
-     * A strict PREFIX of already-cached content: the end-of-prompt checkpoint splits inside a
-     * cached node, and the end-of-generation commit dedups through existing nodes (pin-walk). The
-     * repeat request must then resume token-exact at its own L-1.
+     * A strict PREFIX of already-cached content: the end-of-prompt boundary can fall inside a
+     * cached block, and the end-of-generation commit dedups through existing blocks. The repeat
+     * request must then resume token-exact at its own L-1.
      */
     private static void promptCacheStrictPrefix() throws Exception {
         String body =
@@ -575,8 +620,8 @@ public final class ServerIntegrationTest {
 
     /**
      * Requests sharing only a SYSTEM PROMPT prefix. A populates the tree; the short stream lies
-     * entirely inside the dense tail, so B and C resume token-exact at the divergence on their
-     * FIRST visit (bx rows — no checkpoint round-trip needed anymore).
+     * entirely inside cached block coverage, so B and C resume token-exact at the nearest block
+     * boundary below the divergence on their FIRST visit (blocks are self-contained).
      */
     private static void promptCacheBranchPoint() throws Exception {
         String system =
@@ -654,11 +699,11 @@ public final class ServerIntegrationTest {
     }
 
     /**
-     * Regular traffic keeps stride bx pairs (K=64) over the body plus a dense tail: an edit OUTSIDE
-     * the tail resumes at the stride point just below the divergence, and the F32 checkpoint
-     * attached during that pass upgrades the next divergent request beyond it.
+     * Regular traffic commits the body as chunked blocks plus single-token decode blocks: an edit
+     * mid-body resumes at the block boundary just below the divergence, and the self-contained
+     * block attached during that pass upgrades the next divergent request beyond it.
      */
-    private static void strideAndTailResume() throws Exception {
+    private static void blockBoundaryResume() throws Exception {
         StringBuilder sb = new StringBuilder("You are a rules engine.");
         for (int i = 1; i <= 80; i++) {
             sb.append(" Rule ")
@@ -678,7 +723,7 @@ public final class ServerIntegrationTest {
         long ptTail = promptTokens(tailEdit), cachedTail = cachedTokens(tailEdit);
         check(
                 cachedTail >= ptTail - 40,
-                "edited user message resumed token-exact via the dense tail (cached "
+                "edited user message resumed token-exact at a block boundary (cached "
                         + cachedTail
                         + " of "
                         + ptTail
@@ -690,15 +735,15 @@ public final class ServerIntegrationTest {
                         chatBody(edited, "What does rule 3 say? One sentence."));
         long cachedMid = cachedTokens(midEdit);
         check(
-                cachedMid >= 64 && cachedMid % 64 == 0,
-                "mid-body edit resumed at a stride point (cached " + cachedMid + ")");
+                cachedMid > 0,
+                "mid-body edit resumed at a cached block boundary (cached " + cachedMid + ")");
         HttpResponse<String> again =
                 post(
                         "/v1/chat/completions",
                         chatBody(edited, "What does rule 30 say? One sentence."));
         check(
                 cachedTokens(again) > cachedMid,
-                "second divergent request resumed beyond the stride point (cached "
+                "second divergent request resumed at a deeper block boundary (cached "
                         + cachedTokens(again)
                         + ")");
     }
@@ -1053,16 +1098,13 @@ public final class ServerIntegrationTest {
     // --- generation limits ---
 
     /**
-     * Wall-clock deadline: Params.timeoutNanos aborts a long generation through the per-token abort
-     * path, reporting finish_reason "length". Engine-level so it needs no global flag.
+     * Wall-clock deadline: the timeoutNanos duration aborts a long generation through the per-token
+     * abort path, reporting finish_reason "length". Engine-level so it needs no global flag.
      */
     private static <S extends RuntimeState> void generationDeadline(ChatModel<S> chat) {
         LoadedModel<S> model = chat.base();
         com.qxotic.toknroll.IntSequence prompt =
                 model.tokenizer().encode("Write a very long, detailed story.");
-        Generator.Params params =
-                new Generator.Params(
-                        Sampler.ARGMAX, 100_000, TimeUnit.MILLISECONDS.toNanos(300), Set.of());
         long start = System.nanoTime();
         S state =
                 model.model()
@@ -1070,7 +1112,15 @@ public final class ServerIntegrationTest {
                                 model.model().config().contextLength(),
                                 Math.max(prompt.length(), 16));
         Generator.GenerationResult result =
-                Generator.generate(model.model(), state, prompt, params, null);
+                Generator.generate(
+                        model.model(),
+                        state,
+                        prompt,
+                        Sampler.ARGMAX,
+                        100_000,
+                        TimeUnit.MILLISECONDS.toNanos(300),
+                        Set.of(),
+                        null);
         long elapsedMs = (System.nanoTime() - start) / 1_000_000;
         check(
                 "length".equals(result.finishReason()),
