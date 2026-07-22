@@ -25,7 +25,7 @@ public final class Models {
                     .toList();
 
     /** Loads {@code path} at context size {@code ctx} (-1 = the model's full context). */
-    public static ChatModel<?> load(Path path, int ctx) throws IOException {
+    public static LoadedModel<?> load(Path path, int ctx) throws IOException {
         try (FileChannel fc = FileChannel.open(path, StandardOpenOption.READ)) {
             fc.position(0L);
             GGUF gguf =
@@ -40,7 +40,7 @@ public final class Models {
      * As {@link #load(Path, int)} but reusing an already-parsed {@code gguf} (the header is not
      * re-read) - used by AOT preload. {@code fileChannel} supplies the tensor data to mmap.
      */
-    public static ChatModel<?> load(FileChannel fileChannel, GGUF gguf, int ctx)
+    public static LoadedModel<?> load(FileChannel fileChannel, GGUF gguf, int ctx)
             throws IOException {
         String arch = gguf.getString("general.architecture");
         for (ModelProvider p : PROVIDERS) {

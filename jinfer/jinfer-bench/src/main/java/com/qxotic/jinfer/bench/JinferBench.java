@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.bench;
 
 import com.qxotic.jinfer.*;
+import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
 import java.io.PrintStream;
@@ -62,7 +63,7 @@ public final class JinferBench {
 
     /** Arch dispatch via the shared ModelProvider services. */
     private static LoadedModel<?> loadAny(Path path, int ctx) throws Exception {
-        return com.qxotic.jinfer.chat.Models.load(path, ctx).base();
+        return com.qxotic.jinfer.chat.Models.load(path, ctx);
     }
 
     /**
