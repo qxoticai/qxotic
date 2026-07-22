@@ -13,18 +13,18 @@ package com.qxotic.jinfer.server;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.*;
+import com.qxotic.jinfer.cache.FrozenBlocks;
+import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.ChatModel;
 import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.Message;
-import com.qxotic.jinfer.chat.Part;
-import com.qxotic.jinfer.chat.SpanReplyDecoder;
+import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Thinking;
-import com.qxotic.jinfer.chat.TurnTemplate;
-import com.qxotic.jinfer.chat.TurnTemplateAdapter;
 import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
 import com.qxotic.toknroll.IntSequence;
+import com.qxotic.toknroll.Tokenizer;
 import java.io.BufferedOutputStream;
 import java.io.BufferedReader;
 import java.io.FileDescriptor;
@@ -70,22 +70,24 @@ public class Main {
         thoughtOut.println();
     }
 
-    private static IntConsumer streamingPrinter(GgufTokenizer tokenizer, LLMOptions options) {
+    private static IntConsumer streamingPrinter(Tokenizer tokenizer, LLMOptions options) {
         if (!options.stream()) {
             return token -> {};
         }
 
-        Integer thinkOpen = tokenizer.getSpecialTokens().get("<think>");
-        Integer thinkClose = tokenizer.getSpecialTokens().get("</think>");
-        if (thinkOpen == null || thinkClose == null) {
+        java.util.OptionalInt open = SpecialTokens.find(tokenizer, "<think>");
+        java.util.OptionalInt close = SpecialTokens.find(tokenizer, "</think>");
+        if (open.isEmpty() || close.isEmpty()) {
             return token -> { // no think markers in the vocabulary: plain content streaming
-                if (!tokenizer.isSpecialToken(token)) {
-                    byte[] bytes = tokenizer.decodeTokenBytes(token);
+                if (!SpecialTokens.isSpecial(tokenizer, token)) {
+                    byte[] bytes = tokenizer.decodeBytes(new int[] {token});
                     System.out.write(bytes, 0, bytes.length);
                 }
             };
         }
 
+        int thinkOpen = open.getAsInt();
+        int thinkClose = close.getAsInt();
         boolean thinkEnabled = options.think();
         PrintStream thoughtOut = options.thinkInline() ? System.out : System.err;
         boolean ansi = options.colors();
@@ -108,8 +110,8 @@ public class Main {
                 emitted[0] = false;
                 return;
             }
-            if (!tokenizer.isSpecialToken(token)) {
-                byte[] bytes = tokenizer.decodeTokenBytes(token);
+            if (!SpecialTokens.isSpecial(tokenizer, token)) {
+                byte[] bytes = tokenizer.decodeBytes(new int[] {token});
                 if (inThink[0]) {
                     if (thinkEnabled) {
                         thoughtOut.write(bytes, 0, bytes.length);
@@ -123,8 +125,8 @@ public class Main {
     }
 
     /**
-     * A CLI generation outcome: the raw result, the display text the decoder assembled, and the
-     * decoder's structured reply message (verbatim ids - what a codec chat loop appends).
+     * A CLI generation outcome: the raw result, the display text the parser assembled, and the
+     * parser's structured reply message (verbatim ids - what a codec chat loop appends).
      */
     private record CliReply(Generator.GenerationResult result, String text, Message message) {}
 
@@ -132,8 +134,8 @@ public class Main {
      * One generation pass plus CLI presentation: prompt echo, token streaming through the printer,
      * and the stderr timing summary line. --max-tokens is a TOTAL context cap in the CLI, so it is
      * converted to the generator's completion budget here. The display text is assembled by a plain
-     * {@link SpanReplyDecoder} (the CLI offers no tools): think content is bracketed inline when
-     * thinking is shown, dropped otherwise.
+     * span parser (the CLI offers no tools): think content is bracketed inline when thinking is
+     * shown, dropped otherwise.
      */
     private static <S extends RuntimeState> CliReply generateCli(
             LoadedModel<S> model,
@@ -142,17 +144,20 @@ public class Main {
             Set<Integer> stopTokens,
             Sampler sampler,
             LLMOptions options) {
-        GgufTokenizer tokenizer = model.tokenizer();
+        Tokenizer tokenizer = model.tokenizer();
         if (options.echo()) {
             promptTokens.forEachInt(
-                    token -> System.err.print(replaceControlCharacters(tokenizer.decode(token))));
+                    token ->
+                            System.err.print(
+                                    replaceControlCharacters(tokenizer.decode(new int[] {token}))));
         }
         IntConsumer printer = streamingPrinter(tokenizer, options);
         IntConsumer onToken =
                 !options.echo()
                         ? printer
                         : token -> {
-                            System.err.print(replaceControlCharacters(tokenizer.decode(token)));
+                            System.err.print(
+                                    replaceControlCharacters(tokenizer.decode(new int[] {token})));
                             printer.accept(token);
                         };
         int startPosition = state.position();
@@ -168,24 +173,26 @@ public class Main {
         while (promptTokens.length() > cap) {
             int[] ids = promptTokens.subSequence(0, cap).toArray();
             if (options.echo()) {
-                for (int id : ids) System.err.print(replaceControlCharacters(tokenizer.decode(id)));
+                for (int id : ids)
+                    System.err.print(replaceControlCharacters(tokenizer.decode(new int[] {id})));
             }
             long t0 = System.nanoTime();
             model.model().ingest(state, Batch.prefill(ids));
             chunkNanos += System.nanoTime() - t0;
             promptTokens = promptTokens.subSequence(cap, promptTokens.length());
         }
-        SpanReplyDecoder decoder = new SpanReplyDecoder(tokenizer, null);
+        ReplyParser parser = ReplyParser.spans(tokenizer);
         StringBuilder text = new StringBuilder();
         InlineThink inlineThink = new InlineThink();
-        java.util.function.Consumer<Part> collect =
-                part -> {
-                    if (part instanceof Part.Text t) {
-                        text.append(t.text());
-                    } else if (part instanceof Part.Reasoning r && options.think()) {
+        java.util.function.BiConsumer<String, Boolean> collect =
+                (fragment, reasoning) -> {
+                    if (!reasoning) {
+                        text.append(
+                                options.think() ? inlineThink.project(fragment, false) : fragment);
+                    } else if (options.think()) {
                         // thinking shown: bracket it inline in the display text (the old
                         // visible-tokens rendering kept think spans when --think is on)
-                        inlineThink.project(r, text::append);
+                        text.append(inlineThink.project(fragment, true));
                     }
                 };
         Generator.GenerationResult result =
@@ -193,14 +200,17 @@ public class Main {
                         model.model(),
                         state,
                         promptTokens,
-                        new Generator.Params(sampler, budget, 0 /* CLI: no deadline */, stopTokens),
+                        sampler,
+                        budget,
+                        0 /* CLI: no deadline */,
+                        stopTokens,
                         token -> {
                             onToken.accept(token);
-                            for (Part part : decoder.feed(token)) collect.accept(part);
+                            String fragment = parser.feed(token);
+                            if (!fragment.isEmpty()) collect.accept(fragment, parser.reasoning());
                             return true;
                         });
-        for (Part part : decoder.finish()) collect.accept(part);
-        Message message = decoder.message();
+        Message message = parser.finish();
         int generated = result.tokens().length() + (result.stopToken() >= 0 ? 1 : 0);
         String timingPrefix = options.colors() ? ANSI_CYAN : "";
         String timingSuffix = options.colors() ? ANSI_RESET : "";
@@ -209,9 +219,9 @@ public class Main {
                 timingPrefix,
                 startPosition + totalPrompt + generated,
                 model.model().config().contextLength(),
-                totalPrompt / (chunkNanos / 1e6 / 1000.0 + result.promptMillis() / 1000.0),
+                totalPrompt / ((chunkNanos + result.promptNanos()) / 1e9),
                 totalPrompt,
-                generated / (result.predictedMillis() / 1000.0),
+                generated / (result.predictedNanos() / 1e9),
                 generated,
                 timingSuffix);
         return new CliReply(result, text.toString(), message);
@@ -275,7 +285,7 @@ public class Main {
                 "  --raw-prompt                  bypass chat template and tokenize --prompt"
                         + " directly");
         out.println(
-                "  --sealed <file>               instruct: sealed-prompt cache for the"
+                "  --frozen <file>               instruct: frozen-prompt cache for the"
                         + " (system+prompt) prefix;");
         out.println(
                 "                                created on first run, restored (instant TTFT)"
@@ -326,7 +336,7 @@ public class Main {
         boolean keepPastThinking = false;
         boolean rawPrompt = false;
         boolean noGrammar = false;
-        Path sealedPrompt = null;
+        Path frozenPrompt = null;
         List<String> warmPrompts = new ArrayList<>();
 
         for (int i = 0; i < args.length; i++) {
@@ -373,7 +383,7 @@ public class Main {
                                 keepPastThinking =
                                         LLMOptions.parseBooleanOption(optionName, nextArg);
                         case "--warm-prompt" -> warmPrompts.add(nextArg);
-                        case "--sealed" -> sealedPrompt = Path.of(nextArg);
+                        case "--frozen" -> frozenPrompt = Path.of(nextArg);
                         case "--think" -> {
                             String thinkMode = nextArg.toLowerCase(Locale.ROOT);
                             thinkInline = List.of("inline", "stdout").contains(thinkMode);
@@ -420,7 +430,7 @@ public class Main {
                 rawPrompt,
                 List.copyOf(warmPrompts),
                 noGrammar,
-                sealedPrompt);
+                frozenPrompt);
     }
 
     /**
@@ -462,8 +472,8 @@ public class Main {
             return;
         }
         Sampler sampler =
-                Generator.configuredSampler(
-                        model.base().model(),
+                Sampler.select(
+                        model.base().model().config().vocabularySize(),
                         options.temperature(),
                         options.topp(),
                         options.seed());
@@ -477,9 +487,8 @@ public class Main {
      * CLI driver: a one-shot {@code --prompt} or an interactive {@code --chat} loop. Models
      * exposing a {@link ChatTemplate} run through the model's own codec framing - native codecs
      * incrementally via whole-conversation re-encode + longest-common-prefix reuse (the verbatim
-     * splice keeps generated turns in the common prefix), adapter-backed models via the per-turn
-     * closeTurn flow; everything else falls back to the whole-render Jinja path with a fresh state
-     * per turn.
+     * splice keeps generated turns in the common prefix); everything else falls back to the
+     * whole-render Jinja path with a fresh state per turn.
      */
     static <S extends RuntimeState> void runGeneric(
             ChatModel<S> chatModel, Sampler sampler, LLMOptions options) throws IOException {
@@ -487,11 +496,6 @@ public class Main {
         ChatTemplate template = options.rawPrompt() ? null : chatModel.template().orElse(null);
         if (!options.interactive()) {
             runInstruct(model, template, sampler, options);
-        } else if (template instanceof TurnTemplateAdapter adapted) {
-            // Per-turn incremental chat needs closeTurn + verbatim reply KV reuse - a TurnTemplate
-            // capability the codec deliberately does not expose; a native codec port replaces
-            // this with verbatim-splice re-encoding (runChatCodec).
-            runChatIncremental(model, adapted.turnTemplate(), sampler, options);
         } else if (template != null) {
             runChatCodec(model, template, sampler, options);
         } else {
@@ -505,7 +509,7 @@ public class Main {
         Set<Integer> stops = model.stopTokens();
         IntSequence promptTokens;
         if (options.rawPrompt()) {
-            promptTokens = model.tokenizer().encodeWithSpecialTokens(options.prompt());
+            promptTokens = SpecialTokens.encode(model.tokenizer(), options.prompt());
         } else if (template != null) {
             List<Message> turns = new ArrayList<>();
             if (options.systemPrompt() != null) {
@@ -522,7 +526,7 @@ public class Main {
             }
             messages.add(Map.of("role", "user", "content", options.prompt()));
             promptTokens =
-                    new JinjaChatTemplate(model.tokenizer())
+                    new JinjaChatTemplate(model.tokenizer(), model.chatTemplateSource())
                             .render(messages, null, true, options.think(), null);
         }
         S state =
@@ -533,50 +537,49 @@ public class Main {
                                         Math.max(promptTokens.length(), 16),
                                         RuntimeFlags.BATCH_CAPACITY)); // ports chunk long prompts
 
-        // --sealed: restore the (system+prompt) prefix from the sealed file (instant TTFT), or
-        // create it
-        // on the first run. The seal covers every position BUT THE LAST: it captures the
-        // KV/recurrent
-        // state, not the transient last-position activations (s.residual / lastChunkLen) that
-        // logits()
-        // reads. So the final token is always ingested fresh, and its forward pass reproduces those
-        // — for
-        // attention and recurrent layers alike (the last token also advances the conv state from
-        // as-of-P-1
-        // to as-of-P). Any mismatch (different prompt/model) falls back to a plain prefill.
-        if (options.sealedPrompt() != null
+        // --frozen: restore the (system+prompt) prefix from the frozen artifact (instant TTFT),
+        // or create it on the first run. The artifact covers every position BUT THE LAST (the
+        // prompt-compiler convention): it captures the KV/recurrent state, not the transient
+        // last-position activations that logits() reads - the final token is always ingested
+        // fresh. Any mismatch (different prompt/model) falls back to a plain prefill.
+        if (options.frozenPrompt() != null
                 && model.model().stateCodec().isPresent()
                 && promptTokens.length() >= 2) {
             var codec = model.model().stateCodec().get();
-            int last = promptTokens.getLast();
-            long[] fp = new long[promptTokens.length() - 1];
+            long[] fp = new long[promptTokens.length()];
             for (int i = 0; i < fp.length; i++) fp[i] = promptTokens.intAt(i);
-            byte[] seed = com.qxotic.jinfer.cache.PromptCache.modelSeed(options.modelPath());
-            if (Files.exists(options.sealedPrompt())) {
+            byte[] seed = PromptCache.modelSeed(options.modelPath());
+            if (Files.exists(options.frozenPrompt())) {
                 long t0 = System.nanoTime();
-                int restored =
-                        com.qxotic.jinfer.cache.SealedPrompt.open(options.sealedPrompt(), seed)
-                                .tryRestore(state, codec, fp);
-                if (restored == fp.length) {
+                var session =
+                        FrozenBlocks.open(options.frozenPrompt(), seed)
+                                .serve(model.model(), codec, seed, state, fp, fp.length - 1);
+                if (session.position() == fp.length - 1) {
                     System.err.printf(
-                            "sealed prompt restored: %d positions in %.1f ms%n",
-                            restored, (System.nanoTime() - t0) / 1e6);
-                    // re-ingest the last token to rebuild the hidden state
-                    promptTokens = IntSequence.of(last);
+                            "frozen prompt restored: %d positions in %.1f ms%n",
+                            session.position(), (System.nanoTime() - t0) / 1e6);
+                    // re-ingest the last token to materialize fresh logits
+                    promptTokens = IntSequence.of(promptTokens.getLast());
                 } else {
-                    System.err.println("sealed prompt mismatch: prefilling normally");
+                    System.err.println("frozen prompt mismatch: prefilling normally");
                 }
             } else {
-                model.model().ingest(state, Batch.prefill(fpToIds(fp)));
-                com.qxotic.jinfer.cache.SealedPrompt.compile(
-                        options.sealedPrompt(), "cli", codec, state, fp, seed);
+                FrozenBlocks.compile(
+                        options.frozenPrompt(),
+                        model.model(),
+                        codec,
+                        seed,
+                        state,
+                        List.of(Batch.prefill(promptTokens.toArray())));
                 System.err.println(
-                        "sealed prompt compiled: "
-                                + options.sealedPrompt()
+                        "frozen prompt compiled: "
+                                + options.frozenPrompt()
                                 + " ("
                                 + fp.length
                                 + " positions)");
-                promptTokens = IntSequence.of(last);
+                // the compile ingested everything (its final 1-token block leaves fresh
+                // logits): decode directly from the retained logits, nothing left to prefill
+                promptTokens = IntSequence.empty();
             }
         }
 
@@ -593,62 +596,9 @@ public class Main {
     }
 
     /**
-     * Interactive chat on the model's TurnTemplate: ONE persistent state; per turn only the delta
-     * is ingested - closeTurn (re-framing the un-ingested stop token) + the user turn + the
-     * generation prompt. The reply tokens are already in the KV from decoding.
-     */
-    private static <S extends RuntimeState> void runChatIncremental(
-            LoadedModel<S> model, TurnTemplate template, Sampler sampler, LLMOptions options)
-            throws IOException {
-        Set<Integer> stops = model.stopTokens();
-        S state =
-                model.model()
-                        .newState(
-                                model.model().config().contextLength(),
-                                RuntimeFlags.BATCH_CAPACITY);
-        boolean first = true;
-        try (BufferedReader reader =
-                new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8))) {
-            while (true) {
-                System.out.print("> ");
-                System.out.flush();
-                String userText = reader.readLine();
-                if (userText == null || "/quit".equals(userText) || "/exit".equals(userText)) break;
-                if ("/context".equals(userText)) {
-                    System.out.printf(
-                            "context: %d/%d tokens%n",
-                            state.position(), model.model().config().contextLength());
-                    continue;
-                }
-                List<Batch> batches = new ArrayList<>();
-                List<Message> turns = new ArrayList<>();
-                if (first) {
-                    batches.addAll(template.conversationStart());
-                    if (options.systemPrompt() != null) {
-                        turns.add(Message.system(options.systemPrompt()));
-                    }
-                } else {
-                    batches.addAll(template.closeTurn()); // close the previous assistant turn
-                }
-                turns.add(Message.user(userText));
-                for (Message m : first ? template.normalize(turns) : turns) {
-                    batches.addAll(template.encodeTurn(m));
-                }
-                batches.addAll(template.generationPrompt(options.think()));
-                IntSequence delta = IntSequence.wrap(Batch.tokenIds(batches));
-                CliReply reply = generateCli(model, state, delta, stops, sampler, options);
-                if (!options.stream()) {
-                    System.out.println(reply.text());
-                }
-                first = false;
-            }
-        }
-    }
-
-    /**
      * Interactive chat on a NATIVE codec: ONE running {@link Conversation}, re-encoded whole each
      * turn; the longest common prefix with the token stream the KV already holds is skipped and
-     * only the suffix is ingested. Replies are appended as the decoder's structured message
+     * only the suffix is ingested. Replies are appended as the parser's structured message
      * (verbatim ids), so the codec's verbatim splice keeps every generated turn inside the common
      * prefix - the append-only happy path ingests exactly closeTurn + the user turn + the scaffold,
      * like the per-turn flow. Any divergence rebuilds the state from scratch (correctness first;
@@ -719,7 +669,8 @@ public class Main {
     private static <S extends RuntimeState> void runChatWholeRender(
             LoadedModel<S> model, Sampler sampler, LLMOptions options) throws IOException {
         Set<Integer> stops = model.stopTokens();
-        JinjaChatTemplate jinja = new JinjaChatTemplate(model.tokenizer());
+        JinjaChatTemplate jinja =
+                new JinjaChatTemplate(model.tokenizer(), model.chatTemplateSource());
         List<Object> history = new ArrayList<>();
         if (options.systemPrompt() != null) {
             history.add(Map.of("role", "system", "content", options.systemPrompt()));
