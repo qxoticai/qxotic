@@ -10,7 +10,7 @@ import java.util.random.RandomGeneratorFactory;
  * Token sampling over a logits tensor, with composable building blocks: {@link #ARGMAX}, {@link
  * CategoricalSampler}, {@link ToppSampler}, the {@link #withTemperature} softmax wrapper and the
  * {@link #banning} token filter. {@link #select} assembles the standard stack from (temperature,
- * top-p, seed); model-aware policy (think-token bans) lives in {@link Generator#configuredSampler}.
+ * top-p, seed); model-aware policy (think-token bans, grammars) is the caller's to layer on top.
  */
 @FunctionalInterface
 public interface Sampler {

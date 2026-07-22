@@ -1,16 +1,16 @@
 // New-API generation driver: prefill via Batch.prepare (the port chunks internally), decode via
 // logits(state) + Sampler + Batch.step. Tokens in, tokens out - the loop knows sampling, token
 // stops, the completion budget and the wall-clock deadline, and NOTHING else: no text, no
-// reasoning, no tool calls. Reply STRUCTURE (think spans, tool-call spans, UTF-8 assembly) is the
-// chat layer's ReplyDecoder; string-level stop handling is TextStops; both are driven by the
-// caller through the TokenSink. NOTE: prompt caching / prefix resume is not (yet) supported on
-// this path - the cache path decodes from a resumed state via generate() with an empty prompt.
+// reasoning, no tool calls, no billing. Reply STRUCTURE (think spans, tool-call spans, UTF-8
+// assembly) is the chat layer's ReplyParser; string-level stop handling is TextStops; billing
+// policy (BOS discounts, cache restores) is the server's; all are driven by the caller through
+// the TokenSink. NOTE: prompt caching / prefix resume is not (yet) supported on this path - the
+// cache path decodes from a resumed state via generate() with an empty prompt.
 package com.qxotic.jinfer.llm;
 
 import com.qxotic.jinfer.*;
 import com.qxotic.toknroll.IntSequence;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 public final class Generator {
@@ -28,78 +28,58 @@ public final class Generator {
     }
 
     /**
-     * Sampling and limit parameters for one generation pass. The sampler is supplied by the caller
-     * (see {@link #configuredSampler}) so interactive frontends can keep one RNG across turns.
-     * {@code maxTokens} is the completion budget in generated tokens; negative means "as much as
-     * the context allows". {@code timeoutNanos} is a wall-clock decode deadline as a DURATION
-     * (converted to an absolute deadline at entry); 0 means no deadline. {@code stopTokens} end
-     * generation (the stop token is reported but excluded from the result tokens).
-     */
-    public record Params(
-            Sampler sampler, int maxTokens, long timeoutNanos, Set<Integer> stopTokens) {}
-
-    /**
-     * The outcome of one generation pass. {@code tokens} are the generated tokens excluding the
-     * trailing stop token, reported in {@code stopToken} (-1 when not ended by a stop token).
-     * {@code promptTokens} is the raw prompt size ingested by this pass (billing policy - BOS
-     * discounts, cache restores - is the caller's, via {@link #withUsage}). {@code finishReason}:
-     * "stop" for a stop token, "length" for the budget or deadline, "abort" when the sink ended the
-     * pass.
+     * The outcome of one generation pass - only what the loop alone knows. {@code tokens} are the
+     * generated tokens excluding the trailing stop token, reported in {@code stopToken} (-1 when
+     * not ended by a stop token). {@code finishReason}: "stop" for a stop token, "length" for the
+     * budget or deadline, "abort" when the sink ended the pass. Durations are exact {@link
+     * System#nanoTime} deltas; consumers convert at their display edge.
      */
     public record GenerationResult(
             IntSequence tokens,
             int stopToken,
-            int promptTokens,
-            int completionTokens,
-            int cachedTokens,
             String finishReason,
-            double promptMillis,
-            double predictedMillis) {
+            long promptNanos,
+            long predictedNanos) {
 
-        /**
-         * The same result with restamped billing counts (the prompt-cache path bills the whole
-         * prompt, of which {@code cachedTokens} were restored instead of prefilled).
-         */
-        public GenerationResult withUsage(int promptTokens, int cachedTokens) {
-            return new GenerationResult(
-                    tokens,
-                    stopToken,
-                    promptTokens,
-                    completionTokens,
-                    cachedTokens,
-                    finishReason,
-                    promptMillis,
-                    predictedMillis);
+        public int completionTokens() {
+            return tokens.length();
         }
     }
 
     /**
-     * Sampler for a generation request: temperature / top-p (greedy at temp 0). Structure-aware
-     * wrappers (think-marker bans, think budgets, grammars) are the caller's to layer on top.
+     * As {@link #generate(LanguageModel, RuntimeState, List, Sampler, int, long, Set, TokenSink)}
+     * for a plain token prompt.
      */
-    public static Sampler configuredSampler(
-            LanguageModel<?, ?, ?> model, float temperature, float topp, long seed) {
-        require(
-                Float.isFinite(temperature) && 0 <= temperature,
-                "Invalid argument: temperature must be a finite non-negative number");
-        require(
-                Float.isFinite(topp) && 0 <= topp && topp <= 1,
-                "Invalid argument: top_p must be within [0, 1]");
-        return Sampler.select(model.config().vocabularySize(), temperature, topp, seed);
+    public static <S extends RuntimeState> GenerationResult generate(
+            LanguageModel<?, ?, S> model,
+            S state,
+            IntSequence promptTokens,
+            Sampler sampler,
+            int maxTokens,
+            long timeoutNanos,
+            Set<Integer> stopTokens,
+            TokenSink sink) {
+        List<Batch> prompt =
+                promptTokens.isEmpty() ? List.of() : List.of(Batch.prefill(promptTokens.toArray()));
+        return generate(model, state, prompt, sampler, maxTokens, timeoutNanos, stopTokens, sink);
     }
 
     /**
-     * One generation pass: ingest {@code prompt} at the state's cursor, then decode until a stop
-     * token, an aborting sink, the wall-clock deadline, or the completion budget. The state is
-     * caller-owned; a fresh state generates from the prompt, a resumed state continues from its
-     * position (an empty prompt samples directly from the retained logits). Generations on a shared
-     * model are serialized.
+     * One generation pass: ingest {@code prompt} (token and media-embedding batches) at the state's
+     * cursor, then decode until a stop token, an aborting sink, the wall-clock deadline ({@code
+     * timeoutNanos} as a duration; 0 = none), or the completion budget ({@code maxTokens}; negative
+     * = as much as the context allows). The state is caller-owned; a fresh state generates from the
+     * prompt, a resumed state continues from its position (an empty prompt samples directly from
+     * the retained logits). Generations on a shared model are serialized.
      */
-    private static <S extends RuntimeState> GenerationResult generateBatches(
+    public static <S extends RuntimeState> GenerationResult generate(
             LanguageModel<?, ?, S> model,
             S state,
             List<Batch> prompt,
-            Params params,
+            Sampler sampler,
+            int maxTokens,
+            long timeoutNanos,
+            Set<Integer> stopTokens,
             TokenSink sink) {
         int contextLength = model.config().contextLength();
         int promptCount = prompt.stream().mapToInt(Batch::count).sum();
@@ -110,13 +90,12 @@ public final class Generator {
                 promptPositions,
                 contextLength);
         int actualMaxTokens =
-                params.maxTokens() < 0
+                maxTokens < 0
                         ? contextLength - promptPositions
-                        : Math.min(params.maxTokens(), contextLength - promptPositions);
+                        : Math.min(maxTokens, contextLength - promptPositions);
 
-        boolean hasDeadline = params.timeoutNanos() != 0;
-        long deadlineNanos =
-                hasDeadline ? System.nanoTime() + params.timeoutNanos() : Long.MAX_VALUE;
+        boolean hasDeadline = timeoutNanos != 0;
+        long deadlineNanos = hasDeadline ? System.nanoTime() + timeoutNanos : Long.MAX_VALUE;
 
         long startNanos = System.nanoTime();
         long[] prefillDoneNanos = {0};
@@ -129,9 +108,9 @@ public final class Generator {
                             model,
                             state,
                             prompt,
-                            params.stopTokens(),
+                            stopTokens,
                             actualMaxTokens,
-                            params.sampler(),
+                            sampler,
                             token -> {
                                 boolean keepGoing = sink == null || sink.onToken(token);
                                 if (!keepGoing) aborted[0] = true;
@@ -145,11 +124,9 @@ public final class Generator {
         }
         long endNanos = System.nanoTime();
         long boundary = prefillDoneNanos[0] != 0 ? prefillDoneNanos[0] : endNanos;
-        double promptMillis = (boundary - startNanos) / 1e6;
-        double predictedMillis = (endNanos - boundary) / 1e6;
 
         int stopToken = -1;
-        if (!responseTokens.isEmpty() && params.stopTokens().contains(responseTokens.getLast())) {
+        if (!responseTokens.isEmpty() && stopTokens.contains(responseTokens.getLast())) {
             stopToken = responseTokens.getLast();
             responseTokens = responseTokens.subSequence(0, responseTokens.length() - 1);
         }
@@ -162,24 +139,9 @@ public final class Generator {
         return new GenerationResult(
                 responseTokens,
                 stopToken,
-                promptCount,
-                responseTokens.length(),
-                0,
                 finishReason,
-                promptMillis,
-                predictedMillis);
-    }
-
-    /** As {@link #generateBatches} for a plain token prompt. */
-    public static <S extends RuntimeState> GenerationResult generate(
-            LanguageModel<?, ?, S> model,
-            S state,
-            IntSequence promptTokens,
-            Params params,
-            TokenSink sink) {
-        List<Batch> prompt =
-                promptTokens.isEmpty() ? List.of() : List.of(Batch.prefill(promptTokens.toArray()));
-        return generateBatches(model, state, prompt, params, sink);
+                boundary - startNanos,
+                endNanos - boundary);
     }
 
     /**
@@ -224,18 +186,6 @@ public final class Generator {
             model.ingest(state, Batch.step(nextToken));
         }
         return generated.build();
-    }
-
-    /** Prompt size as billed to the client: a leading BOS is template overhead, not user input. */
-    public static int consumedPromptTokens(GgufTokenizer tokenizer, IntSequence promptTokens) {
-        Map<String, Integer> specialTokens = tokenizer.getSpecialTokens();
-        int bos =
-                specialTokens.getOrDefault(
-                        "<bos>", specialTokens.getOrDefault("<|startoftext|>", 1));
-        if (!promptTokens.isEmpty() && promptTokens.getFirst() == bos) {
-            return promptTokens.length() - 1;
-        }
-        return promptTokens.length();
     }
 
     static void require(boolean condition, String messageFormat, Object... args) {
