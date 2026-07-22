@@ -6,21 +6,22 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * TRANSITIONAL per-turn chat contract for curated models: encodes one turn at a time,
- * deterministically and verbatim. Turn-stability (a turn's batches never change when later turns
- * are appended) is what makes incremental ingestion and exact prompt caching sound — hand-written
- * implementations guarantee it by construction, and are validated byte-exact against the model's
- * official Jinja chat template offline.
+ * The per-turn chat contract for curated models: encodes one turn at a time, deterministically and
+ * verbatim. Turn-stability (a turn's batches never change when later turns are appended) is what
+ * makes incremental ingestion and exact prompt caching sound — hand-written implementations
+ * guarantee it by construction, and are validated byte-exact against the model's official Jinja
+ * chat template offline. This is the PERMANENT substrate native ports are written against; the
+ * default {@link #encode(Conversation)} below is the {@link ChatTemplate} codec face the oracles
+ * validate.
  *
- * <p>Two tokenization domains, enforced by every implementation: turn scaffolding (role headers,
- * turn and media markers) is emitted as trusted special-token ids; conversation text is tokenized
- * plainly, so content can never mint control tokens.
+ * <p>Two tokenization domains, enforced by the seam itself: turn scaffolding (role headers, turn
+ * and media markers) is emitted as trusted special-token ids (specials-only lookups); conversation
+ * text goes through the plain, non-special-aware tokenizer path, so content can never mint control
+ * tokens.
  *
- * <p>This is the porting substrate for the {@link ChatTemplate} codec: unported models expose their
- * TurnTemplate through {@link TurnTemplateAdapter}; a native codec port (whole-conversation encode
- * + {@link ReplyParser}) replaces it per model, and the interface goes away with the last port.
- * Per-turn encoding cannot express position-dependent templates (Qwen's last-query rules, Harmony
- * channels) — that is why the codec is whole-conversation.
+ * <p>Position-dependent framing (Qwen's last-query rules, Harmony channels) and tool welding are
+ * not expressible turn-locally — a port with those overrides {@link #encode(Conversation)} directly
+ * (LFM2 does) while keeping its per-turn methods as the building blocks.
  */
 public interface TurnTemplate extends ChatTemplate {
 
