@@ -8,10 +8,12 @@ import com.qxotic.jinfer.Media;
 import com.qxotic.jinfer.MultiModal;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
+import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.llm.*;
-import com.qxotic.jinfer.llm.GgufTokenizer;
+import com.qxotic.jinfer.llm.SpecialTokens;
+import com.qxotic.toknroll.Tokenizer;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -32,12 +34,12 @@ import java.util.List;
  * missing encoder.
  *
  * <p>Two domains: {@code <bos>}/{@code <|turn>}/{@code <turn|>}/media wrappers are emitted as
- * trusted ids; everything else goes through plain {@link GgufTokenizer#encode} so conversation text
- * can never mint control tokens.
+ * trusted ids; everything else goes through plain {@link Tokenizer#encode} so conversation text can
+ * never mint control tokens.
  */
 public final class Gemma4TurnTemplate implements TurnTemplate {
 
-    private final GgufTokenizer tokenizer;
+    private final Tokenizer tokenizer;
     private final MultiModal media; // encoder source; null or empty modalities on text-only loads
     private final int modelDim;
     private final int bos; // <bos>
@@ -47,17 +49,17 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
     private final List<Batch> generationPrompt; // <|turn>model\n, constant
     private final List<Batch> closeTurn; // <turn|>\n, constant
 
-    public Gemma4TurnTemplate(GgufTokenizer tokenizer) {
+    public Gemma4TurnTemplate(Tokenizer tokenizer) {
         this(tokenizer, null, 0);
     }
 
-    public Gemma4TurnTemplate(GgufTokenizer tokenizer, MultiModal media, int modelDim) {
+    public Gemma4TurnTemplate(Tokenizer tokenizer, MultiModal media, int modelDim) {
         this.tokenizer = tokenizer;
         this.media = media;
         this.modelDim = modelDim;
-        this.bos = tokenizer.requiredSpecial("<bos>");
-        this.turnOpen = tokenizer.requiredSpecial("<|turn>");
-        this.turnClose = tokenizer.requiredSpecial("<turn|>");
+        this.bos = SpecialTokens.require(tokenizer, "<bos>");
+        this.turnOpen = SpecialTokens.require(tokenizer, "<|turn>");
+        this.turnClose = SpecialTokens.require(tokenizer, "<turn|>");
         this.newline = List.copyOf(tokenizer.encode("\n").toList());
         List<Integer> gen = new ArrayList<>();
         gen.add(turnOpen);
@@ -113,20 +115,20 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
     private void encodeMedia(Media m, List<Integer> ids, List<Batch> out) {
         switch (m) {
             case Media.Image img -> {
-                ids.add(tokenizer.requiredSpecial("<|image>"));
+                ids.add(SpecialTokens.require(tokenizer, "<|image>"));
                 out.add(Batch.prefill(ids));
                 ids.clear();
                 FloatTensor rows = encode(Media.Image.class, img);
                 out.add(Batch.embeddings(rows, (int) (rows.size() / modelDim)));
-                ids.add(tokenizer.requiredSpecial("<image|>"));
+                ids.add(SpecialTokens.require(tokenizer, "<image|>"));
             }
             case Media.Audio aud -> {
-                ids.add(tokenizer.requiredSpecial("<|audio>"));
+                ids.add(SpecialTokens.require(tokenizer, "<|audio>"));
                 out.add(Batch.prefill(ids));
                 ids.clear();
                 FloatTensor rows = encode(Media.Audio.class, aud);
                 out.add(Batch.embeddings(rows, (int) (rows.size() / modelDim), false));
-                ids.add(tokenizer.requiredSpecial("<audio|>"));
+                ids.add(SpecialTokens.require(tokenizer, "<audio|>"));
             }
             case Media.Video vid -> {
                 // Video decomposes into frames: each frame is a timestamped image block,
@@ -207,5 +209,10 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
         if (text.isEmpty()) return;
         ids.addAll(tokenizer.encode(text.toString()).toList());
         text.setLength(0);
+    }
+
+    @Override
+    public ReplyParser parser() {
+        return ReplyParser.spans(tokenizer);
     }
 }

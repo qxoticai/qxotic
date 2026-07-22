@@ -5,19 +5,17 @@ import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
-import com.qxotic.jinfer.chat.ReplyDecoder;
+import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Role;
-import com.qxotic.jinfer.chat.SpanReplyDecoder;
-import com.qxotic.jinfer.chat.SpanToolCallDetector;
 import com.qxotic.jinfer.chat.Tool;
-import com.qxotic.jinfer.chat.ToolCallDetector;
 import com.qxotic.jinfer.chat.ToolCallSyntax;
 import com.qxotic.jinfer.chat.TurnTemplate;
-import com.qxotic.jinfer.llm.GgufTokenizer;
+import com.qxotic.jinfer.chat.UnsupportedConversation;
+import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.toknroll.IntSequence;
+import com.qxotic.toknroll.Tokenizer;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 
 /**
  * Hand-written LFM2.5 chat codec (ChatML dialect), byte-exact with the GGUF's Jinja {@code
@@ -32,12 +30,12 @@ import java.util.Optional;
  * header/content boundary, so encoding them separately would drift.
  *
  * <p>Two domains: {@code <|startoftext|>}/{@code <|im_start|>}/{@code <|im_end|>} are emitted as
- * trusted ids; everything else goes through plain {@link GgufTokenizer#encode} so conversation text
- * can never mint control tokens. Matching the template, a re-rendered assistant turn keeps only the
+ * trusted ids; everything else goes through plain {@link Tokenizer#encode} so conversation text can
+ * never mint control tokens. Matching the template, a re-rendered assistant turn keeps only the
  * text after its last {@code </think>} (trimmed).
  *
  * <p>VERBATIM SPLICE: an assistant message whose model-produced parts all carry verbatim token ids
- * (a reply built by this codec's own {@link ReplyDecoder}) replays them exactly - {@code
+ * (a reply built by this codec's own {@link ReplyParser}) replays them exactly - {@code
  * generationPrompt ++ payload ids (delimiters re-emitted as trusted ids) ++ closeTurn} - so
  * re-encoding an extended conversation reproduces the generated KV token-for-token (the round-trip
  * law; KV continuity for the in-process agentic/CLI loop). Wire-echoed history never carries
@@ -47,9 +45,9 @@ import java.util.Optional;
  * append {@code <|tool_call_start|>[pythonic]<|tool_call_end|>}; tool results are a {@code tool}
  * turn. Out of scope, matching the model: media parts (text-only port).
  */
-public final class Lfm2ChatTemplate implements ChatTemplate, TurnTemplate {
+public final class Lfm2ChatTemplate implements TurnTemplate {
 
-    private final GgufTokenizer tokenizer;
+    private final Tokenizer tokenizer;
     private final int bos; // <|startoftext|>
     private final int imStart; // <|im_start|>
     private final int imEnd; // <|im_end|>
@@ -63,15 +61,17 @@ public final class Lfm2ChatTemplate implements ChatTemplate, TurnTemplate {
     private final IntSequence closeTurnIds; // <|im_end|>\n, constant
     private final List<Batch> closeTurn;
 
-    public Lfm2ChatTemplate(GgufTokenizer tokenizer) {
+    public Lfm2ChatTemplate(Tokenizer tokenizer) {
         this.tokenizer = tokenizer;
-        this.bos = tokenizer.requiredSpecial("<|startoftext|>");
-        this.imStart = tokenizer.requiredSpecial("<|im_start|>");
-        this.imEnd = tokenizer.requiredSpecial("<|im_end|>");
-        this.tcStart = tokenizer.requiredSpecial("<|tool_call_start|>");
-        this.tcEnd = tokenizer.requiredSpecial("<|tool_call_end|>");
-        this.thinkOpen = tokenizer.getSpecialTokens().get("<think>");
-        this.thinkClose = tokenizer.getSpecialTokens().get("</think>");
+        this.bos = SpecialTokens.require(tokenizer, "<|startoftext|>");
+        this.imStart = SpecialTokens.require(tokenizer, "<|im_start|>");
+        this.imEnd = SpecialTokens.require(tokenizer, "<|im_end|>");
+        this.tcStart = SpecialTokens.require(tokenizer, "<|tool_call_start|>");
+        this.tcEnd = SpecialTokens.require(tokenizer, "<|tool_call_end|>");
+        java.util.OptionalInt open = SpecialTokens.find(tokenizer, "<think>");
+        java.util.OptionalInt close = SpecialTokens.find(tokenizer, "</think>");
+        this.thinkOpen = open.isPresent() ? open.getAsInt() : null;
+        this.thinkClose = close.isPresent() ? close.getAsInt() : null;
         this.newline = tokenizer.encode("\n").toArray();
         this.generationPromptIds = IntSequence.of(imStart).concat(tokenizer.encode("assistant\n"));
         this.generationPrompt = List.of(Batch.prefill(generationPromptIds.toArray()));
@@ -82,27 +82,8 @@ public final class Lfm2ChatTemplate implements ChatTemplate, TurnTemplate {
     // ---- ChatTemplate: the codec ----
 
     @Override
-    public boolean supports(Conversation conversation) {
-        for (Message message : conversation.messages()) {
-            boolean toolTurn = message.role().equals(Role.TOOL);
-            boolean assistant = message.role().equals(Role.ASSISTANT);
-            for (Part part : message.content()) {
-                boolean ok =
-                        switch (part) {
-                            case Part.Text t -> true;
-                            case Part.ToolResult r -> toolTurn;
-                            case Part.ToolCall c -> assistant;
-                            case Part.Reasoning r -> assistant;
-                            case Part.Blob b -> false; // text-only model
-                        };
-                if (!ok) return false;
-            }
-        }
-        return true;
-    }
-
-    @Override
     public List<Batch> encode(Conversation conversation) {
+        requireSupported(conversation);
         List<Batch> out = new ArrayList<>();
         List<Message> turns = conversation.messages();
         if (!conversation.tools().isEmpty()) {
@@ -118,8 +99,30 @@ public final class Lfm2ChatTemplate implements ChatTemplate, TurnTemplate {
     }
 
     @Override
-    public ReplyDecoder decoder() {
-        return new SpanReplyDecoder(tokenizer, toolCallDetector().orElse(null));
+    public ReplyParser parser() {
+        return ReplyParser.spans(
+                tokenizer, "<|tool_call_start|>", "<|tool_call_end|>", ToolCallSyntax::parseBlock);
+    }
+
+    /** The part shapes this port frames byte-exactly; anything else punts to the whole render. */
+    private static void requireSupported(Conversation conversation) {
+        for (Message message : conversation.messages()) {
+            boolean toolTurn = message.role().equals(Role.TOOL);
+            boolean assistant = message.role().equals(Role.ASSISTANT);
+            for (Part part : message.content()) {
+                boolean ok =
+                        switch (part) {
+                            case Part.Text t -> true;
+                            case Part.ToolResult r -> toolTurn;
+                            case Part.ToolCall c -> assistant;
+                            case Part.Reasoning r -> assistant;
+                            case Part.Blob b -> false; // text-only model
+                        };
+                if (!ok)
+                    throw new UnsupportedConversation(
+                            message.role().name() + " turn: " + part.getClass().getSimpleName());
+            }
+        }
     }
 
     // ---- verbatim splice (the round-trip law) ----
@@ -184,21 +187,6 @@ public final class Lfm2ChatTemplate implements ChatTemplate, TurnTemplate {
     }
 
     // ---- TurnTemplate: the per-turn building blocks ----
-
-    @Override
-    public boolean supportsTools() {
-        return true;
-    }
-
-    @Override
-    public Optional<ToolCallDetector> toolCallDetector() {
-        return Optional.of(
-                new SpanToolCallDetector(
-                        tokenizer,
-                        "<|tool_call_start|>",
-                        "<|tool_call_end|>",
-                        ToolCallSyntax::parseBlock));
-    }
 
     @Override
     public List<Batch> conversationStart() {

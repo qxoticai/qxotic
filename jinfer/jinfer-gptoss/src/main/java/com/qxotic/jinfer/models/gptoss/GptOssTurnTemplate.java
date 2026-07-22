@@ -2,15 +2,16 @@ package com.qxotic.jinfer.models.gptoss;
 
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.llm.*;
-import com.qxotic.jinfer.llm.GgufTokenizer;
+import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.toknroll.IntSequence;
+import com.qxotic.toknroll.Tokenizer;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Hand-written gpt-oss (Harmony) chat framing, matching the GGUF chat_template's plain-conversation
@@ -26,9 +27,9 @@ import java.util.Map;
  * <|channel|>analysis<|message|>...}), so {@code thinking} is a no-op here - Harmony always
  * reasons, and the effort knob lives in the system preamble ({@code Reasoning: medium}).
  *
- * <p>Each text run between specials is ONE contiguous plain {@link GgufTokenizer#encode} (that is
- * how a rendered template tokenizes; specials force the only splits), and conversation content
- * never goes through special-aware encoding, so text cannot mint control tokens.
+ * <p>Each text run between specials is ONE contiguous plain {@link Tokenizer#encode} (that is how a
+ * rendered template tokenizes; specials force the only splits), and conversation content never goes
+ * through special-aware encoding, so text cannot mint control tokens.
  *
  * <p>The preamble embeds the current date ({@code strftime_now("%Y-%m-%d")} in the template); it is
  * a constructor argument so tests are deterministic - the convenience constructor pins today,
@@ -40,7 +41,7 @@ public final class GptOssTurnTemplate implements TurnTemplate {
             "You are ChatGPT, a large language model trained by OpenAI.";
     static final String DEFAULT_EFFORT = "medium";
 
-    private final GgufTokenizer tokenizer;
+    private final Tokenizer tokenizer;
     private final String systemText;
     private final List<Batch> conversationStart; // fixed preamble, encoded once
     private final int start; // <|start|>
@@ -48,17 +49,16 @@ public final class GptOssTurnTemplate implements TurnTemplate {
     private final int channel; // <|channel|>
     private final int end; // <|end|>
 
-    public GptOssTurnTemplate(GgufTokenizer tokenizer) {
+    public GptOssTurnTemplate(Tokenizer tokenizer) {
         this(tokenizer, LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")));
     }
 
-    public GptOssTurnTemplate(GgufTokenizer tokenizer, String currentDate) {
+    public GptOssTurnTemplate(Tokenizer tokenizer, String currentDate) {
         this.tokenizer = tokenizer;
-        Map<String, Integer> special = tokenizer.getSpecialTokens();
-        this.start = tokenizer.requiredSpecial("<|start|>");
-        this.message = tokenizer.requiredSpecial("<|message|>");
-        this.channel = tokenizer.requiredSpecial("<|channel|>");
-        this.end = tokenizer.requiredSpecial("<|end|>");
+        this.start = SpecialTokens.require(tokenizer, "<|start|>");
+        this.message = SpecialTokens.require(tokenizer, "<|message|>");
+        this.channel = SpecialTokens.require(tokenizer, "<|channel|>");
+        this.end = SpecialTokens.require(tokenizer, "<|end|>");
         this.systemText =
                 DEFAULT_IDENTITY
                         + "\n"
@@ -122,5 +122,10 @@ public final class GptOssTurnTemplate implements TurnTemplate {
     @Override
     public List<Batch> closeTurn() {
         return List.of(Batch.prefill(new int[] {end}));
+    }
+
+    @Override
+    public ReplyParser parser() {
+        return new HarmonyReplyParser(tokenizer);
     }
 }

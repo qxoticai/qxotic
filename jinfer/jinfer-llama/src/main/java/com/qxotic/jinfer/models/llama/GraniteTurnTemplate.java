@@ -2,10 +2,12 @@ package com.qxotic.jinfer.models.llama;
 
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.llm.*;
-import com.qxotic.jinfer.llm.GgufTokenizer;
+import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.toknroll.IntSequence;
+import com.qxotic.toknroll.Tokenizer;
 import java.util.List;
 
 /**
@@ -24,12 +26,12 @@ import java.util.List;
  *
  * <p>Empty system messages are the caller's to omit (the template drops them; a turn here would
  * still frame). Two domains: the three role/turn markers are emitted as trusted ids; everything
- * else goes through plain {@link GgufTokenizer#encode} so conversation text can never mint control
+ * else goes through plain {@link Tokenizer#encode} so conversation text can never mint control
  * tokens.
  */
 public final class GraniteTurnTemplate implements TurnTemplate {
 
-    private final GgufTokenizer tokenizer;
+    private final Tokenizer tokenizer;
     private final int startRole; // <|start_of_role|>
     private final int endRole; // <|end_of_role|>
     private final int endText; // <|end_of_text|>
@@ -38,11 +40,11 @@ public final class GraniteTurnTemplate implements TurnTemplate {
             generationPrompt; // <|start_of_role|>assistant<|end_of_role|>, constant
     private final List<Batch> closeTurn; // <|end_of_text|>\n, constant
 
-    public GraniteTurnTemplate(GgufTokenizer tokenizer) {
+    public GraniteTurnTemplate(Tokenizer tokenizer) {
         this.tokenizer = tokenizer;
-        this.startRole = tokenizer.requiredSpecial("<|start_of_role|>");
-        this.endRole = tokenizer.requiredSpecial("<|end_of_role|>");
-        this.endText = tokenizer.requiredSpecial("<|end_of_text|>");
+        this.startRole = SpecialTokens.require(tokenizer, "<|start_of_role|>");
+        this.endRole = SpecialTokens.require(tokenizer, "<|end_of_role|>");
+        this.endText = SpecialTokens.require(tokenizer, "<|end_of_text|>");
         this.newline = tokenizer.encode("\n");
         IntSequence gen =
                 IntSequence.of(startRole)
@@ -79,5 +81,10 @@ public final class GraniteTurnTemplate implements TurnTemplate {
     @Override
     public List<Batch> closeTurn() {
         return closeTurn;
+    }
+
+    @Override
+    public ReplyParser parser() {
+        return ReplyParser.spans(tokenizer);
     }
 }
