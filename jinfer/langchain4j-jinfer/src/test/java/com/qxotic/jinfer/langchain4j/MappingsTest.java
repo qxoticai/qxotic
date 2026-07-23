@@ -134,7 +134,35 @@ class MappingsTest {
     }
 
     @Test
-    void unsupportedContentRejected() {
+    void imageContentDecodesToMediaBlob() throws Exception {
+        var img = new java.awt.image.BufferedImage(4, 3, java.awt.image.BufferedImage.TYPE_INT_RGB);
+        var png = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(img, "png", png);
+        String base64 = java.util.Base64.getEncoder().encodeToString(png.toByteArray());
+
+        Message m =
+                Mappings.toMessages(
+                                List.of(
+                                        UserMessage.from(
+                                                dev.langchain4j.data.message.ImageContent.from(
+                                                        base64, "image/png"))))
+                        .get(0);
+        Part.Blob blob = assertInstanceOf(Part.Blob.class, m.content().get(0));
+        var decoded = assertInstanceOf(com.qxotic.jinfer.Media.Image.class, blob.media());
+        assertEquals(4, decoded.width());
+        assertEquals(3, decoded.height());
+    }
+
+    @Test
+    void badMediaRejectedLoudly() {
+        assertThrows(
+                java.io.UncheckedIOException.class,
+                () ->
+                        Mappings.toMessages(
+                                List.of(
+                                        UserMessage.from(
+                                                dev.langchain4j.data.message.ImageContent.from(
+                                                        "aGk=", "image/png")))));
         assertThrows(
                 UnsupportedFeatureException.class,
                 () ->
@@ -142,6 +170,7 @@ class MappingsTest {
                                 List.of(
                                         UserMessage.from(
                                                 dev.langchain4j.data.message.ImageContent.from(
-                                                        "aGk=", "image/png")))));
+                                                        java.net.URI.create(
+                                                                "https://example.com/a.png"))))));
     }
 }

@@ -37,7 +37,10 @@ public final class JinferChatModel implements ChatModel {
     private final long timeoutNanos;
 
     private JinferChatModel(Builder b) {
-        this.engine = b.engine != null ? b.engine : new JinferEngine(b.modelPath, b.contextLength);
+        this.engine =
+                b.engine != null
+                        ? b.engine
+                        : new JinferEngine(b.modelPath, b.mediaProjector, b.contextLength);
         this.thinking = b.thinking;
         this.seed = b.seed;
         this.timeoutNanos = b.timeout == null ? 0 : b.timeout.toNanos();
@@ -145,6 +148,7 @@ public final class JinferChatModel implements ChatModel {
 
     public static final class Builder {
         private Path modelPath;
+        private Path mediaProjector;
         private int contextLength;
         private JinferEngine engine; // internal: share an already-loaded engine
         private Double temperature;
@@ -156,6 +160,12 @@ public final class JinferChatModel implements ChatModel {
 
         public Builder modelPath(Path modelPath) {
             this.modelPath = modelPath;
+            return this;
+        }
+
+        /** The media sidecar (mmproj GGUF: vision/audio encoders) for multimodal models. */
+        public Builder mediaProjector(Path mediaProjector) {
+            this.mediaProjector = mediaProjector;
             return this;
         }
 

@@ -32,9 +32,13 @@ final class JinferEngine {
     private final JinjaChatTemplate jinja;
     private final ReentrantLock lock = new ReentrantLock(true);
 
-    JinferEngine(Path modelPath, int contextLength) {
+    JinferEngine(Path modelPath, Path mediaProjector, int contextLength) {
         try {
-            this.loaded = com.qxotic.jinfer.chat.Models.load(modelPath, contextLength);
+            this.loaded =
+                    mediaProjector == null
+                            ? com.qxotic.jinfer.chat.Models.load(modelPath, contextLength)
+                            : com.qxotic.jinfer.chat.Models.load(
+                                    modelPath, mediaProjector, contextLength);
         } catch (IOException e) {
             throw new UncheckedIOException("failed to load " + modelPath, e);
         }
@@ -51,12 +55,24 @@ final class JinferEngine {
      */
     Encoded encode(Conversation conversation, List<Object> messageMaps, List<Object> toolMaps) {
         Optional<ChatTemplate> template = loaded.template();
+        boolean hasMedia =
+                conversation.messages().stream()
+                        .flatMap(m -> m.content().stream())
+                        .anyMatch(p -> p instanceof com.qxotic.jinfer.chat.Part.Blob);
+        UnsupportedConversation punted = null;
         if (template.isPresent()) {
             try {
                 return new Encoded(template.get().encode(conversation), template);
             } catch (UnsupportedConversation punt) {
-                // fall through to the whole render; the parser (same reply grammar) stays usable
+                punted = punt; // fall through; the parser (same reply grammar) stays usable
             }
+        }
+        // the whole-render fallback is text-only: dropping media silently would be a lie
+        if (hasMedia) {
+            throw new dev.langchain4j.exception.UnsupportedFeatureException(
+                    "this model cannot frame media"
+                            + (punted != null ? ": " + punted.getMessage() : "")
+                            + " (for Gemma 4, pass the mmproj GGUF via mediaProjector(...))");
         }
         IntSequence ids =
                 jinja.render(

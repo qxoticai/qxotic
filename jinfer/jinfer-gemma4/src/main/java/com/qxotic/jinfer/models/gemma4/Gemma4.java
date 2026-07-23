@@ -1143,10 +1143,14 @@ public final class Gemma4
      */
     public static Gemma4 loadModel(Path textGguf, Path mmprojGguf, int maxContextLength)
             throws IOException {
-        Gemma4 model = loadModel(textGguf, maxContextLength);
-        model.vision = loadVision(mmprojGguf);
-        model.audio = loadAudio(mmprojGguf);
-        return model;
+        return loadModel(textGguf, maxContextLength).withMediaEncoders(mmprojGguf);
+    }
+
+    /** Attaches the mmproj GGUF's vision/audio encoders to an already-loaded text model. */
+    public Gemma4 withMediaEncoders(Path mmprojGguf) throws IOException {
+        this.vision = loadVision(mmprojGguf);
+        this.audio = loadAudio(mmprojGguf);
+        return this;
     }
 
     /**

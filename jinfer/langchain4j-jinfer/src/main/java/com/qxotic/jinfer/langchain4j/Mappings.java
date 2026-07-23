@@ -9,12 +9,15 @@ import com.qxotic.jinfer.chat.ToolCallSyntax;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.AiMessage;
+import dev.langchain4j.data.message.AudioContent;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.Content;
+import dev.langchain4j.data.message.ImageContent;
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.TextContent;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.data.message.VideoContent;
 import dev.langchain4j.exception.UnsupportedFeatureException;
 import dev.langchain4j.internal.JsonSchemaElementUtils;
 import dev.langchain4j.model.output.FinishReason;
@@ -39,7 +42,7 @@ final class Mappings {
         for (ChatMessage m : messages) {
             switch (m) {
                 case SystemMessage s -> out.add(new Message(Role.SYSTEM, s.text()));
-                case UserMessage u -> out.add(new Message(Role.USER, userText(u)));
+                case UserMessage u -> out.add(new Message(Role.USER, userParts(u)));
                 case AiMessage ai -> out.add(assistant(ai));
                 case ToolExecutionResultMessage r ->
                         out.add(
@@ -53,14 +56,82 @@ final class Mappings {
         return out;
     }
 
+    /** User content, media included: text stays text, image/audio/video decode to media parts. */
+    private static List<Part> userParts(UserMessage u) {
+        List<Part> parts = new ArrayList<>();
+        for (Content c : u.contents()) {
+            switch (c) {
+                case TextContent t -> parts.add(new Part.Text(t.text(), null));
+                case ImageContent i ->
+                        parts.add(
+                                blob(
+                                        "image",
+                                        () ->
+                                                com.qxotic.jinfer.media.ImageCodec.decode(
+                                                        bytes(
+                                                                i.image().base64Data(),
+                                                                i.image().url()))));
+                case AudioContent a ->
+                        parts.add(
+                                blob(
+                                        "audio",
+                                        () ->
+                                                com.qxotic.jinfer.media.AudioCodec.decode(
+                                                        bytes(
+                                                                a.audio().base64Data(),
+                                                                a.audio().url()))));
+                case VideoContent v ->
+                        parts.add(
+                                blob(
+                                        "video",
+                                        () ->
+                                                com.qxotic.jinfer.media.VideoCodec.load(
+                                                        localPath(v.video().url()))));
+                default ->
+                        throw new UnsupportedFeatureException(
+                                c.getClass().getSimpleName() + " is not supported");
+            }
+        }
+        return parts;
+    }
+
+    private interface MediaDecode {
+        com.qxotic.jinfer.Media decode() throws java.io.IOException;
+    }
+
+    private static Part.Blob blob(String kind, MediaDecode decode) {
+        try {
+            return new Part.Blob(decode.decode());
+        } catch (java.io.IOException e) {
+            throw new java.io.UncheckedIOException("failed to decode " + kind, e);
+        }
+    }
+
+    /** Inline base64 first; else a LOCAL file URI. The library never fetches over the network. */
+    private static byte[] bytes(String base64, java.net.URI url) {
+        if (base64 != null && !base64.isBlank()) {
+            return java.util.Base64.getDecoder().decode(base64);
+        }
+        try {
+            return java.nio.file.Files.readAllBytes(localPath(url));
+        } catch (java.io.IOException e) {
+            throw new java.io.UncheckedIOException("failed to read " + url, e);
+        }
+    }
+
+    private static java.nio.file.Path localPath(java.net.URI url) {
+        if (url == null)
+            throw new UnsupportedFeatureException("media needs base64 data or a file:// URI");
+        if (!"file".equals(url.getScheme()))
+            throw new UnsupportedFeatureException(
+                    "remote media URLs are not fetched (" + url.getScheme() + "); pass bytes");
+        return java.nio.file.Path.of(url);
+    }
+
     private static String userText(UserMessage u) {
         StringBuilder sb = new StringBuilder();
         for (Content c : u.contents()) {
-            if (!(c instanceof TextContent t)) {
-                throw new UnsupportedFeatureException(
-                        c.getClass().getSimpleName() + " is not supported yet (text only)");
-            }
-            sb.append(t.text());
+            if (c instanceof TextContent t) sb.append(t.text());
         }
         return sb.toString();
     }

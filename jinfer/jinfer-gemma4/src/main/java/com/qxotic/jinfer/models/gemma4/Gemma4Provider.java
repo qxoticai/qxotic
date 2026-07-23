@@ -19,4 +19,16 @@ public final class Gemma4Provider implements ModelProvider {
             throws IOException {
         return Gemma4.loadModel(fileChannel, gguf, contextLength, true).loaded();
     }
+
+    @Override
+    public LoadedModel<?> load(
+            FileChannel fileChannel,
+            GGUF gguf,
+            int contextLength,
+            java.nio.file.Path mediaProjector)
+            throws IOException {
+        return Gemma4.loadModel(fileChannel, gguf, contextLength, true)
+                .withMediaEncoders(mediaProjector)
+                .loaded();
+    }
 }

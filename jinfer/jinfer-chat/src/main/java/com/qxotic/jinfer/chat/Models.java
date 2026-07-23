@@ -37,6 +37,25 @@ public final class Models {
     }
 
     /**
+     * Multimodal load: the text model plus its media sidecar (mmproj GGUF with the vision/audio
+     * encoders). Throws {@link UnsupportedOperationException} for architectures without one.
+     */
+    public static LoadedModel<?> load(Path path, Path mediaProjector, int ctx) throws IOException {
+        try (FileChannel fc = FileChannel.open(path, StandardOpenOption.READ)) {
+            fc.position(0L);
+            GGUF gguf =
+                    GGUF.read(
+                            Channels.newChannel(
+                                    new BufferedInputStream(Channels.newInputStream(fc), 1 << 20)));
+            String arch = gguf.getString("general.architecture");
+            for (ModelProvider p : PROVIDERS) {
+                if (p.supports(arch)) return p.load(fc, gguf, ctx, mediaProjector);
+            }
+            throw new IllegalArgumentException("unsupported architecture '" + arch + "'");
+        }
+    }
+
+    /**
      * As {@link #load(Path, int)} but reusing an already-parsed {@code gguf} (the header is not
      * re-read) - used by AOT preload. {@code fileChannel} supplies the tensor data to mmap.
      */

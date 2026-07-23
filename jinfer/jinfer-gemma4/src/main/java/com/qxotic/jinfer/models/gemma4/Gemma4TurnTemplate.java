@@ -6,11 +6,13 @@ import com.qxotic.jinfer.F32FloatTensor;
 import com.qxotic.jinfer.FloatTensor;
 import com.qxotic.jinfer.Media;
 import com.qxotic.jinfer.MultiModal;
+import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.TurnTemplate;
+import com.qxotic.jinfer.chat.UnsupportedConversation;
 import com.qxotic.jinfer.llm.*;
 import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.toknroll.Tokenizer;
@@ -188,6 +190,32 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
             for (float v : c) rows.setFloat(at++, v);
         }
         return rows;
+    }
+
+    /**
+     * The codec face, media included: text and {@link Part.Blob} parts fold through the
+     * media-capable {@link #encodeTurn} (an image/audio/video part lowers to its wrapped embeddings
+     * batch in part order). Identical to the default fold for text-only conversations. Punts: tools
+     * (not in Gemma's template), structured parts, and media on a text-only load (no encoders).
+     */
+    @Override
+    public List<Batch> encode(Conversation conversation) {
+        if (!conversation.tools().isEmpty())
+            throw new UnsupportedConversation("tool framing not ported: whole-render");
+        for (Message m : conversation.messages()) {
+            for (Part part : m.content()) {
+                boolean ok = part instanceof Part.Text || part instanceof Part.Blob;
+                if (!ok)
+                    throw new UnsupportedConversation(
+                            m.role().name() + " turn: " + part.getClass().getSimpleName());
+                if (part instanceof Part.Blob && media == null)
+                    throw new UnsupportedConversation("media on a text-only load");
+            }
+        }
+        List<Batch> out = new ArrayList<>(conversationStart());
+        for (Message m : conversation.messages()) out.addAll(encodeTurn(m));
+        out.addAll(generationPrompt(conversation.thinking()));
+        return out;
     }
 
     @Override
