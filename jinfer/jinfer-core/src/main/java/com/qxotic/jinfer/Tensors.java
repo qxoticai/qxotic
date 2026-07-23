@@ -1664,6 +1664,8 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
         return result;
     }
 
+    @com.oracle.svm.shared.AlwaysInline(
+            "hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compiler)")
     static FloatVector q8BlockFma(
             Q8_0FloatTensor thiz,
             long blockOffset,

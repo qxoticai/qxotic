@@ -281,6 +281,8 @@ public final class Q4Kernel {
         return (float) sum;
     }
 
+    @com.oracle.svm.shared.AlwaysInline(
+            "hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compiler)")
     private static FloatVector av(MemorySegment a, long aBase, long elem) {
         return FloatVector.fromMemorySegment(
                 F_SPECIES, a, aBase + elem * 4, ByteOrder.LITTLE_ENDIAN);
