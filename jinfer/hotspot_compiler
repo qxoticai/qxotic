@@ -13,10 +13,13 @@
 # NOTE: F32FloatTensor.siluMultiplyInPlace is already inline-by-construction in source (siluVec/tanhVec are
 # hand-inlined into its loop), so it is intentionally NOT listed here.
 
+# NOTE: F16FloatTensor.f16ToF32Vector is deliberately NOT force-inlined: loadF16 (below) is, and
+# Graal inlines the tiny converter into it naturally. Force-inlining the converter AT EVERY CALL
+# SITE on top of the already-forced qkTile/pvTile bodies blew Graal's compilation units in qwen35's
+# hybrid attention layers - measured 2.0x SLOWER prefill on Oracle GraalVM 25.1 (863 vs 1776 t/s,
+# Qwen3.5-0.8B-Q8_0). Bisect: the regression needs BOTH this line and the FlashAttention lines.
 inline com/qxotic/jinfer/F32FloatTensor.siluVec
 inline com/qxotic/jinfer/F32FloatTensor.tanhVec
-inline com/qxotic/jinfer/F16FloatTensor.f16ToF32Vector
-inline com/qxotic/jinfer/Llama.f16DecodeVector
 inline com/qxotic/jinfer/FlashAttention.loadF32
 inline com/qxotic/jinfer/FlashAttention.loadF16
 inline com/qxotic/jinfer/FlashAttention.accumulate
