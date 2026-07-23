@@ -127,7 +127,7 @@ class Gemma4MediaIT {
     }
 
     /** A mono 16-bit PCM WAV of a sine tone, built in memory. */
-    private static byte[] toneWav(double hz, double seconds, int rate) {
+    static byte[] toneWav(double hz, double seconds, int rate) {
         int n = (int) (seconds * rate);
         byte[] pcm = new byte[n * 2];
         for (int i = 0; i < n; i++) {

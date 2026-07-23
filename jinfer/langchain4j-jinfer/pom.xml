@@ -25,6 +25,13 @@
       <artifactId>langchain4j-core</artifactId>
       <version>${langchain4j.version}</version>
     </dependency>
+    <!-- AiServices (the tool-loop showcase); tests only - the provider itself needs just -core -->
+    <dependency>
+      <groupId>dev.langchain4j</groupId>
+      <artifactId>langchain4j</artifactId>
+      <version>${langchain4j.version}</version>
+      <scope>test</scope>
+    </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-core</artifactId>
