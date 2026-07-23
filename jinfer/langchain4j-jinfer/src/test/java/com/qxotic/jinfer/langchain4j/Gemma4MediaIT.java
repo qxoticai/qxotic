@@ -38,6 +38,14 @@ class Gemma4MediaIT {
             Path.of(
                     "/home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf");
 
+    // Audio: the 12B mmproj carries the gemma4ua audio adapter (the E2B sidecar is vision-only).
+    static final Path AUDIO_MODEL =
+            Path.of(
+                    "/home/mukel/Desktop/playground/models/unsloth/gemma-4-12B-it-qat-GGUF/gemma-4-12B-it-qat-UD-Q4_K_XL.gguf");
+    static final Path AUDIO_MMPROJ =
+            Path.of(
+                    "/home/mukel/Desktop/playground/models/unsloth/gemma-4-12B-it-qat-GGUF/mmproj-F32.gguf");
+
     static JinferChatModel model;
 
     @BeforeAll
@@ -84,13 +92,22 @@ class Gemma4MediaIT {
 
     @Test
     void consumesAudio() {
+        Assumptions.assumeTrue(Files.exists(AUDIO_MODEL), "model not found: " + AUDIO_MODEL);
+        Assumptions.assumeTrue(Files.exists(AUDIO_MMPROJ), "mmproj not found: " + AUDIO_MMPROJ);
+        JinferChatModel audioModel =
+                JinferChatModel.builder()
+                        .modelPath(AUDIO_MODEL)
+                        .mediaProjector(AUDIO_MMPROJ)
+                        .contextLength(4096)
+                        .maxOutputTokens(512)
+                        .build();
         Assumptions.assumeTrue(
-                engineModel() instanceof MultiModal mm
+                engineModel(audioModel) instanceof MultiModal mm
                         && mm.modalities().contains(Media.Audio.class),
                 "mmproj carries no audio adapter");
         byte[] wav = toneWav(440, 1.0, 16000);
         ChatResponse r =
-                model.chat(
+                audioModel.chat(
                         ChatRequest.builder()
                                 .messages(
                                         UserMessage.from(
@@ -104,16 +121,12 @@ class Gemma4MediaIT {
         assertTrue(!r.aiMessage().text().isBlank());
     }
 
-    private static Object engineModel() {
+    private static Object engineModel(JinferChatModel m) {
         // the loaded LanguageModel implements MultiModal for gemma4
-        return modelUnderTest().loaded.model();
-    }
-
-    private static JinferEngine modelUnderTest() {
         try {
             var f = JinferChatModel.class.getDeclaredField("engine");
             f.setAccessible(true);
-            return (JinferEngine) f.get(model);
+            return ((JinferEngine) f.get(m)).loaded.model();
         } catch (ReflectiveOperationException e) {
             throw new AssertionError(e);
         }
