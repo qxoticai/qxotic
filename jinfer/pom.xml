@@ -28,6 +28,7 @@
     <module>jinfer-nemotronh</module>
     <module>jinfer-lfm2</module>
     <module>jinfer-server</module>
+    <module>langchain4j-jinfer</module>
     <module>jinfer-bench</module>
   </modules>
 

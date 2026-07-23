@@ -1,0 +1,215 @@
+package com.qxotic.jinfer.langchain4j;
+
+import com.qxotic.jinfer.chat.JsonCodec;
+import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.chat.Part;
+import com.qxotic.jinfer.chat.Role;
+import com.qxotic.jinfer.chat.Tool;
+import com.qxotic.jinfer.chat.ToolCallSyntax;
+import dev.langchain4j.agent.tool.ToolExecutionRequest;
+import dev.langchain4j.agent.tool.ToolSpecification;
+import dev.langchain4j.data.message.AiMessage;
+import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.data.message.Content;
+import dev.langchain4j.data.message.SystemMessage;
+import dev.langchain4j.data.message.TextContent;
+import dev.langchain4j.data.message.ToolExecutionResultMessage;
+import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.exception.UnsupportedFeatureException;
+import dev.langchain4j.internal.JsonSchemaElementUtils;
+import dev.langchain4j.model.output.FinishReason;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * The mapping seam between langchain4j's message/tool model and jinfer's. Two output shapes per
+ * conversation: typed {@link Message}s for the native codec, and OpenAI-shaped maps for the Jinja
+ * whole-render fallback (templates read arbitrary fields, so the fallback speaks raw maps).
+ */
+final class Mappings {
+
+    private Mappings() {}
+
+    // ---- langchain4j -> jinfer (typed, for the native codec) ----
+
+    static List<Message> toMessages(List<ChatMessage> messages) {
+        List<Message> out = new ArrayList<>(messages.size());
+        for (ChatMessage m : messages) {
+            switch (m) {
+                case SystemMessage s -> out.add(new Message(Role.SYSTEM, s.text()));
+                case UserMessage u -> out.add(new Message(Role.USER, userText(u)));
+                case AiMessage ai -> out.add(assistant(ai));
+                case ToolExecutionResultMessage r ->
+                        out.add(
+                                new Message(
+                                        Role.TOOL, List.of(new Part.ToolResult(r.id(), r.text()))));
+                default ->
+                        throw new UnsupportedFeatureException(
+                                "message type " + m.type() + " is not supported");
+            }
+        }
+        return out;
+    }
+
+    private static String userText(UserMessage u) {
+        StringBuilder sb = new StringBuilder();
+        for (Content c : u.contents()) {
+            if (!(c instanceof TextContent t)) {
+                throw new UnsupportedFeatureException(
+                        c.getClass().getSimpleName() + " is not supported yet (text only)");
+            }
+            sb.append(t.text());
+        }
+        return sb.toString();
+    }
+
+    private static Message assistant(AiMessage ai) {
+        List<Part> parts = new ArrayList<>();
+        if (ai.thinking() != null && !ai.thinking().isEmpty()) {
+            parts.add(new Part.Reasoning(List.of(new Part.Text(ai.thinking(), null)), null));
+        }
+        if (ai.text() != null && !ai.text().isEmpty()) {
+            parts.add(new Part.Text(ai.text(), null));
+        }
+        if (ai.hasToolExecutionRequests()) {
+            for (ToolExecutionRequest r : ai.toolExecutionRequests()) {
+                parts.add(
+                        new Part.ToolCall(
+                                r.id() == null ? "" : r.id(),
+                                r.name(),
+                                argsMap(r.arguments()),
+                                null));
+            }
+        }
+        return new Message(Role.ASSISTANT, parts);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> argsMap(String argumentsJson) {
+        if (argumentsJson == null || argumentsJson.isBlank()) return Map.of();
+        Object parsed = JsonCodec.parse(argumentsJson);
+        return parsed instanceof Map ? (Map<String, Object>) parsed : Map.of();
+    }
+
+    static List<Tool> toTools(List<ToolSpecification> specs) {
+        List<Tool> out = new ArrayList<>(specs.size());
+        for (ToolSpecification spec : specs) {
+            out.add(new Tool(spec.name(), ToolCallSyntax.jinjaJson(toolMap(spec))));
+        }
+        return out;
+    }
+
+    // ---- langchain4j -> OpenAI-shaped maps (for the Jinja whole-render fallback) ----
+
+    static List<Object> toMessageMaps(List<ChatMessage> messages) {
+        List<Object> out = new ArrayList<>(messages.size());
+        for (ChatMessage m : messages) {
+            var map = new LinkedHashMap<String, Object>();
+            switch (m) {
+                case SystemMessage s -> {
+                    map.put("role", "system");
+                    map.put("content", s.text());
+                }
+                case UserMessage u -> {
+                    map.put("role", "user");
+                    map.put("content", userText(u));
+                }
+                case AiMessage ai -> {
+                    map.put("role", "assistant");
+                    map.put("content", ai.text() == null ? "" : ai.text());
+                    if (ai.hasToolExecutionRequests()) {
+                        List<Object> calls = new ArrayList<>();
+                        for (ToolExecutionRequest r : ai.toolExecutionRequests()) {
+                            var call = new LinkedHashMap<String, Object>();
+                            call.put("id", r.id() == null ? "" : r.id());
+                            call.put("type", "function");
+                            var fn = new LinkedHashMap<String, Object>();
+                            fn.put("name", r.name());
+                            fn.put("arguments", r.arguments());
+                            call.put("function", fn);
+                            calls.add(call);
+                        }
+                        map.put("tool_calls", calls);
+                    }
+                }
+                case ToolExecutionResultMessage r -> {
+                    map.put("role", "tool");
+                    map.put("content", r.text());
+                    map.put("tool_call_id", r.id());
+                    map.put("name", r.toolName());
+                }
+                default ->
+                        throw new UnsupportedFeatureException(
+                                "message type " + m.type() + " is not supported");
+            }
+            out.add(map);
+        }
+        return out;
+    }
+
+    static List<Object> toToolMaps(List<ToolSpecification> specs) {
+        List<Object> out = new ArrayList<>(specs.size());
+        for (ToolSpecification spec : specs) out.add(toolMap(spec));
+        return out;
+    }
+
+    private static Map<String, Object> toolMap(ToolSpecification spec) {
+        var fn = new LinkedHashMap<String, Object>();
+        fn.put("name", spec.name());
+        if (spec.description() != null) fn.put("description", spec.description());
+        if (spec.parameters() != null) {
+            fn.put("parameters", JsonSchemaElementUtils.toMap(spec.parameters()));
+        }
+        var tool = new LinkedHashMap<String, Object>();
+        tool.put("type", "function");
+        tool.put("function", fn);
+        return tool;
+    }
+
+    // ---- jinfer reply -> langchain4j ----
+
+    static AiMessage toAiMessage(Message reply) {
+        StringBuilder text = new StringBuilder();
+        StringBuilder thinking = new StringBuilder();
+        List<ToolExecutionRequest> calls = new ArrayList<>();
+        collect(reply.content(), text, thinking, calls, false);
+        AiMessage.Builder b = AiMessage.builder();
+        if (!text.isEmpty()) b.text(text.toString());
+        if (!thinking.isEmpty()) b.thinking(thinking.toString());
+        if (!calls.isEmpty()) b.toolExecutionRequests(calls);
+        return b.build();
+    }
+
+    private static void collect(
+            List<Part> parts,
+            StringBuilder text,
+            StringBuilder thinking,
+            List<ToolExecutionRequest> calls,
+            boolean inReasoning) {
+        for (Part part : parts) {
+            switch (part) {
+                case Part.Text t -> (inReasoning ? thinking : text).append(t.text());
+                case Part.Reasoning r -> collect(r.content(), text, thinking, calls, true);
+                case Part.ToolCall c ->
+                        calls.add(
+                                ToolExecutionRequest.builder()
+                                        .id(c.id())
+                                        .name(c.name())
+                                        .arguments(JsonCodec.stringify(c.arguments()))
+                                        .build());
+                default -> {} // ToolResult/Blob never appear in a generated reply
+            }
+        }
+    }
+
+    static FinishReason toFinishReason(String jinferReason, boolean hasToolCalls) {
+        if (hasToolCalls) return FinishReason.TOOL_EXECUTION;
+        return switch (jinferReason) {
+            case "stop" -> FinishReason.STOP;
+            case "length" -> FinishReason.LENGTH;
+            default -> FinishReason.OTHER;
+        };
+    }
+}

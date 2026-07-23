@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.qxotic</groupId>
+    <artifactId>jinfer-parent</artifactId>
+    <version>0.1.0</version>
+  </parent>
+
+  <artifactId>langchain4j-jinfer</artifactId>
+  <packaging>jar</packaging>
+
+  <!-- langchain4j chat-model provider backed by jinfer: in-process CPU inference over GGUF models,
+       native chat-template codec first (token-exact, injection-inert), hardened Jinja whole-render
+       fallback for unported models. Blocking + streaming, tools, reasoning lane. Runtime needs
+       jinfer's JVM flags: enable-preview, jdk.incubator.vector, enable-native-access. -->
+  <properties>
+    <langchain4j.version>1.18.0</langchain4j.version>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>dev.langchain4j</groupId>
+      <artifactId>langchain4j-core</artifactId>
+      <version>${langchain4j.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-llm</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-chat</artifactId>
+    </dependency>
+    <!-- architecture ports, resolved via ServiceLoader (Models.load); runtime-only.
+         A shaded consumer needs the ServicesResourceTransformer to merge their descriptors. -->
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-gemma4</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-llama</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-qwen35</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-gptoss</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-nemotronh</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-lfm2</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+  </dependencies>
+</project>
