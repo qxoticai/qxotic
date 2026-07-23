@@ -18,6 +18,7 @@ import com.qxotic.jinfer.cache.FrozenBlocks;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.Conversation;
+import com.qxotic.jinfer.chat.JinjaChatTemplate;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Models;

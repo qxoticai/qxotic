@@ -1,7 +1,7 @@
 // Thin JSON facade over com.qxotic:json: parse/stringify with this project's null and
 // number conventions (Json.NULL <-> Java null, decimals as double). The single place the
 // external JSON library is adapted to the engine's Map/List/null value model.
-package com.qxotic.jinfer.server;
+package com.qxotic.jinfer.chat;
 
 import com.qxotic.format.json.Json;
 import com.qxotic.jinfer.*;
@@ -10,15 +10,15 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-final class JsonCodec {
+public final class JsonCodec {
     private static final Json.ParseOptions OPTIONS =
             Json.ParseOptions.defaults().decimalsAsBigDecimal(false);
 
-    static Object parse(String text) {
+    public static Object parse(String text) {
         return fromLibrary(Json.parse(text, OPTIONS));
     }
 
-    static String stringify(Object value) {
+    public static String stringify(Object value) {
         return Json.stringify(toLibrary(value));
     }
 

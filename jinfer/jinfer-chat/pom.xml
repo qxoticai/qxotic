@@ -33,6 +33,10 @@
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-jinja</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
       <artifactId>toknroll-core</artifactId>
       <!-- IntSequence: verbatim token spans on model-produced Parts -->
     </dependency>

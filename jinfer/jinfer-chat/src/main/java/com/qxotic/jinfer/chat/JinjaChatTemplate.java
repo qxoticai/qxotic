@@ -1,11 +1,11 @@
 // Whole-render chat renderer: renders the model's own Jinja chat_template over the OpenAI request
 // and re-scans the string into tokens. The server's fallback when a request cannot be framed
-// turn-stably by the model's TurnTemplate - a model with no hand-written template, tools on a model
-// without supportsTools(), a forced tool_choice, or arbitrary chat_template_kwargs. Unlike a
+// turn-stably by the model's native ChatTemplate - a model with no hand-written template, an
+// unsupported conversation shape, a forced tool_choice, or arbitrary chat_template_kwargs. Unlike a
 // TurnTemplate it re-scans a rendered String and bakes in the generation prompt, so it is one
 // prompt, not turn groups - no incremental caching. Plain chat on covered models goes through the
 // model's TurnTemplate instead.
-package com.qxotic.jinfer.server;
+package com.qxotic.jinfer.chat;
 
 import com.qxotic.jinfer.*;
 import com.qxotic.jinfer.jinja.CompiledTemplate;
@@ -25,14 +25,14 @@ import java.util.Map;
  * template source once at construction (parse once, render many times) - hold one instance per
  * model, not per request.
  */
-final class JinjaChatTemplate {
+public final class JinjaChatTemplate {
 
     private final Tokenizer tokenizer;
     private final CompiledTemplate template; // null: GGUF carries none or it failed to parse
     private final com.qxotic.toknroll.Specials specials; // compiled once per model
     private final List<String> specialNames; // longest-first, for the content scrub
 
-    JinjaChatTemplate(Tokenizer tokenizer, String source) {
+    public JinjaChatTemplate(Tokenizer tokenizer, String source) {
         this.tokenizer = tokenizer;
         this.template = source.isEmpty() ? null : JinjaRenderer.template(source);
         this.specials = SpecialTokens.encoder(tokenizer);
@@ -53,7 +53,7 @@ final class JinjaChatTemplate {
      * variables (chat_template_kwargs). Falls back to a best-effort ChatML framing when the GGUF
      * has no compilable template.
      */
-    IntSequence render(
+    public IntSequence render(
             List<Object> messages,
             List<Object> tools,
             boolean addGenerationPrompt,
@@ -83,7 +83,7 @@ final class JinjaChatTemplate {
     }
 
     /** Raw-prompt authoring: specials map to ids (the compiled per-model encoder, reused). */
-    IntSequence encodeRaw(String text) {
+    public IntSequence encodeRaw(String text) {
         return specials.encode(tokenizer, text);
     }
 

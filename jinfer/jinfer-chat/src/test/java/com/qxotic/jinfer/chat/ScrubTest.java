@@ -1,4 +1,4 @@
-package com.qxotic.jinfer.server;
+package com.qxotic.jinfer.chat;
 
 import java.util.List;
 import java.util.Map;
