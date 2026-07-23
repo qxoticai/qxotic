@@ -1,11 +1,15 @@
 package com.qxotic.jinfer.langchain4j;
 
+import com.qxotic.jinfer.Media;
 import com.qxotic.jinfer.chat.JsonCodec;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.chat.ToolCallSyntax;
+import com.qxotic.jinfer.media.AudioCodec;
+import com.qxotic.jinfer.media.ImageCodec;
+import com.qxotic.jinfer.media.VideoCodec;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.AiMessage;
@@ -20,8 +24,15 @@ import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.data.message.VideoContent;
 import dev.langchain4j.exception.UnsupportedFeatureException;
 import dev.langchain4j.internal.JsonSchemaElementUtils;
+import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.output.FinishReason;
+import dev.langchain4j.model.output.TokenUsage;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.net.URI;
+import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -67,7 +78,7 @@ final class Mappings {
                                 blob(
                                         "image",
                                         () ->
-                                                com.qxotic.jinfer.media.ImageCodec.decode(
+                                                ImageCodec.decode(
                                                         bytes(
                                                                 i.image().base64Data(),
                                                                 i.image().url()))));
@@ -76,17 +87,12 @@ final class Mappings {
                                 blob(
                                         "audio",
                                         () ->
-                                                com.qxotic.jinfer.media.AudioCodec.decode(
+                                                AudioCodec.decode(
                                                         bytes(
                                                                 a.audio().base64Data(),
                                                                 a.audio().url()))));
                 case VideoContent v ->
-                        parts.add(
-                                blob(
-                                        "video",
-                                        () ->
-                                                com.qxotic.jinfer.media.VideoCodec.load(
-                                                        localPath(v.video().url()))));
+                        parts.add(blob("video", () -> VideoCodec.load(localPath(v.video().url()))));
                 default ->
                         throw new UnsupportedFeatureException(
                                 c.getClass().getSimpleName() + " is not supported");
@@ -96,30 +102,30 @@ final class Mappings {
     }
 
     private interface MediaDecode {
-        com.qxotic.jinfer.Media decode() throws java.io.IOException;
+        Media decode() throws IOException;
     }
 
     private static Part.Blob blob(String kind, MediaDecode decode) {
         try {
             return new Part.Blob(decode.decode());
-        } catch (java.io.IOException e) {
-            throw new java.io.UncheckedIOException("failed to decode " + kind, e);
+        } catch (IOException e) {
+            throw new UncheckedIOException("failed to decode " + kind, e);
         }
     }
 
     /** Inline base64 first; else a LOCAL file URI. The library never fetches over the network. */
-    private static byte[] bytes(String base64, java.net.URI url) {
+    private static byte[] bytes(String base64, URI url) {
         if (base64 != null && !base64.isBlank()) {
-            return java.util.Base64.getDecoder().decode(base64);
+            return Base64.getDecoder().decode(base64);
         }
         try {
-            return java.nio.file.Files.readAllBytes(localPath(url));
-        } catch (java.io.IOException e) {
-            throw new java.io.UncheckedIOException("failed to read " + url, e);
+            return Files.readAllBytes(localPath(url));
+        } catch (IOException e) {
+            throw new UncheckedIOException("failed to read " + url, e);
         }
     }
 
-    private static java.nio.file.Path localPath(java.net.URI url) {
+    private static java.nio.file.Path localPath(URI url) {
         if (url == null)
             throw new UnsupportedFeatureException("media needs base64 data or a file:// URI");
         if (!"file".equals(url.getScheme()))
@@ -273,6 +279,20 @@ final class Mappings {
                 default -> {} // ToolResult/Blob never appear in a generated reply
             }
         }
+    }
+
+    /** The shared ChatResponse assembly (blocking and streaming build the identical shape). */
+    static ChatResponse response(
+            String modelName,
+            AiMessage ai,
+            int promptTokens,
+            com.qxotic.jinfer.llm.Generator.GenerationResult result) {
+        return ChatResponse.builder()
+                .aiMessage(ai)
+                .modelName(modelName)
+                .tokenUsage(new TokenUsage(promptTokens, result.completionTokens()))
+                .finishReason(toFinishReason(result.finishReason(), ai.hasToolExecutionRequests()))
+                .build();
     }
 
     static FinishReason toFinishReason(String jinferReason, boolean hasToolCalls) {

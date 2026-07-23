@@ -8,10 +8,8 @@ import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.request.ChatRequestParameters;
-import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.chat.response.PartialThinking;
 import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
-import dev.langchain4j.model.output.TokenUsage;
 import java.util.Optional;
 
 /**
@@ -48,11 +46,6 @@ public final class JinferStreamingChatModel implements StreamingChatModel {
             long seed,
             long timeoutNanos) {
         return new JinferStreamingChatModel(engine, defaults, thinking, seed, timeoutNanos);
-    }
-
-    /** Standalone construction; prefer {@link JinferChatModel#streaming()} to share one engine. */
-    public static JinferStreamingChatModel from(JinferChatModel blocking) {
-        return blocking.streaming();
     }
 
     @Override
@@ -113,13 +106,6 @@ public final class JinferStreamingChatModel implements StreamingChatModel {
                         ? Mappings.toAiMessage(parser.finish())
                         : Mappings.toAiMessage(engine.decode(Optional.empty(), result.tokens()));
         handler.onCompleteResponse(
-                ChatResponse.builder()
-                        .aiMessage(ai)
-                        .modelName(engine.modelName)
-                        .tokenUsage(new TokenUsage(p.promptTokens(), result.completionTokens()))
-                        .finishReason(
-                                Mappings.toFinishReason(
-                                        result.finishReason(), ai.hasToolExecutionRequests()))
-                        .build());
+                Mappings.response(engine.modelName, ai, p.promptTokens(), result));
     }
 }

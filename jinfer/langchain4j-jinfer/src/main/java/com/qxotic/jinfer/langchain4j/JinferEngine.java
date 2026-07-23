@@ -8,10 +8,16 @@ import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.JinjaChatTemplate;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.chat.Models;
+import com.qxotic.jinfer.chat.Part;
+import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.UnsupportedConversation;
 import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.Sampler;
 import com.qxotic.toknroll.IntSequence;
+import dev.langchain4j.agent.tool.ToolSpecification;
+import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.exception.UnsupportedFeatureException;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Path;
@@ -36,9 +42,8 @@ final class JinferEngine {
         try {
             this.loaded =
                     mediaProjector == null
-                            ? com.qxotic.jinfer.chat.Models.load(modelPath, contextLength)
-                            : com.qxotic.jinfer.chat.Models.load(
-                                    modelPath, mediaProjector, contextLength);
+                            ? Models.load(modelPath, contextLength)
+                            : Models.load(modelPath, mediaProjector, contextLength);
         } catch (IOException e) {
             throw new UncheckedIOException("failed to load " + modelPath, e);
         }
@@ -51,14 +56,13 @@ final class JinferEngine {
 
     /**
      * Native-first encode: the model's own codec when it can frame the conversation byte-exactly,
-     * else the scrubbed Jinja whole-render over the OpenAI-shaped maps.
+     * else the scrubbed Jinja whole-render (its maps built lazily from the original request only
+     * when the punt actually happens). Media never reaches the text-only fallback - it fails loudly
+     * instead of being silently dropped.
      */
-    Encoded encode(Conversation conversation, List<Object> messageMaps, List<Object> toolMaps) {
+    Encoded encode(
+            Conversation conversation, List<ChatMessage> messages, List<ToolSpecification> tools) {
         Optional<ChatTemplate> template = loaded.template();
-        boolean hasMedia =
-                conversation.messages().stream()
-                        .flatMap(m -> m.content().stream())
-                        .anyMatch(p -> p instanceof com.qxotic.jinfer.chat.Part.Blob);
         UnsupportedConversation punted = null;
         if (template.isPresent()) {
             try {
@@ -67,21 +71,26 @@ final class JinferEngine {
                 punted = punt; // fall through; the parser (same reply grammar) stays usable
             }
         }
-        // the whole-render fallback is text-only: dropping media silently would be a lie
-        if (hasMedia) {
-            throw new dev.langchain4j.exception.UnsupportedFeatureException(
+        if (hasMedia(conversation)) {
+            throw new UnsupportedFeatureException(
                     "this model cannot frame media"
                             + (punted != null ? ": " + punted.getMessage() : "")
                             + " (for Gemma 4, pass the mmproj GGUF via mediaProjector(...))");
         }
         IntSequence ids =
                 jinja.render(
-                        messageMaps,
-                        toolMaps.isEmpty() ? null : toolMaps,
+                        Mappings.toMessageMaps(messages),
+                        tools.isEmpty() ? null : Mappings.toToolMaps(tools),
                         true,
                         conversation.thinking(),
                         null);
         return new Encoded(List.of(Batch.prefill(ids.toArray())), template);
+    }
+
+    private static boolean hasMedia(Conversation conversation) {
+        return conversation.messages().stream()
+                .flatMap(m -> m.content().stream())
+                .anyMatch(p -> p instanceof Part.Blob);
     }
 
     /** One generation pass under the engine lock; a fresh state per request. */
@@ -125,7 +134,6 @@ final class JinferEngine {
         if (template.isPresent()) {
             return template.get().decode(replyTokens);
         }
-        return new Message(
-                com.qxotic.jinfer.chat.Role.ASSISTANT, loaded.tokenizer().decode(replyTokens));
+        return new Message(Role.ASSISTANT, loaded.tokenizer().decode(replyTokens));
     }
 }

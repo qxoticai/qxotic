@@ -1,9 +1,11 @@
 package com.qxotic.jinfer.langchain4j;
 
+import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.Thinking;
 import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.Sampler;
+import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.exception.UnsupportedFeatureException;
 import dev.langchain4j.model.chat.ChatModel;
@@ -14,7 +16,6 @@ import dev.langchain4j.model.chat.request.ResponseFormat;
 import dev.langchain4j.model.chat.request.ResponseFormatType;
 import dev.langchain4j.model.chat.request.ToolChoice;
 import dev.langchain4j.model.chat.response.ChatResponse;
-import dev.langchain4j.model.output.TokenUsage;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
@@ -37,10 +38,7 @@ public final class JinferChatModel implements ChatModel {
     private final long timeoutNanos;
 
     private JinferChatModel(Builder b) {
-        this.engine =
-                b.engine != null
-                        ? b.engine
-                        : new JinferEngine(b.modelPath, b.mediaProjector, b.contextLength);
+        this.engine = new JinferEngine(b.modelPath, b.mediaProjector, b.contextLength);
         this.thinking = b.thinking;
         this.seed = b.seed;
         this.timeoutNanos = b.timeout == null ? 0 : b.timeout.toNanos();
@@ -64,17 +62,12 @@ public final class JinferChatModel implements ChatModel {
         Generator.GenerationResult result =
                 engine.generate(
                         p.encoded().prompt(), p.sampler(), p.maxTokens(), timeoutNanos, t -> true);
-        com.qxotic.jinfer.chat.Message reply =
-                engine.decode(p.encoded().template(), result.tokens());
-        AiMessage ai = Mappings.toAiMessage(reply);
-        return ChatResponse.builder()
-                .aiMessage(ai)
-                .modelName(engine.modelName)
-                .tokenUsage(new TokenUsage(p.promptTokens(), result.completionTokens()))
-                .finishReason(
-                        Mappings.toFinishReason(
-                                result.finishReason(), ai.hasToolExecutionRequests()))
-                .build();
+        AiMessage ai = Mappings.toAiMessage(engine.decode(p.encoded().template(), result.tokens()));
+        return Mappings.response(engine.modelName, ai, p.promptTokens(), result);
+    }
+
+    JinferEngine engine() {
+        return engine;
     }
 
     /** A streaming twin sharing this model's engine (the GGUF is loaded once). */
@@ -90,21 +83,15 @@ public final class JinferChatModel implements ChatModel {
     static Prepared prepare(JinferEngine engine, ChatRequest request, boolean thinking, long seed) {
         ChatRequestParameters p = request.parameters();
         rejectUnsupported(p);
-        var tools =
-                p.toolSpecifications() == null
-                        ? List.<dev.langchain4j.agent.tool.ToolSpecification>of()
-                        : p.toolSpecifications();
+        List<ToolSpecification> tools =
+                p.toolSpecifications() == null ? List.of() : p.toolSpecifications();
         Conversation conversation =
                 new Conversation(
                         Mappings.toMessages(request.messages()),
                         Mappings.toTools(tools),
                         thinking,
                         "");
-        JinferEngine.Encoded encoded =
-                engine.encode(
-                        conversation,
-                        Mappings.toMessageMaps(request.messages()),
-                        Mappings.toToolMaps(tools));
+        JinferEngine.Encoded encoded = engine.encode(conversation, request.messages(), tools);
         double temperature = p.temperature() == null ? 0.0 : p.temperature();
         double topP = p.topP() == null ? 0.95 : p.topP();
         int maxTokens = p.maxOutputTokens() == null ? -1 : p.maxOutputTokens();
@@ -123,7 +110,7 @@ public final class JinferChatModel implements ChatModel {
                                 engine.loaded.tokenizer(),
                                 maxTokens >= 0 ? Math.max(1, maxTokens / 2) : -1)
                         : Thinking.banMarkers(sampler, engine.loaded.tokenizer());
-        int promptTokens = encoded.prompt().stream().mapToInt(com.qxotic.jinfer.Batch::count).sum();
+        int promptTokens = encoded.prompt().stream().mapToInt(Batch::count).sum();
         return new Prepared(encoded, sampler, maxTokens, promptTokens);
     }
 
@@ -150,7 +137,6 @@ public final class JinferChatModel implements ChatModel {
         private Path modelPath;
         private Path mediaProjector;
         private int contextLength;
-        private JinferEngine engine; // internal: share an already-loaded engine
         private Double temperature;
         private Double topP;
         private Integer maxOutputTokens;
@@ -206,14 +192,8 @@ public final class JinferChatModel implements ChatModel {
             return this;
         }
 
-        Builder engine(JinferEngine engine) {
-            this.engine = engine;
-            return this;
-        }
-
         public JinferChatModel build() {
-            if (engine == null && modelPath == null)
-                throw new IllegalArgumentException("modelPath is required");
+            if (modelPath == null) throw new IllegalArgumentException("modelPath is required");
             return new JinferChatModel(this);
         }
     }
