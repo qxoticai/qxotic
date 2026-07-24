@@ -135,7 +135,11 @@ public final class JinferChatModel implements ChatModel {
                         timeoutNanos,
                         t -> true,
                         p.cached());
-        AiMessage ai = Mappings.toAiMessage(engine.decode(p.encoded().template(), result.tokens()));
+        com.qxotic.toknroll.IntSequence reply = result.tokens();
+        if (p.callSeed().length > 0) {
+            reply = com.qxotic.toknroll.IntSequence.of(p.callSeed()).concat(reply);
+        }
+        AiMessage ai = Mappings.toAiMessage(engine.decode(p.encoded().template(), reply));
         return Mappings.response(engine.modelName, ai, p.promptTokens(), result);
     }
 
@@ -155,7 +159,10 @@ public final class JinferChatModel implements ChatModel {
             Sampler sampler,
             int maxTokens,
             int promptTokens,
-            boolean cached) {}
+            boolean cached,
+            int[] callSeed) {}
+
+    private static final int[] NO_SEED = new int[0];
 
     /** Every request-shape rejection, synchronously (streaming calls this before its thread). */
     static void validate(JinferChatModel m, ChatRequest request) {
@@ -170,6 +177,18 @@ public final class JinferChatModel implements ChatModel {
                             + " toolSpecifications would silently forfeit the cache - put tools on"
                             + " withCachedPrompt(...) instead");
         }
+        if (p.toolChoice() == ToolChoice.REQUIRED) {
+            if (!requestHasTools && m.prefix.tools().isEmpty()) {
+                throw new IllegalArgumentException("toolChoice REQUIRED without any tools");
+            }
+            if (m.engine.loaded.template().isEmpty()
+                    || SpecialTokens.find(m.engine.loaded.tokenizer(), "<|tool_call_start|>")
+                            .isEmpty()) {
+                throw new UnsupportedFeatureException(
+                        "ToolChoice.REQUIRED is not supported by this model: forcing seeds the"
+                                + " reply with its tool-call marker, which needs the native codec");
+            }
+        }
     }
 
     static Prepared prepare(JinferChatModel m, ChatRequest request) {
@@ -180,9 +199,11 @@ public final class JinferChatModel implements ChatModel {
                 p.toolSpecifications() == null ? List.of() : p.toolSpecifications();
         JinferEngine engine = m.engine;
         int maxTokens = p.maxOutputTokens() == null ? -1 : p.maxOutputTokens();
+        boolean required = p.toolChoice() == ToolChoice.REQUIRED;
         // a think span cannot fit a tiny completion budget: below the floor, reasoning is
-        // disabled outright (scaffold and sampler both) so the budget buys VISIBLE text
-        boolean think = m.thinking && (maxTokens < 0 || maxTokens >= 16);
+        // disabled outright (scaffold and sampler both) so the budget buys VISIBLE text.
+        // A forced call also skips thinking: the reply is seeded INTO the call block.
+        boolean think = m.thinking && (maxTokens < 0 || maxTokens >= 16) && !required;
         List<com.qxotic.jinfer.chat.Message> messages = new ArrayList<>(m.prefix.messages());
         messages.addAll(Mappings.toMessages(request.messages()));
         Conversation conversation =
@@ -217,8 +238,22 @@ public final class JinferChatModel implements ChatModel {
         if (rf != null && rf.type() == ResponseFormatType.JSON) {
             sampler = withJsonGrammar(engine, sampler, think, rf);
         }
+        int[] callSeed = NO_SEED;
+        if (required) {
+            // the server's forcing trick: seed the assistant turn with the tool-call marker so
+            // the model can only COMPLETE a call (the paren is deliberately not seeded - it lands
+            // on a tokenization boundary the model never saw). The seed re-attaches to the reply
+            // before parsing so the call parses whole.
+            callSeed =
+                    new int[] {
+                        SpecialTokens.require(engine.loaded.tokenizer(), "<|tool_call_start|>")
+                    };
+            List<Batch> prompt = new ArrayList<>(encoded.prompt());
+            prompt.add(Batch.prefill(callSeed));
+            encoded = new JinferEngine.Encoded(List.copyOf(prompt), encoded.template());
+        }
         int promptTokens = encoded.prompt().stream().mapToInt(Batch::count).sum();
-        return new Prepared(encoded, sampler, maxTokens, promptTokens, cached);
+        return new Prepared(encoded, sampler, maxTokens, promptTokens, cached, callSeed);
     }
 
     /**
@@ -262,8 +297,6 @@ public final class JinferChatModel implements ChatModel {
             throw new UnsupportedFeatureException("presencePenalty is not supported");
         if (p.stopSequences() != null && !p.stopSequences().isEmpty())
             throw new UnsupportedFeatureException("stopSequences are not supported yet");
-        if (p.toolChoice() == ToolChoice.REQUIRED)
-            throw new UnsupportedFeatureException("toolChoice REQUIRED is not supported");
         ResponseFormat rf = p.responseFormat();
         boolean tools = p.toolSpecifications() != null && !p.toolSpecifications().isEmpty();
         if (rf != null && rf.type() == ResponseFormatType.JSON && tools)

@@ -71,6 +71,10 @@ public final class JinferStreamingChatModel implements StreamingChatModel {
         Optional<ChatTemplate> template = p.encoded().template();
         ReplyParser parser = template.map(ChatTemplate::parser).orElse(null);
         PendingUtf8 raw = parser == null ? new PendingUtf8() : null;
+        if (parser != null) {
+            // a forced tool call was seeded into the prompt; the parser must see the marker too
+            for (int token : p.callSeed()) parser.feed(token);
+        }
 
         AtomicBoolean cancelled = new AtomicBoolean();
         StreamingHandle handle =

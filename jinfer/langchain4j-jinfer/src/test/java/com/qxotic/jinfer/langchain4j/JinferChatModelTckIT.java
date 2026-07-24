@@ -75,11 +75,6 @@ class JinferChatModelTckIT extends AbstractChatModelIT {
     }
 
     @Override
-    protected boolean supportsToolChoiceRequired() {
-        return false; // no grammar-forced tool calls
-    }
-
-    @Override
     protected boolean supportsToolsAndJsonResponseFormatWithSchema() {
         return false;
     }

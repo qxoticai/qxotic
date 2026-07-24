@@ -141,11 +141,6 @@ class JinferStreamingChatModelTckIT extends AbstractStreamingChatModelIT {
     }
 
     @Override
-    protected boolean supportsToolChoiceRequired() {
-        return false;
-    }
-
-    @Override
     protected boolean supportsToolsAndJsonResponseFormatWithSchema() {
         return false;
     }
