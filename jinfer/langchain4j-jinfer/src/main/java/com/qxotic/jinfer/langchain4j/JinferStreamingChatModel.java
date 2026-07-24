@@ -48,6 +48,11 @@ public final class JinferStreamingChatModel implements StreamingChatModel {
     }
 
     @Override
+    public java.util.Set<dev.langchain4j.model.chat.Capability> supportedCapabilities() {
+        return model.supportedCapabilities();
+    }
+
+    @Override
     public void doChat(ChatRequest request, StreamingChatResponseHandler handler) {
         // the WHOLE preparation is synchronous: every request-shape rejection (unsupported
         // params, media the model cannot frame, remote URLs) throws raw from chat(), unwrapped

@@ -127,6 +127,13 @@ public final class JinferChatModel implements ChatModel {
     }
 
     @Override
+    public java.util.Set<dev.langchain4j.model.chat.Capability> supportedCapabilities() {
+        // grammar-constrained decoding honors JSON schemas natively - AiServices reads this to
+        // use structured output for POJO extraction instead of prompt-based JSON begging
+        return java.util.Set.of(dev.langchain4j.model.chat.Capability.RESPONSE_FORMAT_JSON_SCHEMA);
+    }
+
+    @Override
     public ChatResponse doChat(ChatRequest request) {
         Prepared p = prepare(this, request);
         StopSequences stops = StopSequences.of(p.stops());

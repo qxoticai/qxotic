@@ -631,7 +631,7 @@ public final class Grammar {
             array  ::= "[" ws "]" | "[" ws value (ws "," ws value)* ws "]"
             string ::= "\\"" ([^"\\\\\\x00-\\x1F] | "\\\\" (["\\\\/bfnrt] | "u" [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]))* "\\""
             number ::= "-"? ([0-9] | [1-9] [0-9]*) ("." [0-9]+)? ([eE] [+-]? [0-9]+)?
-            ws     ::= [ \\t\\n\\r]*
+            ws     ::= [ \\t\\n\\r]{0,8}
             """;
 
     // Minified JSON: same structure as JSON_GRAMMAR with every `ws` removed, so no whitespace is
@@ -696,7 +696,10 @@ public final class Grammar {
         static String toGbnf(Map<String, Object> schema) {
             Schema s = new Schema();
             // shared leaf rules (any-JSON fallbacks + scalars)
-            s.rules.append("ws ::= [ \\t\\n\\r]*\n");
+            // BOUNDED whitespace (llama.cpp-style): unbounded ws lets a reluctant model stall
+            // forever without progress, growing a fresh matcher state (and a full-vocab mask
+            // recompute) per whitespace token. Eight chars covers pretty-printing.
+            s.rules.append("ws ::= [ \\t\\n\\r]{0,8}\n");
             s.rules.append(
                     "string ::= \"\\\"\" ([^\"\\\\\\x00-\\x1F] | \"\\\\\" ([\"\\\\/bfnrt] | \"u\""
                             + " [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]))* \"\\\"\"\n");
@@ -771,7 +774,9 @@ public final class Grammar {
                 return "\"{\" ws \"}\"";
             Map<String, Object> props = (Map<String, Object>) propsObj;
             List<String> keys = new ArrayList<>();
-            if (m.get("required") instanceof List<?> req) {
+            // an EMPTY required list means "nothing mandatory", not "no properties" - fall back
+            // to all declared properties (AiServices emits required=[] for extracted POJOs)
+            if (m.get("required") instanceof List<?> req && !req.isEmpty()) {
                 for (Object k : req)
                     if (props.containsKey(String.valueOf(k))) keys.add(String.valueOf(k));
             } else {
@@ -957,14 +962,7 @@ public final class Grammar {
                 for (byte b : s.getBytes(StandardCharsets.UTF_8))
                     res.add(new Rule.Element.Value(b));
                 i = end + 1;
-                char mod = i < body.length() ? body.charAt(i) : 0;
-                if (mod == '*' || mod == '+' || mod == '?') {
-                    Rule.Element last = res.removeLast();
-                    int min = mod == '+' ? 1 : 0;
-                    int max = mod == '?' ? 1 : -1;
-                    res.add(new Rule.Element.Repetition(last, min, max));
-                    i++;
-                }
+                i = applyMod(body, i, res);
             } else if (c == '[') {
                 int end = findMatchingBracket(body, i);
                 if (end < 0) {
@@ -1018,25 +1016,11 @@ public final class Grammar {
                 }
                 res.add(new Rule.Element.CharClass(chars, neg));
                 i = end + 1;
-                char mod = i < body.length() ? body.charAt(i) : 0;
-                if (mod == '*' || mod == '+' || mod == '?') {
-                    Rule.Element last = res.removeLast();
-                    int min = mod == '+' ? 1 : 0;
-                    int max = mod == '?' ? 1 : -1;
-                    res.add(new Rule.Element.Repetition(last, min, max));
-                    i++;
-                }
+                i = applyMod(body, i, res);
             } else if (c == '.') {
                 res.add(new Rule.Element.Dot());
                 i++;
-                char mod = i < body.length() ? body.charAt(i) : 0;
-                if (mod == '*' || mod == '+' || mod == '?') {
-                    Rule.Element last = res.removeLast();
-                    int min = mod == '+' ? 1 : 0;
-                    int max = mod == '?' ? 1 : -1;
-                    res.add(new Rule.Element.Repetition(last, min, max));
-                    i++;
-                }
+                i = applyMod(body, i, res);
             } else if (c == '|') {
                 res.add(new Rule.Element.Pipe());
                 i++;
@@ -1046,19 +1030,8 @@ public final class Grammar {
                     end++;
                 String name = body.substring(i, end);
                 int rid = rules.getOrDefault(name, 0);
-                char next = end < body.length() ? body.charAt(end) : 0;
-                Rule.Element.Ref ref = new Rule.Element.Ref(rid);
-                if (next == '*') {
-                    res.add(new Rule.Element.Repetition(ref, 0, -1));
-                    end++;
-                } else if (next == '+') {
-                    res.add(new Rule.Element.Repetition(ref, 1, -1));
-                    end++;
-                } else if (next == '?') {
-                    res.add(new Rule.Element.Repetition(ref, 0, 1));
-                    end++;
-                } else res.add(ref);
-                i = end;
+                res.add(new Rule.Element.Ref(rid));
+                i = applyMod(body, end, res);
             } else if (c == '(') {
                 int end = findMatchingParen(body, i);
                 if (end < 0) {
@@ -1066,19 +1039,8 @@ public final class Grammar {
                     continue;
                 }
                 List<Rule.Element> inner = parseBody(body.substring(i + 1, end - 1), rules);
-                Rule.Element.Group grp = new Rule.Element.Group(inner);
-                char next = end < body.length() ? body.charAt(end) : 0;
-                if (next == '*') {
-                    res.add(new Rule.Element.Repetition(grp, 0, -1));
-                    end++;
-                } else if (next == '+') {
-                    res.add(new Rule.Element.Repetition(grp, 1, -1));
-                    end++;
-                } else if (next == '?') {
-                    res.add(new Rule.Element.Repetition(grp, 0, 1));
-                    end++;
-                } else res.add(grp);
-                i = end;
+                res.add(new Rule.Element.Group(inner));
+                i = applyMod(body, end, res);
             } else i++;
         }
         return res;
@@ -1096,6 +1058,56 @@ public final class Grammar {
             else if (c == ']' && --d == 0) return j;
         }
         return -1;
+    }
+
+    /**
+     * Consumes a trailing repetition modifier at {@code i} - {@code *}, {@code +}, {@code ?}, or
+     * GBNF's bounded {@code {m}} / {@code {m,}} / {@code {m,n}} - wrapping the LAST parsed element.
+     * Returns the index just past the modifier ({@code i} unchanged when none).
+     */
+    private static int applyMod(String body, int i, List<Rule.Element> res) {
+        if (i >= body.length() || res.isEmpty()) return i;
+        int min;
+        int max;
+        switch (body.charAt(i)) {
+            case '*' -> {
+                min = 0;
+                max = -1;
+            }
+            case '+' -> {
+                min = 1;
+                max = -1;
+            }
+            case '?' -> {
+                min = 0;
+                max = 1;
+            }
+            case '{' -> {
+                int close = body.indexOf('}', i);
+                if (close < 0) return i;
+                String spec = body.substring(i + 1, close).trim();
+                int comma = spec.indexOf(',');
+                try {
+                    if (comma < 0) {
+                        min = Integer.parseInt(spec);
+                        max = min;
+                    } else {
+                        min = Integer.parseInt(spec.substring(0, comma).trim());
+                        String hi = spec.substring(comma + 1).trim();
+                        max = hi.isEmpty() ? -1 : Integer.parseInt(hi);
+                    }
+                } catch (NumberFormatException notARepetition) {
+                    return i; // not a repetition spec: leave the brace alone
+                }
+                res.add(new Rule.Element.Repetition(res.removeLast(), min, max));
+                return close + 1;
+            }
+            default -> {
+                return i;
+            }
+        }
+        res.add(new Rule.Element.Repetition(res.removeLast(), min, max));
+        return i + 1;
     }
 
     static int findMatchingParen(String s, int start) {

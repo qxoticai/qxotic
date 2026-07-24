@@ -152,6 +152,23 @@ class JinferChatModelIT {
                 "NONE must prevent tool calls: " + none.aiMessage());
     }
 
+    record Person(String name, int age) {}
+
+    interface PersonExtractor {
+        Person extract(String text);
+    }
+
+    @Test
+    void aiServicesStructuredExtraction() {
+        // supportedCapabilities() advertises RESPONSE_FORMAT_JSON_SCHEMA, so AiServices uses the
+        // grammar-constrained schema path for the POJO - not prompt-based JSON begging
+        PersonExtractor extractor =
+                dev.langchain4j.service.AiServices.create(PersonExtractor.class, model);
+        Person p = extractor.extract("Johann is 42 years old and lives in Munich.");
+        assertEquals("Johann", p.name());
+        assertEquals(42, p.age());
+    }
+
     @Test
     void multiTurn() {
         ChatResponse r =

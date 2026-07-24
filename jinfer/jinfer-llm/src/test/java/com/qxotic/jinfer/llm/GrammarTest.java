@@ -148,6 +148,7 @@ public final class GrammarTest {
         testParser();
         testCursor();
         testPrefixPin();
+        testBoundedRepetition();
         testJsonDFA();
         testGbnfCharClass();
         testGbnfDot();
@@ -192,6 +193,24 @@ public final class GrammarTest {
     // ========================================================================
     // parser-only tests
     // ========================================================================
+
+    static void testBoundedRepetition() {
+        // {m,n}: epsilon-reachable below min... (min 0), hard cutoff at max - the anti-stall
+        // bound behind ws{0,8} (unbounded ws let a reluctant model spin forever)
+        Grammar.Vocab v = new MockV();
+        Grammar.Cursor cur = Grammar.of("root ::= [ ]{0,2} \"a\"", v).cursor();
+        check("rep{0,2}: start allows both", allows(cur, v, " ") && allows(cur, v, "a"));
+        advance(cur, v, " ");
+        advance(cur, v, " ");
+        check("rep{0,2}: bound exhausted", rejects(cur, v, " ") && allows(cur, v, "a"));
+        advance(cur, v, "a");
+        check("rep{0,2}: accepts", cur.exhausted());
+        Grammar.Cursor exact = Grammar.of("root ::= [x]{2}", v).cursor();
+        advance(exact, v, "x");
+        check("rep{2}: one is not enough", !exact.exhausted() && allows(exact, v, "x"));
+        advance(exact, v, "x");
+        check("rep{2}: two exactly", exact.exhausted());
+    }
 
     static void testPrefixPin() {
         // prefix-pin: "a" ("bc" | "de") "{" - constrains the pin, exhausts, then releases
