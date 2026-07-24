@@ -11,6 +11,7 @@ import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.exception.UnsupportedFeatureException;
 import dev.langchain4j.model.chat.ChatModel;
+import dev.langchain4j.model.chat.listener.ChatModelListener;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.request.ChatRequestParameters;
 import dev.langchain4j.model.chat.request.DefaultChatRequestParameters;
@@ -39,6 +40,7 @@ public final class JinferChatModel implements ChatModel {
     final boolean thinking;
     final long seed;
     final long timeoutNanos;
+    final List<ChatModelListener> listeners;
     // cached-prompt view state: EMPTY for the base model. Converted to jinfer types ONCE at view
     // creation (media decoded once, not per request); a view's conversations all start with this
     // prefix, its KV restored from the engine's block tree instead of re-prefilled.
@@ -59,14 +61,22 @@ public final class JinferChatModel implements ChatModel {
         this.thinking = b.thinking;
         this.seed = b.seed;
         this.timeoutNanos = b.timeout == null ? 0 : b.timeout.toNanos();
+        this.listeners = List.copyOf(b.listeners);
         this.prefix = CachedPrompt.EMPTY;
-        this.defaults =
+        ChatRequestParameters base =
                 DefaultChatRequestParameters.builder()
                         .modelName(engine.modelName)
                         .temperature(b.temperature)
                         .topP(b.topP)
                         .maxOutputTokens(b.maxOutputTokens)
                         .build();
+        // caller-supplied defaults win field-by-field; unsupported ones reject HERE, eagerly - a
+        // model whose defaults can never serve a request should fail at build, not at first use
+        this.defaults = b.defaultParameters == null ? base : base.overrideWith(b.defaultParameters);
+        if (b.defaultParameters != null) {
+            rejectUnsupported(this.defaults);
+            rejectModelSwitch(engine, this.defaults);
+        }
     }
 
     private JinferChatModel(JinferChatModel base, CachedPrompt prefix) {
@@ -75,6 +85,7 @@ public final class JinferChatModel implements ChatModel {
         this.thinking = base.thinking;
         this.seed = base.seed;
         this.timeoutNanos = base.timeoutNanos;
+        this.listeners = base.listeners;
         this.prefix = prefix;
     }
 
@@ -103,6 +114,11 @@ public final class JinferChatModel implements ChatModel {
     @Override
     public ChatRequestParameters defaultRequestParameters() {
         return defaults;
+    }
+
+    @Override
+    public List<ChatModelListener> listeners() {
+        return listeners; // core's chat() dispatches onRequest/onResponse/onError
     }
 
     @Override
@@ -138,26 +154,39 @@ public final class JinferChatModel implements ChatModel {
             int promptTokens,
             boolean cached) {}
 
-    static Prepared prepare(JinferChatModel m, ChatRequest request) {
+    /** Every request-shape rejection, synchronously (streaming calls this before its thread). */
+    static void validate(JinferChatModel m, ChatRequest request) {
         ChatRequestParameters p = request.parameters();
         rejectUnsupported(p);
-        boolean cached = !m.prefix.isEmpty();
-        List<ToolSpecification> requestTools =
-                p.toolSpecifications() == null ? List.of() : p.toolSpecifications();
-        if (cached && !requestTools.isEmpty()) {
+        rejectModelSwitch(m.engine, p);
+        boolean requestHasTools =
+                p.toolSpecifications() != null && !p.toolSpecifications().isEmpty();
+        if (!m.prefix.isEmpty() && requestHasTools) {
             throw new UnsupportedFeatureException(
                     "a cached-prompt view welds its tools into the cached prefix; per-request"
                             + " toolSpecifications would silently forfeit the cache - put tools on"
                             + " withCachedPrompt(...) instead");
         }
+    }
+
+    static Prepared prepare(JinferChatModel m, ChatRequest request) {
+        validate(m, request);
+        ChatRequestParameters p = request.parameters();
+        boolean cached = !m.prefix.isEmpty();
+        List<ToolSpecification> requestTools =
+                p.toolSpecifications() == null ? List.of() : p.toolSpecifications();
         JinferEngine engine = m.engine;
+        int maxTokens = p.maxOutputTokens() == null ? -1 : p.maxOutputTokens();
+        // a think span cannot fit a tiny completion budget: below the floor, reasoning is
+        // disabled outright (scaffold and sampler both) so the budget buys VISIBLE text
+        boolean think = m.thinking && (maxTokens < 0 || maxTokens >= 16);
         List<com.qxotic.jinfer.chat.Message> messages = new ArrayList<>(m.prefix.messages());
         messages.addAll(Mappings.toMessages(request.messages()));
         Conversation conversation =
                 new Conversation(
                         messages,
                         cached ? m.prefix.tools() : Mappings.toTools(requestTools),
-                        m.thinking,
+                        think,
                         "");
         // cached views are native-only (define enforced it); the base keeps the Jinja fallback
         JinferEngine.Encoded encoded =
@@ -166,7 +195,6 @@ public final class JinferChatModel implements ChatModel {
                         : engine.encode(conversation, request.messages(), requestTools);
         double temperature = p.temperature() == null ? 0.0 : p.temperature();
         double topP = p.topP() == null ? 0.95 : p.topP();
-        int maxTokens = p.maxOutputTokens() == null ? -1 : p.maxOutputTokens();
         Sampler sampler =
                 Sampler.select(
                         engine.loaded.model().config().vocabularySize(),
@@ -176,7 +204,7 @@ public final class JinferChatModel implements ChatModel {
         // mirror the server's reasoning policy: cap the think span at half the budget, or ban the
         // markers outright when thinking is off (a thinking model would otherwise still emit them)
         sampler =
-                m.thinking
+                think
                         ? Thinking.capBudget(
                                 sampler,
                                 engine.loaded.tokenizer(),
@@ -184,6 +212,16 @@ public final class JinferChatModel implements ChatModel {
                         : Thinking.banMarkers(sampler, engine.loaded.tokenizer());
         int promptTokens = encoded.prompt().stream().mapToInt(Batch::count).sum();
         return new Prepared(encoded, sampler, maxTokens, promptTokens, cached);
+    }
+
+    /** One loaded GGUF per instance: a different {@code modelName} cannot be served. */
+    private static void rejectModelSwitch(JinferEngine engine, ChatRequestParameters p) {
+        if (p.modelName() != null && !p.modelName().equals(engine.modelName)) {
+            throw new UnsupportedFeatureException(
+                    "per-request modelName is not supported: this model IS '"
+                            + engine.modelName
+                            + "' (one loaded GGUF per instance)");
+        }
     }
 
     private static void rejectUnsupported(ChatRequestParameters p) {
@@ -213,6 +251,8 @@ public final class JinferChatModel implements ChatModel {
         private Double temperature;
         private Double topP;
         private Integer maxOutputTokens;
+        private ChatRequestParameters defaultParameters;
+        private List<ChatModelListener> listeners = List.of();
         private boolean thinking = true;
         private long seed = 42;
         private Duration timeout;
@@ -252,6 +292,20 @@ public final class JinferChatModel implements ChatModel {
 
         public Builder maxOutputTokens(Integer maxOutputTokens) {
             this.maxOutputTokens = maxOutputTokens;
+            return this;
+        }
+
+        public Builder listeners(List<ChatModelListener> listeners) {
+            this.listeners = listeners;
+            return this;
+        }
+
+        /**
+         * Default request parameters, merged under each request's own (standard langchain4j
+         * semantics). Unsupported parameters are rejected eagerly at build.
+         */
+        public Builder defaultRequestParameters(ChatRequestParameters defaultParameters) {
+            this.defaultParameters = defaultParameters;
             return this;
         }
 
