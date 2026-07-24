@@ -177,6 +177,43 @@ AGENT> The top lamp of the traffic light is red.
 Note the last two answers: the recording was a pure sine tone - out of distribution for a speech-tuned audio encoder - and the agent reports the ambiguity instead of inventing content, then recalls both observations from memory.
 The runnable version is `LocalAgentIT` in this module's tests.
 
+## Cached prompts
+
+A cached prompt is paid for once and cheap forever after: `withCachedPrompt` prefills the prefix
+(system prompt, tools, few-shot, even images) into an in-memory KV block tree and returns a model
+view whose requests restore it instead of recomputing it - users only pay for their own data.
+Content-addressed (no names), memory-only by default, byte-identical output to the uncached path.
+
+```java
+JinferChatModel base = JinferChatModel.builder().modelPath(gguf).build();
+
+// prefill once; every chat on the view pays only the user's text
+JinferChatModel support = base.withCachedPrompt(
+        List.of(SystemMessage.from(SUPPORT_INSTRUCTIONS)), supportTools);
+support.chat("How do I reset my password?");
+
+// several prompts share one tree - common prefixes are stored once
+JinferChatModel sales = base.withCachedPrompt(
+        List.of(SystemMessage.from(SALES_INSTRUCTIONS)), salesTools);
+
+// optional persistence: freeze everything into one artifact...
+base.saveCachedPrompts(Path.of("dist/personas.jkv"));
+
+// ...and mount it in the next process: re-declaring a stored prompt costs zero prefill
+JinferChatModel base2 = JinferChatModel.builder()
+        .modelPath(gguf)
+        .loadCachedPrompts(Path.of("dist/personas.jkv"))   // model-seed-checked
+        .build();
+JinferChatModel support2 = base2.withCachedPrompt(
+        List.of(SystemMessage.from(SUPPORT_INSTRUCTIONS)), supportTools);  // instant
+```
+
+Rules: the base model never touches the tree (fully stateless by default); views are immutable,
+composable (`withCachedPrompt` on a view branches on its prefix), and reject per-request
+`toolSpecifications` (tools are welded into the cached prefix); an edited prompt matches to the
+divergence point and pays only the tail; a wrong-model artifact fails at `build()`. Requires a
+model with a native template codec (the Jinja fallback makes no prefix-stability promise).
+
 ## Notes
 
 - One generation runs at a time per loaded model; concurrent `chat` calls queue fairly.

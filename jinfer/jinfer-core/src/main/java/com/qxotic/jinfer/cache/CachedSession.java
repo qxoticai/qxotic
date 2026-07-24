@@ -99,6 +99,32 @@ public final class CachedSession<S extends RuntimeState> {
     }
 
     /**
+     * The expected fingerprint stream of a batch list, media included - EXACTLY what {@link
+     * #ingest} appends (token ids as themselves, embedding rows by content digest), so a caller can
+     * {@link #resume} against a prompt before ingesting it.
+     */
+    public static long[] fingerprints(List<Batch> batches) {
+        int total = batches.stream().mapToInt(Batch::count).sum();
+        long[] fp = new long[total];
+        int at = 0;
+        for (Batch b : batches) {
+            switch (b.input()) {
+                case Batch.Input.Tokens t -> {
+                    for (int id : t.ids()) fp[at++] = id;
+                }
+                case Batch.Input.Embeddings e -> {
+                    long[] digest = rowsDigest(e);
+                    for (int i = 0; i < e.count(); i++) fp[at++] = digest[i & 3] + GOLDEN * i;
+                }
+                default ->
+                        throw new IllegalArgumentException(
+                                "cannot fingerprint " + b.input().getClass().getSimpleName());
+            }
+        }
+        return fp;
+    }
+
+    /**
      * Ingests batches (chunked at the state's batch capacity), committing each chunk: token ids
      * fingerprint as themselves, embeddings by rows content hash (one block per media group).
      */

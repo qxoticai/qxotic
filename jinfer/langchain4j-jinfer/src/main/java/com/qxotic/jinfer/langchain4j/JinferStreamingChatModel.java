@@ -10,6 +10,7 @@ import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.request.ChatRequestParameters;
 import dev.langchain4j.model.chat.response.PartialThinking;
 import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -25,18 +26,24 @@ public final class JinferStreamingChatModel implements StreamingChatModel {
     private final boolean thinking;
     private final long seed;
     private final long timeoutNanos;
+    private final List<dev.langchain4j.data.message.ChatMessage> prefixMessages;
+    private final List<dev.langchain4j.agent.tool.ToolSpecification> prefixTools;
 
     private JinferStreamingChatModel(
             JinferEngine engine,
             ChatRequestParameters defaults,
             boolean thinking,
             long seed,
-            long timeoutNanos) {
+            long timeoutNanos,
+            List<dev.langchain4j.data.message.ChatMessage> prefixMessages,
+            List<dev.langchain4j.agent.tool.ToolSpecification> prefixTools) {
         this.engine = engine;
         this.defaults = defaults;
         this.thinking = thinking;
         this.seed = seed;
         this.timeoutNanos = timeoutNanos;
+        this.prefixMessages = prefixMessages;
+        this.prefixTools = prefixTools;
     }
 
     static JinferStreamingChatModel over(
@@ -44,8 +51,11 @@ public final class JinferStreamingChatModel implements StreamingChatModel {
             ChatRequestParameters defaults,
             boolean thinking,
             long seed,
-            long timeoutNanos) {
-        return new JinferStreamingChatModel(engine, defaults, thinking, seed, timeoutNanos);
+            long timeoutNanos,
+            List<dev.langchain4j.data.message.ChatMessage> prefixMessages,
+            List<dev.langchain4j.agent.tool.ToolSpecification> prefixTools) {
+        return new JinferStreamingChatModel(
+                engine, defaults, thinking, seed, timeoutNanos, prefixMessages, prefixTools);
     }
 
     @Override
@@ -68,38 +78,47 @@ public final class JinferStreamingChatModel implements StreamingChatModel {
     }
 
     private void stream(ChatRequest request, StreamingChatResponseHandler handler) {
-        JinferChatModel.Prepared p = JinferChatModel.prepare(engine, request, thinking, seed);
+        JinferChatModel.Prepared p =
+                JinferChatModel.prepare(
+                        engine, request, thinking, seed, prefixMessages, prefixTools);
         Optional<ChatTemplate> template = p.encoded().template();
         ReplyParser parser = template.map(ChatTemplate::parser).orElse(null);
         PendingUtf8 raw = parser == null ? new PendingUtf8() : null;
 
-        Generator.GenerationResult result =
-                engine.generate(
-                        p.encoded().prompt(),
-                        p.sampler(),
-                        p.maxTokens(),
-                        timeoutNanos,
-                        token -> {
-                            if (parser != null) {
-                                String fragment = parser.feed(token);
-                                if (!fragment.isEmpty()) {
-                                    if (parser.reasoning()) {
-                                        handler.onPartialThinking(new PartialThinking(fragment));
-                                    } else {
-                                        handler.onPartialResponse(fragment);
-                                    }
-                                }
+        Generator.TokenSink sink =
+                token -> {
+                    if (parser != null) {
+                        String fragment = parser.feed(token);
+                        if (!fragment.isEmpty()) {
+                            if (parser.reasoning()) {
+                                handler.onPartialThinking(new PartialThinking(fragment));
                             } else {
-                                PendingUtf8.Fragment f =
-                                        raw.add(
-                                                engine.loaded
-                                                        .tokenizer()
-                                                        .decodeBytes(new int[] {token}),
-                                                token);
-                                if (!f.text().isEmpty()) handler.onPartialResponse(f.text());
+                                handler.onPartialResponse(fragment);
                             }
-                            return true;
-                        });
+                        }
+                    } else {
+                        PendingUtf8.Fragment f =
+                                raw.add(
+                                        engine.loaded.tokenizer().decodeBytes(new int[] {token}),
+                                        token);
+                        if (!f.text().isEmpty()) handler.onPartialResponse(f.text());
+                    }
+                    return true;
+                };
+        Generator.GenerationResult result =
+                p.cached()
+                        ? engine.cachedGenerate(
+                                p.encoded().prompt(),
+                                p.sampler(),
+                                p.maxTokens(),
+                                timeoutNanos,
+                                sink)
+                        : engine.generate(
+                                p.encoded().prompt(),
+                                p.sampler(),
+                                p.maxTokens(),
+                                timeoutNanos,
+                                sink);
 
         AiMessage ai =
                 parser != null

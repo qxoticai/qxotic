@@ -121,6 +121,46 @@ class Gemma4MediaIT {
         assertTrue(!r.aiMessage().text().isBlank());
     }
 
+    @Test
+    void imageInCachedPrompt() throws Exception {
+        var img = new BufferedImage(224, 224, BufferedImage.TYPE_INT_RGB);
+        var g = img.createGraphics();
+        g.setColor(Color.BLUE);
+        g.fillRect(0, 0, 224, 224);
+        g.dispose();
+        var png = new ByteArrayOutputStream();
+        ImageIO.write(img, "png", png);
+        String b64 = Base64.getEncoder().encodeToString(png.toByteArray());
+
+        // the image lives in the CACHED prompt: encoded+prefilled once, restored per request
+        JinferChatModel scene =
+                model.withCachedPrompt(
+                        java.util.List.of(
+                                UserMessage.from(
+                                        ImageContent.from(b64, "image/png"),
+                                        TextContent.from("This image is the reference scene."))),
+                        java.util.List.of());
+        ChatResponse first =
+                scene.chat(
+                        dev.langchain4j.model.chat.request.ChatRequest.builder()
+                                .messages(
+                                        UserMessage.from(
+                                                "What single color fills the reference scene?"
+                                                        + " One word."))
+                                .build());
+        assertTrue(
+                first.aiMessage().text().toLowerCase().contains("blue"), first.aiMessage().text());
+        // second request through the view: the image's prefill positions restore from blocks
+        ChatResponse second =
+                scene.chat(
+                        dev.langchain4j.model.chat.request.ChatRequest.builder()
+                                .messages(UserMessage.from("Is the scene dark or bright?"))
+                                .build());
+        assertTrue(!second.aiMessage().text().isBlank());
+        String stats = model.engine().promptStats();
+        assertTrue(stats.contains("hits=") && !stats.contains("hits=0 "), stats);
+    }
+
     private static Object engineModel(JinferChatModel m) {
         // the loaded LanguageModel implements MultiModal for gemma4
         return m.engine().loaded.model();
