@@ -64,14 +64,13 @@ final class JinferEngine {
             // built only when the model can support it (or a mount demands it): a codec-less
             // model (Qwen35) must still load and chat - the codec throw belongs to the first
             // CACHED-feature use, not to plain construction
-            this.prompts =
-                    cachedPrompts == null && loaded.model().stateCodec().isEmpty()
-                            ? null
-                            : tree(
-                                    loaded,
-                                    cachedPrompts == null
-                                            ? null
-                                            : FrozenBlocks.open(cachedPrompts, loaded.seed()));
+            if (cachedPrompts != null) {
+                this.prompts = tree(loaded, FrozenBlocks.open(cachedPrompts, loaded.seed()));
+            } else if (loaded.model().stateCodec().isPresent()) {
+                this.prompts = tree(loaded, null);
+            } else {
+                this.prompts = null;
+            }
         } catch (IOException e) {
             throw new UncheckedIOException("failed to load " + modelPath, e);
         }
@@ -292,7 +291,11 @@ final class JinferEngine {
 
     @SuppressWarnings("unchecked")
     private <S extends RuntimeState> PromptCache<S> tree() {
-        if (prompts == null) loaded.codec(); // throws, naming the missing state codec
+        if (prompts == null) {
+            throw new IllegalStateException(
+                    loaded.model().getClass().getSimpleName()
+                            + " does not support block caching (no state codec)");
+        }
         return (PromptCache<S>) prompts;
     }
 }

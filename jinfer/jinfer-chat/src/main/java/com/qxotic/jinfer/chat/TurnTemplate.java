@@ -51,6 +51,30 @@ public interface TurnTemplate extends ChatTemplate {
     List<Batch> closeTurn();
 
     /**
+     * The part shapes a text-only tool codec frames byte-exactly - text anywhere, calls and
+     * reasoning on assistant turns, results on tool turns; anything else (media, misplaced parts)
+     * throws so the caller falls back to the whole render. The shared validator behind every
+     * tool-capable port's {@code encode} override.
+     */
+    static void requireToolShapes(List<Message> messages) {
+        for (Message m : messages) {
+            boolean assistant = m.role().equals(Role.ASSISTANT);
+            boolean tool = m.role().equals(Role.TOOL);
+            for (Part p : m.content()) {
+                boolean ok =
+                        p instanceof Part.Text
+                                || (assistant
+                                        && (p instanceof Part.ToolCall
+                                                || p instanceof Part.Reasoning))
+                                || (tool && p instanceof Part.ToolResult);
+                if (!ok)
+                    throw new UnsupportedConversation(
+                            m.role().name() + " turn: " + p.getClass().getSimpleName());
+            }
+        }
+    }
+
+    /**
      * The conversation as the model's own template would frame it - e.g. a template that
      * unconditionally renders a system turn (Llama) injects its default here when the conversation
      * lacks one. Identity by default. EVERY caller that encodes turn-by-turn must normalize first,

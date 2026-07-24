@@ -53,8 +53,9 @@ public final class GptOssTurnTemplate implements TurnTemplate {
             "\nCalls to these tools must go to the commentary channel: 'functions'.";
 
     private final Tokenizer tokenizer;
-    private final String systemText;
     private final List<Batch> conversationStart; // fixed preamble, encoded once
+    private final Batch toolsPreamble; // the preamble + routing line, encoded once
+    private final int[] callEpilogue; // " <|constrain|>json<|message|>", resolved once
     private final int start; // <|start|>
     private final int message; // <|message|>
     private final int channel; // <|channel|>
@@ -72,7 +73,7 @@ public final class GptOssTurnTemplate implements TurnTemplate {
         this.channel = SpecialTokens.require(tokenizer, "<|channel|>");
         this.end = SpecialTokens.require(tokenizer, "<|end|>");
         this.call = SpecialTokens.require(tokenizer, "<|call|>");
-        this.systemText =
+        String systemText =
                 DEFAULT_IDENTITY
                         + "\n"
                         + "Knowledge cutoff: 2024-06\n"
@@ -85,6 +86,13 @@ public final class GptOssTurnTemplate implements TurnTemplate {
                         + "# Valid channels: analysis, commentary, final. Channel must be included"
                         + " for every message.";
         this.conversationStart = List.of(block("system", systemText));
+        this.toolsPreamble = block("system", systemText + TOOLS_LINE);
+        IntSequence.Builder epilogue = IntSequence.newBuilder();
+        epilogue.addAll(tokenizer.encode(" "));
+        epilogue.add(SpecialTokens.require(tokenizer, "<|constrain|>"));
+        epilogue.addAll(tokenizer.encode("json"));
+        epilogue.add(message);
+        this.callEpilogue = epilogue.build().toArray();
     }
 
     /** {@code <|start|>{role}<|message|>{body}<|end|>} - one channel-less block. */
@@ -176,10 +184,19 @@ public final class GptOssTurnTemplate implements TurnTemplate {
     public List<Batch> encode(Conversation conversation) {
         List<Message> msgs = conversation.messages();
         List<Tool> tools = conversation.tools();
-        requireSupported(msgs);
+        TurnTemplate.requireToolShapes(msgs);
         List<Batch> out = new ArrayList<>();
         if (tools.isEmpty()) out.addAll(conversationStart());
-        else out.add(block("system", systemText + TOOLS_LINE));
+        else out.add(toolsPreamble);
+        // the answered-round-trip boundary: calls at or after it keep their analysis message
+        int lastFinal = -1;
+        for (int i = 0; i < msgs.size(); i++) {
+            Message m = msgs.get(i);
+            if (m.role().equals(Role.ASSISTANT)
+                    && m.content().stream().noneMatch(p -> p instanceof Part.ToolCall)) {
+                lastFinal = i;
+            }
+        }
         Message dev =
                 !msgs.isEmpty() && msgs.get(0).role().equals(Role.SYSTEM) ? msgs.get(0) : null;
         String devText = dev == null ? "" : dev.textOnly();
@@ -228,13 +245,13 @@ public final class GptOssTurnTemplate implements TurnTemplate {
                 continue;
             }
             String content = m.text();
-            Part.Reasoning thinking = reasoning(m);
+            Part.Reasoning thinking = m.reasoning();
             if (!content.isEmpty() && thinking != null)
                 throw new UnsupportedConversation(
                         "assistant call turn with both content and thinking");
-            if ((!content.isEmpty() || thinking != null) && !futureFinal(msgs, i)) {
+            if ((!content.isEmpty() || thinking != null) && i > lastFinal) {
                 // the one place inference retains CoT: an unanswered tool-call round-trip
-                String analysis = !content.isEmpty() ? content : reasoningText(thinking);
+                String analysis = !content.isEmpty() ? content : thinking.text();
                 out.add(
                         turn(
                                 "assistant",
@@ -256,59 +273,17 @@ public final class GptOssTurnTemplate implements TurnTemplate {
         return out;
     }
 
-    /** A later assistant message with no tool calls - the answered-round-trip signal. */
-    private static boolean futureFinal(List<Message> msgs, int after) {
-        for (int j = after + 1; j < msgs.size(); j++) {
-            Message m = msgs.get(j);
-            if (m.role().equals(Role.ASSISTANT)
-                    && m.content().stream().noneMatch(p -> p instanceof Part.ToolCall)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static Part.Reasoning reasoning(Message m) {
-        for (Part p : m.content()) {
-            if (p instanceof Part.Reasoning r) return r;
-        }
-        return null;
-    }
-
-    private static String reasoningText(Part.Reasoning r) {
-        StringBuilder sb = new StringBuilder();
-        for (Part p : r.content()) {
-            if (p instanceof Part.Text t) sb.append(t.text());
-        }
-        return sb.toString();
-    }
-
-    /** The part shapes this port frames byte-exactly; anything else punts to the whole render. */
-    private static void requireSupported(List<Message> msgs) {
-        for (Message m : msgs) {
-            boolean assistant = m.role().equals(Role.ASSISTANT);
-            boolean tool = m.role().equals(Role.TOOL);
-            for (Part p : m.content()) {
-                boolean ok =
-                        switch (p) {
-                            case Part.Text t -> true;
-                            case Part.ToolCall c -> assistant;
-                            case Part.Reasoning r -> assistant;
-                            case Part.ToolResult r -> tool;
-                            default -> false; // Blob: gpt-oss is text-only
-                        };
-                if (!ok)
-                    throw new UnsupportedConversation(
-                            m.role().name() + " turn: " + p.getClass().getSimpleName());
-            }
-        }
-    }
-
     /**
      * Forced calls: the reply is seeded with {@code <|channel|>}, then the pin walks the header's
      * plain bytes {@code commentary to=functions.} through an offered name and releases - the
      * content-type, arguments and {@code <|call|>} stay the model's own.
      */
+    /** Forced calls seed {@code <|channel|>} - the reply opens in a header the pin then owns. */
+    @Override
+    public int[] callSeed() {
+        return new int[] {channel};
+    }
+
     @Override
     public Optional<String> callGrammar(List<Tool> tools) {
         if (tools.isEmpty()) return Optional.empty();
@@ -323,12 +298,7 @@ public final class GptOssTurnTemplate implements TurnTemplate {
      */
     @Override
     public int[] callEpilogue() {
-        IntSequence.Builder ids = IntSequence.newBuilder();
-        ids.addAll(tokenizer.encode(" "));
-        ids.add(SpecialTokens.require(tokenizer, "<|constrain|>"));
-        ids.addAll(tokenizer.encode("json"));
-        ids.add(message);
-        return ids.build().toArray();
+        return callEpilogue;
     }
 
     @Override

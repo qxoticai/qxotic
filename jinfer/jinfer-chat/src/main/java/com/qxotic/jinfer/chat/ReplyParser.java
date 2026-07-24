@@ -66,4 +66,27 @@ public interface ReplyParser {
         return new SpansReplyParser(
                 tokenizer, new SpanToolCallDetector(tokenizer, callStart, callEnd, payload));
     }
+
+    /**
+     * {@code inner} with one token id silenced - for GGUFs that mistype a control token as NORMAL
+     * (Gemma 4's {@code <eos>}), whose spelling would otherwise leak into content as literal text.
+     */
+    static ReplyParser dropping(ReplyParser inner, int id) {
+        return new ReplyParser() {
+            @Override
+            public String feed(int token) {
+                return token == id ? "" : inner.feed(token);
+            }
+
+            @Override
+            public boolean reasoning() {
+                return inner.reasoning();
+            }
+
+            @Override
+            public Message finish() {
+                return inner.finish();
+            }
+        };
+    }
 }

@@ -113,4 +113,10 @@ public final class Qwen35TurnTemplate implements TurnTemplate {
         return ReplyParser.spans(
                 tokenizer, "<tool_call>", "</tool_call>", ToolCallSyntax::parseFunctionXml);
     }
+
+    /** Forced calls seed {@code <tool_call>} (seeding only - no pin hook yet). */
+    @Override
+    public int[] callSeed() {
+        return new int[] {SpecialTokens.require(tokenizer, "<tool_call>")};
+    }
 }

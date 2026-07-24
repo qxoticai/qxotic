@@ -47,6 +47,15 @@ public sealed interface Part {
         public Reasoning {
             content = List.copyOf(content);
         }
+
+        /** The span's concatenated text, mirroring {@link Message#text()}. */
+        public String text() {
+            StringBuilder sb = new StringBuilder();
+            for (Part p : content) {
+                if (p instanceof Text t) sb.append(t.text());
+            }
+            return sb.toString();
+        }
     }
 
     /**

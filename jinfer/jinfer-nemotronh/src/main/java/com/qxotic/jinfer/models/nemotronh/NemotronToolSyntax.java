@@ -1,6 +1,5 @@
 package com.qxotic.jinfer.models.nemotronh;
 
-import com.qxotic.jinfer.chat.JsonCodec;
 import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.chat.ToolCallSyntax;
@@ -29,7 +28,7 @@ final class NemotronToolSyntax {
         StringBuilder sb = new StringBuilder();
         sb.append("# Tools\n\nYou have access to the following functions:\n\n<tools>");
         for (Tool tool : tools) {
-            Map<String, Object> fn = function(tool);
+            Map<String, Object> fn = ToolCallSyntax.functionObject(tool);
             sb.append("\n<function>\n<name>").append(str(fn.get("name"))).append("</name>");
             if (fn.containsKey("description")) {
                 sb.append("\n<description>")
@@ -85,8 +84,7 @@ final class NemotronToolSyntax {
         sb.append("\n<function=").append(call.name()).append(">\n");
         for (Map.Entry<String, Object> arg : call.arguments().entrySet()) {
             sb.append("<parameter=").append(arg.getKey()).append(">\n");
-            Object v = arg.getValue();
-            sb.append(v instanceof Map || v instanceof List ? ToolCallSyntax.jinjaJson(v) : str(v));
+            sb.append(ToolCallSyntax.jinjaValue(arg.getValue()));
             sb.append("\n</parameter>\n");
         }
         sb.append("</function>\n");
@@ -98,25 +96,15 @@ final class NemotronToolSyntax {
         if (dict == null) return;
         for (Map.Entry<String, Object> e : dict.entrySet()) {
             if (handled.contains(e.getKey())) continue;
-            Object v = e.getValue();
-            String rendered =
-                    v instanceof Map || v instanceof List ? ToolCallSyntax.jinjaJson(v) : str(v);
             sb.append('\n')
                     .append('<')
                     .append(e.getKey())
                     .append('>')
-                    .append(rendered)
+                    .append(ToolCallSyntax.jinjaValue(e.getValue()))
                     .append("</")
                     .append(e.getKey())
                     .append('>');
         }
-    }
-
-    /** The tool's inner {@code function} object; lenient when rawJson IS already that object. */
-    private static Map<String, Object> function(Tool tool) {
-        Map<String, Object> raw = map(JsonCodec.parse(tool.rawJson()));
-        Map<String, Object> fn = map(raw.get("function"));
-        return fn != null ? fn : raw;
     }
 
     @SuppressWarnings("unchecked")

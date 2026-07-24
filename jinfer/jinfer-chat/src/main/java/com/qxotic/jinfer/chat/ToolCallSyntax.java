@@ -92,6 +92,28 @@ public final class ToolCallSyntax {
     }
 
     /**
+     * The tool's inner {@code function} object from its raw JSON envelope ({@code {"type":
+     * "function","function":{...}}}), lenient when the raw JSON IS already that object - the one
+     * wire fact about {@link Tool#rawJson} every template port needs.
+     */
+    @SuppressWarnings("unchecked")
+    public static Map<String, Object> functionObject(Tool tool) {
+        Map<String, Object> raw = (Map<String, Object>) JsonCodec.parse(tool.rawJson());
+        return raw.get("function") instanceof Map<?, ?> fn ? (Map<String, Object>) fn : raw;
+    }
+
+    /**
+     * A template value as Jinja renders it: {@code tojson} for maps and lists, {@code |string}
+     * otherwise (Python spellings: {@code True}/{@code False}/{@code None}).
+     */
+    public static String jinjaValue(Object v) {
+        if (v instanceof Map || v instanceof List) return jinjaJson(v);
+        if (v instanceof Boolean b) return b ? "True" : "False";
+        if (v == null) return "None";
+        return String.valueOf(v);
+    }
+
+    /**
      * Parse one XML-function span, {@code <function=NAME><parameter=K>\nV\n</parameter>...
      * </function>} - the form Qwen 3.5 and Nemotron emit between their trusted {@code <tool_call>}
      * / {@code </tool_call>} ids (one function per span; both templates emit one span per call). A

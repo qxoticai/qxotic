@@ -54,9 +54,20 @@ public interface ChatTemplate {
     }
 
     /**
+     * Trusted ids seeded into the reply to FORCE a tool call ({@code toolChoice REQUIRED}): the
+     * family's call-opening marker ({@code <|tool_call_start|>}, Harmony's {@code <|channel|>}),
+     * appended to the prompt so the model can only COMPLETE a call. Empty = this family cannot
+     * force calls. The seed deliberately stops BEFORE any delimiter the model's training merges
+     * with what follows (never the paren).
+     */
+    default int[] callSeed() {
+        return new int[0];
+    }
+
+    /**
      * The dual of {@link #parser} for FORCED tool calls: a GBNF prefix grammar over the family's
      * call syntax - {@code prefix (name|...|name) delimiter} in plain bytes, pinning the reply
-     * (already seeded with the call marker) to a call of an OFFERED tool. The pin covers only the
+     * (already seeded with {@link #callSeed}) to a call of an OFFERED tool. The pin covers only the
      * prefix; once matched the sampler releases and the arguments stay the model's own. Empty when
      * the family has no call syntax (forcing then relies on seeding alone).
      */

@@ -254,8 +254,6 @@ public final class Gemma4
         for (String name : new String[] {"<turn|>", "<end_of_turn>", "<eos>", "<|endoftext|>"}) {
             if (tokenizer.vocabulary().contains(name)) {
                 stops.add(tokenizer.vocabulary().id(name));
-            } else {
-                SpecialTokens.find(tokenizer, name).ifPresent(stops::add);
             }
         }
         return stops;

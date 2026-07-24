@@ -389,26 +389,15 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
         // trailing stop into content as literal "<eos>" text (which then re-encodes into the
         // next prompt via the echo) - filter it like the control token it really is
         if (!tokenizer.vocabulary().contains("<eos>")) return spans;
-        int eos = tokenizer.vocabulary().id("<eos>");
-        return new ReplyParser() {
-            @Override
-            public String feed(int token) {
-                return token == eos ? "" : spans.feed(token);
-            }
-
-            @Override
-            public boolean reasoning() {
-                return spans.reasoning();
-            }
-
-            @Override
-            public Message finish() {
-                return spans.finish();
-            }
-        };
+        return ReplyParser.dropping(spans, tokenizer.vocabulary().id("<eos>"));
     }
 
-    /** Forced calls pin {@code call:name} - the notation's plain-byte opening. */
+    /** Forced calls seed {@code <|tool_call>} and pin {@code call:name}. */
+    @Override
+    public int[] callSeed() {
+        return new int[] {require("<|tool_call>")};
+    }
+
     @Override
     public Optional<String> callGrammar(List<Tool> tools) {
         if (tools.isEmpty()) return Optional.empty();

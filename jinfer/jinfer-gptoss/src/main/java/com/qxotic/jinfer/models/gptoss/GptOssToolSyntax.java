@@ -1,6 +1,5 @@
 package com.qxotic.jinfer.models.gptoss;
 
-import com.qxotic.jinfer.chat.JsonCodec;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.chat.ToolCallSyntax;
 import java.util.List;
@@ -28,7 +27,7 @@ final class GptOssToolSyntax {
         sb.append("## functions\n\n");
         sb.append("namespace functions {\n\n");
         for (Tool tool : tools) {
-            Map<String, Object> fn = function(tool);
+            Map<String, Object> fn = ToolCallSyntax.functionObject(tool);
             sb.append("// ").append(str(fn.get("description"))).append('\n');
             sb.append("type ").append(str(fn.get("name"))).append(" = ");
             Map<String, Object> parameters = map(fn.get("parameters"));
@@ -146,13 +145,6 @@ final class GptOssToolSyntax {
             return "object";
         }
         return "any";
-    }
-
-    /** The tool's inner {@code function} object; lenient when rawJson IS already that object. */
-    private static Map<String, Object> function(Tool tool) {
-        Map<String, Object> raw = map(JsonCodec.parse(tool.rawJson()));
-        Map<String, Object> fn = map(raw.get("function"));
-        return fn != null ? fn : raw;
     }
 
     @SuppressWarnings("unchecked")

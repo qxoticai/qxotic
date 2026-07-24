@@ -110,7 +110,12 @@ public final class Lfm2ChatTemplate implements TurnTemplate {
                 tokenizer, "<|tool_call_start|>", "<|tool_call_end|>", ToolCallSyntax::parseBlock);
     }
 
-    /** Forced calls pin {@code [name} - the pythonic syntax's plain-byte opening. */
+    /** Forced calls seed {@code <|tool_call_start|>} and pin {@code [name}. */
+    @Override
+    public int[] callSeed() {
+        return new int[] {tcStart};
+    }
+
     @Override
     public Optional<String> callGrammar(List<Tool> tools) {
         if (tools.isEmpty()) return Optional.empty();

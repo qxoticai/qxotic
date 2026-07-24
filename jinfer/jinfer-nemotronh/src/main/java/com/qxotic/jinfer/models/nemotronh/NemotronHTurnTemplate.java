@@ -49,6 +49,11 @@ public final class NemotronHTurnTemplate implements TurnTemplate {
     private final int imEnd; // <|im_end|>
     private final int think; // <think>
     private final int endThink; // </think>
+    // the tool markers, or -1 on older vocabs without them (tools then punt / parse plainly)
+    private final int toolCall; // <tool_call>
+    private final int endToolCall; // </tool_call>
+    private final int toolResponse; // <tool_response>
+    private final int endToolResponse; // </tool_response>
     private final IntSequence newline; // encode("\n"), constant
     private final IntSequence assistantNl; // encode("assistant\n"), constant
     private final List<Batch> genThinking, genDirect; // generation prompts, encoded once
@@ -60,6 +65,10 @@ public final class NemotronHTurnTemplate implements TurnTemplate {
         this.imEnd = SpecialTokens.require(tokenizer, "<|im_end|>");
         this.think = SpecialTokens.require(tokenizer, "<think>");
         this.endThink = SpecialTokens.require(tokenizer, "</think>");
+        this.toolCall = SpecialTokens.find(tokenizer, "<tool_call>").orElse(-1);
+        this.endToolCall = SpecialTokens.find(tokenizer, "</tool_call>").orElse(-1);
+        this.toolResponse = SpecialTokens.find(tokenizer, "<tool_response>").orElse(-1);
+        this.endToolResponse = SpecialTokens.find(tokenizer, "</tool_response>").orElse(-1);
         this.newline = tokenizer.encode("\n");
         this.assistantNl = tokenizer.encode("assistant\n");
         IntSequence head =
@@ -139,28 +148,22 @@ public final class NemotronHTurnTemplate implements TurnTemplate {
         return closeTurn;
     }
 
-    /** The format-instructions block appended after the declarations (the template's constant). */
-    static final String TOOL_INSTRUCTIONS =
-            "\n\n"
-                + "If you choose to call a function ONLY reply in the following format with NO"
-                + " suffix:\n\n"
-                + "<tool_call>\n"
-                + "<function=example_function_name>\n"
-                + "<parameter=example_parameter_1>\n"
-                + "value_1\n"
-                + "</parameter>\n"
-                + "<parameter=example_parameter_2>\n"
-                + "This is the value for the second parameter\n"
-                + "that can span\n"
-                + "multiple lines\n"
-                + "</parameter>\n"
-                + "</function>\n"
-                + "</tool_call>\n\n"
-                + "<IMPORTANT>\n"
-                + "Reminder:\n"
-                + "- Function calls MUST follow the specified format: an inner"
-                + " <function=...></function> block must be nested within <tool_call></tool_call>"
-                + " XML tags\n"
+    // The format-instructions constant, split where its literal <tool_call> spellings sit: those
+    // are template-authored and emit as trusted ids (matching the render+rescan). The reminder
+    // line's own <tool_call></tool_call> mention splits INSTRUCTIONS_TAIL the same way.
+    static final String INSTRUCTIONS_HEAD =
+            "\n\nIf you choose to call a function ONLY reply in the following format with NO"
+                    + " suffix:\n\n";
+    static final String INSTRUCTIONS_EXAMPLE =
+            "\n<function=example_function_name>\n<parameter=example_parameter_1>\nvalue_1\n"
+                    + "</parameter>\n<parameter=example_parameter_2>\nThis is the value for the"
+                    + " second parameter\nthat can span\nmultiple lines\n</parameter>\n"
+                    + "</function>\n";
+    static final String INSTRUCTIONS_REMINDER =
+            "\n\n<IMPORTANT>\nReminder:\n- Function calls MUST follow the specified format: an"
+                    + " inner <function=...></function> block must be nested within ";
+    static final String INSTRUCTIONS_TAIL =
+            " XML tags\n"
                 + "- Required parameters MUST be specified\n"
                 + "- You may provide optional reasoning for your function call in natural language"
                 + " BEFORE the function call, but NOT after\n"
@@ -183,11 +186,10 @@ public final class NemotronHTurnTemplate implements TurnTemplate {
         if (conversation.tools().isEmpty() && plainShape(msgs)) {
             return TurnTemplate.super.encode(conversation);
         }
-        requireSupported(msgs);
-        int toolCall = requireToolMarker("<tool_call>");
-        int endToolCall = requireToolMarker("</tool_call>");
-        int toolResponse = requireToolMarker("<tool_response>");
-        int endToolResponse = requireToolMarker("</tool_response>");
+        TurnTemplate.requireToolShapes(msgs);
+        if (toolCall < 0) {
+            throw new UnsupportedConversation("tools need the <tool_call> markers in the vocab");
+        }
 
         Message sys =
                 !msgs.isEmpty() && msgs.get(0).role().equals(Role.SYSTEM) ? msgs.get(0) : null;
@@ -206,15 +208,14 @@ public final class NemotronHTurnTemplate implements TurnTemplate {
         if (!conversation.tools().isEmpty()) {
             if (!sysText.isEmpty()) text.append("\n\n");
             text.append(NemotronToolSyntax.declarations(conversation.tools()));
-            // the instruction constant's <tool_call> spellings are template-authored: emit them
-            // as the trusted ids the render+rescan would produce
-            for (String piece : TOOL_INSTRUCTIONS.split("(?=</?tool_call>)|(?<=</?tool_call>)")) {
-                switch (piece) {
-                    case "<tool_call>" -> emit(ids, text, toolCall);
-                    case "</tool_call>" -> emit(ids, text, endToolCall);
-                    default -> text.append(piece);
-                }
-            }
+            text.append(INSTRUCTIONS_HEAD);
+            emit(ids, text, toolCall);
+            text.append(INSTRUCTIONS_EXAMPLE);
+            emit(ids, text, endToolCall);
+            text.append(INSTRUCTIONS_REMINDER);
+            emit(ids, text, toolCall);
+            emit(ids, text, endToolCall);
+            text.append(INSTRUCTIONS_TAIL);
         }
         emit(ids, text, imEnd);
         text.append('\n');
@@ -256,11 +257,11 @@ public final class NemotronHTurnTemplate implements TurnTemplate {
                             .toList();
             emit(ids, text, imStart);
             text.append("assistant\n");
-            Part.Reasoning thinking = reasoning(m);
+            Part.Reasoning thinking = m.reasoning();
             boolean truncate = i < lastUser; // truncate_history_thinking, template default true
             if (thinking != null && !truncate) {
                 emit(ids, text, think);
-                text.append('\n').append(reasoningText(thinking)).append('\n');
+                text.append('\n').append(thinking.text()).append('\n');
                 emit(ids, text, endThink);
                 // the "\n" after </think> survives the template's trim only when text follows
                 // (the call branch's own '\n' re-adds it before <tool_call> blocks)
@@ -305,14 +306,6 @@ public final class NemotronHTurnTemplate implements TurnTemplate {
         text.setLength(0);
     }
 
-    private int requireToolMarker(String name) {
-        return SpecialTokens.find(tokenizer, name)
-                .orElseThrow(
-                        () ->
-                                new UnsupportedConversation(
-                                        "tools need the " + name + " marker in the vocabulary"));
-    }
-
     private static boolean plainShape(List<Message> msgs) {
         for (Message m : msgs) {
             for (Part p : m.content()) {
@@ -322,42 +315,6 @@ public final class NemotronHTurnTemplate implements TurnTemplate {
         return true;
     }
 
-    /** The part shapes this port frames byte-exactly; anything else punts to the whole render. */
-    private static void requireSupported(List<Message> msgs) {
-        for (Message m : msgs) {
-            boolean assistant = m.role().equals(Role.ASSISTANT);
-            boolean tool = m.role().equals(Role.TOOL);
-            for (Part p : m.content()) {
-                boolean ok =
-                        switch (p) {
-                            case Part.Text t -> true;
-                            case Part.ToolCall c -> assistant;
-                            case Part.Reasoning r -> assistant;
-                            case Part.ToolResult r -> tool;
-                            default -> false; // Blob: nemotron is text-only
-                        };
-                if (!ok)
-                    throw new UnsupportedConversation(
-                            m.role().name() + " turn: " + p.getClass().getSimpleName());
-            }
-        }
-    }
-
-    private static Part.Reasoning reasoning(Message m) {
-        for (Part p : m.content()) {
-            if (p instanceof Part.Reasoning r) return r;
-        }
-        return null;
-    }
-
-    private static String reasoningText(Part.Reasoning r) {
-        StringBuilder sb = new StringBuilder();
-        for (Part p : r.content()) {
-            if (p instanceof Part.Text t) sb.append(t.text());
-        }
-        return sb.toString();
-    }
-
     /**
      * Tool calls parse natively: the reply's {@code <tool_call>}/{@code </tool_call>} trusted ids
      * claim XML-function payloads ({@code <function=NAME><parameter=K>...} - the grammar Nemotron
@@ -365,10 +322,16 @@ public final class NemotronHTurnTemplate implements TurnTemplate {
      */
     @Override
     public ReplyParser parser() {
-        if (SpecialTokens.find(tokenizer, "<tool_call>").isEmpty()) {
+        if (toolCall < 0) {
             return ReplyParser.spans(tokenizer); // older vocabs without the tool markers
         }
         return ReplyParser.spans(
                 tokenizer, "<tool_call>", "</tool_call>", ToolCallSyntax::parseFunctionXml);
+    }
+
+    /** Forced calls seed {@code <tool_call>} (seeding only - no pin hook yet). */
+    @Override
+    public int[] callSeed() {
+        return toolCall < 0 ? new int[0] : new int[] {toolCall};
     }
 }

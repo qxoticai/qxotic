@@ -27,7 +27,6 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.OptionalInt;
 
 /**
  * langchain4j {@link ChatModel} backed by jinfer: in-process CPU inference over a local GGUF.
@@ -207,10 +206,11 @@ public final class JinferChatModel implements ChatModel {
             if (!requestHasTools && m.prefix.tools().isEmpty()) {
                 throw new IllegalArgumentException("toolChoice REQUIRED without any tools");
             }
-            if (m.engine.loaded.template().isEmpty() || callMarker(m.engine).isEmpty()) {
+            if (m.engine.loaded.template().map(t -> t.callSeed().length == 0).orElse(true)) {
                 throw new UnsupportedFeatureException(
                         "ToolChoice.REQUIRED is not supported by this model: forcing seeds the"
-                                + " reply with its tool-call marker, which needs the native codec");
+                                + " reply with the family's call marker, which needs a native"
+                                + " codec that declares one");
             }
         }
         if (p.toolChoice() == ToolChoice.NONE && !m.prefix.tools().isEmpty()) {
@@ -252,11 +252,10 @@ public final class JinferChatModel implements ChatModel {
         Sampler sampler = sampler(m, p, think, maxTokens);
         int[] callSeed = NO_SEED;
         if (required) {
-            // the server's forcing trick: seed the assistant turn with the tool-call marker so
-            // the model can only COMPLETE a call (the paren is deliberately not seeded - it lands
-            // on a tokenization boundary the model never saw). ReplyLanes re-feeds the seed so
-            // the reply parses whole.
-            callSeed = new int[] {callMarker(engine).orElseThrow()}; // validate() guaranteed it
+            // the server's forcing trick: seed the assistant turn with the family's call marker
+            // (the template declares it) so the model can only COMPLETE a call. ReplyLanes
+            // re-feeds the seed so the reply parses whole.
+            callSeed = encoded.template().orElseThrow().callSeed(); // validate() guaranteed it
             List<Batch> prompt = new ArrayList<>(encoded.prompt());
             prompt.add(Batch.prefill(callSeed));
             encoded = new JinferEngine.Encoded(List.copyOf(prompt), encoded.template());
@@ -320,20 +319,6 @@ public final class JinferChatModel implements ChatModel {
             sampler = Sampler.withGrammar(sampler, spec.cursor(), eos(engine), gate, skipNl);
         }
         return sampler;
-    }
-
-    /**
-     * The model family's tool-call opening marker (LFM2 / Gemma 4 / Qwen / Harmony spellings).
-     * Harmony's is its channel header: seeding {@code <|channel|>} puts the reply in a header the
-     * call grammar then pins to {@code commentary to=functions.{name}}.
-     */
-    private static OptionalInt callMarker(JinferEngine engine) {
-        return SpecialTokens.findFirst(
-                engine.loaded.tokenizer(),
-                "<|tool_call_start|>",
-                "<|tool_call>",
-                "<tool_call>",
-                "<|channel|>");
     }
 
     /** A stop token to end generation with when a grammar dead-ends. */

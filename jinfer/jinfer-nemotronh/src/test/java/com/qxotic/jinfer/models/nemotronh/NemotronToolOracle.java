@@ -75,7 +75,7 @@ public final class NemotronToolOracle {
                 List.of(WEATHER),
                 List.of(
                         Message.user("Weather in Paris?"),
-                        assistantCall("get_weather", java.util.Map.of("city", "Paris"))));
+                        assistantCall("get_weather", Map.of("city", "Paris"))));
         o.compareTools(
                 "call + tool result (response folded into a user turn)",
                 List.of(WEATHER),

@@ -60,4 +60,12 @@ public record Message(Role role, List<Part> content) {
         }
         return sb.toString();
     }
+
+    /** The first reasoning span, or null - the think channel a template may re-render. */
+    public Part.Reasoning reasoning() {
+        for (Part p : content) {
+            if (p instanceof Part.Reasoning r) return r;
+        }
+        return null;
+    }
 }

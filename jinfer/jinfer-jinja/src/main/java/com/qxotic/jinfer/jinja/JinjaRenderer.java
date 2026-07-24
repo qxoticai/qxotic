@@ -145,19 +145,7 @@ public final class JinjaRenderer {
                 if (!hasBuiltins) return new Undef(key);
                 Val.Obj self = this;
                 return switch (key) {
-                    case "items" ->
-                            new Val.Func(
-                                    "items",
-                                    args -> {
-                                        var arr = new ArrayList<Val>();
-                                        for (var e : self.v.entrySet())
-                                            arr.add(
-                                                    new Val.Arr(
-                                                            List.of(
-                                                                    new Val.Str(e.getKey()),
-                                                                    e.getValue())));
-                                        return new Val.Arr(arr);
-                                    });
+                    case "items" -> new Val.Func("items", args -> items(self));
                     case "keys" ->
                             new Val.Func(
                                     "keys",
@@ -1806,12 +1794,7 @@ public final class JinjaRenderer {
                         var kept = new ArrayList<Val>(items.size());
                         for (Val item : items) {
                             var ff = new Frame();
-                            if (f.var2() != null && item instanceof Val.Arr a && a.v.size() >= 2) {
-                                ff.set(f.var(), a.v.get(0));
-                                ff.set(f.var2(), a.v.get(1));
-                            } else {
-                                ff.set(f.var(), item);
-                            }
+                            bindLoopVars(ff, f, item);
                             stack.addLast(ff);
                             try {
                                 if (eval(f.filter()).truthy()) kept.add(item);
@@ -1824,12 +1807,7 @@ public final class JinjaRenderer {
                     for (int idx = 0; idx < items.size(); idx++) {
                         Val item = items.get(idx);
                         var lf = new Frame();
-                        if (f.var2() != null && item instanceof Val.Arr a && a.v.size() >= 2) {
-                            lf.set(f.var(), a.v.get(0));
-                            lf.set(f.var2(), a.v.get(1));
-                        } else {
-                            lf.set(f.var(), item);
-                        }
+                        bindLoopVars(lf, f, item);
                         var loop = new LinkedHashMap<String, Val>();
                         loop.put("index0", new Val.Int(idx));
                         loop.put("index", new Val.Int(idx + 1));
@@ -1882,6 +1860,16 @@ public final class JinjaRenderer {
                     generationSpans.add(new int[] {start, out.length()});
                 }
                 default -> {}
+            }
+        }
+
+        /** For-loop var binding: an Arr of >= 2 destructures into (var, var2), else single. */
+        private static void bindLoopVars(Frame frame, ForNode f, Val item) {
+            if (f.var2() != null && item instanceof Val.Arr a && a.v.size() >= 2) {
+                frame.set(f.var(), a.v.get(0));
+                frame.set(f.var2(), a.v.get(1));
+            } else {
+                frame.set(f.var(), item);
             }
         }
 
