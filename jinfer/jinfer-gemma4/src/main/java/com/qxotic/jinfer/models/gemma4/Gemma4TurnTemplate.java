@@ -382,8 +382,30 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
 
     @Override
     public ReplyParser parser() {
-        return ReplyParser.spans(
-                tokenizer, "<|tool_call>", "<tool_call|>", Gemma4ToolSyntax::parseBlock);
+        ReplyParser spans =
+                ReplyParser.spans(
+                        tokenizer, "<|tool_call>", "<tool_call|>", Gemma4ToolSyntax::parseBlock);
+        // this GGUF mistypes <eos> (id 1) as NORMAL: the span grammar would route a sampled
+        // trailing stop into content as literal "<eos>" text (which then re-encodes into the
+        // next prompt via the echo) - filter it like the control token it really is
+        if (!tokenizer.vocabulary().contains("<eos>")) return spans;
+        int eos = tokenizer.vocabulary().id("<eos>");
+        return new ReplyParser() {
+            @Override
+            public String feed(int token) {
+                return token == eos ? "" : spans.feed(token);
+            }
+
+            @Override
+            public boolean reasoning() {
+                return spans.reasoning();
+            }
+
+            @Override
+            public Message finish() {
+                return spans.finish();
+            }
+        };
     }
 
     /** Forced calls pin {@code call:name} - the notation's plain-byte opening. */

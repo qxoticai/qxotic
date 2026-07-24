@@ -242,11 +242,21 @@ public final class Gemma4
         return Optional.empty();
     }
 
-    /** Convenience for callers/tests: the turn-delimiter / eos ids that terminate generation. */
+    /**
+     * The turn-delimiter / eos ids that terminate generation. Looked up by SPELLING regardless of
+     * token type: this GGUF mistypes {@code <eos>} (id 1) as NORMAL, so the control-typed lookup
+     * missed it and a sampled {@code <eos>} leaked into content as literal text (observed after
+     * forced tool calls). Including it is safe - the plain encoder tokenizes the text {@code
+     * "<eos>"} as its literal pieces, never id 1, so conversation content cannot mint a stop.
+     */
     public java.util.Set<Integer> stopTokens() {
         java.util.Set<Integer> stops = new java.util.HashSet<>();
         for (String name : new String[] {"<turn|>", "<end_of_turn>", "<eos>", "<|endoftext|>"}) {
-            SpecialTokens.find(tokenizer, name).ifPresent(stops::add);
+            if (tokenizer.vocabulary().contains(name)) {
+                stops.add(tokenizer.vocabulary().id(name));
+            } else {
+                SpecialTokens.find(tokenizer, name).ifPresent(stops::add);
+            }
         }
         return stops;
     }
