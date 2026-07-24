@@ -644,6 +644,21 @@ public final class JinjaRendererTest {
         eq(
                 "{% for k, v in obj.items() %}{{ k }}={{ v }};{% endfor %}",
                 map("obj", map("a", 1, "b", 2)), "a=1;b=2;");
+        // the items FILTER (Jinja 3.1): same pairs as .items(); undefined renders empty
+        eq(
+                "{% for k, v in obj|items %}{{ k }}={{ v }};{% endfor %}",
+                map("obj", map("a", 1, "b", 2)), "a=1;b=2;");
+        eq("{% for k, v in missing|items %}{{ k }};{% endfor %}", map(), "");
+        // safe is an autoescape marker: identity here (tool templates chain x|tojson|safe)
+        eq("{{ obj|tojson|safe }}", map("obj", map("a", 1)), "{\"a\": 1}");
+        // the loop FILTER ({% for x in xs if cond %}): applied before iteration, so loop.last
+        // sees only the kept items; `not in` over a list is the tool-template idiom
+        eq(
+                "{% for x in xs if x != 'b' %}{{ x }}{% if loop.last %}!{% endif %}{% endfor %}",
+                map("xs", list("a", "b", "c")), "ac!");
+        eq(
+                "{% for k in obj if k not in skip %}{{ k }};{% endfor %}",
+                map("obj", map("a", 1, "b", 2, "c", 3), "skip", list("b")), "a;c;");
         // iterating an object directly yields its KEYS (Python/Jinja), not [key, value] pairs
         eq("{% for k in obj %}{{ k }};{% endfor %}", map("obj", map("a", 1, "b", 2)), "a;b;");
         // loop.previtem / loop.nextitem: undefined (empty) at the ends, the neighbour otherwise

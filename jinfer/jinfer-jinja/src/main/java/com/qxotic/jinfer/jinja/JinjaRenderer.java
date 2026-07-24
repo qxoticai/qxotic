@@ -326,8 +326,23 @@ public final class JinjaRenderer {
                                             expectStr(requireArg(args, 1))));
             case "selectattr" -> filterAttr(val, args, true);
             case "rejectattr" -> filterAttr(val, args, false);
+            case "items" -> items(val);
+            case "safe" -> val; // autoescape marker: identity in this text-only engine
             default -> throw unsupported("filter '" + name + "'");
         };
+    }
+
+    /** Jinja 3.1 {@code items}: a mapping's (key, value) pairs; undefined renders empty. */
+    static Val items(Val v) {
+        if (v instanceof Val.Obj o) {
+            var arr = new ArrayList<Val>();
+            for (var e : o.v.entrySet()) {
+                arr.add(new Val.Arr(List.of(new Val.Str(e.getKey()), e.getValue())));
+            }
+            return new Val.Arr(arr);
+        }
+        if (!v.isDefined() || v instanceof Val.None) return new Val.Arr(List.of());
+        throw unsupported("items on non-mapping " + v.getClass().getSimpleName());
     }
 
     static long length(Val v) {
@@ -1011,7 +1026,8 @@ public final class JinjaRenderer {
     record CondNode(Node test, Node then, Node orElse)
             implements Node {} // a if test else b (value-valued)
 
-    record ForNode(String var, String var2, Node iterable, List<Node> body) implements Node {}
+    record ForNode(String var, String var2, Node iterable, Node filter, List<Node> body)
+            implements Node {}
 
     record GenerationNode(List<Node> body)
             implements Node {} // {% generation %}…{% endgeneration %}: renders the body
@@ -1235,7 +1251,15 @@ public final class JinjaRenderer {
         Node parseFor() {
             var loopVars = parseVarList();
             expectId("in");
-            Node iterable = parseExpr();
+            // the iterable NEVER takes an inline-if: `if` after it is Jinja's LOOP FILTER
+            // ({% for x in xs if cond %}), so parse below the ternary layer
+            skipText();
+            Node iterable = parseOr();
+            Node filter = null;
+            if (isId("if")) {
+                next();
+                filter = parseExpr();
+            }
             expect(T.CLOSE_STMT);
             var body = parseBody("endfor");
             expect(T.OPEN_STMT);
@@ -1243,7 +1267,7 @@ public final class JinjaRenderer {
             expect(T.CLOSE_STMT);
             String v1 = loopVars.getFirst();
             String v2 = loopVars.size() > 1 ? loopVars.get(1) : null;
-            return new ForNode(v1, v2, iterable, body);
+            return new ForNode(v1, v2, iterable, filter, body);
         }
 
         // ── generation (transformers assistant-span extension) ──
@@ -1776,6 +1800,27 @@ public final class JinjaRenderer {
                                     yield arr;
                                 }
                             };
+                    if (f.filter() != null) {
+                        // Jinja's loop filter: applied BEFORE iteration, so loop.length /
+                        // loop.last / previtem see only the kept items
+                        var kept = new ArrayList<Val>(items.size());
+                        for (Val item : items) {
+                            var ff = new Frame();
+                            if (f.var2() != null && item instanceof Val.Arr a && a.v.size() >= 2) {
+                                ff.set(f.var(), a.v.get(0));
+                                ff.set(f.var2(), a.v.get(1));
+                            } else {
+                                ff.set(f.var(), item);
+                            }
+                            stack.addLast(ff);
+                            try {
+                                if (eval(f.filter()).truthy()) kept.add(item);
+                            } finally {
+                                stack.removeLast();
+                            }
+                        }
+                        items = kept;
+                    }
                     for (int idx = 0; idx < items.size(); idx++) {
                         Val item = items.get(idx);
                         var lf = new Frame();
