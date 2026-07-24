@@ -1,7 +1,5 @@
 package com.qxotic.jinfer.langchain4j;
 
-import com.qxotic.jinfer.chat.ChatTemplate;
-import com.qxotic.jinfer.chat.PendingUtf8;
 import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.llm.Generator;
 import dev.langchain4j.data.message.AiMessage;
@@ -17,7 +15,6 @@ import dev.langchain4j.model.chat.response.PartialThinking;
 import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
 import dev.langchain4j.model.chat.response.StreamingHandle;
 import java.util.List;
-import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -69,14 +66,9 @@ public final class JinferStreamingChatModel implements StreamingChatModel {
 
     private void stream(JinferChatModel.Prepared p, StreamingChatResponseHandler handler) {
         JinferEngine engine = model.engine;
-        Optional<ChatTemplate> template = p.encoded().template();
-        ReplyParser parser = template.map(ChatTemplate::parser).orElse(null);
-        PendingUtf8 raw = parser == null ? new PendingUtf8() : null;
         StopSequences stops = StopSequences.of(p.stops());
-        if (parser != null) {
-            // a forced tool call was seeded into the prompt; the parser must see the marker too
-            for (int token : p.callSeed()) parser.feed(token);
-        }
+        ReplyLanes lanes =
+                new ReplyLanes(p.encoded().template(), engine.loaded.tokenizer(), p.callSeed());
 
         AtomicBoolean cancelled = new AtomicBoolean();
         StreamingHandle handle =
@@ -96,21 +88,8 @@ public final class JinferStreamingChatModel implements StreamingChatModel {
         Generator.TokenSink sink =
                 token -> {
                     if (cancelled.get()) return false;
-                    String fragment;
-                    boolean reasoning;
-                    if (parser != null) {
-                        fragment = parser.feed(token);
-                        reasoning = parser.reasoning();
-                    } else {
-                        fragment =
-                                raw.add(
-                                                engine.loaded
-                                                        .tokenizer()
-                                                        .decodeBytes(new int[] {token}),
-                                                token)
-                                        .text();
-                        reasoning = false;
-                    }
+                    String fragment = lanes.feed(token);
+                    boolean reasoning = lanes.reasoning();
                     if (!fragment.isEmpty()) {
                         if (reasoning) {
                             safely(
@@ -151,10 +130,7 @@ public final class JinferStreamingChatModel implements StreamingChatModel {
                         () -> handler.onPartialResponse(new PartialResponse(tail), context));
             }
         }
-        AiMessage ai =
-                parser != null
-                        ? Mappings.toAiMessage(parser.finish())
-                        : Mappings.toAiMessage(engine.decode(Optional.empty(), result.tokens()));
+        AiMessage ai = Mappings.toAiMessage(lanes.finish());
         boolean stopHit = stops != null && stops.hit();
         if (stopHit) {
             ai = Mappings.withText(ai, stops.beforeCut());

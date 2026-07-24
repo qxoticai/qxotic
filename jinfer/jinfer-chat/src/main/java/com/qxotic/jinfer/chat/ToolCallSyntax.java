@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.chat;
 
 import com.qxotic.format.json.Json;
+import com.qxotic.jinfer.llm.Grammar;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -105,9 +106,9 @@ public final class ToolCallSyntax {
         StringBuilder names = new StringBuilder();
         for (Tool t : tools) {
             if (!names.isEmpty()) names.append(" | ");
-            names.append(com.qxotic.jinfer.llm.Grammar.gbnfLiteral(t.name()));
+            names.append(Grammar.gbnfLiteral(t.name()));
         }
-        return "root ::= " + com.qxotic.jinfer.llm.Grammar.gbnfLiteral(prefix) + " (" + names + ")";
+        return "root ::= " + Grammar.gbnfLiteral(prefix) + " (" + names + ")";
     }
 
     private static void writeJinja(StringBuilder sb, Object v) {

@@ -11,10 +11,8 @@ import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.JinjaChatTemplate;
 import com.qxotic.jinfer.chat.LoadedModel;
-import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.chat.Part;
-import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.UnsupportedConversation;
 import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.Sampler;
@@ -153,14 +151,6 @@ final class JinferEngine {
                 timeoutNanos,
                 loaded.stopTokens(),
                 sink);
-    }
-
-    /** Structured reply via the native parser, or a plain-text message when the model has none. */
-    Message decode(Optional<ChatTemplate> template, IntSequence replyTokens) {
-        if (template.isPresent()) {
-            return template.get().decode(replyTokens);
-        }
-        return new Message(Role.ASSISTANT, loaded.tokenizer().decode(replyTokens));
     }
 
     // ---- cached prompts: the block tree behind withCachedPrompt / save / load ----

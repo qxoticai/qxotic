@@ -7,17 +7,22 @@ import com.qxotic.jinfer.FloatTensor;
 import com.qxotic.jinfer.Media;
 import com.qxotic.jinfer.MultiModal;
 import com.qxotic.jinfer.chat.Conversation;
+import com.qxotic.jinfer.chat.JsonCodec;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Role;
+import com.qxotic.jinfer.chat.Tool;
+import com.qxotic.jinfer.chat.ToolCallSyntax;
 import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.chat.UnsupportedConversation;
-import com.qxotic.jinfer.llm.*;
 import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.toknroll.Tokenizer;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.function.Consumer;
 
 /**
  * Hand-written Gemma 4 chat framing, matching the GGUF chat_template's plain-conversation shape and
@@ -268,7 +273,7 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
                 ids.add(require("<|tool_response>")); // awaiting results: the turn stays open
             } else if (!(responses && content.isEmpty())) {
                 ids.add(turnClose);
-                addAll(ids, newline);
+                ids.addAll(newline);
             }
             if (!ids.isEmpty()) out.add(Batch.prefill(ids));
         }
@@ -282,31 +287,28 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
      * {@code <|turn>system\n} + trimmed system text + one {@code <|tool>declaration<tool|>} block
      * per tool + {@code <turn|>\n} - the template's tool-definitions block.
      */
-    private void systemBlock(
-            Message system, List<com.qxotic.jinfer.chat.Tool> tools, List<Batch> out) {
+    private void systemBlock(Message system, List<Tool> tools, List<Batch> out) {
         List<Integer> ids = new ArrayList<>();
         ids.add(turnOpen);
         StringBuilder text = new StringBuilder("system\n");
         if (system != null) text.append(system.textOnly().strip());
         flushText(text, ids);
-        for (com.qxotic.jinfer.chat.Tool tool : tools) {
+        for (Tool tool : tools) {
             ids.add(require("<|tool>"));
-            Object parsed = com.qxotic.jinfer.chat.JsonCodec.parse(tool.rawJson());
+            Object parsed = JsonCodec.parse(tool.rawJson());
             @SuppressWarnings("unchecked")
-            java.util.Map<String, Object> map = (java.util.Map<String, Object>) parsed;
+            Map<String, Object> map = (Map<String, Object>) parsed;
             sinkInto(text, ids, s -> Gemma4ToolSyntax.declaration(map, s));
             ids.add(require("<tool|>"));
         }
         ids.add(turnClose);
-        addAll(ids, newline);
+        ids.addAll(newline);
         out.add(Batch.prefill(ids));
     }
 
     /** Runs a tool-syntax renderer: text runs accumulate, quotes emit the trusted id. */
     private void sinkInto(
-            StringBuilder text,
-            List<Integer> ids,
-            java.util.function.Consumer<Gemma4ToolSyntax.Sink> render) {
+            StringBuilder text, List<Integer> ids, Consumer<Gemma4ToolSyntax.Sink> render) {
         render.accept(
                 new Gemma4ToolSyntax.Sink() {
                     @Override
@@ -332,10 +334,6 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
 
     private int require(String name) {
         return SpecialTokens.require(tokenizer, name);
-    }
-
-    private static void addAll(List<Integer> ids, List<Integer> more) {
-        ids.addAll(more);
     }
 
     /** The part shapes this port frames byte-exactly; anything else punts to the whole render. */
@@ -390,9 +388,8 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
 
     /** Forced calls pin {@code call:name} - the notation's plain-byte opening. */
     @Override
-    public java.util.Optional<String> callGrammar(List<com.qxotic.jinfer.chat.Tool> tools) {
-        if (tools.isEmpty()) return java.util.Optional.empty();
-        return java.util.Optional.of(
-                com.qxotic.jinfer.chat.ToolCallSyntax.prefixPinGbnf("call:", tools));
+    public Optional<String> callGrammar(List<Tool> tools) {
+        if (tools.isEmpty()) return Optional.empty();
+        return Optional.of(ToolCallSyntax.prefixPinGbnf("call:", tools));
     }
 }

@@ -2,6 +2,7 @@ package com.qxotic.jinfer.langchain4j;
 
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.chat.Conversation;
+import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Thinking;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.llm.Generator;
@@ -26,6 +27,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.OptionalInt;
 
 /**
  * langchain4j {@link ChatModel} backed by jinfer: in-process CPU inference over a local GGUF.
@@ -50,7 +52,7 @@ public final class JinferChatModel implements ChatModel {
     final CachedPrompt prefix;
 
     /** A view's prefix in jinfer types; {@link #EMPTY} for the base model. */
-    record CachedPrompt(List<com.qxotic.jinfer.chat.Message> messages, List<Tool> tools) {
+    record CachedPrompt(List<Message> messages, List<Tool> tools) {
         static final CachedPrompt EMPTY = new CachedPrompt(List.of(), List.of());
 
         boolean isEmpty() {
@@ -100,7 +102,7 @@ public final class JinferChatModel implements ChatModel {
      */
     public JinferChatModel withCachedPrompt(
             List<ChatMessage> prefixMessages, List<ToolSpecification> tools) {
-        List<com.qxotic.jinfer.chat.Message> messages = new ArrayList<>(prefix.messages());
+        List<Message> messages = new ArrayList<>(prefix.messages());
         messages.addAll(Mappings.toMessages(prefixMessages)); // converted ONCE, media decoded here
         List<Tool> welded = new ArrayList<>(prefix.tools());
         welded.addAll(Mappings.toTools(tools));
@@ -128,52 +130,30 @@ public final class JinferChatModel implements ChatModel {
     public ChatResponse doChat(ChatRequest request) {
         Prepared p = prepare(this, request);
         StopSequences stops = StopSequences.of(p.stops());
+        ReplyLanes lanes =
+                new ReplyLanes(p.encoded().template(), engine.loaded.tokenizer(), p.callSeed());
+        Generator.TokenSink sink =
+                token -> {
+                    String fragment = lanes.feed(token);
+                    if (stops != null && !lanes.reasoning() && !fragment.isEmpty()) {
+                        stops.feed(fragment); // stop strings match the content lane only
+                    }
+                    return stops == null || !stops.hit();
+                };
         Generator.GenerationResult result =
                 engine.generate(
                         p.encoded().prompt(),
                         p.sampler(),
                         p.maxTokens(),
                         timeoutNanos,
-                        stops == null ? t -> true : stopSink(p, stops),
+                        sink,
                         p.cached());
-        com.qxotic.toknroll.IntSequence reply = result.tokens();
-        if (p.callSeed().length > 0) {
-            reply = com.qxotic.toknroll.IntSequence.of(p.callSeed()).concat(reply);
-        }
-        AiMessage ai = Mappings.toAiMessage(engine.decode(p.encoded().template(), reply));
+        AiMessage ai = Mappings.toAiMessage(lanes.finish());
         boolean stopHit = stops != null && stops.hit();
         if (stopHit) {
             ai = Mappings.withText(ai, stops.beforeCut());
         }
         return Mappings.response(engine.modelName, ai, p.promptTokens(), result, stopHit);
-    }
-
-    /** A sink that watches the reply's content lane and aborts generation at the first stop. */
-    private Generator.TokenSink stopSink(Prepared p, StopSequences stops) {
-        var parser =
-                p.encoded()
-                        .template()
-                        .map(com.qxotic.jinfer.chat.ChatTemplate::parser)
-                        .orElse(null);
-        var raw = parser == null ? new com.qxotic.jinfer.chat.PendingUtf8() : null;
-        if (parser != null) {
-            for (int token : p.callSeed()) parser.feed(token); // forced call: stay in sync
-        }
-        return token -> {
-            String fragment;
-            boolean content;
-            if (parser != null) {
-                fragment = parser.feed(token);
-                content = !parser.reasoning();
-            } else {
-                fragment =
-                        raw.add(engine.loaded.tokenizer().decodeBytes(new int[] {token}), token)
-                                .text();
-                content = true;
-            }
-            if (content && !fragment.isEmpty()) stops.feed(fragment);
-            return !stops.hit();
-        };
     }
 
     JinferEngine engine() {
@@ -244,7 +224,7 @@ public final class JinferChatModel implements ChatModel {
         // disabled outright (scaffold and sampler both) so the budget buys VISIBLE text.
         // A forced call also skips thinking: the reply is seeded INTO the call block.
         boolean think = m.thinking && (maxTokens < 0 || maxTokens >= 16) && !required;
-        List<com.qxotic.jinfer.chat.Message> messages = new ArrayList<>(m.prefix.messages());
+        List<Message> messages = new ArrayList<>(m.prefix.messages());
         messages.addAll(Mappings.toMessages(request.messages()));
         Conversation conversation =
                 new Conversation(
@@ -257,6 +237,46 @@ public final class JinferChatModel implements ChatModel {
                 cached
                         ? engine.encodeNative(conversation)
                         : engine.encode(conversation, request.messages(), requestTools);
+        Sampler sampler = sampler(m, p, think, maxTokens);
+        int[] callSeed = NO_SEED;
+        if (required) {
+            // the server's forcing trick: seed the assistant turn with the tool-call marker so
+            // the model can only COMPLETE a call (the paren is deliberately not seeded - it lands
+            // on a tokenization boundary the model never saw). ReplyLanes re-feeds the seed so
+            // the reply parses whole.
+            callSeed = new int[] {callMarker(engine).orElseThrow()}; // validate() guaranteed it
+            List<Batch> prompt = new ArrayList<>(encoded.prompt());
+            prompt.add(Batch.prefill(callSeed));
+            encoded = new JinferEngine.Encoded(List.copyOf(prompt), encoded.template());
+            // prefix-pin: the family's call grammar pins "prefix (name|...)" right after the
+            // seeded marker, then releases - the called tool is GUARANTEED to be an offered one,
+            // the arguments stay the model's own. No grammar = seeding-only.
+            var pin = encoded.template().flatMap(t -> t.callGrammar(conversation.tools()));
+            if (pin.isPresent()) {
+                sampler =
+                        Sampler.withPrefixGrammar(
+                                sampler,
+                                Grammar.of(pin.get(), engine.loaded.tokenizer()).cursor(),
+                                eos(engine));
+            }
+        }
+        int promptTokens = encoded.prompt().stream().mapToInt(Batch::count).sum();
+        return new Prepared(
+                encoded, sampler, maxTokens, promptTokens, cached, callSeed, p.stopSequences());
+    }
+
+    /**
+     * The request's sampling stack, inside-out: the standard (temperature, topP, seed) stack, the
+     * server's reasoning policy (cap the think span at half the budget, or ban the markers outright
+     * when thinking is off), and grammar-constrained JSON when the request asks for it - dormant
+     * through the think span (constraining from token 0 would suppress reasoning), schema compiled
+     * when present, the dead-end token one of the model's real stops. Specs are cached per (grammar
+     * source, vocab), so repeated schemas reuse the compiled masks.
+     */
+    private static Sampler sampler(
+            JinferChatModel m, ChatRequestParameters p, boolean think, int maxTokens) {
+        JinferEngine engine = m.engine;
+        var tokenizer = engine.loaded.tokenizer();
         double temperature = p.temperature() == null ? 0.0 : p.temperature();
         double topP = p.topP() == null ? 0.95 : p.topP();
         Sampler sampler =
@@ -265,73 +285,37 @@ public final class JinferChatModel implements ChatModel {
                         (float) temperature,
                         (float) topP,
                         m.seed);
-        // mirror the server's reasoning policy: cap the think span at half the budget, or ban the
-        // markers outright when thinking is off (a thinking model would otherwise still emit them)
         sampler =
                 think
                         ? Thinking.capBudget(
                                 sampler,
-                                engine.loaded.tokenizer(),
+                                tokenizer,
                                 maxTokens >= 0 ? Math.max(1, maxTokens / 2) : -1)
-                        : Thinking.banMarkers(sampler, engine.loaded.tokenizer());
+                        : Thinking.banMarkers(sampler, tokenizer);
         ResponseFormat rf = p.responseFormat();
         if (rf != null && rf.type() == ResponseFormatType.JSON) {
-            sampler = withJsonGrammar(engine, sampler, think, rf);
+            Grammar.Spec spec =
+                    rf.jsonSchema() == null
+                            ? Grammar.json(tokenizer)
+                            : Grammar.fromSchema(
+                                    JsonSchemaElementUtils.toMap(rf.jsonSchema().rootElement()),
+                                    tokenizer);
+            int gate = think ? SpecialTokens.find(tokenizer, "</think>").orElse(-1) : -1;
+            int[] skipNl = gate >= 0 ? SpecialTokens.newlineTokens(tokenizer) : null;
+            sampler = Sampler.withGrammar(sampler, spec.cursor(), eos(engine), gate, skipNl);
         }
-        int[] callSeed = NO_SEED;
-        if (required) {
-            // the server's forcing trick: seed the assistant turn with the tool-call marker so
-            // the model can only COMPLETE a call (the paren is deliberately not seeded - it lands
-            // on a tokenization boundary the model never saw). The seed re-attaches to the reply
-            // before parsing so the call parses whole.
-            callSeed = new int[] {callMarker(engine).orElseThrow()}; // validate() guaranteed it
-            List<Batch> prompt = new ArrayList<>(encoded.prompt());
-            prompt.add(Batch.prefill(callSeed));
-            encoded = new JinferEngine.Encoded(List.copyOf(prompt), encoded.template());
-            // prefix-pin: the family's call grammar pins "prefix (name|...) delim" right after
-            // the seeded marker, then releases - the called tool is GUARANTEED to be an offered
-            // one, the arguments stay the model's own. No grammar = seeding-only, as before.
-            var pin = encoded.template().flatMap(t -> t.callGrammar(conversation.tools()));
-            if (pin.isPresent()) {
-                sampler =
-                        Sampler.withPrefixGrammar(
-                                sampler,
-                                Grammar.of(pin.get(), engine.loaded.tokenizer()).cursor(),
-                                engine.loaded.stopTokens().iterator().next());
-            }
-        }
-        int promptTokens = encoded.prompt().stream().mapToInt(Batch::count).sum();
-        return new Prepared(
-                encoded, sampler, maxTokens, promptTokens, cached, callSeed, p.stopSequences());
+        return sampler;
     }
 
     /** The model family's tool-call opening marker (LFM2 / Gemma 4 / Qwen spellings). */
-    private static java.util.OptionalInt callMarker(JinferEngine engine) {
+    private static OptionalInt callMarker(JinferEngine engine) {
         return SpecialTokens.findFirst(
                 engine.loaded.tokenizer(), "<|tool_call_start|>", "<|tool_call>", "<tool_call>");
     }
 
-    /**
-     * Grammar-constrained JSON output (llama.cpp-style token masking), mirroring the server: for a
-     * reasoning request the grammar stays dormant until {@code </think>} so the constraint never
-     * suppresses the think span, and the boilerplate newline after it passes through unconsumed.
-     * The forced token on grammar dead-ends is one of the model's real stop tokens. With a schema
-     * (typed or raw), the grammar is compiled from it - typed structured output; specs are cached
-     * per (grammar source, vocab), so repeated schemas reuse the compiled masks.
-     */
-    private static Sampler withJsonGrammar(
-            JinferEngine engine, Sampler sampler, boolean think, ResponseFormat rf) {
-        var tokenizer = engine.loaded.tokenizer();
-        Grammar.Spec spec =
-                rf.jsonSchema() == null
-                        ? Grammar.json(tokenizer)
-                        : Grammar.fromSchema(
-                                JsonSchemaElementUtils.toMap(rf.jsonSchema().rootElement()),
-                                tokenizer);
-        int eos = engine.loaded.stopTokens().iterator().next();
-        int gate = think ? SpecialTokens.find(tokenizer, "</think>").orElse(-1) : -1;
-        int[] skipNl = gate >= 0 ? SpecialTokens.newlineTokens(tokenizer) : null;
-        return Sampler.withGrammar(sampler, spec.cursor(), eos, gate, skipNl);
+    /** A stop token to end generation with when a grammar dead-ends. */
+    private static int eos(JinferEngine engine) {
+        return engine.loaded.stopTokens().iterator().next();
     }
 
     /** One loaded GGUF per instance: a different {@code modelName} cannot be served. */
@@ -381,13 +365,13 @@ public final class JinferChatModel implements ChatModel {
             return this;
         }
 
-        /** The media sidecar (mmproj GGUF: vision/audio encoders) for multimodal models. */
         /** Mounts a cached-prompt artifact ({@link #saveCachedPrompts}); model-seed-checked. */
         public Builder loadCachedPrompts(Path cachedPrompts) {
             this.cachedPrompts = cachedPrompts;
             return this;
         }
 
+        /** The media sidecar (mmproj GGUF: vision/audio encoders) for multimodal models. */
         public Builder mediaProjector(Path mediaProjector) {
             this.mediaProjector = mediaProjector;
             return this;

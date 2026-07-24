@@ -16,6 +16,7 @@ import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Hand-written LFM2.5 chat codec (ChatML dialect), byte-exact with the GGUF's Jinja {@code
@@ -111,9 +112,9 @@ public final class Lfm2ChatTemplate implements TurnTemplate {
 
     /** Forced calls pin {@code [name} - the pythonic syntax's plain-byte opening. */
     @Override
-    public java.util.Optional<String> callGrammar(java.util.List<Tool> tools) {
-        if (tools.isEmpty()) return java.util.Optional.empty();
-        return java.util.Optional.of(ToolCallSyntax.prefixPinGbnf("[", tools));
+    public Optional<String> callGrammar(List<Tool> tools) {
+        if (tools.isEmpty()) return Optional.empty();
+        return Optional.of(ToolCallSyntax.prefixPinGbnf("[", tools));
     }
 
     /** The part shapes this port frames byte-exactly; anything else punts to the whole render. */

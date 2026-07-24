@@ -3,6 +3,7 @@ package com.qxotic.jinfer.chat;
 import com.qxotic.jinfer.Batch;
 import com.qxotic.toknroll.IntSequence;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * A model's chat template as a CODEC with two directions over one grammar: {@link #encode} lowers a
@@ -59,7 +60,7 @@ public interface ChatTemplate {
      * prefix; once matched the sampler releases and the arguments stay the model's own. Empty when
      * the family has no call syntax (forcing then relies on seeding alone).
      */
-    default java.util.Optional<String> callGrammar(List<Tool> tools) {
-        return java.util.Optional.empty();
+    default Optional<String> callGrammar(List<Tool> tools) {
+        return Optional.empty();
     }
 }
