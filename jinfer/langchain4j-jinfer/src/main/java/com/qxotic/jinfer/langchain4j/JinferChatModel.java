@@ -189,14 +189,22 @@ public final class JinferChatModel implements ChatModel {
                                 + " reply with its tool-call marker, which needs the native codec");
             }
         }
+        if (p.toolChoice() == ToolChoice.NONE && !m.prefix.tools().isEmpty()) {
+            throw new UnsupportedFeatureException(
+                    "toolChoice NONE on a cached-prompt view is not supported: the view's tools"
+                            + " are welded into its cached prefix and cannot be un-offered");
+        }
     }
 
     static Prepared prepare(JinferChatModel m, ChatRequest request) {
         validate(m, request);
         ChatRequestParameters p = request.parameters();
         boolean cached = !m.prefix.isEmpty();
+        // NONE = the model cannot use tools: never offer them, and there is nothing to call
         List<ToolSpecification> requestTools =
-                p.toolSpecifications() == null ? List.of() : p.toolSpecifications();
+                p.toolChoice() == ToolChoice.NONE || p.toolSpecifications() == null
+                        ? List.of()
+                        : p.toolSpecifications();
         JinferEngine engine = m.engine;
         int maxTokens = p.maxOutputTokens() == null ? -1 : p.maxOutputTokens();
         boolean required = p.toolChoice() == ToolChoice.REQUIRED;

@@ -135,6 +135,21 @@ class JinferChatModelIT {
                                 .build());
         assertNotNull(second.aiMessage().text());
         assertTrue(second.aiMessage().text().contains("18"), second.aiMessage().text());
+
+        // toolChoice NONE: same tool, same call-inviting prompt - the tool is never offered,
+        // so the model cannot call it
+        ChatResponse none =
+                model.chat(
+                        ChatRequest.builder()
+                                .messages(
+                                        UserMessage.from(
+                                                "What is the weather in Paris? Use the tool."))
+                                .toolSpecifications(weather)
+                                .toolChoice(dev.langchain4j.model.chat.request.ToolChoice.NONE)
+                                .build());
+        assertTrue(
+                !none.aiMessage().hasToolExecutionRequests(),
+                "NONE must prevent tool calls: " + none.aiMessage());
     }
 
     @Test
