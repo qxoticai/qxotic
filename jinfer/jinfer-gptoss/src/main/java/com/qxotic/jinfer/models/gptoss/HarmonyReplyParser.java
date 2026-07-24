@@ -33,7 +33,6 @@ final class HarmonyReplyParser implements ReplyParser {
     private static final String CALL_TARGET = "to=functions.";
 
     private final Tokenizer tokenizer;
-    private final int channelId; // <|channel|>
     private final int messageId; // <|message|>
     private final int endId; // <|end|>
     private final int startId; // <|start|>
@@ -58,7 +57,6 @@ final class HarmonyReplyParser implements ReplyParser {
 
     HarmonyReplyParser(Tokenizer tokenizer) {
         this.tokenizer = tokenizer;
-        this.channelId = SpecialTokens.require(tokenizer, "<|channel|>");
         this.messageId = SpecialTokens.require(tokenizer, "<|message|>");
         this.endId = SpecialTokens.require(tokenizer, "<|end|>");
         this.startId = SpecialTokens.require(tokenizer, "<|start|>");
@@ -83,11 +81,11 @@ final class HarmonyReplyParser implements ReplyParser {
             header.setLength(0);
             return flushed;
         }
-        if (token == channelId) {
-            return ""; // header punctuation
-        }
         if (SpecialTokens.isSpecial(tokenizer, token)) {
-            return ""; // <|return|>, <|constrain|>, other scaffold: inert
+            // <|channel|>, <|constrain|>, other scaffold: inert - but a special BETWEEN header
+            // words is a boundary ("get_time<|constrain|>json" must not read as "get_timejson")
+            if (!inBody) header.append(' ');
+            return "";
         }
         if (!inBody) { // header text: role / channel name / call target, never displayed
             header.append(tokenizer.decode(new int[] {token}));

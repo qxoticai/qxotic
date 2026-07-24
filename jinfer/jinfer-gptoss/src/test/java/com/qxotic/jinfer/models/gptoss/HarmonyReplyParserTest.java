@@ -137,6 +137,16 @@ public final class HarmonyReplyParserTest {
         int[] malformed = {1, 12, 13, 14, 6, 15, 2, 18, 5};
         Message none = ReplyParser.parse(new HarmonyReplyParser(TOK), IntSequence.of(malformed));
         check(none.content().isEmpty(), "malformed payload is no call: " + none.content());
+
+        // no space before <|constrain|>: the special itself is the header-word boundary
+        // ("get_time<|constrain|>json" must not read as name "get_timejson")
+        int[] tight = {1, 12, 13, 6, 15, 2, 16, 17, 5};
+        Message m2 = ReplyParser.parse(new HarmonyReplyParser(TOK), IntSequence.of(tight));
+        check(
+                m2.content().size() == 1
+                        && m2.content().get(0) instanceof Part.ToolCall c2
+                        && "get_weather".equals(c2.name()),
+                "specials delimit header words: " + m2.content());
     }
 
     private static final class FakeTokenizer implements Tokenizer {
