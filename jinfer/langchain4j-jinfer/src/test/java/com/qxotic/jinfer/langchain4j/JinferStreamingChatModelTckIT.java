@@ -146,11 +146,6 @@ class JinferStreamingChatModelTckIT extends AbstractStreamingChatModelIT {
     }
 
     @Override
-    protected boolean supportsJsonResponseFormat() {
-        return false;
-    }
-
-    @Override
     protected boolean supportsJsonResponseFormatWithSchema() {
         return false;
     }

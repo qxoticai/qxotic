@@ -24,12 +24,10 @@ import com.qxotic.jinfer.llm.Generator.GenerationResult;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.WeakHashMap;
 import java.util.function.Consumer;
 
 /**
@@ -51,8 +49,6 @@ final class Generation {
     private final LoadedModel<?> model;
     private final LLMOptions options;
     private final Worker worker;
-    private final Map<Tokenizer, int[]> newlineCache =
-            Collections.synchronizedMap(new WeakHashMap<>());
     private final ChatTemplate template; // memoized model framing, null when the model has none
     private final JinjaChatTemplate jinjaTemplate; // whole-render fallback, compiled once
     private final Set<Integer> stopTokens; // memoized model stops
@@ -393,7 +389,7 @@ final class Generation {
             // grammar (so non-ws-tolerant grammars like choice/jsonCompact see a clean first
             // token).
             int grammarGate = think ? SpecialTokens.find(tokenizer, "</think>").orElse(-1) : -1;
-            int[] skipNl = grammarGate >= 0 ? newlineTokens(tokenizer) : null;
+            int[] skipNl = grammarGate >= 0 ? SpecialTokens.newlineTokens(tokenizer) : null;
             sampler = Sampler.withGrammar(sampler, grammarCursor, eosToken, grammarGate, skipNl);
         }
         // Billed prompt: the whole conversation. On the cached path the state is pre-resumed to the
@@ -555,35 +551,6 @@ final class Generation {
             return Grammar.json(tokenizer).cursor();
         }
         return null;
-    }
-
-    /**
-     * Token ids that decode to newlines only (LF/CR), per tokenizer (cached). The chat template
-     * emits {@code </think>\n} before the answer; these are passed through untouched so the
-     * boilerplate newline is not consumed by the grammar (no whitespace baked into the language).
-     */
-    private int[] newlineTokens(Tokenizer tok) {
-        return newlineCache.computeIfAbsent(
-                tok,
-                t -> {
-                    List<Integer> ids = new ArrayList<>();
-                    for (int i = 0, n = t.vocabulary().size(); i < n; i++) {
-                        byte[] b = t.decodeBytes(new int[] {i});
-                        if (b.length == 0) continue;
-                        boolean nl = true;
-                        for (byte x : b) {
-                            int c = x & 0xFF;
-                            if (c != '\n' && c != '\r') {
-                                nl = false;
-                                break;
-                            }
-                        }
-                        if (nl) ids.add(i);
-                    }
-                    int[] arr = new int[ids.size()];
-                    for (int i = 0; i < arr.length; i++) arr[i] = ids.get(i);
-                    return arr;
-                });
     }
 
     /**

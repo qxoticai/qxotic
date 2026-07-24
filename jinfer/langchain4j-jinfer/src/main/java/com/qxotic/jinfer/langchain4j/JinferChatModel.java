@@ -5,7 +5,9 @@ import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.Thinking;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.llm.Generator;
+import com.qxotic.jinfer.llm.Grammar;
 import com.qxotic.jinfer.llm.Sampler;
+import com.qxotic.jinfer.llm.SpecialTokens;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
@@ -210,8 +212,26 @@ public final class JinferChatModel implements ChatModel {
                                 engine.loaded.tokenizer(),
                                 maxTokens >= 0 ? Math.max(1, maxTokens / 2) : -1)
                         : Thinking.banMarkers(sampler, engine.loaded.tokenizer());
+        ResponseFormat rf = p.responseFormat();
+        if (rf != null && rf.type() == ResponseFormatType.JSON) {
+            sampler = withJsonGrammar(engine, sampler, think);
+        }
         int promptTokens = encoded.prompt().stream().mapToInt(Batch::count).sum();
         return new Prepared(encoded, sampler, maxTokens, promptTokens, cached);
+    }
+
+    /**
+     * Grammar-constrained JSON output (llama.cpp-style token masking), mirroring the server: for a
+     * reasoning request the grammar stays dormant until {@code </think>} so the constraint never
+     * suppresses the think span, and the boilerplate newline after it passes through unconsumed.
+     * The forced token on grammar dead-ends is one of the model's real stop tokens.
+     */
+    private static Sampler withJsonGrammar(JinferEngine engine, Sampler sampler, boolean think) {
+        var tokenizer = engine.loaded.tokenizer();
+        int eos = engine.loaded.stopTokens().iterator().next();
+        int gate = think ? SpecialTokens.find(tokenizer, "</think>").orElse(-1) : -1;
+        int[] skipNl = gate >= 0 ? SpecialTokens.newlineTokens(tokenizer) : null;
+        return Sampler.withGrammar(sampler, Grammar.json(tokenizer).cursor(), eos, gate, skipNl);
     }
 
     /** One loaded GGUF per instance: a different {@code modelName} cannot be served. */
@@ -235,8 +255,9 @@ public final class JinferChatModel implements ChatModel {
         if (p.toolChoice() == ToolChoice.REQUIRED)
             throw new UnsupportedFeatureException("toolChoice REQUIRED is not supported");
         ResponseFormat rf = p.responseFormat();
-        if (rf != null && rf.type() == ResponseFormatType.JSON)
-            throw new UnsupportedFeatureException("JSON response format is not supported yet");
+        if (rf != null && rf.type() == ResponseFormatType.JSON && rf.jsonSchema() != null)
+            throw new UnsupportedFeatureException(
+                    "JSON response format with a schema is not supported yet");
     }
 
     public static Builder builder() {

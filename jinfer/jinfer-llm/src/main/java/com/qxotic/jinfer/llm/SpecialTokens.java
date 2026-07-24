@@ -78,4 +78,36 @@ public final class SpecialTokens {
     public static IntSequence encode(Tokenizer tokenizer, String text) {
         return encoder(tokenizer).encode(tokenizer, text);
     }
+
+    private static final java.util.concurrent.ConcurrentHashMap<Tokenizer, int[]> newlines =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * Token ids that decode to newlines only (LF/CR), per tokenizer (cached). Chat templates emit
+     * {@code </think>\n} before the answer; grammar gating passes these through untouched so the
+     * boilerplate newline is not consumed by a grammar with no whitespace in its language.
+     */
+    public static int[] newlineTokens(Tokenizer tokenizer) {
+        return newlines.computeIfAbsent(
+                tokenizer,
+                t -> {
+                    java.util.List<Integer> ids = new java.util.ArrayList<>();
+                    for (int i = 0, n = t.vocabulary().size(); i < n; i++) {
+                        byte[] b = t.decodeBytes(new int[] {i});
+                        if (b.length == 0) continue;
+                        boolean nl = true;
+                        for (byte x : b) {
+                            int c = x & 0xFF;
+                            if (c != '\n' && c != '\r') {
+                                nl = false;
+                                break;
+                            }
+                        }
+                        if (nl) ids.add(i);
+                    }
+                    int[] arr = new int[ids.size()];
+                    for (int i = 0; i < arr.length; i++) arr[i] = ids.get(i);
+                    return arr;
+                });
+    }
 }

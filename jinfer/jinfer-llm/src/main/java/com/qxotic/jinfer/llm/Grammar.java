@@ -56,6 +56,8 @@ public final class Grammar {
         byte[] bytes(int tokenId);
     }
 
+    private static final byte[] NO_BYTES = new byte[0];
+
     static Vocab vocab(Tokenizer tok) {
         return WRAPPERS.computeIfAbsent(
                 tok,
@@ -66,6 +68,12 @@ public final class Grammar {
                             }
 
                             public byte[] bytes(int id) {
+                                // Specials are CONTROL, not content, whatever their literal
+                                // rendering (LFM2's <|im_end|> decodes to its 10-char string).
+                                // Empty bytes makes every special unsamplable mid-grammar and
+                                // samplable exactly at accept states - the model can always END
+                                // a completed constrained span with its natural stop token.
+                                if (SpecialTokens.isSpecial(t, id)) return NO_BYTES;
                                 return t.decodeBytes(new int[] {id});
                             }
                         });
