@@ -109,6 +109,13 @@ public final class Lfm2ChatTemplate implements TurnTemplate {
                 tokenizer, "<|tool_call_start|>", "<|tool_call_end|>", ToolCallSyntax::parseBlock);
     }
 
+    /** Forced calls pin {@code [name} - the pythonic syntax's plain-byte opening. */
+    @Override
+    public java.util.Optional<String> callGrammar(java.util.List<Tool> tools) {
+        if (tools.isEmpty()) return java.util.Optional.empty();
+        return java.util.Optional.of(ToolCallSyntax.prefixPinGbnf("[", tools));
+    }
+
     /** The part shapes this port frames byte-exactly; anything else punts to the whole render. */
     private static void requireSupported(Conversation conversation) {
         for (Message message : conversation.messages()) {

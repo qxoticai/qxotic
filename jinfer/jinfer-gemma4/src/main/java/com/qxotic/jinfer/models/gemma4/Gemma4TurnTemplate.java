@@ -387,4 +387,12 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
         return ReplyParser.spans(
                 tokenizer, "<|tool_call>", "<tool_call|>", Gemma4ToolSyntax::parseBlock);
     }
+
+    /** Forced calls pin {@code call:name} - the notation's plain-byte opening. */
+    @Override
+    public java.util.Optional<String> callGrammar(List<com.qxotic.jinfer.chat.Tool> tools) {
+        if (tools.isEmpty()) return java.util.Optional.empty();
+        return java.util.Optional.of(
+                com.qxotic.jinfer.chat.ToolCallSyntax.prefixPinGbnf("call:", tools));
+    }
 }

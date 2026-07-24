@@ -104,6 +104,31 @@ public interface Sampler {
             return token;
         };
     }
+
+    /**
+     * Prefix-pin sampling: constrains until the grammar is FULLY matched ({@link
+     * Grammar.Cursor#exhausted}), then releases - generation continues free. The pin for forced
+     * tool calls: the grammar covers {@code prefix (name|...) delim} and the arguments stay the
+     * model's own. Unlike {@link #withGrammar}, exhaustion means release, not termination -
+     * choice-style grammars that WANT the forced stop keep using withGrammar.
+     */
+    static Sampler withPrefixGrammar(Sampler inner, Grammar.Cursor cursor, int eosToken) {
+        if (cursor == null || !RuntimeFlags.GRAMMAR) return inner;
+        boolean[] released = {false};
+        return logits -> {
+            if (released[0] || cursor.exhausted()) {
+                released[0] = true;
+                return inner.sampleToken(logits);
+            }
+            if (!cursor.maskLogits(logits)) {
+                cursor.advanceWith(eosToken); // no vocab token fits the pin: end cleanly
+                return eosToken;
+            }
+            int token = inner.sampleToken(logits);
+            cursor.advanceWith(token);
+            return token;
+        };
+    }
 }
 
 record CategoricalSampler(RandomGenerator rng) implements Sampler {

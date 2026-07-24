@@ -88,6 +88,28 @@ public final class ToolCallSyntax {
         return sb.toString();
     }
 
+    /**
+     * A prefix-pin GBNF over the offered tool names - {@code prefix (name|...|name)} - the shared
+     * shape behind {@link ChatTemplate#callGrammar}: every family's call syntax opens with
+     * plain-byte framing then the name, and pinning exactly that much guarantees a call of an
+     * offered tool while leaving everything after the name free.
+     *
+     * <p>The pin deliberately ENDS AT THE NAME: pinning the delimiter too forces an unnatural token
+     * split (the model's training merges the delimiter with the first argument - {@code (city}),
+     * and generation derails at the off-distribution boundary (hallucinated arguments, observed on
+     * LFM2.5). Same boundary lesson as the server's forced-call seeding, which seeds {@code [name}
+     * and never the paren. Ceiling: a tool name that is a strict prefix of another offered name
+     * resolves toward the longer one.
+     */
+    public static String prefixPinGbnf(String prefix, List<Tool> tools) {
+        StringBuilder names = new StringBuilder();
+        for (Tool t : tools) {
+            if (!names.isEmpty()) names.append(" | ");
+            names.append(com.qxotic.jinfer.llm.Grammar.gbnfLiteral(t.name()));
+        }
+        return "root ::= " + com.qxotic.jinfer.llm.Grammar.gbnfLiteral(prefix) + " (" + names + ")";
+    }
+
     private static void writeJinja(StringBuilder sb, Object v) {
         if (v == null) {
             sb.append("null");

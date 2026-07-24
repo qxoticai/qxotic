@@ -571,6 +571,15 @@ public final class Grammar {
         }
 
         /**
+         * True when the grammar is fully matched with NO continuation - nothing left to constrain.
+         * A prefix grammar reaching this state has done its job; {@link Sampler#withGrammar} then
+         * releases the mask (a dead state - no match, not accepting - is not exhausted).
+         */
+        public boolean exhausted() {
+            return spec.cfg != null && accepting && ready.isEmpty();
+        }
+
+        /**
          * Masks {@code logits} to grammar-allowed tokens; returns whether any token remains. A
          * DISABLED spec is a pass-through (no masking, always true).
          */
@@ -853,7 +862,7 @@ public final class Grammar {
     }
 
     /** Wrap raw bytes as a GBNF double-quoted literal that matches exactly those bytes. */
-    static String gbnfLiteral(String raw) {
+    public static String gbnfLiteral(String raw) {
         StringBuilder b = new StringBuilder("\"");
         for (int i = 0; i < raw.length(); i++) {
             char c = raw.charAt(i);

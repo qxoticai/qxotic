@@ -51,4 +51,15 @@ public interface ChatTemplate {
     default Message decode(IntSequence reply) {
         return ReplyParser.parse(parser(), reply);
     }
+
+    /**
+     * The dual of {@link #parser} for FORCED tool calls: a GBNF prefix grammar over the family's
+     * call syntax - {@code prefix (name|...|name) delimiter} in plain bytes, pinning the reply
+     * (already seeded with the call marker) to a call of an OFFERED tool. The pin covers only the
+     * prefix; once matched the sampler releases and the arguments stay the model's own. Empty when
+     * the family has no call syntax (forcing then relies on seeding alone).
+     */
+    default java.util.Optional<String> callGrammar(List<Tool> tools) {
+        return java.util.Optional.empty();
+    }
 }

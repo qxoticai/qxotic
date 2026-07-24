@@ -173,18 +173,32 @@ class Gemma4MediaIT {
         assertNotNull(second.aiMessage().text());
         assertTrue(second.aiMessage().text().contains("18"), second.aiMessage().text());
 
-        // toolChoice REQUIRED: gemma's <|tool_call> marker seeds the reply - a statement, not
-        // even a question, must still produce a call
+        // toolChoice REQUIRED: gemma's <|tool_call> marker seeds the reply and the prefix-pin
+        // grammar guarantees the called NAME is an offered tool - a statement, not even a
+        // question, with a decoy tool in the mix
+        var decoy =
+                dev.langchain4j.agent.tool.ToolSpecification.builder()
+                        .name("get_time")
+                        .description("Get the current time for a timezone")
+                        .parameters(
+                                dev.langchain4j.model.chat.request.json.JsonObjectSchema.builder()
+                                        .addStringProperty("timezone")
+                                        .build())
+                        .build();
         ChatResponse forced =
                 model.chat(
                         ChatRequest.builder()
                                 .messages(UserMessage.from("I live in Munich."))
-                                .toolSpecifications(weather)
+                                .toolSpecifications(weather, decoy)
                                 .toolChoice(dev.langchain4j.model.chat.request.ToolChoice.REQUIRED)
                                 .build());
         assertTrue(
                 forced.aiMessage().hasToolExecutionRequests(),
                 "REQUIRED must force a call: " + forced.aiMessage());
+        String forcedName = forced.aiMessage().toolExecutionRequests().get(0).name();
+        assertTrue(
+                forcedName.equals("get_weather") || forcedName.equals("get_time"),
+                "pinned to an offered tool, got: " + forcedName);
     }
 
     /** A solid 224x224 PNG as base64 (the shared image fixture). */
