@@ -113,10 +113,25 @@ public interface Sampler {
      * choice-style grammars that WANT the forced stop keep using withGrammar.
      */
     static Sampler withPrefixGrammar(Sampler inner, Grammar.Cursor cursor, int eosToken) {
+        return withPrefixGrammar(inner, cursor, eosToken, new int[0]);
+    }
+
+    /**
+     * Prefix-pin with a forced epilogue: once the pin exhausts, {@code epilogue} ids are emitted
+     * verbatim (bypassing the logits) before sampling releases. For families whose call header
+     * continues with SCAFFOLD after the pinned name - Harmony's {@code " <|constrain|>json
+     * <|message|>"} - improvising it from an off-policy state derails generation; forcing it keeps
+     * the model on-distribution until the free payload.
+     */
+    static Sampler withPrefixGrammar(
+            Sampler inner, Grammar.Cursor cursor, int eosToken, int[] epilogue) {
         if (cursor == null || !RuntimeFlags.GRAMMAR) return inner;
         boolean[] released = {false};
+        int[] forced = {0};
         return logits -> {
-            if (released[0] || cursor.exhausted()) {
+            if (released[0]) return inner.sampleToken(logits);
+            if (cursor.exhausted()) {
+                if (forced[0] < epilogue.length) return epilogue[forced[0]++];
                 released[0] = true;
                 return inner.sampleToken(logits);
             }

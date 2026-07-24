@@ -261,15 +261,18 @@ public final class JinferChatModel implements ChatModel {
             prompt.add(Batch.prefill(callSeed));
             encoded = new JinferEngine.Encoded(List.copyOf(prompt), encoded.template());
             // prefix-pin: the family's call grammar pins "prefix (name|...)" right after the
-            // seeded marker, then releases - the called tool is GUARANTEED to be an offered one,
-            // the arguments stay the model's own. No grammar = seeding-only.
+            // seeded marker, then forces the family's header epilogue (scaffold after the name,
+            // e.g. Harmony's " <|constrain|>json<|message|>") and releases - the called tool is
+            // GUARANTEED to be an offered one, the arguments stay the model's own. No grammar =
+            // seeding-only.
             var pin = encoded.template().flatMap(t -> t.callGrammar(conversation.tools()));
             if (pin.isPresent()) {
                 sampler =
                         Sampler.withPrefixGrammar(
                                 sampler,
                                 Grammar.of(pin.get(), engine.loaded.tokenizer()).cursor(),
-                                eos(engine));
+                                eos(engine),
+                                encoded.template().get().callEpilogue());
             }
         }
         int promptTokens = encoded.prompt().stream().mapToInt(Batch::count).sum();

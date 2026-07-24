@@ -63,4 +63,15 @@ public interface ChatTemplate {
     default Optional<String> callGrammar(List<Tool> tools) {
         return Optional.empty();
     }
+
+    /**
+     * Trusted scaffold ids that COMPLETE the forced-call header once {@link #callGrammar}'s pin
+     * releases - emitted verbatim, never sampled. Empty for families whose header ends at the
+     * pinned name (the model's own continuation is on-distribution there); Harmony's header
+     * continues {@code " <|constrain|>json<|message|>"} after the name, which is scaffold, not a
+     * model choice - improvising it from the pinned (off-policy) state derails generation.
+     */
+    default int[] callEpilogue() {
+        return new int[0];
+    }
 }

@@ -315,6 +315,22 @@ public final class GptOssTurnTemplate implements TurnTemplate {
         return Optional.of(ToolCallSyntax.prefixPinGbnf("commentary to=functions.", tools));
     }
 
+    /**
+     * {@code " <|constrain|>json<|message|>"} - the header's remainder after the pinned name, as
+     * the model emits it natively. Scaffold, so forced: sampling it from the pinned (off-policy)
+     * state is warmup-noise fragile (observed: the model abandoning the call with {@code <|end|>}
+     * and restarting its reply).
+     */
+    @Override
+    public int[] callEpilogue() {
+        IntSequence.Builder ids = IntSequence.newBuilder();
+        ids.addAll(tokenizer.encode(" "));
+        ids.add(SpecialTokens.require(tokenizer, "<|constrain|>"));
+        ids.addAll(tokenizer.encode("json"));
+        ids.add(message);
+        return ids.build().toArray();
+    }
+
     @Override
     public ReplyParser parser() {
         return new HarmonyReplyParser(tokenizer);
