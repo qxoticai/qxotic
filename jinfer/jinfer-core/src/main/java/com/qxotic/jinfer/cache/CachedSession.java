@@ -118,7 +118,8 @@ public final class CachedSession<S extends RuntimeState> {
                 }
                 default ->
                         throw new IllegalArgumentException(
-                                "cannot fingerprint " + b.input().getClass().getSimpleName());
+                                "CachedSession cannot fingerprint "
+                                        + b.input().getClass().getSimpleName());
             }
         }
         return fp;
@@ -131,21 +132,9 @@ public final class CachedSession<S extends RuntimeState> {
     public void ingest(List<Batch> batches) {
         for (Batch b : Batch.prepare(batches, state.batchCapacity())) {
             int off = len;
-            switch (b.input()) {
-                case Batch.Input.Tokens t -> {
-                    model.ingest(state, b);
-                    for (int id : t.ids()) append(id);
-                }
-                case Batch.Input.Embeddings e -> {
-                    long[] digest = rowsDigest(e);
-                    model.ingest(state, b);
-                    for (int i = 0; i < e.count(); i++) append(digest[i & 3] + GOLDEN * i);
-                }
-                default ->
-                        throw new IllegalArgumentException(
-                                "CachedSession cannot fingerprint "
-                                        + b.input().getClass().getSimpleName());
-            }
+            long[] f = fingerprints(List.of(b)); // the ONE fingerprint law (see fingerprints)
+            model.ingest(state, b);
+            for (long v : f) append(v);
             tip = cache.commit(tip, fp, off, len - off, state);
         }
     }
@@ -194,7 +183,12 @@ public final class CachedSession<S extends RuntimeState> {
      * seam is sliced. A hit strictly inside a media batch cannot happen (a media group is one
      * block, and its content-hash fingerprints never collide with token ids).
      */
-    private static List<Batch> tail(List<Batch> group, int skip) {
+    /**
+     * The batch list minus its first {@code skip} positions: whole batches drop, a token batch at
+     * the seam is sliced. A seam strictly inside a media batch cannot happen when {@code skip} came
+     * from a block-aligned resume (media groups commit and restore whole) - it throws loudly.
+     */
+    public static List<Batch> tail(List<Batch> group, int skip) {
         List<Batch> out = new java.util.ArrayList<>();
         for (Batch b : group) {
             int n = b.count();

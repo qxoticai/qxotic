@@ -17,6 +17,7 @@ import java.io.ByteArrayOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Base64;
+import java.util.List;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
@@ -63,27 +64,13 @@ class Gemma4MediaIT {
 
     @Test
     void describesImage() throws Exception {
-        var img = new BufferedImage(224, 224, BufferedImage.TYPE_INT_RGB);
-        var g = img.createGraphics();
-        g.setColor(Color.RED);
-        g.fillRect(0, 0, 224, 224);
-        g.dispose();
-        var png = new ByteArrayOutputStream();
-        ImageIO.write(img, "png", png);
-
         ChatResponse r =
                 model.chat(
-                        ChatRequest.builder()
-                                .messages(
-                                        UserMessage.from(
-                                                ImageContent.from(
-                                                        Base64.getEncoder()
-                                                                .encodeToString(png.toByteArray()),
-                                                        "image/png"),
-                                                TextContent.from(
-                                                        "What single color fills this image?"
-                                                                + " Answer with one word.")))
-                                .build());
+                        UserMessage.from(
+                                ImageContent.from(solidPngB64(Color.RED), "image/png"),
+                                TextContent.from(
+                                        "What single color fills this image?"
+                                                + " Answer with one word.")));
         assertNotNull(r.aiMessage().text());
         assertTrue(
                 r.aiMessage().text().toLowerCase().contains("red"),
@@ -123,42 +110,37 @@ class Gemma4MediaIT {
 
     @Test
     void imageInCachedPrompt() throws Exception {
+        // the image lives in the CACHED prompt: decoded + prefilled once at view creation, its
+        // prefill positions restored per request (the media ENCODER still runs to fingerprint)
+        JinferChatModel scene =
+                model.withCachedPrompt(
+                        List.of(
+                                UserMessage.from(
+                                        ImageContent.from(solidPngB64(Color.BLUE), "image/png"),
+                                        TextContent.from("This image is the reference scene."))),
+                        List.of());
+        ChatResponse first =
+                scene.chat(
+                        UserMessage.from("What single color fills the reference scene? One word."));
+        assertTrue(
+                first.aiMessage().text().toLowerCase().contains("blue"), first.aiMessage().text());
+        // second request through the view: the image's prefill positions restore from blocks
+        ChatResponse second = scene.chat(UserMessage.from("Is the scene dark or bright?"));
+        assertTrue(!second.aiMessage().text().isBlank());
+        String stats = model.engine().promptStats();
+        assertTrue(stats.contains("hits=") && !stats.contains("hits=0 "), stats);
+    }
+
+    /** A solid 224x224 PNG as base64 (the shared image fixture). */
+    private static String solidPngB64(Color color) throws java.io.IOException {
         var img = new BufferedImage(224, 224, BufferedImage.TYPE_INT_RGB);
         var g = img.createGraphics();
-        g.setColor(Color.BLUE);
+        g.setColor(color);
         g.fillRect(0, 0, 224, 224);
         g.dispose();
         var png = new ByteArrayOutputStream();
         ImageIO.write(img, "png", png);
-        String b64 = Base64.getEncoder().encodeToString(png.toByteArray());
-
-        // the image lives in the CACHED prompt: encoded+prefilled once, restored per request
-        JinferChatModel scene =
-                model.withCachedPrompt(
-                        java.util.List.of(
-                                UserMessage.from(
-                                        ImageContent.from(b64, "image/png"),
-                                        TextContent.from("This image is the reference scene."))),
-                        java.util.List.of());
-        ChatResponse first =
-                scene.chat(
-                        dev.langchain4j.model.chat.request.ChatRequest.builder()
-                                .messages(
-                                        UserMessage.from(
-                                                "What single color fills the reference scene?"
-                                                        + " One word."))
-                                .build());
-        assertTrue(
-                first.aiMessage().text().toLowerCase().contains("blue"), first.aiMessage().text());
-        // second request through the view: the image's prefill positions restore from blocks
-        ChatResponse second =
-                scene.chat(
-                        dev.langchain4j.model.chat.request.ChatRequest.builder()
-                                .messages(UserMessage.from("Is the scene dark or bright?"))
-                                .build());
-        assertTrue(!second.aiMessage().text().isBlank());
-        String stats = model.engine().promptStats();
-        assertTrue(stats.contains("hits=") && !stats.contains("hits=0 "), stats);
+        return Base64.getEncoder().encodeToString(png.toByteArray());
     }
 
     private static Object engineModel(JinferChatModel m) {

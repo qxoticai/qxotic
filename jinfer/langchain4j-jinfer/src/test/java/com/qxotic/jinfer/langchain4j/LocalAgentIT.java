@@ -136,8 +136,11 @@ class LocalAgentIT {
 
     @Test
     void seesHearsRemembers() throws Exception {
-        // scene: a "traffic light" picture and a tone recording, in a temp dir
-        Path dir = Files.createTempDirectory("local-agent");
+        // scene: a "traffic light" picture and a tone recording. The dir name is FIXED: the path
+        // appears verbatim in the prompts, and a random path would make every run a different
+        // trajectory despite greedy sampling + fixed seed (observed flaky).
+        Path dir = Path.of(System.getProperty("java.io.tmpdir"), "local-agent-demo");
+        Files.createDirectories(dir);
         Path photo = dir.resolve("sign.png");
         ImageIO.write(trafficLight(), "png", photo.toFile());
         Path memo = dir.resolve("memo.wav");

@@ -41,7 +41,7 @@ final class JinferEngine {
     final String modelName;
     private final JinjaChatTemplate jinja;
     private final ReentrantLock lock = new ReentrantLock(true);
-    private PromptCache<?> prompts; // the cached-prompt block tree; created lazily (or on mount)
+    private final PromptCache<?> prompts; // the cached-prompt block tree (empty when unused)
 
     JinferEngine(Path modelPath, Path mediaProjector, int contextLength, Path cachedPrompts) {
         try {
@@ -49,9 +49,12 @@ final class JinferEngine {
                     mediaProjector == null
                             ? Models.load(modelPath, contextLength)
                             : Models.load(modelPath, mediaProjector, contextLength);
-            if (cachedPrompts != null) {
-                this.prompts = tree(loaded, FrozenBlocks.open(cachedPrompts, loaded.seed()));
-            }
+            this.prompts =
+                    tree(
+                            loaded,
+                            cachedPrompts == null
+                                    ? null
+                                    : FrozenBlocks.open(cachedPrompts, loaded.seed()));
         } catch (IOException e) {
             throw new UncheckedIOException("failed to load " + modelPath, e);
         }
@@ -108,16 +111,24 @@ final class JinferEngine {
                 .anyMatch(p -> p instanceof Part.Blob);
     }
 
-    /** One generation pass under the engine lock; a fresh state per request. */
+    /**
+     * One generation pass under the engine lock; a fresh state per request. {@code cached} routes
+     * through the prompt tree (resume the longest defined prefix, prefill only the rest) - the
+     * uncached path never touches the tree, keeping the base model fully stateless.
+     */
     Generator.GenerationResult generate(
             List<Batch> prompt,
             Sampler sampler,
             int maxTokens,
             long timeoutNanos,
-            Generator.TokenSink sink) {
+            Generator.TokenSink sink,
+            boolean cached) {
         lock.lock();
         try {
-            return run(loaded.model(), prompt, sampler, maxTokens, timeoutNanos, sink);
+            return cached
+                    ? cachedRun(
+                            loaded.model(), tree(), prompt, sampler, maxTokens, timeoutNanos, sink)
+                    : run(loaded.model(), prompt, sampler, maxTokens, timeoutNanos, sink);
         } finally {
             lock.unlock();
         }
@@ -158,7 +169,7 @@ final class JinferEngine {
      * Encode via the native codec only - cached prompts are a prefix-stability bet the Jinja
      * whole-render cannot honor.
      */
-    List<Batch> encodeNative(Conversation conversation) {
+    Encoded encodeNative(Conversation conversation) {
         ChatTemplate template =
                 loaded.template()
                         .orElseThrow(
@@ -167,7 +178,7 @@ final class JinferEngine {
                                                 "cached prompts need a native chat-template codec;"
                                                     + " this model only has the Jinja whole-render"
                                                     + " (no prefix-stability guarantee)"));
-        return template.encode(conversation);
+        return new Encoded(template.encode(conversation), Optional.of(template));
     }
 
     /**
@@ -175,7 +186,7 @@ final class JinferEngine {
      * batch (turn boundaries), then discards the working state - the blocks hold the KV.
      */
     void define(Conversation prefix) {
-        List<Batch> prompt = encodeNative(prefix);
+        List<Batch> prompt = encodeNative(prefix).prompt();
         lock.lock();
         try {
             defineOn(loaded.model(), tree(), prompt);
@@ -188,30 +199,15 @@ final class JinferEngine {
             LanguageModel<?, ?, S> model, PromptCache<S> cache, List<Batch> prompt) {
         long[] fp = CachedSession.fingerprints(prompt);
         S state = Generator.stateFor(model, fp.length);
-        CachedSession<S> s = CachedSession.resume(model, cache, state, fp, fp.length);
+        CachedSession<S> s = CachedSession.resume(model, cache, state, fp);
         s.ingestGroups(prompt.stream().map(List::of).toList());
     }
 
     /**
-     * A generation pass that resumes the longest tree-cached prefix and prefills only the rest. The
-     * suffix ingests DIRECTLY on the state (never committed): the tree holds defined prompts only,
-     * so serving stays stateless and the tree bounded.
+     * A generation pass that resumes the longest tree-cached prefix and hands the generator only
+     * the unrestored tail (the generator ingests it - the tail is never committed, so the tree
+     * holds defined prompts only and serving stays stateless).
      */
-    Generator.GenerationResult cachedGenerate(
-            List<Batch> prompt,
-            Sampler sampler,
-            int maxTokens,
-            long timeoutNanos,
-            Generator.TokenSink sink) {
-        lock.lock();
-        try {
-            return cachedRun(
-                    loaded.model(), tree(), prompt, sampler, maxTokens, timeoutNanos, sink);
-        } finally {
-            lock.unlock();
-        }
-    }
-
     private <S extends RuntimeState> Generator.GenerationResult cachedRun(
             LanguageModel<?, ?, S> model,
             PromptCache<S> cache,
@@ -224,14 +220,10 @@ final class JinferEngine {
         S state = Generator.stateFor(model, fp.length);
         // cap at length-1: at least one position re-ingests, leaving fresh logits at the cursor
         CachedSession<S> s = CachedSession.resume(model, cache, state, fp, fp.length - 1);
-        List<Batch> suffix = suffix(prompt, s.position());
-        for (Batch b : Batch.prepare(suffix, state.batchCapacity())) {
-            model.ingest(state, b);
-        }
         return Generator.generate(
                 model,
                 state,
-                List.of(),
+                CachedSession.tail(prompt, s.position()),
                 sampler,
                 maxTokens,
                 timeoutNanos,
@@ -239,37 +231,10 @@ final class JinferEngine {
                 sink);
     }
 
-    /**
-     * The batch-list tail after {@code skip} restored positions; a token batch at the seam is
-     * sliced (blocks restore whole media groups, so the seam can only land inside tokens).
-     */
-    private static List<Batch> suffix(List<Batch> prompt, int skip) {
-        List<Batch> out = new java.util.ArrayList<>();
-        int pos = 0;
-        for (Batch b : prompt) {
-            int n = b.count();
-            if (pos + n <= skip) {
-                pos += n;
-                continue;
-            }
-            if (pos >= skip) {
-                out.add(b);
-            } else {
-                int[] ids = ((Batch.Input.Tokens) b.input()).ids();
-                out.add(Batch.prefill(java.util.Arrays.copyOfRange(ids, skip - pos, n)));
-            }
-            pos += n;
-        }
-        return out;
-    }
-
     /** Freezes the whole tree (mounted base + everything defined) into one artifact. */
     void freezePrompts(Path out) {
         lock.lock();
         try {
-            if (prompts == null) {
-                throw new IllegalStateException("no cached prompts defined - nothing to save");
-            }
             prompts.freeze(out);
         } catch (IOException e) {
             throw new UncheckedIOException("failed to save cached prompts to " + out, e);
@@ -278,16 +243,13 @@ final class JinferEngine {
         }
     }
 
-    /** Test seam: the tree's stats line ("blocks=.. hits=.." - see PromptCache.stats), or "". */
+    /** Test seam: the tree's stats line ("blocks=.. hits=.." - see PromptCache.stats). */
     String promptStats() {
-        return prompts == null ? "" : prompts.stats();
+        return prompts.stats();
     }
 
     @SuppressWarnings("unchecked")
     private <S extends RuntimeState> PromptCache<S> tree() {
-        if (prompts == null) {
-            prompts = tree((LoadedModel<S>) loaded, null);
-        }
         return (PromptCache<S>) prompts;
     }
 }

@@ -29,7 +29,10 @@ import org.junit.jupiter.api.Test;
 class CachedPromptIT {
 
     static final Path MODEL =
-            Path.of("/home/mukel/Desktop/playground/models/LiquidAI/LFM2.5-8B-A1B-Q8_0.gguf");
+            Path.of(
+                    System.getProperty(
+                            "jinfer.testModel",
+                            "/home/mukel/Desktop/playground/models/LiquidAI/LFM2.5-8B-A1B-Q8_0.gguf"));
 
     static final List<ChatMessage> SUPPORT =
             List.of(
@@ -54,15 +57,10 @@ class CachedPromptIT {
     void byteIdentityWithUncached() {
         String question = "Where do I reset my password?";
         // uncached: prefix inlined into the request on the BASE model (which never uses the tree)
-        ChatResponse plain =
-                base.chat(
-                        ChatRequest.builder()
-                                .messages(SUPPORT.get(0), UserMessage.from(question))
-                                .build());
+        ChatResponse plain = base.chat(SUPPORT.get(0), UserMessage.from(question));
         // cached: same conversation through a view
         JinferChatModel support = base.withCachedPrompt(SUPPORT, List.of());
-        ChatResponse cached =
-                support.chat(ChatRequest.builder().messages(UserMessage.from(question)).build());
+        ChatResponse cached = support.chat(UserMessage.from(question));
 
         assertEquals(plain.aiMessage().text(), cached.aiMessage().text());
         assertTrue(
@@ -73,7 +71,7 @@ class CachedPromptIT {
     @Test
     void treeIsConsultedAndBaseStaysCold() {
         JinferChatModel support = base.withCachedPrompt(SUPPORT, List.of());
-        support.chat(ChatRequest.builder().messages(UserMessage.from("Hello?")).build());
+        support.chat(UserMessage.from("Hello?"));
         String stats = base.engine().promptStats();
         assertTrue(stats.contains("hits=") && !stats.contains("hits=0 "), stats);
     }
@@ -109,8 +107,7 @@ class CachedPromptIT {
                         List.of());
         String stats = base2.engine().promptStats();
         assertTrue(stats.contains("hits=") && !stats.contains("hits=0 "), stats);
-        ChatResponse r =
-                a2.chat(ChatRequest.builder().messages(UserMessage.from("One word: ok?")).build());
+        ChatResponse r = a2.chat(UserMessage.from("One word: ok?"));
         assertTrue(!r.aiMessage().text().isBlank());
     }
 

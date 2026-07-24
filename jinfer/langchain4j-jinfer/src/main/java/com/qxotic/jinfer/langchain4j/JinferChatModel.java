@@ -3,6 +3,7 @@ package com.qxotic.jinfer.langchain4j;
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.Thinking;
+import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.Sampler;
 import dev.langchain4j.agent.tool.ToolSpecification;
@@ -19,6 +20,7 @@ import dev.langchain4j.model.chat.request.ToolChoice;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -32,15 +34,24 @@ import java.util.List;
  */
 public final class JinferChatModel implements ChatModel {
 
-    private final JinferEngine engine;
-    private final ChatRequestParameters defaults;
-    private final boolean thinking;
-    private final long seed;
-    private final long timeoutNanos;
-    // cached-prompt view state: empty for the base model. A view's conversations all start with
-    // this prefix (KV restored from the engine's block tree, never re-prefilled).
-    private final List<ChatMessage> prefixMessages;
-    private final List<ToolSpecification> prefixTools;
+    final JinferEngine engine;
+    final ChatRequestParameters defaults;
+    final boolean thinking;
+    final long seed;
+    final long timeoutNanos;
+    // cached-prompt view state: EMPTY for the base model. Converted to jinfer types ONCE at view
+    // creation (media decoded once, not per request); a view's conversations all start with this
+    // prefix, its KV restored from the engine's block tree instead of re-prefilled.
+    final CachedPrompt prefix;
+
+    /** A view's prefix in jinfer types; {@link #EMPTY} for the base model. */
+    record CachedPrompt(List<com.qxotic.jinfer.chat.Message> messages, List<Tool> tools) {
+        static final CachedPrompt EMPTY = new CachedPrompt(List.of(), List.of());
+
+        boolean isEmpty() {
+            return messages.isEmpty() && tools.isEmpty();
+        }
+    }
 
     private JinferChatModel(Builder b) {
         this.engine =
@@ -48,8 +59,7 @@ public final class JinferChatModel implements ChatModel {
         this.thinking = b.thinking;
         this.seed = b.seed;
         this.timeoutNanos = b.timeout == null ? 0 : b.timeout.toNanos();
-        this.prefixMessages = List.of();
-        this.prefixTools = List.of();
+        this.prefix = CachedPrompt.EMPTY;
         this.defaults =
                 DefaultChatRequestParameters.builder()
                         .modelName(engine.modelName)
@@ -59,17 +69,13 @@ public final class JinferChatModel implements ChatModel {
                         .build();
     }
 
-    private JinferChatModel(
-            JinferChatModel base,
-            List<ChatMessage> prefixMessages,
-            List<ToolSpecification> prefixTools) {
+    private JinferChatModel(JinferChatModel base, CachedPrompt prefix) {
         this.engine = base.engine;
         this.defaults = base.defaults;
         this.thinking = base.thinking;
         this.seed = base.seed;
         this.timeoutNanos = base.timeoutNanos;
-        this.prefixMessages = List.copyOf(prefixMessages);
-        this.prefixTools = List.copyOf(prefixTools);
+        this.prefix = prefix;
     }
 
     /**
@@ -79,18 +85,14 @@ public final class JinferChatModel implements ChatModel {
      * the base model itself never touches the tree.
      */
     public JinferChatModel withCachedPrompt(
-            List<ChatMessage> prefix, List<ToolSpecification> tools) {
-        List<ChatMessage> mergedMessages = new java.util.ArrayList<>(prefixMessages);
-        mergedMessages.addAll(prefix);
-        List<ToolSpecification> mergedTools = new java.util.ArrayList<>(prefixTools);
-        mergedTools.addAll(tools);
-        engine.define(
-                new Conversation(
-                        Mappings.toMessages(mergedMessages),
-                        Mappings.toTools(mergedTools),
-                        thinking,
-                        ""));
-        return new JinferChatModel(this, mergedMessages, mergedTools);
+            List<ChatMessage> prefixMessages, List<ToolSpecification> tools) {
+        List<com.qxotic.jinfer.chat.Message> messages = new ArrayList<>(prefix.messages());
+        messages.addAll(Mappings.toMessages(prefixMessages)); // converted ONCE, media decoded here
+        List<Tool> welded = new ArrayList<>(prefix.tools());
+        welded.addAll(Mappings.toTools(tools));
+        CachedPrompt merged = new CachedPrompt(List.copyOf(messages), List.copyOf(welded));
+        engine.define(new Conversation(merged.messages(), merged.tools(), thinking, ""));
+        return new JinferChatModel(this, merged);
     }
 
     /** Freezes every prompt defined so far (plus any mounted base) into one artifact. */
@@ -105,21 +107,15 @@ public final class JinferChatModel implements ChatModel {
 
     @Override
     public ChatResponse doChat(ChatRequest request) {
-        Prepared p = prepare(engine, request, thinking, seed, prefixMessages, prefixTools);
+        Prepared p = prepare(this, request);
         Generator.GenerationResult result =
-                p.cached()
-                        ? engine.cachedGenerate(
-                                p.encoded().prompt(),
-                                p.sampler(),
-                                p.maxTokens(),
-                                timeoutNanos,
-                                t -> true)
-                        : engine.generate(
-                                p.encoded().prompt(),
-                                p.sampler(),
-                                p.maxTokens(),
-                                timeoutNanos,
-                                t -> true);
+                engine.generate(
+                        p.encoded().prompt(),
+                        p.sampler(),
+                        p.maxTokens(),
+                        timeoutNanos,
+                        t -> true,
+                        p.cached());
         AiMessage ai = Mappings.toAiMessage(engine.decode(p.encoded().template(), result.tokens()));
         return Mappings.response(engine.modelName, ai, p.promptTokens(), result);
     }
@@ -128,10 +124,9 @@ public final class JinferChatModel implements ChatModel {
         return engine;
     }
 
-    /** A streaming twin sharing this model's engine (the GGUF is loaded once). */
+    /** A streaming twin sharing this model's engine and cached prefix (the GGUF loads once). */
     public JinferStreamingChatModel streaming() {
-        return JinferStreamingChatModel.over(
-                engine, defaults, thinking, seed, timeoutNanos, prefixMessages, prefixTools);
+        return new JinferStreamingChatModel(this);
     }
 
     // ---- shared request preparation (also used by the streaming twin) ----
@@ -143,46 +138,32 @@ public final class JinferChatModel implements ChatModel {
             int promptTokens,
             boolean cached) {}
 
-    static Prepared prepare(
-            JinferEngine engine,
-            ChatRequest request,
-            boolean thinking,
-            long seed,
-            List<ChatMessage> prefixMessages,
-            List<ToolSpecification> prefixTools) {
+    static Prepared prepare(JinferChatModel m, ChatRequest request) {
         ChatRequestParameters p = request.parameters();
         rejectUnsupported(p);
-        boolean cached = !prefixMessages.isEmpty() || !prefixTools.isEmpty();
-        List<ToolSpecification> tools =
+        boolean cached = !m.prefix.isEmpty();
+        List<ToolSpecification> requestTools =
                 p.toolSpecifications() == null ? List.of() : p.toolSpecifications();
-        if (cached && !tools.isEmpty()) {
+        if (cached && !requestTools.isEmpty()) {
             throw new UnsupportedFeatureException(
                     "a cached-prompt view welds its tools into the cached prefix; per-request"
                             + " toolSpecifications would silently forfeit the cache - put tools on"
                             + " withCachedPrompt(...) instead");
         }
-        JinferEngine.Encoded encoded;
-        Conversation conversation;
-        if (cached) {
-            List<ChatMessage> all = new java.util.ArrayList<>(prefixMessages);
-            all.addAll(request.messages());
-            conversation =
-                    new Conversation(
-                            Mappings.toMessages(all), Mappings.toTools(prefixTools), thinking, "");
-            tools = prefixTools;
-            // native-only: the view was created through the native codec (define enforced it)
-            encoded =
-                    new JinferEngine.Encoded(
-                            engine.encodeNative(conversation), engine.loaded.template());
-        } else {
-            conversation =
-                    new Conversation(
-                            Mappings.toMessages(request.messages()),
-                            Mappings.toTools(tools),
-                            thinking,
-                            "");
-            encoded = engine.encode(conversation, request.messages(), tools);
-        }
+        JinferEngine engine = m.engine;
+        List<com.qxotic.jinfer.chat.Message> messages = new ArrayList<>(m.prefix.messages());
+        messages.addAll(Mappings.toMessages(request.messages()));
+        Conversation conversation =
+                new Conversation(
+                        messages,
+                        cached ? m.prefix.tools() : Mappings.toTools(requestTools),
+                        m.thinking,
+                        "");
+        // cached views are native-only (define enforced it); the base keeps the Jinja fallback
+        JinferEngine.Encoded encoded =
+                cached
+                        ? engine.encodeNative(conversation)
+                        : engine.encode(conversation, request.messages(), requestTools);
         double temperature = p.temperature() == null ? 0.0 : p.temperature();
         double topP = p.topP() == null ? 0.95 : p.topP();
         int maxTokens = p.maxOutputTokens() == null ? -1 : p.maxOutputTokens();
@@ -191,11 +172,11 @@ public final class JinferChatModel implements ChatModel {
                         engine.loaded.model().config().vocabularySize(),
                         (float) temperature,
                         (float) topP,
-                        seed);
+                        m.seed);
         // mirror the server's reasoning policy: cap the think span at half the budget, or ban the
         // markers outright when thinking is off (a thinking model would otherwise still emit them)
         sampler =
-                thinking
+                m.thinking
                         ? Thinking.capBudget(
                                 sampler,
                                 engine.loaded.tokenizer(),
