@@ -61,12 +61,17 @@ final class JinferEngine {
                     mediaProjector == null
                             ? Models.load(modelPath, contextLength)
                             : Models.load(modelPath, mediaProjector, contextLength);
+            // built only when the model can support it (or a mount demands it): a codec-less
+            // model (Qwen35) must still load and chat - the codec throw belongs to the first
+            // CACHED-feature use, not to plain construction
             this.prompts =
-                    tree(
-                            loaded,
-                            cachedPrompts == null
-                                    ? null
-                                    : FrozenBlocks.open(cachedPrompts, loaded.seed()));
+                    cachedPrompts == null && loaded.model().stateCodec().isEmpty()
+                            ? null
+                            : tree(
+                                    loaded,
+                                    cachedPrompts == null
+                                            ? null
+                                            : FrozenBlocks.open(cachedPrompts, loaded.seed()));
         } catch (IOException e) {
             throw new UncheckedIOException("failed to load " + modelPath, e);
         }
@@ -272,7 +277,7 @@ final class JinferEngine {
     void freezePrompts(Path out) {
         lock.lock();
         try {
-            prompts.freeze(out);
+            tree().freeze(out);
         } catch (IOException e) {
             throw new UncheckedIOException("failed to save cached prompts to " + out, e);
         } finally {
@@ -282,11 +287,12 @@ final class JinferEngine {
 
     /** Test seam: the tree's stats line ("blocks=.. hits=.." - see PromptCache.stats). */
     String promptStats() {
-        return prompts.stats();
+        return tree().stats();
     }
 
     @SuppressWarnings("unchecked")
     private <S extends RuntimeState> PromptCache<S> tree() {
+        if (prompts == null) loaded.codec(); // throws, naming the missing state codec
         return (PromptCache<S>) prompts;
     }
 }
