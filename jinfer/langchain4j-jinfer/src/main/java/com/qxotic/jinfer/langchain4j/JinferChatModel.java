@@ -215,9 +215,7 @@ public final class JinferChatModel implements ChatModel {
             if (!requestHasTools && m.prefix.tools().isEmpty()) {
                 throw new IllegalArgumentException("toolChoice REQUIRED without any tools");
             }
-            if (m.engine.loaded.template().isEmpty()
-                    || SpecialTokens.find(m.engine.loaded.tokenizer(), "<|tool_call_start|>")
-                            .isEmpty()) {
+            if (m.engine.loaded.template().isEmpty() || callMarker(m.engine).isEmpty()) {
                 throw new UnsupportedFeatureException(
                         "ToolChoice.REQUIRED is not supported by this model: forcing seeds the"
                                 + " reply with its tool-call marker, which needs the native codec");
@@ -286,10 +284,7 @@ public final class JinferChatModel implements ChatModel {
             // the model can only COMPLETE a call (the paren is deliberately not seeded - it lands
             // on a tokenization boundary the model never saw). The seed re-attaches to the reply
             // before parsing so the call parses whole.
-            callSeed =
-                    new int[] {
-                        SpecialTokens.require(engine.loaded.tokenizer(), "<|tool_call_start|>")
-                    };
+            callSeed = new int[] {callMarker(engine).orElseThrow()}; // validate() guaranteed it
             List<Batch> prompt = new ArrayList<>(encoded.prompt());
             prompt.add(Batch.prefill(callSeed));
             encoded = new JinferEngine.Encoded(List.copyOf(prompt), encoded.template());
@@ -297,6 +292,12 @@ public final class JinferChatModel implements ChatModel {
         int promptTokens = encoded.prompt().stream().mapToInt(Batch::count).sum();
         return new Prepared(
                 encoded, sampler, maxTokens, promptTokens, cached, callSeed, p.stopSequences());
+    }
+
+    /** The model family's tool-call opening marker (LFM2's or Gemma 4's spelling). */
+    private static java.util.OptionalInt callMarker(JinferEngine engine) {
+        return SpecialTokens.findFirst(
+                engine.loaded.tokenizer(), "<|tool_call_start|>", "<|tool_call>");
     }
 
     /**

@@ -131,6 +131,62 @@ class Gemma4MediaIT {
         assertTrue(stats.contains("hits=") && !stats.contains("hits=0 "), stats);
     }
 
+    @Test
+    void toolRoundTrip() {
+        var weather =
+                dev.langchain4j.agent.tool.ToolSpecification.builder()
+                        .name("get_weather")
+                        .description("Get current weather for a city")
+                        .parameters(
+                                dev.langchain4j.model.chat.request.json.JsonObjectSchema.builder()
+                                        .addStringProperty("city")
+                                        .required("city")
+                                        .build())
+                        .build();
+        ChatResponse first =
+                model.chat(
+                        ChatRequest.builder()
+                                .messages(
+                                        UserMessage.from(
+                                                "What is the weather in Paris? Use the"
+                                                        + " get_weather tool."))
+                                .toolSpecifications(weather)
+                                .build());
+        Assumptions.assumeTrue(
+                first.aiMessage().hasToolExecutionRequests(),
+                "model chose not to call the tool: " + first.aiMessage().text());
+        var call = first.aiMessage().toolExecutionRequests().get(0);
+        assertTrue("get_weather".equals(call.name()), call.name());
+        assertTrue(call.arguments().contains("Paris"), call.arguments());
+        ChatResponse second =
+                model.chat(
+                        ChatRequest.builder()
+                                .messages(
+                                        UserMessage.from(
+                                                "What is the weather in Paris? Use the"
+                                                        + " get_weather tool."),
+                                        first.aiMessage(),
+                                        dev.langchain4j.data.message.ToolExecutionResultMessage
+                                                .from(call.id(), call.name(), "18C, sunny"))
+                                .toolSpecifications(weather)
+                                .build());
+        assertNotNull(second.aiMessage().text());
+        assertTrue(second.aiMessage().text().contains("18"), second.aiMessage().text());
+
+        // toolChoice REQUIRED: gemma's <|tool_call> marker seeds the reply - a statement, not
+        // even a question, must still produce a call
+        ChatResponse forced =
+                model.chat(
+                        ChatRequest.builder()
+                                .messages(UserMessage.from("I live in Munich."))
+                                .toolSpecifications(weather)
+                                .toolChoice(dev.langchain4j.model.chat.request.ToolChoice.REQUIRED)
+                                .build());
+        assertTrue(
+                forced.aiMessage().hasToolExecutionRequests(),
+                "REQUIRED must force a call: " + forced.aiMessage());
+    }
+
     /** A solid 224x224 PNG as base64 (the shared image fixture). */
     private static String solidPngB64(Color color) throws java.io.IOException {
         var img = new BufferedImage(224, 224, BufferedImage.TYPE_INT_RGB);

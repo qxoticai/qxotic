@@ -193,18 +193,165 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
     }
 
     /**
-     * The codec face, media included: text and {@link Part.Blob} parts fold through the
-     * media-capable {@link #encodeTurn} (an image/audio/video part lowers to its wrapped embeddings
-     * batch in part order). Identical to the default fold for text-only conversations. Punts: tools
-     * (not in Gemma's template), structured parts, and media on a text-only load (no encoders).
+     * The codec face, media and tools included: text and {@link Part.Blob} parts fold through the
+     * media-capable {@link #encodeTurn}; tools render the template's exact flow - declarations in
+     * the system turn ({@code <|tool>declaration:...<tool|>}), and the whole call round-trip as ONE
+     * open model turn: {@code <|tool_call>call:...<tool_call|>} then folded {@code
+     * <|tool_response>response:...<tool_response|>} blocks then the answer text, with the
+     * generation prompt suppressed while the model turn is open. Punts: {@link Part.Reasoning}
+     * (thought channel not ported) and media on a text-only load.
      */
     @Override
     public List<Batch> encode(Conversation conversation) {
-        if (!conversation.tools().isEmpty())
-            throw new UnsupportedConversation("tool framing not ported: whole-render");
+        requireSupported(conversation);
+        List<Message> msgs = conversation.messages();
+        List<Batch> out = new ArrayList<>(conversationStart());
+        boolean systemFirst = !msgs.isEmpty() && msgs.get(0).role().equals(Role.SYSTEM);
+        int start = 0;
+        if (systemFirst || !conversation.tools().isEmpty()) {
+            systemBlock(systemFirst ? msgs.get(0) : null, conversation.tools(), out);
+            if (systemFirst) start = 1;
+        }
+        // the template's per-message state: 'call'/'response' leave the model turn OPEN
+        String prev = null;
+        Role prevNonToolRole = null;
+        for (int i = start; i < msgs.size(); i++) {
+            Message m = msgs.get(i);
+            if (m.role().equals(Role.TOOL)) continue; // folded into its call turn below
+            prev = null;
+            boolean continuation =
+                    m.role().equals(Role.ASSISTANT) && Role.ASSISTANT.equals(prevNonToolRole);
+            prevNonToolRole = m.role();
+            List<Part.ToolCall> calls =
+                    m.content().stream()
+                            .filter(p -> p instanceof Part.ToolCall)
+                            .map(p -> (Part.ToolCall) p)
+                            .toList();
+            if (calls.isEmpty() && !continuation) {
+                out.addAll(encodeTurn(m));
+                continue;
+            }
+            if (m.content().stream().anyMatch(p -> p instanceof Part.Blob)) {
+                throw new UnsupportedConversation("media in a tool-call/continuation model turn");
+            }
+            List<Integer> ids = new ArrayList<>();
+            StringBuilder text = new StringBuilder();
+            if (!continuation) {
+                ids.add(turnOpen);
+                text.append(roleName(m.role())).append('\n');
+            }
+            for (Part.ToolCall call : calls) {
+                flushText(text, ids);
+                ids.add(require("<|tool_call>"));
+                sinkInto(text, ids, s -> Gemma4ToolSyntax.call(call.name(), call.arguments(), s));
+                ids.add(require("<tool_call|>"));
+            }
+            // forward-fold the consecutive tool-role results, names resolved from the calls
+            boolean responses = false;
+            for (int j = i + 1; j < msgs.size() && msgs.get(j).role().equals(Role.TOOL); j++) {
+                for (Part part : msgs.get(j).content()) {
+                    if (!(part instanceof Part.ToolResult r)) continue;
+                    flushText(text, ids);
+                    ids.add(require("<|tool_response>"));
+                    String name = resolveName(calls, r.callId());
+                    sinkInto(text, ids, s -> Gemma4ToolSyntax.response(name, r.text(), s));
+                    ids.add(require("<tool_response|>"));
+                    responses = true;
+                    prev = "response";
+                }
+            }
+            if (!calls.isEmpty() && !responses) prev = "call";
+            String content = m.text().strip(); // the lenient view: call parts render above
+            text.append(content);
+            flushText(text, ids);
+            if ("call".equals(prev)) {
+                ids.add(require("<|tool_response>")); // awaiting results: the turn stays open
+            } else if (!(responses && content.isEmpty())) {
+                ids.add(turnClose);
+                addAll(ids, newline);
+            }
+            if (!ids.isEmpty()) out.add(Batch.prefill(ids));
+        }
+        if (!"call".equals(prev) && !"response".equals(prev)) {
+            out.addAll(generationPrompt(conversation.thinking()));
+        }
+        return out;
+    }
+
+    /**
+     * {@code <|turn>system\n} + trimmed system text + one {@code <|tool>declaration<tool|>} block
+     * per tool + {@code <turn|>\n} - the template's tool-definitions block.
+     */
+    private void systemBlock(
+            Message system, List<com.qxotic.jinfer.chat.Tool> tools, List<Batch> out) {
+        List<Integer> ids = new ArrayList<>();
+        ids.add(turnOpen);
+        StringBuilder text = new StringBuilder("system\n");
+        if (system != null) text.append(system.textOnly().strip());
+        flushText(text, ids);
+        for (com.qxotic.jinfer.chat.Tool tool : tools) {
+            ids.add(require("<|tool>"));
+            Object parsed = com.qxotic.jinfer.chat.JsonCodec.parse(tool.rawJson());
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, Object> map = (java.util.Map<String, Object>) parsed;
+            sinkInto(text, ids, s -> Gemma4ToolSyntax.declaration(map, s));
+            ids.add(require("<tool|>"));
+        }
+        ids.add(turnClose);
+        addAll(ids, newline);
+        out.add(Batch.prefill(ids));
+    }
+
+    /** Runs a tool-syntax renderer: text runs accumulate, quotes emit the trusted id. */
+    private void sinkInto(
+            StringBuilder text,
+            List<Integer> ids,
+            java.util.function.Consumer<Gemma4ToolSyntax.Sink> render) {
+        render.accept(
+                new Gemma4ToolSyntax.Sink() {
+                    @Override
+                    public void text(String s) {
+                        text.append(s);
+                    }
+
+                    @Override
+                    public void quote() {
+                        flushText(text, ids);
+                        ids.add(require("<|\"|>"));
+                    }
+                });
+        flushText(text, ids);
+    }
+
+    private static String resolveName(List<Part.ToolCall> calls, String callId) {
+        for (Part.ToolCall call : calls) {
+            if (call.id().equals(callId)) return call.name();
+        }
+        return calls.size() == 1 ? calls.get(0).name() : "unknown";
+    }
+
+    private int require(String name) {
+        return SpecialTokens.require(tokenizer, name);
+    }
+
+    private static void addAll(List<Integer> ids, List<Integer> more) {
+        ids.addAll(more);
+    }
+
+    /** The part shapes this port frames byte-exactly; anything else punts to the whole render. */
+    private void requireSupported(Conversation conversation) {
         for (Message m : conversation.messages()) {
+            boolean toolTurn = m.role().equals(Role.TOOL);
+            boolean assistant = m.role().equals(Role.ASSISTANT);
             for (Part part : m.content()) {
-                boolean ok = part instanceof Part.Text || part instanceof Part.Blob;
+                boolean ok =
+                        switch (part) {
+                            case Part.Text t -> true;
+                            case Part.Blob b -> !toolTurn;
+                            case Part.ToolCall c -> assistant;
+                            case Part.ToolResult r -> toolTurn;
+                            default -> false; // Reasoning: thought channel not ported
+                        };
                 if (!ok)
                     throw new UnsupportedConversation(
                             m.role().name() + " turn: " + part.getClass().getSimpleName());
@@ -212,10 +359,6 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
                     throw new UnsupportedConversation("media on a text-only load");
             }
         }
-        List<Batch> out = new ArrayList<>(conversationStart());
-        for (Message m : conversation.messages()) out.addAll(encodeTurn(m));
-        out.addAll(generationPrompt(conversation.thinking()));
-        return out;
     }
 
     @Override
@@ -241,6 +384,7 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
 
     @Override
     public ReplyParser parser() {
-        return ReplyParser.spans(tokenizer);
+        return ReplyParser.spans(
+                tokenizer, "<|tool_call>", "<tool_call|>", Gemma4ToolSyntax::parseBlock);
     }
 }

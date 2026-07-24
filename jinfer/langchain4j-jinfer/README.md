@@ -53,7 +53,8 @@ System.out.println(response.tokenUsage());     // real token counts, not estimat
 System.out.println(response.finishReason());   // STOP | LENGTH | TOOL_EXECUTION
 ```
 
-Unsupported knobs (`topK`, penalties, string stop sequences, JSON response format, `toolChoice=REQUIRED`) throw `UnsupportedFeatureException` instead of being silently ignored.
+String stop sequences, JSON response format (grammar-constrained decoding), and `toolChoice=REQUIRED` are supported.
+Unsupported knobs (`topK`, penalties, per-request `modelName`, tools combined with a JSON response format) throw `UnsupportedFeatureException` instead of being silently ignored.
 
 ## Streaming
 
