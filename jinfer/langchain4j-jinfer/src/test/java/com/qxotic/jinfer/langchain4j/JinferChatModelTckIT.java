@@ -80,16 +80,6 @@ class JinferChatModelTckIT extends AbstractChatModelIT {
     }
 
     @Override
-    protected boolean supportsJsonResponseFormatWithSchema() {
-        return false;
-    }
-
-    @Override
-    protected boolean supportsJsonResponseFormatWithRawSchema() {
-        return false;
-    }
-
-    @Override
     protected boolean supportsToolsAndJsonResponseFormatWithSchema() {
         return false;
     }

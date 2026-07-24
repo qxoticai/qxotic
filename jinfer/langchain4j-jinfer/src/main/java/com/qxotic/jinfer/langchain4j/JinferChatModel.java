@@ -12,6 +12,7 @@ import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.exception.UnsupportedFeatureException;
+import dev.langchain4j.internal.JsonSchemaElementUtils;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.listener.ChatModelListener;
 import dev.langchain4j.model.chat.request.ChatRequest;
@@ -214,7 +215,7 @@ public final class JinferChatModel implements ChatModel {
                         : Thinking.banMarkers(sampler, engine.loaded.tokenizer());
         ResponseFormat rf = p.responseFormat();
         if (rf != null && rf.type() == ResponseFormatType.JSON) {
-            sampler = withJsonGrammar(engine, sampler, think);
+            sampler = withJsonGrammar(engine, sampler, think, rf);
         }
         int promptTokens = encoded.prompt().stream().mapToInt(Batch::count).sum();
         return new Prepared(encoded, sampler, maxTokens, promptTokens, cached);
@@ -224,14 +225,23 @@ public final class JinferChatModel implements ChatModel {
      * Grammar-constrained JSON output (llama.cpp-style token masking), mirroring the server: for a
      * reasoning request the grammar stays dormant until {@code </think>} so the constraint never
      * suppresses the think span, and the boilerplate newline after it passes through unconsumed.
-     * The forced token on grammar dead-ends is one of the model's real stop tokens.
+     * The forced token on grammar dead-ends is one of the model's real stop tokens. With a schema
+     * (typed or raw), the grammar is compiled from it - typed structured output; specs are cached
+     * per (grammar source, vocab), so repeated schemas reuse the compiled masks.
      */
-    private static Sampler withJsonGrammar(JinferEngine engine, Sampler sampler, boolean think) {
+    private static Sampler withJsonGrammar(
+            JinferEngine engine, Sampler sampler, boolean think, ResponseFormat rf) {
         var tokenizer = engine.loaded.tokenizer();
+        Grammar.Spec spec =
+                rf.jsonSchema() == null
+                        ? Grammar.json(tokenizer)
+                        : Grammar.fromSchema(
+                                JsonSchemaElementUtils.toMap(rf.jsonSchema().rootElement()),
+                                tokenizer);
         int eos = engine.loaded.stopTokens().iterator().next();
         int gate = think ? SpecialTokens.find(tokenizer, "</think>").orElse(-1) : -1;
         int[] skipNl = gate >= 0 ? SpecialTokens.newlineTokens(tokenizer) : null;
-        return Sampler.withGrammar(sampler, Grammar.json(tokenizer).cursor(), eos, gate, skipNl);
+        return Sampler.withGrammar(sampler, spec.cursor(), eos, gate, skipNl);
     }
 
     /** One loaded GGUF per instance: a different {@code modelName} cannot be served. */
@@ -255,9 +265,11 @@ public final class JinferChatModel implements ChatModel {
         if (p.toolChoice() == ToolChoice.REQUIRED)
             throw new UnsupportedFeatureException("toolChoice REQUIRED is not supported");
         ResponseFormat rf = p.responseFormat();
-        if (rf != null && rf.type() == ResponseFormatType.JSON && rf.jsonSchema() != null)
+        boolean tools = p.toolSpecifications() != null && !p.toolSpecifications().isEmpty();
+        if (rf != null && rf.type() == ResponseFormatType.JSON && tools)
             throw new UnsupportedFeatureException(
-                    "JSON response format with a schema is not supported yet");
+                    "tools together with a JSON response format are not supported:"
+                            + " grammar-constrained output cannot admit tool-call syntax");
     }
 
     public static Builder builder() {
