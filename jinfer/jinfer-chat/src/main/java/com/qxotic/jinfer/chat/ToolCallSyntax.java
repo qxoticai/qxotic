@@ -114,6 +114,47 @@ public final class ToolCallSyntax {
     }
 
     /**
+     * Python {@code str()} of a parsed JSON value - {@code {'key': 'val', 'n': 1}} with
+     * single-quoted strings and {@code True}/{@code False}/{@code None} - the form templates that
+     * render tools with {@code tool | string} trained their models on (SmolLM3).
+     */
+    public static String pythonRepr(Object v) {
+        StringBuilder sb = new StringBuilder();
+        writePython(sb, v);
+        return sb.toString();
+    }
+
+    private static void writePython(StringBuilder sb, Object v) {
+        if (v == null) {
+            sb.append("None");
+        } else if (v instanceof String s) {
+            sb.append('\'').append(s.replace("\\", "\\\\").replace("'", "\\'")).append('\'');
+        } else if (v instanceof Boolean b) {
+            sb.append(b ? "True" : "False");
+        } else if (v instanceof Map<?, ?> m) {
+            sb.append('{');
+            boolean first = true;
+            for (Map.Entry<?, ?> e : m.entrySet()) {
+                if (!first) sb.append(", ");
+                first = false;
+                writePython(sb, String.valueOf(e.getKey()));
+                sb.append(": ");
+                writePython(sb, e.getValue());
+            }
+            sb.append('}');
+        } else if (v instanceof List<?> l) {
+            sb.append('[');
+            for (int i = 0; i < l.size(); i++) {
+                if (i > 0) sb.append(", ");
+                writePython(sb, l.get(i));
+            }
+            sb.append(']');
+        } else {
+            sb.append(v); // numbers
+        }
+    }
+
+    /**
      * Parse one XML-function span, {@code <function=NAME><parameter=K>\nV\n</parameter>...
      * </function>} - the form Qwen 3.5 and Nemotron emit between their trusted {@code <tool_call>}
      * / {@code </tool_call>} ids (one function per span; both templates emit one span per call). A

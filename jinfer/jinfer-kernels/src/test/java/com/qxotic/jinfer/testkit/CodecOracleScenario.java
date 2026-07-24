@@ -82,6 +82,7 @@ public final class CodecOracleScenario {
         Map<String, Object> vars = new HashMap<>(renderVars);
         vars.put("messages", maps);
         vars.put("tools", toolVars);
+        vars.put("xml_tools", toolVars); // SmolLM3's spelling of the same variable
         vars.put("add_generation_prompt", true);
         String rendered = support.jinja.render(vars);
         List<Integer> oracle = specials.encode(tokenizer, rendered).toList();

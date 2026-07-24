@@ -145,12 +145,32 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
      */
     public LoadedModel<Llama.State> loaded() {
         return new LoadedModel<>(
-                this,
-                tokenizer(),
-                chatTemplateSource,
-                stopTokens(),
-                modelSeed,
-                turnTemplate().map(t -> (com.qxotic.jinfer.chat.ChatTemplate) t));
+                this, tokenizer(), chatTemplateSource, stopTokens(), modelSeed, chatTemplate());
+    }
+
+    private com.qxotic.jinfer.chat.ChatTemplate chatTemplate; // memoized, like turnTemplate
+
+    /**
+     * The native codec for this GGUF, selected by the CHAT TEMPLATE SOURCE first: SmolLM3 reuses
+     * the Llama 3 tokenizer base, so its vocab still carries the Llama 3 scaffold specials - the
+     * source, not the vocabulary, says which wire format the model was trained on. SmolLM3's ChatML
+     * codec when the source names it, else the Llama 3 per-turn port when its scaffold specials
+     * exist, else the whole-render Jinja fallback.
+     */
+    public java.util.Optional<com.qxotic.jinfer.chat.ChatTemplate> chatTemplate() {
+        if (chatTemplate == null) {
+            if (chatTemplateSource.contains("named SmolLM")
+                    && com.qxotic.jinfer.llm.SpecialTokens.find(tokenizer(), "<|im_start|>")
+                            .isPresent()) {
+                chatTemplate = new SmolLm3ChatTemplate(tokenizer());
+            } else {
+                chatTemplate =
+                        turnTemplate()
+                                .map(t -> (com.qxotic.jinfer.chat.ChatTemplate) t)
+                                .orElse(null);
+            }
+        }
+        return java.util.Optional.ofNullable(chatTemplate);
     }
 
     public java.util.Optional<com.qxotic.jinfer.chat.TurnTemplate> turnTemplate() {
