@@ -7,6 +7,7 @@ import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.chat.ToolCallSyntax;
+import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.media.AudioCodec;
 import com.qxotic.jinfer.media.ImageCodec;
 import com.qxotic.jinfer.media.VideoCodec;
@@ -31,11 +32,13 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * The mapping seam between langchain4j's message/tool model and jinfer's. Two output shapes per
@@ -125,7 +128,7 @@ final class Mappings {
         }
     }
 
-    private static java.nio.file.Path localPath(URI url) {
+    private static Path localPath(URI url) {
         if (url == null)
             throw new UnsupportedFeatureException("media needs base64 data or a file:// URI");
         if (!"file".equals(url.getScheme()))
@@ -134,7 +137,7 @@ final class Mappings {
                             + url.getScheme()
                             + "): the library never fetches over the network; pass bytes or a"
                             + " file:// URI");
-        return java.nio.file.Path.of(url);
+        return Path.of(url);
     }
 
     private static String userText(UserMessage u) {
@@ -301,10 +304,10 @@ final class Mappings {
             String modelName,
             AiMessage ai,
             int promptTokens,
-            com.qxotic.jinfer.llm.Generator.GenerationResult result,
+            Generator.GenerationResult result,
             boolean stoppedBySequence) {
         return ChatResponse.builder()
-                .id(java.util.UUID.randomUUID().toString()) // generation identity for listeners
+                .id(UUID.randomUUID().toString()) // generation identity for listeners
                 .aiMessage(ai)
                 .modelName(modelName)
                 .tokenUsage(new TokenUsage(promptTokens, result.completionTokens()))
