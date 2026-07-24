@@ -294,10 +294,10 @@ public final class JinferChatModel implements ChatModel {
                 encoded, sampler, maxTokens, promptTokens, cached, callSeed, p.stopSequences());
     }
 
-    /** The model family's tool-call opening marker (LFM2's or Gemma 4's spelling). */
+    /** The model family's tool-call opening marker (LFM2 / Gemma 4 / Qwen spellings). */
     private static java.util.OptionalInt callMarker(JinferEngine engine) {
         return SpecialTokens.findFirst(
-                engine.loaded.tokenizer(), "<|tool_call_start|>", "<|tool_call>");
+                engine.loaded.tokenizer(), "<|tool_call_start|>", "<|tool_call>", "<tool_call>");
     }
 
     /**
