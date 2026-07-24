@@ -319,10 +319,18 @@ public final class JinferChatModel implements ChatModel {
         return sampler;
     }
 
-    /** The model family's tool-call opening marker (LFM2 / Gemma 4 / Qwen spellings). */
+    /**
+     * The model family's tool-call opening marker (LFM2 / Gemma 4 / Qwen / Harmony spellings).
+     * Harmony's is its channel header: seeding {@code <|channel|>} puts the reply in a header the
+     * call grammar then pins to {@code commentary to=functions.{name}}.
+     */
     private static OptionalInt callMarker(JinferEngine engine) {
         return SpecialTokens.findFirst(
-                engine.loaded.tokenizer(), "<|tool_call_start|>", "<|tool_call>", "<tool_call>");
+                engine.loaded.tokenizer(),
+                "<|tool_call_start|>",
+                "<|tool_call>",
+                "<tool_call>",
+                "<|channel|>");
     }
 
     /** A stop token to end generation with when a grammar dead-ends. */
