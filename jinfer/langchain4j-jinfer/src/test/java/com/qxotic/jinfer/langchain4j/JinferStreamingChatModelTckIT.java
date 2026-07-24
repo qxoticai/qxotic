@@ -136,11 +136,6 @@ class JinferStreamingChatModelTckIT extends AbstractStreamingChatModelIT {
     }
 
     @Override
-    protected boolean supportsStopSequencesParameter() {
-        return false;
-    }
-
-    @Override
     protected boolean supportsToolsAndJsonResponseFormatWithSchema() {
         return false;
     }

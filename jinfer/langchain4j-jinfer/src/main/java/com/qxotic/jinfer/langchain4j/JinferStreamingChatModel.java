@@ -71,6 +71,7 @@ public final class JinferStreamingChatModel implements StreamingChatModel {
         Optional<ChatTemplate> template = p.encoded().template();
         ReplyParser parser = template.map(ChatTemplate::parser).orElse(null);
         PendingUtf8 raw = parser == null ? new PendingUtf8() : null;
+        StopSequences stops = StopSequences.of(p.stops());
         if (parser != null) {
             // a forced tool call was seeded into the prompt; the parser must see the marker too
             for (int token : p.callSeed()) parser.feed(token);
@@ -115,14 +116,18 @@ public final class JinferStreamingChatModel implements StreamingChatModel {
                                     handler,
                                     () -> handler.onPartialThinking(new PartialThinking(fragment)));
                         } else {
-                            safely(
-                                    handler,
-                                    () ->
-                                            handler.onPartialResponse(
-                                                    new PartialResponse(fragment), context));
+                            // the matcher holds back a possible stop prefix; emit what's safe
+                            String out = stops == null ? fragment : stops.feed(fragment);
+                            if (!out.isEmpty()) {
+                                safely(
+                                        handler,
+                                        () ->
+                                                handler.onPartialResponse(
+                                                        new PartialResponse(out), context));
+                            }
                         }
                     }
-                    return !cancelled.get();
+                    return !cancelled.get() && (stops == null || !stops.hit());
                 };
 
         Generator.GenerationResult result =
@@ -137,17 +142,30 @@ public final class JinferStreamingChatModel implements StreamingChatModel {
         if (cancelled.get()) {
             return; // a cancelled stream ends silently: no complete callback
         }
+        if (stops != null) {
+            String tail = stops.flush(); // release the held-back chars (nothing past a cut)
+            if (!tail.isEmpty()) {
+                safely(
+                        handler,
+                        () -> handler.onPartialResponse(new PartialResponse(tail), context));
+            }
+        }
         AiMessage ai =
                 parser != null
                         ? Mappings.toAiMessage(parser.finish())
                         : Mappings.toAiMessage(engine.decode(Optional.empty(), result.tokens()));
+        boolean stopHit = stops != null && stops.hit();
+        if (stopHit) {
+            ai = Mappings.withText(ai, stops.beforeCut());
+        }
         if (ai.hasToolExecutionRequests()) {
             for (int i = 0; i < ai.toolExecutionRequests().size(); i++) {
                 CompleteToolCall call = new CompleteToolCall(i, ai.toolExecutionRequests().get(i));
                 safely(handler, () -> handler.onCompleteToolCall(call));
             }
         }
-        ChatResponse response = Mappings.response(engine.modelName, ai, p.promptTokens(), result);
+        ChatResponse response =
+                Mappings.response(engine.modelName, ai, p.promptTokens(), result, stopHit);
         safely(handler, () -> handler.onCompleteResponse(response));
     }
 

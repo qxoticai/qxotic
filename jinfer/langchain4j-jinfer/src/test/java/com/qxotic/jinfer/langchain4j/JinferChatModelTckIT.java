@@ -70,11 +70,6 @@ class JinferChatModelTckIT extends AbstractChatModelIT {
     }
 
     @Override
-    protected boolean supportsStopSequencesParameter() {
-        return false; // string stop sequences throw UnsupportedFeatureException
-    }
-
-    @Override
     protected boolean supportsToolsAndJsonResponseFormatWithSchema() {
         return false;
     }

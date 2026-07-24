@@ -281,17 +281,31 @@ final class Mappings {
         }
     }
 
+    /** {@code ai} with its text replaced (empty = none), thinking and tool calls preserved. */
+    static AiMessage withText(AiMessage ai, String text) {
+        AiMessage.Builder b = AiMessage.builder();
+        if (!text.isEmpty()) b.text(text);
+        if (ai.thinking() != null && !ai.thinking().isEmpty()) b.thinking(ai.thinking());
+        if (ai.hasToolExecutionRequests()) b.toolExecutionRequests(ai.toolExecutionRequests());
+        return b.build();
+    }
+
     /** The shared ChatResponse assembly (blocking and streaming build the identical shape). */
     static ChatResponse response(
             String modelName,
             AiMessage ai,
             int promptTokens,
-            com.qxotic.jinfer.llm.Generator.GenerationResult result) {
+            com.qxotic.jinfer.llm.Generator.GenerationResult result,
+            boolean stoppedBySequence) {
         return ChatResponse.builder()
                 .aiMessage(ai)
                 .modelName(modelName)
                 .tokenUsage(new TokenUsage(promptTokens, result.completionTokens()))
-                .finishReason(toFinishReason(result.finishReason(), ai.hasToolExecutionRequests()))
+                .finishReason(
+                        stoppedBySequence // a stop-sequence cut IS a stop, not an abort
+                                ? FinishReason.STOP
+                                : toFinishReason(
+                                        result.finishReason(), ai.hasToolExecutionRequests()))
                 .build();
     }
 

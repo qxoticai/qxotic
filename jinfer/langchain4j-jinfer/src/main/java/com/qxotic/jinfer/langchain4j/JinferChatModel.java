@@ -127,20 +127,53 @@ public final class JinferChatModel implements ChatModel {
     @Override
     public ChatResponse doChat(ChatRequest request) {
         Prepared p = prepare(this, request);
+        StopSequences stops = StopSequences.of(p.stops());
         Generator.GenerationResult result =
                 engine.generate(
                         p.encoded().prompt(),
                         p.sampler(),
                         p.maxTokens(),
                         timeoutNanos,
-                        t -> true,
+                        stops == null ? t -> true : stopSink(p, stops),
                         p.cached());
         com.qxotic.toknroll.IntSequence reply = result.tokens();
         if (p.callSeed().length > 0) {
             reply = com.qxotic.toknroll.IntSequence.of(p.callSeed()).concat(reply);
         }
         AiMessage ai = Mappings.toAiMessage(engine.decode(p.encoded().template(), reply));
-        return Mappings.response(engine.modelName, ai, p.promptTokens(), result);
+        boolean stopHit = stops != null && stops.hit();
+        if (stopHit) {
+            ai = Mappings.withText(ai, stops.beforeCut());
+        }
+        return Mappings.response(engine.modelName, ai, p.promptTokens(), result, stopHit);
+    }
+
+    /** A sink that watches the reply's content lane and aborts generation at the first stop. */
+    private Generator.TokenSink stopSink(Prepared p, StopSequences stops) {
+        var parser =
+                p.encoded()
+                        .template()
+                        .map(com.qxotic.jinfer.chat.ChatTemplate::parser)
+                        .orElse(null);
+        var raw = parser == null ? new com.qxotic.jinfer.chat.PendingUtf8() : null;
+        if (parser != null) {
+            for (int token : p.callSeed()) parser.feed(token); // forced call: stay in sync
+        }
+        return token -> {
+            String fragment;
+            boolean content;
+            if (parser != null) {
+                fragment = parser.feed(token);
+                content = !parser.reasoning();
+            } else {
+                fragment =
+                        raw.add(engine.loaded.tokenizer().decodeBytes(new int[] {token}), token)
+                                .text();
+                content = true;
+            }
+            if (content && !fragment.isEmpty()) stops.feed(fragment);
+            return !stops.hit();
+        };
     }
 
     JinferEngine engine() {
@@ -160,7 +193,8 @@ public final class JinferChatModel implements ChatModel {
             int maxTokens,
             int promptTokens,
             boolean cached,
-            int[] callSeed) {}
+            int[] callSeed,
+            List<String> stops) {}
 
     private static final int[] NO_SEED = new int[0];
 
@@ -261,7 +295,8 @@ public final class JinferChatModel implements ChatModel {
             encoded = new JinferEngine.Encoded(List.copyOf(prompt), encoded.template());
         }
         int promptTokens = encoded.prompt().stream().mapToInt(Batch::count).sum();
-        return new Prepared(encoded, sampler, maxTokens, promptTokens, cached, callSeed);
+        return new Prepared(
+                encoded, sampler, maxTokens, promptTokens, cached, callSeed, p.stopSequences());
     }
 
     /**
@@ -303,8 +338,6 @@ public final class JinferChatModel implements ChatModel {
             throw new UnsupportedFeatureException("frequencyPenalty is not supported");
         if (p.presencePenalty() != null)
             throw new UnsupportedFeatureException("presencePenalty is not supported");
-        if (p.stopSequences() != null && !p.stopSequences().isEmpty())
-            throw new UnsupportedFeatureException("stopSequences are not supported yet");
         ResponseFormat rf = p.responseFormat();
         boolean tools = p.toolSpecifications() != null && !p.toolSpecifications().isEmpty();
         if (rf != null && rf.type() == ResponseFormatType.JSON && tools)
