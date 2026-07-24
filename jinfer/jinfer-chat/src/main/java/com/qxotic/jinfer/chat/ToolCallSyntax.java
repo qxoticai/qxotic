@@ -8,10 +8,12 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Parses the payload inside a tool-call span into structured {@link Part.ToolCall}s. Two grammars,
- * because the models emit two: a JSON object/array of {@code {name, arguments}}, or the Pythonic
- * call list {@code [f(a=1), g(b='x')]} that LFM2.5 (and other pythonic-tool-call models) produce -
- * a format the wider ecosystem special-cases too (SGLang's {@code Lfm2Detector}, llama.cpp).
+ * Parses the payload inside a tool-call span into structured {@link Part.ToolCall}s. Three
+ * grammars, because the models emit three: a JSON object/array of {@code {name, arguments}}, the
+ * Pythonic call list {@code [f(a=1), g(b='x')]} that LFM2.5 (and other pythonic-tool-call models)
+ * produce - a format the wider ecosystem special-cases too (SGLang's {@code Lfm2Detector},
+ * llama.cpp) - and the XML function form {@code <function=NAME><parameter=K>...} shared by Qwen 3.5
+ * and Nemotron.
  *
  * <p>Only the payload text is parsed here; the span boundaries are the model detector's job and are
  * decided on token ids, so this never has to guard against content faking a marker. Shared by every
@@ -87,6 +89,50 @@ public final class ToolCallSyntax {
         StringBuilder sb = new StringBuilder();
         writeJinja(sb, value);
         return sb.toString();
+    }
+
+    /**
+     * Parse one XML-function span, {@code <function=NAME><parameter=K>\nV\n</parameter>...
+     * </function>} - the form Qwen 3.5 and Nemotron emit between their trusted {@code <tool_call>}
+     * / {@code </tool_call>} ids (one function per span; both templates emit one span per call). A
+     * parameter value is the template's {@code tojson}-for-objects / raw-string-otherwise, so it
+     * parses as JSON when it is valid JSON (numbers, objects, arrays, booleans) and stays a plain
+     * string otherwise (an unquoted word like {@code Paris} is not valid JSON).
+     */
+    public static List<Part.ToolCall> parseFunctionXml(String block) {
+        int fn = block.indexOf("<function=");
+        if (fn < 0) return List.of();
+        int nameEnd = block.indexOf('>', fn);
+        if (nameEnd < 0) return List.of();
+        String name = block.substring(fn + "<function=".length(), nameEnd).strip();
+        if (name.isEmpty()) return List.of();
+
+        int fnClose = block.indexOf("</function>", nameEnd);
+        String body = block.substring(nameEnd, fnClose < 0 ? block.length() : fnClose);
+
+        Map<String, Object> arguments = new LinkedHashMap<>();
+        int p = body.indexOf("<parameter=");
+        while (p >= 0) {
+            int keyEnd = body.indexOf('>', p);
+            if (keyEnd < 0) break;
+            String key = body.substring(p + "<parameter=".length(), keyEnd).strip();
+            int close = body.indexOf("\n</parameter>", keyEnd);
+            if (close < 0) break;
+            // the templates frame the value as ">\n" + value + "\n</parameter>"
+            String value = body.substring(keyEnd + 2, close);
+            if (!key.isEmpty()) arguments.put(key, typedValue(value));
+            p = body.indexOf("<parameter=", close);
+        }
+        return List.of(new Part.ToolCall("", name, arguments));
+    }
+
+    /** A parameter value as its JSON type when it is valid JSON, else the raw string. */
+    private static Object typedValue(String value) {
+        try {
+            return JsonCodec.parse(value);
+        } catch (RuntimeException notJson) {
+            return value;
+        }
     }
 
     /**

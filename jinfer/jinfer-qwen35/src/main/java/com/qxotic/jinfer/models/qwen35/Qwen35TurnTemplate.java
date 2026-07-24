@@ -4,6 +4,7 @@ import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Role;
+import com.qxotic.jinfer.chat.ToolCallSyntax;
 import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.llm.*;
 import com.qxotic.jinfer.llm.SpecialTokens;
@@ -110,6 +111,6 @@ public final class Qwen35TurnTemplate implements TurnTemplate {
     @Override
     public ReplyParser parser() {
         return ReplyParser.spans(
-                tokenizer, "<tool_call>", "</tool_call>", Qwen35ToolCallDetector::parsePayload);
+                tokenizer, "<tool_call>", "</tool_call>", ToolCallSyntax::parseFunctionXml);
     }
 }
