@@ -25,21 +25,33 @@ import org.junit.jupiter.api.Test;
  */
 public final class HarmonyReplyParserTest {
 
-    // ids:           0            1             2          3           4            5
+    // ids:           0            1             2          3           4
     static final String[] W = {
         "<|start|>",
         "<|channel|>",
         "<|message|>",
         "<|end|>",
         "<|return|>",
+        //   5            6
+        "<|call|>",
+        "<|constrain|>",
+        //   7           8          9           10           11
         "assistant",
-        //   6           7          8            9
         "analysis",
         "final",
         "thinking...",
-        "The answer is 4."
+        "The answer is 4.",
+        //   12           13                            14    15
+        "commentary",
+        " to=functions.get_weather",
+        " ",
+        "json",
+        //   16              17        18
+        "{\"city\": \"Pa",
+        "ris\"}",
+        "{broken"
     };
-    static final int SPECIALS = 5; // ids 0..4 special; 5.. plain
+    static final int SPECIALS = 7; // ids 0..6 special; 7.. plain
 
     static final Tokenizer TOK = new FakeTokenizer();
 
@@ -53,7 +65,7 @@ public final class HarmonyReplyParserTest {
     void harmonyChannelRouting() {
         // <|channel|>analysis<|message|>thinking...<|end|><|start|>assistant<|channel|>final
         // <|message|>The answer is 4.<|return|>
-        int[] reply = {1, 6, 2, 8, 3, 0, 5, 1, 7, 2, 9, 4};
+        int[] reply = {1, 8, 2, 10, 3, 0, 7, 1, 9, 2, 11, 4};
         ReplyParser p = new HarmonyReplyParser(TOK);
         List<Step> steps = new ArrayList<>();
         for (int t : reply) {
@@ -76,7 +88,7 @@ public final class HarmonyReplyParserTest {
         check("The answer is 4.".equals(m.text()), "content text is the final body");
         check(
                 m.content().get(1) instanceof Part.Text t
-                        && t.verbatim().toList().equals(List.of(9)),
+                        && t.verbatim().toList().equals(List.of(11)),
                 "final body carries verbatim ids");
 
         // header text (role, channel names) never leaks into either channel
@@ -86,6 +98,45 @@ public final class HarmonyReplyParserTest {
         // one-shot equals streamed
         Message oneshot = ReplyParser.parse(new HarmonyReplyParser(TOK), IntSequence.of(reply));
         check(oneshot.equals(m), "streamed == one-shot");
+    }
+
+    @Test
+    void commentaryToolCall() {
+        // <|channel|>analysis<|message|>thinking...<|end|><|start|>assistant<|channel|>commentary
+        //  to=functions.get_weather <|constrain|>json<|message|>{"city": "Paris"}<|call|>
+        int[] reply = {1, 8, 2, 10, 3, 0, 7, 1, 12, 13, 14, 6, 15, 2, 16, 17, 5};
+        ReplyParser p = new HarmonyReplyParser(TOK);
+        List<Step> steps = new ArrayList<>();
+        for (int t : reply) {
+            String s = p.feed(t);
+            if (!s.isEmpty()) steps.add(new Step(s, p.reasoning()));
+        }
+        check(
+                steps.equals(List.of(new Step("thinking...", true))),
+                "call payload never streams: " + steps);
+
+        Message m = p.finish();
+        check(m.content().size() == 2, "message: reasoning + call: " + m.content());
+        check(m.content().get(0) instanceof Part.Reasoning, "analysis body kept as reasoning");
+        check(
+                m.content().get(1) instanceof Part.ToolCall c
+                        && "get_weather".equals(c.name())
+                        && Map.of("city", "Paris").equals(c.arguments())
+                        && c.verbatim().toList().equals(List.of(16, 17)),
+                "call parsed with name, arguments, verbatim payload ids: " + m.content().get(1));
+        check(m.text().isEmpty(), "call payload never reaches content");
+
+        // stop token withheld by the driver: finish() still closes the open call body
+        int[] unterminated = {1, 12, 13, 14, 6, 15, 2, 16, 17};
+        Message open = ReplyParser.parse(new HarmonyReplyParser(TOK), IntSequence.of(unterminated));
+        check(
+                open.content().size() == 1 && open.content().get(0) instanceof Part.ToolCall,
+                "finish() closes an open call body: " + open.content());
+
+        // a payload that is not a JSON object is no call - and never content either
+        int[] malformed = {1, 12, 13, 14, 6, 15, 2, 18, 5};
+        Message none = ReplyParser.parse(new HarmonyReplyParser(TOK), IntSequence.of(malformed));
+        check(none.content().isEmpty(), "malformed payload is no call: " + none.content());
     }
 
     private static final class FakeTokenizer implements Tokenizer {

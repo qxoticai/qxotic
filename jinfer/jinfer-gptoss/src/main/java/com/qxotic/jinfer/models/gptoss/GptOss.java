@@ -134,13 +134,16 @@ public final class GptOss
                 });
     }
 
-    /** The turn-delimiter / eos ids that terminate generation (convenience for callers/tests). */
+    /**
+     * The ids that terminate generation. Harmony's {@code <|end|>} is deliberately NOT one: it
+     * separates messages WITHIN a reply (analysis {@code <|end|>} final, analysis {@code <|end|>}
+     * commentary call), so stopping on it truncates every multi-channel reply after its first
+     * message. Only {@code <|return|>} (final answer done) and {@code <|call|>} (tool call done)
+     * end a reply, per the Harmony grammar.
+     */
     public Set<Integer> stopTokens() {
         Set<Integer> stops = new HashSet<>();
-        for (String name :
-                new String[] {
-                    "<|return|>", "<|call|>", "<|end|>", "<|endofprompt|>", "<|endoftext|>"
-                }) {
+        for (String name : new String[] {"<|return|>", "<|call|>", "<|endoftext|>"}) {
             SpecialTokens.find(tokenizer, name).ifPresent(stops::add);
         }
         return stops;
