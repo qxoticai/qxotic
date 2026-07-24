@@ -52,22 +52,23 @@ public final class JinferStreamingChatModel implements StreamingChatModel {
 
     @Override
     public void doChat(ChatRequest request, StreamingChatResponseHandler handler) {
-        JinferChatModel.validate(model, request); // invalid requests throw HERE, synchronously
+        // the WHOLE preparation is synchronous: every request-shape rejection (unsupported
+        // params, media the model cannot frame, remote URLs) throws raw from chat(), unwrapped
+        JinferChatModel.Prepared p = JinferChatModel.prepare(model, request);
         Thread.ofVirtual()
                 .name("jinfer-stream")
                 .start(
                         () -> {
                             try {
-                                stream(request, handler);
+                                stream(p, handler);
                             } catch (Throwable t) {
                                 handler.onError(t);
                             }
                         });
     }
 
-    private void stream(ChatRequest request, StreamingChatResponseHandler handler) {
+    private void stream(JinferChatModel.Prepared p, StreamingChatResponseHandler handler) {
         JinferEngine engine = model.engine;
-        JinferChatModel.Prepared p = JinferChatModel.prepare(model, request);
         Optional<ChatTemplate> template = p.encoded().template();
         ReplyParser parser = template.map(ChatTemplate::parser).orElse(null);
         PendingUtf8 raw = parser == null ? new PendingUtf8() : null;

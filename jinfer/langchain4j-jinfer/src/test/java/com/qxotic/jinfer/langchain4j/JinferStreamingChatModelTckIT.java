@@ -149,19 +149,4 @@ class JinferStreamingChatModelTckIT extends AbstractStreamingChatModelIT {
     protected boolean supportsSingleImageInputAsPublicURL() {
         return false;
     }
-
-    @Override
-    protected boolean assertResponseId() {
-        return false;
-    }
-
-    @Override
-    protected boolean assertToolId(StreamingChatModel model) {
-        return false;
-    }
-
-    @Override
-    protected boolean assertExceptionType() {
-        return false;
-    }
 }

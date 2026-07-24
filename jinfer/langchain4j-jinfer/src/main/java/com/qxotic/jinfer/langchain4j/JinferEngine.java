@@ -91,7 +91,7 @@ final class JinferEngine {
         }
         if (hasMedia(conversation)) {
             throw new UnsupportedFeatureException(
-                    "this model cannot frame media"
+                    "image/audio/video input is not supported by this model"
                             + (punted != null ? ": " + punted.getMessage() : "")
                             + " (for Gemma 4, pass the mmproj GGUF via mediaProjector(...))");
         }

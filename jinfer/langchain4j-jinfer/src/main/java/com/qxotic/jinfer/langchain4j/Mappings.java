@@ -130,7 +130,10 @@ final class Mappings {
             throw new UnsupportedFeatureException("media needs base64 data or a file:// URI");
         if (!"file".equals(url.getScheme()))
             throw new UnsupportedFeatureException(
-                    "remote media URLs are not fetched (" + url.getScheme() + "); pass bytes");
+                    "remote image/media URLs are not supported ("
+                            + url.getScheme()
+                            + "): the library never fetches over the network; pass bytes or a"
+                            + " file:// URI");
         return java.nio.file.Path.of(url);
     }
 
@@ -270,9 +273,12 @@ final class Mappings {
                 case Part.Text t -> (inReasoning ? thinking : text).append(t.text());
                 case Part.Reasoning r -> collect(r.content(), text, thinking, calls, true);
                 case Part.ToolCall c ->
+                        // pythonic syntaxes carry no call ids: mint stable positional ones (what
+                        // Ollama's server does); ids never render back into the prompt (the
+                        // template's call syntax has no id slot), so echoes stay byte-identical
                         calls.add(
                                 ToolExecutionRequest.builder()
-                                        .id(c.id())
+                                        .id(c.id().isEmpty() ? "call_" + calls.size() : c.id())
                                         .name(c.name())
                                         .arguments(JsonCodec.stringify(c.arguments()))
                                         .build());
@@ -298,6 +304,7 @@ final class Mappings {
             com.qxotic.jinfer.llm.Generator.GenerationResult result,
             boolean stoppedBySequence) {
         return ChatResponse.builder()
+                .id(java.util.UUID.randomUUID().toString()) // generation identity for listeners
                 .aiMessage(ai)
                 .modelName(modelName)
                 .tokenUsage(new TokenUsage(promptTokens, result.completionTokens()))

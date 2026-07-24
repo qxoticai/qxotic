@@ -83,22 +83,4 @@ class JinferChatModelTckIT extends AbstractChatModelIT {
     protected boolean supportsSingleImageInputAsPublicURL() {
         return false; // this library never fetches over the network
     }
-
-    // ---- response-shape assertions we do not (yet) satisfy ----
-
-    @Override
-    protected boolean assertResponseId() {
-        return false; // responses carry no id
-    }
-
-    @Override
-    protected boolean assertToolId(dev.langchain4j.model.chat.ChatModel model) {
-        return false; // LFM2's pythonic call syntax carries no call ids
-    }
-
-    @Override
-    protected boolean assertExceptionType() {
-        return false; // jinfer-side validation surfaces IllegalArgument/IllegalState, not
-        // langchain4j's http-oriented exception hierarchy
-    }
 }
