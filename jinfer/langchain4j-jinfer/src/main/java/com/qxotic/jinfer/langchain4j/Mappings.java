@@ -149,6 +149,12 @@ final class Mappings {
     }
 
     private static Message assistant(AiMessage ai) {
+        // an UNMODIFIED echo of a reply this provider produced restores the parsed Message with
+        // its verbatim ids; an edited echo (or one from another provider) re-renders faithfully
+        if (ai.attributes().get(REPLY_ATTRIBUTE) instanceof Message reply
+                && toAiMessage(reply).equals(ai)) {
+            return reply;
+        }
         List<Part> parts = new ArrayList<>();
         if (ai.thinking() != null && !ai.thinking().isEmpty()) {
             parts.add(new Part.Reasoning(List.of(new Part.Text(ai.thinking(), null)), null));
@@ -253,6 +259,15 @@ final class Mappings {
 
     // ---- jinfer reply -> langchain4j ----
 
+    /**
+     * The attribute carrying the parsed reply {@link Message} - verbatim token ids included -
+     * across the langchain4j wire. An unmodified echo restores it ({@link #assistant}), letting the
+     * native codec's verbatim splice re-encode the turn to the EXACT generated tokens (the
+     * round-trip law; what makes {@code cachedSessions} hits deterministic instead of tokenization
+     * luck).
+     */
+    static final String REPLY_ATTRIBUTE = "jinfer.reply";
+
     static AiMessage toAiMessage(Message reply) {
         StringBuilder text = new StringBuilder();
         StringBuilder thinking = new StringBuilder();
@@ -262,6 +277,7 @@ final class Mappings {
         if (!text.isEmpty()) b.text(text.toString());
         if (!thinking.isEmpty()) b.thinking(thinking.toString());
         if (!calls.isEmpty()) b.toolExecutionRequests(calls);
+        b.attributes(Map.of(REPLY_ATTRIBUTE, reply));
         return b.build();
     }
 

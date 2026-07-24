@@ -40,8 +40,22 @@ final class JinferEngine {
     private final JinjaChatTemplate jinja;
     private final ReentrantLock lock = new ReentrantLock(true);
     private final PromptCache<?> prompts; // the cached-prompt block tree (empty when unused)
+    // cachedSessions(n): the last n live conversation states, reused append-only when a new
+    // prompt's fingerprint stream strictly extends one (all access under the generation lock)
+    private final java.util.ArrayDeque<LiveSession> sessions = new java.util.ArrayDeque<>();
+    private final int sessionCapacity;
+    private int sessionHits;
 
-    JinferEngine(Path modelPath, Path mediaProjector, int contextLength, Path cachedPrompts) {
+    /** A finished generation's state with the fingerprints of everything ingested into it. */
+    private record LiveSession(RuntimeState state, long[] fp) {}
+
+    JinferEngine(
+            Path modelPath,
+            Path mediaProjector,
+            int contextLength,
+            Path cachedPrompts,
+            int cachedSessions) {
+        this.sessionCapacity = Math.max(0, cachedSessions);
         try {
             this.loaded =
                     mediaProjector == null
@@ -123,34 +137,95 @@ final class JinferEngine {
             boolean cached) {
         lock.lock();
         try {
-            return cached
-                    ? cachedRun(
-                            loaded.model(), tree(), prompt, sampler, maxTokens, timeoutNanos, sink)
-                    : run(loaded.model(), prompt, sampler, maxTokens, timeoutNanos, sink);
+            return run(loaded.model(), prompt, sampler, maxTokens, timeoutNanos, sink, cached);
         } finally {
             lock.unlock();
         }
     }
 
+    /**
+     * One generation pass, cheapest source first: a pooled live session when the prompt strictly
+     * extends one ({@code cachedSessions} - zero restore, only the delta prefills), else the prompt
+     * tree for cached views (block restore, resume capped one short so the final block re-ingests
+     * and leaves fresh logits), else a fresh state. On success the finished state (prompt + reply
+     * KV) returns to the pool for the conversation's next turn.
+     */
     private <S extends RuntimeState> Generator.GenerationResult run(
             LanguageModel<?, ?, S> model,
             List<Batch> prompt,
             Sampler sampler,
             int maxTokens,
             long timeoutNanos,
-            Generator.TokenSink sink) {
-        int promptLen = prompt.stream().mapToInt(Batch::count).sum();
-        S state = Generator.stateFor(model, promptLen);
-        List<Batch> prepared = Batch.prepare(prompt, state.batchCapacity());
-        return Generator.generate(
-                model,
-                state,
-                prepared,
-                sampler,
-                maxTokens,
-                timeoutNanos,
-                loaded.stopTokens(),
-                sink);
+            Generator.TokenSink sink,
+            boolean cached) {
+        long[] fp = CachedSession.fingerprints(prompt);
+        S state;
+        List<Batch> remaining;
+        LiveSession pooled = acquireSession(fp);
+        if (pooled != null) {
+            sessionHits++;
+            @SuppressWarnings("unchecked")
+            S reused = (S) pooled.state();
+            state = reused;
+            remaining = CachedSession.tail(prompt, pooled.fp().length);
+        } else if (cached) {
+            state = Generator.stateFor(model, fp.length);
+            CachedSession<S> resumed =
+                    CachedSession.resume(model, tree(), state, fp, fp.length - 1);
+            remaining = CachedSession.tail(prompt, resumed.position());
+        } else {
+            state = Generator.stateFor(model, fp.length);
+            remaining = prompt;
+        }
+        Generator.GenerationResult result =
+                Generator.generate(
+                        model,
+                        state,
+                        Batch.prepare(remaining, state.batchCapacity()),
+                        sampler,
+                        maxTokens,
+                        timeoutNanos,
+                        loaded.stopTokens(),
+                        sink);
+        poolSession(state, fp, result); // not reached on throw: a torn state is never pooled
+        return result;
+    }
+
+    /** The pooled session with the LONGEST stream strictly extended by {@code fp}, removed. */
+    private LiveSession acquireSession(long[] fp) {
+        LiveSession best = null;
+        for (LiveSession s : sessions) {
+            int len = s.fp().length;
+            if (len < fp.length
+                    && s.state().contextCapacity() >= fp.length
+                    && java.util.Arrays.equals(s.fp(), 0, len, fp, 0, len)
+                    && (best == null || len > best.fp().length)) {
+                best = s;
+            }
+        }
+        if (best != null) sessions.remove(best);
+        return best;
+    }
+
+    /** Pools the finished state under prompt + ingested-reply fingerprints; evicts past cap. */
+    private void poolSession(RuntimeState state, long[] promptFp, Generator.GenerationResult r) {
+        if (sessionCapacity == 0) return;
+        int ingested = state.position() - promptFp.length;
+        if (ingested < 0) return;
+        long[] fp = java.util.Arrays.copyOf(promptFp, promptFp.length + ingested);
+        for (int i = 0; i < ingested; i++) fp[promptFp.length + i] = r.tokens().intAt(i);
+        sessions.addLast(new LiveSession(state, fp));
+        while (sessions.size() > sessionCapacity) sessions.removeFirst();
+    }
+
+    /** Test seam: live-session pool occupancy and hit count. */
+    String sessionStats() {
+        lock.lock();
+        try {
+            return "sessions=" + sessions.size() + " hits=" + sessionHits;
+        } finally {
+            lock.unlock();
+        }
     }
 
     // ---- cached prompts: the block tree behind withCachedPrompt / save / load ----
@@ -191,34 +266,6 @@ final class JinferEngine {
         S state = Generator.stateFor(model, fp.length);
         CachedSession<S> s = CachedSession.resume(model, cache, state, fp);
         s.ingestGroups(prompt.stream().map(List::of).toList());
-    }
-
-    /**
-     * A generation pass that resumes the longest tree-cached prefix and hands the generator only
-     * the unrestored tail (the generator ingests it - the tail is never committed, so the tree
-     * holds defined prompts only and serving stays stateless).
-     */
-    private <S extends RuntimeState> Generator.GenerationResult cachedRun(
-            LanguageModel<?, ?, S> model,
-            PromptCache<S> cache,
-            List<Batch> prompt,
-            Sampler sampler,
-            int maxTokens,
-            long timeoutNanos,
-            Generator.TokenSink sink) {
-        long[] fp = CachedSession.fingerprints(prompt);
-        S state = Generator.stateFor(model, fp.length);
-        // cap at length-1: at least one position re-ingests, leaving fresh logits at the cursor
-        CachedSession<S> s = CachedSession.resume(model, cache, state, fp, fp.length - 1);
-        return Generator.generate(
-                model,
-                state,
-                CachedSession.tail(prompt, s.position()),
-                sampler,
-                maxTokens,
-                timeoutNanos,
-                loaded.stopTokens(),
-                sink);
     }
 
     /** Freezes the whole tree (mounted base + everything defined) into one artifact. */

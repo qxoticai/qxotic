@@ -54,6 +54,43 @@ class CachedPromptIT {
     }
 
     @Test
+    void cachedSessionsMultiTurn() {
+        // cachedSessions(1): turn 2 strictly extends turn 1's pooled state (the echoed reply
+        // restores its verbatim ids through the wire attribute, so the re-encode is the exact
+        // generated tokens). BYTE-IDENTITY LAW, proven on ONE engine: the same turn-2 request
+        // served from the pool (hit) and cold (the pool no longer matches after it grew past
+        // the request) must answer identically. (Cross-ENGINE comparison is deliberately not
+        // asserted: two jam pools in one JVM can drift an argmax tie at high-entropy points.)
+        JinferChatModel warm =
+                JinferChatModel.builder()
+                        .modelPath(MODEL)
+                        .contextLength(4096)
+                        .maxOutputTokens(128)
+                        .cachedSessions(1)
+                        .build();
+        UserMessage first = UserMessage.from("Remember the codeword PELICAN. Acknowledge briefly.");
+        ChatResponse w1 = warm.chat(ChatRequest.builder().messages(first).build());
+
+        ChatRequest secondTurn =
+                ChatRequest.builder()
+                        .messages(
+                                first,
+                                w1.aiMessage(),
+                                UserMessage.from("What was the codeword? Answer with one word."))
+                        .build();
+        ChatResponse hit = warm.chat(secondTurn); // strictly extends the pooled turn-1 state
+        String stats = warm.engine().sessionStats();
+        assertTrue(stats.contains("hits=1"), "turn 2 must reuse turn 1's live state: " + stats);
+
+        ChatResponse cold = warm.chat(secondTurn); // pool grew past this prompt: full prefill
+        assertEquals(cold.aiMessage().text(), hit.aiMessage().text());
+        assertTrue(hit.aiMessage().text().contains("PELICAN"), hit.aiMessage().text());
+        assertTrue(
+                warm.engine().sessionStats().contains("hits=1"),
+                "the repeat is NOT an extension and must miss: " + warm.engine().sessionStats());
+    }
+
+    @Test
     void byteIdentityWithUncached() {
         String question = "Where do I reset my password?";
         // uncached: prefix inlined into the request on the BASE model (which never uses the tree)

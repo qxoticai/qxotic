@@ -62,7 +62,12 @@ public final class JinferChatModel implements ChatModel {
 
     private JinferChatModel(Builder b) {
         this.engine =
-                new JinferEngine(b.modelPath, b.mediaProjector, b.contextLength, b.cachedPrompts);
+                new JinferEngine(
+                        b.modelPath,
+                        b.mediaProjector,
+                        b.contextLength,
+                        b.cachedPrompts,
+                        b.cachedSessions);
         this.thinking = b.thinking;
         this.seed = b.seed;
         this.timeoutNanos = b.timeout == null ? 0 : b.timeout.toNanos();
@@ -357,6 +362,7 @@ public final class JinferChatModel implements ChatModel {
         private Path modelPath;
         private Path mediaProjector;
         private Path cachedPrompts;
+        private int cachedSessions;
         private int contextLength;
         private Double temperature;
         private Double topP;
@@ -381,6 +387,19 @@ public final class JinferChatModel implements ChatModel {
         /** The media sidecar (mmproj GGUF: vision/audio encoders) for multimodal models. */
         public Builder mediaProjector(Path mediaProjector) {
             this.mediaProjector = mediaProjector;
+            return this;
+        }
+
+        /**
+         * Keeps the last {@code n} finished conversations' KV states LIVE for append-only reuse: a
+         * request whose prompt strictly extends a kept conversation (its echoed turns re-encoding
+         * to the exact generated tokens - the native codec's verbatim splice guarantees this for
+         * unmodified echoes) pays prefill only for the delta. Purely a runtime warmth knob: output
+         * is byte-identical to a cold run, nothing persists, and the default 0 keeps the model
+         * fully stateless. Each kept state holds a full context of KV.
+         */
+        public Builder cachedSessions(int cachedSessions) {
+            this.cachedSessions = cachedSessions;
             return this;
         }
 
