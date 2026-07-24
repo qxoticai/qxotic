@@ -267,7 +267,11 @@ public final class ToolCallSyntax {
             while (true) {
                 if (i >= s.length()) throw err("closing quote");
                 char c = s.charAt(i++);
-                if (c == quote) return out.toString();
+                if (c == quote) {
+                    if (closesString()) return out.toString();
+                    out.append(c); // lenient: an unescaped inner quote is content (models emit
+                    continue; //     them verbatim despite the syntax)
+                }
                 if (c == '\\' && i < s.length()) {
                     char esc = s.charAt(i++);
                     out.append(
@@ -282,6 +286,18 @@ public final class ToolCallSyntax {
                     out.append(c);
                 }
             }
+        }
+
+        /**
+         * A quote CLOSES the string only when what follows can continue the grammar; anything else
+         * means the model emitted an unescaped quote inside the value. Ceiling: content containing
+         * quote-then-delimiter (e.g. {@code "hi", she said}) still closes early - the whole parse
+         * then fails and the span is no call, exactly as before this leniency.
+         */
+        private boolean closesString() {
+            int j = i;
+            while (j < s.length() && Character.isWhitespace(s.charAt(j))) j++;
+            return j >= s.length() || ",)]}:".indexOf(s.charAt(j)) >= 0;
         }
 
         private Object number() {
@@ -299,7 +315,10 @@ public final class ToolCallSyntax {
                 else break;
             }
             String token = s.substring(from, i);
-            return floating ? Double.parseDouble(token) : Long.parseLong(token);
+            // two statements on purpose: a ?: would numeric-promote the long branch to double,
+            // turning every integer argument into 2.0
+            if (floating) return Double.parseDouble(token);
+            return Long.parseLong(token);
         }
 
         private List<Object> sequence(char open, char close) {
