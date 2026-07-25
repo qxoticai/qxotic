@@ -101,7 +101,8 @@ public final class Grammar {
 
     static Spec json(Vocab v) {
         if (!RuntimeFlags.GRAMMAR) return Spec.DISABLED;
-        return cache(v).computeIfAbsent("__json__", k -> build(JSON_GRAMMAR, v));
+        // NUL-prefixed builtin keys can never collide with a user grammar string
+        return cache(v).computeIfAbsent("\0json", k -> build(JSON_GRAMMAR, v));
     }
 
     /**
@@ -115,7 +116,7 @@ public final class Grammar {
 
     static Spec jsonCompact(Vocab v) {
         if (!RuntimeFlags.GRAMMAR) return Spec.DISABLED;
-        return cache(v).computeIfAbsent("__json_compact__", k -> build(JSON_COMPACT_GRAMMAR, v));
+        return cache(v).computeIfAbsent("\0jsonCompact", k -> build(JSON_COMPACT_GRAMMAR, v));
     }
 
     public static Spec of(String g, Tokenizer t) {
