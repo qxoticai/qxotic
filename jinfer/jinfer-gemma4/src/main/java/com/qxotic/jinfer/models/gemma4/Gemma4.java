@@ -251,7 +251,16 @@ public final class Gemma4
      */
     public java.util.Set<Integer> stopTokens() {
         java.util.Set<Integer> stops = new java.util.HashSet<>();
-        for (String name : new String[] {"<turn|>", "<end_of_turn>", "<eos>", "<|endoftext|>"}) {
+        // <|tool_response> is the HANDOFF: results are runtime-provided by definition, so a
+        // model-emitted response marker always means "stop, my call awaits its result". Without
+        // it, the open-turn format leaves room to keep generating past the call - observed on
+        // E2B fabricating the response inline, which then re-entered the next prompt via the
+        // echo and outweighed the real result. (Prompt-side <|tool_response> emissions are
+        // unaffected: stops apply to sampled tokens only.)
+        for (String name :
+                new String[] {
+                    "<turn|>", "<end_of_turn>", "<eos>", "<|endoftext|>", "<|tool_response>"
+                }) {
             if (tokenizer.vocabulary().contains(name)) {
                 stops.add(tokenizer.vocabulary().id(name));
             }

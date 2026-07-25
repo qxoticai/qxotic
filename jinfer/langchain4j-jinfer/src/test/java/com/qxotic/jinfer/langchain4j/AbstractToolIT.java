@@ -405,8 +405,11 @@ abstract class AbstractToolIT {
 
         // round trip 2 on the SAME history: the call turns above re-encode as history. The wire
         // contract here is that the multi-round history frames and parses cleanly; whether the
-        // model USES the second result is capability (small models hallucinate results inline
-        // and ignore the fed one - observed on gemma E2B), so that part is assumption-gated.
+        // model USES the second result is capability, so that part is assumption-gated. (The one
+        // observed miss - gemma E2B answering with a self-fabricated result - turned out to be a
+        // WIRE bug, not capability: the family lacked its response-handoff stop token, the model
+        // generated past the call, and the echo fed the fabrication back. Fixed at the stop set;
+        // the gate stays for genuine capability limits.)
         history.add(UserMessage.from("And what time is it there right now? Use the tools."));
         ChatResponse second = chat(history, WEATHER, TIME);
         ToolExecutionRequest time = assumeCall(second);
