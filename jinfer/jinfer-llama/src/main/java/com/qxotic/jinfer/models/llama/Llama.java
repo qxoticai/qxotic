@@ -163,6 +163,10 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                     && com.qxotic.jinfer.llm.SpecialTokens.find(tokenizer(), "<|im_start|>")
                             .isPresent()) {
                 chatTemplate = new SmolLm3ChatTemplate(tokenizer());
+            } else if (chatTemplateSource.contains("<tool_def_sep>")
+                    && com.qxotic.jinfer.llm.SpecialTokens.find(tokenizer(), "<function")
+                            .isPresent()) {
+                chatTemplate = new MiniCpm5ChatTemplate(tokenizer()); // MiniCPM5's XML wire
             } else {
                 chatTemplate =
                         turnTemplate()
