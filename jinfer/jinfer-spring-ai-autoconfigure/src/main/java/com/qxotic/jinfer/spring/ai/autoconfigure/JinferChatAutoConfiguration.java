@@ -34,6 +34,7 @@ public class JinferChatAutoConfiguration {
                 JinferChatModel.builder()
                         .modelPath(Path.of(properties.getModelPath()))
                         .contextLength(properties.getContextLength())
+                        .cachedSessions(properties.getCachedSessions())
                         .temperature(properties.getTemperature())
                         .topP(properties.getTopP())
                         .maxTokens(properties.getMaxTokens())

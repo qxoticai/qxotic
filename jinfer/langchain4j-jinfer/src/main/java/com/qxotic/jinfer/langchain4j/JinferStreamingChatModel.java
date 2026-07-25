@@ -117,12 +117,13 @@ public final class JinferStreamingChatModel implements StreamingChatModel {
 
         Generator.GenerationResult result =
                 engine.generate(
-                        p.encoded().prompt(),
-                        p.sampler(),
-                        p.maxTokens(),
-                        model.timeoutNanos,
-                        sink,
-                        p.cached());
+                                p.encoded().prompt(),
+                                p.sampler(),
+                                p.maxTokens(),
+                                model.timeoutNanos,
+                                sink,
+                                p.cached())
+                        .result();
 
         if (cancelled.get()) {
             return; // a cancelled stream ends silently: no complete callback

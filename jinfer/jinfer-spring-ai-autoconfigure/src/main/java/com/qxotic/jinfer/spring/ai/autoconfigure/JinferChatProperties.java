@@ -19,6 +19,12 @@ public class JinferChatProperties {
     /** Path to a cached-prompt artifact (.jkv) to mount at startup; model-seed-checked. */
     private String cachedPrompts;
 
+    /**
+     * Live conversation states kept resident and reused append-only when a request's conversation
+     * strictly extends one (the multi-turn zero-restore tier). 0 (default) disables the pool.
+     */
+    private int cachedSessions;
+
     /** Context window; 0 = the model's own maximum. */
     private int contextLength;
 
@@ -55,6 +61,14 @@ public class JinferChatProperties {
 
     public void setCachedPrompts(String cachedPrompts) {
         this.cachedPrompts = cachedPrompts;
+    }
+
+    public int getCachedSessions() {
+        return cachedSessions;
+    }
+
+    public void setCachedSessions(int cachedSessions) {
+        this.cachedSessions = cachedSessions;
     }
 
     public int getContextLength() {

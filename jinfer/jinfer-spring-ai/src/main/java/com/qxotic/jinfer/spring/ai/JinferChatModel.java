@@ -1,18 +1,21 @@
 package com.qxotic.jinfer.spring.ai;
 
 import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.JsonCodec;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.PendingUtf8;
 import com.qxotic.jinfer.chat.ReplyParser;
+import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.Thinking;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.Grammar;
 import com.qxotic.jinfer.llm.Sampler;
 import com.qxotic.jinfer.llm.SpecialTokens;
+import com.qxotic.toknroll.Tokenizer;
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationRegistry;
 import io.micrometer.observation.contextpropagation.ObservationThreadLocalAccessor;
@@ -89,7 +92,12 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                     "defaultOptions and individual knobs are mutually exclusive");
         }
         this.engine =
-                new JinferEngine(b.modelPath, b.mediaProjector, b.contextLength, b.cachedPrompts);
+                new JinferEngine(
+                        b.modelPath,
+                        b.mediaProjector,
+                        b.contextLength,
+                        b.cachedPrompts,
+                        b.cachedSessions);
         this.prefix = CachedPrompt.EMPTY;
         this.observationRegistry =
                 b.observationRegistry == null ? ObservationRegistry.NOOP : b.observationRegistry;
@@ -167,13 +175,14 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
 
     /** Everything the blocking and streaming paths share, computed once per request. */
     private record Prepared(
-            JinferEngine.Encoded encoded,
+            ChatEngine.Encoded encoded,
             Sampler sampler,
             int maxTokens,
             long timeoutNanos,
             int promptTokens,
             StopSequences stops,
-            boolean cached) {}
+            boolean cached,
+            int[] parserSeed) {}
 
     /** All request-shape validation happens here, synchronously (before any thread starts). */
     private Prepared prepare(Prompt prompt) {
@@ -199,7 +208,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         messages.addAll(JinferMappings.toMessages(prompt.getInstructions()));
         Conversation conversation = new Conversation(messages, tools, think, "");
         // cached views are native-only (define enforced it); the base keeps the Jinja fallback
-        JinferEngine.Encoded encoded =
+        ChatEngine.Encoded encoded =
                 cached
                         ? engine.encodeNative(conversation)
                         : engine.encode(conversation, prompt.getInstructions(), callbacks);
@@ -227,6 +236,10 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
 
         int promptTokens = encoded.prompt().stream().mapToInt(Batch::count).sum();
         long timeoutNanos = options.getTimeout() == null ? 0 : options.getTimeout().toNanos();
+        // the generation prompt's reply-grammar tail (a prompt-opened think span): the parser
+        // must start in the span state the prompt left the model in, or reasoning routes to
+        // the content lane (Qwen3.5, MiniCPM5, Nemotron, SmolLM3 open the span in the prompt)
+        int[] parserSeed = encoded.template().map(t -> t.replySeed(think)).orElse(new int[0]);
         return new Prepared(
                 encoded,
                 sampler,
@@ -234,7 +247,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                 timeoutNanos,
                 promptTokens,
                 StopSequences.of(options.getStopSequences()),
-                cached);
+                cached,
+                parserSeed);
     }
 
     @Override
@@ -272,22 +286,33 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
 
     private ChatResponse doCall(Prompt prompt) {
         Prepared p = prepare(prompt);
-        JinferEngine.Outcome outcome =
+        ReplyFeed feed = new ReplyFeed(p.encoded(), engine.loaded.tokenizer(), p.parserSeed());
+        StopSequences stops = p.stops();
+        Generator.TokenSink sink =
+                token -> {
+                    String fragment = feed.feed(token);
+                    if (stops != null && feed.content() && !fragment.isEmpty()) {
+                        stops.feed(fragment);
+                    }
+                    return stops == null || !stops.hit();
+                };
+        ChatEngine.Outcome outcome =
                 engine.generate(
                         p.encoded().prompt(),
                         p.sampler(),
                         p.maxTokens(),
                         p.timeoutNanos(),
-                        p.stops() == null ? t -> true : stopSink(p.encoded(), p.stops()),
+                        sink,
                         p.cached());
 
-        Message reply = engine.decode(p.encoded().template(), outcome.result().tokens());
+        // the same parse that fed the stop watch finishes the message - no second decode pass
+        Message reply = feed.finish();
         AssistantMessage ai = JinferMappings.toAssistantMessage(reply);
-        boolean stopHit = p.stops() != null && p.stops().hit();
+        boolean stopHit = stops != null && stops.hit();
         if (stopHit) {
             ai =
                     AssistantMessage.builder()
-                            .content(p.stops().beforeCut())
+                            .content(stops.beforeCut())
                             .properties(ai.getMetadata())
                             .toolCalls(ai.getToolCalls())
                             .build();
@@ -315,20 +340,22 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     public Flux<ChatResponse> stream(Prompt prompt) {
         Prompt requestPrompt = buildRequestPrompt(prompt);
         Prepared p = prepare(requestPrompt); // invalid requests throw here, not on the thread
-        ChatModelObservationContext observationContext =
-                ChatModelObservationContext.builder()
-                        .prompt(requestPrompt)
-                        .provider(PROVIDER)
-                        .streaming(true)
-                        .build();
-        Observation observation =
-                ChatModelObservationDocumentation.CHAT_MODEL_OPERATION.observation(
-                        observationConvention,
-                        DEFAULT_CONVENTION,
-                        () -> observationContext,
-                        observationRegistry);
+        // per-subscription observation state: a flux is re-subscribable, and a shared
+        // Observation would race on start()/setResponse across subscriptions
         return Flux.deferContextual(
                 view -> {
+                    ChatModelObservationContext observationContext =
+                            ChatModelObservationContext.builder()
+                                    .prompt(requestPrompt)
+                                    .provider(PROVIDER)
+                                    .streaming(true)
+                                    .build();
+                    Observation observation =
+                            ChatModelObservationDocumentation.CHAT_MODEL_OPERATION.observation(
+                                    observationConvention,
+                                    DEFAULT_CONVENTION,
+                                    () -> observationContext,
+                                    observationRegistry);
                     observation.parentObservation(
                             (Observation)
                                     view.getOrDefault(ObservationThreadLocalAccessor.KEY, null));
@@ -349,29 +376,54 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     }
 
     /**
-     * The reply's text lanes: the native parser when the model has a codec, raw UTF-8 decode
-     * otherwise. Shared by the stop-sequence sink and the streaming emitter.
+     * The reply's two text lanes, token by token: the native {@link ReplyParser}'s (content vs
+     * reasoning) when the model has a codec, else raw decoded text. Owns the ONE parser instance of
+     * a generation - pre-fed the reply seed so a prompt-opened think span parses on the reasoning
+     * lane - and {@link #finish}es the structured message from exactly the parse that streamed;
+     * there is no second decode pass, so the streamed fragments and the final message can never
+     * disagree.
      */
-    private final class ReplyFeed {
+    private static final class ReplyFeed {
         private final ReplyParser parser; // null = no native codec
         private final PendingUtf8 raw;
+        private final StringBuilder rawText; // codec-less accumulation
+        private final Tokenizer tokenizer;
+        private boolean reasoning;
 
-        ReplyFeed(JinferEngine.Encoded encoded) {
+        ReplyFeed(ChatEngine.Encoded encoded, Tokenizer tokenizer, int[] seed) {
             this.parser = encoded.template().map(ChatTemplate::parser).orElse(null);
             this.raw = parser == null ? new PendingUtf8() : null;
+            this.rawText = parser == null ? new StringBuilder() : null;
+            this.tokenizer = tokenizer;
+            if (parser != null) {
+                for (int t : seed) {
+                    parser.feed(t);
+                }
+            }
         }
 
         /** The displayable fragment from one token ("" when nothing to show). */
         String feed(int token) {
-            return parser != null
-                    ? parser.feed(token)
-                    : raw.add(engine.loaded.tokenizer().decodeBytes(new int[] {token}), token)
-                            .text();
+            if (parser != null) {
+                String fragment = parser.feed(token);
+                reasoning = parser.reasoning();
+                return fragment;
+            }
+            String fragment = raw.add(tokenizer.decodeBytes(new int[] {token}), token).text();
+            rawText.append(fragment);
+            return fragment;
         }
 
         /** Whether the reply is currently on the content lane (vs reasoning). */
         boolean content() {
-            return parser == null || !parser.reasoning();
+            return !reasoning;
+        }
+
+        /** The finished structured reply, from the same parse that fed. */
+        Message finish() {
+            return parser != null
+                    ? parser.finish()
+                    : new Message(Role.ASSISTANT, rawText.toString());
         }
     }
 
@@ -379,7 +431,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         AtomicBoolean cancelled = new AtomicBoolean();
         sink.onCancel(() -> cancelled.set(true));
         sink.onDispose(() -> cancelled.set(true));
-        ReplyFeed feed = new ReplyFeed(p.encoded());
+        ReplyFeed feed = new ReplyFeed(p.encoded(), engine.loaded.tokenizer(), p.parserSeed());
         StopSequences stops = p.stops();
         Generator.TokenSink tokenSink =
                 token -> {
@@ -395,7 +447,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                     return thought || stops == null || !stops.hit();
                 };
         try {
-            JinferEngine.Outcome outcome =
+            ChatEngine.Outcome outcome =
                     engine.generate(
                             p.encoded().prompt(),
                             p.sampler(),
@@ -408,8 +460,9 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                 String tail = stops.flush();
                 if (!tail.isEmpty()) sink.next(chunk(tail, false));
             }
-            // the final chunk: no text (deltas carried it), but complete tool calls + metadata
-            Message reply = engine.decode(p.encoded().template(), outcome.result().tokens());
+            // the final chunk: no text (deltas carried it), but complete tool calls + metadata,
+            // from the same parse that streamed
+            Message reply = feed.finish();
             AssistantMessage parsed = JinferMappings.toAssistantMessage(reply);
             boolean stopHit = stops != null && stops.hit();
             AssistantMessage ai =
@@ -475,6 +528,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                     "per-request model is not supported: this model IS '"
                             + engine.modelName
                             + "' (one loaded GGUF per instance)");
+        if (o.getTimeout() != null && o.getTimeout().isNegative())
+            throw new IllegalArgumentException("timeout must not be negative");
         if (o.getOutputSchema() != null
                 && o.getToolCallbacks() != null
                 && !o.getToolCallbacks().isEmpty())
@@ -483,20 +538,10 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                             + " grammar-constrained output cannot admit tool-call syntax");
     }
 
-    /** A sink that watches the reply's content lane and aborts generation at the first stop. */
-    private Generator.TokenSink stopSink(JinferEngine.Encoded encoded, StopSequences stops) {
-        ReplyFeed feed = new ReplyFeed(encoded);
-        return token -> {
-            String fragment = feed.feed(token);
-            if (feed.content() && !fragment.isEmpty()) stops.feed(fragment);
-            return !stops.hit();
-        };
-    }
-
     private ChatResponse response(
             AssistantMessage ai,
             int promptTokens,
-            JinferEngine.Outcome outcome,
+            ChatEngine.Outcome outcome,
             boolean stoppedBySequence) {
         Generator.GenerationResult result = outcome.result();
         String finishReason =
@@ -522,7 +567,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                                         new JinferUsage(
                                                 result.promptNanos(), result.predictedNanos()),
                                         outcome.restoredTokens() > 0
-                                                ? outcome.restoredTokens()
+                                                ? Long.valueOf(outcome.restoredTokens())
                                                 : null,
                                         null))
                         .rateLimit(new EmptyRateLimit())
@@ -552,6 +597,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         private Path modelPath;
         private Path mediaProjector;
         private Path cachedPrompts;
+        private int cachedSessions;
         private int contextLength;
         private Double temperature;
         private Double topP;
@@ -577,6 +623,16 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         /** Mounts a cached-prompt artifact ({@link #saveCachedPrompts}); model-seed-checked. */
         public Builder loadCachedPrompts(Path cachedPrompts) {
             this.cachedPrompts = cachedPrompts;
+            return this;
+        }
+
+        /**
+         * Keeps the last {@code n} live conversation states resident, reused append-only when a
+         * request's conversation strictly extends one (the multi-turn zero-restore tier). 0
+         * (default) disables the pool.
+         */
+        public Builder cachedSessions(int cachedSessions) {
+            this.cachedSessions = cachedSessions;
             return this;
         }
 

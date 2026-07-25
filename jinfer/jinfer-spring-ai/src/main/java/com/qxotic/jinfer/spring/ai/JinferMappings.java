@@ -254,8 +254,10 @@ final class JinferMappings {
         AssistantMessage.Builder<?> b =
                 AssistantMessage.builder().content(text.toString()).toolCalls(calls);
         // reasoning survives in metadata (Spring AI's AssistantMessage has no thinking slot) and
-        // is replayed into the next request's assistant turn - the Ollama/OpenAI convention
-        if (!thinking.isEmpty()) {
+        // is replayed into the next request's assistant turn - the Ollama/OpenAI convention.
+        // Blank-only reasoning (a prompt-opened span's scaffold newlines, e.g. the closed empty
+        // pair when thinking is off) is no reasoning at all.
+        if (!thinking.toString().isBlank()) {
             b.properties(Map.of(THINKING_KEY, thinking.toString()));
         }
         return b.build();

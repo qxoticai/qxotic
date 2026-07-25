@@ -100,18 +100,19 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
     /**
      * Copies a (possibly foreign) {@link ChatOptions} onto {@code base}: common fields by getters,
      * tool plumbing when it is a {@link ToolCallingChatOptions}, jinfer extras only from another
-     * {@code JinferChatOptions}.
+     * {@code JinferChatOptions}. Foreign options are typically sparse, so only their NON-NULL
+     * fields override - a null must not wipe a configured default.
      */
     static JinferChatOptions copyOnto(JinferChatOptions base, ChatOptions o) {
         Builder b = base.mutate();
-        b.model(o.getModel())
-                .frequencyPenalty(o.getFrequencyPenalty())
-                .maxTokens(o.getMaxTokens())
-                .presencePenalty(o.getPresencePenalty())
-                .stopSequences(o.getStopSequences())
-                .temperature(o.getTemperature())
-                .topK(o.getTopK())
-                .topP(o.getTopP());
+        if (o.getModel() != null) b.model(o.getModel());
+        if (o.getFrequencyPenalty() != null) b.frequencyPenalty(o.getFrequencyPenalty());
+        if (o.getMaxTokens() != null) b.maxTokens(o.getMaxTokens());
+        if (o.getPresencePenalty() != null) b.presencePenalty(o.getPresencePenalty());
+        if (o.getStopSequences() != null) b.stopSequences(o.getStopSequences());
+        if (o.getTemperature() != null) b.temperature(o.getTemperature());
+        if (o.getTopK() != null) b.topK(o.getTopK());
+        if (o.getTopP() != null) b.topP(o.getTopP());
         if (o instanceof ToolCallingChatOptions t) {
             if (t.getToolCallbacks() != null) b.toolCallbacks(t.getToolCallbacks());
             if (t.getToolContext() != null) b.toolContext(t.getToolContext());

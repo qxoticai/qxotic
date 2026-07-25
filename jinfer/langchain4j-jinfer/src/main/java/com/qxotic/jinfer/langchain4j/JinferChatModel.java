@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.langchain4j;
 
 import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Thinking;
@@ -37,7 +38,7 @@ import java.util.List;
  * <p>Run with jinfer's JVM flags: {@code --enable-preview --add-modules jdk.incubator.vector
  * --enable-native-access=ALL-UNNAMED}.
  */
-public final class JinferChatModel implements ChatModel {
+public final class JinferChatModel implements ChatModel, AutoCloseable {
 
     final JinferEngine engine;
     final ChatRequestParameters defaults;
@@ -120,6 +121,16 @@ public final class JinferChatModel implements ChatModel {
         engine.freezePrompts(out);
     }
 
+    /**
+     * Releases the engine's cached-prompt blobs and pooled session states; later use of this model
+     * (or any view sharing its engine) fails with IllegalStateException. Idempotent. Weights still
+     * release with reachability - close() is for eagerly dropping cache memory.
+     */
+    @Override
+    public void close() {
+        engine.close();
+    }
+
     @Override
     public ChatRequestParameters defaultRequestParameters() {
         return defaults;
@@ -153,12 +164,13 @@ public final class JinferChatModel implements ChatModel {
                 };
         Generator.GenerationResult result =
                 engine.generate(
-                        p.encoded().prompt(),
-                        p.sampler(),
-                        p.maxTokens(),
-                        timeoutNanos,
-                        sink,
-                        p.cached());
+                                p.encoded().prompt(),
+                                p.sampler(),
+                                p.maxTokens(),
+                                timeoutNanos,
+                                sink,
+                                p.cached())
+                        .result();
         AiMessage ai = Mappings.toAiMessage(lanes.finish());
         boolean stopHit = stops != null && stops.hit();
         if (stopHit) {
@@ -179,7 +191,7 @@ public final class JinferChatModel implements ChatModel {
     // ---- shared request preparation (also used by the streaming twin) ----
 
     record Prepared(
-            JinferEngine.Encoded encoded,
+            ChatEngine.Encoded encoded,
             Sampler sampler,
             int maxTokens,
             int promptTokens,
@@ -245,7 +257,7 @@ public final class JinferChatModel implements ChatModel {
                         think,
                         "");
         // cached views are native-only (define enforced it); the base keeps the Jinja fallback
-        JinferEngine.Encoded encoded =
+        ChatEngine.Encoded encoded =
                 cached
                         ? engine.encodeNative(conversation)
                         : engine.encode(conversation, request.messages(), requestTools);
@@ -258,7 +270,7 @@ public final class JinferChatModel implements ChatModel {
             callSeed = encoded.template().orElseThrow().callSeed(); // validate() guaranteed it
             List<Batch> prompt = new ArrayList<>(encoded.prompt());
             prompt.add(Batch.prefill(callSeed));
-            encoded = new JinferEngine.Encoded(List.copyOf(prompt), encoded.template());
+            encoded = new ChatEngine.Encoded(List.copyOf(prompt), encoded.template());
             // prefix-pin: the family's call grammar pins "prefix (name|...)" right after the
             // seeded marker, then forces the family's header epilogue (scaffold after the name,
             // e.g. Harmony's " <|constrain|>json<|message|>") and releases - the called tool is

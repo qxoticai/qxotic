@@ -79,11 +79,25 @@ class JinferChatOptionsTest {
         JinferChatOptions copied = JinferChatOptions.copyOnto(base, foreign);
         assertEquals(0.1, copied.getTemperature());
         assertEquals(5, copied.getMaxTokens());
-        // 2.0 replace semantics: common fields the foreign options leave null are REPLACED by
-        // null (unset), while jinfer's extras - which foreign options cannot carry - survive
-        assertNull(copied.getStopSequences());
+        // merge semantics: foreign options are sparse, so their nulls must NOT wipe configured
+        // defaults - only the fields they actually set override
+        assertEquals(List.of("STOP"), copied.getStopSequences());
+        assertEquals(0.9, copied.getTopP());
+        assertEquals("m.gguf", copied.getModel());
         assertEquals(7L, copied.getSeed());
         assertEquals(Boolean.FALSE, copied.getThinking());
+    }
+
+    @Test
+    void copyOntoFromEmptyForeignPreservesEverything() {
+        JinferChatOptions base = fullyPopulated();
+        JinferChatOptions copied = JinferChatOptions.copyOnto(base, ChatOptions.builder().build());
+        assertEquals(0.7, copied.getTemperature());
+        assertEquals(0.9, copied.getTopP());
+        assertEquals(128, copied.getMaxTokens());
+        assertEquals(List.of("STOP"), copied.getStopSequences());
+        assertEquals("m.gguf", copied.getModel());
+        assertEquals(7L, copied.getSeed());
     }
 
     @Test

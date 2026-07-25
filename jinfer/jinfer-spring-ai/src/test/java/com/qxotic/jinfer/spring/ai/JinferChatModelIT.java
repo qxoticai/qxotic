@@ -249,6 +249,17 @@ class JinferChatModelIT {
                                                         .frequencyPenalty(0.5)
                                                         .build())));
         assertEquals("frequencyPenalty is not supported", e2.getMessage());
+        var e3 =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                model.call(
+                                        new Prompt(
+                                                new UserMessage("hi"),
+                                                JinferChatOptions.builder()
+                                                        .timeout(Duration.ofSeconds(-1))
+                                                        .build())));
+        assertEquals("timeout must not be negative", e3.getMessage());
     }
 
     @Test
@@ -377,6 +388,22 @@ class JinferChatModelIT {
                 .hasNumberOfObservationsWithNameEqualTo("gen_ai.client.operation", 1);
         observations.assertThat().hasAnObservationWithAKeyValue("gen_ai.request.stream", "true");
         observations.assertThat().hasAnObservationWithAKeyName("gen_ai.usage.input_tokens");
+    }
+
+    @Test
+    void streamFluxIsResubscribable() {
+        observations.clear();
+        var flux =
+                model.stream(
+                        new Prompt(
+                                new UserMessage("One word: ok?"),
+                                JinferChatOptions.builder().maxTokens(8).build()));
+        flux.collectList().block(Duration.ofMinutes(2));
+        flux.collectList().block(Duration.ofMinutes(2));
+        // each subscription gets its own observation (no shared-Observation race)
+        observations
+                .assertThat()
+                .hasNumberOfObservationsWithNameEqualTo("gen_ai.client.operation", 2);
     }
 
     @Test
