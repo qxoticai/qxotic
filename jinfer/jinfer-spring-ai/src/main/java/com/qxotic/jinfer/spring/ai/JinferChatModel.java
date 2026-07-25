@@ -9,12 +9,10 @@ import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.PendingUtf8;
 import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Role;
-import com.qxotic.jinfer.chat.Thinking;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.Grammar;
 import com.qxotic.jinfer.llm.Sampler;
-import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.toknroll.Tokenizer;
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationRegistry;
@@ -214,22 +212,16 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                         : engine.encode(conversation, prompt.getInstructions(), callbacks);
 
         Sampler sampler =
-                Sampler.select(
-                        engine.loaded.model().config().vocabularySize(),
+                ChatEngine.sampler(
+                        engine.loaded,
                         options.getTemperature() == null
                                 ? 0.0f
                                 : options.getTemperature().floatValue(),
                         options.getTopP() == null ? 0.95f : options.getTopP().floatValue(),
-                        options.getSeed() == null ? 42 : options.getSeed());
-        // mirror the server's reasoning policy: cap the think span at half the budget, or ban the
-        // markers outright when thinking is off (a thinking model would otherwise still emit them)
-        sampler =
-                think
-                        ? Thinking.capBudget(
-                                sampler,
-                                engine.loaded.tokenizer(),
-                                maxTokens >= 0 ? Math.max(1, maxTokens / 2) : -1)
-                        : Thinking.banMarkers(sampler, engine.loaded.tokenizer());
+                        options.getSeed() == null ? 42 : options.getSeed(),
+                        think,
+                        maxTokens,
+                        null);
         if (options.getOutputSchema() != null) {
             sampler = withSchemaGrammar(sampler, think, options.getOutputSchema());
         }
@@ -496,14 +488,10 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
      * tokens. Specs are cached per (schema, vocab), so repeated schemas reuse the compiled masks.
      */
     private Sampler withSchemaGrammar(Sampler sampler, boolean think, String outputSchema) {
-        var tokenizer = engine.loaded.tokenizer();
         @SuppressWarnings("unchecked")
         Map<String, Object> schemaMap = (Map<String, Object>) JsonCodec.parse(outputSchema);
-        Grammar.Spec spec = Grammar.fromSchema(schemaMap, tokenizer);
-        int eos = engine.loaded.stopTokens().iterator().next();
-        int gate = think ? SpecialTokens.find(tokenizer, "</think>").orElse(-1) : -1;
-        int[] skipNl = gate >= 0 ? SpecialTokens.newlineTokens(tokenizer) : null;
-        return Sampler.withGrammar(sampler, spec.cursor(), eos, gate, skipNl);
+        Grammar.Spec spec = Grammar.fromSchema(schemaMap, engine.loaded.tokenizer());
+        return ChatEngine.constrained(engine.loaded, sampler, spec.cursor(), think);
     }
 
     private JinferChatOptions resolveOptions(ChatOptions runtime) {

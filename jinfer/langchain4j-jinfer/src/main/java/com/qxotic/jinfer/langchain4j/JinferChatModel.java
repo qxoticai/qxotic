@@ -4,12 +4,10 @@ import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.Message;
-import com.qxotic.jinfer.chat.Thinking;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.Grammar;
 import com.qxotic.jinfer.llm.Sampler;
-import com.qxotic.jinfer.llm.SpecialTokens;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
@@ -214,16 +212,10 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                             + " toolSpecifications would silently forfeit the cache - put tools on"
                             + " withCachedPrompt(...) instead");
         }
-        if (p.toolChoice() == ToolChoice.REQUIRED) {
-            if (!requestHasTools && m.prefix.tools().isEmpty()) {
-                throw new IllegalArgumentException("toolChoice REQUIRED without any tools");
-            }
-            if (m.engine.loaded.template().map(t -> t.callSeed().length == 0).orElse(true)) {
-                throw new UnsupportedFeatureException(
-                        "ToolChoice.REQUIRED is not supported by this model: forcing seeds the"
-                                + " reply with the family's call marker, which needs a native"
-                                + " codec that declares one");
-            }
+        if (p.toolChoice() == ToolChoice.REQUIRED
+                && !requestHasTools
+                && m.prefix.tools().isEmpty()) {
+            throw new IllegalArgumentException("toolChoice REQUIRED without any tools");
         }
         if (p.toolChoice() == ToolChoice.NONE && !m.prefix.tools().isEmpty()) {
             throw new UnsupportedFeatureException(
@@ -262,92 +254,61 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                         ? engine.encodeNative(conversation)
                         : engine.encode(conversation, request.messages(), requestTools);
         Sampler sampler = sampler(m, p, think, maxTokens);
-        int[] callSeed = NO_SEED;
-        if (required) {
-            // the server's forcing trick: seed the assistant turn with the family's call marker
-            // (the template declares it) so the model can only COMPLETE a call. ReplyLanes
-            // re-feeds the seed so the reply parses whole.
-            callSeed = encoded.template().orElseThrow().callSeed(); // validate() guaranteed it
-            List<Batch> prompt = new ArrayList<>(encoded.prompt());
-            prompt.add(Batch.prefill(callSeed));
-            encoded = new ChatEngine.Encoded(List.copyOf(prompt), encoded.template());
-            // prefix-pin: the family's call grammar pins "prefix (name|...)" right after the
-            // seeded marker, then forces the family's header epilogue (scaffold after the name,
-            // e.g. Harmony's " <|constrain|>json<|message|>") and releases - the called tool is
-            // GUARANTEED to be an offered one, the arguments stay the model's own. No grammar =
-            // seeding-only.
-            var pin = encoded.template().flatMap(t -> t.callGrammar(conversation.tools()));
-            if (pin.isPresent()) {
-                sampler =
-                        Sampler.withPrefixGrammar(
-                                sampler,
-                                Grammar.of(pin.get(), engine.loaded.tokenizer()).cursor(),
-                                eos(engine),
-                                encoded.template().get().callEpilogue());
-            }
-        }
         // the parser pre-feed: the generation prompt's reply-grammar tail (a prompt-opened think
-        // span) plus, when forcing, the seeded call marker - so the parser starts in the exact
-        // span state the prompt left the model in
-        int[] replySeed = encoded.template().map(t -> t.replySeed(think)).orElse(NO_SEED);
-        int[] parserSeed = callSeed.length == 0 ? replySeed : concat(replySeed, callSeed);
+        // span); a forced call replaces it with the recipe's own (reply seeded into the call block)
+        int[] parserSeed = encoded.template().map(t -> t.replySeed(think)).orElse(NO_SEED);
+        if (required) {
+            // the shared recipe: seed the family's call marker into the prompt, prefix-pin the
+            // offered names + header epilogue, pre-feed the parser - one unsplittable value
+            ChatEngine.ForcedCall f =
+                    ChatEngine.forceCall(engine.loaded, conversation.tools(), sampler)
+                            .orElseThrow(
+                                    () ->
+                                            new UnsupportedFeatureException(
+                                                    "ToolChoice.REQUIRED is not supported by this"
+                                                        + " model: forcing seeds the reply with the"
+                                                        + " family's call marker, which needs a"
+                                                        + " native codec that declares one"));
+            List<Batch> prompt = new ArrayList<>(encoded.prompt());
+            prompt.add(f.seed());
+            encoded = new ChatEngine.Encoded(List.copyOf(prompt), encoded.template());
+            sampler = f.sampler();
+            parserSeed = f.parserSeed();
+        }
         int promptTokens = encoded.prompt().stream().mapToInt(Batch::count).sum();
         return new Prepared(
                 encoded, sampler, maxTokens, promptTokens, cached, parserSeed, p.stopSequences());
     }
 
-    private static int[] concat(int[] a, int[] b) {
-        int[] out = new int[a.length + b.length];
-        System.arraycopy(a, 0, out, 0, a.length);
-        System.arraycopy(b, 0, out, a.length, b.length);
-        return out;
-    }
-
     /**
-     * The request's sampling stack, inside-out: the standard (temperature, topP, seed) stack, the
-     * server's reasoning policy (cap the think span at half the budget, or ban the markers outright
-     * when thinking is off), and grammar-constrained JSON when the request asks for it - dormant
-     * through the think span (constraining from token 0 would suppress reasoning), schema compiled
-     * when present, the dead-end token one of the model's real stops. Specs are cached per (grammar
-     * source, vocab), so repeated schemas reuse the compiled masks.
+     * The request's sampling stack via the shared {@link ChatEngine} policy, plus
+     * grammar-constrained JSON when the request asks for it (schema compiled here - the framework
+     * conversion is this adapter's; specs are cached per grammar source, so repeated schemas reuse
+     * the compiled masks).
      */
     private static Sampler sampler(
             JinferChatModel m, ChatRequestParameters p, boolean think, int maxTokens) {
-        JinferEngine engine = m.engine;
-        var tokenizer = engine.loaded.tokenizer();
-        double temperature = p.temperature() == null ? 0.0 : p.temperature();
-        double topP = p.topP() == null ? 0.95 : p.topP();
+        var loaded = m.engine.loaded;
         Sampler sampler =
-                Sampler.select(
-                        engine.loaded.model().config().vocabularySize(),
-                        (float) temperature,
-                        (float) topP,
-                        m.seed);
-        sampler =
-                think
-                        ? Thinking.capBudget(
-                                sampler,
-                                tokenizer,
-                                maxTokens >= 0 ? Math.max(1, maxTokens / 2) : -1)
-                        : Thinking.banMarkers(sampler, tokenizer);
+                ChatEngine.sampler(
+                        loaded,
+                        p.temperature() == null ? 0.0f : p.temperature().floatValue(),
+                        p.topP() == null ? 0.95f : p.topP().floatValue(),
+                        m.seed,
+                        think,
+                        maxTokens,
+                        null);
         ResponseFormat rf = p.responseFormat();
         if (rf != null && rf.type() == ResponseFormatType.JSON) {
             Grammar.Spec spec =
                     rf.jsonSchema() == null
-                            ? Grammar.json(tokenizer)
+                            ? Grammar.json(loaded.tokenizer())
                             : Grammar.fromSchema(
                                     JsonSchemaElementUtils.toMap(rf.jsonSchema().rootElement()),
-                                    tokenizer);
-            int gate = think ? SpecialTokens.find(tokenizer, "</think>").orElse(-1) : -1;
-            int[] skipNl = gate >= 0 ? SpecialTokens.newlineTokens(tokenizer) : null;
-            sampler = Sampler.withGrammar(sampler, spec.cursor(), eos(engine), gate, skipNl);
+                                    loaded.tokenizer());
+            sampler = ChatEngine.constrained(loaded, sampler, spec.cursor(), think);
         }
         return sampler;
-    }
-
-    /** A stop token to end generation with when a grammar dead-ends. */
-    private static int eos(JinferEngine engine) {
-        return engine.loaded.stopTokens().iterator().next();
     }
 
     /** One loaded GGUF per instance: a different {@code modelName} cannot be served. */

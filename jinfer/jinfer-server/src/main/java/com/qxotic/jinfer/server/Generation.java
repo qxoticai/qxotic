@@ -5,6 +5,7 @@ import com.qxotic.jinfer.cache.CacheStore;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.cache.SessionPool;
 import com.qxotic.jinfer.cache.StateCodec;
+import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.JinjaChatTemplate;
@@ -14,7 +15,6 @@ import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Role;
-import com.qxotic.jinfer.chat.Thinking;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.chat.ToolCallSyntax;
 import com.qxotic.jinfer.chat.UnsupportedConversation;
@@ -382,47 +382,33 @@ final class Generation {
         // turns thinking off for any forced request.
         boolean forced = resumedState != null && ToolUse.forced(request) != null;
         boolean think = requestThink(request);
+        // the shared sampling stack (ChatEngine): base sampling + the reasoning policy;
+        // reasoning_max_tokens is the server's per-request override of the half-budget default
+        Object rmt = request.get("reasoning_max_tokens");
         Sampler sampler =
-                Sampler.select(m.model().config().vocabularySize(), temperature, topp, seed);
-        if (think) {
-            // thinking models starve the answer under tight budgets: cap the think span, by default
-            // at half the completion budget (request reasoning_max_tokens overrides; -1 = uncapped)
-            int reasoningBudget =
-                    Values.intValue(
-                            request.get("reasoning_max_tokens"),
-                            maxTokens >= 0 ? Math.max(1, maxTokens / 2) : -1);
-            sampler = Thinking.capBudget(sampler, tokenizer, reasoningBudget);
-        } else {
-            sampler = Thinking.banMarkers(sampler, tokenizer);
-        }
+                ChatEngine.sampler(
+                        model,
+                        temperature,
+                        topp,
+                        seed,
+                        think,
+                        maxTokens,
+                        rmt == null ? null : Values.intValue(rmt, -1));
         Grammar.Cursor grammarCursor = buildGrammarCursor(tokenizer, request);
         if (grammarCursor != null) {
-            int eosToken = SpecialTokens.findFirst(tokenizer, "<eos>", "<|endoftext|>").orElse(2);
-            // For a reasoning request, hold the grammar until after the think span - constraining
-            // from token 0 would suppress the model's reasoning and degrade the answer. The
-            // newline the model emits between </think> and the answer is passed through, not
-            // consumed by the grammar (so non-ws-tolerant grammars like choice/jsonCompact see a
-            // clean first token).
-            int grammarGate = think ? SpecialTokens.find(tokenizer, "</think>").orElse(-1) : -1;
-            int[] skipNl = grammarGate >= 0 ? SpecialTokens.newlineTokens(tokenizer) : null;
-            sampler = Sampler.withGrammar(sampler, grammarCursor, eosToken, grammarGate, skipNl);
+            // shared wiring (ChatEngine.constrained): think-gated, newline-skipped, dead-ending
+            // on one of the model's OWN stops (previously a vocab scan for <eos>, which is not
+            // guaranteed to be a stop token - the pin path always used stops.first)
+            sampler = ChatEngine.constrained(model, sampler, grammarCursor, think);
         }
-        if (forced) {
-            // prefix-pin: the family's call grammar pins "prefix (name|...)" right after the
-            // seeded marker (a NAMED choice pins that single name), then forces the family's
-            // header epilogue and releases - the called tool is guaranteed to be an offered
-            // (or THE named) one, the arguments stay the model's own. No grammar = seeding-only.
-            var pin = template.callGrammar(pinTools(request));
-            if (pin.isPresent()) {
-                int eosToken = stopTokens.iterator().next();
-                sampler =
-                        Sampler.withPrefixGrammar(
-                                sampler,
-                                Grammar.of(pin.get(), tokenizer).cursor(),
-                                eosToken,
-                                template.callEpilogue());
-            }
-        }
+        // the shared forced-call recipe: prefix-pin the offered (or THE named) tool + the
+        // family epilogue, and the parser pre-feed below starts in the seeded span state
+        // (chatTemplated already put the call seed in the prompt on this path)
+        ChatEngine.ForcedCall forcedCall =
+                forced
+                        ? ChatEngine.forceCall(model, pinTools(request), sampler).orElseThrow()
+                        : null;
+        if (forcedCall != null) sampler = forcedCall.sampler();
         // Billed prompt: the whole conversation. On the cached path the state is pre-resumed to the
         // full prompt (position == total), of which cachedTokens were restored from the cache.
         int billedPrompt =
@@ -438,13 +424,13 @@ final class Generation {
                 ToolUse.offered(request) && template != null
                         ? template.parser()
                         : ReplyParser.spans(tokenizer);
-        if (template != null) {
-            // pre-feed the prompt's reply-grammar tail (a prompt-opened think span) and, when
-            // forcing, the seeded call marker - the parser starts in the exact span state the
-            // prompt left the model in (without this, a prompt-opened think span routes
-            // reasoning into the CONTENT channel)
+        // pre-feed the prompt's reply-grammar tail - the parser starts in the exact span
+        // state the prompt left the model in (without this, a prompt-opened think span routes
+        // reasoning into the CONTENT channel); a forced call uses the recipe's own pre-feed
+        if (forcedCall != null) {
+            for (int t : forcedCall.parserSeed()) parser.feed(t);
+        } else if (template != null) {
             for (int t : template.replySeed(think)) parser.feed(t);
-            if (forced) for (int t : template.callSeed()) parser.feed(t);
         }
         FragmentRouter router =
                 new FragmentRouter(

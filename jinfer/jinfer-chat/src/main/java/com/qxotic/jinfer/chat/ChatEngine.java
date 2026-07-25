@@ -9,7 +9,9 @@ import com.qxotic.jinfer.cache.FrozenBlocks;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.cache.StateCodec;
 import com.qxotic.jinfer.llm.Generator;
+import com.qxotic.jinfer.llm.Grammar;
 import com.qxotic.jinfer.llm.Sampler;
+import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.toknroll.IntSequence;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -345,6 +347,84 @@ public final class ChatEngine {
         } finally {
             lock.unlock();
         }
+    }
+
+    // ---- the shared request policy: sampling stack, constraint wiring, forced calls ----
+    // Statics over LoadedModel so the server (which has no ChatEngine) shares the same code.
+
+    /**
+     * The standard jinfer sampling stack: (temperature, topP, seed) plus the reasoning policy -
+     * thinking on caps the think span so it cannot starve the visible answer ({@code
+     * reasoningOverride}: null = half of {@code maxTokens}, -1 = uncapped); thinking off masks the
+     * think markers outright.
+     */
+    public static Sampler sampler(
+            LoadedModel<?> m,
+            float temperature,
+            float topP,
+            long seed,
+            boolean think,
+            int maxTokens,
+            Integer reasoningOverride) {
+        Sampler sampler =
+                Sampler.select(m.model().config().vocabularySize(), temperature, topP, seed);
+        if (!think) {
+            return Thinking.banMarkers(sampler, m.tokenizer());
+        }
+        int budget =
+                reasoningOverride != null
+                        ? reasoningOverride
+                        : maxTokens >= 0 ? Math.max(1, maxTokens / 2) : -1;
+        return Thinking.capBudget(sampler, m.tokenizer(), budget);
+    }
+
+    /**
+     * Grammar-constrained decoding over any compiled cursor (JSON mode, JSON schema, raw GBNF):
+     * dormant through the think span (constraining from token 0 would suppress reasoning), the
+     * newline after {@code </think>} passed through, and a dead-end forcing one of the model's own
+     * stop tokens.
+     */
+    public static Sampler constrained(
+            LoadedModel<?> m, Sampler s, Grammar.Cursor g, boolean think) {
+        int eos = m.stopTokens().iterator().next();
+        int gate = think ? SpecialTokens.find(m.tokenizer(), "</think>").orElse(-1) : -1;
+        int[] skipNl = gate >= 0 ? SpecialTokens.newlineTokens(m.tokenizer()) : null;
+        return Sampler.withGrammar(s, g, eos, gate, skipNl);
+    }
+
+    /**
+     * The complete forced-call recipe as ONE value - the three parts only work together, so a
+     * caller can never seed without pre-feeding the parser (the historical bug class): {@code seed}
+     * joins the prompt (the model can only COMPLETE a call), {@code sampler} prefix-pins the
+     * offered names and forces the family's header epilogue before releasing, {@code parserSeed}
+     * puts the reply parser in the seeded span state. A forced reply never thinks (it is seeded
+     * INTO the call block), so the prompt must be rendered with thinking off.
+     */
+    public record ForcedCall(Batch seed, Sampler sampler, int[] parserSeed) {}
+
+    /**
+     * The recipe for forcing a call to one of {@code tools}, or empty when this model cannot force
+     * (no native codec, or its template declares no call seed) - the caller's cue to reject.
+     */
+    public static Optional<ForcedCall> forceCall(LoadedModel<?> m, List<Tool> tools, Sampler base) {
+        ChatTemplate template = m.template().orElse(null);
+        if (template == null || template.callSeed().length == 0) return Optional.empty();
+        int[] callSeed = template.callSeed();
+        Sampler sampler = base;
+        Optional<String> pin = template.callGrammar(tools);
+        if (pin.isPresent()) {
+            sampler =
+                    Sampler.withPrefixGrammar(
+                            base,
+                            Grammar.of(pin.get(), m.tokenizer()).cursor(),
+                            m.stopTokens().iterator().next(),
+                            template.callEpilogue());
+        }
+        int[] replySeed = template.replySeed(false);
+        int[] parserSeed = new int[replySeed.length + callSeed.length];
+        System.arraycopy(replySeed, 0, parserSeed, 0, replySeed.length);
+        System.arraycopy(callSeed, 0, parserSeed, replySeed.length, callSeed.length);
+        return Optional.of(new ForcedCall(Batch.prefill(callSeed), sampler, parserSeed));
     }
 
     /** Test seam: the tree's stats line ("blocks=.. hits=.." - see PromptCache.stats). */
