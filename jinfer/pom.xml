@@ -29,6 +29,9 @@
     <module>jinfer-lfm2</module>
     <module>jinfer-server</module>
     <module>langchain4j-jinfer</module>
+    <module>jinfer-spring-ai</module>
+    <module>jinfer-spring-ai-autoconfigure</module>
+    <module>jinfer-spring-ai-spring-boot-starter</module>
     <module>jinfer-bench</module>
   </modules>
 
@@ -54,6 +57,14 @@
          driver      = hand tools (run by name, args via -Djinfer.args="...") -->
     <surefire.excludedGroups>integration,bench,driver</surefire.excludedGroups>
     <jinfer.PreloadGGUF />
+
+    <!-- the Spring AI backend modules (jinfer-spring-ai*) -->
+    <spring-ai.version>2.0.0</spring-ai.version>
+    <spring-boot.version>4.1.0</spring-boot.version>
+
+    <!-- test libraries shared by the backend modules -->
+    <assertj.version>3.27.6</assertj.version>
+    <mockito.version>5.21.0</mockito.version>
   </properties>
 
   <dependencyManagement>
@@ -112,6 +123,23 @@
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-lfm2</artifactId>
         <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>jinfer-spring-ai</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>jinfer-spring-ai-autoconfigure</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <!-- enforcer pin for the Spring AI modules: jsonschema-generator pulls jackson-core
+           3.0.3, spring-ai-model wants 3.1.4 (inert for every other module) -->
+      <dependency>
+        <groupId>tools.jackson.core</groupId>
+        <artifactId>jackson-core</artifactId>
+        <version>3.1.4</version>
       </dependency>
     </dependencies>
   </dependencyManagement>

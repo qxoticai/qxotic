@@ -8,49 +8,29 @@
     <version>0.1.0</version>
   </parent>
 
-  <artifactId>langchain4j-jinfer</artifactId>
+  <artifactId>jinfer-spring-ai</artifactId>
   <packaging>jar</packaging>
 
-  <!-- langchain4j chat-model provider backed by jinfer: in-process CPU inference over GGUF models,
+  <!-- Spring AI chat-model provider backed by jinfer: in-process CPU inference over GGUF models,
        native chat-template codec first (token-exact, injection-inert), hardened Jinja whole-render
-       fallback for unported models. Blocking + streaming, tools, reasoning lane. Runtime needs
-       jinfer's JVM flags: enable-preview, jdk.incubator.vector, enable-native-access. -->
-  <properties>
-    <langchain4j.version>1.18.0</langchain4j.version>
-  </properties>
+       fallback for unported models. Blocking + streaming, tools, media. Runtime needs jinfer's JVM
+       flags: enable-preview, jdk.incubator.vector, enable-native-access. -->
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.springframework.ai</groupId>
+        <artifactId>spring-ai-bom</artifactId>
+        <version>${spring-ai.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
 
   <dependencies>
     <dependency>
-      <groupId>dev.langchain4j</groupId>
-      <artifactId>langchain4j-core</artifactId>
-      <version>${langchain4j.version}</version>
-    </dependency>
-    <!-- AiServices (the tool-loop showcase); tests only - the provider itself needs just -core -->
-    <dependency>
-      <groupId>dev.langchain4j</groupId>
-      <artifactId>langchain4j</artifactId>
-      <version>${langchain4j.version}</version>
-      <scope>test</scope>
-    </dependency>
-    <!-- the compliance kit: AbstractChatModelIT and friends (test-jar) + its assertion deps -->
-    <dependency>
-      <groupId>dev.langchain4j</groupId>
-      <artifactId>langchain4j-core</artifactId>
-      <version>${langchain4j.version}</version>
-      <classifier>tests</classifier>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>org.assertj</groupId>
-      <artifactId>assertj-core</artifactId>
-      <version>${assertj.version}</version>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>org.mockito</groupId>
-      <artifactId>mockito-core</artifactId>
-      <version>${mockito.version}</version>
-      <scope>test</scope>
+      <groupId>org.springframework.ai</groupId>
+      <artifactId>spring-ai-model</artifactId>
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
@@ -95,6 +75,25 @@
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-lfm2</artifactId>
       <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.assertj</groupId>
+      <artifactId>assertj-core</artifactId>
+      <version>${assertj.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <!-- observation assertions; matches spring-ai-model's micrometer-observation -->
+    <dependency>
+      <groupId>io.micrometer</groupId>
+      <artifactId>micrometer-observation-test</artifactId>
+      <version>1.17.0</version>
+      <scope>test</scope>
+    </dependency>
+    <!-- ChatClient for the structured-output entity() dogfood -->
+    <dependency>
+      <groupId>org.springframework.ai</groupId>
+      <artifactId>spring-ai-client-chat</artifactId>
+      <scope>test</scope>
     </dependency>
   </dependencies>
 </project>
