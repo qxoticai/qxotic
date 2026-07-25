@@ -167,6 +167,10 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                     && com.qxotic.jinfer.llm.SpecialTokens.find(tokenizer(), "<function")
                             .isPresent()) {
                 chatTemplate = new MiniCpm5ChatTemplate(tokenizer()); // MiniCPM5's XML wire
+            } else if (chatTemplateSource.contains("[SYSTEM_PROMPT]")
+                    && com.qxotic.jinfer.llm.SpecialTokens.find(tokenizer(), "[INST]")
+                            .isPresent()) {
+                chatTemplate = new MistralChatTemplate(tokenizer()); // Mistral v13 wire
             } else {
                 chatTemplate =
                         turnTemplate()

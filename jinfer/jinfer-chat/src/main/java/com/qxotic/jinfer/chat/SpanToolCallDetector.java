@@ -47,26 +47,13 @@ final class SpanToolCallDetector implements ToolCallDetector {
     @Override
     public boolean accept(int token) {
         if (token == startMarker) {
-            inSpan = true;
-            span.reset();
+            closeSpan(); // formats without a close marker (Mistral's [TOOL_CALLS]) chain spans:
+            inSpan = true; // a new start closes the previous call
             spanIds = IntSequence.newBuilder();
             return true;
         }
         if (token == endMarker) {
-            if (inSpan) {
-                List<Part.ToolCall> parsed =
-                        payloadParser.apply(span.toString(StandardCharsets.UTF_8));
-                IntSequence verbatim = spanIds.build();
-                for (Part.ToolCall call : parsed) {
-                    calls.add(
-                            parsed.size() == 1
-                                    ? new Part.ToolCall(
-                                            call.id(), call.name(), call.arguments(), verbatim)
-                                    : call);
-                }
-                span.reset();
-                inSpan = false;
-            }
+            closeSpan();
             return true;
         }
         if (inSpan) {
@@ -76,6 +63,20 @@ final class SpanToolCallDetector implements ToolCallDetector {
             return true;
         }
         return false;
+    }
+
+    private void closeSpan() {
+        if (!inSpan) return;
+        List<Part.ToolCall> parsed = payloadParser.apply(span.toString(StandardCharsets.UTF_8));
+        IntSequence verbatim = spanIds.build();
+        for (Part.ToolCall call : parsed) {
+            calls.add(
+                    parsed.size() == 1
+                            ? new Part.ToolCall(call.id(), call.name(), call.arguments(), verbatim)
+                            : call);
+        }
+        span.reset();
+        inSpan = false;
     }
 
     @Override
