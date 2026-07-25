@@ -83,10 +83,8 @@ public final class SmolLm3Oracle {
                         + " 'description': 'Get current weather for a city', 'parameters':"
                         + " {'type': 'object', 'properties': {'city': {'type': 'string'}},"
                         + " 'required': ['city']}}}\n"
-                        + SmolLm3ChatTemplate.TOOLS_OUTRO_HEAD
-                        + "<tool_call></tool_call> XML tags:\n<tool_call>"
-                        + SmolLm3ChatTemplate.TOOLS_EXAMPLE_BODY
-                        + "</tool_call>\n\n<|im_end|>\n";
+                        + SmolLm3ChatTemplate.TOOLS_OUTRO
+                        + "\n\n<|im_end|>\n";
         o.compareToolsExpected(
                 "call turn renders as the model emits it (deviation)",
                 header

@@ -6,6 +6,7 @@ import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Role;
+import com.qxotic.jinfer.chat.TokenRuns;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.chat.ToolCallSyntax;
 import com.qxotic.jinfer.chat.TurnTemplate;
@@ -61,6 +62,7 @@ public final class GptOssTurnTemplate implements TurnTemplate {
     private final int channel; // <|channel|>
     private final int end; // <|end|>
     private final int call; // <|call|>
+    private final TokenRuns proto; // compiled spelling table, forked per block/turn
 
     public GptOssTurnTemplate(Tokenizer tokenizer) {
         this(tokenizer, LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")));
@@ -73,6 +75,7 @@ public final class GptOssTurnTemplate implements TurnTemplate {
         this.channel = SpecialTokens.require(tokenizer, "<|channel|>");
         this.end = SpecialTokens.require(tokenizer, "<|end|>");
         this.call = SpecialTokens.require(tokenizer, "<|call|>");
+        this.proto = new TokenRuns(tokenizer);
         String systemText =
                 DEFAULT_IDENTITY
                         + "\n"
@@ -97,13 +100,7 @@ public final class GptOssTurnTemplate implements TurnTemplate {
 
     /** {@code <|start|>{role}<|message|>{body}<|end|>} - one channel-less block. */
     private Batch block(String role, String body) {
-        IntSequence.Builder ids = IntSequence.newBuilder();
-        ids.add(start);
-        ids.addAll(tokenizer.encode(role));
-        ids.add(message);
-        ids.addAll(tokenizer.encode(body));
-        ids.add(end);
-        return Batch.prefill(ids.build().toArray());
+        return proto.fresh().id(start).text(role).id(message).text(body).id(end).batch();
     }
 
     /**
@@ -113,16 +110,11 @@ public final class GptOssTurnTemplate implements TurnTemplate {
      */
     private Batch turn(
             String header, String channelName, String body, IntSequence verbatim, int close) {
-        IntSequence.Builder ids = IntSequence.newBuilder();
-        ids.add(start);
-        ids.addAll(tokenizer.encode(header));
-        ids.add(channel);
-        ids.addAll(tokenizer.encode(channelName));
-        ids.add(message);
-        if (verbatim != null) ids.addAll(verbatim);
-        else ids.addAll(tokenizer.encode(body));
-        ids.add(close);
-        return Batch.prefill(ids.build().toArray());
+        TokenRuns runs =
+                proto.fresh().id(start).text(header).id(channel).text(channelName).id(message);
+        if (verbatim != null) runs.verbatim(verbatim);
+        else runs.text(body);
+        return runs.id(close).batch();
     }
 
     /** The fixed Harmony system preamble: {@code <|start|>system<|message|>{...}<|end|>}. */

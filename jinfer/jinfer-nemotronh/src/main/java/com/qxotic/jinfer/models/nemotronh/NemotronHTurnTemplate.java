@@ -6,6 +6,7 @@ import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Role;
+import com.qxotic.jinfer.chat.TokenRuns;
 import com.qxotic.jinfer.chat.ToolCallSyntax;
 import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.chat.UnsupportedConversation;
@@ -58,6 +59,7 @@ public final class NemotronHTurnTemplate implements TurnTemplate {
     private final IntSequence assistantNl; // encode("assistant\n"), constant
     private final List<Batch> genThinking, genDirect; // generation prompts, encoded once
     private final List<Batch> closeTurn; // <|im_end|>\n, constant
+    private final TokenRuns proto; // compiled spelling table, forked per encode
 
     public NemotronHTurnTemplate(Tokenizer tokenizer) {
         this.tokenizer = tokenizer;
@@ -69,6 +71,7 @@ public final class NemotronHTurnTemplate implements TurnTemplate {
         this.endToolCall = SpecialTokens.find(tokenizer, "</tool_call>").orElse(-1);
         this.toolResponse = SpecialTokens.find(tokenizer, "<tool_response>").orElse(-1);
         this.endToolResponse = SpecialTokens.find(tokenizer, "</tool_response>").orElse(-1);
+        this.proto = new TokenRuns(tokenizer);
         this.newline = tokenizer.encode("\n");
         this.assistantNl = tokenizer.encode("assistant\n");
         IntSequence head =
@@ -148,22 +151,32 @@ public final class NemotronHTurnTemplate implements TurnTemplate {
         return closeTurn;
     }
 
-    // The format-instructions constant, split where its literal <tool_call> spellings sit: those
-    // are template-authored and emit as trusted ids (matching the render+rescan). The reminder
-    // line's own <tool_call></tool_call> mention splits INSTRUCTIONS_TAIL the same way.
-    static final String INSTRUCTIONS_HEAD =
-            "\n\nIf you choose to call a function ONLY reply in the following format with NO"
-                    + " suffix:\n\n";
-    static final String INSTRUCTIONS_EXAMPLE =
-            "\n<function=example_function_name>\n<parameter=example_parameter_1>\nvalue_1\n"
-                    + "</parameter>\n<parameter=example_parameter_2>\nThis is the value for the"
-                    + " second parameter\nthat can span\nmultiple lines\n</parameter>\n"
-                    + "</function>\n";
-    static final String INSTRUCTIONS_REMINDER =
-            "\n\n<IMPORTANT>\nReminder:\n- Function calls MUST follow the specified format: an"
-                    + " inner <function=...></function> block must be nested within ";
-    static final String INSTRUCTIONS_TAIL =
-            " XML tags\n"
+    /**
+     * The format-instructions block appended after the declarations - ONE constant, exactly the
+     * template's string: {@link TokenRuns#trusted} mints the literal {@code <tool_call>} spellings
+     * (example and reminder alike) as ids, matching the render+rescan.
+     */
+    static final String TOOL_INSTRUCTIONS =
+            "\n\n"
+                + "If you choose to call a function ONLY reply in the following format with NO"
+                + " suffix:\n\n"
+                + "<tool_call>\n"
+                + "<function=example_function_name>\n"
+                + "<parameter=example_parameter_1>\n"
+                + "value_1\n"
+                + "</parameter>\n"
+                + "<parameter=example_parameter_2>\n"
+                + "This is the value for the second parameter\n"
+                + "that can span\n"
+                + "multiple lines\n"
+                + "</parameter>\n"
+                + "</function>\n"
+                + "</tool_call>\n\n"
+                + "<IMPORTANT>\n"
+                + "Reminder:\n"
+                + "- Function calls MUST follow the specified format: an inner"
+                + " <function=...></function> block must be nested within <tool_call></tool_call>"
+                + " XML tags\n"
                 + "- Required parameters MUST be specified\n"
                 + "- You may provide optional reasoning for your function call in natural language"
                 + " BEFORE the function call, but NOT after\n"
@@ -200,54 +213,35 @@ public final class NemotronHTurnTemplate implements TurnTemplate {
             if (loop.get(i).role().equals(Role.USER)) lastUser = i;
         }
 
-        IntSequence.Builder ids = IntSequence.newBuilder();
-        StringBuilder text = new StringBuilder();
+        TokenRuns runs = proto.fresh();
         // system turn: message text, then declarations + instructions when tools are offered
-        ids.add(imStart);
-        text.append("system\n").append(sysText);
+        runs.id(imStart).text("system\n").text(sysText);
         if (!conversation.tools().isEmpty()) {
-            if (!sysText.isEmpty()) text.append("\n\n");
-            text.append(NemotronToolSyntax.declarations(conversation.tools()));
-            text.append(INSTRUCTIONS_HEAD);
-            emit(ids, text, toolCall);
-            text.append(INSTRUCTIONS_EXAMPLE);
-            emit(ids, text, endToolCall);
-            text.append(INSTRUCTIONS_REMINDER);
-            emit(ids, text, toolCall);
-            emit(ids, text, endToolCall);
-            text.append(INSTRUCTIONS_TAIL);
+            if (!sysText.isEmpty()) runs.text("\n\n");
+            runs.text(NemotronToolSyntax.declarations(conversation.tools()));
+            runs.trusted(TOOL_INSTRUCTIONS);
         }
-        emit(ids, text, imEnd);
-        text.append('\n');
+        runs.id(imEnd).text("\n");
 
         for (int i = 0; i < loop.size(); i++) {
             Message m = loop.get(i);
             if (m.role().equals(Role.TOOL)) {
                 if (i == 0 || !loop.get(i - 1).role().equals(Role.TOOL)) {
-                    emit(ids, text, imStart);
-                    text.append("user\n");
+                    runs.id(imStart).text("user\n");
                 }
-                emit(ids, text, toolResponse);
-                text.append('\n');
+                runs.id(toolResponse).text("\n");
                 for (Part p : m.content()) {
-                    if (p instanceof Part.ToolResult r) text.append(r.text());
+                    if (p instanceof Part.ToolResult r) runs.text(r.text());
                 }
-                text.append('\n');
-                emit(ids, text, endToolResponse);
-                text.append('\n');
+                runs.text("\n").id(endToolResponse).text("\n");
                 boolean nextIsTool =
                         i + 1 < loop.size() && loop.get(i + 1).role().equals(Role.TOOL);
-                if (!nextIsTool) {
-                    emit(ids, text, imEnd);
-                    text.append('\n');
-                }
+                if (!nextIsTool) runs.id(imEnd).text("\n");
                 continue;
             }
             if (!m.role().equals(Role.ASSISTANT)) {
-                emit(ids, text, imStart);
-                text.append(m.role().name()).append('\n').append(m.textOnly());
-                emit(ids, text, imEnd);
-                text.append('\n');
+                runs.id(imStart).text(m.role().name()).text("\n").text(m.textOnly());
+                runs.id(imEnd).text("\n");
                 continue;
             }
             List<Part.ToolCall> calls =
@@ -255,55 +249,35 @@ public final class NemotronHTurnTemplate implements TurnTemplate {
                             .filter(p -> p instanceof Part.ToolCall)
                             .map(p -> (Part.ToolCall) p)
                             .toList();
-            emit(ids, text, imStart);
-            text.append("assistant\n");
+            runs.id(imStart).text("assistant\n");
             Part.Reasoning thinking = m.reasoning();
             boolean truncate = i < lastUser; // truncate_history_thinking, template default true
             if (thinking != null && !truncate) {
-                emit(ids, text, think);
-                text.append('\n').append(thinking.text()).append('\n');
-                emit(ids, text, endThink);
+                runs.id(think).text("\n").text(thinking.text()).text("\n").id(endThink);
                 // the "\n" after </think> survives the template's trim only when text follows
                 // (the call branch's own '\n' re-adds it before <tool_call> blocks)
                 String tail = m.text().stripTrailing();
-                if (!tail.isEmpty()) text.append('\n').append(tail);
+                if (!tail.isEmpty()) runs.text("\n").text(tail);
             } else {
                 // truncated (or no reasoning): the empty pair then the text - trailing-trimmed
                 // when kept as-is, fully stripped through the template's truncation split
-                emit(ids, text, think);
-                emit(ids, text, endThink);
+                runs.id(think).id(endThink);
                 String tail = truncate ? m.text().strip() : m.text().stripTrailing();
-                if (!tail.isEmpty()) text.append(tail);
+                if (!tail.isEmpty()) runs.text(tail);
             }
             if (!calls.isEmpty()) {
-                text.append('\n'); // the call branch appends '\n' after the content
+                runs.text("\n"); // the call branch appends '\n' after the content
                 for (Part.ToolCall call : calls) {
-                    emit(ids, text, toolCall);
-                    text.append(NemotronToolSyntax.call(call));
-                    emit(ids, text, endToolCall);
-                    text.append('\n');
+                    runs.id(toolCall).text(NemotronToolSyntax.call(call)).id(endToolCall);
+                    runs.text("\n");
                 }
             }
-            emit(ids, text, imEnd);
-            text.append('\n');
+            runs.id(imEnd).text("\n");
         }
-        flush(ids, text);
         List<Batch> out = new ArrayList<>();
-        out.add(Batch.prefill(ids.build().toArray()));
+        out.add(runs.batch());
         out.addAll(generationPrompt(conversation.thinking()));
         return out;
-    }
-
-    /** Flushes the pending text run plainly, then emits one trusted id. */
-    private void emit(IntSequence.Builder ids, StringBuilder text, int id) {
-        flush(ids, text);
-        ids.add(id);
-    }
-
-    private void flush(IntSequence.Builder ids, StringBuilder text) {
-        if (text.isEmpty()) return;
-        ids.addAll(tokenizer.encode(text.toString()));
-        text.setLength(0);
     }
 
     private static boolean plainShape(List<Message> msgs) {

@@ -7,6 +7,7 @@ import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Role;
+import com.qxotic.jinfer.chat.TokenRuns;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.chat.ToolCallSyntax;
 import com.qxotic.jinfer.chat.TurnTemplate;
@@ -46,6 +47,7 @@ public final class GraniteTurnTemplate implements TurnTemplate {
     private final List<Batch>
             generationPrompt; // <|start_of_role|>assistant<|end_of_role|>, constant
     private final List<Batch> closeTurn; // <|end_of_text|>\n, constant
+    private final TokenRuns proto; // compiled spelling table, forked per encode
 
     public GraniteTurnTemplate(Tokenizer tokenizer) {
         this.tokenizer = tokenizer;
@@ -60,6 +62,7 @@ public final class GraniteTurnTemplate implements TurnTemplate {
         this.generationPrompt = List.of(Batch.prefill(gen.toArray()));
         IntSequence close = IntSequence.of(endText).concat(newline);
         this.closeTurn = List.of(Batch.prefill(close.toArray()));
+        this.proto = new TokenRuns(tokenizer);
     }
 
     @Override
@@ -90,22 +93,23 @@ public final class GraniteTurnTemplate implements TurnTemplate {
         return closeTurn;
     }
 
-    // The tools system message, split where its literal <tools> / <tool_call> spellings sit:
-    // both marker families are control specials in this vocab, so the template-authored
-    // instruction text emits them as trusted ids (matching the render+rescan).
-    static final String TOOLS_INTRO =
+    // The tools system message, the template's own prefix/suffix pair: TokenRuns.trusted mints
+    // the literal <tools> / <tool_call> spellings (control specials in this vocab) as ids,
+    // matching the render+rescan.
+    static final String TOOLS_PREFIX =
             "You are a helpful assistant with access to the following tools. You may call one or"
                     + " more tools to assist with the user query.\n\n"
-                    + "You are provided with function signatures within ";
-    static final String XML_TAGS = " XML tags:\n";
-    static final String TOOLS_OUTRO_HEAD =
-            "\n\nFor each tool call, return a json object with function name and arguments"
-                    + " within ";
-    static final String TOOLS_EXAMPLE_BODY =
-            "\n{\"name\": <function-name>, \"arguments\": <args-json-object>}\n";
-    static final String TOOLS_OUTRO_TAIL =
-            ". If a tool does not exist in the provided list of tools, notify the user that you do"
-                    + " not have the ability to fulfill the request.";
+                    + "You are provided with function signatures within <tools></tools> XML"
+                    + " tags:\n<tools>";
+    static final String TOOLS_SUFFIX =
+            "\n"
+                + "</tools>\n\n"
+                + "For each tool call, return a json object with function name and arguments within"
+                + " <tool_call></tool_call> XML tags:\n"
+                + "<tool_call>\n"
+                + "{\"name\": <function-name>, \"arguments\": <args-json-object>}\n"
+                + "</tool_call>. If a tool does not exist in the provided list of tools, notify the"
+                + " user that you do not have the ability to fulfill the request.";
 
     /**
      * The codec face, tools included - the template's flow: the tools message (per-tool {@code
@@ -132,108 +136,64 @@ public final class GraniteTurnTemplate implements TurnTemplate {
         Message sys =
                 !msgs.isEmpty() && msgs.get(0).role().equals(Role.SYSTEM) ? msgs.get(0) : null;
         int first = sys != null ? 1 : 0;
-        IntSequence.Builder ids = IntSequence.newBuilder();
-        StringBuilder text = new StringBuilder();
+        TokenRuns runs = proto.fresh();
         if (sys != null || !tools.isEmpty()) {
-            ids.add(startRole);
-            text.append("system");
-            emit(ids, text, endRole);
-            if (sys != null) text.append(sys.textOnly());
+            runs.id(startRole).text("system").id(endRole);
+            if (sys != null) runs.text(sys.textOnly());
             if (!tools.isEmpty()) {
-                int toolsOpen = SpecialTokens.require(tokenizer, "<tools>");
-                int toolsClose = SpecialTokens.require(tokenizer, "</tools>");
-                if (sys != null) text.append("\n\n");
-                text.append(TOOLS_INTRO);
-                emit(ids, text, toolsOpen);
-                emit(ids, text, toolsClose);
-                text.append(XML_TAGS);
-                emit(ids, text, toolsOpen);
+                if (sys != null) runs.text("\n\n");
+                runs.trusted(TOOLS_PREFIX);
                 for (Tool t : tools) {
-                    text.append('\n')
-                            .append(ToolCallSyntax.jinjaJson(JsonCodec.parse(t.rawJson())));
+                    runs.text("\n").text(ToolCallSyntax.jinjaJson(JsonCodec.parse(t.rawJson())));
                 }
-                text.append('\n');
-                emit(ids, text, toolsClose);
-                text.append(TOOLS_OUTRO_HEAD);
-                emit(ids, text, toolCall);
-                emit(ids, text, endToolCall);
-                text.append(XML_TAGS);
-                emit(ids, text, toolCall);
-                text.append(TOOLS_EXAMPLE_BODY);
-                emit(ids, text, endToolCall);
-                text.append(TOOLS_OUTRO_TAIL);
+                runs.trusted(TOOLS_SUFFIX);
             }
-            emit(ids, text, endText);
-            text.append('\n');
+            runs.id(endText).text("\n");
         }
         for (int i = first; i < msgs.size(); i++) {
             Message m = msgs.get(i);
             if (m.role().equals(Role.TOOL)) {
                 if (i == first || !msgs.get(i - 1).role().equals(Role.TOOL)) {
-                    emit(ids, text, startRole);
-                    text.append("user");
-                    emit(ids, text, endRole);
+                    runs.id(startRole).text("user").id(endRole);
                 }
-                text.append('\n');
-                emit(ids, text, toolResponse);
-                text.append('\n');
+                runs.text("\n").id(toolResponse).text("\n");
                 for (Part p : m.content()) {
-                    if (p instanceof Part.ToolResult r) text.append(r.text());
+                    if (p instanceof Part.ToolResult r) runs.text(r.text());
                 }
-                text.append('\n');
-                emit(ids, text, endToolResponse);
+                runs.text("\n").id(endToolResponse);
                 boolean nextIsTool =
                         i + 1 < msgs.size() && msgs.get(i + 1).role().equals(Role.TOOL);
-                if (!nextIsTool) {
-                    emit(ids, text, endText);
-                    text.append('\n');
-                }
+                if (!nextIsTool) runs.id(endText).text("\n");
                 continue;
             }
-            emit(ids, text, startRole);
-            text.append(m.role().name());
-            emit(ids, text, endRole);
+            runs.id(startRole).text(m.role().name()).id(endRole);
             String content = m.text(); // Reasoning dropped: the template has no think scaffold
-            text.append(content);
+            runs.text(content);
             if (m.role().equals(Role.ASSISTANT)) {
                 boolean firstCall = true;
                 for (Part p : m.content()) {
                     if (!(p instanceof Part.ToolCall call)) continue;
-                    if (!firstCall || !content.isEmpty()) text.append('\n');
+                    if (!firstCall || !content.isEmpty()) runs.text("\n");
                     firstCall = false;
-                    emit(ids, text, toolCall);
-                    text.append("\n{\"name\": \"")
-                            .append(call.name())
-                            .append("\", \"arguments\": ")
-                            .append(ToolCallSyntax.jinjaJson(call.arguments()))
-                            .append("}\n");
-                    emit(ids, text, endToolCall);
+                    runs.id(toolCall)
+                            .text("\n{\"name\": \"")
+                            .text(call.name())
+                            .text("\", \"arguments\": ")
+                            .text(ToolCallSyntax.jinjaJson(call.arguments()))
+                            .text("}\n")
+                            .id(endToolCall);
                 }
             }
-            emit(ids, text, endText);
-            text.append('\n');
+            runs.id(endText).text("\n");
         }
-        flush(ids, text);
         List<Batch> out = new ArrayList<>();
-        out.add(Batch.prefill(ids.build().toArray()));
+        out.add(runs.batch());
         out.addAll(generationPrompt(conversation.thinking()));
         return out;
     }
 
     private static boolean textOnly(Message m) {
         return m.content().stream().allMatch(p -> p instanceof Part.Text);
-    }
-
-    /** Flushes the pending text run plainly, then emits one trusted id. */
-    private void emit(IntSequence.Builder ids, StringBuilder text, int id) {
-        flush(ids, text);
-        ids.add(id);
-    }
-
-    private void flush(IntSequence.Builder ids, StringBuilder text) {
-        if (text.isEmpty()) return;
-        ids.addAll(tokenizer.encode(text.toString()));
-        text.setLength(0);
     }
 
     /** Tool calls parse from the {@code <tool_call>} span's JSON {@code {name, arguments}}. */

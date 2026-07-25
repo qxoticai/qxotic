@@ -8,13 +8,13 @@ import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Role;
+import com.qxotic.jinfer.chat.TokenRuns;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.chat.ToolCallSyntax;
 import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -33,22 +33,21 @@ import java.util.List;
  */
 public final class MiniCpm5ChatTemplate implements ChatTemplate {
 
-    // The declarations block, split where trusted spellings sit (<tools> ids 12/13; the
-    // guidelines' literal <function ... </function> mentions ids 18/19, </param> id 21)
-    static final String DEFS_INTRO = "# Tools\n\nYou are provided with function signatures within ";
-    static final String XML_TAGS = " XML tags:\n";
-    static final String GUIDE_A =
-            "\n\nTool usage guidelines:\n- You may call zero or more functions. If no function"
-                    + " calls are needed, just answer normally and do not include any ";
-    static final String GUIDE_DOTS = " ... ";
-    static final String GUIDE_B = ".\n- When calling a function, return an XML object within ";
-    static final String GUIDE_C = " using:\n";
-    static final String GUIDE_EXAMPLE =
-            " name=\"function-name\"><param name=\"param-name\">param-value";
-    static final String GUIDE_D =
-            "\n- param-value may be multi-line. If it contains <, & or newline characters, wrap it"
-                    + " in a CDATA block: <param name=\"param-name\"><![CDATA[...multi-line"
-                    + " value...]]>";
+    // The declarations block, the template's own strings: TokenRuns.trusted mints the literal
+    // <tools> / <function / </function> / </param> spellings (control specials in this vocab;
+    // <param opens are NOT in the rescan's kept set and stay plain).
+    static final String DEFS_INTRO =
+            "# Tools\n\nYou are provided with function signatures within <tools></tools> XML"
+                    + " tags:\n<tools>";
+    static final String GUIDELINES =
+            "\n</tools>\n\nTool usage guidelines:\n- You may call zero or more functions. If no"
+                    + " function calls are needed, just answer normally and do not include any"
+                    + " <function ... </function>.\n- When calling a function, return an XML object"
+                    + " within <function ... </function> using:\n<function"
+                    + " name=\"function-name\"><param name=\"param-name\">param-value</param>"
+                    + "</function>\n- param-value may be multi-line. If it contains <, & or newline"
+                    + " characters, wrap it in a CDATA block: <param"
+                    + " name=\"param-name\"><![CDATA[...multi-line value...]]></param>";
 
     private final Tokenizer tokenizer;
     private final int bos; // <s>
@@ -63,6 +62,7 @@ public final class MiniCpm5ChatTemplate implements ChatTemplate {
     private final int endParam; // </param>
     private final int toolResponse; // <tool_response>
     private final int endToolResponse; // </tool_response>
+    private final TokenRuns proto; // compiled spelling table, forked per encode
 
     public MiniCpm5ChatTemplate(Tokenizer tokenizer) {
         this.tokenizer = tokenizer;
@@ -78,6 +78,7 @@ public final class MiniCpm5ChatTemplate implements ChatTemplate {
         this.endParam = SpecialTokens.require(tokenizer, "</param>");
         this.toolResponse = SpecialTokens.require(tokenizer, "<tool_response>");
         this.endToolResponse = SpecialTokens.require(tokenizer, "</tool_response>");
+        this.proto = new TokenRuns(tokenizer);
     }
 
     @Override
@@ -96,122 +97,72 @@ public final class MiniCpm5ChatTemplate implements ChatTemplate {
             }
         }
 
-        IntSequence.Builder ids = IntSequence.newBuilder();
-        StringBuilder text = new StringBuilder();
-        ids.add(bos);
+        TokenRuns runs = proto.fresh();
+        runs.id(bos);
         if (!tools.isEmpty()) {
-            ids.add(imStart);
-            text.append("system\n");
-            if (sys != null) text.append(sys.textOnly()).append("\n\n");
-            text.append(DEFS_INTRO);
-            emit(ids, text, toolsOpen);
-            emit(ids, text, toolsClose);
-            text.append(XML_TAGS);
-            emit(ids, text, toolsOpen);
+            runs.id(imStart).text("system\n");
+            if (sys != null) runs.text(sys.textOnly()).text("\n\n");
+            runs.trusted(DEFS_INTRO);
             for (Tool t : tools) {
-                text.append('\n').append(ToolCallSyntax.jinjaJson(JsonCodec.parse(t.rawJson())));
+                runs.text("\n").text(ToolCallSyntax.jinjaJson(JsonCodec.parse(t.rawJson())));
             }
-            text.append('\n');
-            emit(ids, text, toolsClose);
-            text.append(GUIDE_A);
-            emit(ids, text, function);
-            text.append(GUIDE_DOTS);
-            emit(ids, text, endFunction);
-            text.append(GUIDE_B);
-            emit(ids, text, function);
-            text.append(GUIDE_DOTS);
-            emit(ids, text, endFunction);
-            text.append(GUIDE_C);
-            emit(ids, text, function);
-            text.append(GUIDE_EXAMPLE);
-            emit(ids, text, endParam);
-            emit(ids, text, endFunction);
-            text.append(GUIDE_D);
-            emit(ids, text, endParam);
-            emit(ids, text, imEnd);
-            text.append('\n');
+            runs.trusted(GUIDELINES);
+            runs.id(imEnd).text("\n");
         } else if (sys != null) {
-            ids.add(imStart);
-            text.append("system\n").append(sys.textOnly());
-            emit(ids, text, imEnd);
-            text.append('\n');
+            runs.id(imStart).text("system\n").text(sys.textOnly());
+            runs.id(imEnd).text("\n");
         }
 
         for (int i = sys != null ? 1 : 0; i < msgs.size(); i++) {
             Message m = msgs.get(i);
             if (m.role().equals(Role.TOOL)) {
                 if (i == 0 || !msgs.get(i - 1).role().equals(Role.TOOL)) {
-                    emit(ids, text, imStart);
-                    text.append("user"); // no newline: the response block brings its own
+                    runs.id(imStart).text("user"); // no newline: the response block brings its own
                 }
-                text.append('\n');
-                emit(ids, text, toolResponse);
-                text.append('\n');
+                runs.text("\n").id(toolResponse).text("\n");
                 for (Part p : m.content()) {
-                    if (p instanceof Part.ToolResult r) text.append(r.text());
+                    if (p instanceof Part.ToolResult r) runs.text(r.text());
                 }
-                text.append('\n');
-                emit(ids, text, endToolResponse);
+                runs.text("\n").id(endToolResponse);
                 boolean nextIsTool =
                         i + 1 < msgs.size() && msgs.get(i + 1).role().equals(Role.TOOL);
-                if (!nextIsTool) {
-                    emit(ids, text, imEnd);
-                    text.append('\n');
-                }
+                if (!nextIsTool) runs.id(imEnd).text("\n");
                 continue;
             }
             if (!m.role().equals(Role.ASSISTANT)) {
-                emit(ids, text, imStart);
-                text.append(m.role().name()).append('\n').append(m.textOnly());
-                emit(ids, text, imEnd);
-                text.append('\n');
+                runs.id(imStart).text(m.role().name()).text("\n").text(m.textOnly());
+                runs.id(imEnd).text("\n");
                 continue;
             }
-            emit(ids, text, imStart);
-            text.append("assistant\n");
+            runs.id(imStart).text("assistant\n");
             String content = m.text();
             Part.Reasoning reasoning = m.reasoning();
             if (reasoning != null && i > lastQuery) {
-                emit(ids, text, think);
-                text.append('\n').append(strip(reasoning.text(), '\n')).append('\n');
-                emit(ids, text, endThink);
-                text.append("\n\n").append(stripLeading(content));
+                runs.id(think).text("\n").text(strip(reasoning.text(), '\n')).text("\n");
+                runs.id(endThink).text("\n\n").text(stripLeading(content));
             } else {
-                text.append(content);
+                runs.text(content);
             }
             boolean first = true;
             for (Part p : m.content()) {
                 if (!(p instanceof Part.ToolCall call)) continue;
-                if (!first || !content.isEmpty()) text.append('\n');
+                if (!first || !content.isEmpty()) runs.text("\n");
                 first = false;
-                emit(ids, text, function);
-                text.append(" name=\"").append(call.name()).append("\">");
+                runs.id(function).text(" name=\"").text(call.name()).text("\">");
                 for (var arg : call.arguments().entrySet()) {
-                    text.append("<param name=\"").append(arg.getKey()).append("\">");
-                    text.append(MiniCpmToolSyntax.paramValue(arg.getValue()));
-                    emit(ids, text, endParam);
+                    runs.text("<param name=\"").text(arg.getKey()).text("\">");
+                    runs.text(MiniCpmToolSyntax.paramValue(arg.getValue()));
+                    runs.id(endParam);
                 }
-                emit(ids, text, endFunction);
+                runs.id(endFunction);
             }
-            emit(ids, text, imEnd);
-            text.append('\n');
+            runs.id(imEnd).text("\n");
         }
 
-        emit(ids, text, imStart);
-        text.append("assistant\n");
-        if (conversation.thinking()) {
-            emit(ids, text, think);
-            text.append('\n');
-        } else {
-            emit(ids, text, think);
-            text.append("\n\n");
-            emit(ids, text, endThink);
-            text.append("\n\n");
-        }
-        flush(ids, text);
-        List<Batch> out = new ArrayList<>();
-        out.add(Batch.prefill(ids.build().toArray()));
-        return out;
+        runs.id(imStart).text("assistant\n");
+        if (conversation.thinking()) runs.id(think).text("\n");
+        else runs.id(think).text("\n\n").id(endThink).text("\n\n");
+        return List.of(runs.batch());
     }
 
     private static String strip(String s, char c) {
@@ -225,17 +176,6 @@ public final class MiniCpm5ChatTemplate implements ChatTemplate {
         int i = 0;
         while (i < s.length() && s.charAt(i) == '\n') i++;
         return s.substring(i);
-    }
-
-    private void emit(IntSequence.Builder ids, StringBuilder text, int id) {
-        flush(ids, text);
-        ids.add(id);
-    }
-
-    private void flush(IntSequence.Builder ids, StringBuilder text) {
-        if (text.isEmpty()) return;
-        ids.addAll(tokenizer.encode(text.toString()));
-        text.setLength(0);
     }
 
     /**

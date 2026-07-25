@@ -8,6 +8,7 @@ import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Role;
+import com.qxotic.jinfer.chat.TokenRuns;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.chat.ToolCallSyntax;
 import com.qxotic.jinfer.chat.TurnTemplate;
@@ -16,7 +17,6 @@ import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
@@ -41,38 +41,37 @@ import java.util.Locale;
  */
 public final class SmolLm3ChatTemplate implements ChatTemplate {
 
-    // The think persona, split where its literal <think> spellings sit (specials in this vocab:
-    // the render+rescan mints ids there, so the port emits them as trusted ids)
-    static final String PERSONA_THINK_HEAD =
+    /**
+     * The think persona - ONE constant, the template's exact string; {@link TokenRuns#trusted}
+     * mints its literal {@code <think>} spellings as ids, matching the render+rescan.
+     */
+    static final String DEFAULT_THINK_PERSONA =
             "You are a helpful AI assistant named SmolLM, trained by Hugging Face. Your role as an"
                 + " assistant involves thoroughly exploring questions through a systematic thinking"
                 + " process before providing the final precise and accurate solutions. This"
                 + " requires engaging in a comprehensive cycle of analysis, summarizing,"
                 + " exploration, reassessment, reflection, backtracking, and iteration to develop"
                 + " well-considered thinking process. Please structure your response into two main"
-                + " sections: Thought and Solution using the specified format: ";
-    static final String PERSONA_THINK_MID = " Thought section ";
-    static final String PERSONA_THINK_TAIL =
-            " Solution section. In the Thought section, detail your reasoning process in steps."
-                + " Each step should include detailed considerations such as analysing questions,"
-                + " summarizing relevant findings, brainstorming new ideas, verifying the accuracy"
-                + " of the current steps, refining any errors, and revisiting previous steps. In"
-                + " the Solution section, based on various attempts, explorations, and reflections"
-                + " from the Thought section, systematically present the final solution that you"
-                + " deem correct. The Solution section should be logical, accurate, and concise and"
-                + " detail necessary steps needed to reach the conclusion.\n\n";
-    static final String DEFAULT_THINK_PERSONA =
-            PERSONA_THINK_HEAD + "<think>" + PERSONA_THINK_MID + "</think>" + PERSONA_THINK_TAIL;
+                + " sections: Thought and Solution using the specified format: <think> Thought"
+                + " section </think> Solution section. In the Thought section, detail your"
+                + " reasoning process in steps. Each step should include detailed considerations"
+                + " such as analysing questions, summarizing relevant findings, brainstorming new"
+                + " ideas, verifying the accuracy of the current steps, refining any errors, and"
+                + " revisiting previous steps. In the Solution section, based on various attempts,"
+                + " explorations, and reflections from the Thought section, systematically present"
+                + " the final solution that you deem correct. The Solution section should be"
+                + " logical, accurate, and concise and detail necessary steps needed to reach the"
+                + " conclusion.\n\n";
+
     static final String DEFAULT_PERSONA =
             "You are a helpful AI assistant named SmolLM, trained by Hugging Face.\n\n";
     static final String TOOLS_INTRO =
             "You may call one or more functions to assist with the user query.\nYou are provided"
                     + " with function signatures within <tools></tools> XML tags:\n\n<tools>\n";
-    static final String TOOLS_OUTRO_HEAD =
+    static final String TOOLS_OUTRO =
             "</tools>\n\nFor each function call, return a json object with function name and"
-                    + " arguments within ";
-    static final String TOOLS_EXAMPLE_BODY =
-            "\n{\"name\": <function-name>, \"arguments\": <args-json-object>}\n";
+                    + " arguments within <tool_call></tool_call> XML tags:\n<tool_call>\n{\"name\":"
+                    + " <function-name>, \"arguments\": <args-json-object>}\n</tool_call>";
 
     private final Tokenizer tokenizer;
     private final String today; // strftime_now("%d %B %Y")
@@ -82,6 +81,7 @@ public final class SmolLm3ChatTemplate implements ChatTemplate {
     private final int endThink; // </think>
     private final int toolCall; // <tool_call>
     private final int endToolCall; // </tool_call>
+    private final TokenRuns proto; // compiled spelling table, forked per encode
 
     public SmolLm3ChatTemplate(Tokenizer tokenizer) {
         this(
@@ -99,6 +99,7 @@ public final class SmolLm3ChatTemplate implements ChatTemplate {
         this.endThink = SpecialTokens.require(tokenizer, "</think>");
         this.toolCall = SpecialTokens.require(tokenizer, "<tool_call>");
         this.endToolCall = SpecialTokens.require(tokenizer, "</tool_call>");
+        this.proto = new TokenRuns(tokenizer);
     }
 
     @Override
@@ -118,47 +119,27 @@ public final class SmolLm3ChatTemplate implements ChatTemplate {
             custom = sysContent.replace("/no_think", "").replace("/think", "").stripTrailing();
         }
 
-        IntSequence.Builder ids = IntSequence.newBuilder();
-        StringBuilder text = new StringBuilder();
-        ids.add(imStart);
-        text.append("system\n");
+        TokenRuns runs = proto.fresh();
+        runs.id(imStart).text("system\n");
         if (sysContent != null && sysContent.contains("/system_override")) {
-            text.append(custom.replace("/system_override", "").stripTrailing());
-            emit(ids, text, imEnd);
-            text.append('\n');
+            runs.text(custom.replace("/system_override", "").stripTrailing());
+            runs.id(imEnd).text("\n");
         } else {
-            text.append("## Metadata\n\nKnowledge Cutoff Date: June 2025\nToday Date: ")
-                    .append(today)
-                    .append("\nReasoning Mode: ")
-                    .append(thinkMode ? "/think" : "/no_think")
-                    .append("\n\n## Custom Instructions\n\n");
-            if (!custom.isEmpty()) {
-                text.append(custom).append("\n\n");
-            } else if (thinkMode) {
-                text.append(PERSONA_THINK_HEAD);
-                emit(ids, text, think);
-                text.append(PERSONA_THINK_MID);
-                emit(ids, text, endThink);
-                text.append(PERSONA_THINK_TAIL);
-            } else {
-                text.append(DEFAULT_PERSONA);
-            }
+            runs.text("## Metadata\n\nKnowledge Cutoff Date: June 2025\nToday Date: ")
+                    .text(today)
+                    .text("\nReasoning Mode: ")
+                    .text(thinkMode ? "/think" : "/no_think")
+                    .text("\n\n## Custom Instructions\n\n");
+            if (!custom.isEmpty()) runs.text(custom).text("\n\n");
+            else if (thinkMode) runs.trusted(DEFAULT_THINK_PERSONA);
+            else runs.text(DEFAULT_PERSONA);
             if (!tools.isEmpty()) {
-                text.append("### Tools\n\n").append(TOOLS_INTRO);
+                runs.text("### Tools\n\n").trusted(TOOLS_INTRO);
                 for (Tool t : tools) {
-                    text.append(ToolCallSyntax.pythonRepr(JsonCodec.parse(t.rawJson())))
-                            .append('\n');
+                    runs.text(ToolCallSyntax.pythonRepr(JsonCodec.parse(t.rawJson()))).text("\n");
                 }
-                text.append(TOOLS_OUTRO_HEAD);
-                emit(ids, text, toolCall);
-                emit(ids, text, endToolCall);
-                text.append(" XML tags:\n");
-                emit(ids, text, toolCall);
-                text.append(TOOLS_EXAMPLE_BODY);
-                emit(ids, text, endToolCall);
-                text.append("\n\n");
-                emit(ids, text, imEnd);
-                text.append('\n');
+                runs.trusted(TOOLS_OUTRO);
+                runs.text("\n\n").id(imEnd).text("\n");
             }
             // faithful quirk: without tools the template leaves the system turn UNCLOSED
         }
@@ -166,75 +147,48 @@ public final class SmolLm3ChatTemplate implements ChatTemplate {
         for (int i = sys != null ? 1 : 0; i < msgs.size(); i++) {
             Message m = msgs.get(i);
             if (m.role().equals(Role.ASSISTANT)) {
-                emit(ids, text, imStart);
-                text.append("assistant\n");
-                if (!thinkMode) {
-                    emit(ids, text, think);
-                    text.append("\n\n");
-                    emit(ids, text, endThink);
-                    text.append('\n');
-                }
+                runs.id(imStart).text("assistant\n");
+                if (!thinkMode) runs.id(think).text("\n\n").id(endThink).text("\n");
                 String content = stripLeadingNewlines(m.text()); // Reasoning dropped from history
-                text.append(content);
+                runs.text(content);
                 boolean first = true;
                 for (Part p : m.content()) {
                     if (!(p instanceof Part.ToolCall call)) continue;
-                    if (!first || !content.isEmpty()) text.append('\n');
+                    if (!first || !content.isEmpty()) runs.text("\n");
                     first = false;
-                    emit(ids, text, toolCall);
-                    text.append("\n{\"name\": \"")
-                            .append(call.name())
-                            .append("\", \"arguments\": ")
-                            .append(ToolCallSyntax.jinjaJson(call.arguments()))
-                            .append("}\n");
-                    emit(ids, text, endToolCall);
+                    runs.id(toolCall)
+                            .text("\n{\"name\": \"")
+                            .text(call.name())
+                            .text("\", \"arguments\": ")
+                            .text(ToolCallSyntax.jinjaJson(call.arguments()))
+                            .text("}\n")
+                            .id(endToolCall);
                 }
-                emit(ids, text, imEnd);
-                text.append('\n');
+                runs.id(imEnd).text("\n");
             } else { // user, later system, and tool results all frame as user-family turns
-                emit(ids, text, imStart);
-                text.append(m.role().equals(Role.TOOL) ? "user" : m.role().name()).append('\n');
+                runs.id(imStart)
+                        .text(m.role().equals(Role.TOOL) ? "user" : m.role().name())
+                        .text("\n");
                 if (m.role().equals(Role.TOOL)) {
                     for (Part p : m.content()) {
-                        if (p instanceof Part.ToolResult r) text.append(r.text());
+                        if (p instanceof Part.ToolResult r) runs.text(r.text());
                     }
                 } else {
-                    text.append(m.textOnly());
+                    runs.text(m.textOnly());
                 }
-                emit(ids, text, imEnd);
-                text.append('\n');
+                runs.id(imEnd).text("\n");
             }
         }
 
-        emit(ids, text, imStart);
-        text.append("assistant\n");
-        if (!thinkMode) {
-            emit(ids, text, think);
-            text.append("\n\n");
-            emit(ids, text, endThink);
-            text.append('\n');
-        }
-        flush(ids, text);
-        List<Batch> out = new ArrayList<>();
-        out.add(Batch.prefill(ids.build().toArray()));
-        return out;
+        runs.id(imStart).text("assistant\n");
+        if (!thinkMode) runs.id(think).text("\n\n").id(endThink).text("\n");
+        return List.of(runs.batch());
     }
 
     private static String stripLeadingNewlines(String s) {
         int i = 0;
         while (i < s.length() && s.charAt(i) == '\n') i++;
         return s.substring(i);
-    }
-
-    private void emit(IntSequence.Builder ids, StringBuilder text, int id) {
-        flush(ids, text);
-        ids.add(id);
-    }
-
-    private void flush(IntSequence.Builder ids, StringBuilder text) {
-        if (text.isEmpty()) return;
-        ids.addAll(tokenizer.encode(text.toString()));
-        text.setLength(0);
     }
 
     /** Tool calls parse from the {@code <tool_call>} span's JSON {@code {name, arguments}}. */

@@ -8,11 +8,11 @@ import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Role;
+import com.qxotic.jinfer.chat.TokenRuns;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.chat.ToolCallSyntax;
 import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.llm.SpecialTokens;
-import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -95,6 +95,7 @@ public final class MistralChatTemplate implements ChatTemplate {
     private final int args; // [ARGS]
     private final int toolResults; // [TOOL_RESULTS]
     private final int endToolResults; // [/TOOL_RESULTS]
+    private final TokenRuns proto; // compiled spelling table, forked per encode
 
     public MistralChatTemplate(Tokenizer tokenizer) {
         this.tokenizer = tokenizer;
@@ -110,6 +111,7 @@ public final class MistralChatTemplate implements ChatTemplate {
         this.args = SpecialTokens.require(tokenizer, "[ARGS]");
         this.toolResults = SpecialTokens.require(tokenizer, "[TOOL_RESULTS]");
         this.endToolResults = SpecialTokens.require(tokenizer, "[/TOOL_RESULTS]");
+        this.proto = new TokenRuns(tokenizer);
     }
 
     @Override
@@ -120,56 +122,37 @@ public final class MistralChatTemplate implements ChatTemplate {
 
         Message sys =
                 !msgs.isEmpty() && msgs.get(0).role().equals(Role.SYSTEM) ? msgs.get(0) : null;
-        IntSequence.Builder ids = IntSequence.newBuilder();
-        StringBuilder text = new StringBuilder();
-        ids.add(bos);
-        ids.add(systemPrompt);
-        text.append(sys != null ? sys.textOnly() : DEFAULT_SYSTEM);
-        emit(ids, text, endSystemPrompt);
+        TokenRuns runs = proto.fresh();
+        runs.id(bos).id(systemPrompt);
+        runs.text(sys != null ? sys.textOnly() : DEFAULT_SYSTEM);
+        runs.id(endSystemPrompt);
         if (!tools.isEmpty()) {
             List<Object> parsed = new ArrayList<>();
             for (Tool t : tools) parsed.add(JsonCodec.parse(t.rawJson()));
-            ids.add(availableTools);
-            text.append(ToolCallSyntax.jinjaJson(parsed));
-            emit(ids, text, endAvailableTools);
+            runs.id(availableTools).text(ToolCallSyntax.jinjaJson(parsed)).id(endAvailableTools);
         }
         for (int i = sys != null ? 1 : 0; i < msgs.size(); i++) {
             Message m = msgs.get(i);
             if (m.role().equals(Role.USER)) {
-                ids.add(inst);
-                text.append(m.textOnly());
-                emit(ids, text, endInst);
+                runs.id(inst).text(m.textOnly()).id(endInst);
             } else if (m.role().equals(Role.TOOL)) {
-                ids.add(toolResults);
+                runs.id(toolResults);
                 for (Part p : m.content()) {
-                    if (p instanceof Part.ToolResult r) text.append(r.text());
+                    if (p instanceof Part.ToolResult r) runs.text(r.text());
                 }
-                emit(ids, text, endToolResults);
+                runs.id(endToolResults);
             } else { // assistant: bare content, calls, then the per-message eos
-                text.append(m.text()); // Reasoning dropped: no think scaffold in this wire
+                runs.text(m.text()); // Reasoning dropped: no think scaffold in this wire
                 for (Part p : m.content()) {
                     if (!(p instanceof Part.ToolCall call)) continue;
-                    emit(ids, text, toolCalls);
-                    text.append(call.name());
-                    emit(ids, text, args);
-                    text.append(ToolCallSyntax.jinjaJson(call.arguments()));
+                    runs.id(toolCalls).text(call.name()).id(args);
+                    runs.text(ToolCallSyntax.jinjaJson(call.arguments()));
                 }
-                emit(ids, text, eos);
+                runs.id(eos);
             }
         }
-        flush(ids, text); // no generation scaffold: the assistant continues after [/INST]
-        return List.of(Batch.prefill(ids.build().toArray()));
-    }
-
-    private void emit(IntSequence.Builder ids, StringBuilder text, int id) {
-        flush(ids, text);
-        ids.add(id);
-    }
-
-    private void flush(IntSequence.Builder ids, StringBuilder text) {
-        if (text.isEmpty()) return;
-        ids.addAll(tokenizer.encode(text.toString()));
-        text.setLength(0);
+        // no generation scaffold: the assistant continues after [/INST]
+        return List.of(runs.batch());
     }
 
     /**
