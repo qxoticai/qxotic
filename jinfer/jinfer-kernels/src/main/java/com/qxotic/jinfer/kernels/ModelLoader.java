@@ -38,7 +38,13 @@ public final class ModelLoader {
         }
     }
 
-    /** Memory-maps the tensor data (whole-file mapping outlives the process: Arena.global). */
+    /**
+     * Memory-maps the tensor data in one automatic-arena mapping shared by every tensor slice: the
+     * mapping lives exactly as long as any tensor of the model is reachable and is unmapped by GC
+     * once the whole model graph is dropped - weights can be released, never leak for the process.
+     * (Kernels read via raw addresses ({@code FloatTensor.GLOBAL_SEGMENT}), so liveness is carried
+     * by object reachability; {@code Generator} fences the model for the duration of every pass.)
+     */
     public static Map<String, GGMLTensorEntry> loadTensors(FileChannel fileChannel, GGUF gguf)
             throws IOException {
         return loadTensors(fileChannel, gguf.getTensorDataOffset(), gguf.getTensors());
@@ -52,7 +58,7 @@ public final class ModelLoader {
                         FileChannel.MapMode.READ_ONLY,
                         tensorDataOffset,
                         fileChannel.size() - tensorDataOffset,
-                        Arena.global());
+                        Arena.ofAuto());
         Map<String, GGMLTensorEntry> tensorEntries = HashMap.newHashMap(tensors.size());
         for (TensorEntry tensor : tensors) {
             int[] shape = Arrays.stream(tensor.shape()).mapToInt(Math::toIntExact).toArray();

@@ -107,7 +107,35 @@ public final class Generator {
 
         boolean hasDeadline = timeoutNanos != 0;
         long deadlineNanos = hasDeadline ? System.nanoTime() + timeoutNanos : Long.MAX_VALUE;
+        try {
+            return generationPass(
+                    model,
+                    state,
+                    prompt,
+                    sampler,
+                    stopTokens,
+                    sink,
+                    actualMaxTokens,
+                    deadlineNanos);
+        } finally {
+            // Weights live in an automatic-arena mapping and kernels read them via raw addresses
+            // (FloatTensor.GLOBAL_SEGMENT), which the GC cannot see: this fence pins the model -
+            // and through it the mapping - for the whole pass, so the Cleaner can never unmap
+            // under a running kernel even if the caller drops its reference mid-call.
+            java.lang.ref.Reference.reachabilityFence(model);
+        }
+    }
 
+    private static <S extends RuntimeState> GenerationResult generationPass(
+            LanguageModel<?, ?, S> model,
+            S state,
+            List<Batch> prompt,
+            Sampler sampler,
+            Set<Integer> stopTokens,
+            TokenSink sink,
+            int actualMaxTokens,
+            long deadlineNanos) {
+        boolean hasDeadline = deadlineNanos != Long.MAX_VALUE;
         long startNanos = System.nanoTime();
         long[] prefillDoneNanos = {0};
         boolean[] aborted = {false};

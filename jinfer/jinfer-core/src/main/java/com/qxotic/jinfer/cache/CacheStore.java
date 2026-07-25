@@ -8,8 +8,9 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.BitSet;
+import java.util.Collections;
 import java.util.IdentityHashMap;
-import java.util.Map;
+import java.util.Set;
 import java.util.zip.CRC32C;
 
 /**
@@ -45,28 +46,31 @@ public interface CacheStore extends AutoCloseable {
         return true;
     }
 
-    /** Default backend: one confined arena per blob. */
+    /**
+     * Default backend: one automatic arena per blob. GC owns the memory - {@link #free} drops the
+     * reference and the Cleaner reclaims after collection, and dropping the whole store (even
+     * unclosed) releases everything with it, so an abandoned cache can never leak natively. The
+     * budget is therefore soft by one GC cycle: an evicted blob's memory lingers until collected.
+     */
     static CacheStore inMemory() {
         return new CacheStore() {
-            private final Map<MemorySegment, Arena> arenas = new IdentityHashMap<>();
+            private final Set<MemorySegment> blobs =
+                    Collections.newSetFromMap(new IdentityHashMap<>());
             private volatile long used;
 
             @Override
             public MemorySegment allocate(long bytes) {
-                Arena arena = Arena.ofConfined();
-                MemorySegment blob = arena.allocate(bytes, 64);
-                arenas.put(blob, arena);
+                MemorySegment blob = Arena.ofAuto().allocate(bytes, 64);
+                blobs.add(blob);
                 used += bytes;
                 return blob;
             }
 
             @Override
             public void free(MemorySegment blob) {
-                Arena arena = arenas.remove(blob);
-                if (arena == null)
+                if (!blobs.remove(blob))
                     throw new IllegalArgumentException("blob not allocated by this store");
                 used -= blob.byteSize();
-                arena.close();
             }
 
             @Override
@@ -76,8 +80,7 @@ public interface CacheStore extends AutoCloseable {
 
             @Override
             public void close() {
-                arenas.values().forEach(Arena::close);
-                arenas.clear();
+                blobs.clear();
                 used = 0;
             }
         };
@@ -96,6 +99,7 @@ public interface CacheStore extends AutoCloseable {
 }
 
 final class BlockStore implements CacheStore {
+    private final Arena poolArena = Arena.ofShared();
     private final MemorySegment pool;
     private final long blockDataSize; // blockTokens * kvBytesPerToken
     private final int numBlocks;
@@ -123,7 +127,7 @@ final class BlockStore implements CacheStore {
                         StandardOpenOption.WRITE,
                         StandardOpenOption.CREATE,
                         StandardOpenOption.TRUNCATE_EXISTING);
-        this.pool = fc.map(FileChannel.MapMode.READ_WRITE, 0, fileSize, Arena.global());
+        this.pool = fc.map(FileChannel.MapMode.READ_WRITE, 0, fileSize, poolArena);
         fc.close();
     }
 
@@ -181,6 +185,8 @@ final class BlockStore implements CacheStore {
     @Override
     public void close() {
         small.close();
+        pool.force(); // flush dirty pages before the unmap - the file is the artifact
+        poolArena.close();
     }
 
     // ---- integrity ----

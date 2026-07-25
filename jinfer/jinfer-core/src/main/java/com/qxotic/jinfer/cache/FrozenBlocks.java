@@ -68,13 +68,14 @@ public final class FrozenBlocks {
 
     /**
      * Maps {@code file} lazily and validates it belongs to the model identified by {@code
-     * modelSeed} - throws a descriptive error when it does not. The mapping lives for the process
-     * (global arena); frozen artifacts are process-lifetime.
+     * modelSeed} - throws a descriptive error when it does not. The mapping is automatic-arena: it
+     * stays alive while this object (or any blob sliced from it, e.g. frozen grafts inside a
+     * PromptCache) is reachable, and is unmapped by GC after.
      */
     public static FrozenBlocks open(Path file, byte[] modelSeed) throws IOException {
         MemorySegment map;
         try (FileChannel ch = FileChannel.open(file, StandardOpenOption.READ)) {
-            map = ch.map(FileChannel.MapMode.READ_ONLY, 0, ch.size(), Arena.global());
+            map = ch.map(FileChannel.MapMode.READ_ONLY, 0, ch.size(), Arena.ofAuto());
         }
         ByteBuffer h = map.asSlice(0, HEADER_BYTES).asByteBuffer().order(ByteOrder.LITTLE_ENDIAN);
         if (h.getInt() != MAGIC) {
