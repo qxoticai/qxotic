@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.qxotic.jinfer.spring.ai.JinferChatModel;
 import com.qxotic.jinfer.spring.ai.autoconfigure.JinferChatAutoConfiguration;
+import com.qxotic.jinfer.testkit.ModelFixture;
 import io.micrometer.observation.tck.TestObservationRegistry;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -32,8 +33,7 @@ class JinferStarterIT {
     static final Path MODEL =
             Path.of(
                     System.getProperty(
-                            "jinfer.testModel",
-                            "/home/mukel/Desktop/playground/models/LiquidAI/LFM2.5-8B-A1B-Q8_0.gguf"));
+                            "jinfer.testModel", ModelFixture.LFM25_8B_Q8.path().toString()));
 
     static class Weather {
         @Tool(description = "Get current weather for a city")

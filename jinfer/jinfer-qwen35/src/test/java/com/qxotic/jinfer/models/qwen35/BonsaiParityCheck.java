@@ -12,6 +12,7 @@ package com.qxotic.jinfer.models.qwen35;
 
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.testkit.Checks;
+import com.qxotic.jinfer.testkit.ModelFixture;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -50,9 +51,7 @@ public final class BonsaiParityCheck {
     @Test
     @Tag("integration")
     void greedyParity() throws Exception {
-        Path model =
-                Path.of(
-                        "/home/mukel/Desktop/playground/models/prism-ml/Bonsai-27B-gguf/Bonsai-27B-Q1_0.gguf");
+        Path model = ModelFixture.BONSAI_27B_Q1.path();
         Assumptions.assumeTrue(Files.exists(model), "model not found: " + model);
         Qwen35 model35 = Qwen35.loadModel(model, 4096);
         var tokenizer = model35.tokenizer();

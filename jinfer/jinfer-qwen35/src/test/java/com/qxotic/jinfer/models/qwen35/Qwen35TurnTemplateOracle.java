@@ -6,6 +6,7 @@
 package com.qxotic.jinfer.models.qwen35;
 
 import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.testkit.ModelFixture;
 import com.qxotic.jinfer.testkit.OracleScenario;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -18,9 +19,7 @@ public final class Qwen35TurnTemplateOracle {
 
     @Test
     void oracle() throws Exception {
-        Path model =
-                Path.of(
-                        "/home/mukel/Desktop/playground/models/unsloth/Qwen3.5-2B-GGUF/Qwen3.5-2B-Q8_0.gguf");
+        Path model = ModelFixture.QWEN35_2B_Q8.path();
         Assumptions.assumeTrue(Files.exists(model), "model not found: " + model);
         OracleScenario o =
                 new OracleScenario(model, Qwen35TurnTemplate::new, Map.of("enable_thinking", true));

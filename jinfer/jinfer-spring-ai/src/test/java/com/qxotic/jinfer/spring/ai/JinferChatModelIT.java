@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.testkit.ModelFixture;
 import io.micrometer.observation.tck.TestObservationRegistry;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -37,8 +38,7 @@ class JinferChatModelIT {
     static final Path MODEL =
             Path.of(
                     System.getProperty(
-                            "jinfer.testModel",
-                            "/home/mukel/Desktop/playground/models/LiquidAI/LFM2.5-8B-A1B-Q8_0.gguf"));
+                            "jinfer.testModel", ModelFixture.LFM25_8B_Q8.path().toString()));
 
     static JinferChatModel model;
     static TestObservationRegistry observations;

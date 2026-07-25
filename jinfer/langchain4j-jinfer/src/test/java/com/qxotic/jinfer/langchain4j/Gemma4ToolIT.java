@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.langchain4j;
 
+import com.qxotic.jinfer.testkit.ModelFixture;
 import java.nio.file.Path;
 
 /**
@@ -13,7 +14,6 @@ class Gemma4ToolIT extends AbstractToolIT {
     Path modelPath() {
         return Path.of(
                 System.getProperty(
-                        "jinfer.gemma4Model",
-                        "/home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-Q8_0.gguf"));
+                        "jinfer.gemma4Model", ModelFixture.GEMMA4_E2B_Q8.path().toString()));
     }
 }

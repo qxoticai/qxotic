@@ -2,6 +2,7 @@ package com.qxotic.jinfer.langchain4j;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.testkit.ModelFixture;
 import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
 import dev.langchain4j.data.message.AudioContent;
@@ -37,14 +38,9 @@ import org.junit.jupiter.api.Test;
 @Tag("integration")
 class LocalAgentIT {
 
-    static final Path BRAIN =
-            Path.of("/home/mukel/Desktop/playground/models/LiquidAI/LFM2.5-8B-A1B-Q8_0.gguf");
-    static final Path EYES =
-            Path.of(
-                    "/home/mukel/Desktop/playground/models/unsloth/gemma-4-12B-it-qat-GGUF/gemma-4-12B-it-qat-UD-Q4_K_XL.gguf");
-    static final Path EYES_MMPROJ =
-            Path.of(
-                    "/home/mukel/Desktop/playground/models/unsloth/gemma-4-12B-it-qat-GGUF/mmproj-F32.gguf");
+    static final Path BRAIN = ModelFixture.LFM25_8B_Q8.path();
+    static final Path EYES = ModelFixture.GEMMA4_12B_QAT_Q4.path();
+    static final Path EYES_MMPROJ = ModelFixture.GEMMA4_12B_QAT_MMPROJ.path();
 
     /** Gemma 4 behind two tools: the brain never sees pixels or samples, only descriptions. */
     static class Senses {

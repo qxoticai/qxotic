@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.langchain4j;
 
+import com.qxotic.jinfer.testkit.ModelFixture;
 import java.nio.file.Path;
 
 /**
@@ -13,7 +14,6 @@ class SmolLm3ToolIT extends AbstractToolIT {
     Path modelPath() {
         return Path.of(
                 System.getProperty(
-                        "jinfer.smollm3Model",
-                        "/home/mukel/Desktop/playground/models/ggml-org/SmolLM3-Q4_K_M.gguf"));
+                        "jinfer.smollm3Model", ModelFixture.SMOLLM3_Q4.path().toString()));
     }
 }

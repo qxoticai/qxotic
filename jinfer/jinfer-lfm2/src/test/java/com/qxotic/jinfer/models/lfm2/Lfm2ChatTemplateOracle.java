@@ -5,6 +5,7 @@ package com.qxotic.jinfer.models.lfm2;
 
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.testkit.CodecOracleScenario;
+import com.qxotic.jinfer.testkit.ModelFixture;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -16,8 +17,7 @@ public final class Lfm2ChatTemplateOracle {
 
     @Test
     void oracle() throws Exception {
-        Path model =
-                Path.of("/home/mukel/Desktop/playground/models/LiquidAI/LFM2.5-8B-A1B-Q8_0.gguf");
+        Path model = ModelFixture.LFM25_8B_Q8.path();
         Assumptions.assumeTrue(Files.exists(model), "model not found: " + model);
         CodecOracleScenario o =
                 new CodecOracleScenario(

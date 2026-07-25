@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.langchain4j;
 
+import com.qxotic.jinfer.testkit.ModelFixture;
 import java.nio.file.Path;
 
 /**
@@ -13,7 +14,6 @@ class GptOssToolIT extends AbstractToolIT {
     Path modelPath() {
         return Path.of(
                 System.getProperty(
-                        "jinfer.gptossModel",
-                        "/home/mukel/Desktop/playground/models/unsloth/gpt-oss-20b-Q8_0.gguf"));
+                        "jinfer.gptossModel", ModelFixture.GPTOSS_20B_Q8.path().toString()));
     }
 }

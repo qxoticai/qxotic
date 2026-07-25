@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.langchain4j;
 
+import com.qxotic.jinfer.testkit.ModelFixture;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.common.AbstractChatModelIT;
 import java.nio.file.Files;
@@ -21,8 +22,7 @@ class JinferChatModelTckIT extends AbstractChatModelIT {
     static final Path MODEL =
             Path.of(
                     System.getProperty(
-                            "jinfer.testModel",
-                            "/home/mukel/Desktop/playground/models/LiquidAI/LFM2.5-8B-A1B-Q8_0.gguf"));
+                            "jinfer.testModel", ModelFixture.LFM25_8B_Q8.path().toString()));
 
     static boolean modelAvailable() {
         return Files.exists(MODEL);

@@ -8,6 +8,7 @@ import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.testkit.CodecOracleScenario;
+import com.qxotic.jinfer.testkit.ModelFixture;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -31,7 +32,7 @@ public final class MiniCpm5Oracle {
 
     @Test
     void oracle() throws Exception {
-        Path model = Path.of("/home/mukel/Desktop/playground/models/openbmb/MiniCPM5-1B-Q8_0.gguf");
+        Path model = ModelFixture.MINICPM5_1B_Q8.path();
         Assumptions.assumeTrue(Files.exists(model), "model not found: " + model);
         CodecOracleScenario o =
                 new CodecOracleScenario(

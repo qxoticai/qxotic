@@ -7,6 +7,7 @@
 package com.qxotic.jinfer.models.gemma4;
 
 import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.testkit.ModelFixture;
 import com.qxotic.jinfer.testkit.OracleScenario;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -18,8 +19,7 @@ import org.junit.jupiter.api.Test;
 public final class Gemma4TurnTemplateOracle {
     @Test
     void oracle() throws Exception {
-        Path model =
-                Path.of("/home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-Q8_0.gguf");
+        Path model = ModelFixture.GEMMA4_E2B_Q8.path();
         Assumptions.assumeTrue(Files.exists(model), "model not found: " + model);
         OracleScenario o =
                 new OracleScenario(model, Gemma4TurnTemplate::new, Map.of("bos_token", "<bos>"));

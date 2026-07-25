@@ -9,6 +9,7 @@ import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.jinfer.cache.CachedSession;
 import com.qxotic.jinfer.cache.FrozenBlocks;
 import com.qxotic.jinfer.chat.LoadedModel;
+import com.qxotic.jinfer.testkit.ModelFixture;
 import com.qxotic.toknroll.IntSequence;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -25,26 +26,25 @@ public final class FrozenTtftBench {
     @Test
     @Tag("bench")
     void run() throws Exception {
-        Path models = Path.of("/home/mukel/Desktop/playground/models");
         bench(
                 "LFM2.5-8B-A1B-Q8_0",
-                models.resolve("LiquidAI/LFM2.5-8B-A1B-Q8_0.gguf"),
+                ModelFixture.LFM25_8B_Q8.path(),
                 p -> com.qxotic.jinfer.models.lfm2.Lfm2.loadModel(p, CTX).loaded());
         bench(
                 "gemma-4-E2B-it-Q8_0",
-                models.resolve("unsloth/gemma-4-E2B-it-Q8_0.gguf"),
+                ModelFixture.GEMMA4_E2B_Q8.path(),
                 p -> com.qxotic.jinfer.models.gemma4.Gemma4.loadModel(p, CTX).loaded());
         bench(
                 "gpt-oss-20b-Q8_0",
-                models.resolve("unsloth/gpt-oss-20b-Q8_0.gguf"),
+                ModelFixture.GPTOSS_20B_Q8.path(),
                 p -> com.qxotic.jinfer.models.gptoss.GptOss.loadModel(p, CTX).loaded());
         bench(
                 "Llama-3.2-1B-Instruct-Q8_0",
-                models.resolve("unsloth/Llama-3.2-1B-Instruct-Q8_0.gguf"),
+                ModelFixture.LLAMA32_1B_Q8.path(),
                 p -> com.qxotic.jinfer.models.llama.Llama.loadModel(p, CTX).loaded());
         bench(
                 "granite-4.1-3b-Q8_0",
-                models.resolve("ibm-granite/granite-4.1-3b-Q8_0.gguf"),
+                ModelFixture.GRANITE_41_3B_Q8.path(),
                 p -> com.qxotic.jinfer.models.llama.Granite.loadModel(p, CTX).loaded());
     }
 

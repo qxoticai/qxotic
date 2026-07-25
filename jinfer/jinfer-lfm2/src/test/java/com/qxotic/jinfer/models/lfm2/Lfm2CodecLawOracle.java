@@ -17,6 +17,7 @@ import com.qxotic.jinfer.kernels.ModelLoader;
 import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.jinfer.llm.Tokenizers;
 import com.qxotic.jinfer.testkit.Checks;
+import com.qxotic.jinfer.testkit.ModelFixture;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import java.io.ByteArrayOutputStream;
@@ -36,8 +37,7 @@ public final class Lfm2CodecLawOracle {
 
     @Test
     void oracle() throws Exception {
-        Path model =
-                Path.of("/home/mukel/Desktop/playground/models/LiquidAI/LFM2.5-8B-A1B-Q8_0.gguf");
+        Path model = ModelFixture.LFM25_8B_Q8.path();
         Assumptions.assumeTrue(Files.exists(model), "model not found: " + model);
         GGUF g;
         try (FileChannel channel = FileChannel.open(model, StandardOpenOption.READ)) {

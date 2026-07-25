@@ -4,6 +4,7 @@
 package com.qxotic.jinfer.models.llama;
 
 import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.testkit.ModelFixture;
 import com.qxotic.jinfer.testkit.OracleScenario;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -16,9 +17,7 @@ public final class GraniteTurnTemplateOracle {
 
     @Test
     void oracle() throws Exception {
-        Path model =
-                Path.of(
-                        "/home/mukel/Desktop/playground/models/ibm-granite/granite-4.1-3b-Q8_0.gguf");
+        Path model = ModelFixture.GRANITE_41_3B_Q8.path();
         Assumptions.assumeTrue(Files.exists(model), "model not found: " + model);
         OracleScenario o = new OracleScenario(model, GraniteTurnTemplate::new, Map.of());
 

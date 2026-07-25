@@ -6,6 +6,7 @@ package com.qxotic.jinfer.models.llama;
 import com.qxotic.jinfer.llm.*;
 import com.qxotic.jinfer.testkit.CacheScenario;
 import com.qxotic.jinfer.testkit.Harness;
+import com.qxotic.jinfer.testkit.ModelFixture;
 import com.qxotic.jinfer.testkit.Stories;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Tag;
@@ -25,10 +26,7 @@ public final class LlamaCacheRun {
 
     private static void main(String[] args) throws Exception {
         Path path =
-                Path.of(
-                        args.length > 0
-                                ? args[0]
-                                : "/home/mukel/Desktop/playground/models/unsloth/Llama-3.2-1B-Instruct-Q8_0.gguf");
+                Path.of(args.length > 0 ? args[0] : ModelFixture.LLAMA32_1B_Q8.path().toString());
         Llama m = Llama.loadModel(path, 8192);
         Harness<Llama.State> h =
                 new Harness<>(m.loaded(), m.turnTemplate().orElseThrow(), path, 8192);

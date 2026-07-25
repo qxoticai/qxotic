@@ -9,6 +9,7 @@ import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.testkit.CodecOracleScenario;
+import com.qxotic.jinfer.testkit.ModelFixture;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
@@ -31,7 +32,7 @@ public final class SmolLm3Oracle {
 
     @Test
     void oracle() throws Exception {
-        Path model = Path.of("/home/mukel/Desktop/playground/models/ggml-org/SmolLM3-Q4_K_M.gguf");
+        Path model = ModelFixture.SMOLLM3_Q4.path();
         Assumptions.assumeTrue(Files.exists(model), "model not found: " + model);
         String today =
                 LocalDate.now().format(DateTimeFormatter.ofPattern("dd MMMM yyyy", Locale.ENGLISH));

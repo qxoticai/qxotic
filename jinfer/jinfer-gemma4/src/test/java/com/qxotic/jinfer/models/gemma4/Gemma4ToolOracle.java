@@ -7,6 +7,7 @@ import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.testkit.CodecOracleScenario;
+import com.qxotic.jinfer.testkit.ModelFixture;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -39,8 +40,7 @@ public final class Gemma4ToolOracle {
 
     @Test
     void oracle() throws Exception {
-        Path model =
-                Path.of("/home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-Q8_0.gguf");
+        Path model = ModelFixture.GEMMA4_E2B_Q8.path();
         Assumptions.assumeTrue(Files.exists(model), "model not found: " + model);
         CodecOracleScenario o =
                 new CodecOracleScenario(

@@ -8,6 +8,7 @@ import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.llm.*;
+import com.qxotic.jinfer.testkit.ModelFixture;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -29,11 +30,7 @@ public final class Lfm2ChatRun {
     }
 
     private static void main(String[] args) throws Exception {
-        Path path =
-                Path.of(
-                        args.length > 0
-                                ? args[0]
-                                : "/home/mukel/Desktop/playground/models/LiquidAI/LFM2.5-8B-A1B-Q8_0.gguf");
+        Path path = Path.of(args.length > 0 ? args[0] : ModelFixture.LFM25_8B_Q8.path().toString());
         Lfm2 model = Lfm2.loadModel(path, 4096);
         var c = model.config();
         var tk = model.tokenizer();

@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.testkit.ModelFixture;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
@@ -33,8 +34,7 @@ class JinferChatModelIT {
     static final Path MODEL =
             Path.of(
                     System.getProperty(
-                            "jinfer.testModel",
-                            "/home/mukel/Desktop/playground/models/LiquidAI/LFM2.5-8B-A1B-Q8_0.gguf"));
+                            "jinfer.testModel", ModelFixture.LFM25_8B_Q8.path().toString()));
 
     static JinferChatModel model;
 

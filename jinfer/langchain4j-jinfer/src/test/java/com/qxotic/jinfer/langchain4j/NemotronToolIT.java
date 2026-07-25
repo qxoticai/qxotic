@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.langchain4j;
 
+import com.qxotic.jinfer.testkit.ModelFixture;
 import java.nio.file.Path;
 
 /**
@@ -14,8 +15,6 @@ class NemotronToolIT extends AbstractToolIT {
     Path modelPath() {
         return Path.of(
                 System.getProperty(
-                        "jinfer.nemotronModel",
-                        "/home/mukel/Desktop/playground/models/bartowski/"
-                                + "nvidia_Nemotron-Cascade-2-30B-A3B-Q8_0.gguf"));
+                        "jinfer.nemotronModel", ModelFixture.NEMOTRON_30B_Q8.path().toString()));
     }
 }

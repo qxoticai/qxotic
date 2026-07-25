@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.testkit.ModelFixture;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -32,8 +33,7 @@ class CachedPromptIT {
     static final Path MODEL =
             Path.of(
                     System.getProperty(
-                            "jinfer.testModel",
-                            "/home/mukel/Desktop/playground/models/LiquidAI/LFM2.5-8B-A1B-Q8_0.gguf"));
+                            "jinfer.testModel", ModelFixture.LFM25_8B_Q8.path().toString()));
 
     static final List<org.springframework.ai.chat.messages.Message> SUPPORT =
             List.of(
@@ -169,8 +169,7 @@ class CachedPromptIT {
         base.withCachedPrompt(SUPPORT, List.of());
         base.saveCachedPrompts(artifact);
 
-        Path other =
-                Path.of("/home/mukel/Desktop/playground/models/LiquidAI/LFM2.5-350M-Q8_0.gguf");
+        Path other = ModelFixture.LFM25_350M_Q8.path();
         Assumptions.assumeTrue(Files.exists(other), "second model not found");
         assertThrows(
                 Exception.class,

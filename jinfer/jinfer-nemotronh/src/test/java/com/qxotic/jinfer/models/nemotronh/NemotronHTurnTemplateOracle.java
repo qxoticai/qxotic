@@ -4,6 +4,7 @@
 package com.qxotic.jinfer.models.nemotronh;
 
 import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.testkit.ModelFixture;
 import com.qxotic.jinfer.testkit.OracleScenario;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -16,9 +17,7 @@ public final class NemotronHTurnTemplateOracle {
 
     @Test
     void oracle() throws Exception {
-        Path model =
-                Path.of(
-                        "/home/mukel/Desktop/playground/models/bartowski/nvidia_Nemotron-Cascade-2-30B-A3B-Q8_0.gguf");
+        Path model = ModelFixture.NEMOTRON_30B_Q8.path();
         Assumptions.assumeTrue(Files.exists(model), "model not found: " + model);
         // template defaults: enable_thinking=true, truncate_history_thinking=true (pinned
         // explicitly)

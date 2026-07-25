@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.testkit.ModelFixture;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -28,7 +29,7 @@ class JinferCoarseCacheIT {
             Path.of(
                     System.getProperty(
                             "jinfer.testModelCoarse",
-                            "/home/mukel/Desktop/playground/models/bartowski/nvidia_Nemotron-Cascade-2-30B-A3B-Q8_0.gguf"));
+                            ModelFixture.NEMOTRON_30B_Q8.path().toString()));
 
     static final List<org.springframework.ai.chat.messages.Message> PREFIX =
             List.of(new SystemMessage("You are a terse assistant. Answer in one short sentence."));

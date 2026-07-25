@@ -5,6 +5,7 @@ import com.qxotic.jinfer.chat.TokenRuns;
 import com.qxotic.jinfer.chat.ToolCallSyntax;
 import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.jinfer.testkit.AbstractToolWireTest;
+import com.qxotic.jinfer.testkit.ModelFixture;
 import com.qxotic.toknroll.Tokenizer;
 import java.nio.file.Path;
 import java.util.Map;
@@ -16,8 +17,7 @@ class GraniteToolWireTest extends AbstractToolWireTest {
 
     @Override
     protected Path modelPath() {
-        return Path.of(
-                "/home/mukel/Desktop/playground/models/ibm-granite/granite-4.1-3b-Q8_0.gguf");
+        return ModelFixture.GRANITE_41_3B_Q8.path();
     }
 
     @Override

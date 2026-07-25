@@ -6,6 +6,7 @@ import com.qxotic.jinfer.chat.TokenRuns;
 import com.qxotic.jinfer.chat.ToolCallSyntax;
 import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.jinfer.testkit.AbstractToolWireTest;
+import com.qxotic.jinfer.testkit.ModelFixture;
 import com.qxotic.toknroll.Tokenizer;
 import java.nio.file.Path;
 import java.util.List;
@@ -16,7 +17,7 @@ class Lfm2ToolWireTest extends AbstractToolWireTest {
 
     @Override
     protected Path modelPath() {
-        return Path.of("/home/mukel/Desktop/playground/models/LiquidAI/LFM2.5-8B-A1B-Q8_0.gguf");
+        return ModelFixture.LFM25_8B_Q8.path();
     }
 
     @Override

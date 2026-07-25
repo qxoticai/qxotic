@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.Media;
 import com.qxotic.jinfer.MultiModal;
+import com.qxotic.jinfer.testkit.ModelFixture;
 import java.awt.Color;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
@@ -34,7 +35,7 @@ class Gemma4MediaIT {
             Path.of(
                     System.getProperty(
                             "jinfer.testMediaModel",
-                            "/home/mukel/Desktop/playground/models/unsloth/gemma-4-12B-it-qat-GGUF/gemma-4-12B-it-qat-UD-Q4_K_XL.gguf"));
+                            ModelFixture.GEMMA4_12B_QAT_Q4.path().toString()));
     static final Path MMPROJ = MODEL.resolveSibling("mmproj-F32.gguf");
 
     static JinferChatModel model;

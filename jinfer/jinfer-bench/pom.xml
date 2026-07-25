@@ -61,6 +61,13 @@
       <groupId>com.qxotic</groupId>
       <artifactId>gguf</artifactId>
     </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-kernels</artifactId>
+      <version>${project.version}</version>
+      <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <!-- The shade + native-image configuration lives in jinfer-parent's pluginManagement; this

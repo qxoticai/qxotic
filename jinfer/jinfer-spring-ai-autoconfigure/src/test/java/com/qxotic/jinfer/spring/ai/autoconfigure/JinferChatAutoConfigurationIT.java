@@ -3,6 +3,7 @@ package com.qxotic.jinfer.spring.ai.autoconfigure;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.qxotic.jinfer.spring.ai.JinferChatModel;
+import com.qxotic.jinfer.testkit.ModelFixture;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Assumptions;
@@ -22,8 +23,7 @@ class JinferChatAutoConfigurationIT {
     static final Path MODEL =
             Path.of(
                     System.getProperty(
-                            "jinfer.testModel",
-                            "/home/mukel/Desktop/playground/models/LiquidAI/LFM2.5-8B-A1B-Q8_0.gguf"));
+                            "jinfer.testModel", ModelFixture.LFM25_8B_Q8.path().toString()));
 
     @Test
     void wiresAndServes() {

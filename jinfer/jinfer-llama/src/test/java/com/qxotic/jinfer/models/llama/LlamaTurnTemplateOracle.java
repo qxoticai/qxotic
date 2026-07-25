@@ -7,6 +7,7 @@
 package com.qxotic.jinfer.models.llama;
 
 import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.testkit.ModelFixture;
 import com.qxotic.jinfer.testkit.OracleScenario;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -19,9 +20,7 @@ public final class LlamaTurnTemplateOracle {
 
     @Test
     void oracle() throws Exception {
-        Path model =
-                Path.of(
-                        "/home/mukel/Desktop/playground/models/unsloth/Llama-3.2-1B-Instruct-Q8_0.gguf");
+        Path model = ModelFixture.LLAMA32_1B_Q8.path();
         Assumptions.assumeTrue(Files.exists(model), "model not found: " + model);
         OracleScenario o =
                 new OracleScenario(

@@ -96,5 +96,12 @@
       <artifactId>jinfer-lfm2</artifactId>
       <scope>runtime</scope>
     </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-kernels</artifactId>
+      <version>${project.version}</version>
+      <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 </project>

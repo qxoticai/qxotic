@@ -22,6 +22,7 @@ import com.qxotic.jinfer.cache.CacheStore;
 import com.qxotic.jinfer.cache.CachedSession;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.llm.*;
+import com.qxotic.jinfer.testkit.ModelFixture;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -47,11 +48,8 @@ public final class Gemma4MtpIdentityTest {
     @Tag("driver")
     void run() throws Exception {
         Assumptions.assumeTrue(
-                java.nio.file.Files.exists(
-                        java.nio.file.Path.of(
-                                "/home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-Q8_0.gguf")),
-                "model not found:"
-                    + " /home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-Q8_0.gguf");
+                java.nio.file.Files.exists(ModelFixture.GEMMA4_E2B_Q8.path()),
+                "model not found:" + " " + ModelFixture.GEMMA4_E2B_Q8.path());
         main();
     }
 
@@ -60,10 +58,8 @@ public final class Gemma4MtpIdentityTest {
         // but set it first to be independent of class-init order)
         System.setProperty("jinfer.disableJam", "true");
 
-        Path model =
-                Path.of("/home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-Q8_0.gguf");
-        Path sidecar =
-                Path.of("/home/mukel/Desktop/playground/models/unsloth/mtp-gemma-4-E2B-it.gguf");
+        Path model = ModelFixture.GEMMA4_E2B_Q8.path();
+        Path sidecar = ModelFixture.GEMMA4_E2B_MTP.path();
         if (!Files.exists(model) || !Files.exists(sidecar)) {
             System.out.println("Gemma4MtpIdentityTest: model/sidecar absent, skipping");
             return;
@@ -119,7 +115,7 @@ public final class Gemma4MtpIdentityTest {
                             1L << 30,
                             PromptCache.modelSeed(model));
             CachedSession<Gemma4.State> session =
-                    CachedSession.resume(m, cache, m.newState(4096, 64), new long[0]);
+                    CachedSession.start(m, cache, m.newState(4096, 64));
             int[] ids = withBos(bos, tk.encode(PROMPTS[0]).toList());
             session.ingest(List.of(Batch.prefill(ids)));
             Gemma4Speculative.Result r =

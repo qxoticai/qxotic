@@ -95,5 +95,12 @@
       <artifactId>spring-ai-client-chat</artifactId>
       <scope>test</scope>
     </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-kernels</artifactId>
+      <version>${project.version}</version>
+      <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 </project>

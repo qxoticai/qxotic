@@ -5,6 +5,7 @@ import com.qxotic.jinfer.chat.TokenRuns;
 import com.qxotic.jinfer.chat.ToolCallSyntax;
 import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.jinfer.testkit.AbstractToolWireTest;
+import com.qxotic.jinfer.testkit.ModelFixture;
 import com.qxotic.toknroll.Tokenizer;
 import java.nio.file.Path;
 import java.util.Map;
@@ -17,7 +18,7 @@ class SmolLm3ToolWireTest extends AbstractToolWireTest {
 
     @Override
     protected Path modelPath() {
-        return Path.of("/home/mukel/Desktop/playground/models/ggml-org/SmolLM3-Q4_K_M.gguf");
+        return ModelFixture.SMOLLM3_Q4.path();
     }
 
     @Override

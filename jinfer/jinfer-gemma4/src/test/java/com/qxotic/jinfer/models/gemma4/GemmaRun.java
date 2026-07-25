@@ -5,6 +5,7 @@
 package com.qxotic.jinfer.models.gemma4;
 
 import com.qxotic.jinfer.llm.SpecialTokens;
+import com.qxotic.jinfer.testkit.ModelFixture;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -26,9 +27,7 @@ public final class GemmaRun {
 
     private static void main(String[] args) throws Exception {
         String path =
-                args.length > 0
-                        ? args[0]
-                        : "/home/mukel/Desktop/playground/models/google/gemma-4-E2B_q4_0-it.gguf";
+                args.length > 0 ? args[0] : ModelFixture.GEMMA4_E2B_GOOGLE_Q4.path().toString();
         String promptStr = args.length > 1 ? args[1] : "The capital of France is";
         int nTokens = args.length > 2 ? Integer.parseInt(args[2]) : 20;
         int contextCapacity =

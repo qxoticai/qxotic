@@ -9,6 +9,7 @@ package com.qxotic.jinfer.models.gemma4;
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.FloatTensor;
 import com.qxotic.jinfer.llm.SpecialTokens;
+import com.qxotic.jinfer.testkit.ModelFixture;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -32,8 +33,7 @@ public final class BatchVsStepProbe {
 
     private static void main(String[] args) throws Exception {
         int chunk = args.length > 0 ? Integer.parseInt(args[0]) : 3; // = MTP depth+1
-        Path model =
-                Path.of("/home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-Q8_0.gguf");
+        Path model = ModelFixture.GEMMA4_E2B_Q8.path();
         if (!Files.exists(model)) {
             System.out.println("BatchVsStepProbe: model absent, skipping");
             return;

@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.Media;
 import com.qxotic.jinfer.MultiModal;
+import com.qxotic.jinfer.testkit.ModelFixture;
 import dev.langchain4j.data.message.AudioContent;
 import dev.langchain4j.data.message.ImageContent;
 import dev.langchain4j.data.message.TextContent;
@@ -32,20 +33,12 @@ import org.junit.jupiter.api.Test;
 @Tag("integration")
 class Gemma4MediaIT {
 
-    static final Path MODEL =
-            Path.of(
-                    "/home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf");
-    static final Path MMPROJ =
-            Path.of(
-                    "/home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf");
+    static final Path MODEL = ModelFixture.GEMMA4_E2B_QAT_Q4.path();
+    static final Path MMPROJ = ModelFixture.GEMMA4_E2B_MMPROJ.path();
 
     // Audio: the 12B mmproj carries the gemma4ua audio adapter (the E2B sidecar is vision-only).
-    static final Path AUDIO_MODEL =
-            Path.of(
-                    "/home/mukel/Desktop/playground/models/unsloth/gemma-4-12B-it-qat-GGUF/gemma-4-12B-it-qat-UD-Q4_K_XL.gguf");
-    static final Path AUDIO_MMPROJ =
-            Path.of(
-                    "/home/mukel/Desktop/playground/models/unsloth/gemma-4-12B-it-qat-GGUF/mmproj-F32.gguf");
+    static final Path AUDIO_MODEL = ModelFixture.GEMMA4_12B_QAT_Q4.path();
+    static final Path AUDIO_MMPROJ = ModelFixture.GEMMA4_12B_QAT_MMPROJ.path();
 
     static JinferChatModel model;
 

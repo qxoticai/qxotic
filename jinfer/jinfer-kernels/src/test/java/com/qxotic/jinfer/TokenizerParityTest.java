@@ -3,6 +3,7 @@ package com.qxotic.jinfer;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
+import com.qxotic.jinfer.testkit.ModelFixture;
 import com.qxotic.toknroll.Tokenizer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
@@ -79,8 +80,7 @@ public final class TokenizerParityTest {
 
     @Test
     void oracle() throws Exception {
-        Path model =
-                Path.of("/home/mukel/Desktop/playground/models/LiquidAI/LFM2.5-8B-A1B-Q8_0.gguf");
+        Path model = ModelFixture.LFM25_8B_Q8.path();
         Assumptions.assumeTrue(Files.exists(model), "model not found: " + model);
         failures = 0;
         GGUF gguf;

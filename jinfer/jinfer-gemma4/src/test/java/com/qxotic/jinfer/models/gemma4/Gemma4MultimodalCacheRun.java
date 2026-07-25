@@ -16,6 +16,7 @@ import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.TurnTemplate;
+import com.qxotic.jinfer.testkit.ModelFixture;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.nio.file.Path;
@@ -28,17 +29,10 @@ import org.junit.jupiter.api.Test;
 
 public final class Gemma4MultimodalCacheRun {
 
-    static final Path E2B =
-            Path.of("/home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-Q8_0.gguf");
-    static final Path E2B_MMPROJ =
-            Path.of(
-                    "/home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf");
-    static final Path B12 =
-            Path.of(
-                    "/home/mukel/Desktop/playground/models/unsloth/gemma-4-12b-it-GGUF/gemma-4-12b-it-Q8_0.gguf");
-    static final Path B12_MMPROJ =
-            Path.of(
-                    "/home/mukel/Desktop/playground/models/unsloth/gemma-4-12b-it-GGUF/mmproj-F32.gguf");
+    static final Path E2B = ModelFixture.GEMMA4_E2B_Q8.path();
+    static final Path E2B_MMPROJ = ModelFixture.GEMMA4_E2B_MMPROJ.path();
+    static final Path B12 = ModelFixture.GEMMA4_12B_Q8.path();
+    static final Path B12_MMPROJ = ModelFixture.GEMMA4_12B_MMPROJ.path();
 
     static int failures;
     static Gemma4 model;
@@ -52,11 +46,8 @@ public final class Gemma4MultimodalCacheRun {
     @Tag("integration")
     void run() throws Exception {
         Assumptions.assumeTrue(
-                java.nio.file.Files.exists(
-                        java.nio.file.Path.of(
-                                "/home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-Q8_0.gguf")),
-                "model not found:"
-                    + " /home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-Q8_0.gguf");
+                java.nio.file.Files.exists(ModelFixture.GEMMA4_E2B_Q8.path()),
+                "model not found:" + " " + ModelFixture.GEMMA4_E2B_Q8.path());
         main(testArgs());
     }
 
@@ -125,7 +116,7 @@ public final class Gemma4MultimodalCacheRun {
         PromptCache<Gemma4.State> cache =
                 new PromptCache<>(codec, CacheStore.inMemory(), budget, seed);
         CachedSession<Gemma4.State> a =
-                CachedSession.resume(model, cache, model.newState(4096, 512), new long[0]);
+                CachedSession.start(model, cache, model.newState(4096, 512));
         long t0 = System.nanoTime();
         List<Batch> batches =
                 concat(
@@ -135,7 +126,7 @@ public final class Gemma4MultimodalCacheRun {
         long t1 = System.nanoTime();
         a.ingest(batches);
         double ingestMs = (System.nanoTime() - t1) / 1e6;
-        long[] turnFp = a.fingerprints(); // the dual view up to the turn end
+        int turnPositions = a.length(); // the stream up to the turn end == positions(batches)
         double fullTtft = encodeMs + ingestMs + firstTokenMs(a);
         String reply = decode(a, 16);
         System.out.printf("reply: %s%n", reply.strip());
@@ -148,26 +139,24 @@ public final class Gemma4MultimodalCacheRun {
         }
 
         // -- cold resume: everything restored, byte-identical through the codec --
-        long[] all = a.fingerprints();
+        int all = a.length();
         CachedSession<Gemma4.State> b =
-                CachedSession.resume(model, cache, model.newState(4096, 512), all);
+                CachedSession.resume(model, cache, model.newState(4096, 512), a);
         check(
-                b.position() == all.length,
+                b.position() == all,
                 name
                         + ": cold resume restores all "
-                        + all.length
+                        + all
                         + " positions (got "
                         + b.position()
                         + ")");
         check(
-                statesEqual(a.state(), b.state(), all.length),
+                statesEqual(a.state(), b.state(), all),
                 name + ": restored state byte-identical via codec");
 
         // -- divergence inside the media block: only the pre-media text block is reused --
         int[] bounds = blockBounds(batches); // [preMediaEnd, mediaEnd]
-        long[] mutated = all.clone();
-        mutated[bounds[0] + mediaRows / 2] ^=
-                0x5DEECE66DL; // flip a fingerprint inside the media block
+        List<Batch> mutated = perturbMedia(batches); // one media row value flipped
         CachedSession<Gemma4.State> d =
                 CachedSession.resume(model, cache, model.newState(4096, 512), mutated);
         check(
@@ -176,7 +165,7 @@ public final class Gemma4MultimodalCacheRun {
                         + ": divergent media resumes only the text prefix ("
                         + d.position()
                         + "/"
-                        + all.length
+                        + all
                         + ", media block excluded)");
 
         // -- re-encode determinism (informational): same media, fresh encode -> same fingerprints?
@@ -184,10 +173,11 @@ public final class Gemma4MultimodalCacheRun {
         List<Batch> again = concat(template.conversationStart(), template.encodeTurn(turn));
         PromptCache<Gemma4.State> scratch =
                 new PromptCache<>(codec, CacheStore.inMemory(), budget, seed);
+        // observable form: a fresh state resuming the RE-ENCODED batches against the first
+        // cache restores everything iff the re-encode produced the same content stream
         CachedSession<Gemma4.State> e =
-                CachedSession.resume(model, scratch, model.newState(4096, 512), new long[0]);
-        e.ingest(again);
-        boolean reEncodeStable = java.util.Arrays.equals(turnFp, e.fingerprints());
+                CachedSession.resume(model, cache, model.newState(4096, 512), again);
+        boolean reEncodeStable = e.position() == turnPositions;
         System.out.println(
                 "      (re-encode fingerprint-stable: "
                         + reEncodeStable
@@ -199,9 +189,9 @@ public final class Gemma4MultimodalCacheRun {
 
         // -- the DOUBLE WIN: same media, different question resumes at/after the media block
         // end - both the media encode and the media prefill are skipped --
-        long[] sameMediaFp = java.util.Arrays.copyOf(all, bounds[1]);
+        List<Batch> sameMedia = truncateAt(batches, bounds[1]);
         CachedSession<Gemma4.State> dw =
-                CachedSession.resume(model, cache, model.newState(4096, 512), sameMediaFp);
+                CachedSession.resume(model, cache, model.newState(4096, 512), sameMedia);
         check(
                 dw.position() >= bounds[1],
                 name
@@ -214,9 +204,11 @@ public final class Gemma4MultimodalCacheRun {
         // -- a genuinely different media on the SAME cache: shares the text prefix, answers
         // differently --
         Message otherTurn = new Message(Role.USER, List.of(otherMedia, new Part.Text(question)));
+        List<Batch> otherBatches =
+                concat(template.conversationStart(), template.encodeTurn(otherTurn));
         CachedSession<Gemma4.State> c =
-                CachedSession.resume(model, cache, model.newState(4096, 512), new long[0]);
-        c.ingest(concat(template.conversationStart(), template.encodeTurn(otherTurn)));
+                CachedSession.start(model, cache, model.newState(4096, 512));
+        c.ingest(otherBatches);
         c.ingest(template.generationPrompt(true));
         String otherReply = decode(c, 16);
         System.out.printf("other-media reply: %s%n", otherReply.strip());
@@ -231,8 +223,8 @@ public final class Gemma4MultimodalCacheRun {
         for (int r = 0; r < 3; r++) {
             long t2 = System.nanoTime();
             CachedSession<Gemma4.State> w =
-                    CachedSession.resume(model, cache, model.newState(4096, 512), turnFp);
-            if (w.position() != turnFp.length)
+                    CachedSession.resume(model, cache, model.newState(4096, 512), batches);
+            if (w.position() != turnPositions)
                 throw new IllegalStateException("warm resume missed");
             w.ingest(template.generationPrompt(true));
             model.logits(w.state()).argmax();
@@ -258,9 +250,9 @@ public final class Gemma4MultimodalCacheRun {
             // 1. the first image's turn serves fully from disk, and greedy decode from the
             // restored KV matches the live session's reply (the encode was skipped entirely)
             CachedSession<Gemma4.State> fa =
-                    fz.serve(model, codec, seed, model.newState(4096, 512), turnFp);
+                    fz.serve(model, codec, seed, model.newState(4096, 512), batches);
             check(
-                    fa.position() == turnFp.length,
+                    fa.position() == turnPositions,
                     name + ": frozen serve restores the media turn (" + fa.position() + ")");
             fa.ingest(template.generationPrompt(true));
             check(
@@ -269,19 +261,14 @@ public final class Gemma4MultimodalCacheRun {
 
             // 2. the SECOND image's conversation serves from the same artifact (catalog)
             CachedSession<Gemma4.State> fc =
-                    fz.serve(model, codec, seed, model.newState(4096, 512), c.fingerprints());
+                    fz.serve(model, codec, seed, model.newState(4096, 512), otherBatches);
             check(
                     fc.position() >= bounds[1],
                     name + ": second image serves from the same catalog (" + fc.position() + ")");
 
             // 3. double win from disk: same media, different question resumes past media end
             CachedSession<Gemma4.State> fd =
-                    fz.serve(
-                            model,
-                            codec,
-                            seed,
-                            model.newState(4096, 512),
-                            java.util.Arrays.copyOf(all, bounds[1]));
+                    fz.serve(model, codec, seed, model.newState(4096, 512), sameMedia);
             check(
                     fd.position() >= bounds[1],
                     name
@@ -300,7 +287,7 @@ public final class Gemma4MultimodalCacheRun {
                             + ": frozen divergent media resumes the text prefix ("
                             + fm.position()
                             + "/"
-                            + all.length
+                            + all
                             + ")");
         } catch (java.io.IOException ioe) {
             throw new RuntimeException(ioe);
@@ -340,6 +327,39 @@ public final class Gemma4MultimodalCacheRun {
             pos += b.count();
         }
         return new int[] {preEnd, mediaEnd};
+    }
+
+    /** The batch list with ONE media row value flipped - diverges inside the media block. */
+    static List<Batch> perturbMedia(List<Batch> batches) {
+        List<Batch> out = new ArrayList<>();
+        boolean done = false;
+        for (Batch b : batches) {
+            if (!done && b.input() instanceof Batch.Input.Embeddings em) {
+                long size = em.rows().size();
+                com.qxotic.jinfer.F32FloatTensor copy =
+                        com.qxotic.jinfer.F32FloatTensor.allocate((int) size);
+                for (long i = 0; i < size; i++) copy.setFloat(i, em.rows().getFloat(i));
+                long mid = size / 2;
+                copy.setFloat(mid, copy.getFloat(mid) + 1f);
+                out.add(Batch.embeddings(copy, em.count(), em.bidirectional()));
+                done = true;
+            } else {
+                out.add(b);
+            }
+        }
+        return out;
+    }
+
+    /** The batch list truncated at position {@code end} (a batch boundary here: media end). */
+    static List<Batch> truncateAt(List<Batch> batches, int end) {
+        List<Batch> out = new ArrayList<>();
+        int pos = 0;
+        for (Batch b : batches) {
+            if (pos + b.count() > end) break;
+            out.add(b);
+            pos += b.count();
+        }
+        return out;
     }
 
     static int mediaRows(List<Batch> batches) {

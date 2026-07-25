@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.testkit.ModelFixture;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -31,7 +32,7 @@ class MiniCpm5ThinkingIT {
             Path.of(
                     System.getProperty(
                             "jinfer.testModelMiniCpm5",
-                            "/home/mukel/Desktop/playground/models/openbmb/MiniCPM5-1B-Q8_0.gguf"));
+                            ModelFixture.MINICPM5_1B_Q8.path().toString()));
 
     static JinferChatModel model;
 

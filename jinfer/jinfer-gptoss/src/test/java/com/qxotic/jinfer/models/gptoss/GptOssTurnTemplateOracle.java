@@ -5,6 +5,7 @@
 package com.qxotic.jinfer.models.gptoss;
 
 import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.testkit.ModelFixture;
 import com.qxotic.jinfer.testkit.OracleScenario;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -19,7 +20,7 @@ public final class GptOssTurnTemplateOracle {
 
     @Test
     void oracle() throws Exception {
-        Path model = Path.of("/home/mukel/Desktop/playground/models/unsloth/gpt-oss-20b-Q8_0.gguf");
+        Path model = ModelFixture.GPTOSS_20B_Q8.path();
         Assumptions.assumeTrue(Files.exists(model), "model not found: " + model);
         String today = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
         OracleScenario o =

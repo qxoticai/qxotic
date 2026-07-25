@@ -5,6 +5,7 @@
 //   java ... com.qxotic.jinfer.models.gemma4.Gemma4MtpLoadTest [mtp-sidecar.gguf]
 package com.qxotic.jinfer.models.gemma4;
 
+import com.qxotic.jinfer.testkit.ModelFixture;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Assumptions;
@@ -28,11 +29,8 @@ public final class Gemma4MtpLoadTest {
     @Tag("integration")
     void run() throws Exception {
         Assumptions.assumeTrue(
-                java.nio.file.Files.exists(
-                        java.nio.file.Path.of(
-                                "/home/mukel/Desktop/playground/models/unsloth/mtp-gemma-4-E2B-it.gguf")),
-                "model not found:"
-                        + " /home/mukel/Desktop/playground/models/unsloth/mtp-gemma-4-E2B-it.gguf");
+                java.nio.file.Files.exists(ModelFixture.GEMMA4_E2B_MTP.path()),
+                "model not found:" + " " + ModelFixture.GEMMA4_E2B_MTP.path());
         main(testArgs());
     }
 
@@ -43,10 +41,7 @@ public final class Gemma4MtpLoadTest {
 
     private static void main(String[] args) throws Exception {
         Path sidecar =
-                Path.of(
-                        args.length > 0
-                                ? args[0]
-                                : "/home/mukel/Desktop/playground/models/unsloth/mtp-gemma-4-E2B-it.gguf");
+                Path.of(args.length > 0 ? args[0] : ModelFixture.GEMMA4_E2B_MTP.path().toString());
         if (!Files.exists(sidecar)) {
             System.out.println("Gemma4MtpLoadTest: sidecar not found (" + sidecar + "), skipping");
             return;

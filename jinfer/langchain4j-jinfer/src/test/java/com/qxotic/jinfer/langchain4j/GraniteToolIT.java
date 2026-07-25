@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.langchain4j;
 
+import com.qxotic.jinfer.testkit.ModelFixture;
 import java.nio.file.Path;
 
 /**
@@ -13,8 +14,6 @@ class GraniteToolIT extends AbstractToolIT {
     Path modelPath() {
         return Path.of(
                 System.getProperty(
-                        "jinfer.graniteModel",
-                        "/home/mukel/Desktop/playground/models/ibm-granite/"
-                                + "granite-4.1-3b-Q8_0.gguf"));
+                        "jinfer.graniteModel", ModelFixture.GRANITE_41_3B_Q8.path().toString()));
     }
 }

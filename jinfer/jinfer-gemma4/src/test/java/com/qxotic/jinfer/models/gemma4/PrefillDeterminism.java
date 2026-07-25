@@ -2,6 +2,7 @@ package com.qxotic.jinfer.models.gemma4;
 
 import com.qxotic.jinfer.FloatTensor;
 import com.qxotic.jinfer.llm.SpecialTokens;
+import com.qxotic.jinfer.testkit.ModelFixture;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -27,11 +28,8 @@ public final class PrefillDeterminism {
     @Tag("integration")
     void run() throws Exception {
         Assumptions.assumeTrue(
-                java.nio.file.Files.exists(
-                        java.nio.file.Path.of(
-                                "/home/mukel/Desktop/playground/models/unsloth/gemma-4-26B-A4B-it-Q8_0.gguf")),
-                "model not found:"
-                    + " /home/mukel/Desktop/playground/models/unsloth/gemma-4-26B-A4B-it-Q8_0.gguf");
+                java.nio.file.Files.exists(ModelFixture.GEMMA4_26B_MOE_Q8.path()),
+                "model not found:" + " " + ModelFixture.GEMMA4_26B_MOE_Q8.path());
         main(testArgs());
     }
 
@@ -41,10 +39,7 @@ public final class PrefillDeterminism {
     }
 
     private static void main(String[] args) throws Exception {
-        String path =
-                args.length > 0
-                        ? args[0]
-                        : "/home/mukel/Desktop/playground/models/unsloth/gemma-4-26B-A4B-it-Q8_0.gguf";
+        String path = args.length > 0 ? args[0] : ModelFixture.GEMMA4_26B_MOE_Q8.path().toString();
         String promptStr = args.length > 1 ? args[1] : "The capital of France is";
         int reps = args.length > 2 ? Integer.parseInt(args[2]) : 12;
 

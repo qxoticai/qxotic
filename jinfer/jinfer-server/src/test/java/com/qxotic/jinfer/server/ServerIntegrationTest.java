@@ -6,6 +6,7 @@ import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
+import com.qxotic.jinfer.testkit.ModelFixture;
 import com.sun.net.httpserver.HttpServer;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -76,9 +77,7 @@ public final class ServerIntegrationTest {
 
     private static Path modelPath() {
         return Path.of(
-                System.getProperty(
-                        "jinfer.testModel",
-                        "/home/mukel/Desktop/playground/models/LiquidAI/LFM2.5-8B-A1B-Q8_0.gguf"));
+                System.getProperty("jinfer.testModel", ModelFixture.LFM25_8B_Q8.path().toString()));
     }
 
     private static void assertClean() {

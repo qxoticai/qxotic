@@ -2,6 +2,7 @@ package com.qxotic.jinfer.spring.ai;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import com.qxotic.jinfer.testkit.ModelFixture;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -24,8 +25,7 @@ class JinferLifecycleIT {
     static final Path SMALL =
             Path.of(
                     System.getProperty(
-                            "jinfer.testModelSmall",
-                            "/home/mukel/Desktop/playground/models/LiquidAI/LFM2.5-350M-Q8_0.gguf"));
+                            "jinfer.testModelSmall", ModelFixture.LFM25_350M_Q8.path().toString()));
 
     private static JinferChatModel load() {
         return JinferChatModel.builder().modelPath(SMALL).contextLength(2048).maxTokens(8).build();

@@ -5,6 +5,7 @@ import com.qxotic.jinfer.chat.TokenRuns;
 import com.qxotic.jinfer.chat.ToolCallSyntax;
 import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.jinfer.testkit.AbstractToolWireTest;
+import com.qxotic.jinfer.testkit.ModelFixture;
 import com.qxotic.toknroll.Tokenizer;
 import java.nio.file.Path;
 import java.util.Map;
@@ -17,9 +18,7 @@ class MistralToolWireTest extends AbstractToolWireTest {
 
     @Override
     protected Path modelPath() {
-        return Path.of(
-                "/home/mukel/Desktop/playground/models/unsloth/"
-                        + "Ministral-3-3B-Instruct-2512-Q8_0.gguf");
+        return ModelFixture.MINISTRAL_3B_Q8.path();
     }
 
     @Override

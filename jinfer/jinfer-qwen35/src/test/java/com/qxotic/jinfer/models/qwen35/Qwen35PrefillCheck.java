@@ -9,6 +9,7 @@ package com.qxotic.jinfer.models.qwen35;
 
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.FloatTensor;
+import com.qxotic.jinfer.testkit.ModelFixture;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Assumptions;
@@ -21,11 +22,8 @@ public final class Qwen35PrefillCheck {
     @Tag("integration")
     void run() throws Exception {
         Assumptions.assumeTrue(
-                java.nio.file.Files.exists(
-                        java.nio.file.Path.of(
-                                "/home/mukel/Desktop/playground/models/unsloth/Qwen3.5-2B-GGUF/Qwen3.5-2B-Q8_0.gguf")),
-                "model not found:"
-                    + " /home/mukel/Desktop/playground/models/unsloth/Qwen3.5-2B-GGUF/Qwen3.5-2B-Q8_0.gguf");
+                java.nio.file.Files.exists(ModelFixture.QWEN35_2B_Q8.path()),
+                "model not found:" + " " + ModelFixture.QWEN35_2B_Q8.path());
         main(testArgs());
     }
 
@@ -36,10 +34,7 @@ public final class Qwen35PrefillCheck {
 
     private static void main(String[] args) throws Exception {
         Path path =
-                Path.of(
-                        args.length > 0
-                                ? args[0]
-                                : "/home/mukel/Desktop/playground/models/unsloth/Qwen3.5-2B-GGUF/Qwen3.5-2B-Q8_0.gguf");
+                Path.of(args.length > 0 ? args[0] : ModelFixture.QWEN35_2B_Q8.path().toString());
         if (!Files.exists(path)) {
             System.out.println("Qwen35PrefillCheck: model not found (" + path + "), skipping");
             return;

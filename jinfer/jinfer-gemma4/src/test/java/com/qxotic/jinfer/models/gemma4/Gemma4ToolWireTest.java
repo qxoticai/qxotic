@@ -4,6 +4,7 @@ import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.TokenRuns;
 import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.jinfer.testkit.AbstractToolWireTest;
+import com.qxotic.jinfer.testkit.ModelFixture;
 import com.qxotic.toknroll.Tokenizer;
 import java.nio.file.Path;
 import java.util.Map;
@@ -16,7 +17,7 @@ class Gemma4ToolWireTest extends AbstractToolWireTest {
 
     @Override
     protected Path modelPath() {
-        return Path.of("/home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-Q8_0.gguf");
+        return ModelFixture.GEMMA4_E2B_Q8.path();
     }
 
     @Override

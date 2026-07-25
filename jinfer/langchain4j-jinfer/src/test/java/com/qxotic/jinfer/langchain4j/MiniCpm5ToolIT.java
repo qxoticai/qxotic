@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.langchain4j;
 
+import com.qxotic.jinfer.testkit.ModelFixture;
 import java.nio.file.Path;
 
 /**
@@ -13,7 +14,6 @@ class MiniCpm5ToolIT extends AbstractToolIT {
     Path modelPath() {
         return Path.of(
                 System.getProperty(
-                        "jinfer.minicpmModel",
-                        "/home/mukel/Desktop/playground/models/openbmb/MiniCPM5-1B-Q8_0.gguf"));
+                        "jinfer.minicpmModel", ModelFixture.MINICPM5_1B_Q8.path().toString()));
     }
 }

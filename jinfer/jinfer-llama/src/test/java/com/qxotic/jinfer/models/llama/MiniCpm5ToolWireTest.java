@@ -4,6 +4,7 @@ import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.TokenRuns;
 import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.jinfer.testkit.AbstractToolWireTest;
+import com.qxotic.jinfer.testkit.ModelFixture;
 import com.qxotic.toknroll.Tokenizer;
 import java.nio.file.Path;
 import java.util.Map;
@@ -17,7 +18,7 @@ class MiniCpm5ToolWireTest extends AbstractToolWireTest {
 
     @Override
     protected Path modelPath() {
-        return Path.of("/home/mukel/Desktop/playground/models/openbmb/MiniCPM5-1B-Q8_0.gguf");
+        return ModelFixture.MINICPM5_1B_Q8.path();
     }
 
     @Override

@@ -10,6 +10,7 @@ package com.qxotic.jinfer.models.gemma4;
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.FloatTensor;
 import com.qxotic.jinfer.llm.SpecialTokens;
+import com.qxotic.jinfer.testkit.ModelFixture;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -35,11 +36,8 @@ public final class MtpLockstepOracle {
     @Tag("driver")
     void run() throws Exception {
         Assumptions.assumeTrue(
-                java.nio.file.Files.exists(
-                        java.nio.file.Path.of(
-                                "/home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-Q8_0.gguf")),
-                "model not found:"
-                    + " /home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-Q8_0.gguf");
+                java.nio.file.Files.exists(ModelFixture.GEMMA4_E2B_Q8.path()),
+                "model not found:" + " " + ModelFixture.GEMMA4_E2B_Q8.path());
         main(testArgs());
     }
 
@@ -50,10 +48,8 @@ public final class MtpLockstepOracle {
 
     private static void main(String[] args) throws Exception {
         int depth = args.length > 0 ? Integer.parseInt(args[0]) : 2;
-        Path model =
-                Path.of("/home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-Q8_0.gguf");
-        Path sidecar =
-                Path.of("/home/mukel/Desktop/playground/models/unsloth/mtp-gemma-4-E2B-it.gguf");
+        Path model = ModelFixture.GEMMA4_E2B_Q8.path();
+        Path sidecar = ModelFixture.GEMMA4_E2B_MTP.path();
         if (!Files.exists(model) || !Files.exists(sidecar)) {
             System.out.println("MtpLockstepOracle: model/sidecar absent, skipping");
             return;

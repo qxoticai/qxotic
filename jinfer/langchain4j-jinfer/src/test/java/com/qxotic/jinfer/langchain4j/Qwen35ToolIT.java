@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.langchain4j;
 
+import com.qxotic.jinfer.testkit.ModelFixture;
 import java.nio.file.Path;
 
 /**
@@ -14,7 +15,6 @@ class Qwen35ToolIT extends AbstractToolIT {
     Path modelPath() {
         return Path.of(
                 System.getProperty(
-                        "jinfer.qwen35Model",
-                        "/home/mukel/Desktop/playground/models/unsloth/Qwen3.5-4B-Q8_0.gguf"));
+                        "jinfer.qwen35Model", ModelFixture.QWEN35_4B_Q8.path().toString()));
     }
 }

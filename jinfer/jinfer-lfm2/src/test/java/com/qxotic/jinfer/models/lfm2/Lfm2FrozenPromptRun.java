@@ -5,6 +5,7 @@ package com.qxotic.jinfer.models.lfm2;
 import com.qxotic.jinfer.llm.*;
 import com.qxotic.jinfer.testkit.FrozenPromptScenario;
 import com.qxotic.jinfer.testkit.Harness;
+import com.qxotic.jinfer.testkit.ModelFixture;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -22,11 +23,7 @@ public final class Lfm2FrozenPromptRun {
     }
 
     private static void main(String[] args) throws Exception {
-        Path path =
-                Path.of(
-                        args.length > 0
-                                ? args[0]
-                                : "/home/mukel/Desktop/playground/models/LiquidAI/LFM2.5-8B-A1B-Q8_0.gguf");
+        Path path = Path.of(args.length > 0 ? args[0] : ModelFixture.LFM25_8B_Q8.path().toString());
         Lfm2 m = Lfm2.loadModel(path, 8192);
         new FrozenPromptScenario<>(
                         new Harness<>(m.loaded(), m.turnTemplate().orElseThrow(), path, 8192))

@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.langchain4j;
 
+import com.qxotic.jinfer.testkit.ModelFixture;
 import java.nio.file.Path;
 
 /**
@@ -14,8 +15,6 @@ class MinistralToolIT extends AbstractToolIT {
     Path modelPath() {
         return Path.of(
                 System.getProperty(
-                        "jinfer.ministralModel",
-                        "/home/mukel/Desktop/playground/models/unsloth/"
-                                + "Ministral-3-3B-Instruct-2512-Q8_0.gguf"));
+                        "jinfer.ministralModel", ModelFixture.MINISTRAL_3B_Q8.path().toString()));
     }
 }
