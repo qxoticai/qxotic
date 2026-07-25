@@ -113,7 +113,7 @@ public final class NemotronH
     }
 
     @Override
-    public void ingest(State s, Batch batch) {
+    public void forward(State s, Batch batch) {
         int n = batch.count();
         if (n > s.batchCapacity)
             throw new IllegalArgumentException(
@@ -153,7 +153,7 @@ public final class NemotronH
     }
 
     @Override
-    public FloatTensor logits(State s, int output) {
+    public FloatTensor head(State s, int output) {
         int dim = configuration.embeddingLength;
         int row = s.lastChunkLen - s.outputCount + output;
         rmsnorm(s.xb, 0, s.x, (long) row * dim, weights.outputNorm, dim, configuration.rmsNormEps);

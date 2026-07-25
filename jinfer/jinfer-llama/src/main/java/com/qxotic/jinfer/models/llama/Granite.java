@@ -70,7 +70,7 @@ public final class Granite
     }
 
     @Override
-    public void ingest(State s, com.qxotic.jinfer.Batch batch) {
+    public void forward(State s, com.qxotic.jinfer.Batch batch) {
         int n = batch.count();
         if (n > s.batchCapacity)
             throw new IllegalArgumentException(
@@ -108,7 +108,7 @@ public final class Granite
     }
 
     @Override
-    public FloatTensor logits(State s, int output) {
+    public FloatTensor head(State s, int output) {
         int dim = configuration.embeddingLength;
         int row = s.lastChunkLen - s.outputCount + output;
         return Parallel.onDecodePool(

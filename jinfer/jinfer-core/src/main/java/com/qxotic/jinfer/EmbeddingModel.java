@@ -19,7 +19,14 @@ public interface EmbeddingModel<C extends Config, W, S extends RuntimeState>
      * Pool (+ L2-normalize) the {@code index}-th retained hidden state of the last ingest into an
      * embedding.
      */
-    FloatTensor embedding(S state, int index);
+    default FloatTensor embedding(S state, int index) {
+        FloatTensor embedding = pool(state, index);
+        java.lang.ref.Reference.reachabilityFence(this);
+        return embedding;
+    }
+
+    /** The pooling head behind {@link #embedding} - the implementation seam. */
+    FloatTensor pool(S state, int index);
 
     /** The last retained row — the pooled embedding of a single ingested sequence. */
     default FloatTensor embedding(S state) {

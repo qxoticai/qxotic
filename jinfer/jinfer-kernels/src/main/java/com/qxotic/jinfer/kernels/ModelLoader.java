@@ -43,8 +43,8 @@ public final class ModelLoader {
      * mapping lives exactly as long as any tensor of the model is reachable and is unmapped by GC
      * once the whole model graph is dropped - weights can be released, never leak for the process.
      * (Kernels read via raw addresses ({@code FloatTensor.GLOBAL_SEGMENT}), so liveness is carried
-     * by object reachability: callers must hold the model across kernel calls - {@code Generator}
-     * and {@code CachedSession} add reachability fences on their passes as hardening.)
+     * by object reachability: the {@code Model} interface's public entry points fence the model
+     * across every kernel pass - see the lifetime note on {@code com.qxotic.jinfer.Model}.)
      */
     public static Map<String, GGMLTensorEntry> loadTensors(FileChannel fileChannel, GGUF gguf)
             throws IOException {

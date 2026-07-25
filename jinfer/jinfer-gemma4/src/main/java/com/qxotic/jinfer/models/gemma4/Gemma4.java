@@ -87,7 +87,7 @@ public final class Gemma4
     }
 
     @Override
-    public void ingest(State s, com.qxotic.jinfer.Batch batch) {
+    public void forward(State s, com.qxotic.jinfer.Batch batch) {
         int n = batch.count();
         if (n > s.batchCapacity) {
             throw new IllegalArgumentException(
@@ -139,7 +139,7 @@ public final class Gemma4
      * is the last row's residual; ALL → output indexes the rows in order.)
      */
     @Override
-    public FloatTensor logits(State s, int output) {
+    public FloatTensor head(State s, int output) {
         int dim = configuration.embeddingLength();
         int row = s.lastChunkLen - s.outputCount + output; // map retained index → chunk row
         // The vocab projection (vocab × dim) is the heaviest single op in decode and

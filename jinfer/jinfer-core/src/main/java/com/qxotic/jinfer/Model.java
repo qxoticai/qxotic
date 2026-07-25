@@ -9,6 +9,13 @@ package com.qxotic.jinfer;
  * weights are captured so {@link #ingest} never threads them, and exposed so a model can be cheaply
  * cloned over shared weights ({@code new Impl(config(), weights())}). State is caller-owned,
  * forkable, and many run at once.
+ *
+ * <p>Lifetime: weights and state buffers release with reachability - drop the last reference and GC
+ * unmaps/frees them; there is no close(). Kernels read those buffers via raw addresses the GC
+ * cannot see ({@code FloatTensor.GLOBAL_SEGMENT}), so every public entry point that runs kernels
+ * ({@link #ingest}, a head projection) is a default wrapper whose trailing reachability fence pins
+ * the model across the call - implementations override the unfenced seam ({@link #forward}, ...)
+ * and callers never think about it.
  */
 public interface Model<C extends Config, W, S extends RuntimeState> {
 
@@ -38,5 +45,11 @@ public interface Model<C extends Config, W, S extends RuntimeState> {
      * retain the final hidden states selected by {@link Batch#outputs()}. The {@link Batch.Input}
      * union is the multi-modal seam.
      */
-    void ingest(S state, Batch batch);
+    default void ingest(S state, Batch batch) {
+        forward(state, batch);
+        java.lang.ref.Reference.reachabilityFence(this);
+    }
+
+    /** The forward pass behind {@link #ingest} - the implementation seam, never called directly. */
+    void forward(S state, Batch batch);
 }

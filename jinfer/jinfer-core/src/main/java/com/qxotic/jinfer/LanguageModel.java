@@ -19,7 +19,14 @@ public interface LanguageModel<C extends Config, W, S extends RuntimeState> exte
     }
 
     /** Vocabulary logits for the {@code output}-th retained hidden state (0 .. outputCount()-1). */
-    FloatTensor logits(S state, int output);
+    default FloatTensor logits(S state, int output) {
+        FloatTensor logits = head(state, output);
+        java.lang.ref.Reference.reachabilityFence(this);
+        return logits;
+    }
+
+    /** The LM-head projection behind {@link #logits} - the implementation seam. */
+    FloatTensor head(S state, int output);
 
     /** The last retained output — the next-token distribution after the last input row. */
     default FloatTensor logits(S state) {

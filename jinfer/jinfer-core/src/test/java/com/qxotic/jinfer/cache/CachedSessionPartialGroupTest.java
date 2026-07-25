@@ -68,7 +68,7 @@ public final class CachedSessionPartialGroupTest {
         }
 
         @Override
-        public void ingest(FakeState s, Batch batch) {
+        public void forward(FakeState s, Batch batch) {
             for (int id : ((Batch.Input.Tokens) batch.input()).ids()) s.ingested.add(id);
             s.position += batch.count();
         }

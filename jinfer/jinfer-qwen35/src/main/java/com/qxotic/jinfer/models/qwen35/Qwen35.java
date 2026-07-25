@@ -81,7 +81,7 @@ public final class Qwen35
     }
 
     @Override
-    public void ingest(State s, Batch batch) {
+    public void forward(State s, Batch batch) {
         int n = batch.count();
         if (n > s.batchCapacity)
             throw new IllegalArgumentException(
@@ -126,7 +126,7 @@ public final class Qwen35
     }
 
     @Override
-    public FloatTensor logits(State s, int output) {
+    public FloatTensor head(State s, int output) {
         if (output != 0)
             throw new UnsupportedOperationException(
                     "Qwen3.5 port keeps only the last row (LAST); ALL outputs unsupported");
