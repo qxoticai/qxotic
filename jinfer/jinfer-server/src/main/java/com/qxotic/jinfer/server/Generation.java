@@ -260,12 +260,8 @@ final class Generation {
             groups.add(List.of(Batch.prefill(template.callSeed())));
         }
 
-        int[] groupLen = new int[groups.size()];
         int total = 0;
-        for (int g = 0; g < groups.size(); g++) {
-            groupLen[g] = groups.get(g).stream().mapToInt(Batch::count).sum();
-            total += groupLen[g];
-        }
+        for (List<Batch> group : groups) for (Batch b : group) total += b.count();
         @SuppressWarnings("unchecked")
         PromptCache<S> cache = (PromptCache<S>) promptCache;
         if (cache == null) {
@@ -275,14 +271,10 @@ final class Generation {
             for (Batch b : Batch.prepare(all, state.batchCapacity())) m.model().ingest(state, b);
             return generateFrom(m, state, request, sinks, 0);
         }
-        long[] fingerprints = new long[total];
-        int i = 0;
-        for (List<Batch> group : groups)
-            for (int id : Batch.tokenIds(group)) fingerprints[i++] = id;
         // Tier 1: a live pooled session whose whole stream strictly prefixes this conversation
         // continues append-only (no restore at all). Otherwise tier 2: resume the longest block
-        // prefix into a fresh state - at most up to the final block (the generation prompt), so a
-        // whole-prompt hit still re-ingests that block, leaving fresh logits at the cursor.
+        // prefix into a fresh state - the pool derives both from the groups (content addressing
+        // is the cache package's own law; the server never sees it).
         @SuppressWarnings("unchecked")
         SessionPool<S> pool = (SessionPool<S>) sessionPool;
         int billed = total;
@@ -290,9 +282,7 @@ final class Generation {
                 m.model(),
                 cache,
                 () -> m.model().newState(m.model().config().contextLength()),
-                fingerprints,
-                total,
-                total - groupLen[groupLen.length - 1],
+                groups,
                 (session, tier1) -> {
                     int restored = session.position(); // reused positions: a BLOCK boundary
                     session.ingestGroups(groups); // (or the pooled stream end), not

@@ -1,8 +1,11 @@
 package com.qxotic.jinfer.cache;
 
+import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.Model;
 import com.qxotic.jinfer.RuntimeState;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.Supplier;
 
 /**
@@ -75,11 +78,19 @@ public final class SessionPool<S extends RuntimeState> {
             Model<?, ?, S> model,
             PromptCache<S> cache,
             Supplier<S> freshState,
-            long[] fingerprints,
-            int len,
-            int resumeLimit,
+            List<List<Batch>> groups,
             Work<S, R> work) {
-        CachedSession<S> session = acquire(fingerprints, len);
+        // flatten to the internal content stream; tier-2 resumes at most up to the FINAL group
+        // (the generation prompt), so a whole-prompt hit still re-ingests it for fresh logits
+        List<Batch> flat = new ArrayList<>();
+        for (List<Batch> group : groups) flat.addAll(group);
+        long[] fingerprints = CachedSession.fingerprints(flat);
+        int lastGroup =
+                groups.isEmpty()
+                        ? 0
+                        : groups.get(groups.size() - 1).stream().mapToInt(Batch::count).sum();
+        int resumeLimit = fingerprints.length - lastGroup;
+        CachedSession<S> session = acquire(fingerprints, fingerprints.length);
         boolean tier1 = session != null;
         if (!tier1) {
             session =

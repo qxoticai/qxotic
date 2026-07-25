@@ -99,14 +99,11 @@ public final class Harness<S extends RuntimeState> {
         return new Reply(out.toString(), Math.max(n, 1));
     }
 
-    /** Plain chunked ingest (no cache); returns the ingested fingerprints. */
-    public long[] ingest(S state, List<Batch> batches) {
-        List<Batch> prepared = Batch.prepare(batches, state.batchCapacity());
-        for (Batch b : prepared) model.model().ingest(state, b);
-        int[] ids = Batch.tokenIds(prepared);
-        long[] fp = new long[ids.length];
-        for (int i = 0; i < fp.length; i++) fp[i] = ids[i];
-        return fp;
+    /** Plain chunked ingest (no cache). */
+    public void ingest(S state, List<Batch> batches) {
+        for (Batch b : Batch.prepare(batches, state.batchCapacity())) {
+            model.model().ingest(state, b);
+        }
     }
 
     /**
@@ -155,12 +152,6 @@ public final class Harness<S extends RuntimeState> {
         long[] out = java.util.Arrays.copyOf(a, a.length + b.length);
         System.arraycopy(b, 0, out, a.length, b.length);
         return out;
-    }
-
-    public static int[] toInts(long[] fp) {
-        int[] ids = new int[fp.length];
-        for (int i = 0; i < ids.length; i++) ids[i] = (int) fp[i];
-        return ids;
     }
 
     /** Long replies (e.g. Harmony analysis channels): show just the final stretch for logs. */

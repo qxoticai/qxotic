@@ -134,7 +134,7 @@ public final class FrozenBlocks {
      * committed as its own block, so a serve-time resume with {@code maxPositions = fp.length - 1}
      * lands exactly one token short and a single-token ingest materializes fresh logits.
      */
-    public static <S extends com.qxotic.jinfer.RuntimeState> long[] compile(
+    public static <S extends com.qxotic.jinfer.RuntimeState> void compile(
             Path out,
             com.qxotic.jinfer.Model<?, ?, S> model,
             StateCodec<S> codec,
@@ -160,7 +160,6 @@ public final class FrozenBlocks {
             session.ingest(prompt);
         }
         build.freeze(out);
-        return session.fingerprints();
     }
 
     /**
@@ -168,7 +167,7 @@ public final class FrozenBlocks {
      * resuming the longest frozen chain matching {@code fp[0..maxPositions)}. The returned
      * session's {@code position()} is the restore depth; the caller re-ingests the rest.
      */
-    public <S extends com.qxotic.jinfer.RuntimeState> CachedSession<S> serve(
+    <S extends com.qxotic.jinfer.RuntimeState> CachedSession<S> serve(
             com.qxotic.jinfer.Model<?, ?, S> model,
             StateCodec<S> codec,
             byte[] modelSeed,
@@ -181,14 +180,27 @@ public final class FrozenBlocks {
         return CachedSession.resume(model, cache, state, fp, maxPositions);
     }
 
-    /** As {@link #serve} restoring up to the whole stream. */
+    /** As {@link #serve} for an encoded prompt (media included), restoring the whole stream. */
     public <S extends com.qxotic.jinfer.RuntimeState> CachedSession<S> serve(
             com.qxotic.jinfer.Model<?, ?, S> model,
             StateCodec<S> codec,
             byte[] modelSeed,
             S state,
-            long[] fp) {
+            List<com.qxotic.jinfer.Batch> prompt) {
+        long[] fp = CachedSession.fingerprints(prompt);
         return serve(model, codec, modelSeed, state, fp, fp.length);
+    }
+
+    /** As {@link #serve} for an encoded prompt, restoring at most {@code maxPositions}. */
+    public <S extends com.qxotic.jinfer.RuntimeState> CachedSession<S> serve(
+            com.qxotic.jinfer.Model<?, ?, S> model,
+            StateCodec<S> codec,
+            byte[] modelSeed,
+            S state,
+            List<com.qxotic.jinfer.Batch> prompt,
+            int maxPositions) {
+        return serve(
+                model, codec, modelSeed, state, CachedSession.fingerprints(prompt), maxPositions);
     }
 
     /** As {@link #serve} for a plain token-id prompt. */

@@ -91,14 +91,13 @@ public final class FrozenTtftBench {
         Path artifact = Files.createTempFile("frozen-" + name, ".jkv");
         artifact.toFile().deleteOnExit();
         long tFreeze = System.nanoTime();
-        long[] fp =
-                FrozenBlocks.compile(
-                        artifact,
-                        m.model(),
-                        m.codec(),
-                        seed,
-                        m.model().newState(CTX, 512),
-                        List.of(Batch.prefill(prompt)));
+        FrozenBlocks.compile(
+                artifact,
+                m.model(),
+                m.codec(),
+                seed,
+                m.model().newState(CTX, 512),
+                List.of(Batch.prefill(prompt)));
         double freezeMs = (System.nanoTime() - tFreeze) / 1e6;
 
         // FROZEN: open + resume (to the deepest boundary below the tip) + tail + first argmax
@@ -107,7 +106,8 @@ public final class FrozenTtftBench {
         double openMs = (System.nanoTime() - t1) / 1e6;
         S state = m.model().newState(CTX, 512);
         long t2 = System.nanoTime();
-        CachedSession<S> w = frozen.serve(m.model(), m.codec(), seed, state, fp, fp.length - 1);
+        CachedSession<S> w =
+                frozen.serve(m.model(), m.codec(), seed, state, prompt, prompt.length - 1);
         double resumeMs = (System.nanoTime() - t2) / 1e6;
         int restored = w.position();
         long t3 = System.nanoTime();

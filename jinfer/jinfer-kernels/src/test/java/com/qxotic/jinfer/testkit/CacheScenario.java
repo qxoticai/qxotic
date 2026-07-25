@@ -64,8 +64,7 @@ public final class CacheScenario<S extends RuntimeState> {
 
     public void run(String runName) {
         // ---- short conversation: two turns, committed as it goes ----
-        CachedSession<S> a =
-                CachedSession.resume(h.model.model(), cache, h.newState(), new long[0]);
+        CachedSession<S> a = CachedSession.start(h.model.model(), cache, h.newState());
         a.ingest(h.template.conversationStart());
         if (cfg.systemPrompt() != null)
             a.ingest(h.template.encodeTurn(Message.system(cfg.systemPrompt())));
@@ -73,7 +72,7 @@ public final class CacheScenario<S extends RuntimeState> {
         System.out.println("turn 1: " + log(h.decode(a, cfg.maxTokens()).text()));
         a.ingest(h.template.encodeTurn(Message.user("And the smallest? Answer briefly.")));
         System.out.println("turn 2: " + log(h.decode(a, cfg.maxTokens()).text()));
-        long[] shortHist = a.fingerprints();
+        int[] shortHist = a.tokenIds();
         Bench shortBench =
                 validate(
                         cache,
@@ -83,7 +82,7 @@ public final class CacheScenario<S extends RuntimeState> {
                         Message.user("Which of those two did you name first? One word."));
 
         // ---- long conversation: history far beyond the sliding window (rings wrap) ----
-        long[] longHist = null;
+        int[] longHist = null;
         Bench longBench = null;
         if (cfg.longCase() != null) {
             // own cache instance: cross-session block dedup (the shared conversationStart) would
@@ -92,12 +91,11 @@ public final class CacheScenario<S extends RuntimeState> {
             // keeps the restored-vs-live byte gate exact.
             PromptCache<S> longCache =
                     new PromptCache<>(h.codec, CacheStore.inMemory(), budget, h.seed);
-            CachedSession<S> b =
-                    CachedSession.resume(h.model.model(), longCache, h.newState(), new long[0]);
+            CachedSession<S> b = CachedSession.start(h.model.model(), longCache, h.newState());
             b.ingest(h.template.conversationStart());
             b.ingest(h.template.encodeTurn(Message.user(cfg.longCase().story())));
             System.out.println("long turn 1: " + log(h.decode(b, cfg.maxTokens()).text()));
-            longHist = b.fingerprints();
+            longHist = b.tokenIds();
             h.check(
                     longHist.length > cfg.longCase().minLen(),
                     "long history exceeds the window ("
@@ -115,9 +113,10 @@ public final class CacheScenario<S extends RuntimeState> {
         }
 
         // ---- divergent tail resumes only the shared prefix ----
-        long[] mutated = shortHist.clone();
+        int[] mutated = shortHist.clone();
         mutated[mutated.length - 1] = -1;
-        CachedSession<S> d = CachedSession.resume(h.model.model(), cache, h.newState(), mutated);
+        CachedSession<S> d =
+                CachedSession.resume(h.model.model(), cache, h.newState(), mutated, mutated.length);
         h.check(
                 d.position() > 0 && d.position() < shortHist.length,
                 "divergent tail resumes a shorter prefix ("
@@ -157,10 +156,10 @@ public final class CacheScenario<S extends RuntimeState> {
      * decode is deterministic, informational for MoE).
      */
     private Bench validate(
-            PromptCache<S> cache, String name, long[] history, S liveState, Message probe) {
+            PromptCache<S> cache, String name, int[] history, S liveState, Message probe) {
         long t0 = System.nanoTime();
         CachedSession<S> cached =
-                CachedSession.resume(h.model.model(), cache, h.newState(), history);
+                CachedSession.resume(h.model.model(), cache, h.newState(), history, history.length);
         double resumeMs = (System.nanoTime() - t0) / 1e6;
         h.check(
                 cached.position() == history.length,
@@ -180,10 +179,9 @@ public final class CacheScenario<S extends RuntimeState> {
         double decodeSec = (System.nanoTime() - t1) / 1e9;
 
         PromptCache<S> scratch = new PromptCache<>(h.codec, CacheStore.inMemory(), budget, h.seed);
-        CachedSession<S> plain =
-                CachedSession.resume(h.model.model(), scratch, h.newState(), new long[0]);
+        CachedSession<S> plain = CachedSession.start(h.model.model(), scratch, h.newState());
         long t2 = System.nanoTime();
-        plain.ingest(List.of(Batch.prefill(Harness.toInts(history))));
+        plain.ingest(List.of(Batch.prefill(history)));
         double replayMs = (System.nanoTime() - t2) / 1e6;
         plain.ingest(turn);
         String plainReply = h.decode(plain, cfg.maxTokens()).text();

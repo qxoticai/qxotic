@@ -46,8 +46,8 @@ final class JinferEngine {
     private final int sessionCapacity;
     private int sessionHits;
 
-    /** A finished generation's state with the fingerprints of everything ingested into it. */
-    private record LiveSession(RuntimeState state, long[] fp) {}
+    /** A finished generation's state with the batch stream of everything ingested into it. */
+    private record LiveSession(RuntimeState state, List<Batch> stream, int positions) {}
 
     JinferEngine(
             Path modelPath,
@@ -162,23 +162,23 @@ final class JinferEngine {
             long timeoutNanos,
             Generator.TokenSink sink,
             boolean cached) {
-        long[] fp = CachedSession.fingerprints(prompt);
+        int total = positions(prompt);
         S state;
         List<Batch> remaining;
-        LiveSession pooled = acquireSession(fp);
+        Pooled pooled = acquireSession(prompt, total);
         if (pooled != null) {
             sessionHits++;
             @SuppressWarnings("unchecked")
-            S reused = (S) pooled.state();
+            S reused = (S) pooled.session().state();
             state = reused;
-            remaining = CachedSession.tail(prompt, pooled.fp().length);
+            remaining = CachedSession.tail(prompt, pooled.prefixPositions());
         } else if (cached) {
-            state = Generator.stateFor(model, fp.length);
+            state = Generator.stateFor(model, total);
             CachedSession<S> resumed =
-                    CachedSession.resume(model, tree(), state, fp, fp.length - 1);
+                    CachedSession.resume(model, tree(), state, prompt, total - 1);
             remaining = CachedSession.tail(prompt, resumed.position());
         } else {
-            state = Generator.stateFor(model, fp.length);
+            state = Generator.stateFor(model, total);
             remaining = prompt;
         }
         Generator.GenerationResult result =
@@ -191,34 +191,49 @@ final class JinferEngine {
                         timeoutNanos,
                         loaded.stopTokens(),
                         sink);
-        poolSession(state, fp, result); // not reached on throw: a torn state is never pooled
+        poolSession(state, prompt, total, result); // not reached on throw: torn states never pool
         return result;
     }
 
-    /** The pooled session with the LONGEST stream strictly extended by {@code fp}, removed. */
-    private LiveSession acquireSession(long[] fp) {
-        LiveSession best = null;
-        for (LiveSession s : sessions) {
-            int len = s.fp().length;
-            if (len < fp.length
-                    && s.state().contextCapacity() >= fp.length
-                    && java.util.Arrays.equals(s.fp(), 0, len, fp, 0, len)
-                    && (best == null || len > best.fp().length)) {
-                best = s;
-            }
-        }
-        if (best != null) sessions.remove(best);
-        return best;
+    private static int positions(List<Batch> prompt) {
+        int total = 0;
+        for (Batch b : prompt) total += b.count();
+        return total;
     }
 
-    /** Pools the finished state under prompt + ingested-reply fingerprints; evicts past cap. */
-    private void poolSession(RuntimeState state, long[] promptFp, Generator.GenerationResult r) {
+    /** A pooled hit: the live session plus how many prompt positions its stream covers. */
+    private record Pooled(LiveSession session, int prefixPositions) {}
+
+    /** The pooled session with the LONGEST stream strictly prefixing {@code prompt}, removed. */
+    private Pooled acquireSession(List<Batch> prompt, int total) {
+        LiveSession best = null;
+        int bestLen = -1;
+        for (LiveSession s : sessions) {
+            if (s.positions() <= bestLen || s.state().contextCapacity() < total) continue;
+            int n = CachedSession.strictPrefixPositions(s.stream(), prompt);
+            if (n > bestLen) {
+                best = s;
+                bestLen = n;
+            }
+        }
+        if (best == null) return null;
+        sessions.remove(best);
+        return new Pooled(best, bestLen);
+    }
+
+    /** Pools the finished state under prompt + ingested-reply stream; evicts past cap. */
+    private void poolSession(
+            RuntimeState state, List<Batch> prompt, int total, Generator.GenerationResult r) {
         if (sessionCapacity == 0) return;
-        int ingested = state.position() - promptFp.length;
+        int ingested = state.position() - total;
         if (ingested < 0) return;
-        long[] fp = java.util.Arrays.copyOf(promptFp, promptFp.length + ingested);
-        for (int i = 0; i < ingested; i++) fp[promptFp.length + i] = r.tokens().intAt(i);
-        sessions.addLast(new LiveSession(state, fp));
+        List<Batch> stream = new java.util.ArrayList<>(prompt);
+        if (ingested > 0) {
+            int[] reply = new int[ingested];
+            for (int i = 0; i < ingested; i++) reply[i] = r.tokens().intAt(i);
+            stream.add(Batch.prefill(reply));
+        }
+        sessions.addLast(new LiveSession(state, List.copyOf(stream), total + ingested));
         while (sessions.size() > sessionCapacity) sessions.removeFirst();
     }
 
@@ -266,9 +281,8 @@ final class JinferEngine {
 
     private <S extends RuntimeState> void defineOn(
             LanguageModel<?, ?, S> model, PromptCache<S> cache, List<Batch> prompt) {
-        long[] fp = CachedSession.fingerprints(prompt);
-        S state = Generator.stateFor(model, fp.length);
-        CachedSession<S> s = CachedSession.resume(model, cache, state, fp);
+        S state = Generator.stateFor(model, positions(prompt));
+        CachedSession<S> s = CachedSession.resume(model, cache, state, prompt);
         s.ingestGroups(prompt.stream().map(List::of).toList());
     }
 

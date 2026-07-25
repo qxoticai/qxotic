@@ -53,11 +53,52 @@ public final class CachedSession<S extends RuntimeState> {
         this.len = len;
     }
 
+    /** A fresh session on a fresh state for a brand-new conversation (nothing to resume). */
+    public static <S extends RuntimeState> CachedSession<S> start(
+            Model<?, ?, S> model, PromptCache<S> cache, S state) {
+        return resume(model, cache, state, new long[0], 0);
+    }
+
+    /**
+     * A fresh session on a fresh state, resuming the longest cached prefix of {@code prompt} - the
+     * encoded batches themselves are the key; their content addressing (token ids as themselves,
+     * media rows by content digest) is this package's internal law.
+     */
+    public static <S extends RuntimeState> CachedSession<S> resume(
+            Model<?, ?, S> model, PromptCache<S> cache, S state, List<Batch> prompt) {
+        long[] fp = fingerprints(prompt);
+        return resume(model, cache, state, fp, fp.length);
+    }
+
+    /**
+     * As {@link #resume(Model, PromptCache, Object, List)} but restoring at most {@code
+     * maxPositions} - e.g. the prompt length minus its final block, so a whole-prompt hit still
+     * re-ingests that block and leaves fresh logits at the cursor.
+     */
+    public static <S extends RuntimeState> CachedSession<S> resume(
+            Model<?, ?, S> model,
+            PromptCache<S> cache,
+            S state,
+            List<Batch> prompt,
+            int maxPositions) {
+        return resume(model, cache, state, fingerprints(prompt), maxPositions);
+    }
+
+    /**
+     * A fresh session resuming another session's exact ingested stream - serve a recorded
+     * conversation again on a cold state (the cache-soundness scenario).
+     */
+    public static <S extends RuntimeState> CachedSession<S> resume(
+            Model<?, ?, S> model, PromptCache<S> cache, S state, CachedSession<?> history) {
+        long[] fp = history.fingerprints();
+        return resume(model, cache, state, fp, fp.length);
+    }
+
     /**
      * A fresh session on a fresh state, resuming the longest cached prefix of {@code expected}
      * (empty for a brand-new conversation).
      */
-    public static <S extends RuntimeState> CachedSession<S> resume(
+    static <S extends RuntimeState> CachedSession<S> resume(
             Model<?, ?, S> model, PromptCache<S> cache, S state, long[] expected) {
         return resume(model, cache, state, expected, expected.length);
     }
@@ -67,7 +108,7 @@ public final class CachedSession<S extends RuntimeState> {
      * maxPositions} — e.g. the prompt length minus its final block, so a whole-prompt hit still
      * re-ingests that block and leaves fresh logits at the cursor.
      */
-    public static <S extends RuntimeState> CachedSession<S> resume(
+    static <S extends RuntimeState> CachedSession<S> resume(
             Model<?, ?, S> model,
             PromptCache<S> cache,
             S state,
@@ -92,7 +133,7 @@ public final class CachedSession<S extends RuntimeState> {
     }
 
     /** Token ids widened to the fingerprint stream they are (media rows fingerprint by hash). */
-    public static long[] fingerprints(int[] tokens) {
+    static long[] fingerprints(int[] tokens) {
         long[] fp = new long[tokens.length];
         for (int i = 0; i < tokens.length; i++) fp[i] = tokens[i];
         return fp;
@@ -103,7 +144,7 @@ public final class CachedSession<S extends RuntimeState> {
      * #ingest} appends (token ids as themselves, embedding rows by content digest), so a caller can
      * {@link #resume} against a prompt before ingesting it.
      */
-    public static long[] fingerprints(List<Batch> batches) {
+    static long[] fingerprints(List<Batch> batches) {
         int total = batches.stream().mapToInt(Batch::count).sum();
         long[] fp = new long[total];
         int at = 0;
@@ -277,7 +318,7 @@ public final class CachedSession<S extends RuntimeState> {
      * append-only reuse test ({@link SessionPool}): the live state can continue with the remainder,
      * nothing to rewind, and at least one position is left to ingest.
      */
-    public boolean streamIsStrictPrefixOf(long[] req, int reqLen) {
+    boolean streamIsStrictPrefixOf(long[] req, int reqLen) {
         return len < reqLen && Arrays.equals(fp, 0, len, req, 0, len);
     }
 
@@ -290,8 +331,36 @@ public final class CachedSession<S extends RuntimeState> {
     }
 
     /** The exact ingested fingerprint stream so far (the low-level half of the dual view). */
-    public long[] fingerprints() {
+    long[] fingerprints() {
         return Arrays.copyOf(fp, len);
+    }
+
+    /**
+     * The ingested conversation as plain token ids - only meaningful for text-only sessions; throws
+     * if any position is a media digest (media cannot be replayed from ids).
+     */
+    public int[] tokenIds() {
+        int[] ids = new int[len];
+        for (int i = 0; i < len; i++) {
+            long v = fp[i];
+            if (v != (int) v) {
+                throw new IllegalStateException("session ingested media; no token-id replay");
+            }
+            ids[i] = (int) v;
+        }
+        return ids;
+    }
+
+    /**
+     * The position count of {@code prefix} when its whole content stream is a STRICT prefix of
+     * {@code whole}'s (at least one position of {@code whole} remains), else -1 - the append-only
+     * reuse test, batches-in so callers never touch the content addressing.
+     */
+    public static int strictPrefixPositions(List<Batch> prefix, List<Batch> whole) {
+        long[] a = fingerprints(prefix);
+        long[] b = fingerprints(whole);
+        if (a.length >= b.length || !Arrays.equals(a, 0, a.length, b, 0, a.length)) return -1;
+        return a.length;
     }
 
     private void append(long fingerprint) {

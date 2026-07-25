@@ -28,14 +28,14 @@ public final class FrozenPromptScenario<S extends RuntimeState> {
 
         // ---- build: compile the static prompt into the artifact (one prefill) ----
         List<Batch> staticPrompt = staticPrompt();
+        int positions = staticPrompt.stream().mapToInt(Batch::count).sum();
         long t0 = System.nanoTime();
-        long[] fp =
-                FrozenBlocks.compile(
-                        artifact, h.model.model(), h.codec, h.seed, h.newState(), staticPrompt);
+        FrozenBlocks.compile(
+                artifact, h.model.model(), h.codec, h.seed, h.newState(), staticPrompt);
         double prefillMs = (System.nanoTime() - t0) / 1e6;
         System.out.printf(
                 "compiled: %d positions, %.1f MB (%s)%n",
-                fp.length, Files.size(artifact) / 1e6, artifact);
+                positions, Files.size(artifact) / 1e6, artifact);
 
         // ---- reference: uncached full prefill + user turn ----
         Message user =
@@ -51,12 +51,12 @@ public final class FrozenPromptScenario<S extends RuntimeState> {
         long t1 = System.nanoTime();
         FrozenBlocks frozen = FrozenBlocks.open(artifact, h.seed);
         S hot = h.newState();
-        CachedSession<S> hs = frozen.serve(h.model.model(), h.codec, h.seed, hot, fp);
+        CachedSession<S> hs = frozen.serve(h.model.model(), h.codec, h.seed, hot, staticPrompt);
         double restoreMs = (System.nanoTime() - t1) / 1e6;
         h.check(
-                hs.position() == fp.length,
+                hs.position() == positions,
                 "frozen restore covers all "
-                        + fp.length
+                        + positions
                         + " positions (got "
                         + hs.position()
                         + ")");
@@ -65,8 +65,7 @@ public final class FrozenPromptScenario<S extends RuntimeState> {
                 "frozen and uncached greedy replies identical");
 
         // ---- mismatch: a diverged prompt restores nothing, plain prefill still serves ----
-        long[] other = fp.clone();
-        other[3] ^= 1;
+        List<Batch> other = divergedAtPosition3(staticPrompt);
         S cold = h.newState();
         CachedSession<S> cs = frozen.serve(h.model.model(), h.codec, h.seed, cold, other);
         h.check(cs.position() == 0, "diverged prompt is discarded (restore 0)");
@@ -90,7 +89,7 @@ public final class FrozenPromptScenario<S extends RuntimeState> {
 
         System.out.printf("%n=== benchmark: frozen restore vs static-prompt prefill ===%n");
         System.out.printf(
-                "%-34s %10.1f ms%n", "static prompt prefill (" + fp.length + " tok)", prefillMs);
+                "%-34s %10.1f ms%n", "static prompt prefill (" + positions + " tok)", prefillMs);
         System.out.printf(
                 "%-34s %10.1f ms   (%.0fx)%n",
                 "frozen open+restore", restoreMs, prefillMs / restoreMs);
@@ -142,6 +141,23 @@ public final class FrozenPromptScenario<S extends RuntimeState> {
         out.addAll(h.template.encodeTurn(Message.system(sys.toString())));
         out.addAll(h.template.encodeTurn(Message.user("Convert 10 kilometers to miles.")));
         out.addAll(h.template.encodeTurn(Message.assistant("10 kilometers is 6.21 miles.")));
+        return out;
+    }
+
+    /** The prompt with token position 3 flipped - diverges inside the first block. */
+    private static List<Batch> divergedAtPosition3(List<Batch> prompt) {
+        List<Batch> out = new java.util.ArrayList<>();
+        int pos = 0;
+        for (Batch b : prompt) {
+            if (b.input() instanceof Batch.Input.Tokens t && pos <= 3 && 3 < pos + b.count()) {
+                int[] ids = t.ids().clone();
+                ids[3 - pos] ^= 1;
+                out.add(Batch.prefill(ids));
+            } else {
+                out.add(b);
+            }
+            pos += b.count();
+        }
         return out;
     }
 }

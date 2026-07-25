@@ -115,17 +115,15 @@ public final class TtftBench {
 
         // history: [start][user: story][genPrompt] -> reply -> closeTurn, all committed
         CachedSession<S> a =
-                CachedSession.resume(
-                        model.model(), cache, model.model().newState(4096, 512), new long[0]);
+                CachedSession.start(model.model(), cache, model.model().newState(4096, 512));
         a.ingest(concat(tpl.conversationStart(), tpl.encodeTurn(Message.user(story()))));
         String reply = decode(model, a, tpl, REPLY_BUDGET);
-        long[] history = a.fingerprints();
+        int[] history = a.tokenIds();
         System.err.println("history: " + history.length + " positions; reply: " + reply.strip());
 
         List<Batch> followUp =
                 concat(tpl.encodeTurn(Message.user(QUESTION)), tpl.generationPrompt(true));
-        int[] historyIds = new int[history.length];
-        for (int i = 0; i < history.length; i++) historyIds[i] = (int) history[i];
+        int[] historyIds = history;
 
         // tier 1: live pooled sessions, pre-resumed OUTSIDE the timing (a SessionPool holds them
         // resident between requests) - the timed leg is pure append-only delta ingest + first
@@ -134,7 +132,11 @@ public final class TtftBench {
         for (int r = 0; r < reps; r++) {
             CachedSession<S> s =
                     CachedSession.resume(
-                            model.model(), cache, model.model().newState(4096, 512), history);
+                            model.model(),
+                            cache,
+                            model.model().newState(4096, 512),
+                            history,
+                            history.length);
             if (s.position() != history.length)
                 throw new IllegalStateException("live resume " + s.position());
             live.add(s);
@@ -154,7 +156,8 @@ public final class TtftBench {
             // warm: cache resume + follow-up only
             S s2 = model.model().newState(4096, 512);
             long t1 = System.nanoTime();
-            CachedSession<S> b2 = CachedSession.resume(model.model(), cache, s2, history);
+            CachedSession<S> b2 =
+                    CachedSession.resume(model.model(), cache, s2, history, history.length);
             if (b2.position() != history.length)
                 throw new IllegalStateException("resume " + b2.position());
             b2.ingest(followUp);
@@ -189,7 +192,7 @@ public final class TtftBench {
 
     /**
      * Freezes the STATIC prefix (conversationStart + the story turn - fully deterministic, no
-     * generated tokens) so the serve side can rebuild the exact fingerprints from text.
+     * generated tokens) so the serve side can re-encode the exact prompt from text.
      */
     static <S extends RuntimeState> void frozenCompile(Bench<S> bench, Path gguf, Path out)
             throws Exception {
@@ -200,8 +203,7 @@ public final class TtftBench {
         PromptCache<S> build =
                 new PromptCache<>(codec, CacheStore.inMemory(), Long.MAX_VALUE, model.seed());
         CachedSession<S> s =
-                CachedSession.resume(
-                        model.model(), build, model.model().newState(4096, 512), new long[0]);
+                CachedSession.start(model.model(), build, model.model().newState(4096, 512));
         s.ingest(prefix);
         build.freeze(out);
         System.out.printf(
@@ -233,15 +235,11 @@ public final class TtftBench {
                 com.qxotic.jinfer.cache.FrozenBlocks.open(file, model.seed());
         double openMs = (System.nanoTime() - t0) / 1e6;
 
-        // request fingerprints: re-derived from the same static text (deterministic template)
+        // request prompt: re-encoded from the same static text (deterministic template)
         S state = model.model().newState(4096, 512);
         long t1 = System.nanoTime();
-        int[] ids =
-                Batch.tokenIds(
-                        concat(tpl.conversationStart(), tpl.encodeTurn(Message.user(story()))));
-        long[] fp = new long[ids.length];
-        for (int i = 0; i < ids.length; i++) fp[i] = ids[i];
-        int restored = frozen.serve(model.model(), codec, model.seed(), state, fp).position();
+        List<Batch> prefix = concat(tpl.conversationStart(), tpl.encodeTurn(Message.user(story())));
+        int restored = frozen.serve(model.model(), codec, model.seed(), state, prefix).position();
         if (restored == 0) throw new IllegalStateException("frozen restore missed");
         for (Batch b : Batch.prepare(followUp, 512)) model.model().ingest(state, b);
         int tok = model.model().logits(state).argmax();
@@ -255,7 +253,7 @@ public final class TtftBench {
             long t2 = System.nanoTime();
             com.qxotic.jinfer.cache.FrozenBlocks f2 =
                     com.qxotic.jinfer.cache.FrozenBlocks.open(file, model.seed());
-            int n2 = f2.serve(model.model(), codec, model.seed(), s2, fp).position();
+            int n2 = f2.serve(model.model(), codec, model.seed(), s2, prefix).position();
             for (Batch b : Batch.prepare(followUp, 512)) model.model().ingest(s2, b);
             model.model().logits(s2).argmax();
             System.out.printf(
