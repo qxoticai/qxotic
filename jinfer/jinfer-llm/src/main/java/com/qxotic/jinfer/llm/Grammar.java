@@ -383,6 +383,30 @@ public final class Grammar {
          * left recursion yields ever-growing stacks, bounded by {@link #CLOSURE_CAP}.
          */
         private State expandSet(List<int[]> raws) {
+            // Fast path (the dominant decode case): every stack already has a TERM on top, so
+            // the closure is just dedup - no worklist, no seen-set, no StackKey allocations.
+            boolean anyEps = false;
+            for (int[] s : raws) {
+                if (s.length == 0 || cfg.kind[s[s.length - 1]] != T_TERM) {
+                    anyEps = true;
+                    break;
+                }
+            }
+            if (!anyEps) {
+                if (raws.size() == 1) return new State(raws, false);
+                List<int[]> ready = new ArrayList<>(raws.size());
+                for (int[] s : raws) {
+                    boolean dup = false;
+                    for (int[] r : ready) {
+                        if (Arrays.equals(r, s)) {
+                            dup = true;
+                            break;
+                        }
+                    }
+                    if (!dup && ready.size() < MAX_STACKS) ready.add(s);
+                }
+                return new State(ready, false);
+            }
             List<int[]> ready = new ArrayList<>();
             Set<StackKey> seen = new HashSet<>();
             boolean[] acc = {false};
@@ -402,10 +426,16 @@ public final class Grammar {
                     case T_END -> work.add(Arrays.copyOf(stack, stack.length - 1));
                     default -> { // T_REF
                         int rid = cfg.data[top], ret = cfg.next[top];
+                        // Tail-call elimination: a ref whose continuation is an END slot
+                        // returns INTO a pop, so the frame and the pop cancel - skip it.
+                        // Without this, right-recursive loops (E* / E+ compile to R ::= E R | ε)
+                        // push one frame per iteration: stacks grow with the repetition length,
+                        // automaton states never repeat (no mask-cache hits), masks go
+                        // quadratic, and past CLOSURE_CAP the closure silently truncates.
                         int[] base =
-                                ret >= 0
-                                        ? replaceLast(stack, ret)
-                                        : Arrays.copyOf(stack, stack.length - 1);
+                                ret < 0 || cfg.kind[ret] == T_END
+                                        ? Arrays.copyOf(stack, stack.length - 1)
+                                        : replaceLast(stack, ret);
                         for (int e : cfg.alts[rid]) work.add(append(base, e));
                     }
                 }
@@ -475,6 +505,15 @@ public final class Grammar {
         }
 
         private static StateKey stateKey(List<int[]> ready, boolean accepting) {
+            // fast path: most matcher states are single-stack - skip the sort and the int[][]
+            if (ready.size() == 1) {
+                int[] s = ready.get(0);
+                int[] flat = new int[s.length + 2];
+                flat[0] = accepting ? 1 : 0;
+                System.arraycopy(s, 0, flat, 1, s.length);
+                flat[flat.length - 1] = -1;
+                return new StateKey(flat);
+            }
             int[][] arr = ready.toArray(new int[0][]);
             Arrays.sort(arr, Grammar::cmpIntArr);
             int total = 1;
@@ -590,9 +629,20 @@ public final class Grammar {
             if (vocab == 0) return false;
             long[] mask = spec.maskFor(ready, accepting);
             boolean any = false;
-            for (int i = 0; i < vocab; i++) {
-                if ((mask[i >> 6] & (1L << (i & 63))) != 0) any = true;
-                else logits.setFloat(i, Float.NEGATIVE_INFINITY);
+            for (int w = 0; w < mask.length; w++) {
+                long bits = mask[w];
+                if (bits == 0) { // 64 rejected: write without per-bit tests
+                    int base = w << 6;
+                    for (int b = 0; b < 64 && base + b < vocab; b++)
+                        logits.setFloat(base + b, Float.NEGATIVE_INFINITY);
+                    continue;
+                }
+                any = true; // this word admits something
+                if (bits == -1L) continue; // 64 allowed: nothing to mask
+                int base = w << 6;
+                for (int b = 0; b < 64 && base + b < vocab; b++) {
+                    if ((bits & (1L << b)) == 0) logits.setFloat(base + b, Float.NEGATIVE_INFINITY);
+                }
             }
             return any;
         }
@@ -892,11 +942,19 @@ public final class Grammar {
     // ========================================================================
 
     static List<Rule> parse(String gbnf) {
+        // Join continuation lines first: llama.cpp-style GBNF lets one rule span several
+        // physical lines (alternatives on their own lines); a line without ::= belongs to the
+        // rule above it. Splitting on raw newlines would silently DROP those alternatives.
+        List<String> logical = new ArrayList<>();
+        for (String raw : gbnf.split("\n")) {
+            String line = stripComment(raw);
+            if (line.trim().isEmpty()) continue;
+            if (line.contains("::=") || logical.isEmpty()) logical.add(line);
+            else logical.set(logical.size() - 1, logical.getLast() + " " + line);
+        }
         Map<String, Integer> nameToId = new LinkedHashMap<>();
         List<Rule> rules = new ArrayList<>();
-        for (String raw : gbnf.split("\n")) {
-            String line = stripComment(raw).trim();
-            if (line.isEmpty()) continue;
+        for (String line : logical) {
             int eq = line.indexOf("::=");
             if (eq < 0) continue;
             String name = line.substring(0, eq).trim();
@@ -905,9 +963,7 @@ public final class Grammar {
                 rules.add(null);
             }
         }
-        for (String raw : gbnf.split("\n")) {
-            String line = stripComment(raw).trim();
-            if (line.isEmpty()) continue;
+        for (String line : logical) {
             int eq = line.indexOf("::=");
             if (eq < 0) continue;
             String name = line.substring(0, eq).trim();
@@ -921,15 +977,21 @@ public final class Grammar {
     }
 
     private static String stripComment(String line) {
-        boolean inStr = false;
-        boolean escape = false;
+        // '#' starts a comment unless inside a string literal OR a char class ([#] is a class
+        // containing '#', not a comment)
+        boolean inStr = false, escape = false, inClass = false;
         for (int i = 0; i < line.length(); i++) {
             char c = line.charAt(i);
             if (inStr) {
                 if (c == '\\') escape = !escape;
                 else if (c == '"' && !escape) inStr = false;
                 else escape = false;
+            } else if (inClass) {
+                if (c == '\\') escape = !escape;
+                else if (c == ']' && !escape) inClass = false;
+                else escape = false;
             } else if (c == '"') inStr = true;
+            else if (c == '[') inClass = true;
             else if (c == '#') return line.substring(0, i);
         }
         return line;
@@ -956,8 +1018,8 @@ public final class Grammar {
                     end = body.indexOf('"', end + 1);
                 }
                 if (end < 0) {
-                    i++;
-                    continue;
+                    throw new IllegalArgumentException(
+                            "unterminated string literal in rule body: " + body);
                 }
                 String s = unescape(body.substring(i + 1, end));
                 for (byte b : s.getBytes(StandardCharsets.UTF_8))
@@ -1027,10 +1089,16 @@ public final class Grammar {
                 i++;
             } else if (Character.isJavaIdentifierStart(c)) {
                 int end = i;
-                while (end < body.length() && Character.isJavaIdentifierPart(body.charAt(end)))
-                    end++;
+                while (end < body.length()
+                        && (Character.isJavaIdentifierPart(body.charAt(end))
+                                || body.charAt(end) == '-')) // llama.cpp names allow hyphens
+                end++;
                 String name = body.substring(i, end);
-                int rid = rules.getOrDefault(name, 0);
+                Integer rid = rules.get(name);
+                if (rid == null) {
+                    throw new IllegalArgumentException(
+                            "undefined rule reference '" + name + "' in rule body: " + body);
+                }
                 res.add(new Rule.Element.Ref(rid));
                 i = applyMod(body, end, res);
             } else if (c == '(') {
@@ -1067,10 +1135,13 @@ public final class Grammar {
      * Returns the index just past the modifier ({@code i} unchanged when none).
      */
     private static int applyMod(String body, int i, List<Rule.Element> res) {
-        if (i >= body.length() || res.isEmpty()) return i;
+        // whitespace between an element and its modifier is insignificant in GBNF ("a" {2})
+        int j = i;
+        while (j < body.length() && (body.charAt(j) == ' ' || body.charAt(j) == '\t')) j++;
+        if (j >= body.length() || res.isEmpty()) return i;
         int min;
         int max;
-        switch (body.charAt(i)) {
+        switch (body.charAt(j)) {
             case '*' -> {
                 min = 0;
                 max = -1;
@@ -1084,9 +1155,9 @@ public final class Grammar {
                 max = 1;
             }
             case '{' -> {
-                int close = body.indexOf('}', i);
+                int close = body.indexOf('}', j);
                 if (close < 0) return i;
-                String spec = body.substring(i + 1, close).trim();
+                String spec = body.substring(j + 1, close).trim();
                 int comma = spec.indexOf(',');
                 try {
                     if (comma < 0) {
@@ -1108,14 +1179,27 @@ public final class Grammar {
             }
         }
         res.add(new Rule.Element.Repetition(res.removeLast(), min, max));
-        return i + 1;
+        return j + 1;
     }
 
     static int findMatchingParen(String s, int start) {
+        // parens inside string literals OR char classes don't count (a class may hold a quote,
+        // a literal may hold unbalanced parens)
         int d = 1, end = start + 1;
+        boolean inStr = false, escape = false, inClass = false;
         while (end < s.length() && d > 0) {
             char c = s.charAt(end);
-            if (c == '(') d++;
+            if (inStr) {
+                if (c == '\\') escape = !escape;
+                else if (c == '"' && !escape) inStr = false;
+                else escape = false;
+            } else if (inClass) {
+                if (c == '\\') escape = !escape;
+                else if (c == ']' && !escape) inClass = false;
+                else escape = false;
+            } else if (c == '"') inStr = true;
+            else if (c == '[') inClass = true;
+            else if (c == '(') d++;
             else if (c == ')') d--;
             end++;
         }
