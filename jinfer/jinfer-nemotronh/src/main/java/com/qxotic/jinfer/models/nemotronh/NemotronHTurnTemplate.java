@@ -334,4 +334,14 @@ public final class NemotronHTurnTemplate implements TurnTemplate {
     public int[] callSeed() {
         return toolCall < 0 ? new int[0] : new int[] {toolCall};
     }
+
+    /** The generation prompt opens the think span (or its closed pair): pre-feed it. */
+    @Override
+    public int[] replySeed(boolean thinking) {
+        IntSequence.Builder ids = IntSequence.newBuilder();
+        ids.add(think);
+        if (thinking) ids.addAll(newline);
+        else ids.add(endThink);
+        return ids.build().toArray();
+    }
 }

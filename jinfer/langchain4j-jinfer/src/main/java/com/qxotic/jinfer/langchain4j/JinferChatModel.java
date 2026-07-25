@@ -142,7 +142,7 @@ public final class JinferChatModel implements ChatModel {
         Prepared p = prepare(this, request);
         StopSequences stops = StopSequences.of(p.stops());
         ReplyLanes lanes =
-                new ReplyLanes(p.encoded().template(), engine.loaded.tokenizer(), p.callSeed());
+                new ReplyLanes(p.encoded().template(), engine.loaded.tokenizer(), p.parserSeed());
         Generator.TokenSink sink =
                 token -> {
                     String fragment = lanes.feed(token);
@@ -184,7 +184,7 @@ public final class JinferChatModel implements ChatModel {
             int maxTokens,
             int promptTokens,
             boolean cached,
-            int[] callSeed,
+            int[] parserSeed,
             List<String> stops) {}
 
     private static final int[] NO_SEED = new int[0];
@@ -274,9 +274,21 @@ public final class JinferChatModel implements ChatModel {
                                 encoded.template().get().callEpilogue());
             }
         }
+        // the parser pre-feed: the generation prompt's reply-grammar tail (a prompt-opened think
+        // span) plus, when forcing, the seeded call marker - so the parser starts in the exact
+        // span state the prompt left the model in
+        int[] replySeed = encoded.template().map(t -> t.replySeed(think)).orElse(NO_SEED);
+        int[] parserSeed = callSeed.length == 0 ? replySeed : concat(replySeed, callSeed);
         int promptTokens = encoded.prompt().stream().mapToInt(Batch::count).sum();
         return new Prepared(
-                encoded, sampler, maxTokens, promptTokens, cached, callSeed, p.stopSequences());
+                encoded, sampler, maxTokens, promptTokens, cached, parserSeed, p.stopSequences());
+    }
+
+    private static int[] concat(int[] a, int[] b) {
+        int[] out = new int[a.length + b.length];
+        System.arraycopy(a, 0, out, 0, a.length);
+        System.arraycopy(b, 0, out, a.length, b.length);
+        return out;
     }
 
     /**

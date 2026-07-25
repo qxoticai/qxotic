@@ -23,13 +23,13 @@ final class ReplyLanes {
     private final Tokenizer tokenizer;
     private boolean reasoning;
 
-    ReplyLanes(Optional<ChatTemplate> template, Tokenizer tokenizer, int[] callSeed) {
+    ReplyLanes(Optional<ChatTemplate> template, Tokenizer tokenizer, int[] parserSeed) {
         this.parser = template.map(ChatTemplate::parser).orElse(null);
         this.pending = parser == null ? new PendingUtf8() : null;
         this.rawText = parser == null ? new StringBuilder() : null;
         this.tokenizer = tokenizer;
         if (parser != null) {
-            for (int token : callSeed) parser.feed(token);
+            for (int token : parserSeed) parser.feed(token);
         }
     }
 

@@ -73,7 +73,7 @@ public final class JinferStreamingChatModel implements StreamingChatModel {
         JinferEngine engine = model.engine;
         StopSequences stops = StopSequences.of(p.stops());
         ReplyLanes lanes =
-                new ReplyLanes(p.encoded().template(), engine.loaded.tokenizer(), p.callSeed());
+                new ReplyLanes(p.encoded().template(), engine.loaded.tokenizer(), p.parserSeed());
 
         AtomicBoolean cancelled = new AtomicBoolean();
         StreamingHandle handle =

@@ -119,4 +119,19 @@ public final class Qwen35TurnTemplate implements TurnTemplate {
     public int[] callSeed() {
         return new int[] {SpecialTokens.require(tokenizer, "<tool_call>")};
     }
+
+    /** The generation prompt opens the think span (or its closed pair): pre-feed it. */
+    @Override
+    public int[] replySeed(boolean thinking) {
+        IntSequence.Builder ids = IntSequence.newBuilder();
+        ids.add(think);
+        if (thinking) {
+            ids.addAll(tokenizer.encode("\n"));
+        } else {
+            ids.addAll(tokenizer.encode("\n\n"));
+            ids.add(endThink);
+            ids.addAll(tokenizer.encode("\n\n"));
+        }
+        return ids.build().toArray();
+    }
 }

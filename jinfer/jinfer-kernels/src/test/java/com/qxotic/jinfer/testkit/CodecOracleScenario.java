@@ -75,18 +75,29 @@ public final class CodecOracleScenario {
      * offered tool list (each Tool's rawJson parsed so Jinja's own {@code tojson} renders it).
      */
     public void compareTools(String name, List<Tool> tools, List<Message> conversation) {
+        compareTools(name, true, Map.of(), tools, conversation);
+    }
+
+    /** Tool-aware comparison with per-case overrides (e.g. {@code enable_thinking}). */
+    public void compareTools(
+            String name,
+            boolean thinking,
+            Map<String, Object> extraVars,
+            List<Tool> tools,
+            List<Message> conversation) {
         List<Object> maps = new ArrayList<>();
         for (Message m : conversation) maps.add(OracleSupport.oracleMessage(m));
         List<Object> toolVars = new ArrayList<>();
         for (Tool t : tools) toolVars.add(com.qxotic.format.json.Json.parse(t.rawJson()));
         Map<String, Object> vars = new HashMap<>(renderVars);
+        vars.putAll(extraVars);
         vars.put("messages", maps);
         vars.put("tools", toolVars);
         vars.put("xml_tools", toolVars); // SmolLM3's spelling of the same variable
         vars.put("add_generation_prompt", true);
         String rendered = support.jinja.render(vars);
         List<Integer> oracle = specials.encode(tokenizer, rendered).toList();
-        List<Integer> ours = encodeIds(new Conversation(conversation, tools, true, ""));
+        List<Integer> ours = encodeIds(new Conversation(conversation, tools, thinking, ""));
         support.diff(checks, name, oracle, ours, rendered);
     }
 

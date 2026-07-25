@@ -316,7 +316,27 @@ public final class JinjaRenderer {
             case "rejectattr" -> filterAttr(val, args, false);
             case "items" -> items(val);
             case "safe" -> val; // autoescape marker: identity in this text-only engine
+            case "min" -> extremum(val, true);
+            case "max" -> extremum(val, false);
             default -> throw unsupported("filter '" + name + "'");
+        };
+    }
+
+    /** Jinja {@code min}/{@code max} over a sequence, by numeric value. */
+    static Val extremum(Val v, boolean min) {
+        if (!(v instanceof Val.Arr a) || a.v.isEmpty()) return Val.NONE;
+        Val best = a.v.get(0);
+        for (Val x : a.v) {
+            if (min == (num(x) < num(best))) best = x;
+        }
+        return best;
+    }
+
+    private static double num(Val v) {
+        return switch (v) {
+            case Val.Int i -> i.v();
+            case Val.Flt f -> f.v();
+            default -> Double.parseDouble(v.asStr());
         };
     }
 

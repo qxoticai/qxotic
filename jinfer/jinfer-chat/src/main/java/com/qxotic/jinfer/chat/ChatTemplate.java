@@ -54,6 +54,18 @@ public interface ChatTemplate {
     }
 
     /**
+     * The generation prompt's trailing ids that are grammatically part of the REPLY - a think span
+     * the template OPENS in the prompt ({@code <think>\n} on Qwen 3.5 / Nemotron / MiniCPM5
+     * thinking prompts, or their closed empty pair when thinking is off). The driver pre-feeds them
+     * into {@link #parser} so it starts in the right span state; without this, reasoning that
+     * begins inside a prompt-opened span routes to the CONTENT channel. Empty when the generation
+     * prompt ends at the role scaffold (the model emits its own markers).
+     */
+    default int[] replySeed(boolean thinking) {
+        return new int[0];
+    }
+
+    /**
      * Trusted ids seeded into the reply to FORCE a tool call ({@code toolChoice REQUIRED}): the
      * family's call-opening marker ({@code <|tool_call_start|>}, Harmony's {@code <|channel|>}),
      * appended to the prompt so the model can only COMPLETE a call. Empty = this family cannot

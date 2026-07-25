@@ -249,4 +249,16 @@ public final class SmolLm3ChatTemplate implements ChatTemplate {
     public int[] callSeed() {
         return new int[] {toolCall};
     }
+
+    /** No-think prompts close the empty pair in the prompt: pre-feed it. */
+    @Override
+    public int[] replySeed(boolean thinking) {
+        if (thinking) return new int[0]; // the model emits its own <think>
+        IntSequence.Builder ids = IntSequence.newBuilder();
+        ids.add(think);
+        ids.addAll(tokenizer.encode("\n\n"));
+        ids.add(endThink);
+        ids.addAll(tokenizer.encode("\n"));
+        return ids.build().toArray();
+    }
 }
