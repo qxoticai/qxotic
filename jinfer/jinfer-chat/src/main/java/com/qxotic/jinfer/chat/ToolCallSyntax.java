@@ -33,7 +33,9 @@ public final class ToolCallSyntax {
         if (c.isEmpty()) return List.of();
         if (c.startsWith("{") || c.startsWith("[{") || c.startsWith("[ {")) {
             try {
-                return fromJson(Json.parse(c));
+                // JsonCodec, not raw Json: argument types must be the engine's value model
+                // (Double decimals, Java null) on EVERY family's wire
+                return fromJson(JsonCodec.parse(c));
             } catch (RuntimeException notJson) {
                 // '{' also opens a Pythonic dict literal - fall through to the pythonic parser
             }
@@ -189,8 +191,24 @@ public final class ToolCallSyntax {
         return List.of(new Part.ToolCall("", name, arguments));
     }
 
-    /** A parameter value as its JSON type when it is valid JSON, else the raw string. */
+    /**
+     * A parameter value as its JSON type when it is valid JSON, else the raw string - with the
+     * Python spellings the templates PRINT ({@code x | string} renders {@code True}/{@code
+     * False}/{@code None}) typed back, so booleans round-trip instead of arriving as "True".
+     */
     private static Object typedValue(String value) {
+        switch (value) {
+            case "True" -> {
+                return Boolean.TRUE;
+            }
+            case "False" -> {
+                return Boolean.FALSE;
+            }
+            case "None" -> {
+                return null;
+            }
+            default -> {}
+        }
         try {
             return JsonCodec.parse(value);
         } catch (RuntimeException notJson) {
@@ -269,7 +287,7 @@ public final class ToolCallSyntax {
         if (args instanceof Map<?, ?> m) return (Map<String, Object>) m;
         if (args instanceof String s && !s.isBlank()) {
             try {
-                if (Json.parse(s) instanceof Map<?, ?> m) return (Map<String, Object>) m;
+                if (JsonCodec.parse(s) instanceof Map<?, ?> m) return (Map<String, Object>) m;
             } catch (RuntimeException notJson) {
                 // a plain string argument value - keep it under a conventional key
             }
