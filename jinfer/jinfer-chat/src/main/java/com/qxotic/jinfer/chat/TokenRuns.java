@@ -26,8 +26,9 @@ public final class TokenRuns {
 
     private final Tokenizer tokenizer;
     private final Set<String> spellings; // the rescan's kept special spellings
-    private final IntSequence.Builder ids = IntSequence.newBuilder();
+    private IntSequence.Builder ids = IntSequence.newBuilder(); // replaced at cuts
     private final StringBuilder run = new StringBuilder();
+    private final java.util.List<Batch> out = new java.util.ArrayList<>(); // atomic-block streams
 
     public TokenRuns(Tokenizer tokenizer) {
         this.tokenizer = tokenizer;
@@ -89,8 +90,23 @@ public final class TokenRuns {
         return this;
     }
 
-    /** Flushes the pending run and returns everything as one id sequence. */
+    /**
+     * Splices an ATOMIC non-token block - a media {@link Batch#embeddings} splice - cutting the id
+     * stream around it. The block's attention semantics (bidirectional image group vs causal audio)
+     * live on the batch itself, and {@link Batch#prepare} guarantees embedding blocks are never
+     * split; this builder only sequences.
+     */
+    public TokenRuns block(Batch block) {
+        cut();
+        out.add(block);
+        return this;
+    }
+
+    /** Flushes the pending run and returns everything as one id sequence (token-only streams). */
     public IntSequence build() {
+        if (!out.isEmpty()) {
+            throw new IllegalStateException("stream contains atomic blocks: use batches()");
+        }
         flush();
         return ids.build();
     }
@@ -98,6 +114,21 @@ public final class TokenRuns {
     /** {@link #build} as one prefill batch - the common whole-conversation shape. */
     public Batch batch() {
         return Batch.prefill(build().toArray());
+    }
+
+    /** The full stream as batches: token runs cut around every atomic block, final flush owned. */
+    public java.util.List<Batch> batches() {
+        cut();
+        return java.util.List.copyOf(out);
+    }
+
+    private void cut() {
+        flush();
+        IntSequence pending = ids.build();
+        if (pending.length() > 0) {
+            out.add(Batch.prefill(pending.toArray()));
+            ids = IntSequence.newBuilder();
+        }
     }
 
     private void flush() {

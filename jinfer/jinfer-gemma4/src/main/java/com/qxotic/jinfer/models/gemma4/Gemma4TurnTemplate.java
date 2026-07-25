@@ -12,6 +12,7 @@ import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Role;
+import com.qxotic.jinfer.chat.TokenRuns;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.chat.ToolCallSyntax;
 import com.qxotic.jinfer.chat.TurnTemplate;
@@ -55,6 +56,7 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
     private final List<Integer> newline; // encode("\n"), constant
     private final List<Batch> generationPrompt; // <|turn>model\n, constant
     private final List<Batch> closeTurn; // <turn|>\n, constant
+    private final TokenRuns proto; // compiled spelling table, forked per turn
 
     public Gemma4TurnTemplate(Tokenizer tokenizer) {
         this(tokenizer, null, 0);
@@ -76,6 +78,7 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
         close.add(turnClose);
         close.addAll(newline);
         this.closeTurn = List.of(Batch.prefill(close));
+        this.proto = new TokenRuns(tokenizer);
     }
 
     @Override
@@ -85,74 +88,58 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
 
     @Override
     public List<Batch> encodeTurn(Message message) {
-        // <|turn> {role}\n{parts...} <turn|> \n — text accumulates into contiguous plain runs,
-        // media flushes the run and splices its wrapped embeddings block in part order.
-        List<Batch> out = new ArrayList<>();
-        List<Integer> ids = new ArrayList<>();
-        ids.add(turnOpen);
-        StringBuilder text = new StringBuilder(roleName(message.role())).append('\n');
+        // <|turn> {role}\n{parts...} <turn|> \n - text accumulates into contiguous plain runs,
+        // media cuts the stream and splices its wrapped embeddings block in part order.
+        TokenRuns runs = proto.fresh();
+        runs.id(turnOpen).text(roleName(message.role())).text("\n");
         boolean hasMedia = message.content().stream().anyMatch(p -> p instanceof Part.Blob);
         if (!hasMedia) {
             // Gemma's template trims each message's text (| trim for user/system, strip_thinking
-            // for
-            // model); a text-only turn's content is stripped to stay token-exact with the render.
-            text.append(message.textOnly().strip());
-            flushText(text, ids);
+            // for model); a text-only turn's content is stripped to stay token-exact with the
+            // render.
+            runs.text(message.textOnly().strip());
         } else {
             for (Part p : message.content()) {
                 if (p instanceof Part.Text t) {
-                    text.append(t.text());
+                    runs.text(t.text());
                 } else if (p instanceof Part.Blob blob) {
-                    flushText(text, ids);
-                    encodeMedia(blob.media(), ids, out);
+                    encodeMedia(blob.media(), runs);
                 }
             }
-            flushText(text, ids);
         }
-        ids.add(turnClose);
-        ids.addAll(newline);
-        out.add(Batch.prefill(ids));
-        return out;
+        runs.id(turnClose).text("\n");
+        return runs.batches();
     }
 
     /**
      * {@code <open>} [embeddings] {@code <close>}: wrapper ids around the encoded block —
      * bidirectional for images (one attention group), causal for audio (gemma4ua).
      */
-    private void encodeMedia(Media m, List<Integer> ids, List<Batch> out) {
+    private void encodeMedia(Media m, TokenRuns runs) {
         switch (m) {
             case Media.Image img -> {
-                ids.add(SpecialTokens.require(tokenizer, "<|image>"));
-                out.add(Batch.prefill(ids));
-                ids.clear();
                 FloatTensor rows = encode(Media.Image.class, img);
-                out.add(Batch.embeddings(rows, (int) (rows.size() / modelDim)));
-                ids.add(SpecialTokens.require(tokenizer, "<image|>"));
+                runs.id(SpecialTokens.require(tokenizer, "<|image>"))
+                        .block(Batch.embeddings(rows, (int) (rows.size() / modelDim)))
+                        .id(SpecialTokens.require(tokenizer, "<image|>"));
             }
             case Media.Audio aud -> {
-                ids.add(SpecialTokens.require(tokenizer, "<|audio>"));
-                out.add(Batch.prefill(ids));
-                ids.clear();
                 FloatTensor rows = encode(Media.Audio.class, aud);
-                out.add(Batch.embeddings(rows, (int) (rows.size() / modelDim), false));
-                ids.add(SpecialTokens.require(tokenizer, "<audio|>"));
+                runs.id(SpecialTokens.require(tokenizer, "<|audio>"))
+                        .block(Batch.embeddings(rows, (int) (rows.size() / modelDim), false))
+                        .id(SpecialTokens.require(tokenizer, "<audio|>"));
             }
             case Media.Video vid -> {
                 // Video decomposes into frames: each frame is a timestamped image block,
-                // interleaved
-                // as the docs show ("00:00 <|image>...", "00:01 ..."). Timestamps are plain text
-                // (not
-                // special tokens). Per-frame token cost = image budget (~256 at budget 280) - use a
-                // low
-                // jinfer.gemma4.imageTokenBudget for video so many frames fit the context.
+                // interleaved as the docs show ("00:00 <|image>...", "00:01 ..."). Timestamps are
+                // plain text (not special tokens). Per-frame token cost = image budget (~256 at
+                // budget 280) - use a low jinfer.gemma4.imageTokenBudget for video so many frames
+                // fit the context.
                 Media.Image[] frames = vid.frames();
                 for (int i = 0; i < frames.length; i++) {
                     int sec = (int) (i / Math.max(vid.fps(), 1f));
-                    ids.addAll(
-                            tokenizer
-                                    .encode(String.format("%n%02d:%02d%n", sec / 60, sec % 60))
-                                    .toList());
-                    encodeMedia(frames[i], ids, out);
+                    runs.text(String.format("%n%02d:%02d%n", sec / 60, sec % 60));
+                    encodeMedia(frames[i], runs);
                 }
             }
             default ->
@@ -239,43 +226,37 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
             if (m.content().stream().anyMatch(p -> p instanceof Part.Blob)) {
                 throw new UnsupportedConversation("media in a tool-call/continuation model turn");
             }
-            List<Integer> ids = new ArrayList<>();
-            StringBuilder text = new StringBuilder();
+            TokenRuns runs = proto.fresh();
             if (!continuation) {
-                ids.add(turnOpen);
-                text.append(roleName(m.role())).append('\n');
+                runs.id(turnOpen).text(roleName(m.role())).text("\n");
             }
             for (Part.ToolCall call : calls) {
-                flushText(text, ids);
-                ids.add(require("<|tool_call>"));
-                sinkInto(text, ids, s -> Gemma4ToolSyntax.call(call.name(), call.arguments(), s));
-                ids.add(require("<tool_call|>"));
+                runs.id(require("<|tool_call>"));
+                sinkInto(runs, s -> Gemma4ToolSyntax.call(call.name(), call.arguments(), s));
+                runs.id(require("<tool_call|>"));
             }
             // forward-fold the consecutive tool-role results, names resolved from the calls
             boolean responses = false;
             for (int j = i + 1; j < msgs.size() && msgs.get(j).role().equals(Role.TOOL); j++) {
                 for (Part part : msgs.get(j).content()) {
                     if (!(part instanceof Part.ToolResult r)) continue;
-                    flushText(text, ids);
-                    ids.add(require("<|tool_response>"));
+                    runs.id(require("<|tool_response>"));
                     String name = resolveName(calls, r.callId());
-                    sinkInto(text, ids, s -> Gemma4ToolSyntax.response(name, r.text(), s));
-                    ids.add(require("<tool_response|>"));
+                    sinkInto(runs, s -> Gemma4ToolSyntax.response(name, r.text(), s));
+                    runs.id(require("<tool_response|>"));
                     responses = true;
                     prev = "response";
                 }
             }
             if (!calls.isEmpty() && !responses) prev = "call";
             String content = m.text().strip(); // the lenient view: call parts render above
-            text.append(content);
-            flushText(text, ids);
+            runs.text(content);
             if ("call".equals(prev)) {
-                ids.add(require("<|tool_response>")); // awaiting results: the turn stays open
+                runs.id(require("<|tool_response>")); // awaiting results: the turn stays open
             } else if (!(responses && content.isEmpty())) {
-                ids.add(turnClose);
-                ids.addAll(newline);
+                runs.id(turnClose).text("\n");
             }
-            if (!ids.isEmpty()) out.add(Batch.prefill(ids));
+            out.addAll(runs.batches());
         }
         if (!"call".equals(prev) && !"response".equals(prev)) {
             out.addAll(generationPrompt(conversation.thinking()));
@@ -288,41 +269,35 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
      * per tool + {@code <turn|>\n} - the template's tool-definitions block.
      */
     private void systemBlock(Message system, List<Tool> tools, List<Batch> out) {
-        List<Integer> ids = new ArrayList<>();
-        ids.add(turnOpen);
-        StringBuilder text = new StringBuilder("system\n");
-        if (system != null) text.append(system.textOnly().strip());
-        flushText(text, ids);
+        TokenRuns runs = proto.fresh();
+        runs.id(turnOpen).text("system\n");
+        if (system != null) runs.text(system.textOnly().strip());
         for (Tool tool : tools) {
-            ids.add(require("<|tool>"));
+            runs.id(require("<|tool>"));
             Object parsed = JsonCodec.parse(tool.rawJson());
             @SuppressWarnings("unchecked")
             Map<String, Object> map = (Map<String, Object>) parsed;
-            sinkInto(text, ids, s -> Gemma4ToolSyntax.declaration(map, s));
-            ids.add(require("<tool|>"));
+            sinkInto(runs, s -> Gemma4ToolSyntax.declaration(map, s));
+            runs.id(require("<tool|>"));
         }
-        ids.add(turnClose);
-        ids.addAll(newline);
-        out.add(Batch.prefill(ids));
+        runs.id(turnClose).text("\n");
+        out.addAll(runs.batches());
     }
 
     /** Runs a tool-syntax renderer: text runs accumulate, quotes emit the trusted id. */
-    private void sinkInto(
-            StringBuilder text, List<Integer> ids, Consumer<Gemma4ToolSyntax.Sink> render) {
+    private void sinkInto(TokenRuns runs, Consumer<Gemma4ToolSyntax.Sink> render) {
         render.accept(
                 new Gemma4ToolSyntax.Sink() {
                     @Override
                     public void text(String s) {
-                        text.append(s);
+                        runs.text(s);
                     }
 
                     @Override
                     public void quote() {
-                        flushText(text, ids);
-                        ids.add(require("<|\"|>"));
+                        runs.id(require("<|\"|>"));
                     }
                 });
-        flushText(text, ids);
     }
 
     private static String resolveName(List<Part.ToolCall> calls, String callId) {
@@ -372,12 +347,6 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
     /** Gemma's template names the assistant turn {@code model}. */
     private static String roleName(Role role) {
         return role.equals(Role.ASSISTANT) ? "model" : role.name();
-    }
-
-    private void flushText(StringBuilder text, List<Integer> ids) {
-        if (text.isEmpty()) return;
-        ids.addAll(tokenizer.encode(text.toString()).toList());
-        text.setLength(0);
     }
 
     @Override
