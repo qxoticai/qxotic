@@ -43,7 +43,8 @@ public final class ModelLoader {
      * mapping lives exactly as long as any tensor of the model is reachable and is unmapped by GC
      * once the whole model graph is dropped - weights can be released, never leak for the process.
      * (Kernels read via raw addresses ({@code FloatTensor.GLOBAL_SEGMENT}), so liveness is carried
-     * by object reachability; {@code Generator} fences the model for the duration of every pass.)
+     * by object reachability: callers must hold the model across kernel calls - {@code Generator}
+     * and {@code CachedSession} add reachability fences on their passes as hardening.)
      */
     public static Map<String, GGMLTensorEntry> loadTensors(FileChannel fileChannel, GGUF gguf)
             throws IOException {

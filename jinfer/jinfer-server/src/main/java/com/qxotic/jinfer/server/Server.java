@@ -40,7 +40,8 @@ public final class Server {
      * serves on its own executor; this call does not block). Host/port come from {@code options};
      * port 0 binds an ephemeral port, readable from {@link HttpServer#getAddress()}. This is the
      * only public API of the module - load a model (jinfer-core), then hand it here to serve it.
-     * Each call serves an independent instance (own worker queue, own generation state).
+     * Each call serves an independent instance (own worker queue, own generation state); the SSE
+     * write-stall watchdog and {@link Metrics} counters are deliberately process-wide.
      */
     public static HttpServer start(LoadedModel<?> model, LLMOptions options) throws IOException {
         return new Server(model, options).serve(model, options);

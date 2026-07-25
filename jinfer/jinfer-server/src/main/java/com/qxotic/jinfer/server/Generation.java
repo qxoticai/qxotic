@@ -386,12 +386,11 @@ final class Generation {
         LLMOptions.require(Values.intValue(request.get("n"), 1) == 1, "Only n=1 is supported");
         LLMOptions.require(0 <= maxTokens, "Invalid argument: max_tokens must be non-negative");
         List<String> textStops = textStops(request.get("stop"));
-        // a forced call on the native path: the reply is seeded INTO the call block
-        // (requestThink already turns thinking off for any forced request)
-        boolean forced =
-                ToolUse.forced(request) != null
-                        && template != null
-                        && template.callSeed().length > 0;
+        // Forced call on the CODEC path: only chatTemplated seeds callSeed into the prompt, and
+        // it always arrives here with a resumed state - the whole-render fallback (legacy
+        // seedForced marker) must NOT get the pin or the parser pre-feed. requestThink already
+        // turns thinking off for any forced request.
+        boolean forced = resumedState != null && ToolUse.forced(request) != null;
         boolean think = requestThink(request);
         Sampler sampler =
                 Sampler.select(m.model().config().vocabularySize(), temperature, topp, seed);

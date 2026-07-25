@@ -105,8 +105,7 @@ public final class Generator {
                         ? contextLength - promptPositions
                         : Math.min(maxTokens, contextLength - promptPositions);
 
-        boolean hasDeadline = timeoutNanos != 0;
-        long deadlineNanos = hasDeadline ? System.nanoTime() + timeoutNanos : Long.MAX_VALUE;
+        long deadlineNanos = timeoutNanos != 0 ? System.nanoTime() + timeoutNanos : Long.MAX_VALUE;
         try {
             return generationPass(
                     model,

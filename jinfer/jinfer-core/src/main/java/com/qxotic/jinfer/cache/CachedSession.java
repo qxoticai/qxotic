@@ -130,6 +130,16 @@ public final class CachedSession<S extends RuntimeState> {
      * fingerprint as themselves, embeddings by rows content hash (one block per media group).
      */
     public void ingest(List<Batch> batches) {
+        try {
+            ingestUnfenced(batches);
+        } finally {
+            // weights are read via raw addresses the GC cannot see (FloatTensor.GLOBAL_SEGMENT):
+            // pin the model across the kernels, as Generator does for its passes
+            java.lang.ref.Reference.reachabilityFence(model);
+        }
+    }
+
+    private void ingestUnfenced(List<Batch> batches) {
         for (Batch b : Batch.prepare(batches, state.batchCapacity())) {
             int off = len;
             long[] f = fingerprints(List.of(b)); // the ONE fingerprint law (see fingerprints)
@@ -244,7 +254,11 @@ public final class CachedSession<S extends RuntimeState> {
 
     /** Ingests one decode step and commits it as a single-token block. */
     public void step(int token) {
-        model.ingest(state, Batch.step(token));
+        try {
+            model.ingest(state, Batch.step(token));
+        } finally {
+            java.lang.ref.Reference.reachabilityFence(model);
+        }
         append(token);
         tip = cache.commit(tip, fp, len - 1, 1, state);
     }
