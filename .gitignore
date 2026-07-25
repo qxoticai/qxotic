@@ -135,3 +135,4 @@ build/
 .docusaurus/
 .cache-loader/
 
+bench-results/
