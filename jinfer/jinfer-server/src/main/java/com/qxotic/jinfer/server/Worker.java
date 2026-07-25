@@ -8,7 +8,7 @@ import java.util.concurrent.SynchronousQueue;
 
 /**
  * The single generation worker. Generation runs one request at a time on a dedicated thread fed by
- * a bounded FIFO queue ({@code llama.serverQueue}; 0 = reject unless idle): a fixed serialization
+ * a bounded FIFO queue ({@code jinfer.serverQueue}; 0 = reject unless idle): a fixed serialization
  * point so the inference state is never shared across requests, with backpressure instead of
  * unbounded pile-up. Handlers parse/validate on their own thread and only block here, so a fixed
  * HTTP pool also caps the threads a slow client can pin.
@@ -44,16 +44,6 @@ final class Worker {
                                 }
                             }
                         });
-    }
-
-    /**
-     * Submits and blocks until the job completes; throws if the queue is full. For startup work
-     * (prompt-cache warming) that must finish before the server serves requests.
-     */
-    void runToCompletion(Runnable job) {
-        if (!submitAndWait(job)) {
-            throw new IllegalStateException("generation queue full at startup");
-        }
     }
 
     /**

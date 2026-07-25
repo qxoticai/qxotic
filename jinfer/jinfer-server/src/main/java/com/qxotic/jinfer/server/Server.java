@@ -28,18 +28,25 @@ import java.util.function.Function;
  */
 public final class Server {
 
-    private Server() {}
+    private final Worker worker = new Worker();
+    private final Generation generation;
+
+    private Server(LoadedModel<?> model, LLMOptions options) {
+        this.generation = new Generation(model, options);
+    }
 
     /**
      * Starts the server for an already-loaded {@code model} and returns the running instance (it
      * serves on its own executor; this call does not block). Host/port come from {@code options};
-     * port 0 binds an ephemeral port, readable from {@link HttpServer#getAddress()}. Prompt-cache
-     * warming, if configured, completes before this returns. This is the only public API of the
-     * module — load a model (jinfer-core), then hand it here to serve it.
+     * port 0 binds an ephemeral port, readable from {@link HttpServer#getAddress()}. This is the
+     * only public API of the module - load a model (jinfer-core), then hand it here to serve it.
+     * Each call serves an independent instance (own worker queue, own generation state).
      */
-    public static HttpServer start(LoadedModel<?> chatModel, LLMOptions options)
-            throws IOException {
-        LoadedModel<?> model = chatModel;
+    public static HttpServer start(LoadedModel<?> model, LLMOptions options) throws IOException {
+        return new Server(model, options).serve(model, options);
+    }
+
+    private HttpServer serve(LoadedModel<?> model, LLMOptions options) throws IOException {
         HttpServer server =
                 HttpServer.create(new InetSocketAddress(options.host(), options.port()), 0);
         String servedId = options.modelPath().getFileName().toString();
@@ -82,9 +89,9 @@ public final class Server {
                                 "status",
                                 "ok",
                                 "busy",
-                                WORKER.busy(),
+                                worker.busy(),
                                 "queued",
-                                WORKER.queueDepth()));
+                                worker.queueDepth()));
         jsonRoute(
                 server,
                 "/props",
@@ -118,16 +125,14 @@ public final class Server {
         jsonRoute(server, "/v1/tokenize", "POST", tokenize); // /v1-prefixed aliases
         jsonRoute(server, "/detokenize", "POST", detokenize);
         jsonRoute(server, "/v1/detokenize", "POST", detokenize);
-        server.createContext("/metrics", Server::handleMetrics);
+        server.createContext("/metrics", this::handleMetrics);
         server.createContext(
                 "/",
                 exchange -> {
                     if (Http.preamble(exchange)) return;
                     Http.sendError(exchange, 404, "Not found");
                 });
-        GENERATION = new Generation(chatModel, options, WORKER);
-        WORKER.start();
-        GENERATION.warm(); // blocks until warmed: instant resume from request one
+        worker.start();
         Sse.startReaper();
         // bounded pool: handlers only parse/validate and block on the generation queue latch,
         // so a fixed pool also caps the threads slow-loris connections can pin
@@ -193,7 +198,7 @@ public final class Server {
      * and never occupy the generation worker, even while it is busy with a long generation. The job
      * runs on the worker via the bounded queue with uniform error handling.
      */
-    private static void handleGenerationPost(
+    private void handleGenerationPost(
             HttpExchange exchange,
             String idPrefix,
             Consumer<Map<String, Object>> validator,
@@ -232,7 +237,7 @@ public final class Server {
                 });
     }
 
-    private static void handleChatCompletion(HttpExchange exchange, LLMOptions options)
+    private void handleChatCompletion(HttpExchange exchange, LLMOptions options)
             throws IOException {
         handleGenerationPost(
                 exchange,
@@ -248,7 +253,7 @@ public final class Server {
                         streamChatCompletion(exchange, request, messages, modelId, id);
                     } else {
                         Reply result =
-                                GENERATION.chat(
+                                generation.chat(
                                         request, messages, Sinks.NONE); // non-streaming, no tools
                         respond(
                                 exchange,
@@ -258,8 +263,7 @@ public final class Server {
                 });
     }
 
-    private static void handleCompletion(HttpExchange exchange, LLMOptions options)
-            throws IOException {
+    private void handleCompletion(HttpExchange exchange, LLMOptions options) throws IOException {
         handleGenerationPost(
                 exchange,
                 "cmpl-",
@@ -276,7 +280,7 @@ public final class Server {
                         streamCompletion(exchange, request, prompt, modelId, id);
                     } else {
                         Reply result =
-                                GENERATION.completion(request, prompt, Sinks.NONE); // non-streaming
+                                generation.completion(request, prompt, Sinks.NONE); // non-streaming
                         respond(
                                 exchange,
                                 result,
@@ -285,8 +289,7 @@ public final class Server {
                 });
     }
 
-    private static void handleResponse(HttpExchange exchange, LLMOptions options)
-            throws IOException {
+    private void handleResponse(HttpExchange exchange, LLMOptions options) throws IOException {
         handleGenerationPost(
                 exchange,
                 "resp-",
@@ -304,7 +307,7 @@ public final class Server {
                         streamResponse(exchange, request, messages, modelId, id);
                     } else {
                         Reply result =
-                                GENERATION.chat(
+                                generation.chat(
                                         request, messages, Sinks.NONE); // non-streaming, no tools
                         respond(
                                 exchange,
@@ -314,7 +317,7 @@ public final class Server {
                 });
     }
 
-    private static void streamChatCompletion(
+    private void streamChatCompletion(
             HttpExchange exchange,
             Map<String, Object> request,
             List<Object> messages,
@@ -328,45 +331,36 @@ public final class Server {
                         sse.emit(
                                 OpenAiSchema.chatCompletionChunk(
                                         id, modelId, Map.of("role", "assistant"), null));
-                        boolean forcedTool = ToolUse.forced(request) != null;
-                        boolean hasTools = ToolUse.offered(request);
-                        OpenAiSchema.Usage usage = forcedTool ? null : new OpenAiSchema.Usage();
-                        // A forced tool call streams no content (the turn is seeded straight into
-                        // the
-                        // tool-call block); otherwise content and reasoning stream live. Tool-call
-                        // body
-                        // text always goes to a discard sink so it never leaks into the content
-                        // stream —
-                        // the calls themselves are parsed from the result and emitted once below.
-                        Consumer<String> contentSink =
-                                forcedTool
-                                        ? DISCARD
-                                        : deltaSink(
-                                                sse,
-                                                usage,
-                                                t ->
-                                                        OpenAiSchema.chatCompletionChunk(
-                                                                id,
-                                                                modelId,
-                                                                Map.of("content", t),
-                                                                null));
-                        Consumer<String> reasoningSink =
-                                forcedTool
-                                        ? null
-                                        : deltaSink(
-                                                sse,
-                                                usage,
-                                                t ->
-                                                        OpenAiSchema.chatCompletionChunk(
-                                                                id,
-                                                                modelId,
-                                                                Map.of("reasoning_content", t),
-                                                                null));
-                        Reply result =
-                                GENERATION.chat(
-                                        request,
-                                        messages,
-                                        new Sinks(contentSink, reasoningSink, usage));
+                        // A forced tool call streams no live channels (the turn is seeded
+                        // straight into the tool-call block; the calls are parsed from the result
+                        // and emitted once below); otherwise content and reasoning stream live.
+                        OpenAiSchema.Usage usage = new OpenAiSchema.Usage();
+                        Sinks sinks =
+                                ToolUse.forced(request) != null
+                                        ? Sinks.NONE
+                                        : new Sinks(
+                                                deltaSink(
+                                                        sse,
+                                                        usage,
+                                                        t ->
+                                                                OpenAiSchema.chatCompletionChunk(
+                                                                        id,
+                                                                        modelId,
+                                                                        Map.of("content", t),
+                                                                        null)),
+                                                deltaSink(
+                                                        sse,
+                                                        usage,
+                                                        t ->
+                                                                OpenAiSchema.chatCompletionChunk(
+                                                                        id,
+                                                                        modelId,
+                                                                        Map.of(
+                                                                                "reasoning_content",
+                                                                                t),
+                                                                        null)),
+                                                usage);
+                        Reply result = generation.chat(request, messages, sinks);
                         if (!result.toolCalls().isEmpty()) {
                             sse.emit(
                                     OpenAiSchema.chatCompletionChunk(
@@ -420,7 +414,7 @@ public final class Server {
                 && Boolean.TRUE.equals(((Map<String, Object>) so).get("include_usage"));
     }
 
-    private static void streamCompletion(
+    private void streamCompletion(
             HttpExchange exchange,
             Map<String, Object> request,
             String prompt,
@@ -438,7 +432,7 @@ public final class Server {
                                         usage,
                                         t -> OpenAiSchema.completionChunk(id, modelId, t, null));
                         Reply result =
-                                GENERATION.completion(request, prompt, Sinks.text(sink, usage));
+                                generation.completion(request, prompt, Sinks.text(sink, usage));
                         endStream(
                                 sse,
                                 request,
@@ -450,7 +444,7 @@ public final class Server {
         }
     }
 
-    private static void streamResponse(
+    private void streamResponse(
             HttpExchange exchange,
             Map<String, Object> request,
             List<Object> messages,
@@ -487,7 +481,7 @@ public final class Server {
                                         usage,
                                         "response.output_text.delta",
                                         t -> OpenAiSchema.responseTextDelta(itemId, t));
-                        Reply result = GENERATION.chat(request, messages, Sinks.text(sink, usage));
+                        Reply result = generation.chat(request, messages, Sinks.text(sink, usage));
                         sse.emit(
                                 "response.output_text.done",
                                 Map.of(
@@ -524,13 +518,6 @@ public final class Server {
     }
 
     /**
-     * A no-op sink: consumes generated text without emitting it. Used to suppress a stream (a
-     * forced tool call streams no content) and to route tool-call body text away from the content
-     * stream — a non-null tool-call sink keeps it out of {@code content}.
-     */
-    private static final Consumer<String> DISCARD = text -> {};
-
-    /**
      * A streaming text sink: each chunk of generated text becomes one {@code data:} SSE frame built
      * by {@code chunkOf}, with running usage attached when tracked.
      */
@@ -562,19 +549,19 @@ public final class Server {
      * Prometheus text exposition (llama.cpp-style /metrics): request/token totals, queue and worker
      * gauges, prompt-cache stats.
      */
-    private static void handleMetrics(HttpExchange exchange) throws IOException {
+    private void handleMetrics(HttpExchange exchange) throws IOException {
         if (Http.preamble(exchange)) return;
         if (!exchange.getRequestURI().getPath().equals("/metrics")) {
             Http.sendError(exchange, 404, "Not found");
             return;
         }
         if (Http.requireMethod(exchange, "GET")) return;
-        Http.sendText(exchange, 200, Metrics.CONTENT_TYPE, Metrics.exposition(WORKER));
+        Http.sendText(exchange, 200, Metrics.CONTENT_TYPE, Metrics.exposition(worker));
     }
 
     private static void setTimingHeader(HttpExchange exchange, Reply result) {
         exchange.getResponseHeaders()
-                .set("X-LFM2-Timing", JsonCodec.stringify(OpenAiSchema.timings(result)));
+                .set("X-Jinfer-Timing", JsonCodec.stringify(OpenAiSchema.timings(result)));
     }
 
     /** Non-streaming reply: attach the timing header, then send the schema body as JSON. */
@@ -584,15 +571,12 @@ public final class Server {
         Http.sendJson(exchange, 200, body);
     }
 
-    private static final Worker WORKER = new Worker();
-    private static Generation GENERATION;
-
     /**
      * Enqueues the request for the generation worker (FIFO) and waits for it to finish; rejects
      * with 503 + Retry-After when the queue is full.
      */
-    private static void runQueued(HttpExchange exchange, Runnable work) throws IOException {
-        if (!WORKER.submitAndWait(work)) {
+    private void runQueued(HttpExchange exchange, Runnable work) throws IOException {
+        if (!worker.submitAndWait(work)) {
             exchange.getResponseHeaders()
                     .set("Retry-After", String.valueOf(Worker.retryAfterSeconds()));
             Http.sendError(

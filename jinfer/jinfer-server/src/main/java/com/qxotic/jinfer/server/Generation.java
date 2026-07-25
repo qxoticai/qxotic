@@ -48,7 +48,6 @@ final class Generation {
 
     private final LoadedModel<?> model;
     private final LLMOptions options;
-    private final Worker worker;
     private final ChatTemplate template; // memoized model framing, null when the model has none
     private final JinjaChatTemplate jinjaTemplate; // whole-render fallback, compiled once
     private final Set<Integer> stopTokens; // memoized model stops
@@ -57,15 +56,17 @@ final class Generation {
     private final SessionPool<?>
             sessionPool; // tier 1: last-N live conversations (append-only reuse)
 
-    Generation(LoadedModel<?> chatModel, LLMOptions options, Worker worker) {
+    Generation(LoadedModel<?> chatModel, LLMOptions options) {
         this.model = chatModel;
         this.options = options;
-        this.worker = worker;
         this.template = chatModel.template().orElse(null);
         this.jinjaTemplate = new JinjaChatTemplate(model.tokenizer(), model.chatTemplateSource());
         this.stopTokens = model.stopTokens();
         this.promptCache = RuntimeFlags.PROMPT_CACHE ? buildCache(model) : null;
         this.sessionPool = promptCache != null ? new SessionPool<>(RuntimeFlags.SESSIONS) : null;
+        if (!options.warmPrompts().isEmpty()) {
+            System.err.println("warm-prompt ignored: startup warming is not implemented yet");
+        }
     }
 
     private static <S extends RuntimeState> PromptCache<S> buildCache(LoadedModel<S> m) {
@@ -136,8 +137,8 @@ final class Generation {
     }
 
     /** The pin's tool list: the single named function, or everything offered for "required". */
-    private List<com.qxotic.jinfer.chat.Tool> pinTools(Map<String, Object> request) {
-        List<com.qxotic.jinfer.chat.Tool> offered = buildTools(request);
+    private List<Tool> pinTools(Map<String, Object> request) {
+        List<Tool> offered = buildTools(request);
         String forced = ToolUse.forced(request);
         if (forced == null || forced.isEmpty()) return offered;
         return offered.stream().filter(t -> t.name().equals(forced)).toList();
@@ -306,15 +307,13 @@ final class Generation {
                                 billed,
                                 cache.stats());
                     }
-                    // decode from the retained logits (empty prompt continues at the cursor); the
-                    // whole
-                    // prompt was billed, of which `restored` came from the cache.
+                    // decode from the retained logits (empty prompt continues at the cursor);
+                    // the whole prompt was billed, of which `restored` came from the cache
                     Reply result = generateFrom(m, session.state(), request, sinks, restored);
                     // Bring the decode back into the session (the generator stepped the state
-                    // directly):
-                    // the reply extends the stream and commits as a block, and the live session
-                    // returns
-                    // to the pool ready for the next echo to continue append-only.
+                    // directly): the reply extends the stream and commits as a block, and the
+                    // live session returns to the pool ready for the next echo to continue
+                    // append-only.
                     int ingested = session.state().position() - billed;
                     if (ingested > 0)
                         session.adopt(result.tokens().subSequence(0, ingested).toList());
@@ -376,7 +375,7 @@ final class Generation {
                         request.getOrDefault("max_tokens", request.get("max_completion_tokens")),
                         options.maxTokens());
         // server-side completion-token ceiling: an unbounded (or oversized) request can never run
-        // the worker past llama.serverMaxTokens; hitting it reports finish_reason "length"
+        // the worker past jinfer.serverMaxTokens; hitting it reports finish_reason "length"
         if (ServerFlags.SERVER_MAX_TOKENS > 0)
             maxTokens =
                     maxTokens < 0
@@ -387,13 +386,13 @@ final class Generation {
         LLMOptions.require(Values.intValue(request.get("n"), 1) == 1, "Only n=1 is supported");
         LLMOptions.require(0 <= maxTokens, "Invalid argument: max_tokens must be non-negative");
         List<String> textStops = textStops(request.get("stop"));
-        // a forced call on the native path: the reply is seeded INTO the call block, so
-        // thinking is off (same policy as the langchain4j provider)
+        // a forced call on the native path: the reply is seeded INTO the call block
+        // (requestThink already turns thinking off for any forced request)
         boolean forced =
                 ToolUse.forced(request) != null
                         && template != null
                         && template.callSeed().length > 0;
-        boolean think = requestThink(request) && !forced;
+        boolean think = requestThink(request);
         Sampler sampler =
                 Sampler.select(m.model().config().vocabularySize(), temperature, topp, seed);
         if (think) {
@@ -411,11 +410,10 @@ final class Generation {
         if (grammarCursor != null) {
             int eosToken = SpecialTokens.findFirst(tokenizer, "<eos>", "<|endoftext|>").orElse(2);
             // For a reasoning request, hold the grammar until after the think span - constraining
-            // from token 0 would suppress the model's reasoning and degrade the answer. The newline
-            // the model emits between </think> and the answer is passed through, not consumed by
-            // the
-            // grammar (so non-ws-tolerant grammars like choice/jsonCompact see a clean first
-            // token).
+            // from token 0 would suppress the model's reasoning and degrade the answer. The
+            // newline the model emits between </think> and the answer is passed through, not
+            // consumed by the grammar (so non-ws-tolerant grammars like choice/jsonCompact see a
+            // clean first token).
             int grammarGate = think ? SpecialTokens.find(tokenizer, "</think>").orElse(-1) : -1;
             int[] skipNl = grammarGate >= 0 ? SpecialTokens.newlineTokens(tokenizer) : null;
             sampler = Sampler.withGrammar(sampler, grammarCursor, eosToken, grammarGate, skipNl);
@@ -506,7 +504,7 @@ final class Generation {
         private final StringBuilder text = new StringBuilder();
         private final StringBuilder reasoning = new StringBuilder();
         private final TextStops.Holdback holdback; // null when neither streaming nor text stops
-        private final java.util.function.Consumer<String> onReasoning;
+        private final Consumer<String> onReasoning;
         private final InlineThink inline; // null when reasoning routes to its own channel
 
         FragmentRouter(
@@ -647,22 +645,5 @@ final class Generation {
      */
     private static boolean inlineReasoning(Map<String, Object> request) {
         return "none".equals(Values.stringValue(request.get("reasoning_format"), null));
-    }
-
-    // ---- prompt-cache warming ----------------------------------------------
-
-    /**
-     * Warm prompts are not implemented on this path yet (the cache itself is live; warming would
-     * pre-ingest and commit the given prompts at startup). Warns so the flag is not silently lost.
-     */
-    void warm() {
-        if (!options.warmPrompts().isEmpty()) {
-            System.err.println("warm-prompt ignored: startup warming is not implemented yet");
-        }
-        if (System.getProperty("jinfer.promptCacheWarm") != null) {
-            System.err.println(
-                    "jinfer.promptCacheWarm ignored: the property was removed - the cache "
-                            + "warms itself per request (start-up warming is not implemented)");
-        }
     }
 }

@@ -60,7 +60,7 @@ final class Http {
     }
 
     /**
-     * Reads the request body, bounded by {@code llama.serverMaxBodyMB}; returns null after sending
+     * Reads the request body, bounded by {@code jinfer.serverMaxBodyMB}; returns null after sending
      * 413 when the body exceeds the limit (callers must return immediately on null).
      */
     static byte[] readBody(HttpExchange exchange) throws IOException {

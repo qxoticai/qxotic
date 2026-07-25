@@ -59,10 +59,14 @@ final class Sse {
 
     /**
      * A reaper closes any stream whose in-flight write has blocked past {@code
-     * llama.serverWriteTimeout}; the blocked write then fails with IOException, aborting that
+     * jinfer.serverWriteTimeout}; the blocked write then fails with IOException, aborting that
      * generation cleanly.
      */
+    private static final java.util.concurrent.atomic.AtomicBoolean REAPER_STARTED =
+            new java.util.concurrent.atomic.AtomicBoolean();
+
     static void startReaper() {
+        if (!REAPER_STARTED.compareAndSet(false, true)) return;
         Thread.ofPlatform()
                 .name("sse-write-reaper")
                 .daemon(true)

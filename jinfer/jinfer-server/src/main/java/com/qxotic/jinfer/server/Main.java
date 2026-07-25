@@ -1,4 +1,4 @@
-// LFM2.5 inference in pure Java
+// jinfer: LLM inference in pure Java
 // Author: Alfonso² Peterssen
 // Based on Andrej Karpathy's llama2.c and minbpe projects
 // Related project: https://github.com/mukel/llama3.java
@@ -78,8 +78,8 @@ public class Main {
             return token -> {};
         }
 
-        java.util.OptionalInt open = SpecialTokens.find(tokenizer, "<think>");
-        java.util.OptionalInt close = SpecialTokens.find(tokenizer, "</think>");
+        var open = SpecialTokens.find(tokenizer, "<think>");
+        var close = SpecialTokens.find(tokenizer, "</think>");
         if (open.isEmpty() || close.isEmpty()) {
             return token -> { // no think markers in the vocabulary: plain content streaming
                 if (!SpecialTokens.isSpecial(tokenizer, token)) {

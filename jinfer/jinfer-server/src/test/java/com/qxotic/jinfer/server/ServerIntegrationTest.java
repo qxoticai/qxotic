@@ -54,23 +54,23 @@ public final class ServerIntegrationTest {
     @Tag("integration")
     void serverBattery() throws Exception {
         Assumptions.assumeTrue(
-                System.getProperty("llama.serverMaxTokens") == null,
+                System.getProperty("jinfer.serverMaxTokens") == null,
                 "ceiling mode configured: run tokenCeilingMode instead");
         run(false);
     }
 
     /**
-     * The token-ceiling check needs its own JVM config (-Dllama.serverMaxTokens is read once at
+     * The token-ceiling check needs its own JVM config (-Djinfer.serverMaxTokens is read once at
      * class init, and the two generation limits race), so it only runs when that property is set:
      * {@code mvn test -Dgroups=integration -Dtest=ServerIntegrationTest#tokenCeilingMode
-     * -Dllama.serverMaxTokens=48}.
+     * -Djinfer.serverMaxTokens=48}.
      */
     @Test
     @Tag("integration")
     void tokenCeilingMode() throws Exception {
         Assumptions.assumeTrue(
-                System.getProperty("llama.serverMaxTokens") != null,
-                "set -Dllama.serverMaxTokens to run ceiling mode");
+                System.getProperty("jinfer.serverMaxTokens") != null,
+                "set -Djinfer.serverMaxTokens to run ceiling mode");
         run(true);
     }
 
@@ -137,7 +137,7 @@ public final class ServerIntegrationTest {
         base = "http://127.0.0.1:" + server.getAddress().getPort();
         client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
 
-        // ceiling mode runs ONLY the token-ceiling check, under a small -Dllama.serverMaxTokens
+        // ceiling mode runs ONLY the token-ceiling check, under a small -Djinfer.serverMaxTokens
         // (the two generation limits race — whichever is tighter fires first — so the ceiling
         // needs its own server config; the deadline is tested Engine-level in the normal battery).
         try {
@@ -331,7 +331,9 @@ public final class ServerIntegrationTest {
                         "{\"messages\":[{\"role\":\"user\",\"content\":\"Briefly, why is the sky"
                                 + " blue?\"}],\"temperature\":0,\"max_tokens\":48}");
         check(response.statusCode() == 200, "chat 200");
-        check(response.headers().firstValue("X-LFM2-Timing").isPresent(), "timing header present");
+        check(
+                response.headers().firstValue("X-Jinfer-Timing").isPresent(),
+                "timing header present");
         Map<String, Object> chat = json(response);
         Map<String, Object> message = path(chat, "choices", 0, "message");
         String content = (String) message.get("content");
@@ -1134,12 +1136,12 @@ public final class ServerIntegrationTest {
     }
 
     /**
-     * Server-side completion ceiling: an oversized request is clamped to llama.serverMaxTokens (set
-     * small for this isolated run), reporting finish_reason "length".
+     * Server-side completion ceiling: an oversized request is clamped to jinfer.serverMaxTokens
+     * (set small for this isolated run), reporting finish_reason "length".
      */
     private static void tokenCeiling() throws Exception {
         int ceiling = ServerFlags.SERVER_MAX_TOKENS;
-        check(ceiling > 0, "ceiling mode needs -Dllama.serverMaxTokens > 0 (" + ceiling + ")");
+        check(ceiling > 0, "ceiling mode needs -Djinfer.serverMaxTokens > 0 (" + ceiling + ")");
         HttpResponse<String> response =
                 post(
                         "/v1/chat/completions",
