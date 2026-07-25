@@ -7,6 +7,7 @@ import com.qxotic.jinfer.cache.CacheStore;
 import com.qxotic.jinfer.cache.CachedSession;
 import com.qxotic.jinfer.cache.FrozenBlocks;
 import com.qxotic.jinfer.cache.PromptCache;
+import com.qxotic.jinfer.cache.StateCodec;
 import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.Sampler;
 import com.qxotic.toknroll.IntSequence;
@@ -299,7 +300,9 @@ public final class ChatEngine {
 
     /**
      * Defines (prefills) a cached prompt: dedups against the tree, commits one block per encoded
-     * batch (turn boundaries), then discards the working state - the blocks hold the KV.
+     * batch (turn boundaries) - or ONE block for the whole prompt when the model's codec has a
+     * coarse residue ({@link StateCodec#coarseBlocks()}) - then discards the working state: the
+     * blocks hold the KV.
      */
     public void define(Conversation prefix) {
         List<Batch> prompt = encodeNative(prefix).prompt();
@@ -314,9 +317,21 @@ public final class ChatEngine {
 
     private <S extends RuntimeState> void defineOn(
             LanguageModel<?, ?, S> model, PromptCache<S> cache, List<Batch> prompt) {
-        S state = Generator.stateFor(model, positions(prompt));
+        // coarse-residue codecs (NemotronH: MBs per block) commit ONE block over everything but
+        // the trailing scaffold batch: one chunk (batch capacity = prompt length), one residue
+        // per prompt. The scaffold is request-shaped (it re-encodes after the user's turn), so
+        // a block containing it would never match - yet would still pay the residue.
+        boolean coarse = model.stateCodec().map(StateCodec::coarseBlocks).orElse(false);
+        S state =
+                coarse
+                        ? model.newState(
+                                model.config().contextLength(), Math.max(positions(prompt), 16))
+                        : Generator.stateFor(model, positions(prompt));
         CachedSession<S> s = CachedSession.resume(model, cache, state, prompt);
-        s.ingestGroups(prompt.stream().map(List::of).toList());
+        s.ingestGroups(
+                coarse
+                        ? List.of(prompt.subList(0, Math.max(1, prompt.size() - 1)))
+                        : prompt.stream().map(List::of).toList());
     }
 
     /** Freezes the whole tree (mounted base + everything defined) into one artifact. */

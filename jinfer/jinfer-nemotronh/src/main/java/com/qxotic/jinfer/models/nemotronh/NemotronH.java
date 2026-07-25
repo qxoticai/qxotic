@@ -98,12 +98,14 @@ public final class NemotronH
         return java.util.Optional.of(turnTemplate);
     }
 
+    private NemotronHStateCodec stateCodec; // memoized: config-driven, model-lifetime
+
     @Override
     public java.util.Optional<com.qxotic.jinfer.cache.StateCodec<State>> stateCodec() {
-        // Mamba SSM state is a LARGE true recurrence (MBs per SSM layer) - neither per-position
-        // rows nor a small residue, so this family offers no block caching; live sessions
-        // (SessionPool) still give append-only reuse.
-        return java.util.Optional.empty();
+        // The SSM residue is MBs per block, so this codec is COARSE (one block per defined
+        // prompt) - block caching works, but per-turn prefix sharing does not pay.
+        if (stateCodec == null) stateCodec = new NemotronHStateCodec(configuration);
+        return java.util.Optional.of(stateCodec);
     }
 
     @Override

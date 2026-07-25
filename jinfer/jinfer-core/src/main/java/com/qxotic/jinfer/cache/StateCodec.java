@@ -32,4 +32,14 @@ public interface StateCodec<S extends RuntimeState> {
 
     /** Copy the span {@code [from,to)} - rows then residue - from {@code src} into the state. */
     void restore(S state, int from, int to, MemorySegment src);
+
+    /**
+     * Coarse blocking hint: a codec whose residue is LARGE (MBs of true recurrence, duplicated per
+     * block by design) asks drivers to commit cached prompts as ONE block per prompt - one residue
+     * per prompt, prefix sharing limited to whole prompts - instead of one block per batch
+     * boundary. Default false: small residue, fine-grained blocking.
+     */
+    default boolean coarseBlocks() {
+        return false;
+    }
 }
