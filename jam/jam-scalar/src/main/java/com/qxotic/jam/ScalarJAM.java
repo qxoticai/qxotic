@@ -5,6 +5,7 @@ import static java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED;
 import static java.lang.foreign.ValueLayout.JAVA_SHORT_UNALIGNED;
 
 import java.lang.foreign.MemorySegment;
+import java.lang.ref.Reference;
 
 /**
  * Pure-Java reference {@link JAM}: a {@code dot()}-based matmul that decodes the quantized weight
@@ -69,6 +70,12 @@ public final class ScalarJAM implements JAM {
                                     rOff + ((long) j * ldr + i) * Float.BYTES,
                                     (float) sum);
                         });
+        // Every read/write above goes through the segments' own checked accessors, so liveness is
+        // already carried per access; the fences make this backend meet the same explicit contract
+        // as NativeJAM/VectorJAM (operands reachable across the whole kernel), belt and braces.
+        Reference.reachabilityFence(w);
+        Reference.reachabilityFence(a);
+        Reference.reachabilityFence(r);
         return OK;
     }
 

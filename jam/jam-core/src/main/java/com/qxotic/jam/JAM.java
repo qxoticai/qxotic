@@ -9,7 +9,10 @@ import java.lang.foreign.MemorySegment;
  * NativeJAM} (via {@link NativeJAM#global()}); other backends (e.g. a Vector API impl) implement
  * this interface. Operands are native {@link MemorySegment}s + byte offsets; an implementation is
  * responsible for its own bounds/liveness handling (the native impl bounds-checks and rejects heap
- * segments).
+ * segments). Liveness contract: every implementation of {@link #mm} must keep each operand segment
+ * reachable across the entire kernel (a trailing {@code Reference.reachabilityFence} per operand) -
+ * kernels that address via raw pointers are invisible to the GC, and an operand backed by an
+ * automatic arena could otherwise be unmapped mid-call.
  */
 public interface JAM {
 

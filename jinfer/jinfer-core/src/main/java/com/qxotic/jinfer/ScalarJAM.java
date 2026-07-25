@@ -41,20 +41,29 @@ final class ScalarJAM implements JAM {
         F32FloatTensor x = new F32FloatTensor((long) n * lda, a.asSlice(aOff));
         F32FloatTensor out = new F32FloatTensor((long) n * ldr, r.asSlice(rOff));
 
-        if (n == 1) {
-            Parallel.parallelFor(0, m, i -> out.setFloat(i, weight.dot((long) i * ldw, x, 0L, k)));
-        } else {
-            Parallel.parallelFor(
-                    0,
-                    n * m,
-                    idx -> {
-                        int s = idx / m, row = idx - s * m; // C[s][row] = dot(W row, A row s)
-                        out.setFloat(
-                                (long) s * ldr + row,
-                                weight.dot((long) row * ldw, x, (long) s * lda, k));
-                    });
+        try {
+            if (n == 1) {
+                Parallel.parallelFor(
+                        0, m, i -> out.setFloat(i, weight.dot((long) i * ldw, x, 0L, k)));
+            } else {
+                Parallel.parallelFor(
+                        0,
+                        n * m,
+                        idx -> {
+                            int s = idx / m, row = idx - s * m; // C[s][row] = dot(W row, A row s)
+                            out.setFloat(
+                                    (long) s * ldr + row,
+                                    weight.dot((long) row * ldw, x, (long) s * lda, k));
+                        });
+            }
+            return OK;
+        } finally {
+            // dot()/setFloat address through FloatTensor.GLOBAL_SEGMENT raw pointers the GC cannot
+            // see: the JAM liveness contract - fence every operand across the whole kernel
+            java.lang.ref.Reference.reachabilityFence(w);
+            java.lang.ref.Reference.reachabilityFence(a);
+            java.lang.ref.Reference.reachabilityFence(r);
         }
-        return OK;
     }
 
     /** Wrap a native segment as the typed tensor for {@code t} (every JAM weight dtype). */

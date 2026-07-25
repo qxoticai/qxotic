@@ -1,6 +1,7 @@
 package com.qxotic.jam;
 
 import java.lang.foreign.MemorySegment;
+import java.lang.ref.Reference;
 
 /**
  * Java Vector API {@link JAM} backend — jam-vector's self-contained matmul, peer to {@link
@@ -86,19 +87,30 @@ public final class VectorJAM implements JAM {
         MemorySegment g = VectorSupport.GLOBAL;
         long ab = a.address() + aOff;
         long ob = r.address() + rOff;
-        switch (wt) {
-            case Q8_0 -> Q8Kernel.gemm(ws, g, ab, g, ob, lda, ldr, n, m, k, 0L);
-            case Q4_0 -> Q4Kernel.gemm(ws, g, ab, g, ob, lda, ldr, n, m, k, 0L);
-            case Q4_K -> Q4KKernel.gemm(ws, g, ab, g, ob, lda, ldr, n, m, k, 0L, scratch);
-            case Q5_K -> Q5KKernel.gemm(ws, g, ab, g, ob, lda, ldr, n, m, k, 0L, scratch);
-            case Q6_K -> Q6KKernel.gemm(ws, g, ab, g, ob, lda, ldr, n, m, k, 0L, scratch);
-            case MXFP4 -> Mxfp4Kernel.gemm(ws, g, ab, g, ob, lda, ldr, n, m, k, 0L, scratch);
-            case NVFP4 -> Nvfp4Kernel.gemm(ws, g, ab, g, ob, lda, ldr, n, m, k, 0L, scratch);
-            case Q1_0 -> Q1Kernel.gemm(ws, g, ab, g, ob, lda, ldr, n, m, k, 0L, scratch);
-            default -> {
-                return EUNSUPPORTED;
+        try {
+            switch (wt) {
+                case Q8_0 -> Q8Kernel.gemm(ws, g, ab, g, ob, lda, ldr, n, m, k, 0L);
+                case Q4_0 -> Q4Kernel.gemm(ws, g, ab, g, ob, lda, ldr, n, m, k, 0L);
+                case Q4_K -> Q4KKernel.gemm(ws, g, ab, g, ob, lda, ldr, n, m, k, 0L, scratch);
+                case Q5_K -> Q5KKernel.gemm(ws, g, ab, g, ob, lda, ldr, n, m, k, 0L, scratch);
+                case Q6_K -> Q6KKernel.gemm(ws, g, ab, g, ob, lda, ldr, n, m, k, 0L, scratch);
+                case MXFP4 -> Mxfp4Kernel.gemm(ws, g, ab, g, ob, lda, ldr, n, m, k, 0L, scratch);
+                case NVFP4 -> Nvfp4Kernel.gemm(ws, g, ab, g, ob, lda, ldr, n, m, k, 0L, scratch);
+                case Q1_0 -> Q1Kernel.gemm(ws, g, ab, g, ob, lda, ldr, n, m, k, 0L, scratch);
+                default -> {
+                    return EUNSUPPORTED;
+                }
             }
+            return OK;
+        } finally {
+            // The kernels read every operand through GLOBAL at raw absolute addresses, which the
+            // GC cannot see: these fences keep the operands' (auto-)arenas alive across the whole
+            // gemm - without them the JIT may drop the last reference after the address() hoist
+            // above and the Cleaner could unmap mid-kernel. `this` pins the context scratch.
+            Reference.reachabilityFence(w);
+            Reference.reachabilityFence(a);
+            Reference.reachabilityFence(r);
+            Reference.reachabilityFence(this);
         }
-        return OK;
     }
 }
