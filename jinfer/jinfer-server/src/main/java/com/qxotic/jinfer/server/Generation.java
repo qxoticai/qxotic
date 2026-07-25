@@ -81,10 +81,11 @@ final class Generation {
     Reply chat(Map<String, Object> request, List<Object> messages, Sinks sinks) {
         boolean tools = ToolUse.offered(request);
         // Codec path: the model's own framing, whenever the template supports the conversation
-        // byte-exactly and the request does not FORCE a specific call (forcing seeds the prompt,
-        // still a whole-render concern). Caching is a separate, optional layer on top (the
-        // framing does not depend on it).
-        if (template != null && ToolUse.forced(request) == null && onlyKnownKwargs(request)) {
+        // byte-exactly. Forced calls ride it too when the template declares its call seed (the
+        // seed batch + prefix-pin + epilogue recipe, same as the langchain4j provider); only
+        // templates without the hook, or a named choice the request does not offer, still take
+        // the whole-render legacy path. Caching is a separate, optional layer on top.
+        if (template != null && nativeForcedOk(request) && onlyKnownKwargs(request)) {
             List<Message> turns = toConversation(messages);
             if (turns != null) {
                 Conversation conversation =
@@ -124,6 +125,22 @@ final class Generation {
         }
         Reply reply = generate(request, promptTokens, sinks);
         return tools ? ToolUse.parse(model, reply, request) : reply;
+    }
+
+    /** Forced requests stay native only when the template's forced-call recipe covers them. */
+    private boolean nativeForcedOk(Map<String, Object> request) {
+        String forced = ToolUse.forced(request);
+        if (forced == null) return true;
+        if (template.callSeed().length == 0) return false;
+        return forced.isEmpty() || ToolUse.names(request).contains(forced);
+    }
+
+    /** The pin's tool list: the single named function, or everything offered for "required". */
+    private List<com.qxotic.jinfer.chat.Tool> pinTools(Map<String, Object> request) {
+        List<com.qxotic.jinfer.chat.Tool> offered = buildTools(request);
+        String forced = ToolUse.forced(request);
+        if (forced == null || forced.isEmpty()) return offered;
+        return offered.stream().filter(t -> t.name().equals(forced)).toList();
     }
 
     /**
@@ -236,6 +253,11 @@ final class Generation {
         // unusable the moment the conversation grows).
         List<List<Batch>> groups = new ArrayList<>();
         for (Batch b : template.encode(conversation)) groups.add(List.of(b));
+        if (ToolUse.forced(request) != null) {
+            // the forcing trick: the family's call marker joins the prompt, so the model can
+            // only COMPLETE a call (the parser is pre-fed the same seed in runGeneration)
+            groups.add(List.of(Batch.prefill(template.callSeed())));
+        }
 
         int[] groupLen = new int[groups.size()];
         int total = 0;
@@ -365,7 +387,13 @@ final class Generation {
         LLMOptions.require(Values.intValue(request.get("n"), 1) == 1, "Only n=1 is supported");
         LLMOptions.require(0 <= maxTokens, "Invalid argument: max_tokens must be non-negative");
         List<String> textStops = textStops(request.get("stop"));
-        boolean think = requestThink(request);
+        // a forced call on the native path: the reply is seeded INTO the call block, so
+        // thinking is off (same policy as the langchain4j provider)
+        boolean forced =
+                ToolUse.forced(request) != null
+                        && template != null
+                        && template.callSeed().length > 0;
+        boolean think = requestThink(request) && !forced;
         Sampler sampler =
                 Sampler.select(m.model().config().vocabularySize(), temperature, topp, seed);
         if (think) {
@@ -392,6 +420,22 @@ final class Generation {
             int[] skipNl = grammarGate >= 0 ? SpecialTokens.newlineTokens(tokenizer) : null;
             sampler = Sampler.withGrammar(sampler, grammarCursor, eosToken, grammarGate, skipNl);
         }
+        if (forced) {
+            // prefix-pin: the family's call grammar pins "prefix (name|...)" right after the
+            // seeded marker (a NAMED choice pins that single name), then forces the family's
+            // header epilogue and releases - the called tool is guaranteed to be an offered
+            // (or THE named) one, the arguments stay the model's own. No grammar = seeding-only.
+            var pin = template.callGrammar(pinTools(request));
+            if (pin.isPresent()) {
+                int eosToken = stopTokens.iterator().next();
+                sampler =
+                        Sampler.withPrefixGrammar(
+                                sampler,
+                                Grammar.of(pin.get(), tokenizer).cursor(),
+                                eosToken,
+                                template.callEpilogue());
+            }
+        }
         // Billed prompt: the whole conversation. On the cached path the state is pre-resumed to the
         // full prompt (position == total), of which cachedTokens were restored from the cache.
         int billedPrompt =
@@ -407,6 +451,14 @@ final class Generation {
                 ToolUse.offered(request) && template != null
                         ? template.parser()
                         : ReplyParser.spans(tokenizer);
+        if (template != null) {
+            // pre-feed the prompt's reply-grammar tail (a prompt-opened think span) and, when
+            // forcing, the seeded call marker - the parser starts in the exact span state the
+            // prompt left the model in (without this, a prompt-opened think span routes
+            // reasoning into the CONTENT channel)
+            for (int t : template.replySeed(think)) parser.feed(t);
+            if (forced) for (int t : template.callSeed()) parser.feed(t);
+        }
         FragmentRouter router =
                 new FragmentRouter(
                         textStops, sinks.onText(), sinks.onReasoning(), inlineReasoning(request));

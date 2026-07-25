@@ -120,7 +120,7 @@ final class ToolUse {
     }
 
     /** The function names a request offers; calls naming anything else are dropped. */
-    private static Set<String> names(Map<String, Object> request) {
+    static Set<String> names(Map<String, Object> request) {
         if (!(request.get("tools") instanceof List<?> tools)) return Set.of();
         Set<String> names = new HashSet<>();
         for (Object tool : tools) {
