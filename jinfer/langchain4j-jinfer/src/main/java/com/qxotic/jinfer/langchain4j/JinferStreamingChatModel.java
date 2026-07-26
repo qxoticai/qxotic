@@ -2,8 +2,8 @@ package com.qxotic.jinfer.langchain4j;
 
 import com.qxotic.jinfer.chat.ReplyLanes;
 import com.qxotic.jinfer.chat.ReplyParser;
-import com.qxotic.jinfer.chat.StopSequences;
 import com.qxotic.jinfer.llm.Generator;
+import com.qxotic.jinfer.llm.TextStops;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.chat.listener.ChatModelListener;
@@ -71,7 +71,7 @@ public final class JinferStreamingChatModel implements StreamingChatModel {
 
     private void stream(JinferChatModel.Prepared p, StreamingChatResponseHandler handler) {
         JinferEngine engine = model.engine;
-        StopSequences stops = StopSequences.of(p.stops());
+        List<String> stops = p.stops() == null ? List.of() : p.stops();
         ReplyLanes lanes =
                 new ReplyLanes(p.encoded().template(), engine.loaded.tokenizer(), p.parserSeed());
 
@@ -90,6 +90,16 @@ public final class JinferStreamingChatModel implements StreamingChatModel {
                 };
         PartialResponseContext context = new PartialResponseContext(handle);
 
+        // the holdback keeps any could-still-be-a-stop suffix unemitted; safe chars flow through
+        TextStops.Holdback watch =
+                new TextStops.Holdback(
+                        stops,
+                        out ->
+                                safely(
+                                        handler,
+                                        () ->
+                                                handler.onPartialResponse(
+                                                        new PartialResponse(out), context)));
         Generator.TokenSink sink =
                 token -> {
                     if (cancelled.get()) return false;
@@ -101,18 +111,10 @@ public final class JinferStreamingChatModel implements StreamingChatModel {
                                     handler,
                                     () -> handler.onPartialThinking(new PartialThinking(fragment)));
                         } else {
-                            // the matcher holds back a possible stop prefix; emit what's safe
-                            String out = stops == null ? fragment : stops.feed(fragment);
-                            if (!out.isEmpty()) {
-                                safely(
-                                        handler,
-                                        () ->
-                                                handler.onPartialResponse(
-                                                        new PartialResponse(out), context));
-                            }
+                            watch.accept(fragment); // stop strings match the content lane only
                         }
                     }
-                    return !cancelled.get() && (stops == null || !stops.hit());
+                    return !cancelled.get() && !watch.stopped();
                 };
 
         Generator.GenerationResult result =
@@ -128,18 +130,11 @@ public final class JinferStreamingChatModel implements StreamingChatModel {
         if (cancelled.get()) {
             return; // a cancelled stream ends silently: no complete callback
         }
-        if (stops != null) {
-            String tail = stops.flush(); // release the held-back chars (nothing past a cut)
-            if (!tail.isEmpty()) {
-                safely(
-                        handler,
-                        () -> handler.onPartialResponse(new PartialResponse(tail), context));
-            }
-        }
+        watch.flush(); // release the held-back chars (a stopped watch emits nothing past the cut)
         AiMessage ai = Mappings.toAiMessage(lanes.finish());
-        boolean stopHit = stops != null && stops.hit();
+        boolean stopHit = watch.stopped();
         if (stopHit) {
-            ai = Mappings.withText(ai, stops.beforeCut());
+            ai = Mappings.withText(ai, TextStops.apply(ai.text(), stops).text());
         }
         if (ai.hasToolExecutionRequests()) {
             for (int i = 0; i < ai.toolExecutionRequests().size(); i++) {

@@ -6,11 +6,11 @@ import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.JsonCodec;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.ReplyLanes;
-import com.qxotic.jinfer.chat.StopSequences;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.Grammar;
 import com.qxotic.jinfer.llm.Sampler;
+import com.qxotic.jinfer.llm.TextStops;
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationRegistry;
 import io.micrometer.observation.contextpropagation.ObservationThreadLocalAccessor;
@@ -175,7 +175,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             int maxTokens,
             long timeoutNanos,
             int promptTokens,
-            StopSequences stops,
+            List<String> stops,
             boolean cached,
             int[] parserSeed) {}
 
@@ -235,7 +235,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                 maxTokens,
                 timeoutNanos,
                 promptTokens,
-                StopSequences.of(options.getStopSequences()),
+                options.getStopSequences() == null ? List.of() : options.getStopSequences(),
                 cached,
                 parserSeed);
     }
@@ -277,14 +277,16 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         Prepared p = prepare(prompt);
         ReplyLanes feed =
                 new ReplyLanes(p.encoded().template(), engine.loaded.tokenizer(), p.parserSeed());
-        StopSequences stops = p.stops();
+        List<String> stops = p.stops();
+        TextStops.Holdback watch =
+                stops.isEmpty() ? null : new TextStops.Holdback(stops, ignored -> {});
         Generator.TokenSink sink =
                 token -> {
                     String fragment = feed.feed(token);
-                    if (stops != null && !feed.reasoning() && !fragment.isEmpty()) {
-                        stops.feed(fragment);
+                    if (watch != null && !feed.reasoning() && !fragment.isEmpty()) {
+                        watch.accept(fragment); // stop strings match the content lane only
                     }
-                    return stops == null || !stops.hit();
+                    return watch == null || !watch.stopped();
                 };
         ChatEngine.Outcome outcome =
                 engine.generate(
@@ -298,11 +300,11 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         // the same parse that fed the stop watch finishes the message - no second decode pass
         Message reply = feed.finish();
         AssistantMessage ai = JinferMappings.toAssistantMessage(reply);
-        boolean stopHit = stops != null && stops.hit();
+        boolean stopHit = watch != null && watch.stopped();
         if (stopHit) {
             ai =
                     AssistantMessage.builder()
-                            .content(stops.beforeCut())
+                            .content(TextStops.apply(ai.getText(), stops).text())
                             .properties(ai.getMetadata())
                             .toolCalls(ai.getToolCalls())
                             .build();
@@ -367,7 +369,10 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         sink.onDispose(() -> cancelled.set(true));
         ReplyLanes feed =
                 new ReplyLanes(p.encoded().template(), engine.loaded.tokenizer(), p.parserSeed());
-        StopSequences stops = p.stops();
+        List<String> stops = p.stops();
+        // the holdback keeps any could-still-be-a-stop suffix unemitted; safe chars flow through
+        TextStops.Holdback watch =
+                new TextStops.Holdback(stops, out -> sink.next(chunk(out, false)));
         Generator.TokenSink tokenSink =
                 token -> {
                     if (cancelled.get()) return false;
@@ -376,10 +381,9 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                     // reasoning streams too, flagged so consumers can keep it off the content
                     // lane; stop sequences stay armed on content only
                     boolean thought = feed.reasoning();
-                    String emit =
-                            thought ? fragment : stops == null ? fragment : stops.feed(fragment);
-                    if (!emit.isEmpty()) sink.next(chunk(emit, thought));
-                    return thought || stops == null || !stops.hit();
+                    if (thought) sink.next(chunk(fragment, true));
+                    else watch.accept(fragment);
+                    return thought || !watch.stopped();
                 };
         try {
             ChatEngine.Outcome outcome =
@@ -391,15 +395,12 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                             tokenSink,
                             p.cached());
             if (cancelled.get()) return; // cancelled subscriptions end silently
-            if (stops != null) {
-                String tail = stops.flush();
-                if (!tail.isEmpty()) sink.next(chunk(tail, false));
-            }
+            watch.flush(); // release held-back chars (a stopped watch emits nothing past the cut)
             // the final chunk: no text (deltas carried it), but complete tool calls + metadata,
             // from the same parse that streamed
             Message reply = feed.finish();
             AssistantMessage parsed = JinferMappings.toAssistantMessage(reply);
-            boolean stopHit = stops != null && stops.hit();
+            boolean stopHit = watch.stopped();
             AssistantMessage ai =
                     AssistantMessage.builder()
                             .content("")

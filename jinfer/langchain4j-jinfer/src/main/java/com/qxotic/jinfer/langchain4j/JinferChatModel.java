@@ -5,11 +5,11 @@ import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.ReplyLanes;
-import com.qxotic.jinfer.chat.StopSequences;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.Grammar;
 import com.qxotic.jinfer.llm.Sampler;
+import com.qxotic.jinfer.llm.TextStops;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
@@ -154,16 +154,18 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     @Override
     public ChatResponse doChat(ChatRequest request) {
         Prepared p = prepare(this, request);
-        StopSequences stops = StopSequences.of(p.stops());
+        List<String> stops = p.stops() == null ? List.of() : p.stops();
+        TextStops.Holdback watch =
+                stops.isEmpty() ? null : new TextStops.Holdback(stops, ignored -> {});
         ReplyLanes lanes =
                 new ReplyLanes(p.encoded().template(), engine.loaded.tokenizer(), p.parserSeed());
         Generator.TokenSink sink =
                 token -> {
                     String fragment = lanes.feed(token);
-                    if (stops != null && !lanes.reasoning() && !fragment.isEmpty()) {
-                        stops.feed(fragment); // stop strings match the content lane only
+                    if (watch != null && !lanes.reasoning() && !fragment.isEmpty()) {
+                        watch.accept(fragment); // stop strings match the content lane only
                     }
-                    return stops == null || !stops.hit();
+                    return watch == null || !watch.stopped();
                 };
         Generator.GenerationResult result =
                 engine.generate(
@@ -175,9 +177,9 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                                 p.cached())
                         .result();
         AiMessage ai = Mappings.toAiMessage(lanes.finish());
-        boolean stopHit = stops != null && stops.hit();
+        boolean stopHit = watch != null && watch.stopped();
         if (stopHit) {
-            ai = Mappings.withText(ai, stops.beforeCut());
+            ai = Mappings.withText(ai, TextStops.apply(ai.text(), stops).text());
         }
         return Mappings.response(engine.modelName, ai, p.promptTokens(), result, stopHit);
     }
