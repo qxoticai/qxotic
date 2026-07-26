@@ -1,10 +1,5 @@
-package com.qxotic.jinfer.langchain4j;
+package com.qxotic.jinfer.chat;
 
-import com.qxotic.jinfer.chat.ChatTemplate;
-import com.qxotic.jinfer.chat.Message;
-import com.qxotic.jinfer.chat.PendingUtf8;
-import com.qxotic.jinfer.chat.ReplyParser;
-import com.qxotic.jinfer.chat.Role;
 import com.qxotic.toknroll.Tokenizer;
 import java.util.Optional;
 
@@ -15,7 +10,7 @@ import java.util.Optional;
  * the structured message from exactly the parse that streamed; there is no second decode pass, so
  * the streamed fragments and the final message can never disagree.
  */
-final class ReplyLanes {
+public final class ReplyLanes {
 
     private final ReplyParser parser; // null: raw text, single lane
     private final PendingUtf8 pending;
@@ -23,7 +18,7 @@ final class ReplyLanes {
     private final Tokenizer tokenizer;
     private boolean reasoning;
 
-    ReplyLanes(Optional<ChatTemplate> template, Tokenizer tokenizer, int[] parserSeed) {
+    public ReplyLanes(Optional<ChatTemplate> template, Tokenizer tokenizer, int[] parserSeed) {
         this.parser = template.map(ChatTemplate::parser).orElse(null);
         this.pending = parser == null ? new PendingUtf8() : null;
         this.rawText = parser == null ? new StringBuilder() : null;
@@ -34,7 +29,7 @@ final class ReplyLanes {
     }
 
     /** The text this token adds ("" while pending); {@link #reasoning()} tells its lane. */
-    String feed(int token) {
+    public String feed(int token) {
         if (parser != null) {
             String fragment = parser.feed(token);
             reasoning = parser.reasoning();
@@ -46,12 +41,12 @@ final class ReplyLanes {
     }
 
     /** The lane of the LAST {@link #feed}ed fragment. */
-    boolean reasoning() {
+    public boolean reasoning() {
         return reasoning;
     }
 
     /** The finished structured reply, from the same parse that streamed. */
-    Message finish() {
+    public Message finish() {
         return parser != null ? parser.finish() : new Message(Role.ASSISTANT, rawText.toString());
     }
 }

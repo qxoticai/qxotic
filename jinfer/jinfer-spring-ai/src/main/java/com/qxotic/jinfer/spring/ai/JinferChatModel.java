@@ -2,19 +2,15 @@ package com.qxotic.jinfer.spring.ai;
 
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.chat.ChatEngine;
-import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.JsonCodec;
 import com.qxotic.jinfer.chat.Message;
-import com.qxotic.jinfer.chat.PendingUtf8;
-import com.qxotic.jinfer.chat.ReplyParser;
-import com.qxotic.jinfer.chat.Role;
+import com.qxotic.jinfer.chat.ReplyLanes;
 import com.qxotic.jinfer.chat.StopSequences;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.Grammar;
 import com.qxotic.jinfer.llm.Sampler;
-import com.qxotic.toknroll.Tokenizer;
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationRegistry;
 import io.micrometer.observation.contextpropagation.ObservationThreadLocalAccessor;
@@ -279,12 +275,13 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
 
     private ChatResponse doCall(Prompt prompt) {
         Prepared p = prepare(prompt);
-        ReplyFeed feed = new ReplyFeed(p.encoded(), engine.loaded.tokenizer(), p.parserSeed());
+        ReplyLanes feed =
+                new ReplyLanes(p.encoded().template(), engine.loaded.tokenizer(), p.parserSeed());
         StopSequences stops = p.stops();
         Generator.TokenSink sink =
                 token -> {
                     String fragment = feed.feed(token);
-                    if (stops != null && feed.content() && !fragment.isEmpty()) {
+                    if (stops != null && !feed.reasoning() && !fragment.isEmpty()) {
                         stops.feed(fragment);
                     }
                     return stops == null || !stops.hit();
@@ -368,63 +365,12 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                 });
     }
 
-    /**
-     * The reply's two text lanes, token by token: the native {@link ReplyParser}'s (content vs
-     * reasoning) when the model has a codec, else raw decoded text. Owns the ONE parser instance of
-     * a generation - pre-fed the reply seed so a prompt-opened think span parses on the reasoning
-     * lane - and {@link #finish}es the structured message from exactly the parse that streamed;
-     * there is no second decode pass, so the streamed fragments and the final message can never
-     * disagree.
-     */
-    private static final class ReplyFeed {
-        private final ReplyParser parser; // null = no native codec
-        private final PendingUtf8 raw;
-        private final StringBuilder rawText; // codec-less accumulation
-        private final Tokenizer tokenizer;
-        private boolean reasoning;
-
-        ReplyFeed(ChatEngine.Encoded encoded, Tokenizer tokenizer, int[] seed) {
-            this.parser = encoded.template().map(ChatTemplate::parser).orElse(null);
-            this.raw = parser == null ? new PendingUtf8() : null;
-            this.rawText = parser == null ? new StringBuilder() : null;
-            this.tokenizer = tokenizer;
-            if (parser != null) {
-                for (int t : seed) {
-                    parser.feed(t);
-                }
-            }
-        }
-
-        /** The displayable fragment from one token ("" when nothing to show). */
-        String feed(int token) {
-            if (parser != null) {
-                String fragment = parser.feed(token);
-                reasoning = parser.reasoning();
-                return fragment;
-            }
-            String fragment = raw.add(tokenizer.decodeBytes(new int[] {token}), token).text();
-            rawText.append(fragment);
-            return fragment;
-        }
-
-        /** Whether the reply is currently on the content lane (vs reasoning). */
-        boolean content() {
-            return !reasoning;
-        }
-
-        /** The finished structured reply, from the same parse that fed. */
-        Message finish() {
-            return parser != null
-                    ? parser.finish()
-                    : new Message(Role.ASSISTANT, rawText.toString());
-        }
-    }
-
     private void streamInto(Prepared p, FluxSink<ChatResponse> sink) {
         AtomicBoolean cancelled = new AtomicBoolean();
         sink.onCancel(() -> cancelled.set(true));
         sink.onDispose(() -> cancelled.set(true));
-        ReplyFeed feed = new ReplyFeed(p.encoded(), engine.loaded.tokenizer(), p.parserSeed());
+        ReplyLanes feed =
+                new ReplyLanes(p.encoded().template(), engine.loaded.tokenizer(), p.parserSeed());
         StopSequences stops = p.stops();
         Generator.TokenSink tokenSink =
                 token -> {
@@ -433,7 +379,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                     if (fragment.isEmpty()) return true;
                     // reasoning streams too, flagged so consumers can keep it off the content
                     // lane; stop sequences stay armed on content only
-                    boolean thought = !feed.content();
+                    boolean thought = feed.reasoning();
                     String emit =
                             thought ? fragment : stops == null ? fragment : stops.feed(fragment);
                     if (!emit.isEmpty()) sink.next(chunk(emit, thought));

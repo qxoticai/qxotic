@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.langchain4j;
 
+import com.qxotic.jinfer.chat.ReplyLanes;
 import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.StopSequences;
 import com.qxotic.jinfer.llm.Generator;
@@ -58,7 +59,11 @@ public final class JinferStreamingChatModel implements StreamingChatModel {
         // the WHOLE preparation is synchronous: every request-shape rejection (unsupported
         // params, media the model cannot frame, remote URLs) throws raw from chat(), unwrapped
         JinferChatModel.Prepared p = JinferChatModel.prepare(model, request);
-        Thread.ofVirtual()
+        // a PLATFORM thread, deliberately: generation is CPU-bound and never yields (a virtual
+        // thread would pin its carrier for the whole run anyway), and jam's compute topology
+        // includes the driving thread - a virtual carrier changes work partitioning and thus
+        // FP reduction order, making streaming numerically diverge from blocking at near-ties
+        Thread.ofPlatform()
                 .name("jinfer-stream")
                 .start(
                         () -> {
