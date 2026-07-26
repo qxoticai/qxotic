@@ -17,7 +17,6 @@ import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.listener.ChatModelListener;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.request.ChatRequestParameters;
-import dev.langchain4j.model.chat.request.DefaultChatRequestParameters;
 import dev.langchain4j.model.chat.request.ResponseFormat;
 import dev.langchain4j.model.chat.request.ResponseFormatType;
 import dev.langchain4j.model.chat.request.ToolChoice;
@@ -71,8 +70,10 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         this.timeoutNanos = b.timeout == null ? 0 : b.timeout.toNanos();
         this.listeners = List.copyOf(b.listeners);
         this.prefix = CachedPrompt.EMPTY;
-        ChatRequestParameters base =
-                DefaultChatRequestParameters.builder()
+        // Jinfer-typed ALWAYS: ChatModel.chat merges defaults.overrideWith(request), and only a
+        // jinfer-typed receiver preserves grammar/seed from either side of the merge
+        JinferChatRequestParameters base =
+                JinferChatRequestParameters.builder()
                         .modelName(engine.modelName)
                         .temperature(b.temperature)
                         .topP(b.topP)
@@ -300,12 +301,14 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     private static Sampler sampler(
             JinferChatModel m, ChatRequestParameters p, boolean think, int maxTokens) {
         var loaded = m.engine.loaded;
+        JinferChatRequestParameters j = p instanceof JinferChatRequestParameters jp ? jp : null;
+        long seed = j != null && j.seed() != null ? j.seed() : m.seed;
         Sampler sampler =
                 ChatEngine.sampler(
                         loaded,
                         p.temperature() == null ? 0.0f : p.temperature().floatValue(),
                         p.topP() == null ? 0.95f : p.topP().floatValue(),
-                        m.seed,
+                        seed,
                         think,
                         maxTokens,
                         null);
@@ -318,6 +321,15 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                                     JsonSchemaElementUtils.toMap(rf.jsonSchema().rootElement()),
                                     loaded.tokenizer());
             sampler = ChatEngine.constrained(loaded, sampler, spec.cursor(), think);
+        } else if (j != null && j.grammar() != null) {
+            // raw GBNF - the JSON format's generalization, same think gating (validate()
+            // guaranteed the two are not combined); specs cache by source, repeats are free
+            sampler =
+                    ChatEngine.constrained(
+                            loaded,
+                            sampler,
+                            Grammar.of(j.grammar(), loaded.tokenizer()).cursor(),
+                            think);
         }
         return sampler;
     }
@@ -344,6 +356,15 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             throw new UnsupportedFeatureException(
                     "tools together with a JSON response format are not supported:"
                             + " grammar-constrained output cannot admit tool-call syntax");
+        String grammar = p instanceof JinferChatRequestParameters j ? j.grammar() : null;
+        if (grammar != null && tools)
+            throw new UnsupportedFeatureException(
+                    "tools together with a grammar are not supported: grammar-constrained output"
+                            + " cannot admit tool-call syntax");
+        if (grammar != null && rf != null && rf.type() == ResponseFormatType.JSON)
+            throw new UnsupportedFeatureException(
+                    "grammar and a JSON response format are mutually exclusive: both constrain the"
+                            + " same reply - pick one");
     }
 
     public static Builder builder() {

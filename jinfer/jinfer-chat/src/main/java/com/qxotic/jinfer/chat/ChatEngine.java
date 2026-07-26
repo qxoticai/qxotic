@@ -390,9 +390,16 @@ public final class ChatEngine {
     public static Sampler constrained(
             LoadedModel<?> m, Sampler s, Grammar.Cursor g, boolean think) {
         int eos = m.stopTokens().iterator().next();
-        int gate = think ? SpecialTokens.find(m.tokenizer(), "</think>").orElse(-1) : -1;
-        int[] skipNl = gate >= 0 ? SpecialTokens.newlineTokens(m.tokenizer()) : null;
-        return Sampler.withGrammar(s, g, eos, gate, skipNl);
+        int close = think ? SpecialTokens.find(m.tokenizer(), "</think>").orElse(-1) : -1;
+        int open = close >= 0 ? SpecialTokens.find(m.tokenizer(), "<think>").orElse(-1) : -1;
+        // native codecs know whether the generation prompt already OPENED the span; then the
+        // grammar stays dormant until the close. Otherwise the first token decides: the model
+        // may open a span, or answer - grammar-constrained from token zero (a think-capable
+        // vocab on a model that answers directly must not leave the grammar dormant forever)
+        boolean startInThink =
+                close >= 0 && m.template().map(t -> t.replySeed(true).length > 0).orElse(false);
+        int[] skipNl = close >= 0 ? SpecialTokens.newlineTokens(m.tokenizer()) : null;
+        return Sampler.withGrammar(s, g, eos, open, close, startInThink, skipNl);
     }
 
     /**

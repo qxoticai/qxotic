@@ -80,11 +80,51 @@ public interface Sampler {
             int eosToken,
             int thinkCloseToken,
             int[] skipTokens) {
+        return withGrammar(
+                inner, cursor, eosToken, -1, thinkCloseToken, thinkCloseToken >= 0, skipTokens);
+    }
+
+    /**
+     * As {@link #withGrammar(Sampler, Grammar.Cursor, int, int, int[])} with the think span made
+     * OPTIONAL: when the reply does not start inside a span ({@code startInThink} false), the first
+     * token is constrained to the grammar's admissible set UNION the {@code thinkOpenToken} - the
+     * model may still choose to reason (grammar dormant until {@code thinkCloseToken}, then the
+     * skip phase), but a direct answer is grammar-decided from token zero. Without this, a model
+     * that CAN think but doesn't (its vocab has the markers, its reply starts answering) leaves a
+     * close-gated grammar dormant forever - unconstrained output wearing a grammar.
+     */
+    static Sampler withGrammar(
+            Sampler inner,
+            Grammar.Cursor cursor,
+            int eosToken,
+            int thinkOpenToken,
+            int thinkCloseToken,
+            boolean startInThink,
+            int[] skipTokens) {
         if (cursor == null || !RuntimeFlags.GRAMMAR) return inner;
         java.util.Set<Integer> skip = new java.util.HashSet<>();
         if (skipTokens != null) for (int t : skipTokens) skip.add(t);
-        int[] phase = {thinkCloseToken < 0 ? 2 : 0}; // 0 think span, 1 skip ws, 2 constrain
+        // phases: -1 undecided (first token: grammar OR open a think span), 0 inside the think
+        // span, 1 skip ws after it, 2 constrained
+        int start = thinkCloseToken < 0 ? 2 : startInThink ? 0 : thinkOpenToken >= 0 ? -1 : 2;
+        int[] phase = {start};
         return logits -> {
+            if (phase[0] == -1) { // first token: the grammar's set, plus the right to reason
+                float openLogit = logits.getFloat(thinkOpenToken);
+                if (!cursor.maskLogits(logits)) {
+                    cursor.advanceWith(eosToken);
+                    return eosToken;
+                }
+                logits.setFloat(thinkOpenToken, openLogit); // union: think stays sampleable
+                int tok = inner.sampleToken(logits);
+                if (tok == thinkOpenToken) {
+                    phase[0] = 0; // the model chose to reason: grammar dormant until the close
+                } else {
+                    cursor.advanceWith(tok); // grammar-decided from token zero
+                    phase[0] = 2;
+                }
+                return tok;
+            }
             if (phase[0] == 0) { // reasoning: pass through, watch for </think>
                 int tok = inner.sampleToken(logits);
                 if (tok == thinkCloseToken) phase[0] = 1;
