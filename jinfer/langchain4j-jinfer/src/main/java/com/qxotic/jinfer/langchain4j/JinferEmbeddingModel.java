@@ -37,7 +37,10 @@ public final class JinferEmbeddingModel implements EmbeddingModel {
 
     private JinferEmbeddingModel(Builder b) {
         try {
-            this.loaded = Models.loadEmbedder(b.modelPath, b.contextLength);
+            // same contract as the chat builders: <= 0 means the model's own maximum (-1 to the
+            // loader); a literal 0 would crash the port's tensor sizing
+            this.loaded =
+                    Models.loadEmbedder(b.modelPath, b.contextLength <= 0 ? -1 : b.contextLength);
         } catch (IOException e) {
             throw new UncheckedIOException("failed to load " + b.modelPath, e);
         }
@@ -149,6 +152,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel {
         /**
          * The packing window and per-segment ceiling (default 2048): larger packs more segments per
          * forward pass and admits longer segments, at the cost of a bigger resident KV state.
+         * {@code <= 0} = the model's own maximum.
          */
         public Builder contextLength(int contextLength) {
             this.contextLength = contextLength;
