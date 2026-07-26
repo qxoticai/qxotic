@@ -18,7 +18,9 @@ import java.util.function.ToIntFunction;
  * converter the chat path uses. Deliberately scaffold-exclusive: chat-template markers add a few
  *
  * <p>Message-level counting DECODES media (base64 / local file) to size its position plan - cheap
- * for text, a real read for large media histories.
+ * for text, a real read for large media histories. Deliberate: a header-only probe would have to
+ * ride the media codecs' backend seam (ImageIO/AudioSystem on the JVM, ffmpeg under native-image) -
+ * machinery unearned until per-turn media counting measurably hurts.
  */
 final class Estimators implements TokenCountEstimator {
 
