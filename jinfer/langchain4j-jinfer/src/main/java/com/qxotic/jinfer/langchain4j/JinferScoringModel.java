@@ -38,6 +38,8 @@ public final class JinferScoringModel implements ScoringModel {
 
     private final Qwen3 model;
     private final Qwen3.State state; // one reusable state; reset() between pairs
+    private final java.util.concurrent.locks.ReentrantLock lock =
+            new java.util.concurrent.locks.ReentrantLock(true); // single-stream, like ChatEngine
     private final String instruction;
     private final int yes;
     private final int no;
@@ -71,21 +73,28 @@ public final class JinferScoringModel implements ScoringModel {
     public Response<List<Double>> scoreAll(List<TextSegment> segments, String query) {
         List<Double> scores = new ArrayList<>(segments.size());
         int promptTokens = 0;
-        for (TextSegment segment : segments) {
-            Batch prompt =
-                    new TokenRuns(model.tokenizer())
-                            .trusted(PREFIX)
-                            .text(
-                                    "<Instruct>: "
-                                            + instruction
-                                            + "\n<Query>: "
-                                            + query
-                                            + "\n<Document>: "
-                                            + segment.text())
-                            .trusted(SUFFIX)
-                            .batch();
-            promptTokens += prompt.count();
-            scores.add(score(prompt));
+        // one serial scoring pipeline per instance (the concurrency contract): concurrent
+        // callers queue fairly, exactly like the chat and embedding surfaces
+        lock.lock();
+        try {
+            for (TextSegment segment : segments) {
+                Batch prompt =
+                        new TokenRuns(model.tokenizer())
+                                .trusted(PREFIX)
+                                .text(
+                                        "<Instruct>: "
+                                                + instruction
+                                                + "\n<Query>: "
+                                                + query
+                                                + "\n<Document>: "
+                                                + segment.text())
+                                .trusted(SUFFIX)
+                                .batch();
+                promptTokens += prompt.count();
+                scores.add(score(prompt));
+            }
+        } finally {
+            lock.unlock();
         }
         return Response.from(scores, new TokenUsage(promptTokens, 0));
     }
