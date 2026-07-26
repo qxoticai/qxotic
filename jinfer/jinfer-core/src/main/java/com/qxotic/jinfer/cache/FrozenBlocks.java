@@ -26,6 +26,19 @@ import java.util.List;
  * in BFS order (parents precede children, so the tree grafts in one pass). The model seed also
  * covers the codec's blob layout: a layout change ships as a format bump, so a stale file fails
  * with a clear error instead of restoring garbage.
+ *
+ * <p>The cross-process lifecycle, end to end:
+ *
+ * <ol>
+ *   <li>Offline: {@code compile(model, codec, seed, prompt, out)} prefills the prompt once and
+ *       writes the artifact.
+ *   <li>Serve start: {@code open(path, modelSeed)} maps it read-only - the SAME model seed as
+ *       compile time, or open throws (an artifact can never serve wrong bytes).
+ *   <li>Per request: {@code serve(...)} restores the frozen prefix into a fresh state; the caller
+ *       ingests only the request's tail.
+ * </ol>
+ *
+ * <p>One open instance is immutable and safely shared across engines/pipelines.
  */
 public final class FrozenBlocks {
 

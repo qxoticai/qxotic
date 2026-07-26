@@ -18,7 +18,27 @@ import java.util.Objects;
  *
  * <p>Works at request level and as {@code defaultRequestParameters} (a standing grammar turns a
  * model instance into a dedicated classifier - the only way to get grammar guarantees through
- * AiServices, which builds its own requests).
+ * AiServices, which builds its own requests):
+ *
+ * <pre>{@code
+ * // per request
+ * model.chat(ChatRequest.builder()
+ *         .messages(UserMessage.from("Is the sky blue? yes or no."))
+ *         .parameters(JinferChatRequestParameters.builder()
+ *                 .grammar("root ::= \"yes\" | \"no\"")
+ *                 .build())
+ *         .build());
+ *
+ * // standing: every request through this instance is constrained (the AiServices path)
+ * var classifier = JinferChatModel.builder()
+ *         .modelPath(gguf)
+ *         .defaultRequestParameters(JinferChatRequestParameters.builder()
+ *                 .grammar("root ::= \"positive\" | \"negative\"")
+ *                 .build())
+ *         .build();
+ * }</pre>
+ *
+ * <p>GBNF dialect and pitfalls: see {@code com.qxotic.jinfer.llm.Grammar}.
  */
 public class JinferChatRequestParameters extends DefaultChatRequestParameters {
 

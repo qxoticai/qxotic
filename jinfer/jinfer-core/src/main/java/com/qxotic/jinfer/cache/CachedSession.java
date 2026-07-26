@@ -28,6 +28,13 @@ import java.util.List;
  * attention group) commits as exactly one cache block. Note the fingerprints hash the ENCODED rows:
  * re-fingerprinting an echoed conversation needs either the retained stream ({@link
  * #fingerprints()}, the dual view) or a re-encode — servers keep the stream.
+ *
+ * <p>Start here: {@code start(model, cache, state)} opens a brand-new conversation; {@code
+ * resume(model, cache, state, prompt)} serves a prompt against the cache (longest cached prefix
+ * restored, caller ingests the tail); the {@code maxPositions} variants resume at most that many
+ * positions - pass {@code total - 1} to leave the final block re-ingested so the cursor holds fresh
+ * logits. The {@code int[]} overloads are the token-only convenience of the {@code List<Batch>}
+ * ones (which media prompts require).
  */
 public final class CachedSession<S extends RuntimeState> {
 

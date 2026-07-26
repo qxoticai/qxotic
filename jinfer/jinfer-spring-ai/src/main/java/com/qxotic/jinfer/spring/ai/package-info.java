@@ -1,0 +1,37 @@
+/**
+ * Spring AI provider backed by jinfer: in-process CPU inference over a local GGUF, no server.
+ * {@link com.qxotic.jinfer.spring.ai.JinferChatModel} is the entry point (blocking {@code call} and
+ * reactive {@code stream} on one object); configure per request via {@link
+ * com.qxotic.jinfer.spring.ai.JinferChatOptions}.
+ *
+ * <h2>Structured output</h2>
+ *
+ * <p>Grammar-constrained decoding makes structured output a guarantee, not a prompt: {@code
+ * outputSchema} compiles to a grammar and the sampler can only emit documents the schema admits.
+ * Two ways to populate it:
+ *
+ * <pre>{@code
+ * // 1. Manual: a JSON Schema string on the options
+ * ChatResponse r = model.call(new Prompt(
+ *         new UserMessage("Describe Paris."),
+ *         JinferChatOptions.builder()
+ *                 .outputSchema("""
+ *                     {"type":"object","properties":{"city":{"type":"string"},
+ *                      "population":{"type":"number"}},"required":["city","population"]}""")
+ *                 .build()));
+ *
+ * // 2. ChatClient entity(): Spring AI derives the schema from the target type and this model
+ * //    (a StructuredOutputChatOptions implementation) receives it as outputSchema
+ * City city = ChatClient.create(model).prompt()
+ *         .user("Describe Paris.")
+ *         .call()
+ *         .entity(City.class);
+ * }</pre>
+ *
+ * <p>On reasoning models the constraint binds only the OUTPUT channel - think spans sample free, so
+ * structured output does not cost reasoning quality (the schema-bound text follows the closed
+ * span). Expect schema-valid output always; expect FIELD QUALITY to track the model - a constrained
+ * small model produces well-formed JSON with weak content. Tools and {@code outputSchema} on one
+ * request reject loudly: a grammar mask cannot admit tool-call syntax.
+ */
+package com.qxotic.jinfer.spring.ai;

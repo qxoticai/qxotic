@@ -16,18 +16,86 @@ import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Grammar-constrained decoding.
+ * Grammar-constrained decoding: compile a grammar once, mask logits per token so the model can only
+ * ever emit strings of the grammar's language.
  *
  * <p>A GBNF grammar is parsed into a {@link Rule} IR, then compiled into a {@link CFG} — a
  * byte-level <b>pushdown</b> grammar (a context-free matcher with an explicit stack). A {@link
  * Cursor} walks it token-by-token: {@link Cursor#maskLogits} restricts the logits to the tokens the
  * grammar can accept next, and {@link Cursor#advanceWith} consumes the chosen token's bytes.
  * Because the matcher carries a stack it represents arbitrarily nested / recursive grammars (real
- * JSON, balanced parens, …) correctly — a finite DFA cannot.
+ * JSON, balanced parens, …) correctly — a finite DFA cannot. Masks are computed once per distinct
+ * matcher state and cached on the {@link Spec} (shared across cursors), so the per-token cost
+ * amortises to a lookup — the same idea Outlines / XGrammar rely on.
  *
- * <p>Masks are computed once per distinct matcher state and cached on the {@link Spec} (shared
- * across cursors), so the per-token cost amortises to a lookup — the same mask-caching idea modern
- * constrained-decoding engines (Outlines / XGrammar) rely on.
+ * <h2>The GBNF dialect (llama.cpp compatible)</h2>
+ *
+ * <p>A grammar is a list of rules, one {@code name ::= body} per line. <b>The first-declared rule
+ * is the start rule</b> — conventionally named {@code root}, but position decides, not the name. A
+ * line without {@code ::=} continues the previous rule (alternatives may sit on their own lines);
+ * {@code #} starts a comment to end of line (except inside a literal or class). Rule names are Java
+ * identifiers plus hyphens ({@code kebab-case} works). Bodies compose:
+ *
+ * <ul>
+ *   <li>{@code "literal"} — exact bytes; escapes {@code \" \\ \n \r \t \xNN}.
+ *   <li>{@code [abc]} {@code [a-z0-9]} {@code [^,\n]} — byte classes: members, ranges, negation,
+ *       the same escapes. {@code .} matches any byte.
+ *   <li>{@code x | y} — alternation; {@code ( … )} — grouping.
+ *   <li>{@code * + ?} and bounded {@code {m} {m,} {m,n}} — repetition of the preceding element
+ *       ({@code "ab"{2,4}}, {@code [0-9]{1,3}}, {@code (num ",")*}).
+ *   <li>{@code name} — a reference to another rule; recursion is fine (pushdown), an undefined
+ *       reference throws at compile.
+ * </ul>
+ *
+ * <h2>Recipes</h2>
+ *
+ * <pre>{@code
+ * root ::= "yes" | "no"                        # closed answer set (or Grammar.choice)
+ *
+ * root ::= [0-9]{1,3} "." [0-9]{1,3} "." [0-9]{1,3}   # bounded numeric shapes (semver-ish)
+ *
+ * root ::= item ("," item)*                    # comma list, no trailing comma
+ * item ::= [a-z]+
+ *
+ * root ::= ws obj                              # whitespace-tolerant JSON-ish framing
+ * ws   ::= [ \t\n]{0,8}                        # ALWAYS cap ws: unbounded ws lets a reluctant
+ * obj  ::= "{" ... "}"                         # model stall emitting whitespace forever
+ * }</pre>
+ *
+ * <p>For JSON prefer the builders: {@link #json} (full RFC 8259), {@link #fromSchema} (exactly the
+ * documents a JSON Schema admits), {@link #choice} (label sets) — all pre-bound to the same caps.
+ * {@link #gbnfLiteral} escapes arbitrary text into a literal.
+ *
+ * <h2>Semantics and expectations</h2>
+ *
+ * <ul>
+ *   <li><b>Byte-level:</b> classes and ranges are over BYTES, not code points. ASCII ranges work as
+ *       written; a multi-byte range like {@code [а-я]} does not mean "Cyrillic letters" — spell
+ *       non-ASCII alternatives as literals ({@code "α" | "β"}).
+ *   <li><b>A token is admissible iff its whole byte string is accepted</b> from the current state;
+ *       special tokens report empty bytes (control, not content) and are never admissible
+ *       mid-grammar.
+ *   <li><b>Dead ends end cleanly:</b> when no vocabulary token is admissible the driving sampler
+ *       forces a stop token; a COMPLETE grammar (nothing may follow) ends the reply — choice
+ *       grammars deliberately terminate the turn.
+ *   <li><b>Caching:</b> specs cache per (source, vocabulary) — repeated compiles are free; masks
+ *       cache per matcher state (capped, see {@code MASK_CACHE_CAP}).
+ *   <li><b>Reasoning stays free:</b> driven through {@code RequestPolicy.constrained}, the grammar
+ *       binds only the output channel — think spans sample unconstrained.
+ * </ul>
+ *
+ * <h2>Known limitations</h2>
+ *
+ * <ul>
+ *   <li>Left recursion is bounded best-effort ({@code CLOSURE_CAP}) — prefer right recursion
+ *       ({@code list ::= item ("," list)?}).
+ *   <li>No lookahead, no lazy quantifiers, no capture — this is a generator constraint, not a regex
+ *       engine.
+ *   <li>Pathologically ambiguous grammars hit the {@code MAX_STACKS} backstop.
+ *   <li>Constrained output is on-language but not on-distribution-free: over-tight grammars at
+ *       positions where the model wants something else degrade quality — leave the model room where
+ *       the answer genuinely varies.
+ * </ul>
  */
 public final class Grammar {
 
@@ -353,6 +421,18 @@ public final class Grammar {
     /**
      * A compiled grammar plus its decoded token table; the matcher engine lives here so the
      * per-state mask cache can be shared across all cursors.
+     *
+     * <p>The per-token wiring, for callers driving sampling themselves:
+     *
+     * <pre>{@code
+     * Grammar.Cursor cursor = spec.cursor();          // fresh per generation pass
+     * if (!cursor.maskLogits(logits)) return stop;    // dead/complete: force a stop token
+     * int token = sampler.sampleToken(logits);        // choose among admissible tokens
+     * cursor.advanceWith(token);                      // consume its bytes
+     * }</pre>
+     *
+     * <p>Most callers want the assembled path instead: {@code RequestPolicy.constrained} wires this
+     * into the chat sampling stack (think spans free, output bound, dead-end stop).
      */
     public static final class Spec {
         static final Spec DISABLED = new Spec(null, null);

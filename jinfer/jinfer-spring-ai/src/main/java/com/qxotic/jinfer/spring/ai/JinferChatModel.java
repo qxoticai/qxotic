@@ -54,6 +54,13 @@ import reactor.core.publisher.FluxSink;
  * states (recycled - extended on a prefix hit, reset on a miss, never re-allocated per request),
  * plus one KV block set per defined cached prompt (explicit and deliberately paid for).
  *
+ * <p>Three caching tiers, near-homonyms with distinct jobs: {@code withCachedPrompt} defines a LIVE
+ * shared prefix (prefilled once, restored per request - the system-prompt/tools/few-shot case);
+ * {@code Builder.cachedSessions} keeps finished CONVERSATION states warm for append-only multi-turn
+ * reuse (ephemeral, nothing persists); {@code saveCachedPrompts}/{@code Builder.loadCachedPrompts}
+ * persist the defined prompts as an immutable ARTIFACT that mounts zero-prefill in later processes.
+ * None changes output - byte-identity to a cold run is the law.
+ *
  * <p>Run with jinfer's JVM flags: {@code --enable-preview --add-modules jdk.incubator.vector
  * --enable-native-access=ALL-UNNAMED}.
  */
@@ -142,6 +149,15 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
      * tools}) - prefilled ONCE into the engine's block tree, restored (not recomputed) on every
      * call. Composable: calling this on a view branches on its prefix. Immutable, shares the base
      * engine; the base model itself never touches the tree.
+     *
+     * <p>Typical shape - the base stays cold and stateless; only views touch the tree:
+     *
+     * <pre>{@code
+     * var base = JinferChatModel.builder().modelPath(gguf).build();
+     * var support = base.withCachedPrompt(List.of(SYSTEM_PROMPT), TOOLS); // prefilled ONCE
+     * support.chat(...);            // restores the prefix, ingests only the request
+     * var billing = support.withCachedPrompt(List.of(BILLING_ADDENDUM), List.of()); // branches
+     * }</pre>
      */
     public JinferChatModel withCachedPrompt(
             List<org.springframework.ai.chat.messages.Message> prefixMessages,
@@ -166,10 +182,12 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     /**
      * An independent sibling of this model: shares the loaded weights/tokenizer/template (nothing
      * reloads, no extra weight memory) but owns its OWN serial inference pipeline - lock, caches,
-     * stream driver. THE way to run several pipelines of one model in parallel. Cached-prompt
-     * definitions are not carried over, but a MOUNTED artifact is (the frozen tier is immutable,
-     * shared safely); options and conventions are. A copy of a VIEW re-defines its prefix on the
-     * fresh pipeline (one prefill).
+     * stream driver. THE way to run several pipelines of one model in parallel. A copy's lifecycle
+     * is independent: closing it never affects the base or other copies (views, by contrast, share
+     * their creator's engine - closing any of them closes all). Cached-prompt definitions are not
+     * carried over, but a MOUNTED artifact is (the frozen tier is immutable, shared safely);
+     * options and conventions are. A copy of a VIEW re-defines its prefix on the fresh pipeline
+     * (one prefill).
      */
     public JinferChatModel copy() {
         JinferChatModel base = new JinferChatModel(this, engine.fork());
