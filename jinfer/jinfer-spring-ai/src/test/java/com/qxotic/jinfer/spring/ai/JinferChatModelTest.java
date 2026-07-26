@@ -32,4 +32,13 @@ class JinferChatModelTest {
                                         .build());
         assertTrue(e.getMessage().contains("mutually exclusive"), e.getMessage());
     }
+
+    @Test
+    void embeddingModelPathIsRequired() {
+        IllegalArgumentException e =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> JinferEmbeddingModel.builder().build());
+        assertEquals("modelPath is required", e.getMessage());
+    }
 }

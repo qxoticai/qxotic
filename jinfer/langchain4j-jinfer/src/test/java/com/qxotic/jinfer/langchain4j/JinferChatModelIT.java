@@ -170,6 +170,81 @@ class JinferChatModelIT {
     }
 
     @Test
+    void maxOutputTokensTruncatesWithLengthFinish() {
+        ChatResponse r =
+                model.chat(
+                        ChatRequest.builder()
+                                .messages(
+                                        UserMessage.from(
+                                                "Count from 1 to 100, digits and spaces only."))
+                                .maxOutputTokens(20)
+                                .build());
+        assertEquals(FinishReason.LENGTH, r.finishReason());
+        assertEquals(20, r.tokenUsage().outputTokenCount());
+    }
+
+    @Test
+    void stopSequencesTruncateContent() {
+        ChatResponse r =
+                model.chat(
+                        ChatRequest.builder()
+                                .messages(
+                                        UserMessage.from(
+                                                "Count from 1 to 20 as plain digits separated by"
+                                                        + " spaces."))
+                                .stopSequences(java.util.List.of("5"))
+                                .build());
+        assertEquals(FinishReason.STOP, r.finishReason());
+        assertTrue(!r.aiMessage().text().contains("5"), r.aiMessage().text());
+    }
+
+    @Test
+    void thinkingExposedAndSuppressible() {
+        ChatResponse thinking = model.chat(UserMessage.from("What is 17 + 25? Answer briefly."));
+        Assumptions.assumeTrue(
+                thinking.aiMessage().thinking() != null, "not a thinking model reply");
+        assertTrue(!thinking.aiMessage().thinking().isBlank());
+        assertTrue(!thinking.aiMessage().text().isBlank());
+
+        try (JinferChatModel quiet =
+                JinferChatModel.builder()
+                        .modelPath(MODEL)
+                        .contextLength(2048)
+                        .maxOutputTokens(128)
+                        .thinking(false)
+                        .build()) {
+            ChatResponse plain = quiet.chat(UserMessage.from("What is 17 + 25? Answer briefly."));
+            assertEquals(null, plain.aiMessage().thinking());
+            assertTrue(!plain.aiMessage().text().isBlank());
+        }
+    }
+
+    @Test
+    void chatModelListenerReceivesRequestAndResponse() {
+        var seen = new java.util.concurrent.atomic.AtomicReference<ChatResponse>();
+        var listener =
+                new dev.langchain4j.model.chat.listener.ChatModelListener() {
+                    @Override
+                    public void onResponse(
+                            dev.langchain4j.model.chat.listener.ChatModelResponseContext ctx) {
+                        seen.set(ctx.chatResponse());
+                    }
+                };
+        try (JinferChatModel listened =
+                JinferChatModel.builder()
+                        .modelPath(ModelFixture.LFM25_350M_Q8.require())
+                        .contextLength(1024)
+                        .maxOutputTokens(32)
+                        .listeners(java.util.List.of(listener))
+                        .build()) {
+            listened.chat(UserMessage.from("Say hi."));
+            assertNotNull(seen.get(), "listener saw the response");
+            assertTrue(seen.get().tokenUsage().totalTokenCount() > 0);
+            assertNotNull(seen.get().finishReason());
+        }
+    }
+
+    @Test
     void multiTurn() {
         ChatResponse r =
                 model.chat(

@@ -118,6 +118,24 @@ ChatResponse seen = gemma.call(new Prompt(UserMessage.builder()
         .build()));
 ```
 
+## Embeddings
+
+`JinferEmbeddingModel` runs an embedding GGUF (the Qwen3-Embedding family) in-process, so the whole RAG stack - vectors, store, chat - stays in one JVM with zero egress.
+Inputs are packed into context-sized ragged batches: one forward pass embeds many segments, so ingesting hundreds of chunks costs a handful of prefills, not hundreds.
+Usage reports exact token counts; `EmbeddingOptions.getDimensions()` truncates vectors.
+
+```java
+JinferEmbeddingModel embeddings = JinferEmbeddingModel.builder()
+        .modelPath(Path.of("models/Qwen3-Embedding-0.6B-Q8_0.gguf"))
+        .contextLength(2048)          // packing window; <= 0 = the model's maximum
+        .build();
+
+EmbeddingResponse r = embeddings.call(
+        new EmbeddingRequest(List.of("first chunk", "second chunk"), null));
+```
+
+With the starter, `spring.ai.jinfer.embedding.model-path` (+ `context-length`) wires the bean; `spring.ai.model.embedding` selects the provider.
+
 ## Cached prompts
 
 A cached prompt is paid for once and cheap forever after: `withCachedPrompt` prefills the prefix

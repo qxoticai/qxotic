@@ -66,6 +66,32 @@ class StructuredOutputIT {
     }
 
     @Test
+    void streamingConformsToSchema() {
+        // a user streaming a schema-constrained reply: concatenated content deltas must be the
+        // same schema-conforming JSON guarantee the blocking path gives
+        StringBuilder text = new StringBuilder();
+        model.stream(
+                        new Prompt(
+                                new UserMessage("What is the capital of France?"),
+                                JinferChatOptions.builder().outputSchema(SCHEMA).build()))
+                .doOnNext(
+                        chunk -> {
+                            if (chunk.getResults().isEmpty()) return;
+                            var out = chunk.getResult().getOutput();
+                            // reasoning streams too, flagged - only CONTENT deltas carry the JSON
+                            boolean thought =
+                                    Boolean.TRUE.equals(out.getMetadata().get("isThought"));
+                            if (!thought && out.getText() != null) {
+                                text.append(out.getText());
+                            }
+                        })
+                .blockLast(java.time.Duration.ofMinutes(2));
+        Map<String, Object> json = parseJson(text.toString());
+        assertTrue(json.get("answer").toString().contains("Paris"), text.toString());
+        assertInstanceOf(Number.class, json.get("confidence"), text.toString());
+    }
+
+    @Test
     void conformsToSchema() {
         ChatResponse r =
                 model.call(

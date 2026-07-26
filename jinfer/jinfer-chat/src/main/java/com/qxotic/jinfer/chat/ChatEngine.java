@@ -151,7 +151,12 @@ public final class ChatEngine {
 
     /** Runs a streaming generation on the engine's single lazy driver thread. */
     public void stream(Runnable generation) {
-        streamDriver.execute(generation);
+        try {
+            streamDriver.execute(generation);
+        } catch (java.util.concurrent.RejectedExecutionException closed) {
+            // the unbounded queue never rejects; rejection means the driver was shut down
+            throw new IllegalStateException("the model is closed");
+        }
     }
 
     private void checkOpen() {

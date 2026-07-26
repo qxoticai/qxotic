@@ -2,6 +2,7 @@ package com.qxotic.jinfer.spring.ai;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -297,6 +298,47 @@ class JinferChatModelIT {
     }
 
     @Test
+    void seedIsDeterministicAtTemperatureZeroAndLiveAtOne() {
+        // own small model: 8 short generations would weigh the shared 8B suite down.
+        // temp-0 hot-vs-hot byte identity (cold-vs-warm tier drift flips argmax; warm first),
+        // then seed liveness at temperature 1.0 via divergence - the drift-immune assertion
+        try (JinferChatModel small =
+                JinferChatModel.builder()
+                        .modelPath(com.qxotic.jinfer.testkit.ModelFixture.LFM25_350M_Q8.require())
+                        .contextLength(1024)
+                        .maxTokens(24)
+                        .build()) {
+            Prompt fixed =
+                    new Prompt(
+                            new UserMessage("Invent a name for a sailing boat."),
+                            JinferChatOptions.builder().temperature(0.0).build());
+            for (int i = 0; i < 4; i++) small.call(fixed);
+            assertEquals(
+                    small.call(fixed).getResult().getOutput().getText(),
+                    small.call(fixed).getResult().getOutput().getText(),
+                    "temperature 0 must replay identically");
+
+            java.util.function.LongFunction<String> at1 =
+                    seed ->
+                            small.call(
+                                            new Prompt(
+                                                    new UserMessage(
+                                                            "Invent a name for a sailing boat."),
+                                                    JinferChatOptions.builder()
+                                                            .temperature(1.0)
+                                                            .seed(seed)
+                                                            .build()))
+                                    .getResult()
+                                    .getOutput()
+                                    .getText();
+            assertNotEquals(
+                    at1.apply(1L),
+                    at1.apply(2L),
+                    "different seeds at temperature 1.0 should diverge");
+        }
+    }
+
+    @Test
     void perRequestMaxTokensTruncates() {
         ChatResponse r =
                 model.call(
@@ -462,7 +504,13 @@ class JinferChatModelIT {
                 model.stream(
                                 new Prompt(
                                         new UserMessage("What is 17 + 25? Answer briefly."),
-                                        JinferChatOptions.builder().thinking(false).build()))
+                                        JinferChatOptions.builder()
+                                                .thinking(false)
+                                                // thinking-off on a reasoning-tuned model can
+                                                // free-run off-distribution; the assertion is
+                                                // about FLAGS, so a tight budget keeps it fast
+                                                .maxTokens(48)
+                                                .build()))
                         .collectList()
                         .block(Duration.ofMinutes(2));
         assertNotNull(chunks);
