@@ -78,7 +78,7 @@ class Gemma4MediaIT {
     @Test
     void consumesAudio() {
         Assumptions.assumeTrue(
-                model.engine.loaded.model() instanceof MultiModal mm
+                model.engine.loaded().model() instanceof MultiModal mm
                         && mm.modalities().contains(Media.Audio.class),
                 "mmproj carries no audio adapter");
         ChatResponse r =

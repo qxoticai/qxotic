@@ -17,6 +17,13 @@ public final class RequestPolicy {
     private RequestPolicy() {}
 
     /**
+     * The smallest completion budget a think span fits: below it, thinking is disabled per request
+     * regardless of the model default - silently spending a tiny budget on reasoning scaffold would
+     * return empty visible text.
+     */
+    public static final int THINK_FLOOR = 16;
+
+    /**
      * The standard jinfer sampling stack: (temperature, topP, seed) plus the reasoning policy -
      * thinking on caps the think span so it cannot starve the visible answer ({@code
      * reasoningOverride}: null = half of {@code maxTokens}, -1 = uncapped); thinking off masks the

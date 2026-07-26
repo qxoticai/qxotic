@@ -16,6 +16,9 @@ import java.util.function.ToIntFunction;
  * preprocessing PLAN ({@code mediaPositions} - image tiers, audio frames; never an encoder run),
  * exact for plan-determined encodings. Message counts sum a message's parts through the same
  * converter the chat path uses. Deliberately scaffold-exclusive: chat-template markers add a few
+ *
+ * <p>Message-level counting DECODES media (base64 / local file) to size its position plan - cheap
+ * for text, a real read for large media histories.
  */
 final class Estimators implements TokenCountEstimator {
 

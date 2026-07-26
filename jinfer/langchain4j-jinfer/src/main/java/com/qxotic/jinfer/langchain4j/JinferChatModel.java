@@ -54,7 +54,7 @@ import java.util.List;
  */
 public final class JinferChatModel implements ChatModel, AutoCloseable {
 
-    final JinferEngine engine;
+    final ChatEngine engine;
     final ChatRequestParameters defaults;
     final boolean thinking;
     final long seed;
@@ -76,7 +76,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
 
     private JinferChatModel(Builder b) {
         this.engine =
-                new JinferEngine(
+                new ChatEngine(
                         b.modelPath,
                         b.mediaProjector,
                         b.contextLength,
@@ -91,7 +91,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         // jinfer-typed receiver preserves grammar/seed from either side of the merge
         JinferChatRequestParameters base =
                 JinferChatRequestParameters.builder()
-                        .modelName(engine.modelName)
+                        .modelName(engine.modelName())
                         .temperature(b.temperature)
                         .topP(b.topP)
                         .maxOutputTokens(b.maxOutputTokens)
@@ -105,7 +105,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         }
     }
 
-    private JinferChatModel(JinferChatModel base, JinferEngine fork) {
+    private JinferChatModel(JinferChatModel base, ChatEngine fork) {
         this.engine = fork;
         this.defaults = base.defaults;
         this.thinking = base.thinking;
@@ -149,7 +149,12 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             welded.addAll(Mappings.toTools(tools));
         }
         CachedPrompt merged = new CachedPrompt(List.copyOf(messages), List.copyOf(welded));
-        engine.define(new Conversation(merged.messages(), merged.tools(), thinking, ""));
+        framed(
+                () -> {
+                    engine.define(
+                            new Conversation(merged.messages(), merged.tools(), thinking, ""));
+                    return null;
+                });
         return new JinferChatModel(this, merged);
     }
 
@@ -169,7 +174,12 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     }
 
     private JinferChatModel withPrefix(CachedPrompt merged) {
-        engine.define(new Conversation(merged.messages(), merged.tools(), thinking, ""));
+        framed(
+                () -> {
+                    engine.define(
+                            new Conversation(merged.messages(), merged.tools(), thinking, ""));
+                    return null;
+                });
         return new JinferChatModel(this, merged);
     }
 
@@ -212,7 +222,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         TextStops.Holdback watch =
                 stops.isEmpty() ? null : new TextStops.Holdback(stops, ignored -> {});
         ReplyLanes lanes =
-                new ReplyLanes(p.encoded().template(), engine.loaded.tokenizer(), p.parserSeed());
+                new ReplyLanes(p.encoded().template(), engine.loaded().tokenizer(), p.parserSeed());
         Generator.TokenSink sink =
                 token -> {
                     String fragment = lanes.feed(token);
@@ -235,7 +245,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         if (stopHit) {
             ai = Mappings.withText(ai, TextStops.apply(ai.text(), stops).text());
         }
-        return Mappings.response(engine.modelName, ai, p.promptTokens(), result, stopHit);
+        return Mappings.response(engine.modelName(), ai, p.promptTokens(), result, stopHit);
     }
 
     /**
@@ -244,9 +254,9 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
      * TokenWindowChatMemory} budgets and token-aware splitters.
      */
     public dev.langchain4j.model.TokenCountEstimator tokenCountEstimator() {
-        var template = engine.loaded.template().orElse(null);
+        var template = engine.loaded().template().orElse(null);
         return new Estimators(
-                engine.loaded.tokenizer(), template == null ? null : template::mediaPositions);
+                engine.loaded().tokenizer(), template == null ? null : template::mediaPositions);
     }
 
     /** A streaming twin sharing this model's engine and cached prefix (the GGUF loads once). */
@@ -299,13 +309,16 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                 p.toolChoice() == ToolChoice.NONE || p.toolSpecifications() == null
                         ? List.of()
                         : p.toolSpecifications();
-        JinferEngine engine = m.engine;
+        ChatEngine engine = m.engine;
         int maxTokens = p.maxOutputTokens() == null ? -1 : p.maxOutputTokens();
         boolean required = p.toolChoice() == ToolChoice.REQUIRED;
         // a think span cannot fit a tiny completion budget: below the floor, reasoning is
         // disabled outright (scaffold and sampler both) so the budget buys VISIBLE text.
         // A forced call also skips thinking: the reply is seeded INTO the call block.
-        boolean think = m.thinking && (maxTokens < 0 || maxTokens >= 16) && !required;
+        boolean think =
+                m.thinking
+                        && (maxTokens < 0 || maxTokens >= RequestPolicy.THINK_FLOOR)
+                        && !required;
         List<Message> messages = new ArrayList<>(m.prefix.messages());
         messages.addAll(Mappings.toMessages(request.messages()));
         Conversation conversation =
@@ -315,10 +328,16 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                         think,
                         "");
         // cached views are native-only (define enforced it); the base keeps the Jinja fallback
+        List<ChatMessage> requestMessages = request.messages();
         ChatEngine.Encoded encoded =
-                cached
-                        ? engine.encodeNative(conversation)
-                        : engine.encode(conversation, request.messages(), requestTools);
+                framed(
+                        () ->
+                                cached
+                                        ? engine.encodeNative(conversation)
+                                        : engine.encode(
+                                                conversation,
+                                                () -> Mappings.toMessageMaps(requestMessages),
+                                                () -> Mappings.toToolMaps(requestTools)));
         Sampler sampler = sampler(m, p, think, maxTokens);
         // the parser pre-feed: the generation prompt's reply-grammar tail (a prompt-opened think
         // span); a forced call replaces it with the recipe's own (reply seeded into the call block)
@@ -327,7 +346,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             // the shared recipe: seed the family's call marker into the prompt, prefix-pin the
             // offered names + header epilogue, pre-feed the parser - one unsplittable value
             RequestPolicy.ForcedCall f =
-                    RequestPolicy.forceCall(engine.loaded, conversation.tools(), sampler)
+                    RequestPolicy.forceCall(engine.loaded(), conversation.tools(), sampler)
                             .orElseThrow(
                                     () ->
                                             new UnsupportedFeatureException(
@@ -354,7 +373,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
      */
     private static Sampler sampler(
             JinferChatModel m, ChatRequestParameters p, boolean think, int maxTokens) {
-        var loaded = m.engine.loaded;
+        var loaded = m.engine.loaded();
         JinferChatRequestParameters j = p instanceof JinferChatRequestParameters jp ? jp : null;
         long seed = j != null && j.seed() != null ? j.seed() : m.seed;
         Sampler sampler =
@@ -388,12 +407,21 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         return sampler;
     }
 
+    /** The engine's neutral unsupported signal, as the framework's typed exception. */
+    private static <T> T framed(java.util.function.Supplier<T> op) {
+        try {
+            return op.get();
+        } catch (UnsupportedOperationException e) {
+            throw new UnsupportedFeatureException(e.getMessage());
+        }
+    }
+
     /** One loaded GGUF per instance: a different {@code modelName} cannot be served. */
-    private static void rejectModelSwitch(JinferEngine engine, ChatRequestParameters p) {
-        if (p.modelName() != null && !p.modelName().equals(engine.modelName)) {
+    private static void rejectModelSwitch(ChatEngine engine, ChatRequestParameters p) {
+        if (p.modelName() != null && !p.modelName().equals(engine.modelName())) {
             throw new UnsupportedFeatureException(
                     "per-request modelName is not supported: this model IS '"
-                            + engine.modelName
+                            + engine.modelName()
                             + "' (one loaded GGUF per instance)");
         }
     }

@@ -241,7 +241,7 @@ class Gemma4MediaIT {
 
     private static Object engineModel(JinferChatModel m) {
         // the loaded LanguageModel implements MultiModal for gemma4
-        return m.engine.loaded.model();
+        return m.engine.loaded().model();
     }
 
     /** A mono 16-bit PCM WAV of a sine tone, built in memory. */

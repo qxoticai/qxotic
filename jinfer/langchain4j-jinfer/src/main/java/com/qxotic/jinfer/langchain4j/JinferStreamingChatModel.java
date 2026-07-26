@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.langchain4j;
 
+import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.ReplyLanes;
 import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.llm.Generator;
@@ -70,10 +71,10 @@ public final class JinferStreamingChatModel implements StreamingChatModel {
     }
 
     private void stream(JinferChatModel.Prepared p, StreamingChatResponseHandler handler) {
-        JinferEngine engine = model.engine;
+        ChatEngine engine = model.engine;
         List<String> stops = p.stops() == null ? List.of() : p.stops();
         ReplyLanes lanes =
-                new ReplyLanes(p.encoded().template(), engine.loaded.tokenizer(), p.parserSeed());
+                new ReplyLanes(p.encoded().template(), engine.loaded().tokenizer(), p.parserSeed());
 
         AtomicBoolean cancelled = new AtomicBoolean();
         StreamingHandle handle =
@@ -143,7 +144,7 @@ public final class JinferStreamingChatModel implements StreamingChatModel {
             }
         }
         ChatResponse response =
-                Mappings.response(engine.modelName, ai, p.promptTokens(), result, stopHit);
+                Mappings.response(engine.modelName(), ai, p.promptTokens(), result, stopHit);
         safely(handler, () -> handler.onCompleteResponse(response));
     }
 

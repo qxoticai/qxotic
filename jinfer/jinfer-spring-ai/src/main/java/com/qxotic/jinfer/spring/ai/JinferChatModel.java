@@ -76,7 +76,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
      */
     static final String IS_THOUGHT_KEY = "isThought";
 
-    final JinferEngine engine;
+    final ChatEngine engine;
     final JinferChatOptions defaultOptions;
     final ObservationRegistry observationRegistry;
     final ChatModelObservationConvention observationConvention; // null = the default convention
@@ -100,7 +100,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                     "defaultOptions and individual knobs are mutually exclusive");
         }
         this.engine =
-                new JinferEngine(
+                new ChatEngine(
                         b.modelPath,
                         b.mediaProjector,
                         b.contextLength,
@@ -112,7 +112,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         this.observationConvention = b.observationConvention;
         JinferChatOptions knobs =
                 JinferChatOptions.builder()
-                        .model(engine.modelName)
+                        .model(engine.modelName())
                         .temperature(b.temperature)
                         .topP(b.topP)
                         .maxTokens(b.maxTokens)
@@ -128,7 +128,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         }
     }
 
-    private JinferChatModel(JinferChatModel base, JinferEngine fork) {
+    private JinferChatModel(JinferChatModel base, ChatEngine fork) {
         this.engine = fork;
         this.defaultOptions = base.defaultOptions;
         this.observationRegistry = base.observationRegistry;
@@ -249,7 +249,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         // a think span cannot fit a tiny completion budget: below the floor, reasoning is
         // disabled outright (scaffold and sampler both) so the budget buys VISIBLE text
         boolean think =
-                options.getThinking() != Boolean.FALSE && (maxTokens < 0 || maxTokens >= 16);
+                options.getThinking() != Boolean.FALSE
+                        && (maxTokens < 0 || maxTokens >= RequestPolicy.THINK_FLOOR);
         List<Tool> tools =
                 cached
                         ? prefix.tools()
@@ -258,14 +259,21 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         messages.addAll(JinferMappings.toMessages(prompt.getInstructions()));
         Conversation conversation = new Conversation(messages, tools, think, "");
         // cached views are native-only (define enforced it); the base keeps the Jinja fallback
+        List<org.springframework.ai.chat.messages.Message> instructions = prompt.getInstructions();
         ChatEngine.Encoded encoded =
                 cached
                         ? engine.encodeNative(conversation)
-                        : engine.encode(conversation, prompt.getInstructions(), callbacks);
+                        : engine.encode(
+                                conversation,
+                                () -> JinferMappings.toMessageMaps(instructions),
+                                () ->
+                                        callbacks == null
+                                                ? List.of()
+                                                : JinferMappings.toToolMaps(callbacks));
 
         Sampler sampler =
                 RequestPolicy.sampler(
-                        engine.loaded,
+                        engine.loaded(),
                         options.getTemperature() == null
                                 ? 0.0f
                                 : options.getTemperature().floatValue(),
@@ -331,7 +339,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     private ChatResponse doCall(Prompt prompt) {
         Prepared p = prepare(prompt);
         ReplyLanes feed =
-                new ReplyLanes(p.encoded().template(), engine.loaded.tokenizer(), p.parserSeed());
+                new ReplyLanes(p.encoded().template(), engine.loaded().tokenizer(), p.parserSeed());
         List<String> stops = p.stops();
         TextStops.Holdback watch =
                 stops.isEmpty() ? null : new TextStops.Holdback(stops, ignored -> {});
@@ -423,7 +431,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         sink.onCancel(() -> cancelled.set(true));
         sink.onDispose(() -> cancelled.set(true));
         ReplyLanes feed =
-                new ReplyLanes(p.encoded().template(), engine.loaded.tokenizer(), p.parserSeed());
+                new ReplyLanes(p.encoded().template(), engine.loaded().tokenizer(), p.parserSeed());
         List<String> stops = p.stops();
         // the holdback keeps any could-still-be-a-stop suffix unemitted; safe chars flow through
         TextStops.Holdback watch =
@@ -489,8 +497,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     private Sampler withSchemaGrammar(Sampler sampler, boolean think, String outputSchema) {
         @SuppressWarnings("unchecked")
         Map<String, Object> schemaMap = (Map<String, Object>) JsonCodec.parse(outputSchema);
-        Grammar.Spec spec = Grammar.fromSchema(schemaMap, engine.loaded.tokenizer());
-        return RequestPolicy.constrained(engine.loaded, sampler, spec.cursor(), think);
+        Grammar.Spec spec = Grammar.fromSchema(schemaMap, engine.loaded().tokenizer());
+        return RequestPolicy.constrained(engine.loaded(), sampler, spec.cursor(), think);
     }
 
     private JinferChatOptions resolveOptions(ChatOptions runtime) {
@@ -510,10 +518,10 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             throw new IllegalArgumentException("frequencyPenalty is not supported");
         if (o.getPresencePenalty() != null)
             throw new IllegalArgumentException("presencePenalty is not supported");
-        if (o.getModel() != null && !o.getModel().equals(engine.modelName))
+        if (o.getModel() != null && !o.getModel().equals(engine.modelName()))
             throw new IllegalArgumentException(
                     "per-request model is not supported: this model IS '"
-                            + engine.modelName
+                            + engine.modelName()
                             + "' (one loaded GGUF per instance)");
         if (o.getTimeout() != null && o.getTimeout().isNegative())
             throw new IllegalArgumentException("timeout must not be negative");
@@ -545,7 +553,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         ChatResponseMetadata metadata =
                 ChatResponseMetadata.builder()
                         .id(UUID.randomUUID().toString())
-                        .model(engine.modelName)
+                        .model(engine.modelName())
                         .usage(
                                 new DefaultUsage(
                                         promptTokens,
