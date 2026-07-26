@@ -149,6 +149,34 @@ class CachedPromptIT {
     }
 
     @Test
+    void copyIsAParallelPipelineSharingTheModel() throws Exception {
+        // the concurrency contract's usability face: copy() = second pipeline, same weights.
+        // Both pipelines generate CONCURRENTLY (forbidden on one instance - StateGuard would
+        // reject shared-state misuse; here each owns its state) and answer coherently.
+        JinferChatModel twin = base.copy();
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            var a =
+                    pool.submit(
+                            () ->
+                                    base.chat(UserMessage.from("Say exactly: ALPHA"))
+                                            .aiMessage()
+                                            .text());
+            var b =
+                    pool.submit(
+                            () ->
+                                    twin.chat(UserMessage.from("Say exactly: BRAVO"))
+                                            .aiMessage()
+                                            .text());
+            assertTrue(a.get().contains("ALPHA"), a.get());
+            assertTrue(b.get().contains("BRAVO"), b.get());
+        } finally {
+            pool.shutdown();
+            twin.close();
+        }
+    }
+
+    @Test
     void viewRejectsRequestTools() {
         JinferChatModel support = base.withCachedPrompt(SUPPORT, List.of());
         ToolSpecification t =

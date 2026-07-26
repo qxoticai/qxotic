@@ -55,6 +55,40 @@ class CachedPromptIT {
     }
 
     @Test
+    void copyIsAParallelPipelineSharingTheModel() throws Exception {
+        JinferChatModel base =
+                JinferChatModel.builder()
+                        .modelPath(MODEL)
+                        .contextLength(2048)
+                        .maxTokens(32)
+                        .build();
+        JinferChatModel twin = base.copy();
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            var a =
+                    pool.submit(
+                            () ->
+                                    base.call(new Prompt(new UserMessage("Say exactly: ALPHA")))
+                                            .getResult()
+                                            .getOutput()
+                                            .getText());
+            var b =
+                    pool.submit(
+                            () ->
+                                    twin.call(new Prompt(new UserMessage("Say exactly: BRAVO")))
+                                            .getResult()
+                                            .getOutput()
+                                            .getText());
+            assertTrue(a.get().contains("ALPHA"), a.get());
+            assertTrue(b.get().contains("BRAVO"), b.get());
+        } finally {
+            pool.shutdown();
+            twin.close();
+            base.close();
+        }
+    }
+
+    @Test
     void cachedSessionsMultiTurn() {
         // cachedSessions(1): turn 2 strictly extends turn 1's pooled state - possible only
         // because the echoed reply restores its verbatim ids through REPLY_KEY metadata, so

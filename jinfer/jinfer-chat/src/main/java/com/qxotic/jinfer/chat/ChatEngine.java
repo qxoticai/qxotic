@@ -95,6 +95,29 @@ public final class ChatEngine {
         this.jinja = new JinjaChatTemplate(loaded.tokenizer(), loaded.chatTemplateSource());
     }
 
+    /** The fork constructor: shares the immutable loaded model, owns everything mutable. */
+    private ChatEngine(ChatEngine base) {
+        this.loaded = base.loaded;
+        this.modelName = base.modelName;
+        this.jinja = base.jinja; // compiled once per model; stateless at render time
+        this.sessionCapacity = base.sessionCapacity;
+        this.promptStore = CacheStore.inMemory();
+        // a fresh, empty prompt tree (a mounted artifact is NOT carried over - mount it on a new
+        // builder if the fork needs it); codec-less models stay treeless, exactly like the base
+        this.prompts = base.prompts == null ? null : tree(loaded, promptStore, null);
+    }
+
+    /**
+     * A sibling engine sharing this one's loaded model - weights, tokenizer and template are
+     * immutable and thread-safe to share (all per-run scratch lives in {@link
+     * com.qxotic.jinfer.RuntimeState}); the fork owns its own serial pipeline: lock, empty prompt
+     * tree, session pool and stream driver. THE cheap answer to "one instance = one pipeline":
+     * parallelism without reloading the model.
+     */
+    public ChatEngine fork() {
+        return new ChatEngine(this);
+    }
+
     private static <S extends RuntimeState> PromptCache<S> tree(
             LoadedModel<S> loaded, CacheStore store, FrozenBlocks base) {
         // unbounded: prompts are explicit, few, and deliberately paid for

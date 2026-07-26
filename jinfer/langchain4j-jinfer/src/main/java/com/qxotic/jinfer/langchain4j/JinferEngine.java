@@ -84,6 +84,17 @@ final class JinferEngine {
     }
 
     /** Test seams (see {@link ChatEngine}). */
+    /** A sibling adapter over {@link ChatEngine#fork()}: shared model, fresh pipeline. */
+    JinferEngine fork() {
+        return new JinferEngine(engine.fork(), modelName);
+    }
+
+    private JinferEngine(ChatEngine engine, String modelName) {
+        this.engine = engine;
+        this.modelName = modelName;
+        this.loaded = engine.loaded();
+    }
+
     /** Runs a streaming generation on the engine's single lazy driver thread. */
     void stream(Runnable generation) {
         engine.stream(generation);

@@ -119,6 +119,14 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         }
     }
 
+    private JinferChatModel(JinferChatModel base, JinferEngine fork) {
+        this.engine = fork;
+        this.defaultOptions = base.defaultOptions;
+        this.observationRegistry = base.observationRegistry;
+        this.observationConvention = base.observationConvention;
+        this.prefix = CachedPrompt.EMPTY;
+    }
+
     private JinferChatModel(JinferChatModel base, CachedPrompt prefix) {
         this.engine = base.engine;
         this.defaultOptions = base.defaultOptions;
@@ -144,6 +152,28 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             welded.addAll(JinferMappings.toTools(tools));
         }
         CachedPrompt merged = new CachedPrompt(List.copyOf(messages), List.copyOf(welded));
+        engine.define(
+                new Conversation(
+                        merged.messages(),
+                        merged.tools(),
+                        defaultOptions.getThinking() != Boolean.FALSE,
+                        ""));
+        return new JinferChatModel(this, merged);
+    }
+
+    /**
+     * An independent sibling of this model: shares the loaded weights/tokenizer/template (nothing
+     * reloads, no extra weight memory) but owns its OWN serial inference pipeline - lock, caches,
+     * stream driver. THE way to run several pipelines of one model in parallel. Cached-prompt
+     * definitions and mounted artifacts are not carried over; options and conventions are. A copy
+     * of a VIEW re-defines its prefix on the fresh pipeline (one prefill).
+     */
+    public JinferChatModel copy() {
+        JinferChatModel base = new JinferChatModel(this, engine.fork());
+        return prefix.isEmpty() ? base : base.withPrefix(prefix);
+    }
+
+    private JinferChatModel withPrefix(CachedPrompt merged) {
         engine.define(
                 new Conversation(
                         merged.messages(),
