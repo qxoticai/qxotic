@@ -41,6 +41,17 @@ public final class Thinking {
      * forced token consumes no RNG draw. Negative = uncapped.
      */
     public static Sampler capBudget(Sampler inner, Tokenizer tokenizer, int budget) {
+        return capBudget(inner, tokenizer, budget, false);
+    }
+
+    /**
+     * As above, but starting INSIDE the think span - for templates whose generation prompt opens
+     * {@code <think>} itself (Qwen3.5, MiniCPM5, Nemotron): the open token never passes through the
+     * sampler, so without this the budget silently never arms and a long reasoning run can starve
+     * the visible answer to LENGTH.
+     */
+    public static Sampler capBudget(
+            Sampler inner, Tokenizer tokenizer, int budget, boolean startInThink) {
         Integer open = boxed(SpecialTokens.find(tokenizer, OPEN));
         Integer close = boxed(SpecialTokens.find(tokenizer, CLOSE));
         if (budget < 0 || open == null || close == null) {
@@ -48,7 +59,7 @@ public final class Thinking {
         }
         int openToken = open, closeToken = close;
         return new Sampler() {
-            boolean inThink;
+            boolean inThink = startInThink;
             int thought;
 
             @Override

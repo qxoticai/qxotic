@@ -46,7 +46,19 @@ public final class RequestPolicy {
                 reasoningOverride != null
                         ? reasoningOverride
                         : maxTokens >= 0 ? Math.max(1, maxTokens / 2) : -1;
-        return Thinking.capBudget(sampler, m.tokenizer(), budget);
+        // prompt-opened spans (replySeed carries the open id): the cap must start ARMED - the
+        // open token never passes through the sampler on those families
+        boolean startInThink = false;
+        java.util.OptionalInt open = SpecialTokens.find(m.tokenizer(), Thinking.OPEN);
+        if (open.isPresent() && m.template().isPresent()) {
+            for (int t : m.template().get().replySeed(think)) {
+                if (t == open.getAsInt()) {
+                    startInThink = true;
+                    break;
+                }
+            }
+        }
+        return Thinking.capBudget(sampler, m.tokenizer(), budget, startInThink);
     }
 
     /**
