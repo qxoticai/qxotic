@@ -125,7 +125,7 @@ public final class ModelFixture {
         String env = System.getenv("JINFER_MODELS");
         if (env != null && !env.isBlank()) return Path.of(env);
         for (Path dir = Path.of("").toAbsolutePath(); dir != null; dir = dir.getParent()) {
-            if (Files.isDirectory(dir.resolve(".git"))) {
+            if (Files.exists(dir.resolve(".git"))) { // a FILE in worktrees, a directory otherwise
                 return dir.getParent() == null
                         ? dir.resolve("models")
                         : dir.getParent().resolve("models");
