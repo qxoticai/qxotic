@@ -608,6 +608,12 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
         final FlashAttention.DecodeScratch decodeScratch = new FlashAttention.DecodeScratch();
         final FloatTensor[] keyCache, valueCache;
 
+        /** Recycles this allocation: cursor to 0; stale KV rows beyond it are attention-masked. */
+        @Override
+        public void reset() {
+            resumeAt(0);
+        }
+
         State(Configuration config, int contextCapacity, int batchCapacity) {
             if (contextCapacity > config.contextLength()) {
                 throw new IllegalArgumentException(

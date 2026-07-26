@@ -836,6 +836,26 @@ public final class NemotronH
                 ssmConvState; // attention / SSM layers respectively
         final float[][] ssmState; // Mamba2 recurrent state, raw heap array
 
+        /**
+         * Recycles this allocation: cursor to 0 and the RECURRENT buffers zeroed - the Mamba2 conv
+         * ring and SSM state carry values across positions and would leak the previous
+         * conversation; stale KV rows beyond the cursor are attention-masked and harmless.
+         */
+        @Override
+        public void reset() {
+            resumeAt(0);
+            for (FloatTensor conv : ssmConvState) {
+                if (conv != null) {
+                    conv.fillInPlace(0, Math.toIntExact(conv.size()), 0f);
+                }
+            }
+            for (float[] recurrent : ssmState) {
+                if (recurrent != null) {
+                    java.util.Arrays.fill(recurrent, 0f);
+                }
+            }
+        }
+
         State(Configuration config, int contextCapacity, int batchCapacity) {
             this.contextCapacity = contextCapacity;
             this.batchCapacity = Math.max(1, batchCapacity);

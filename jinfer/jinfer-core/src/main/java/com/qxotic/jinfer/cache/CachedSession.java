@@ -85,6 +85,16 @@ public final class CachedSession<S extends RuntimeState> {
     }
 
     /**
+     * A fresh session resuming another session's exact ingested stream - serve a recorded
+     * conversation again on a cold state (the cache-soundness scenario).
+     */
+    public static <S extends RuntimeState> CachedSession<S> resume(
+            Model<?, ?, S> model, PromptCache<S> cache, S state, CachedSession<?> history) {
+        long[] fp = history.fingerprints();
+        return resume(model, cache, state, fp, fp.length);
+    }
+
+    /**
      * A fresh session on a fresh state, resuming the longest cached prefix of {@code expected}
      * (empty for a brand-new conversation).
      */
