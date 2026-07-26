@@ -5,7 +5,6 @@ import com.qxotic.jinfer.cache.CacheStore;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.cache.SessionPool;
 import com.qxotic.jinfer.cache.StateCodec;
-import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.JinjaChatTemplate;
@@ -14,6 +13,7 @@ import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.ReplyParser;
+import com.qxotic.jinfer.chat.RequestPolicy;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.chat.ToolCallSyntax;
@@ -382,11 +382,11 @@ final class Generation {
         // turns thinking off for any forced request.
         boolean forced = resumedState != null && ToolUse.forced(request) != null;
         boolean think = requestThink(request);
-        // the shared sampling stack (ChatEngine): base sampling + the reasoning policy;
+        // the shared sampling stack (RequestPolicy): base sampling + the reasoning policy;
         // reasoning_max_tokens is the server's per-request override of the half-budget default
         Object rmt = request.get("reasoning_max_tokens");
         Sampler sampler =
-                ChatEngine.sampler(
+                RequestPolicy.sampler(
                         model,
                         temperature,
                         topp,
@@ -396,17 +396,17 @@ final class Generation {
                         rmt == null ? null : Values.intValue(rmt, -1));
         Grammar.Cursor grammarCursor = buildGrammarCursor(tokenizer, request);
         if (grammarCursor != null) {
-            // shared wiring (ChatEngine.constrained): think-gated, newline-skipped, dead-ending
+            // shared wiring (RequestPolicy.constrained): think-gated, newline-skipped, dead-ending
             // on one of the model's OWN stops (previously a vocab scan for <eos>, which is not
             // guaranteed to be a stop token - the pin path always used stops.first)
-            sampler = ChatEngine.constrained(model, sampler, grammarCursor, think);
+            sampler = RequestPolicy.constrained(model, sampler, grammarCursor, think);
         }
         // the shared forced-call recipe: prefix-pin the offered (or THE named) tool + the
         // family epilogue, and the parser pre-feed below starts in the seeded span state
         // (chatTemplated already put the call seed in the prompt on this path)
-        ChatEngine.ForcedCall forcedCall =
+        RequestPolicy.ForcedCall forcedCall =
                 forced
-                        ? ChatEngine.forceCall(model, pinTools(request), sampler).orElseThrow()
+                        ? RequestPolicy.forceCall(model, pinTools(request), sampler).orElseThrow()
                         : null;
         if (forcedCall != null) sampler = forcedCall.sampler();
         // Billed prompt: the whole conversation. On the cached path the state is pre-resumed to the

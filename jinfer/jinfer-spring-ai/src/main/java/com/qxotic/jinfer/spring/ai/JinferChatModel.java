@@ -6,6 +6,7 @@ import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.JsonCodec;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.ReplyLanes;
+import com.qxotic.jinfer.chat.RequestPolicy;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.Grammar;
@@ -209,7 +210,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                         : engine.encode(conversation, prompt.getInstructions(), callbacks);
 
         Sampler sampler =
-                ChatEngine.sampler(
+                RequestPolicy.sampler(
                         engine.loaded,
                         options.getTemperature() == null
                                 ? 0.0f
@@ -435,7 +436,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         @SuppressWarnings("unchecked")
         Map<String, Object> schemaMap = (Map<String, Object>) JsonCodec.parse(outputSchema);
         Grammar.Spec spec = Grammar.fromSchema(schemaMap, engine.loaded.tokenizer());
-        return ChatEngine.constrained(engine.loaded, sampler, spec.cursor(), think);
+        return RequestPolicy.constrained(engine.loaded, sampler, spec.cursor(), think);
     }
 
     private JinferChatOptions resolveOptions(ChatOptions runtime) {

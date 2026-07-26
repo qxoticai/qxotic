@@ -5,6 +5,7 @@ import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.ReplyLanes;
+import com.qxotic.jinfer.chat.RequestPolicy;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.Grammar;
@@ -272,8 +273,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         if (required) {
             // the shared recipe: seed the family's call marker into the prompt, prefix-pin the
             // offered names + header epilogue, pre-feed the parser - one unsplittable value
-            ChatEngine.ForcedCall f =
-                    ChatEngine.forceCall(engine.loaded, conversation.tools(), sampler)
+            RequestPolicy.ForcedCall f =
+                    RequestPolicy.forceCall(engine.loaded, conversation.tools(), sampler)
                             .orElseThrow(
                                     () ->
                                             new UnsupportedFeatureException(
@@ -304,7 +305,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         JinferChatRequestParameters j = p instanceof JinferChatRequestParameters jp ? jp : null;
         long seed = j != null && j.seed() != null ? j.seed() : m.seed;
         Sampler sampler =
-                ChatEngine.sampler(
+                RequestPolicy.sampler(
                         loaded,
                         p.temperature() == null ? 0.0f : p.temperature().floatValue(),
                         p.topP() == null ? 0.95f : p.topP().floatValue(),
@@ -320,12 +321,12 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                             : Grammar.fromSchema(
                                     JsonSchemaElementUtils.toMap(rf.jsonSchema().rootElement()),
                                     loaded.tokenizer());
-            sampler = ChatEngine.constrained(loaded, sampler, spec.cursor(), think);
+            sampler = RequestPolicy.constrained(loaded, sampler, spec.cursor(), think);
         } else if (j != null && j.grammar() != null) {
             // raw GBNF - the JSON format's generalization, same think gating (validate()
             // guaranteed the two are not combined); specs cache by source, repeats are free
             sampler =
-                    ChatEngine.constrained(
+                    RequestPolicy.constrained(
                             loaded,
                             sampler,
                             Grammar.of(j.grammar(), loaded.tokenizer()).cursor(),
