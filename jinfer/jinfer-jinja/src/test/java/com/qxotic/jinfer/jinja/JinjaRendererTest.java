@@ -529,6 +529,8 @@ public final class JinjaRendererTest {
         eq("{{ 'WIDE' | lower }}", "wide");
         eq("{{ 'wide' | upper }}", "WIDE");
         eq("{{ '  pad  ' | trim }}", "pad");
+        // str.title(): each letter run starts uppercase, the rest lowercase (NOT capitalize)
+        eq("{{ 'hello world-foo BAR'.title() }}", "Hello World-Foo Bar");
         eq("{{ name | length }}", map("name", "abcd"), "4");
         eq("{{ xs | length }}", map("xs", list(1, 2, 3)), "3");
         eq("{{ obj | length }}", map("obj", map("a", 1, "b", 2)), "2");

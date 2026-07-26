@@ -2141,7 +2141,7 @@ public final class JinjaRenderer {
                 // ... the rest share their implementation with the identically-named filter
                 case "lower", "upper", "capitalize", "startswith", "endswith", "replace" ->
                         new Val.Func(m, a -> applyFilter(m, s, a));
-                case "title" -> new Val.Func("title", a -> applyFilter("capitalize", s, a));
+                case "title" -> new Val.Func("title", a -> new Val.Str(titleCase(s.asStr())));
                 // unknown member: undefined (lenient, like Jinja) so `x.attr is defined` guards
                 // work
                 default -> new Val.Undef(m);
@@ -2238,5 +2238,17 @@ public final class JinjaRenderer {
                 }
             };
         }
+    }
+
+    /** Python str.title(): each letter run starts uppercase, the rest lowercase. */
+    private static String titleCase(String text) {
+        StringBuilder b = new StringBuilder(text.length());
+        boolean start = true;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            b.append(start ? Character.toUpperCase(c) : Character.toLowerCase(c));
+            start = !Character.isLetter(c);
+        }
+        return b.toString();
     }
 }
