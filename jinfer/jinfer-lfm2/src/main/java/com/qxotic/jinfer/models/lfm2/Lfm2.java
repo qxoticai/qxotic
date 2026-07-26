@@ -726,6 +726,22 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
         final float[] moeProbByExpert, moeRowTopP;
         final Moe.Routing moeRouting;
 
+        /**
+         * Recycles this allocation for a fresh sequence: cursor to 0 and the RECURRENT buffers
+         * zeroed - stale KV rows beyond the cursor are attention-masked and harmless, but the
+         * rolling short-conv state carries values across positions and would leak the previous
+         * conversation into the next one.
+         */
+        @Override
+        public void reset() {
+            resumeAt(0);
+            for (FloatTensor conv : shortConvState) {
+                if (conv != null) {
+                    conv.fillInPlace(0, Math.toIntExact(conv.size()), 0f);
+                }
+            }
+        }
+
         State(Configuration config, int contextCapacity, int batchCapacity) {
             if (contextCapacity > config.contextLength()) {
                 throw new IllegalArgumentException(
