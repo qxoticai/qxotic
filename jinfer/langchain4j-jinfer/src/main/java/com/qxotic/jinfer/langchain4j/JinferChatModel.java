@@ -35,6 +35,11 @@ import java.util.List;
  * codec (token-exact, injection-inert) and falls back to a scrubbed Jinja whole-render for unported
  * models or unframeable requests.
  *
+ * <p>Concurrency contract: an instance is ONE serial inference pipeline - concurrent requests queue
+ * fairly on it. For parallel pipelines, build several instances: same-model instances share weights
+ * through the OS page cache (read-only mmap), so each extra instance costs only its own mutable
+ * state (KV, caches, sessions), not another copy of the model.
+ *
  * <p>Run with jinfer's JVM flags: {@code --enable-preview --add-modules jdk.incubator.vector
  * --enable-native-access=ALL-UNNAMED}.
  */
