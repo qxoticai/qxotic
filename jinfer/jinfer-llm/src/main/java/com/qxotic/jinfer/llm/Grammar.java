@@ -50,7 +50,7 @@ public final class Grammar {
 
     private Grammar() {}
 
-    interface Vocab {
+    public interface Vocab {
         int size();
 
         byte[] bytes(int tokenId);
@@ -123,7 +123,7 @@ public final class Grammar {
         return of(g, vocab(t));
     }
 
-    static Spec of(String g, Vocab v) {
+    public static Spec of(String g, Vocab v) {
         if (!RuntimeFlags.GRAMMAR) return Spec.DISABLED;
         return cache(v).computeIfAbsent(g, k -> build(k, v));
     }

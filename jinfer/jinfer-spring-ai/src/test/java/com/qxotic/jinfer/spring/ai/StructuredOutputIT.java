@@ -57,7 +57,12 @@ class StructuredOutputIT {
 
     @SuppressWarnings("unchecked")
     private static Map<String, Object> parseJson(String text) {
-        return (Map<String, Object>) JsonCodec.parse(text);
+        try {
+            return (Map<String, Object>) JsonCodec.parse(text);
+        } catch (RuntimeException e) {
+            throw new AssertionError(
+                    "reply is not valid JSON (" + text.length() + " chars): <<<" + text + ">>>", e);
+        }
     }
 
     @Test

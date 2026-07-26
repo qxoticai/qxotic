@@ -32,6 +32,21 @@ public interface ReplyParser {
     boolean reasoning();
 
     /**
+     * The channel a TEXT token would join if fed now, in the FAMILY'S OWN naming
+     * ("reasoning"/"content" for span parsers; "analysis"/"commentary"/"final"/"tool-call" for
+     * Harmony); {@code null} = a structure region (headers, span markers) where every token is
+     * scaffold. The channel authority for channel-scoped constraints: reasoning and structure stay
+     * free, {@link #outputChannels} carry the grammar.
+     */
+    String pendingChannel();
+
+    /**
+     * The channels whose text lands in the final output (what reaches the reply's content) - the
+     * default target of an output grammar.
+     */
+    java.util.Set<String> outputChannels();
+
+    /**
      * Flush and close open spans (an unterminated think span is still reasoning), then the
      * structured reply: coalesced text, the reasoning tree, tool calls - each model-produced part
      * carrying its verbatim payload ids. Role is always assistant. Idempotent.
@@ -81,6 +96,16 @@ public interface ReplyParser {
             @Override
             public boolean reasoning() {
                 return inner.reasoning();
+            }
+
+            @Override
+            public String pendingChannel() {
+                return inner.pendingChannel();
+            }
+
+            @Override
+            public java.util.Set<String> outputChannels() {
+                return inner.outputChannels();
             }
 
             @Override

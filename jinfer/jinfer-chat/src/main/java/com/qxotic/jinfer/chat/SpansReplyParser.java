@@ -79,6 +79,17 @@ final class SpansReplyParser implements ReplyParser {
     }
 
     @Override
+    public String pendingChannel() {
+        if (toolCalls != null && toolCalls.inSpan()) return "tool-call";
+        return inThink ? "reasoning" : "content";
+    }
+
+    @Override
+    public java.util.Set<String> outputChannels() {
+        return java.util.Set.of("content");
+    }
+
+    @Override
     public Message finish() {
         if (message == null) {
             flushPending(); // a trailing split code point still lands in the message

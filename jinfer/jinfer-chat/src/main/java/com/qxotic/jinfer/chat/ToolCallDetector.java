@@ -29,4 +29,7 @@ interface ToolCallDetector {
 
     /** The tool calls completed so far. Grows as spans close; never returns null. */
     List<Part.ToolCall> calls();
+
+    /** Whether the detector is currently inside an open call span (the next token is payload). */
+    boolean inSpan();
 }

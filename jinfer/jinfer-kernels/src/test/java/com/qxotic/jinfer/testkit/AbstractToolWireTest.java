@@ -251,6 +251,57 @@ public abstract class AbstractToolWireTest {
         assertTrue(verbatim != null && verbatim.length() > 0, "calls carry verbatim payload ids");
     }
 
+    @Test
+    void channelsClassifyTheWire() {
+        // the channel law behind channel-scoped grammars: reasoning and call payloads are never
+        // output channels; content is. Fed segment by segment so the wire builders' boundaries
+        // give us the ground truth for free.
+        ReplyParser parser = template.parser();
+        java.util.Set<String> out = parser.outputChannels();
+        assertTrue(!out.isEmpty(), "every parser declares its output channels");
+        for (int t : template.replySeed(hasThinkWire())) parser.feed(t);
+        if (hasThinkWire()) {
+            TokenRuns thinkRun = runs();
+            think(thinkRun, "weighing the options here");
+            int[] wire = thinkRun.build().toArray();
+            boolean sawReasoning = false;
+            for (int i = 0; i < wire.length; i++) {
+                String ch = parser.pendingChannel();
+                if (ch != null && !out.contains(ch)) sawReasoning = true;
+                // position 0 is the open marker itself: pending is legitimately still the
+                // content channel there (the model CHOOSING to reason from content)
+                assertTrue(
+                        i == 0 || ch == null || !out.contains(ch),
+                        "inside the think wire, pending must never be an output channel: " + ch);
+                parser.feed(wire[i]);
+            }
+            assertTrue(sawReasoning, "the think wire must classify as a non-output channel");
+        }
+        TokenRuns contentRun = runs();
+        content(contentRun, "The answer is forty-two.");
+        boolean sawOutput = false;
+        for (int t : contentRun.build().toArray()) {
+            String ch = parser.pendingChannel();
+            if (ch != null && out.contains(ch)) sawOutput = true;
+            parser.feed(t);
+        }
+        assertTrue(sawOutput, "content wire must reach an output channel");
+        // the call wire must pass through a claimed region (payload or structure) - a grammar
+        // over the output channels can never touch call syntax
+        TokenRuns callRun = runs();
+        call(callRun, "get_weather", Map.of("city", "Paris"));
+        int[] callWire = callRun.build().toArray();
+        boolean sawClaimed = false;
+        for (int i = 0; i < callWire.length; i++) {
+            if (i > 0) { // position 0 may legitimately still be the content channel (pre-marker)
+                String ch = parser.pendingChannel();
+                if (ch == null || !out.contains(ch)) sawClaimed = true;
+            }
+            parser.feed(callWire[i]);
+        }
+        assertTrue(sawClaimed, "the call wire must be claimed away from the output channels");
+    }
+
     // ---- forced-call recipe laws (seed / pin / epilogue vs the family's OWN wire) ----
 
     @Test

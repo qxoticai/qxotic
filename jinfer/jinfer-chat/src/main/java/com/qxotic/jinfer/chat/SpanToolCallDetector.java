@@ -29,6 +29,12 @@ final class SpanToolCallDetector implements ToolCallDetector {
     private final Function<String, List<Part.ToolCall>> payloadParser;
 
     private boolean inSpan;
+
+    @Override
+    public boolean inSpan() {
+        return inSpan;
+    }
+
     private final ByteArrayOutputStream span = new ByteArrayOutputStream();
     private IntSequence.Builder spanIds = IntSequence.newBuilder();
     private final List<Part.ToolCall> calls = new ArrayList<>();

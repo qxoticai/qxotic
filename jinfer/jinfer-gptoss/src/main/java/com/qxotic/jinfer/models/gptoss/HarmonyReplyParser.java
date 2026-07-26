@@ -43,6 +43,7 @@ final class HarmonyReplyParser implements ReplyParser {
     private boolean inBody; // false: accumulating header text (channel name, role)
     private final StringBuilder header = new StringBuilder();
     private boolean reasoningBody; // channel of the current/last body
+    private String bodyChannel; // the current body's channel name (set at header -> body)
     private Message message;
 
     private final StringBuilder reasoningText = new StringBuilder();
@@ -70,6 +71,12 @@ final class HarmonyReplyParser implements ReplyParser {
             String h = header.toString();
             callName = callTarget(h);
             reasoningBody = callName == null && h.contains("analysis");
+            bodyChannel =
+                    callName != null
+                            ? "tool-call"
+                            : reasoningBody
+                                    ? "analysis"
+                                    : h.contains("final") ? "final" : "commentary";
             header.setLength(0);
             inBody = true;
             return "";
@@ -124,6 +131,18 @@ final class HarmonyReplyParser implements ReplyParser {
     @Override
     public boolean reasoning() {
         return reasoningBody;
+    }
+
+    @Override
+    public String pendingChannel() {
+        // header region: role/channel/recipient words are structure (plain tokens, still free)
+        return inBody ? bodyChannel : null;
+    }
+
+    @Override
+    public java.util.Set<String> outputChannels() {
+        // the display-routing identity: everything that reaches the reply's content text
+        return java.util.Set.of("final", "commentary");
     }
 
     @Override

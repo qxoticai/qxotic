@@ -389,17 +389,31 @@ public final class ChatEngine {
      */
     public static Sampler constrained(
             LoadedModel<?> m, Sampler s, Grammar.Cursor g, boolean think) {
-        int eos = m.stopTokens().iterator().next();
-        int close = think ? SpecialTokens.find(m.tokenizer(), "</think>").orElse(-1) : -1;
-        int open = close >= 0 ? SpecialTokens.find(m.tokenizer(), "<think>").orElse(-1) : -1;
-        // native codecs know whether the generation prompt already OPENED the span; then the
-        // grammar stays dormant until the close. Otherwise the first token decides: the model
-        // may open a span, or answer - grammar-constrained from token zero (a think-capable
-        // vocab on a model that answers directly must not leave the grammar dormant forever)
-        boolean startInThink =
-                close >= 0 && m.template().map(t -> t.replySeed(true).length > 0).orElse(false);
-        int[] skipNl = close >= 0 ? SpecialTokens.newlineTokens(m.tokenizer()) : null;
-        return Sampler.withGrammar(s, g, eos, open, close, startInThink, skipNl);
+        // channel-scoped: the model's OWN reply parser is the channel authority - the grammar
+        // exists only where text becomes output (reasoning, scaffold and call payloads stay
+        // free; Harmony's analysis channel reasons at full strength under a JSON schema). The
+        // wrapper owns a private parser copy pre-fed the reply seed, so it starts in the exact
+        // span state the prompt left the model in.
+        ReplyParser parser =
+                m.template()
+                        .map(ChatTemplate::parser)
+                        .orElseGet(() -> ReplyParser.spans(m.tokenizer()));
+        for (int t : m.template().map(tp -> tp.replySeed(think)).orElseGet(() -> new int[0])) {
+            parser.feed(t);
+        }
+        java.util.Set<String> output = parser.outputChannels();
+        var tokenizer = m.tokenizer();
+        // the pre-start escape: only the span-OPENING marker (the model's right to reason) -
+        // never stop/turn specials, which would let the model end the turn instead of complying
+        int[] escape = SpecialTokens.find(tokenizer, "<think>").stream().toArray();
+        return new ChannelConstrainedSampler(
+                s,
+                parser,
+                channel -> output.contains(channel) ? g : null,
+                token -> SpecialTokens.isSpecial(tokenizer, token),
+                escape,
+                SpecialTokens.newlineTokens(tokenizer),
+                m.stopTokens().iterator().next());
     }
 
     /**
