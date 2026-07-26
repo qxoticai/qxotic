@@ -10,9 +10,8 @@
  * Parts ({@link com.qxotic.jinfer.chat.ReplyParser} - subsumes tool-call detection and think-span
  * demuxing). Implementations are hand-written per model and validated token-exact against the
  * model's own GGUF Jinja template offline (the oracle tests). {@link
- * com.qxotic.jinfer.chat.TurnTemplate} is the transitional per-turn substrate, bridged by {@link
- * com.qxotic.jinfer.chat.TurnTemplateAdapter} until each model ports natively.
- *
+ * com.qxotic.jinfer.chat.TurnTemplate} is the per-turn substrate, bridged by {@link
+ * com.qxotic.jinfer.chat.*
  * <p>Two tokenization domains, always: turn scaffolding is emitted as trusted special-token ids;
  * conversation text is tokenized plainly, so content can never mint control tokens. Everything else
  * deliberately lives elsewhere: stop tokens on the model, batching policy on {@link

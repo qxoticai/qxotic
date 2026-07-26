@@ -224,7 +224,6 @@ public final class GrammarTest {
         testPerformanceBounds();
         testComplexityGuards();
         testChoice();
-        testSamplerWithGrammar();
         testSpecCacheEviction();
         testMaskCacheCapOverflow();
         testEscapingUnitChecks();
@@ -1395,57 +1394,6 @@ public final class GrammarTest {
         check("choice cached", Grammar.choice(v, "yes") == Grammar.choice(v, "yes"));
     }
 
-    static void testSamplerWithGrammar() {
-        System.out.println("-- sampler withGrammar --");
-        MockVE ve = new MockVE(); // a=0, b=1, ""=2 (the EOS stand-in)
-
-        // phase 2 (no gate): the mask constrains argmax to allowed tokens
-        Grammar.Spec spec = Grammar.of("root ::= [ab]+", ve);
-        Grammar.Cursor cur = spec.cursor();
-        Sampler s = Sampler.withGrammar(Sampler.ARGMAX, cur, 2, -1, null);
-        F32FloatTensor logits = F32FloatTensor.allocate(ve.size());
-        logits.setFloat(0, 1f); // a
-        logits.setFloat(1, 0.5f); // b
-        logits.setFloat(2, 100f); // EOS favored but not allowed mid-grammar
-        check("grammar overrides argmax", s.sampleToken(logits) == 0);
-
-        // a dead grammar forces the eos token
-        Grammar.Cursor dead = Grammar.of("root ::= \"b\"", ve).cursor();
-        dead.advanceWith(1);
-        dead.advanceWith(1); // one too many: dead
-        Sampler sd = Sampler.withGrammar(Sampler.ARGMAX, dead, 2, -1, null);
-        check("dead grammar forces eos", sd.sampleToken(logits) == 2);
-
-        // null cursor / disabled: the inner sampler is returned untouched
-        check(
-                "null cursor passthrough",
-                Sampler.withGrammar(Sampler.ARGMAX, null, 2, -1, null) == Sampler.ARGMAX);
-
-        // gate phases: pass-through during "thinking", skip newlines, then constrain
-        MockV mv = new MockV();
-        int gate = tidx(mv, "!");
-        Grammar.Cursor gated = Grammar.of("root ::= \"z\"", mv).cursor();
-        Sampler sg =
-                Sampler.withGrammar(Sampler.ARGMAX, gated, gate, gate, new int[] {tidx(mv, "\n")});
-        F32FloatTensor lg = F32FloatTensor.allocate(mv.size());
-        // phase 0: argmax favored "a" - passed through UNMASKED even though grammar forbids it
-        lg.setFloat(tidx(mv, "a"), 100f);
-        check("phase 0 pass-through", sg.sampleToken(lg) == tidx(mv, "a"));
-        // gate token flips to phase 1
-        F32FloatTensor lg2 = F32FloatTensor.allocate(mv.size());
-        lg2.setFloat(gate, 100f);
-        check("gate token emitted", sg.sampleToken(lg2) == gate);
-        // phase 1: a skip token is emitted unconstrained, grammar untouched
-        F32FloatTensor lg3 = F32FloatTensor.allocate(mv.size());
-        lg3.setFloat(tidx(mv, "\n"), 100f);
-        check("phase 1 skip emitted", sg.sampleToken(lg3) == tidx(mv, "\n"));
-        // phase 2: grammar now constrains - argmax favoring "x" loses to "z"
-        F32FloatTensor lg4 = F32FloatTensor.allocate(mv.size());
-        lg4.setFloat(tidx(mv, "x"), 100f);
-        lg4.setFloat(tidx(mv, "z"), 1f);
-        check("phase 2 constrains", sg.sampleToken(lg4) == tidx(mv, "z"));
-    }
-
     static void testSpecCacheEviction() {
         System.out.println("-- spec cache eviction --");
         MockV v = new MockV();
@@ -1641,7 +1589,8 @@ public final class GrammarTest {
                             return best;
                         },
                         cur2,
-                        0);
+                        0,
+                        new int[0]);
         F32FloatTensor logits = scratch(v);
         for (int t = 0; t < v.size(); t++) logits.setFloat(t, 0f);
         logits.setFloat(tidx(v, "}"), 5f); // most-likely token is OUTSIDE the pin

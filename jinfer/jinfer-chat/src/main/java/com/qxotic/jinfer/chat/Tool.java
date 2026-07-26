@@ -9,8 +9,8 @@ package com.qxotic.jinfer.chat;
  *
  * <p>The raw JSON is verbatim on purpose. Templates serialize the tool with Jinja {@code tojson};
  * re-serializing from decomposed fields would not preserve key order or spacing and would break
- * byte-exactness with the model's oracle template. The decode side (detector, {@code knownTools})
- * keys on {@code name}; the encode side embeds {@code rawJson}.
+ * byte-exactness with the model's oracle template. The decode side (the call detector and its
+ * allow-list) keys on {@code name}; the encode side embeds {@code rawJson}.
  */
 public record Tool(String name, String rawJson) {
     public Tool {

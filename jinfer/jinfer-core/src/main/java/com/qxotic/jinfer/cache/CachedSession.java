@@ -85,16 +85,6 @@ public final class CachedSession<S extends RuntimeState> {
     }
 
     /**
-     * A fresh session resuming another session's exact ingested stream - serve a recorded
-     * conversation again on a cold state (the cache-soundness scenario).
-     */
-    public static <S extends RuntimeState> CachedSession<S> resume(
-            Model<?, ?, S> model, PromptCache<S> cache, S state, CachedSession<?> history) {
-        long[] fp = history.fingerprints();
-        return resume(model, cache, state, fp, fp.length);
-    }
-
-    /**
      * A fresh session on a fresh state, resuming the longest cached prefix of {@code expected}
      * (empty for a brand-new conversation).
      */
@@ -118,12 +108,6 @@ public final class CachedSession<S extends RuntimeState> {
                 cache.resume(expected, Math.min(expected.length, maxPositions), state);
         long[] fp = Arrays.copyOf(expected, Math.max(256, expected.length));
         return new CachedSession<>(model, state, cache, tip, fp, tip.to);
-    }
-
-    /** As {@link #resume(Model, PromptCache, Object, long[])} for a plain token-id prompt. */
-    public static <S extends RuntimeState> CachedSession<S> resume(
-            Model<?, ?, S> model, PromptCache<S> cache, S state, int[] tokens) {
-        return resume(model, cache, state, fingerprints(tokens), tokens.length);
     }
 
     /** As {@link #resume(Model, PromptCache, Object, long[], int)} for a plain token-id prompt. */

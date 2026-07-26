@@ -311,11 +311,6 @@ public final class FrozenBlocks {
         return (int) crc.getValue();
     }
 
-    /** Total frozen KV bytes (informational; frozen blocks never count against a live budget). */
-    public long kvBytes() {
-        return kvBytes;
-    }
-
     public int blockCount() {
         return entries.size();
     }

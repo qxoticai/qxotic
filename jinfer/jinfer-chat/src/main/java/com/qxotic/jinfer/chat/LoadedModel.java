@@ -44,11 +44,6 @@ public record LoadedModel<S extends RuntimeState>(
         seed = seed.clone();
     }
 
-    /** The same model with a caller-supplied stop-token set (user {@code stop} overrides). */
-    public LoadedModel<S> withStopTokens(Set<Integer> stops) {
-        return new LoadedModel<>(model, tokenizer, chatTemplateSource, stops, seed, template);
-    }
-
     /**
      * The state codec, required: throws when this model does not support block caching (large
      * recurrent state). Use {@code model().stateCodec()} for the capability query.
