@@ -27,13 +27,12 @@ public final class JinferScoringModel implements ScoringModel {
 
     // The Qwen3-Reranker prompt frame, verbatim from the model card (the card is the oracle):
     // prefix + "<Instruct>: ..\n<Query>: ..\n<Document>: .." + suffix, then read yes/no logits.
-    private static final String PREFIX =
+    static final String PREFIX = // package: ScoringBench's naive baseline shares the frame
             "<|im_start|>system\nJudge whether the Document meets the requirements based on the"
                     + " Query and the Instruct provided. Note that the answer can only be \"yes\""
                     + " or \"no\".<|im_end|>\n<|im_start|>user\n";
-    private static final String SUFFIX =
-            "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n";
-    private static final String DEFAULT_INSTRUCTION =
+    static final String SUFFIX = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n";
+    static final String DEFAULT_INSTRUCTION =
             "Given a web search query, retrieve relevant passages that answer the query";
 
     private final Qwen3 model;
