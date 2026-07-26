@@ -187,7 +187,9 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
      * TokenWindowChatMemory} budgets and token-aware splitters.
      */
     public dev.langchain4j.model.TokenCountEstimator tokenCountEstimator() {
-        return new Estimators(engine.loaded.tokenizer());
+        var template = engine.loaded.template().orElse(null);
+        return new Estimators(
+                engine.loaded.tokenizer(), template == null ? null : template::mediaPositions);
     }
 
     /** A streaming twin sharing this model's engine and cached prefix (the GGUF loads once). */

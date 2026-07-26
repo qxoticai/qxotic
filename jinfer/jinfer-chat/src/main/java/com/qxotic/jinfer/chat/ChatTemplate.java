@@ -35,6 +35,15 @@ import java.util.Optional;
 public interface ChatTemplate {
 
     /**
+     * Best-effort context-position count for one media item - the preprocessing plan's number
+     * (image tier, audio frames), never an encoder run. Templates without media keep the default
+     * throw; see {@code Embedder#positions}.
+     */
+    default int mediaPositions(com.qxotic.jinfer.Media media) {
+        throw new UnsupportedOperationException("this model does not plan media positions");
+    }
+
+    /**
      * The complete prompt: the framed conversation, ending with the assistant scaffold ({@code
      * conversation.thinking()} toggles the reasoning scaffold where the model has one).
      *

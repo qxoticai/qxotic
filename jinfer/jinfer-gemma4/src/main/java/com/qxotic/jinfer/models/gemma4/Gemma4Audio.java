@@ -54,6 +54,23 @@ public final class Gemma4Audio implements Embedder<Media.Audio> {
         sink.accept(encode(audio));
     }
 
+    /** The plan's row count for {@code audio}: mono-16k length over non-overlapping frames. */
+    @Override
+    public int positions(Media.Audio audio) {
+        int monoLen = audio.pcm().length / Math.max(1, audio.channels());
+        int n =
+                audio.sampleRate() == SAMPLE_RATE
+                        ? monoLen
+                        : Math.max(
+                                1,
+                                (int)
+                                        Math.round(
+                                                monoLen
+                                                        * ((double) SAMPLE_RATE
+                                                                / audio.sampleRate())));
+        return Math.max(1, (n + frameSize - 1) / frameSize);
+    }
+
     /** Encode one audio clip -> projected rows (nTokens x modelDim). */
     public FloatTensor encode(Media.Audio audio) {
         float[] pcm = toMono16k(audio);

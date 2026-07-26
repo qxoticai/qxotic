@@ -363,6 +363,24 @@ public final class Gemma4Vision implements Embedder<Media.Image> {
 
     private record Patches(FloatTensor tokens, int count, int px, int py) {}
 
+    /** The plan's row count for {@code image} - patchify's grid arithmetic, no tower run. */
+    @Override
+    public int positions(Media.Image image) {
+        int ps = patchSize, curMerge = Math.max(1, merge), factor = ps * curMerge, tw, th;
+        if (VisionPreprocess.SMART_RESIZE) {
+            int maxPixels = VisionPreprocess.budget(280) * factor * factor;
+            int[] wh =
+                    VisionPreprocess.smartResize(
+                            image.width(), image.height(), factor, factor * factor, maxPixels);
+            tw = wh[0];
+            th = wh[1];
+        } else {
+            tw = th = imageSize;
+        }
+        int px = tw / ps, py = th / ps;
+        return Math.max(1, px / curMerge) * Math.max(1, py / curMerge);
+    }
+
     private Patches patchify(Media.Image image) {
         int ps = patchSize, factor = ps * Math.max(1, merge), tw, th;
         if (VisionPreprocess.SMART_RESIZE) {

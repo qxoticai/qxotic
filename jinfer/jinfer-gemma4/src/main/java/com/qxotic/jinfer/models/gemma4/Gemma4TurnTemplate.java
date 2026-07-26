@@ -152,6 +152,34 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
      * Runs the modality's embedder and materializes the model-dim rows (chunks are ephemeral
      * views).
      */
+    /** Best-effort media positions via the modality's embedder plan (no encoding). */
+    @Override
+    public int mediaPositions(Media m) {
+        return switch (m) {
+            case Media.Image img -> plan(Media.Image.class, img);
+            case Media.Audio aud -> plan(Media.Audio.class, aud);
+            default ->
+                    throw new UnsupportedOperationException(
+                            m.getClass().getSimpleName() + " is not supported by this model");
+        };
+    }
+
+    private <R extends Media> int plan(Class<R> type, R m) {
+        if (media == null) {
+            throw new UnsupportedOperationException(
+                    type.getSimpleName()
+                            + " input is not supported by this model (load the mmproj sidecar)");
+        }
+        return media.embedder(type)
+                .orElseThrow(
+                        () ->
+                                new UnsupportedOperationException(
+                                        type.getSimpleName()
+                                                + " input is not supported by this model (load the"
+                                                + " mmproj sidecar)"))
+                .positions(m);
+    }
+
     private <R extends Media> FloatTensor encode(Class<R> type, R m) {
         if (media == null) {
             throw new IllegalStateException(

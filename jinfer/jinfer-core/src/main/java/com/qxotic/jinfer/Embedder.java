@@ -14,4 +14,15 @@ import java.util.function.Consumer;
  */
 public interface Embedder<R extends Media> {
     void embed(R source, int maxChunkSize, Consumer<FloatTensor> sink);
+
+    /**
+     * Best-effort count of the model-dim rows {@link #embed} would emit for {@code source} -
+     * computed from the PREPROCESSING PLAN (resize/tier selection, frame arithmetic), never by
+     * encoding. Exact when the encoding is plan-determined (all current ports); a content-dependent
+     * encoder returns its honest closest number and documents the accuracy.
+     */
+    default int positions(R source) {
+        throw new UnsupportedOperationException(
+                getClass().getSimpleName() + " does not plan media positions");
+    }
 }

@@ -58,7 +58,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel {
      * segment (one EOS on Qwen3) on top of the text count.
      */
     public dev.langchain4j.model.TokenCountEstimator tokenCountEstimator() {
-        return new Estimators(loaded.tokenizer());
+        return new Estimators(loaded.tokenizer(), null);
     }
 
     /** The embedding width - static from the port, never probed with a forward pass. */

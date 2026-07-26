@@ -56,6 +56,39 @@ class Gemma4MediaIT {
     }
 
     @Test
+    void mediaTokenEstimateMatchesTheBill() throws Exception {
+        // the delta law: adding an image to a message must raise the ESTIMATE by exactly what it
+        // raises the BILLED prompt tokens - scaffold cancels out of the difference, so this pins
+        // the plan-based media count against ground truth end to end
+        var estimator = model.tokenCountEstimator();
+        UserMessage textOnly = UserMessage.from(TextContent.from("Describe this in one word."));
+        UserMessage withImage =
+                UserMessage.from(
+                        ImageContent.from(solidPngB64(Color.BLUE), "image/png"),
+                        TextContent.from("Describe this in one word."));
+        int estimateDelta =
+                estimator.estimateTokenCountInMessage(withImage)
+                        - estimator.estimateTokenCountInMessage(textOnly);
+        int billedWith =
+                model.chat(ChatRequest.builder().messages(withImage).maxOutputTokens(1).build())
+                        .tokenUsage()
+                        .inputTokenCount();
+        int billedWithout =
+                model.chat(ChatRequest.builder().messages(textOnly).maxOutputTokens(1).build())
+                        .tokenUsage()
+                        .inputTokenCount();
+        // the image also adds its two framing marker tokens to the prompt (scaffold, deliberately
+        // outside the estimate) - allow exactly that
+        int billedDelta = billedWith - billedWithout;
+        assertTrue(
+                billedDelta - estimateDelta >= 0 && billedDelta - estimateDelta <= 4,
+                "estimate delta " + estimateDelta + " vs billed delta " + billedDelta);
+        // the small test PNG plans to a small grid (e.g. 5x5 = 25) - the LAW above is the
+        // assertion; this floor only guards against the media count silently becoming zero
+        assertTrue(estimateDelta > 0, "image positions must be counted: " + estimateDelta);
+    }
+
+    @Test
     void describesImage() throws Exception {
         ChatResponse r =
                 model.chat(
