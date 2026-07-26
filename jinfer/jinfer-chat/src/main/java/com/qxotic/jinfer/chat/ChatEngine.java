@@ -39,6 +39,7 @@ public final class ChatEngine {
     private final JinjaChatTemplate jinja;
     private final ReentrantLock lock = new ReentrantLock(true);
     private final CacheStore promptStore; // owned: closed (freed) with the engine
+    private final FrozenBlocks mounted; // the read-only artifact, shared with forks (null = none)
     private final PromptCache<?> prompts; // the cached-prompt block tree (null = unsupported)
     // cachedSessions(n): the last n live conversation states, reused append-only when a new
     // prompt's batch stream strictly extends one (all access under the generation lock)
@@ -80,9 +81,10 @@ public final class ChatEngine {
             // built only when the model can support it (or a mount demands it): a codec-less
             // model must still load and chat - the codec throw belongs to the first
             // CACHED-feature use, not to plain construction
-            if (cachedPrompts != null) {
-                this.prompts =
-                        tree(loaded, promptStore, FrozenBlocks.open(cachedPrompts, loaded.seed()));
+            this.mounted =
+                    cachedPrompts == null ? null : FrozenBlocks.open(cachedPrompts, loaded.seed());
+            if (mounted != null) {
+                this.prompts = tree(loaded, promptStore, mounted);
             } else if (loaded.model().stateCodec().isPresent()) {
                 this.prompts = tree(loaded, promptStore, null);
             } else {
@@ -102,9 +104,10 @@ public final class ChatEngine {
         this.jinja = base.jinja; // compiled once per model; stateless at render time
         this.sessionCapacity = base.sessionCapacity;
         this.promptStore = CacheStore.inMemory();
-        // a fresh, empty prompt tree (a mounted artifact is NOT carried over - mount it on a new
-        // builder if the fork needs it); codec-less models stay treeless, exactly like the base
-        this.prompts = base.prompts == null ? null : tree(loaded, promptStore, null);
+        this.mounted =
+                base.mounted; // immutable artifact: safely shared, zero-prefill for forks too
+        // a fresh live tree over the shared frozen base; codec-less models stay treeless
+        this.prompts = base.prompts == null ? null : tree(loaded, promptStore, mounted);
     }
 
     /**

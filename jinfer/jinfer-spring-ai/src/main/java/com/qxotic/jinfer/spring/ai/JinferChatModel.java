@@ -165,8 +165,9 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
      * An independent sibling of this model: shares the loaded weights/tokenizer/template (nothing
      * reloads, no extra weight memory) but owns its OWN serial inference pipeline - lock, caches,
      * stream driver. THE way to run several pipelines of one model in parallel. Cached-prompt
-     * definitions and mounted artifacts are not carried over; options and conventions are. A copy
-     * of a VIEW re-defines its prefix on the fresh pipeline (one prefill).
+     * definitions are not carried over, but a MOUNTED artifact is (the frozen tier is immutable,
+     * shared safely); options and conventions are. A copy of a VIEW re-defines its prefix on the
+     * fresh pipeline (one prefill).
      */
     public JinferChatModel copy() {
         JinferChatModel base = new JinferChatModel(this, engine.fork());
