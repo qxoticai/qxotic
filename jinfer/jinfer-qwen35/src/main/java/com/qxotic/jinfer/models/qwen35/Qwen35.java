@@ -1219,6 +1219,28 @@ public final class Qwen35
         final int contextCapacity, batchCapacity;
         int lastRowOffset;
 
+        /**
+         * Recycles this allocation for a fresh sequence: cursor to 0 and the RECURRENT buffers
+         * zeroed - the delta-net recurrence ({@code ssmState}) and conv ring ({@code ssmConvState})
+         * carry values across positions and would leak the previous conversation; stale KV rows
+         * beyond the cursor are attention-masked and harmless.
+         */
+        @Override
+        public void reset() {
+            resumeAt(0);
+            lastRowOffset = 0;
+            for (FloatTensor conv : ssmConvState) {
+                if (conv != null) {
+                    conv.fillInPlace(0, Math.toIntExact(conv.size()), 0f);
+                }
+            }
+            for (float[] recurrent : ssmState) {
+                if (recurrent != null) {
+                    java.util.Arrays.fill(recurrent, 0f);
+                }
+            }
+        }
+
         final FloatTensor x, xb, xb2, q, k, v, logits, ffnUp, ffnGate, ssmQkv, ssmTmp;
         final FloatTensor attnQ,
                 attnOut,
