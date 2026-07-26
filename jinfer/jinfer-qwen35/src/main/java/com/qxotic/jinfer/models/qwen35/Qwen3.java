@@ -93,6 +93,23 @@ public final class Qwen3
      * sequence), L2-normalized. {@code index} addresses the retained rows exactly as {@code
      * logits}' output does.
      */
+    /**
+     * Raw LM logits for exactly {@code tokens}, via the TIED token-embedding head (Qwen3 small
+     * variants tie the LM head; reranker GGUFs carry no separate output.weight). Rerankers read two
+     * tokens (yes/no) - a couple of dot products instead of the full-vocabulary matmul a generative
+     * head would pay per pair.
+     */
+    public float[] logits(State s, int output, int[] tokens) {
+        int dim = configuration.embeddingLength;
+        int row = s.lastChunkLen - s.outputCount + output;
+        rmsnorm(s.xb, 0, s.x, (long) row * dim, weights.outputNorm, dim, configuration.rmsNormEps);
+        float[] out = new float[tokens.length];
+        for (int i = 0; i < tokens.length; i++) {
+            out[i] = weights.tokenEmbeddingTable.dot((long) tokens[i] * dim, s.xb, 0, dim);
+        }
+        return out;
+    }
+
     @Override
     public FloatTensor pool(State s, int index) {
         int dim = configuration.embeddingLength;

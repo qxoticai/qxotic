@@ -79,7 +79,7 @@
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-qwen35</artifactId>
-      <scope>runtime</scope>
+      <!-- compile, not runtime: JinferScoringModel drives Qwen3's targeted-logits face -->
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>

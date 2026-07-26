@@ -1,12 +1,8 @@
 package com.qxotic.jinfer.langchain4j;
 
 import com.qxotic.jinfer.Batch;
-import com.qxotic.jinfer.FloatTensor;
-import com.qxotic.jinfer.LanguageModel;
-import com.qxotic.jinfer.RuntimeState;
-import com.qxotic.jinfer.chat.LoadedModel;
-import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.chat.TokenRuns;
+import com.qxotic.jinfer.models.qwen35.Qwen3;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.output.Response;
 import dev.langchain4j.model.output.TokenUsage;
@@ -40,27 +36,27 @@ public final class JinferScoringModel implements ScoringModel {
     private static final String DEFAULT_INSTRUCTION =
             "Given a web search query, retrieve relevant passages that answer the query";
 
-    private final LoadedModel<?> loaded;
-    private final RuntimeState state; // one reusable state; reset() between pairs
+    private final Qwen3 model;
+    private final Qwen3.State state; // one reusable state; reset() between pairs
     private final String instruction;
     private final int yes;
     private final int no;
 
     private JinferScoringModel(Builder b) {
         try {
-            this.loaded = Models.load(b.modelPath, b.contextLength <= 0 ? -1 : b.contextLength);
+            this.model = Qwen3.loadModel(b.modelPath, b.contextLength <= 0 ? -1 : b.contextLength);
         } catch (IOException e) {
             throw new UncheckedIOException("failed to load " + b.modelPath, e);
         }
         this.instruction = b.instruction;
-        this.state = loaded.model().newState(loaded.model().config().contextLength(), 512);
+        this.state = model.newState(model.config().contextLength(), 512);
         // the whole scoring convention rests on these being single tokens - fail at build
         this.yes = singleToken("yes");
         this.no = singleToken("no");
     }
 
     private int singleToken(String word) {
-        var ids = loaded.tokenizer().encode(word);
+        var ids = model.tokenizer().encode(word);
         if (ids.length() != 1) {
             throw new IllegalArgumentException(
                     "not a causal-LM reranker vocabulary: '"
@@ -77,7 +73,7 @@ public final class JinferScoringModel implements ScoringModel {
         int promptTokens = 0;
         for (TextSegment segment : segments) {
             Batch prompt =
-                    new TokenRuns(loaded.tokenizer())
+                    new TokenRuns(model.tokenizer())
                             .trusted(PREFIX)
                             .text(
                                     "<Instruct>: "
@@ -89,25 +85,22 @@ public final class JinferScoringModel implements ScoringModel {
                             .trusted(SUFFIX)
                             .batch();
             promptTokens += prompt.count();
-            scores.add(score(loaded.model(), prompt));
+            scores.add(score(prompt));
         }
         return Response.from(scores, new TokenUsage(promptTokens, 0));
     }
 
-    @SuppressWarnings("unchecked")
-    private <S extends RuntimeState> double score(LanguageModel<?, ?, S> model, Batch prompt) {
-        S s = (S) state;
-        s.reset();
-        for (Batch chunk : Batch.prepare(List.of(prompt), s.batchCapacity())) {
-            model.ingest(s, chunk);
+    private double score(Batch prompt) {
+        state.reset();
+        for (Batch chunk : Batch.prepare(List.of(prompt), state.batchCapacity())) {
+            model.ingest(state, chunk);
         }
-        FloatTensor logits = model.logits(s, s.outputCount() - 1);
-        // log-softmax over the {yes, no} pair, per the model card: exp(yes) / (exp(yes)+exp(no))
-        double ly = logits.getFloat(yes);
-        double ln = logits.getFloat(no);
-        double max = Math.max(ly, ln);
-        double ey = Math.exp(ly - max);
-        double en = Math.exp(ln - max);
+        // exactly two logits via the tied head - no full-vocabulary matmul per pair
+        float[] yn = model.logits(state, state.outputCount() - 1, new int[] {yes, no});
+        // softmax over the {yes, no} pair, per the model card
+        double max = Math.max(yn[0], yn[1]);
+        double ey = Math.exp(yn[0] - max);
+        double en = Math.exp(yn[1] - max);
         return ey / (ey + en);
     }
 
