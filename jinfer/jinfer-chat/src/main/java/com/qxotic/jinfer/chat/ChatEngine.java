@@ -59,11 +59,14 @@ public final class ChatEngine {
             Path cachedPrompts,
             int cachedSessions) {
         this.sessionCapacity = Math.max(0, cachedSessions);
+        // the integrations' builder contract is "0 = the model's own maximum"; Models.load spells
+        // that -1 - without this both integrations crashed in the port's tensor sizing on 0
+        int ctx = contextLength <= 0 ? -1 : contextLength;
         try {
             this.loaded =
                     mediaProjector == null
-                            ? Models.load(modelPath, contextLength)
-                            : Models.load(modelPath, mediaProjector, contextLength);
+                            ? Models.load(modelPath, ctx)
+                            : Models.load(modelPath, mediaProjector, ctx);
             this.promptStore = CacheStore.inMemory();
             // built only when the model can support it (or a mount demands it): a codec-less
             // model must still load and chat - the codec throw belongs to the first
