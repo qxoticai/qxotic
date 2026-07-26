@@ -50,7 +50,9 @@ import reactor.core.publisher.FluxSink;
  * <p>Concurrency contract: an instance is ONE serial inference pipeline - concurrent requests queue
  * fairly on it. For parallel pipelines, build several instances: same-model instances share weights
  * through the OS page cache (read-only mmap), so each extra instance costs only its own mutable
- * state (KV, caches, sessions), not another copy of the model.
+ * state (KV, caches, sessions), not another copy of the model. Footprint law: an instance holds its
+ * weights plus at most {@code cachedSessions} full-context states - pooled states are recycled
+ * (extended on a prefix hit, reset on a miss), never re-allocated per request.
  *
  * <p>Run with jinfer's JVM flags: {@code --enable-preview --add-modules jdk.incubator.vector
  * --enable-native-access=ALL-UNNAMED}.
