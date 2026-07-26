@@ -109,7 +109,9 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         List<Message> messages = new ArrayList<>(prefix.messages());
         messages.addAll(Mappings.toMessages(prefixMessages)); // converted ONCE, media decoded here
         List<Tool> welded = new ArrayList<>(prefix.tools());
-        welded.addAll(Mappings.toTools(tools));
+        if (tools != null) {
+            welded.addAll(Mappings.toTools(tools));
+        }
         CachedPrompt merged = new CachedPrompt(List.copyOf(messages), List.copyOf(welded));
         engine.define(new Conversation(merged.messages(), merged.tools(), thinking, ""));
         return new JinferChatModel(this, merged);
