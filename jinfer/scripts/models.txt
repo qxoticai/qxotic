@@ -23,3 +23,4 @@ hf.co ibm-granite granite-4.1-3b-GGUF granite-4.1-3b-Q8_0.gguf
 hf.co ggml-org SmolLM3-3B-GGUF SmolLM3-Q4_K_M.gguf
 hf.co bartowski nvidia_Nemotron-Cascade-2-30B-A3B-GGUF nvidia_Nemotron-Cascade-2-30B-A3B-Q8_0.gguf
 hf.co prism-ml Bonsai-27B-gguf Bonsai-27B-Q1_0.gguf
+hf.co Qwen Qwen3-Embedding-0.6B-GGUF Qwen3-Embedding-0.6B-Q8_0.gguf

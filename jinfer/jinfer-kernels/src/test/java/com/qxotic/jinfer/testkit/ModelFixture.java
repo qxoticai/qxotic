@@ -108,6 +108,9 @@ public final class ModelFixture {
                     "nvidia_Nemotron-Cascade-2-30B-A3B-GGUF",
                     "nvidia_Nemotron-Cascade-2-30B-A3B-Q8_0.gguf");
 
+    public static final Gguf QWEN3_EMBED_06B_Q8 =
+            hf("Qwen", "Qwen3-Embedding-0.6B-GGUF", "Qwen3-Embedding-0.6B-Q8_0.gguf");
+
     public static final Gguf BONSAI_27B_Q1 =
             hf("prism-ml", "Bonsai-27B-gguf", "Bonsai-27B-Q1_0.gguf");
 

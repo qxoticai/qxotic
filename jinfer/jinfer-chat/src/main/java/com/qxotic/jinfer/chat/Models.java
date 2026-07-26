@@ -46,12 +46,21 @@ public final class Models {
         return provider(gguf).load(fileChannel, gguf, ctx);
     }
 
-    private interface Load {
-        LoadedModel<?> apply(FileChannel fc, GGUF gguf) throws IOException;
+    /**
+     * Loads an embedding model (an {@code EmbeddingModel} port, e.g. Qwen3-Embedding) at context
+     * size {@code ctx}; same architecture dispatch as {@link #load}. Generative-only architectures
+     * fail with a clear {@link UnsupportedOperationException}.
+     */
+    public static LoadedEmbedder<?> loadEmbedder(Path path, int ctx) throws IOException {
+        return open(path, (fc, gguf) -> provider(gguf).loadEmbedder(fc, gguf, ctx));
+    }
+
+    private interface Load<T> {
+        T apply(FileChannel fc, GGUF gguf) throws IOException;
     }
 
     /** Opens {@code path}, reads the GGUF header, and hands both to {@code load}. */
-    private static LoadedModel<?> open(Path path, Load load) throws IOException {
+    private static <T> T open(Path path, Load<T> load) throws IOException {
         try (FileChannel fc = FileChannel.open(path, StandardOpenOption.READ)) {
             fc.position(0L);
             GGUF gguf =

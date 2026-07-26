@@ -31,4 +31,16 @@ public interface ModelProvider {
             throws IOException {
         throw new UnsupportedOperationException("this architecture has no media sidecar support");
     }
+
+    /**
+     * Loads an EMBEDDING model from an already-parsed GGUF ({@link Models#loadEmbedder}). Ports
+     * whose architectures are generative-only keep this default.
+     */
+    default LoadedEmbedder<?> loadEmbedder(FileChannel fileChannel, GGUF gguf, int contextLength)
+            throws IOException {
+        throw new UnsupportedOperationException(
+                "'"
+                        + gguf.getString("general.architecture")
+                        + "' is not an embedding architecture");
+    }
 }
