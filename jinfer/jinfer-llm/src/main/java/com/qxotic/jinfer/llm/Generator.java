@@ -134,6 +134,31 @@ public final class Generator {
             TokenSink sink,
             int actualMaxTokens,
             long deadlineNanos) {
+        com.qxotic.jinfer.StateGuard.claim(state); // the single-mutator contract, enforced
+        try {
+            return guardedPass(
+                    model,
+                    state,
+                    prompt,
+                    sampler,
+                    stopTokens,
+                    sink,
+                    actualMaxTokens,
+                    deadlineNanos);
+        } finally {
+            com.qxotic.jinfer.StateGuard.release(state);
+        }
+    }
+
+    private static <S extends RuntimeState> GenerationResult guardedPass(
+            LanguageModel<?, ?, S> model,
+            S state,
+            List<Batch> prompt,
+            Sampler sampler,
+            Set<Integer> stopTokens,
+            TokenSink sink,
+            int actualMaxTokens,
+            long deadlineNanos) {
         boolean hasDeadline = deadlineNanos != Long.MAX_VALUE;
         long startNanos = System.nanoTime();
         long[] prefillDoneNanos = {0};
