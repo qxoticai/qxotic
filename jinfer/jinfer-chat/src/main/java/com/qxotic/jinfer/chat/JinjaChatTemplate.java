@@ -42,7 +42,7 @@ public final class JinjaChatTemplate {
         // scaffold.
         this.specialNames =
                 specials.tokens().stream()
-                        .filter(n -> !n.equals("<think>") && !n.equals("</think>"))
+                        .filter(n -> !n.equals(Thinking.OPEN) && !n.equals(Thinking.CLOSE))
                         .sorted((a, b) -> b.length() - a.length())
                         .toList();
     }

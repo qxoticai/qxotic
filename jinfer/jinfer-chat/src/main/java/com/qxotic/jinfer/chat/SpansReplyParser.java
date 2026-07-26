@@ -34,8 +34,8 @@ final class SpansReplyParser implements ReplyParser {
     /** Think markers resolved from the tokenizer's {@code <think>}/{@code </think>} specials. */
     SpansReplyParser(Tokenizer tokenizer, ToolCallDetector toolCalls) {
         this.tokenizer = tokenizer;
-        this.thinkOpen = SpecialTokens.find(tokenizer, "<think>").orElse(-1);
-        this.thinkClose = SpecialTokens.find(tokenizer, "</think>").orElse(-1);
+        this.thinkOpen = SpecialTokens.find(tokenizer, Thinking.OPEN).orElse(-1);
+        this.thinkClose = SpecialTokens.find(tokenizer, Thinking.CLOSE).orElse(-1);
         this.toolCalls = toolCalls;
     }
 

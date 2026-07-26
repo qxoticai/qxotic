@@ -66,7 +66,7 @@ public final class RequestPolicy {
         var tokenizer = m.tokenizer();
         // the pre-start escape: only the span-OPENING marker (the model's right to reason) -
         // never stop/turn specials, which would let the model end the turn instead of complying
-        int[] escape = SpecialTokens.find(tokenizer, "<think>").stream().toArray();
+        int[] escape = SpecialTokens.find(tokenizer, Thinking.OPEN).stream().toArray();
         return new ChannelConstrainedSampler(
                 s,
                 parser,

@@ -14,6 +14,11 @@ import java.util.Set;
  */
 public final class Thinking {
 
+    /** The think-span marker spellings - THE convention, spelled once. */
+    static final String OPEN = "<think>";
+
+    static final String CLOSE = "</think>";
+
     private Thinking() {}
 
     /**
@@ -21,8 +26,8 @@ public final class Thinking {
      * reasoning span. No-op for models without think markers.
      */
     public static Sampler banMarkers(Sampler inner, Tokenizer tokenizer) {
-        Integer thinkStart = boxed(SpecialTokens.find(tokenizer, "<think>"));
-        Integer thinkEnd = boxed(SpecialTokens.find(tokenizer, "</think>"));
+        Integer thinkStart = boxed(SpecialTokens.find(tokenizer, OPEN));
+        Integer thinkEnd = boxed(SpecialTokens.find(tokenizer, CLOSE));
         Set<Integer> banned = new HashSet<>();
         if (thinkStart != null) banned.add(thinkStart);
         if (thinkEnd != null) banned.add(thinkEnd);
@@ -36,8 +41,8 @@ public final class Thinking {
      * forced token consumes no RNG draw. Negative = uncapped.
      */
     public static Sampler capBudget(Sampler inner, Tokenizer tokenizer, int budget) {
-        Integer open = boxed(SpecialTokens.find(tokenizer, "<think>"));
-        Integer close = boxed(SpecialTokens.find(tokenizer, "</think>"));
+        Integer open = boxed(SpecialTokens.find(tokenizer, OPEN));
+        Integer close = boxed(SpecialTokens.find(tokenizer, CLOSE));
         if (budget < 0 || open == null || close == null) {
             return inner;
         }
