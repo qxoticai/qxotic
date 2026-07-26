@@ -260,13 +260,13 @@ public final class ChatEngine {
             restored = pooled.prefixPositions();
             remaining = CachedSession.tail(prompt, restored);
         } else if (cached) {
-            state = Generator.stateFor(model, total);
+            state = obtainState(model, total);
             CachedSession<S> resumed =
                     CachedSession.resume(model, tree(), state, prompt, total - 1);
             restored = resumed.position();
             remaining = CachedSession.tail(prompt, restored);
         } else {
-            state = Generator.stateFor(model, total);
+            state = obtainState(model, total);
             restored = 0;
             remaining = prompt;
         }
@@ -288,6 +288,30 @@ public final class ChatEngine {
         int total = 0;
         for (Batch b : prompt) total += b.count();
         return total;
+    }
+
+    /**
+     * The state for a pool-miss pass: when the pool is FULL, this request's pooling would evict the
+     * oldest session anyway - so its allocation is recycled NOW ({@code reset()} + reuse, skipping
+     * a full-context allocation) instead of dropped. Families without a {@code reset()} port keep
+     * today's fresh-allocation behavior; states are full-context by {@link Generator#stateFor}
+     * sizing, so any pooled allocation fits any request.
+     */
+    @SuppressWarnings("unchecked")
+    private <S extends RuntimeState> S obtainState(LanguageModel<?, ?, S> model, int total) {
+        if (sessionCapacity > 0 && sessions.size() >= sessionCapacity) {
+            LiveSession oldest = sessions.peekFirst();
+            if (oldest != null && oldest.state().contextCapacity() >= total) {
+                try {
+                    oldest.state().reset();
+                    sessions.removeFirst();
+                    return (S) oldest.state();
+                } catch (UnsupportedOperationException noResetPort) {
+                    // this family cannot recycle yet: fresh allocation, exactly as before
+                }
+            }
+        }
+        return Generator.stateFor(model, total);
     }
 
     /** A pooled hit: the live session plus how many prompt positions its stream covers. */
