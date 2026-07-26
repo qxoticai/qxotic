@@ -56,6 +56,24 @@ public interface TurnTemplate extends ChatTemplate {
      * throws so the caller falls back to the whole render. The shared validator behind every
      * tool-capable port's {@code encode} override.
      */
+    /**
+     * The prompt-opened think scaffold shared by qwen-style families: {@code <think>\n} when
+     * thinking, the closed empty pair {@code <think>\n\n</think>\n\n} when not - the exact ids the
+     * template appends after the role header, and therefore the {@code replySeed}.
+     */
+    static int[] reasonSeed(com.qxotic.toknroll.Tokenizer tokenizer, boolean thinking) {
+        com.qxotic.toknroll.IntSequence.Builder ids = com.qxotic.toknroll.IntSequence.newBuilder();
+        ids.add(com.qxotic.jinfer.llm.SpecialTokens.require(tokenizer, Thinking.OPEN));
+        if (thinking) {
+            ids.addAll(tokenizer.encode("\n"));
+        } else {
+            ids.addAll(tokenizer.encode("\n\n"));
+            ids.add(com.qxotic.jinfer.llm.SpecialTokens.require(tokenizer, Thinking.CLOSE));
+            ids.addAll(tokenizer.encode("\n\n"));
+        }
+        return ids.build().toArray();
+    }
+
     static void requireToolShapes(List<Message> messages) {
         for (Message m : messages) {
             boolean assistant = m.role().equals(Role.ASSISTANT);

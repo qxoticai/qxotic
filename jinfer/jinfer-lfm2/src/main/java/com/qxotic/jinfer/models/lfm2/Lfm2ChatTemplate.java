@@ -10,7 +10,6 @@ import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.chat.ToolCallSyntax;
 import com.qxotic.jinfer.chat.TurnTemplate;
-import com.qxotic.jinfer.chat.UnsupportedConversation;
 import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
@@ -84,7 +83,7 @@ public final class Lfm2ChatTemplate implements TurnTemplate {
 
     @Override
     public List<Batch> encode(Conversation conversation) {
-        requireSupported(conversation);
+        TurnTemplate.requireToolShapes(conversation.messages());
         List<Batch> out = new ArrayList<>();
         List<Message> turns = conversation.messages();
         if (!conversation.tools().isEmpty()) {
@@ -120,27 +119,6 @@ public final class Lfm2ChatTemplate implements TurnTemplate {
     public Optional<String> callGrammar(List<Tool> tools) {
         if (tools.isEmpty()) return Optional.empty();
         return Optional.of(ToolCallSyntax.prefixPinGbnf("[", tools));
-    }
-
-    /** The part shapes this port frames byte-exactly; anything else punts to the whole render. */
-    private static void requireSupported(Conversation conversation) {
-        for (Message message : conversation.messages()) {
-            boolean toolTurn = message.role().equals(Role.TOOL);
-            boolean assistant = message.role().equals(Role.ASSISTANT);
-            for (Part part : message.content()) {
-                boolean ok =
-                        switch (part) {
-                            case Part.Text t -> true;
-                            case Part.ToolResult r -> toolTurn;
-                            case Part.ToolCall c -> assistant;
-                            case Part.Reasoning r -> assistant;
-                            case Part.Blob b -> false; // text-only model
-                        };
-                if (!ok)
-                    throw new UnsupportedConversation(
-                            message.role().name() + " turn: " + part.getClass().getSimpleName());
-            }
-        }
     }
 
     // ---- verbatim splice (the round-trip law) ----

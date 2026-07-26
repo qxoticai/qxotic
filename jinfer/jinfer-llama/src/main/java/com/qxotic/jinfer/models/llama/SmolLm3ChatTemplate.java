@@ -108,8 +108,7 @@ public final class SmolLm3ChatTemplate implements ChatTemplate {
         TurnTemplate.requireToolShapes(msgs);
         List<Tool> tools = conversation.tools();
 
-        Message sys =
-                !msgs.isEmpty() && msgs.get(0).role().equals(Role.SYSTEM) ? msgs.get(0) : null;
+        Message sys = Message.leadingSystem(msgs);
         String sysContent = sys == null ? null : sys.textOnly();
         boolean thinkMode = conversation.thinking();
         String custom = "";

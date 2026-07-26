@@ -162,14 +162,6 @@ final class GptOssToolSyntax {
 
     /** Jinja truthiness for the template's bare {@code if x} checks. */
     private static boolean truthy(Object v) {
-        return switch (v) {
-            case null -> false;
-            case Boolean b -> b;
-            case String s -> !s.isEmpty();
-            case Map<?, ?> m -> !m.isEmpty();
-            case List<?> l -> !l.isEmpty();
-            case Number n -> n.doubleValue() != 0;
-            default -> true;
-        };
+        return ToolCallSyntax.truthy(v);
     }
 }

@@ -47,6 +47,19 @@ public final class ToolCallSyntax {
         }
     }
 
+    /** Jinja truthiness: null/false/empty are falsy, zero Numbers too, everything else truthy. */
+    public static boolean truthy(Object v) {
+        return switch (v) {
+            case null -> false;
+            case Boolean b -> b;
+            case String str -> !str.isEmpty();
+            case java.util.Map<?, ?> m -> !m.isEmpty();
+            case List<?> l -> !l.isEmpty();
+            case Number n -> n.doubleValue() != 0;
+            default -> true;
+        };
+    }
+
     /**
      * Parse a pythonic call sequence starting EXACTLY at {@code from} in {@code text}, trailing
      * content allowed (the bare-call scan's primitive: the server probes every plausible offset).

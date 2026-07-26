@@ -204,8 +204,7 @@ public final class NemotronHTurnTemplate implements TurnTemplate {
             throw new UnsupportedConversation("tools need the <tool_call> markers in the vocab");
         }
 
-        Message sys =
-                !msgs.isEmpty() && msgs.get(0).role().equals(Role.SYSTEM) ? msgs.get(0) : null;
+        Message sys = Message.leadingSystem(msgs);
         String sysText = sys != null ? sys.textOnly() : DEFAULT_SYSTEM;
         List<Message> loop = sys != null ? msgs.subList(1, msgs.size()) : msgs;
         int lastUser = -1;

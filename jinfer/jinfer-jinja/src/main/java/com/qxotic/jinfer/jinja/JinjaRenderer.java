@@ -471,7 +471,7 @@ public final class JinjaRenderer {
         return switch (name) {
             // note: namespace(...) is handled in CallNode evaluation so its kwargs keep their
             // value types (this string-args path would coerce everything to strings).
-            case "format_time", "strftime_now" -> {
+            case "strftime_now" -> {
                 String fmt = args.isEmpty() ? "%Y-%m-%d" : expectStr(requireArg(args, 0));
                 yield new Val.Str(strftime(LocalDateTime.now(), fmt));
             }

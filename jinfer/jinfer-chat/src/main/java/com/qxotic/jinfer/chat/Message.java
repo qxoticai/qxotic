@@ -19,6 +19,13 @@ public record Message(Role role, List<Part> content) {
         this(role, List.of(new Part.Text(text)));
     }
 
+    /** The conversation's leading system message, or null - the shape every template checks. */
+    public static Message leadingSystem(List<Message> messages) {
+        return !messages.isEmpty() && messages.get(0).role().equals(Role.SYSTEM)
+                ? messages.get(0)
+                : null;
+    }
+
     public static Message system(String text) {
         return new Message(Role.SYSTEM, text);
     }

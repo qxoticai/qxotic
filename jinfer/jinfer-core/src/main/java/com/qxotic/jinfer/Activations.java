@@ -30,11 +30,7 @@ public final class Activations {
 
     /** In-place ReLU-squared over {@code n} elements: {@code max(0,x)^2} (Nemotron-H FFN). */
     public static void reluSqr(FloatTensor t, int off, int n) {
-        for (int i = 0; i < n; i++) {
-            float r = t.getFloat(off + i);
-            r = r > 0f ? r : 0f;
-            t.setFloat(off + i, r * r);
-        }
+        t.reluSqrInPlace(off, n); // F32 states take the SIMD override
     }
 
     private static final float GELU_C = (float) Math.sqrt(2.0 / Math.PI);

@@ -134,7 +134,7 @@ public final class Generator {
             TokenSink sink,
             int actualMaxTokens,
             long deadlineNanos) {
-        com.qxotic.jinfer.StateGuard.claim(state); // the single-mutator contract, enforced
+        StateGuard.claim(state); // the single-mutator contract, enforced
         try {
             return guardedPass(
                     model,
@@ -146,7 +146,7 @@ public final class Generator {
                     actualMaxTokens,
                     deadlineNanos);
         } finally {
-            com.qxotic.jinfer.StateGuard.release(state);
+            StateGuard.release(state);
         }
     }
 

@@ -189,8 +189,7 @@ public final class GptOssTurnTemplate implements TurnTemplate {
                 lastFinal = i;
             }
         }
-        Message dev =
-                !msgs.isEmpty() && msgs.get(0).role().equals(Role.SYSTEM) ? msgs.get(0) : null;
+        Message dev = Message.leadingSystem(msgs);
         String devText = dev == null ? "" : dev.textOnly();
         if (!devText.isEmpty() || !tools.isEmpty()) {
             StringBuilder body = new StringBuilder();

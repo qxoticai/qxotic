@@ -275,11 +275,6 @@ public abstract class FloatTensor {
         return F32FloatTensor.allocate(dims);
     }
 
-    /** A native F32 tensor copied from a heap float[]. */
-    public static FloatTensor f32(float[] values) {
-        return F32FloatTensor.of(values);
-    }
-
     /** A fresh native F16 tensor — half the footprint, used for KV caches. */
     public static FloatTensor allocateF16(int... dims) {
         return F16FloatTensor.allocate(dims);

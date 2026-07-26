@@ -133,8 +133,7 @@ public final class GraniteTurnTemplate implements TurnTemplate {
         int toolResponse = SpecialTokens.require(tokenizer, "<tool_response>");
         int endToolResponse = SpecialTokens.require(tokenizer, "</tool_response>");
 
-        Message sys =
-                !msgs.isEmpty() && msgs.get(0).role().equals(Role.SYSTEM) ? msgs.get(0) : null;
+        Message sys = Message.leadingSystem(msgs);
         int first = sys != null ? 1 : 0;
         TokenRuns runs = proto.fresh();
         if (sys != null || !tools.isEmpty()) {

@@ -21,9 +21,6 @@ public final class AudioCodec {
 
     private AudioCodec() {}
 
-    /** gemma4ua and every other speech encoder fix the input at 16 kHz mono. */
-    public static final int SAMPLE_RATE = FfmpegAudioDecoder.SAMPLE_RATE;
-
     private static volatile AudioDecoder decoder;
 
     /** Decode an audio file into 16 kHz mono float PCM via the selected backend. */

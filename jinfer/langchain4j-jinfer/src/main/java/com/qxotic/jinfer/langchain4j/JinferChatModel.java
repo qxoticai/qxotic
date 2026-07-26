@@ -168,11 +168,9 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
 
     private JinferChatModel withPrefix(CachedPrompt merged) {
         framed(
-                () -> {
-                    engine.define(
-                            new Conversation(merged.messages(), merged.tools(), thinking, ""));
-                    return null;
-                });
+                () ->
+                        engine.define(
+                                new Conversation(merged.messages(), merged.tools(), thinking, "")));
         return new JinferChatModel(this, merged);
     }
 
@@ -407,6 +405,14 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         } catch (UnsupportedOperationException e) {
             throw new UnsupportedFeatureException(e.getMessage());
         }
+    }
+
+    private static void framed(Runnable op) {
+        framed(
+                () -> {
+                    op.run();
+                    return null;
+                });
     }
 
     /** One loaded GGUF per instance: a different {@code modelName} cannot be served. */

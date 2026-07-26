@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.models.gemma4;
 
 import com.qxotic.jinfer.chat.Part;
+import com.qxotic.jinfer.chat.ToolCallSyntax;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -253,14 +254,7 @@ final class Gemma4ToolSyntax {
     }
 
     private static boolean truthy(Object v) {
-        return switch (v) {
-            case null -> false;
-            case String s -> !s.isEmpty();
-            case Map<?, ?> m -> !m.isEmpty();
-            case List<?> l -> !l.isEmpty();
-            case Boolean b -> b;
-            default -> true;
-        };
+        return ToolCallSyntax.truthy(v);
     }
 
     // ---- parse side: a claimed <|tool_call> span's decoded text -----------------

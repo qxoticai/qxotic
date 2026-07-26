@@ -120,8 +120,7 @@ public final class MistralChatTemplate implements ChatTemplate {
         TurnTemplate.requireToolShapes(msgs);
         List<Tool> tools = conversation.tools();
 
-        Message sys =
-                !msgs.isEmpty() && msgs.get(0).role().equals(Role.SYSTEM) ? msgs.get(0) : null;
+        Message sys = Message.leadingSystem(msgs);
         TokenRuns runs = proto.fresh();
         runs.id(bos).id(systemPrompt);
         runs.text(sys != null ? sys.textOnly() : DEFAULT_SYSTEM);

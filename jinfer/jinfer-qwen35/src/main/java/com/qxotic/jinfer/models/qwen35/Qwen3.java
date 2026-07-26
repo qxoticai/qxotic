@@ -551,9 +551,10 @@ public final class Qwen3
             return batchCapacity;
         }
 
+        /** Recycles this allocation: cursor to 0; stale KV rows beyond it are attention-masked. */
         @Override
         public void reset() {
-            position = 0;
+            resumeAt(0);
         }
     }
 

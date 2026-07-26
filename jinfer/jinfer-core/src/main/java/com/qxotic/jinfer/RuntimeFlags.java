@@ -56,12 +56,6 @@ public final class RuntimeFlags {
             Long.getLong("jinfer.promptCacheMB", 2048L) * (1L << 20);
 
     /**
-     * Whether a vector-intrinsifying compiler runs the wide decode kernel without boxing: a native
-     * image (Graal AOT backend) or a JVM with the Graal JIT active (UseJVMCICompiler=true — read as
-     * the live flag, so it correctly reports {@code false} for a GraalVM build started with
-     * -XX:-UseJVMCICompiler, i.e. forced HotSpot C2). Plain OpenJDK/C2 -> false.
-     */
-    /**
      * Best-effort physical-core count for sizing the bandwidth-bound decode pool. Linux reports SMT
      * state via sysfs (SMT on => 2 hardware threads per core => logical/2; off => logical).
      * macOS/Windows have no such file, so we assume 2-way SMT on x86 and none on ARM (Apple Silicon
