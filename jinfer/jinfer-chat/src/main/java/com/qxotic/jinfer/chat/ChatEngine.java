@@ -46,6 +46,17 @@ public final class ChatEngine {
     // prompt's batch stream strictly extends one (all access under the generation lock)
     private final ArrayDeque<LiveSession> sessions = new ArrayDeque<>();
     private final int sessionCapacity;
+    // the streaming driver: at most ONE lazy platform thread, reused while streams keep coming,
+    // gone after an idle minute. One is enough - generations serialize on the engine lock anyway,
+    // and a fresh thread per request would just park extras on that lock
+    private final java.util.concurrent.ThreadPoolExecutor streamDriver =
+            new java.util.concurrent.ThreadPoolExecutor(
+                    0,
+                    1,
+                    60,
+                    java.util.concurrent.TimeUnit.SECONDS,
+                    new java.util.concurrent.LinkedBlockingQueue<>(),
+                    r -> new Thread(r, "jinfer-stream"));
     private int sessionHits;
     private volatile boolean closed;
 
@@ -110,6 +121,13 @@ public final class ChatEngine {
         } finally {
             lock.unlock();
         }
+        // no interrupt: an in-flight generation finishes; queued streams fail loudly at checkOpen
+        streamDriver.shutdown();
+    }
+
+    /** Runs a streaming generation on the engine's single lazy driver thread. */
+    public void stream(Runnable generation) {
+        streamDriver.execute(generation);
     }
 
     private void checkOpen() {

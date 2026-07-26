@@ -20,10 +20,10 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Streaming twin of {@link JinferChatModel}: one virtual thread per request drives the generation
- * and forwards the native {@link ReplyParser}'s two lanes to langchain4j's two streaming channels -
- * content fragments to {@code onPartialResponse} (with a cancellation handle), reasoning fragments
- * to {@code onPartialThinking}. Models without a native parser stream raw decoded text.
+ * Streaming twin of {@link JinferChatModel}: the engine's single lazy driver thread runs the
+ * generation and forwards the native {@link ReplyParser}'s two lanes to langchain4j's two streaming
+ * channels - content fragments to {@code onPartialResponse} (with a cancellation handle), reasoning
+ * fragments to {@code onPartialThinking}. Models without a native parser stream raw decoded text.
  *
  * <p>Contract details (the streaming compliance kit's): invalid requests throw synchronously from
  * {@code chat}; a cancelled handle stops generation and suppresses {@code onCompleteResponse};
@@ -59,20 +59,14 @@ public final class JinferStreamingChatModel implements StreamingChatModel {
         // the WHOLE preparation is synchronous: every request-shape rejection (unsupported
         // params, media the model cannot frame, remote URLs) throws raw from chat(), unwrapped
         JinferChatModel.Prepared p = JinferChatModel.prepare(model, request);
-        // a PLATFORM thread, deliberately: generation is CPU-bound and never yields (a virtual
-        // thread would pin its carrier for the whole run anyway), and jam's compute topology
-        // includes the driving thread - a virtual carrier changes work partitioning and thus
-        // FP reduction order, making streaming numerically diverge from blocking at near-ties
-        Thread.ofPlatform()
-                .name("jinfer-stream")
-                .start(
-                        () -> {
-                            try {
-                                stream(p, handler);
-                            } catch (Throwable t) {
-                                handler.onError(t);
-                            }
-                        });
+        model.engine.stream(
+                () -> {
+                    try {
+                        stream(p, handler);
+                    } catch (Throwable t) {
+                        handler.onError(t);
+                    }
+                });
     }
 
     private void stream(JinferChatModel.Prepared p, StreamingChatResponseHandler handler) {

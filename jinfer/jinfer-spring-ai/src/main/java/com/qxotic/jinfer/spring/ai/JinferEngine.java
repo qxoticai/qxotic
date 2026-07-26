@@ -73,6 +73,11 @@ final class JinferEngine {
     }
 
     /** Test seams (see {@link ChatEngine}). */
+    /** Runs a streaming generation on the engine's single lazy driver thread. */
+    void stream(Runnable generation) {
+        engine.stream(generation);
+    }
+
     String promptStats() {
         return engine.promptStats();
     }

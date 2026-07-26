@@ -323,8 +323,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     /**
      * Streams delta chunks (text only in each chunk's {@code AssistantMessage}; reasoning deltas
      * are flagged {@code isThought} per core's convention; metadata on the final chunk carries the
-     * finish reason, tool calls and usage). Generation runs on one virtual thread per request;
-     * cancellation aborts the pass silently.
+     * finish reason, tool calls and usage). Generation runs on the engine's single lazy driver
+     * thread; cancellation aborts the pass silently.
      */
     @Override
     public Flux<ChatResponse> stream(Prompt prompt) {
@@ -351,11 +351,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                                     view.getOrDefault(ObservationThreadLocalAccessor.KEY, null));
                     observation.start();
                     Flux<ChatResponse> events =
-                            Flux.create(
-                                    sink ->
-                                            Thread.ofVirtual()
-                                                    .name("jinfer-stream")
-                                                    .start(() -> streamInto(p, sink)));
+                            Flux.create(sink -> engine.stream(() -> streamInto(p, sink)));
                     return new MessageAggregator()
                             .aggregate(events, observationContext::setResponse)
                             .doOnError(observation::error)
