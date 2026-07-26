@@ -182,10 +182,6 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         return Mappings.response(engine.modelName, ai, p.promptTokens(), result, stopHit);
     }
 
-    JinferEngine engine() {
-        return engine;
-    }
-
     /**
      * Token counting over THIS model's tokenizer: exact on text, message counts summing visible
      * text (chat scaffold excluded - a few percent that consumer margins absorb). For {@code
@@ -212,8 +208,6 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             boolean cached,
             int[] parserSeed,
             List<String> stops) {}
-
-    private static final int[] NO_SEED = new int[0];
 
     /** Every request-shape rejection, synchronously (streaming calls this before its thread). */
     static void validate(JinferChatModel m, ChatRequest request) {
@@ -272,7 +266,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         Sampler sampler = sampler(m, p, think, maxTokens);
         // the parser pre-feed: the generation prompt's reply-grammar tail (a prompt-opened think
         // span); a forced call replaces it with the recipe's own (reply seeded into the call block)
-        int[] parserSeed = encoded.template().map(t -> t.replySeed(think)).orElse(NO_SEED);
+        int[] parserSeed = encoded.template().map(t -> t.replySeed(think)).orElse(new int[0]);
         if (required) {
             // the shared recipe: seed the family's call marker into the prompt, prefix-pin the
             // offered names + header epilogue, pre-feed the parser - one unsplittable value

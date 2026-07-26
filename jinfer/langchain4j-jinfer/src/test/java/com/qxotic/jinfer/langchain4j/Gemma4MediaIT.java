@@ -153,7 +153,7 @@ class Gemma4MediaIT {
         // second request through the view: the image's prefill positions restore from blocks
         ChatResponse second = scene.chat(UserMessage.from("Is the scene dark or bright?"));
         assertTrue(!second.aiMessage().text().isBlank());
-        String stats = model.engine().promptStats();
+        String stats = model.engine.promptStats();
         assertTrue(stats.contains("hits=") && !stats.contains("hits=0 "), stats);
     }
 
@@ -241,7 +241,7 @@ class Gemma4MediaIT {
 
     private static Object engineModel(JinferChatModel m) {
         // the loaded LanguageModel implements MultiModal for gemma4
-        return m.engine().loaded.model();
+        return m.engine.loaded.model();
     }
 
     /** A mono 16-bit PCM WAV of a sine tone, built in memory. */

@@ -140,7 +140,17 @@ final class JinferMappings {
     /** Metadata key carrying a reply's reasoning (Ollama convention); replayed on history. */
     static final String THINKING_KEY = "thinking";
 
+    /** Metadata key carrying the parsed reply itself - the round-trip law's vehicle. */
+    static final String REPLY_KEY = "jinfer.reply";
+
     private static Message assistant(AssistantMessage ai) {
+        // an UNMODIFIED echo of a reply this provider produced restores the parsed Message with
+        // its verbatim ids (byte-exact re-encode: what makes cachedSessions extension hits
+        // deterministic); an edited echo (or one from another provider) re-renders faithfully
+        if (ai.getMetadata().get(REPLY_KEY) instanceof Message reply
+                && toAssistantMessage(reply).equals(ai)) {
+            return reply;
+        }
         List<Part> parts = new ArrayList<>();
         // replay the reasoning the model produced earlier (stored by toAssistantMessage)
         if (ai.getMetadata().get(THINKING_KEY) instanceof String thinking && !thinking.isEmpty()) {
@@ -256,10 +266,14 @@ final class JinferMappings {
         // reasoning survives in metadata (Spring AI's AssistantMessage has no thinking slot) and
         // is replayed into the next request's assistant turn - the Ollama/OpenAI convention.
         // Blank-only reasoning (a prompt-opened span's scaffold newlines, e.g. the closed empty
-        // pair when thinking is off) is no reasoning at all.
+        // pair when thinking is off) is no reasoning at all. The parsed reply rides along whole,
+        // so an unmodified echo restores verbatim ids instead of re-tokenizing.
+        Map<String, Object> properties = new java.util.HashMap<>();
+        properties.put(REPLY_KEY, reply);
         if (!thinking.toString().isBlank()) {
-            b.properties(Map.of(THINKING_KEY, thinking.toString()));
+            properties.put(THINKING_KEY, thinking.toString());
         }
+        b.properties(properties);
         return b.build();
     }
 

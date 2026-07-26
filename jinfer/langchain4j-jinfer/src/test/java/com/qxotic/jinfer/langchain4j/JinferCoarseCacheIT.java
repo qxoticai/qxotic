@@ -54,7 +54,7 @@ class JinferCoarseCacheIT {
 
             // the view request restored the prefix from the tree (no cache-read usage field in
             // langchain4j's TokenUsage - the engine stats are the observable)
-            String stats = base.engine().promptStats();
+            String stats = base.engine.promptStats();
             assertTrue(stats.contains("hits=") && !stats.contains("hits=0 "), stats);
 
             // coarse: exactly ONE block per defined prompt (one residue, not one per turn)

@@ -55,6 +55,38 @@ class CachedPromptIT {
     }
 
     @Test
+    void cachedSessionsMultiTurn() {
+        // cachedSessions(1): turn 2 strictly extends turn 1's pooled state - possible only
+        // because the echoed reply restores its verbatim ids through REPLY_KEY metadata, so
+        // the re-encode is the exact generated tokens (the round-trip law, spring edition)
+        JinferChatModel warm =
+                JinferChatModel.builder()
+                        .modelPath(MODEL)
+                        .contextLength(4096)
+                        .maxTokens(128)
+                        .cachedSessions(1)
+                        .build();
+        try {
+            UserMessage first =
+                    new UserMessage("Remember the codeword PELICAN. Acknowledge briefly.");
+            ChatResponse w1 = warm.call(new Prompt(first));
+            Prompt secondTurn =
+                    new Prompt(
+                            first,
+                            w1.getResult().getOutput(),
+                            new UserMessage("What was the codeword? Answer with one word."));
+            ChatResponse hit = warm.call(secondTurn); // strictly extends the pooled turn-1 state
+            String stats = warm.engine.sessionStats();
+            assertTrue(stats.contains("hits=1"), "turn 2 must reuse turn 1's live state: " + stats);
+            assertTrue(
+                    hit.getResult().getOutput().getText().contains("PELICAN"),
+                    hit.getResult().getOutput().getText());
+        } finally {
+            warm.close();
+        }
+    }
+
+    @Test
     void byteIdentityWithUncached() {
         String question = "Where do I reset my password?";
         // uncached: prefix inlined into the request on the BASE model (which never uses the tree)

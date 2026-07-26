@@ -79,15 +79,15 @@ class CachedPromptIT {
                                 UserMessage.from("What was the codeword? Answer with one word."))
                         .build();
         ChatResponse hit = warm.chat(secondTurn); // strictly extends the pooled turn-1 state
-        String stats = warm.engine().sessionStats();
+        String stats = warm.engine.sessionStats();
         assertTrue(stats.contains("hits=1"), "turn 2 must reuse turn 1's live state: " + stats);
 
         ChatResponse cold = warm.chat(secondTurn); // pool grew past this prompt: full prefill
         assertEquals(cold.aiMessage().text(), hit.aiMessage().text());
         assertTrue(hit.aiMessage().text().contains("PELICAN"), hit.aiMessage().text());
         assertTrue(
-                warm.engine().sessionStats().contains("hits=1"),
-                "the repeat is NOT an extension and must miss: " + warm.engine().sessionStats());
+                warm.engine.sessionStats().contains("hits=1"),
+                "the repeat is NOT an extension and must miss: " + warm.engine.sessionStats());
     }
 
     @Test
@@ -109,7 +109,7 @@ class CachedPromptIT {
     void treeIsConsultedAndBaseStaysCold() {
         JinferChatModel support = base.withCachedPrompt(SUPPORT, List.of());
         support.chat(UserMessage.from("Hello?"));
-        String stats = base.engine().promptStats();
+        String stats = base.engine.promptStats();
         assertTrue(stats.contains("hits=") && !stats.contains("hits=0 "), stats);
     }
 
@@ -142,7 +142,7 @@ class CachedPromptIT {
                 base2.withCachedPrompt(
                         List.of(SystemMessage.from(common + "You handle SUPPORT tickets.")),
                         List.of());
-        String stats = base2.engine().promptStats();
+        String stats = base2.engine.promptStats();
         assertTrue(stats.contains("hits=") && !stats.contains("hits=0 "), stats);
         ChatResponse r = a2.chat(UserMessage.from("One word: ok?"));
         assertTrue(!r.aiMessage().text().isBlank());
