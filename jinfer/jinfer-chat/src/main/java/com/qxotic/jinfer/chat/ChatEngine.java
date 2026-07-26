@@ -302,13 +302,9 @@ public final class ChatEngine {
         if (sessionCapacity > 0 && sessions.size() >= sessionCapacity) {
             LiveSession oldest = sessions.peekFirst();
             if (oldest != null && oldest.state().contextCapacity() >= total) {
-                try {
-                    oldest.state().reset();
-                    sessions.removeFirst();
-                    return (S) oldest.state();
-                } catch (UnsupportedOperationException noResetPort) {
-                    // this family cannot recycle yet: fresh allocation, exactly as before
-                }
+                oldest.state().reset(); // mandatory on BaseState: every generative state recycles
+                sessions.removeFirst();
+                return (S) oldest.state();
             }
         }
         return Generator.stateFor(model, total);

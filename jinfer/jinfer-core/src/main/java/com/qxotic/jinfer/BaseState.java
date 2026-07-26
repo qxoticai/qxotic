@@ -29,6 +29,17 @@ public abstract class BaseState implements RuntimeState {
         position += rows;
     }
 
+    /**
+     * MANDATORY for every generative state (unlike the {@link RuntimeState} default): recycling a
+     * pooled allocation is only sound when the family has decided which of its buffers carry
+     * information across positions - cursor rewind suffices for pure attention (stale KV rows
+     * beyond the cursor are masked), recurrent carriers (conv rings, SSM state) must be zeroed.
+     * Abstract so the decision is made at compile time, never defaulted into silent corruption or
+     * silently-lost recycling.
+     */
+    @Override
+    public abstract void reset();
+
     @Override
     public final void resumeAt(int p) {
         position = p;
