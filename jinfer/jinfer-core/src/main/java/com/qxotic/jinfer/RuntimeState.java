@@ -6,13 +6,17 @@ package com.qxotic.jinfer;
  * caller-owned.
  */
 public interface RuntimeState {
-    int contextCapacity(); // KV ring this state allocated (≤ config.maxContextLength())
+    /** The KV ring this state allocated (at most the model's context length). */
+    int contextCapacity();
 
-    int batchCapacity(); // max rows (tokens) a single ingest into this state may carry
+    /** Max rows (tokens) a single ingest into this state may carry; prefill chunks by it. */
+    int batchCapacity();
 
-    int position(); // tokens ingested so far
+    /** Tokens ingested so far - the cursor the next ingest appends at. */
+    int position();
 
-    int outputCount(); // hidden states the last ingest retained (1 after LAST, n after ALL)
+    /** Hidden states the last ingest retained (1 after LAST, n after ALL). */
+    int outputCount();
 
     /**
      * Advances the cursor past an ingested batch: {@code rows} rows landed, retaining every row's

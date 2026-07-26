@@ -72,7 +72,6 @@ final class JinferEngine {
         engine.close();
     }
 
-    /** Test seams (see {@link ChatEngine}). */
     /** A sibling adapter over {@link ChatEngine#fork()}: shared model, fresh pipeline. */
     JinferEngine fork() {
         return new JinferEngine(engine.fork(), modelName);
@@ -89,10 +88,12 @@ final class JinferEngine {
         engine.stream(generation);
     }
 
+    /** Test seam: the prompt-tree stats string ({@code blocks=.. hits=..}). */
     String promptStats() {
         return engine.promptStats();
     }
 
+    /** Test seam: the session-pool stats string ({@code hits=..}). */
     String sessionStats() {
         return engine.sessionStats();
     }

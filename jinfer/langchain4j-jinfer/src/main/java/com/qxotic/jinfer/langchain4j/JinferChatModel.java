@@ -36,11 +36,11 @@ import java.util.List;
  * models or unframeable requests.
  *
  * <p>Concurrency contract: an instance is ONE serial inference pipeline - concurrent requests queue
- * fairly on it. For parallel pipelines, build several instances: same-model instances share weights
- * through the OS page cache (read-only mmap), so each extra instance costs only its own mutable
- * state (KV, caches, sessions), not another copy of the model. Footprint law: an instance holds its
- * weights plus at most {@code cachedSessions} full-context states - pooled states are recycled
- * (extended on a prefix hit, reset on a miss), never re-allocated per request.
+ * fairly on it. For parallel pipelines call {@code copy()}: siblings share the already-loaded model
+ * (zero reload, no extra weight memory) and each owns its own serial pipeline. Footprint: an
+ * instance holds its weights (shared across copies), at most {@code cachedSessions} full-context
+ * states (recycled - extended on a prefix hit, reset on a miss, never re-allocated per request),
+ * plus one KV block set per defined cached prompt (explicit and deliberately paid for).
  *
  * <p>Run with jinfer's JVM flags: {@code --enable-preview --add-modules jdk.incubator.vector
  * --enable-native-access=ALL-UNNAMED}.
@@ -422,6 +422,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         private long seed = 42;
         private Duration timeout;
 
+        /** The GGUF to load. Required. */
         public Builder modelPath(Path modelPath) {
             this.modelPath = modelPath;
             return this;
@@ -458,21 +459,29 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             return this;
         }
 
+        /** Sampling temperature; default 0 (greedy argmax). Per-request values override. */
         public Builder temperature(Double temperature) {
             this.temperature = temperature;
             return this;
         }
 
+        /** Nucleus sampling mass, effective only at temperature &gt; 0; default 0.95. */
         public Builder topP(Double topP) {
             this.topP = topP;
             return this;
         }
 
+        /**
+         * Completion budget; default unlimited (the context bounds it). Values below 16 also
+         * disable thinking - a think span cannot fit such a budget, and silently spending it on
+         * scaffold would return empty text.
+         */
         public Builder maxOutputTokens(Integer maxOutputTokens) {
             this.maxOutputTokens = maxOutputTokens;
             return this;
         }
 
+        /** langchain4j listeners; core dispatches onRequest/onResponse/onError around chat. */
         public Builder listeners(List<ChatModelListener> listeners) {
             this.listeners = listeners;
             return this;
@@ -487,17 +496,28 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             return this;
         }
 
-        /** The model's reasoning scaffold toggle (templates without one ignore it). Default on. */
+        /**
+         * The model's reasoning scaffold toggle (templates without one ignore it). Default on.
+         * Forced tool calls and completion budgets below 16 tokens disable it per request
+         * regardless - the reply is seeded into the call block, or the budget cannot fit a span.
+         */
         public Builder thinking(boolean thinking) {
             this.thinking = thinking;
             return this;
         }
 
+        /**
+         * RNG seed for temperature sampling; default 42. A per-request {@link
+         * JinferChatRequestParameters#seed} wins over this. Same seed does NOT guarantee
+         * byte-identical replay at temperature &gt; 0: the CPU backend's run-to-run FP jitter flips
+         * near-tie samples.
+         */
         public Builder seed(long seed) {
             this.seed = seed;
             return this;
         }
 
+        /** Wall-clock deadline per request; unset = none. Exceeding it finishes with LENGTH. */
         public Builder timeout(Duration timeout) {
             this.timeout = timeout;
             return this;

@@ -50,6 +50,11 @@ public final class Grammar {
 
     private Grammar() {}
 
+    /**
+     * The byte view of a vocabulary the compiler masks over: {@code bytes(id)} is what sampling id
+     * appends to the text. The seam that lets tests (and non-toknroll callers) compile grammars
+     * without a real tokenizer; specials must report EMPTY bytes (control, not content).
+     */
     public interface Vocab {
         int size();
 
@@ -95,6 +100,7 @@ public final class Grammar {
                 });
     }
 
+    /** Full RFC 8259 JSON over the tokenizer's vocabulary (whitespace-tolerant, ws capped). */
     public static Spec json(Tokenizer t) {
         return json(vocab(t));
     }
@@ -119,6 +125,10 @@ public final class Grammar {
         return cache(v).computeIfAbsent("\0jsonCompact", k -> build(JSON_COMPACT_GRAMMAR, v));
     }
 
+    /**
+     * Compiles a GBNF grammar (llama.cpp dialect) over the tokenizer's vocabulary. Specs cache per
+     * (source, vocabulary): repeated compiles of the same grammar are free.
+     */
     public static Spec of(String g, Tokenizer t) {
         return of(g, vocab(t));
     }
@@ -591,6 +601,11 @@ public final class Grammar {
 
     // ---- Cursor ------------------------------------------------------------
 
+    /**
+     * The mutable walk of one generation through a {@link Spec}: {@code maskLogits} restricts the
+     * next sample to admissible tokens, {@code advanceWith} consumes the chosen one. Single-use and
+     * single-threaded - obtain a fresh {@code spec.cursor()} per generation pass.
+     */
     public static final class Cursor {
         private final Spec spec;
         private List<int[]> ready;
@@ -604,6 +619,7 @@ public final class Grammar {
             }
         }
 
+        /** Rewinds to the start state - equivalent to a fresh {@code spec.cursor()}. */
         public void reset() {
             if (spec.cfg == null) return;
             ready = spec.start.ready();
@@ -713,6 +729,9 @@ public final class Grammar {
         return of(sb.toString(), v);
     }
 
+    /**
+     * Exactly one of {@code options}, byte-literal - the closed-label-set (classification) gate.
+     */
     public static Spec choice(Tokenizer t, String... options) {
         return choice(vocab(t), options);
     }
@@ -735,6 +754,11 @@ public final class Grammar {
         return of(Schema.toGbnf(schema), v);
     }
 
+    /**
+     * A grammar admitting exactly the JSON documents valid under {@code schema} (parsed JSON Schema
+     * map): types, required/optional properties, enums, nesting - no other keys, no other shapes.
+     * Whitespace bounded so a reluctant model cannot stall on it.
+     */
     public static Spec fromSchema(Map<String, Object> schema, Tokenizer t) {
         return fromSchema(schema, vocab(t));
     }

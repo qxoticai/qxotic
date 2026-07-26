@@ -140,7 +140,12 @@ final class JinferMappings {
     /** Metadata key carrying a reply's reasoning (Ollama convention); replayed on history. */
     static final String THINKING_KEY = "thinking";
 
-    /** Metadata key carrying the parsed reply itself - the round-trip law's vehicle. */
+    /**
+     * Metadata key carrying the parsed reply {@link Message} whole. The round-trip law: an
+     * UNMODIFIED assistant echo re-encodes to the exact tokens the model generated (verbatim ids),
+     * which is what makes {@code cachedSessions} extension hits deterministic; an edited echo fails
+     * the equality check and re-renders faithfully instead.
+     */
     static final String REPLY_KEY = "jinfer.reply";
 
     private static Message assistant(AssistantMessage ai) {

@@ -6,7 +6,9 @@ package com.qxotic.jinfer;
  * and the position ceiling (to bound state allocation). Nothing about tokenization itself.
  */
 public interface Config {
-    int vocabularySize(); // the model's token space (input embedding table)
+    /** the model's token space (input embedding table) */
+    int vocabularySize();
 
-    int contextLength(); // largest context a state may allocate; newState must not exceed it
+    /** largest context a state may allocate; newState must not exceed it */
+    int contextLength();
 }

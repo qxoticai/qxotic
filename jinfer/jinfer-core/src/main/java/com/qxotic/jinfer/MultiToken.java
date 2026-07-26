@@ -12,8 +12,9 @@ import java.util.OptionalInt;
  * verifies.
  */
 public interface MultiToken<S extends RuntimeState> {
-    OptionalInt
-            depth(); // empty ⇒ supported but no draft loaded; present ⇒ number of draft heads (≥ 1)
+    /** Empty = supported but no draft loaded; present = number of draft heads (at least 1). */
+    OptionalInt depth();
 
+    /** Draft logits for retained hidden state {@code output} from draft head {@code head}. */
     FloatTensor logits(S state, int output, int head);
 }

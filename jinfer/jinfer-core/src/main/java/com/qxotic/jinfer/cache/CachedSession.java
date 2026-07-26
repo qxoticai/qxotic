@@ -214,11 +214,6 @@ public final class CachedSession<S extends RuntimeState> {
     }
 
     /**
-     * The group minus its first {@code skip} positions - whole batches drop, a token batch at the
-     * seam is sliced. A hit strictly inside a media batch cannot happen (a media group is one
-     * block, and its content-hash fingerprints never collide with token ids).
-     */
-    /**
      * The batch list minus its first {@code skip} positions: whole batches drop, a token batch at
      * the seam is sliced. A seam strictly inside a media batch cannot happen when {@code skip} came
      * from a block-aligned resume (media groups commit and restore whole) - it throws loudly.

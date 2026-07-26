@@ -6,6 +6,10 @@ import com.qxotic.jinfer.*;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Loose-JSON coercions for request maps: each accessor states the expected shape and throws with
+ * the offending KEY on mismatch - endpoint errors name the field, not a cast site.
+ */
 public final class Values {
     private Values() {}
 

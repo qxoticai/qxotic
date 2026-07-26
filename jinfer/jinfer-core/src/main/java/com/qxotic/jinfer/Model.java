@@ -33,8 +33,8 @@ public interface Model<C extends Config, W, S extends RuntimeState> {
     /**
      * Scratch width {@link #newState(int)} allocates when the caller doesn't pick one: a prefill of
      * up to this many tokens ingests in a single batch; longer prompts are re-chunked by the
-     * caller. Defaults to 512; override with {@code -Djinfer.batchCapacity} (read at run time, JVM
-     * or native).
+     * caller. Defaults to {@link RuntimeFlags#BATCH_CAPACITY}; override with {@code
+     * -Djinfer.batchCapacity} (read at run time, JVM or native).
      */
     default S newState(int contextCapacity) {
         return newState(contextCapacity, RuntimeFlags.BATCH_CAPACITY);
