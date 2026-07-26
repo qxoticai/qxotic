@@ -52,6 +52,15 @@ public final class JinferEmbeddingModel implements EmbeddingModel {
         return l.model().newState(ctx);
     }
 
+    /**
+     * Token counting over THIS model's tokenizer: exact on text - for sizing splitter chunks
+     * against {@code contextLength}. The embedder adds {@code sequenceSuffix} tokens per embedded
+     * segment (one EOS on Qwen3) on top of the text count.
+     */
+    public dev.langchain4j.model.TokenCountEstimator tokenCountEstimator() {
+        return new Estimators(loaded.tokenizer());
+    }
+
     /** The embedding width - static from the port, never probed with a forward pass. */
     @Override
     public int dimension() {

@@ -181,6 +181,15 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         return engine;
     }
 
+    /**
+     * Token counting over THIS model's tokenizer: exact on text, message counts summing visible
+     * text (chat scaffold excluded - a few percent that consumer margins absorb). For {@code
+     * TokenWindowChatMemory} budgets and token-aware splitters.
+     */
+    public dev.langchain4j.model.TokenCountEstimator tokenCountEstimator() {
+        return new Estimators(engine.loaded.tokenizer());
+    }
+
     /** A streaming twin sharing this model's engine and cached prefix (the GGUF loads once). */
     public JinferStreamingChatModel streaming() {
         return new JinferStreamingChatModel(this);
