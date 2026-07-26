@@ -181,6 +181,20 @@ public final class ScoringBench {
         for (int i = 0; i < n; i++) {
             model.logits(state, state.outputCount() - 1, new int[] {yes, no});
         }
+        // depth sweep: does the tail cost scale with prefix depth (attention) or not (path)?
+        for (int reps : new int[] {4, 16}) {
+            state.reset();
+            for (int i = 0; i < reps; i++) {
+                model.ingest(state, frame);
+            }
+            int depth = state.position();
+            long td = System.nanoTime();
+            for (int i = 0; i < n; i++) {
+                state.resumeAt(depth);
+                model.ingest(state, tail);
+            }
+            System.out.printf("tail@%d %.1f ms%n", depth, (System.nanoTime() - td) / 1e6 / n);
+        }
         double logitsMs = (System.nanoTime() - t0) / 1e6 / n;
         System.out.printf(
                 "phases: frame(%d tok) %.1f ms   tail(%d tok @pos %d) %.1f ms   tail@0 %.1f ms  "
