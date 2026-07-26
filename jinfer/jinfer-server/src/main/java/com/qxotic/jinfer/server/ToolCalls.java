@@ -6,6 +6,7 @@ package com.qxotic.jinfer.server;
 import com.qxotic.jinfer.*;
 import com.qxotic.jinfer.chat.JsonCodec;
 import com.qxotic.jinfer.chat.Part;
+import com.qxotic.jinfer.chat.ToolCallSyntax;
 import com.qxotic.jinfer.chat.Values;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -141,23 +142,17 @@ final class ToolCalls {
      * JSON, anything else as the Pythonic form; malformed content yields no calls.
      */
     private static List<Map<String, Object>> parseToolCallBlock(String content) {
-        if (content.startsWith("{") || content.startsWith("[{")) {
-            try {
-                Object parsed = JsonCodec.parse(content);
-                List<?> list = parsed instanceof List<?> l ? l : List.of(parsed);
-                List<Map<String, Object>> calls = new ArrayList<>();
-                for (Object value : list) calls.add(Values.asObject(value, "tool call"));
-                return calls;
-            } catch (RuntimeException e) {
-                // fall through: '{' can also open a Pythonic dict literal
-            }
-        }
-        try {
-            return new PythonicCalls(content).parse();
-        } catch (RuntimeException e) {
-            System.err.println("unparseable tool call block: " + e.getMessage());
-            return List.of();
-        }
+        List<Map<String, Object>> calls = new ArrayList<>();
+        for (Part.ToolCall call : ToolCallSyntax.parseBlock(content)) calls.add(rawCall(call));
+        return calls;
+    }
+
+    /** The wire's raw {@code {name, arguments}} view of a parsed call. */
+    private static Map<String, Object> rawCall(Part.ToolCall call) {
+        Map<String, Object> raw = new LinkedHashMap<>();
+        raw.put("name", call.name());
+        raw.put("arguments", call.arguments());
+        return raw;
     }
 
     /**
@@ -233,19 +228,17 @@ final class ToolCalls {
      */
     private static List<Map<String, Object>> tryParseCallsAt(
             String text, int from, Set<String> knownTools) {
-        PythonicCalls parser = new PythonicCalls(text);
-        parser.i = from;
-        List<Map<String, Object>> calls;
+        List<Part.ToolCall> calls;
         try {
-            calls = parser.parseCallSequence();
+            calls = ToolCallSyntax.parseCallsAt(text, from);
         } catch (RuntimeException e) {
             return null; // not a well-formed call sequence at this offset
         }
         if (calls.isEmpty()) return null;
         List<Map<String, Object>> out = new ArrayList<>();
-        for (Map<String, Object> call : calls) {
-            if (!knownTools.contains(Values.stringValue(call.get("name"), ""))) return null;
-            Map<String, Object> normalized = normalizeToolCall(call, out.size());
+        for (Part.ToolCall call : calls) {
+            if (!knownTools.contains(call.name())) return null;
+            Map<String, Object> normalized = normalizeToolCall(rawCall(call), out.size());
             if (normalized != null) out.add(normalized);
         }
         return out.isEmpty() ? null : out;
@@ -302,223 +295,5 @@ final class ToolCalls {
         normalized.put("type", "function");
         normalized.put("function", function);
         return normalized;
-    }
-
-    /**
-     * Recursive-descent parser for the Pythonic tool-call syntax: {@code [name(k=v, ...), ...]} or
-     * a single bare call; values are Python literals — strings (either quote, backslash escapes),
-     * numbers, True/False/None, and nested lists/tuples/dicts — converted to their JSON-ready Java
-     * shapes. Positional arguments are skipped (matching SGLang); anything else malformed throws.
-     */
-    private static final class PythonicCalls {
-        private final String s;
-        private int i;
-
-        PythonicCalls(String s) {
-            this.s = s;
-        }
-
-        /**
-         * Parse a call sequence — either a bracketed list {@code [f(..), g(..)]} or a single bare
-         * call {@code f(..)} — starting at the current offset, leaving {@code i} just past the
-         * closing bracket (or the call). String contents are honored, so brackets, parens, or
-         * commas inside quoted argument values never terminate the scan early.
-         */
-        List<Map<String, Object>> parseCallSequence() {
-            List<Map<String, Object>> calls = new ArrayList<>();
-            skipWs();
-            if (peek() == '[') {
-                i++;
-                skipWs();
-                if (peek() == ']') {
-                    i++;
-                    return calls;
-                }
-                while (true) {
-                    calls.add(call());
-                    skipWs();
-                    char c = next();
-                    if (c == ']') break;
-                    if (c != ',') throw err("',' or ']'");
-                }
-            } else {
-                calls.add(call());
-            }
-            return calls;
-        }
-
-        /** Parse the entire input as exactly one call sequence; trailing junk is an error. */
-        List<Map<String, Object>> parse() {
-            List<Map<String, Object>> calls = parseCallSequence();
-            skipWs();
-            if (i < s.length()) throw err("end of input");
-            return calls;
-        }
-
-        private Map<String, Object> call() {
-            skipWs();
-            String name = identifier();
-            skipWs();
-            if (next() != '(') throw err("'('");
-            Map<String, Object> arguments = new LinkedHashMap<>();
-            skipWs();
-            if (peek() == ')') {
-                i++;
-            } else {
-                while (true) {
-                    skipWs();
-                    int mark = i;
-                    String key = identifier();
-                    skipWs();
-                    if (peek() == '=') {
-                        i++;
-                        arguments.put(key, literal());
-                    } else {
-                        i = mark;
-                        literal(); // positional argument: parse and skip (SGLang behavior)
-                    }
-                    skipWs();
-                    char c = next();
-                    if (c == ')') break;
-                    if (c != ',') throw err("',' or ')'");
-                }
-            }
-            Map<String, Object> call = new LinkedHashMap<>();
-            call.put("name", name);
-            call.put("arguments", arguments);
-            return call;
-        }
-
-        private Object literal() {
-            skipWs();
-            char c = peek();
-            if (c == '"' || c == '\'') return string();
-            if (c == '[') return sequence('[', ']');
-            if (c == '(') return sequence('(', ')'); // tuple -> JSON array
-            if (c == '{') return dict();
-            if (c == '-' || c == '+' || Character.isDigit(c) || c == '.') return number();
-            String word = identifier();
-            return switch (word) {
-                case "True", "true" -> Boolean.TRUE;
-                case "False", "false" -> Boolean.FALSE;
-                case "None", "null" -> null;
-                default -> throw err("literal");
-            };
-        }
-
-        private String string() {
-            char quote = next();
-            StringBuilder out = new StringBuilder();
-            while (true) {
-                if (i >= s.length()) throw err("closing quote");
-                char c = s.charAt(i++);
-                if (c == quote) return out.toString();
-                if (c == '\\' && i < s.length()) {
-                    char esc = s.charAt(i++);
-                    out.append(
-                            switch (esc) {
-                                case 'n' -> '\n';
-                                case 't' -> '\t';
-                                case 'r' -> '\r';
-                                case '0' -> '\0';
-                                default -> esc; // \' \" \\ and anything exotic pass through
-                            });
-                } else {
-                    out.append(c);
-                }
-            }
-        }
-
-        private Object number() {
-            int from = i;
-            if (peek() == '-' || peek() == '+') i++;
-            boolean floating = false;
-            while (i < s.length()) {
-                char c = s.charAt(i);
-                if (Character.isDigit(c)) i++;
-                else if (c == '.' || c == 'e' || c == 'E') {
-                    floating = true;
-                    i++;
-                } else if ((c == '-' || c == '+')
-                        && (s.charAt(i - 1) == 'e' || s.charAt(i - 1) == 'E')) i++;
-                else break;
-            }
-            String token = s.substring(from, i);
-            if (floating) return Double.parseDouble(token);
-            return Long.parseLong(token);
-        }
-
-        private List<Object> sequence(char open, char close) {
-            if (next() != open) throw err("'" + open + "'");
-            List<Object> out = new ArrayList<>();
-            skipWs();
-            if (peek() == close) {
-                i++;
-                return out;
-            }
-            while (true) {
-                out.add(literal());
-                skipWs();
-                char c = next();
-                if (c == close) return out;
-                if (c != ',') throw err("',' or '" + close + "'");
-                skipWs();
-                if (peek() == close) {
-                    i++;
-                    return out;
-                } // trailing comma (and 1-tuples)
-            }
-        }
-
-        private Map<String, Object> dict() {
-            if (next() != '{') throw err("'{'");
-            Map<String, Object> out = new LinkedHashMap<>();
-            skipWs();
-            if (peek() == '}') {
-                i++;
-                return out;
-            }
-            while (true) {
-                Object key = literal();
-                skipWs();
-                if (next() != ':') throw err("':'");
-                out.put(String.valueOf(key), literal());
-                skipWs();
-                char c = next();
-                if (c == '}') return out;
-                if (c != ',') throw err("',' or '}'");
-                skipWs();
-                if (peek() == '}') {
-                    i++;
-                    return out;
-                }
-            }
-        }
-
-        private String identifier() {
-            skipWs();
-            int from = i;
-            while (i < s.length() && isIdentifierPart(s.charAt(i))) i++;
-            if (i == from) throw err("identifier");
-            return s.substring(from, i);
-        }
-
-        private void skipWs() {
-            while (i < s.length() && Character.isWhitespace(s.charAt(i))) i++;
-        }
-
-        private char peek() {
-            return i < s.length() ? s.charAt(i) : '\0';
-        }
-
-        private char next() {
-            if (i >= s.length()) throw err("more input");
-            return s.charAt(i++);
-        }
-
-        private IllegalArgumentException err(String expected) {
-            return new IllegalArgumentException(
-                    "expected " + expected + " at offset " + i + " in: " + s);
-        }
     }
 }

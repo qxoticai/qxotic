@@ -1136,52 +1136,7 @@ public final class Grammar {
                     i++;
                     continue;
                 }
-                String inner = body.substring(i + 1, end);
-                boolean neg = inner.startsWith("^");
-                if (neg) inner = inner.substring(1);
-                List<Byte> chars = new ArrayList<>();
-                for (int jj = 0; jj < inner.length(); jj++) {
-                    byte ch;
-                    if (inner.charAt(jj) == '\\' && jj + 1 < inner.length()) {
-                        if (inner.charAt(jj + 1) == 'x' && jj + 3 < inner.length()) {
-                            ch = (byte) Integer.parseInt(inner.substring(jj + 2, jj + 4), 16);
-                            jj += 3;
-                        } else {
-                            ch = (byte) unescChar(inner.charAt(jj + 1));
-                            jj++;
-                        }
-                    } else {
-                        ch = (byte) inner.charAt(jj);
-                    }
-                    if (jj + 2 < inner.length() && inner.charAt(jj + 1) == '-') {
-                        int endIdx = jj + 2;
-                        byte endCh;
-                        // advance jj to the LAST char of the range-end token; the for-loop's jj++
-                        // then lands just past it (a relative jj += N here is off-by-one and would
-                        // re-read the end token's final char as a spurious extra member).
-                        if (inner.charAt(endIdx) == '\\' && endIdx + 1 < inner.length()) {
-                            if (inner.charAt(endIdx + 1) == 'x' && endIdx + 3 < inner.length()) {
-                                endCh =
-                                        (byte)
-                                                Integer.parseInt(
-                                                        inner.substring(endIdx + 2, endIdx + 4),
-                                                        16);
-                                jj = endIdx + 3;
-                            } else {
-                                endCh = (byte) unescChar(inner.charAt(endIdx + 1));
-                                jj = endIdx + 1;
-                            }
-                        } else {
-                            endCh = (byte) inner.charAt(endIdx);
-                            jj = endIdx;
-                        }
-                        for (int x = Byte.toUnsignedInt(ch); x <= Byte.toUnsignedInt(endCh); x++)
-                            chars.add((byte) x);
-                    } else {
-                        chars.add(ch);
-                    }
-                }
-                res.add(new Rule.Element.CharClass(chars, neg));
+                res.add(parseCharClass(body.substring(i + 1, end)));
                 i = end + 1;
                 i = applyMod(body, i, res);
             } else if (c == '.') {
@@ -1217,6 +1172,57 @@ public final class Grammar {
             } else i++;
         }
         return res;
+    }
+
+    /**
+     * The {@code [...]} char-class sub-parser: members, {@code a-z} ranges, {@code ^} negation, and
+     * the literal escapes incl. {@code \\xNN} - all at the BYTE level.
+     */
+    private static Rule.Element.CharClass parseCharClass(String inner) {
+        boolean neg = inner.startsWith("^");
+        if (neg) inner = inner.substring(1);
+        List<Byte> chars = new ArrayList<>();
+        for (int jj = 0; jj < inner.length(); jj++) {
+            byte ch;
+            if (inner.charAt(jj) == '\\' && jj + 1 < inner.length()) {
+                if (inner.charAt(jj + 1) == 'x' && jj + 3 < inner.length()) {
+                    ch = (byte) Integer.parseInt(inner.substring(jj + 2, jj + 4), 16);
+                    jj += 3;
+                } else {
+                    ch = (byte) unescChar(inner.charAt(jj + 1));
+                    jj++;
+                }
+            } else {
+                ch = (byte) inner.charAt(jj);
+            }
+            if (jj + 2 < inner.length() && inner.charAt(jj + 1) == '-') {
+                int endIdx = jj + 2;
+                byte endCh;
+                // advance jj to the LAST char of the range-end token; the for-loop's jj++
+                // then lands just past it (a relative jj += N here is off-by-one and would
+                // re-read the end token's final char as a spurious extra member).
+                if (inner.charAt(endIdx) == '\\' && endIdx + 1 < inner.length()) {
+                    if (inner.charAt(endIdx + 1) == 'x' && endIdx + 3 < inner.length()) {
+                        endCh =
+                                (byte)
+                                        Integer.parseInt(
+                                                inner.substring(endIdx + 2, endIdx + 4), 16);
+                        jj = endIdx + 3;
+                    } else {
+                        endCh = (byte) unescChar(inner.charAt(endIdx + 1));
+                        jj = endIdx + 1;
+                    }
+                } else {
+                    endCh = (byte) inner.charAt(endIdx);
+                    jj = endIdx;
+                }
+                for (int x = Byte.toUnsignedInt(ch); x <= Byte.toUnsignedInt(endCh); x++)
+                    chars.add((byte) x);
+            } else {
+                chars.add(ch);
+            }
+        }
+        return new Rule.Element.CharClass(chars, neg);
     }
 
     static int findMatchingBracket(String s, int start) {

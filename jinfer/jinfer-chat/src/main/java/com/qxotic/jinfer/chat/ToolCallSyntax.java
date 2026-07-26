@@ -48,6 +48,17 @@ public final class ToolCallSyntax {
     }
 
     /**
+     * Parse a pythonic call sequence starting EXACTLY at {@code from} in {@code text}, trailing
+     * content allowed (the bare-call scan's primitive: the server probes every plausible offset).
+     * Throws on anything that is not a well-formed call sequence at that offset.
+     */
+    public static List<Part.ToolCall> parseCallsAt(String text, int from) {
+        Pythonic parser = new Pythonic(text);
+        parser.i = from;
+        return parser.parseCallSequence();
+    }
+
+    /**
      * Render calls as the pythonic list body {@code name(k=v, ...), ...} (WITHOUT the surrounding
      * brackets or markers - the template adds those). The inverse of {@link #parseBlock}'s pythonic
      * branch, and the exact shape LFM2's {@code render_tool_calls} macro emits: string values are
