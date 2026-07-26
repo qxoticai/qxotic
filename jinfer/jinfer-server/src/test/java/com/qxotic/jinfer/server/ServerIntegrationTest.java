@@ -128,7 +128,6 @@ public final class ServerIntegrationTest {
                         false,
                         false,
                         false,
-                        List.of(warmFile.toString()),
                         false,
                         null,
                         false);
@@ -657,11 +656,12 @@ public final class ServerIntegrationTest {
     }
 
     /**
-     * --warm-prompt: the file was pre-ingested FULLY DENSE at startup, so chat requests using it as
-     * the system prompt resume token-exact at ANY divergence inside it: full match, truncation, and
-     * a mid-prompt word edit.
+     * Cross-request prompt-cache density: the first chat request ingests the shared prompt, and
+     * later requests using it as the system prompt resume token-exact at ANY divergence inside it -
+     * full match, truncation, and a mid-prompt word edit. (Historically framed as --warm-prompt,
+     * which was never implemented; the cache earns the same resumes per request.)
      */
-    private static void warmPromptInstant() throws Exception {
+    private static void sharedPromptResumesDense() throws Exception {
         String warm = Files.readString(warmFile);
         HttpResponse<String> full =
                 post(

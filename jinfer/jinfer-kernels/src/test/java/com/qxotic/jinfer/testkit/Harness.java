@@ -16,7 +16,6 @@ import com.qxotic.toknroll.Tokenizer;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
@@ -133,26 +132,6 @@ public final class Harness<S extends RuntimeState> {
     }
 
     // ---- shared shapes ----
-
-    @SafeVarargs
-    public static List<Batch> concat(List<Batch>... groups) {
-        List<Batch> out = new ArrayList<>();
-        for (List<Batch> g : groups) out.addAll(g);
-        return out;
-    }
-
-    public static long[] flatten(List<Batch> batches) {
-        int[] ids = Batch.tokenIds(batches);
-        long[] fp = new long[ids.length];
-        for (int i = 0; i < fp.length; i++) fp[i] = ids[i];
-        return fp;
-    }
-
-    public static long[] concatFp(long[] a, long[] b) {
-        long[] out = java.util.Arrays.copyOf(a, a.length + b.length);
-        System.arraycopy(b, 0, out, a.length, b.length);
-        return out;
-    }
 
     /** Long replies (e.g. Harmony analysis channels): show just the final stretch for logs. */
     public static String tail(String reply) {

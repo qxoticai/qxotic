@@ -1,25 +1,18 @@
 package com.qxotic.jinfer.cache;
 
-import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
-import java.nio.channels.FileChannel;
-import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
-import java.util.BitSet;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.Set;
-import java.util.zip.CRC32C;
 
 /**
  * Opaque payload storage for the prompt cache — a single-implementation seam so alternative
  * backends (in-memory arena, mmap pool, future network-attached store) can plug in without touching
  * cache logic.
  *
- * <p>Blob lifecycle: allocated → filled once → maybe validated → freed. Immutable after fill.
- * Single-threaded by design (only the generation worker).
+ * <p>Blob lifecycle: allocated → filled once → freed. Immutable after fill. Single-threaded by
+ * design (only the generation worker).
  */
 public interface CacheStore extends AutoCloseable {
 
@@ -34,17 +27,6 @@ public interface CacheStore extends AutoCloseable {
 
     @Override
     default void close() {}
-
-    /**
-     * Opaque integrity hook. Callers invoke this after filling a newly allocated blob (commit:
-     * stamps the checksum, returns true) and before reading a previously stored blob (verify).
-     * Returns false when the blob fails verification - the CALLER must then treat it as a miss
-     * (never restore the bytes) and {@link #free} it; the store itself does not reclaim, so a
-     * still-referenced blob can never alias a new allocation.
-     */
-    default boolean validate(MemorySegment blob) {
-        return true;
-    }
 
     /**
      * Default backend: one automatic arena per blob. GC owns the memory - {@link #free} drops the
@@ -84,146 +66,5 @@ public interface CacheStore extends AutoCloseable {
                 used = 0;
             }
         };
-    }
-
-    /**
-     * Block-pool backend backed by a memory-mapped file. Fixed-size blocks ({@code blockTokens} KV
-     * tokens each), stored contiguously. A CRC32C trailer at end-of-file provides per-block
-     * integrity without fragmenting the data region. Allocations under one block fall back to
-     * in-memory arenas.
-     */
-    static CacheStore mmap(Path file, long budgetBytes, int blockTokens, long kvBytesPerToken)
-            throws IOException {
-        return new BlockStore(file, budgetBytes, blockTokens, kvBytesPerToken);
-    }
-}
-
-final class BlockStore implements CacheStore {
-    private final Arena poolArena = Arena.ofShared();
-    private final MemorySegment pool;
-    private final long blockDataSize; // blockTokens * kvBytesPerToken
-    private final int numBlocks;
-    private final long crcOffset; // start of CRC trailer within the pool
-    private final BitSet usedBlocks;
-    private final CacheStore small; // for allocations under one block
-    private volatile long usedBytes;
-
-    private final CRC32C crc = new CRC32C();
-
-    BlockStore(Path file, long budgetBytes, int blockTokens, long kvBytesPerToken)
-            throws IOException {
-        this.blockDataSize = blockTokens * kvBytesPerToken;
-        long dataRegion = (budgetBytes / (blockDataSize + 4)) * blockDataSize;
-        this.numBlocks = Math.toIntExact(dataRegion / blockDataSize);
-        this.crcOffset = dataRegion;
-        this.usedBlocks = new BitSet(numBlocks);
-        this.small = CacheStore.inMemory();
-
-        long fileSize = crcOffset + (long) numBlocks * 4;
-        FileChannel fc =
-                FileChannel.open(
-                        file,
-                        StandardOpenOption.READ,
-                        StandardOpenOption.WRITE,
-                        StandardOpenOption.CREATE,
-                        StandardOpenOption.TRUNCATE_EXISTING);
-        this.pool = fc.map(FileChannel.MapMode.READ_WRITE, 0, fileSize, poolArena);
-        fc.close();
-    }
-
-    // ---- allocation ----
-
-    @Override
-    public MemorySegment allocate(long bytes) {
-        if (bytes >= blockDataSize) return allocKv(bytes);
-        return small.allocate(bytes);
-    }
-
-    private MemorySegment allocKv(long bytes) {
-        int needed = Math.toIntExact((bytes + blockDataSize - 1) / blockDataSize);
-        int start = allocContiguous(needed);
-        for (int i = start; i < start + needed; i++) usedBlocks.set(i);
-        usedBytes += needed * blockDataSize;
-        return pool.asSlice((long) start * blockDataSize, bytes);
-    }
-
-    private int allocContiguous(int needed) {
-        for (int i = 0; i <= numBlocks - needed; ) {
-            i = usedBlocks.nextClearBit(i);
-            if (i > numBlocks - needed) break;
-            int nextUsed = usedBlocks.nextSetBit(i);
-            if (nextUsed < 0 || nextUsed >= i + needed) return i;
-            i = nextUsed;
-        }
-        throw new OutOfMemoryError("block pool exhausted (" + numBlocks + " blocks)");
-    }
-
-    @Override
-    public void free(MemorySegment blob) {
-        if (inPool(blob)) {
-            long off = blob.address() - pool.address();
-            long bytes = blob.byteSize();
-            int start = Math.toIntExact(off / blockDataSize);
-            int blocks = Math.toIntExact((bytes + blockDataSize - 1) / blockDataSize);
-            for (int i = start; i < start + blocks; i++) {
-                if (usedBlocks.get(i)) {
-                    usedBlocks.clear(i);
-                    usedBytes -= blockDataSize;
-                    pool.set(ValueLayout.JAVA_INT_UNALIGNED, crcOffset + (long) i * 4, 0);
-                }
-            }
-        } else {
-            small.free(blob);
-        }
-    }
-
-    @Override
-    public long usedBytes() {
-        return usedBytes + small.usedBytes();
-    }
-
-    @Override
-    public void close() {
-        small.close();
-        pool.force(); // flush dirty pages before the unmap - the file is the artifact
-        poolArena.close();
-    }
-
-    // ---- integrity ----
-
-    @Override
-    public boolean validate(MemorySegment blob) {
-        if (blob == null || !inPool(blob)) return true;
-        long off = blob.address() - pool.address();
-        int start = Math.toIntExact(off / blockDataSize);
-        int blocks = Math.toIntExact((blob.byteSize() + blockDataSize - 1) / blockDataSize);
-        for (int b = 0; b < blocks; b++) {
-            int idx = start + b;
-            long crcSlot = crcOffset + (long) idx * 4;
-            int stored = pool.get(ValueLayout.JAVA_INT_UNALIGNED, crcSlot);
-            // CRC of the block's data range within the pool (not the blob slice)
-            int actual = crc32c((long) idx * blockDataSize, blockDataSize);
-            if (stored == 0) {
-                pool.set(ValueLayout.JAVA_INT_UNALIGNED, crcSlot, actual);
-            } else if (stored != actual) {
-                // report only: the caller treats this as a miss and frees the blob - reclaiming
-                // here would let a still-referenced blob alias a new allocation
-                System.err.println("[cache] CRC mismatch on block " + idx + " — discarding");
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private int crc32c(long offset, long len) {
-        crc.reset();
-        crc.update(
-                pool.asSlice(offset, len).asByteBuffer()); // direct buffer: intrinsified, zero-copy
-        return (int) crc.getValue();
-    }
-
-    private boolean inPool(MemorySegment blob) {
-        long addr = blob.address();
-        return addr >= pool.address() && addr < pool.address() + crcOffset;
     }
 }

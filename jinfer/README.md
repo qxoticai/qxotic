@@ -91,8 +91,7 @@ Supported GGUF dtypes: `F16` `BF16` `F32` `Q4_0` `Q4_1` `Q4_K` `Q5_K` `Q6_K` `Q8
   `avx256` on AVX2, `neon` on ARM. Override if you know better.
 - **JAM backend:** `jam.jar` on the classpath routes Q8_0 GEMM through native assembly — no config, no
   API change.
-- **Flash attention:** on by default (`-Djinfer.flashAttention=false` to turn it off); wants the inline
-  hints in `$JAVA_FLAGS`.
+- **Flash attention:** always on; wants the inline hints in `$JAVA_FLAGS`.
 - **GraalVM 25+** recommended — best JIT and Native Image Vector API support.
 
 ---

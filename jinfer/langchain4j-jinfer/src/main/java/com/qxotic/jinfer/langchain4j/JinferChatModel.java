@@ -148,14 +148,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         if (tools != null) {
             welded.addAll(Mappings.toTools(tools));
         }
-        CachedPrompt merged = new CachedPrompt(List.copyOf(messages), List.copyOf(welded));
-        framed(
-                () -> {
-                    engine.define(
-                            new Conversation(merged.messages(), merged.tools(), thinking, ""));
-                    return null;
-                });
-        return new JinferChatModel(this, merged);
+        return withPrefix(new CachedPrompt(List.copyOf(messages), List.copyOf(welded)));
     }
 
     /**

@@ -169,14 +169,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         if (tools != null) {
             welded.addAll(JinferMappings.toTools(tools));
         }
-        CachedPrompt merged = new CachedPrompt(List.copyOf(messages), List.copyOf(welded));
-        engine.define(
-                new Conversation(
-                        merged.messages(),
-                        merged.tools(),
-                        defaultOptions.getThinking() != Boolean.FALSE,
-                        ""));
-        return new JinferChatModel(this, merged);
+        return withPrefix(new CachedPrompt(List.copyOf(messages), List.copyOf(welded)));
     }
 
     /**
@@ -271,20 +264,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                                                 ? List.of()
                                                 : JinferMappings.toToolMaps(callbacks));
 
-        Sampler sampler =
-                RequestPolicy.sampler(
-                        engine.loaded(),
-                        options.getTemperature() == null
-                                ? 0.0f
-                                : options.getTemperature().floatValue(),
-                        options.getTopP() == null ? 0.95f : options.getTopP().floatValue(),
-                        options.getSeed() == null ? 42 : options.getSeed(),
-                        think,
-                        maxTokens,
-                        null);
-        if (options.getOutputSchema() != null) {
-            sampler = withSchemaGrammar(sampler, think, options.getOutputSchema());
-        }
+        Sampler sampler = sampler(options, think, maxTokens);
 
         int promptTokens = encoded.prompt().stream().mapToInt(Batch::count).sum();
         long timeoutNanos = options.getTimeout() == null ? 0 : options.getTimeout().toNanos();
@@ -494,6 +474,24 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
      * through unconsumed. The forced token on grammar dead-ends is one of the model's real stop
      * tokens. Specs are cached per (schema, vocab), so repeated schemas reuse the compiled masks.
      */
+    /** The request's sampling stack via the shared policy, plus schema-grammar when asked. */
+    private Sampler sampler(JinferChatOptions options, boolean think, int maxTokens) {
+        Sampler sampler =
+                RequestPolicy.sampler(
+                        engine.loaded(),
+                        options.getTemperature() == null
+                                ? 0.0f
+                                : options.getTemperature().floatValue(),
+                        options.getTopP() == null ? 0.95f : options.getTopP().floatValue(),
+                        options.getSeed() == null ? 42 : options.getSeed(),
+                        think,
+                        maxTokens,
+                        null);
+        return options.getOutputSchema() == null
+                ? sampler
+                : withSchemaGrammar(sampler, think, options.getOutputSchema());
+    }
+
     private Sampler withSchemaGrammar(Sampler sampler, boolean think, String outputSchema) {
         @SuppressWarnings("unchecked")
         Map<String, Object> schemaMap = (Map<String, Object>) JsonCodec.parse(outputSchema);

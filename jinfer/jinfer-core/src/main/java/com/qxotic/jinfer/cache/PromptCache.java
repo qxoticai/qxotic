@@ -211,11 +211,9 @@ public final class PromptCache<S extends RuntimeState> {
             for (int i = chainScratch.size() - 1; i >= 0; i--) {
                 Block b = chainScratch.get(i);
                 boolean valid =
-                        b.frozen
-                                ? b.frozenVerified
-                                        || (b.frozenVerified =
-                                                FrozenBlocks.crc32c(b.mem) == b.frozenCrc)
-                                : store.validate(b.mem);
+                        !b.frozen
+                                || b.frozenVerified
+                                || (b.frozenVerified = FrozenBlocks.crc32c(b.mem) == b.frozenCrc);
                 if (!valid) { // failed verification = a miss, never restored
                     discard(b); // the block and everything chained on it
                     chainScratch.clear();
@@ -262,7 +260,6 @@ public final class PromptCache<S extends RuntimeState> {
         }
         MemorySegment mem = store.allocate(bytes);
         codec.save(state, tip.to, to, mem);
-        store.validate(mem);
         Block block = new Block(key, tip, tip.to, to, mem);
         blocks.put(key, block);
         freshBlocks.add(block); // creation order is parents-first: a tip precedes its children

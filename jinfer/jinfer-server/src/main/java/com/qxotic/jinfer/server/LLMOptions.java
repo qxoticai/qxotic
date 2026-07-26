@@ -2,7 +2,6 @@ package com.qxotic.jinfer.server;
 
 import com.qxotic.jinfer.*;
 import java.nio.file.Path;
-import java.util.List;
 import java.util.Locale;
 
 public record LLMOptions(
@@ -25,7 +24,6 @@ public record LLMOptions(
         boolean colors,
         boolean keepPastThinking,
         boolean rawPrompt,
-        List<String> warmPrompts,
         boolean noGrammar,
         Path promptCache,
         boolean promptCacheReadOnly) {

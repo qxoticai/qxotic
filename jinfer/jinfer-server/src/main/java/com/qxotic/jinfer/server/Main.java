@@ -278,13 +278,6 @@ public class Main {
         out.println(
                 "  --cache-ro <file>             instruct: like --cache but read-only - serves"
                         + " matching prefixes, never writes");
-        out.println(
-                "  --warm-prompt <file>          server: pre-ingest the file into the prompt cache"
-                        + " (fully");
-        out.println(
-                "                                dense - requests diverging anywhere inside it"
-                        + " resume");
-        out.println("                                token-exact); repeatable");
         out.println();
         out.println("Interactive commands:");
         out.println("  /quit, /exit                  exit the chat");
@@ -326,7 +319,6 @@ public class Main {
         boolean noGrammar = false;
         Path promptCache = null;
         boolean promptCacheReadOnly = false;
-        List<String> warmPrompts = new ArrayList<>();
 
         for (int i = 0; i < args.length; i++) {
             String optionName = args[i];
@@ -371,7 +363,6 @@ public class Main {
                         case "--keep-past-thinking" ->
                                 keepPastThinking =
                                         LLMOptions.parseBooleanOption(optionName, nextArg);
-                        case "--warm-prompt" -> warmPrompts.add(nextArg);
                         case "--cache" -> promptCache = Path.of(nextArg);
                         case "--cache-ro" -> {
                             promptCache = Path.of(nextArg);
@@ -421,7 +412,6 @@ public class Main {
                 color,
                 keepPastThinking,
                 rawPrompt,
-                List.copyOf(warmPrompts),
                 noGrammar,
                 promptCache,
                 promptCacheReadOnly);

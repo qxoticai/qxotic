@@ -64,9 +64,6 @@ final class Generation {
         this.stopTokens = model.stopTokens();
         this.promptCache = RuntimeFlags.PROMPT_CACHE ? buildCache(model) : null;
         this.sessionPool = promptCache != null ? new SessionPool<>(RuntimeFlags.SESSIONS) : null;
-        if (!options.warmPrompts().isEmpty()) {
-            System.err.println("warm-prompt ignored: startup warming is not implemented yet");
-        }
     }
 
     private static <S extends RuntimeState> PromptCache<S> buildCache(LoadedModel<S> m) {
