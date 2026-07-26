@@ -127,8 +127,10 @@ public final class Gemma4MultimodalCacheRun {
         a.ingest(batches);
         double ingestMs = (System.nanoTime() - t1) / 1e6;
         int turnPositions = a.length(); // the stream up to the turn end == positions(batches)
-        double fullTtft = encodeMs + ingestMs + firstTokenMs(a);
-        String reply = decode(a, 16);
+        // the ingested stream, recorded caller-side: the cold-resume check replays it below
+        List<Batch> streamA = new ArrayList<>(batches);
+        double fullTtft = encodeMs + ingestMs + firstTokenMs(a, streamA);
+        String reply = decode(a, 16, streamA);
         System.out.printf("reply: %s%n", reply.strip());
         int mediaRows = mediaRows(batches);
         check(mediaRows > 0, name + ": media block present (" + mediaRows + " rows)");
@@ -141,7 +143,7 @@ public final class Gemma4MultimodalCacheRun {
         // -- cold resume: everything restored, byte-identical through the codec --
         int all = a.length();
         CachedSession<Gemma4.State> b =
-                CachedSession.resume(model, cache, model.newState(4096, 512), a);
+                CachedSession.resume(model, cache, model.newState(4096, 512), streamA);
         check(
                 b.position() == all,
                 name
@@ -296,21 +298,36 @@ public final class Gemma4MultimodalCacheRun {
 
     /** genPrompt ingest + first argmax on the session. */
     static double firstTokenMs(CachedSession<Gemma4.State> s) {
+        return firstTokenMs(s, null);
+    }
+
+    /** As above; {@code record} (when non-null) collects the ingested batches for replay. */
+    static double firstTokenMs(CachedSession<Gemma4.State> s, List<Batch> record) {
         long t = System.nanoTime();
-        s.ingest(template.generationPrompt(true));
+        List<Batch> gen = template.generationPrompt(true);
+        s.ingest(gen);
+        if (record != null) record.addAll(gen);
         model.logits(s.state()).argmax();
         return (System.nanoTime() - t) / 1e6;
     }
 
     static String decode(CachedSession<Gemma4.State> s, int maxTokens) {
+        return decode(s, maxTokens, null);
+    }
+
+    /** As above; {@code record} (when non-null) collects the ingested batches for replay. */
+    static String decode(CachedSession<Gemma4.State> s, int maxTokens, List<Batch> record) {
         StringBuilder out = new StringBuilder();
         int tok = model.logits(s.state()).argmax();
         for (int n = 0; n < maxTokens && !stops.contains(tok); n++) {
             out.append(model.tokenizer().decode(new int[] {tok}));
             s.step(tok);
+            if (record != null) record.add(Batch.prefill(new int[] {tok}));
             tok = model.logits(s.state()).argmax();
         }
-        s.ingest(template.closeTurn());
+        List<Batch> close = template.closeTurn();
+        s.ingest(close);
+        if (record != null) record.addAll(close);
         return out.toString();
     }
 

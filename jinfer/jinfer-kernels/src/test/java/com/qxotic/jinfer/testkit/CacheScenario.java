@@ -116,7 +116,12 @@ public final class CacheScenario<S extends RuntimeState> {
         int[] mutated = shortHist.clone();
         mutated[mutated.length - 1] = -1;
         CachedSession<S> d =
-                CachedSession.resume(h.model.model(), cache, h.newState(), mutated, mutated.length);
+                CachedSession.resume(
+                        h.model.model(),
+                        cache,
+                        h.newState(),
+                        List.of(Batch.prefill(mutated)),
+                        mutated.length);
         h.check(
                 d.position() > 0 && d.position() < shortHist.length,
                 "divergent tail resumes a shorter prefix ("
@@ -159,7 +164,12 @@ public final class CacheScenario<S extends RuntimeState> {
             PromptCache<S> cache, String name, int[] history, S liveState, Message probe) {
         long t0 = System.nanoTime();
         CachedSession<S> cached =
-                CachedSession.resume(h.model.model(), cache, h.newState(), history, history.length);
+                CachedSession.resume(
+                        h.model.model(),
+                        cache,
+                        h.newState(),
+                        List.of(Batch.prefill(history)),
+                        history.length);
         double resumeMs = (System.nanoTime() - t0) / 1e6;
         h.check(
                 cached.position() == history.length,

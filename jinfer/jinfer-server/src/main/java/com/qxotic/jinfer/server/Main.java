@@ -567,7 +567,11 @@ public class Main {
                                 base);
                 var session =
                         com.qxotic.jinfer.cache.CachedSession.resume(
-                                model.model(), cache, state, ids, ids.length - 1);
+                                model.model(),
+                                cache,
+                                state,
+                                java.util.List.of(Batch.prefill(ids)),
+                                ids.length - 1);
                 int restored = session.position();
                 if (restored == ids.length - 1) {
                     System.err.printf(

@@ -29,12 +29,10 @@ import java.util.List;
  * re-fingerprinting an echoed conversation needs either the retained stream ({@link
  * #fingerprints()}, the dual view) or a re-encode — servers keep the stream.
  *
- * <p>Start here: {@code start(model, cache, state)} opens a brand-new conversation; {@code
- * resume(model, cache, state, prompt)} serves a prompt against the cache (longest cached prefix
- * restored, caller ingests the tail); the {@code maxPositions} variants resume at most that many
- * positions - pass {@code total - 1} to leave the final block re-ingested so the cursor holds fresh
- * logits. The {@code int[]} overloads are the token-only convenience of the {@code List<Batch>}
- * ones (which media prompts require).
+ * <p>{@code start} opens a brand-new conversation (ingest incrementally); {@code resume(model,
+ * cache, state, prompt)} serves a prompt against the cache (longest cached prefix restored, the
+ * caller ingests the tail) - {@code maxPositions} (pass {@code total - 1}) leaves the final block
+ * re-ingested so the cursor holds fresh logits.
  */
 public final class CachedSession<S extends RuntimeState> {
 
@@ -92,16 +90,6 @@ public final class CachedSession<S extends RuntimeState> {
     }
 
     /**
-     * A fresh session resuming another session's exact ingested stream - serve a recorded
-     * conversation again on a cold state (the cache-soundness scenario).
-     */
-    public static <S extends RuntimeState> CachedSession<S> resume(
-            Model<?, ?, S> model, PromptCache<S> cache, S state, CachedSession<?> history) {
-        long[] fp = history.fingerprints();
-        return resume(model, cache, state, fp, fp.length);
-    }
-
-    /**
      * A fresh session on a fresh state, resuming the longest cached prefix of {@code expected}
      * (empty for a brand-new conversation).
      */
@@ -125,12 +113,6 @@ public final class CachedSession<S extends RuntimeState> {
                 cache.resume(expected, Math.min(expected.length, maxPositions), state);
         long[] fp = Arrays.copyOf(expected, Math.max(256, expected.length));
         return new CachedSession<>(model, state, cache, tip, fp, tip.to);
-    }
-
-    /** As {@link #resume(Model, PromptCache, Object, long[], int)} for a plain token-id prompt. */
-    public static <S extends RuntimeState> CachedSession<S> resume(
-            Model<?, ?, S> model, PromptCache<S> cache, S state, int[] tokens, int maxPositions) {
-        return resume(model, cache, state, fingerprints(tokens), maxPositions);
     }
 
     /** Token ids widened to the fingerprint stream they are (media rows fingerprint by hash). */

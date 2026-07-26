@@ -135,7 +135,7 @@ public final class TtftBench {
                             model.model(),
                             cache,
                             model.model().newState(4096, 512),
-                            history,
+                            List.of(Batch.prefill(history)),
                             history.length);
             if (s.position() != history.length)
                 throw new IllegalStateException("live resume " + s.position());
@@ -157,7 +157,12 @@ public final class TtftBench {
             S s2 = model.model().newState(4096, 512);
             long t1 = System.nanoTime();
             CachedSession<S> b2 =
-                    CachedSession.resume(model.model(), cache, s2, history, history.length);
+                    CachedSession.resume(
+                            model.model(),
+                            cache,
+                            s2,
+                            List.of(Batch.prefill(history)),
+                            history.length);
             if (b2.position() != history.length)
                 throw new IllegalStateException("resume " + b2.position());
             b2.ingest(followUp);
