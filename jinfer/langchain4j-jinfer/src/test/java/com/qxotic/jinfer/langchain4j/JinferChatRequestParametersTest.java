@@ -88,6 +88,17 @@ class JinferChatRequestParametersTest {
     }
 
     @Test
+    void requestGrammarReplacesDefaultsGrammar() {
+        JinferChatRequestParameters defaults =
+                JinferChatRequestParameters.builder().grammar(YES_NO).build();
+        JinferChatRequestParameters request =
+                JinferChatRequestParameters.builder().grammar("root ::= \"ok\"").build();
+        JinferChatRequestParameters merged =
+                (JinferChatRequestParameters) defaults.overrideWith(request);
+        assertEquals("root ::= \"ok\"", merged.grammar(), "request grammar must win");
+    }
+
+    @Test
     void equalsCoversTheJinferFields() {
         JinferChatRequestParameters a =
                 JinferChatRequestParameters.builder().grammar(YES_NO).seed(1L).build();

@@ -11,6 +11,7 @@ import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.exception.UnsupportedFeatureException;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.request.ResponseFormat;
+import java.util.List;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -125,6 +126,174 @@ class JinferRequestParametersIT {
                 "grammar + JSON response format");
         // and the params object alone is inert - conflicts reject at chat time, loudly
         assertEquals("root ::= \"x\"", grammarParams.grammar());
+    }
+
+    @Test
+    void classificationIntoAClosedLabelSet() {
+        String labels = "root ::= \"billing\" | \"shipping\" | \"warranty\" | \"other\"";
+        String text =
+                model.chat(
+                                ChatRequest.builder()
+                                        .messages(
+                                                UserMessage.from(
+                                                        "Classify this support ticket: 'my parcel"
+                                                                + " never arrived'. Answer with the"
+                                                                + " category only."))
+                                        .parameters(
+                                                JinferChatRequestParameters.builder()
+                                                        .grammar(labels)
+                                                        .build())
+                                        .build())
+                        .aiMessage()
+                        .text();
+        assertTrue(
+                List.of("billing", "shipping", "warranty", "other").contains(text),
+                "label: '" + text + "'");
+    }
+
+    @Test
+    void flatJsonObjectGrammarForbidsNesting() {
+        // a SHALLOW object by construction: string values cannot contain quotes, braces or
+        // brackets, so no nested {} or [] can ever appear - the shape is proven, not prompted
+        String flatJson =
+                "root ::= \"{\" ws \"\\\"label\\\"\" ws \":\" ws str ws \",\" ws"
+                        + " \"\\\"confidence\\\"\" ws \":\" ws num ws \"}\"\n"
+                        + "str ::= \"\\\"\" [a-zA-Z0-9 _-]* \"\\\"\"\n"
+                        + "num ::= [0-9] | [0-9] \".\" [0-9] [0-9]?\n"
+                        + "ws ::= \" \"?";
+        String text =
+                model.chat(
+                                ChatRequest.builder()
+                                        .messages(
+                                                UserMessage.from(
+                                                        "Classify 'the app crashes on startup' and"
+                                                            + " give your confidence from 0 to 1 as"
+                                                            + " JSON with fields label and"
+                                                            + " confidence."))
+                                        .parameters(
+                                                JinferChatRequestParameters.builder()
+                                                        .grammar(flatJson)
+                                                        .build())
+                                        .build())
+                        .aiMessage()
+                        .text();
+        Object parsed = com.qxotic.jinfer.chat.JsonCodec.parse(text); // grammar guarantees JSON
+        assertTrue(parsed instanceof java.util.Map<?, ?>, text);
+        java.util.Map<?, ?> map = (java.util.Map<?, ?>) parsed;
+        assertTrue(map.get("label") instanceof String, "label: " + text);
+        assertTrue(map.get("confidence") instanceof Number, "confidence: " + text);
+        assertTrue(
+                !text.contains("[") && text.indexOf('{', 1) < 0, "flat by construction: " + text);
+    }
+
+    @Test
+    void digitsOnlyExtraction() {
+        String text =
+                model.chat(
+                                ChatRequest.builder()
+                                        .messages(
+                                                UserMessage.from(
+                                                        "How many legs does a spider have? Answer"
+                                                                + " with the number only."))
+                                        .parameters(
+                                                JinferChatRequestParameters.builder()
+                                                        .grammar("root ::= [0-9] [0-9]?")
+                                                        .build())
+                                        .build())
+                        .aiMessage()
+                        .text();
+        int n = Integer.parseInt(text); // cannot throw: digits by construction
+        assertTrue(n > 0, "legs: " + n);
+    }
+
+    @Test
+    void multiTokenGrammarComposedWithSeedReplays() {
+        String semver =
+                "root ::= level \" \" num \".\" num \".\" num\n"
+                        + "level ::= \"major\" | \"minor\" | \"patch\"\n"
+                        + "num ::= [0-9] [0-9]?";
+        ChatRequest req =
+                ChatRequest.builder()
+                        .messages(
+                                UserMessage.from(
+                                        "Current version 2.14.3. A public API was removed. Propose"
+                                                + " the version bump."))
+                        .parameters(
+                                JinferChatRequestParameters.builder()
+                                        .grammar(semver)
+                                        .seed(99L)
+                                        .build())
+                        .build();
+        String a = model.chat(req).aiMessage().text();
+        String b = model.chat(req).aiMessage().text();
+        assertTrue(a.matches("(major|minor|patch) \\d{1,2}\\.\\d{1,2}\\.\\d{1,2}"), a);
+        assertEquals(a, b, "grammar + seed must replay identically");
+    }
+
+    @Test
+    void streamingHonorsTheGrammar() throws Exception {
+        var streaming = model.streaming();
+        var done =
+                new java.util.concurrent.CompletableFuture<
+                        dev.langchain4j.model.chat.response.ChatResponse>();
+        StringBuilder partials = new StringBuilder();
+        streaming.chat(
+                ChatRequest.builder()
+                        .messages(UserMessage.from("Is water wet? Answer strictly yes or no."))
+                        .parameters(
+                                JinferChatRequestParameters.builder()
+                                        .grammar("root ::= \"yes\" | \"no\"")
+                                        .build())
+                        .build(),
+                new dev.langchain4j.model.chat.response.StreamingChatResponseHandler() {
+                    @Override
+                    public void onPartialResponse(String partialResponse) {
+                        partials.append(partialResponse);
+                    }
+
+                    @Override
+                    public void onCompleteResponse(
+                            dev.langchain4j.model.chat.response.ChatResponse response) {
+                        done.complete(response);
+                    }
+
+                    @Override
+                    public void onError(Throwable error) {
+                        done.completeExceptionally(error);
+                    }
+                });
+        var response = done.get(60, java.util.concurrent.TimeUnit.SECONDS);
+        String text = response.aiMessage().text();
+        assertTrue(text.equals("yes") || text.equals("no"), "streamed: '" + text + "'");
+        assertEquals(text, partials.toString(), "partials must concatenate to the final text");
+    }
+
+    @Test
+    void streamingSameSeedMatchesBlocking() throws Exception {
+        String blocking = model.chat(creative(4242L)).aiMessage().text();
+        var done =
+                new java.util.concurrent.CompletableFuture<
+                        dev.langchain4j.model.chat.response.ChatResponse>();
+        model.streaming()
+                .chat(
+                        creative(4242L),
+                        new dev.langchain4j.model.chat.response.StreamingChatResponseHandler() {
+                            @Override
+                            public void onPartialResponse(String partialResponse) {}
+
+                            @Override
+                            public void onCompleteResponse(
+                                    dev.langchain4j.model.chat.response.ChatResponse response) {
+                                done.complete(response);
+                            }
+
+                            @Override
+                            public void onError(Throwable error) {
+                                done.completeExceptionally(error);
+                            }
+                        });
+        String streamed = done.get(60, java.util.concurrent.TimeUnit.SECONDS).aiMessage().text();
+        assertEquals(blocking, streamed, "same seed: streaming and blocking must agree");
     }
 
     private static ChatRequest creative(long seed) {
