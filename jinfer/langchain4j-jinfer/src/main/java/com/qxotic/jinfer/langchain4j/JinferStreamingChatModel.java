@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.langchain4j;
 
 import com.qxotic.jinfer.chat.ReplyParser;
+import com.qxotic.jinfer.chat.StopSequences;
 import com.qxotic.jinfer.llm.Generator;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.model.chat.StreamingChatModel;

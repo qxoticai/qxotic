@@ -9,6 +9,7 @@ import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.PendingUtf8;
 import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Role;
+import com.qxotic.jinfer.chat.StopSequences;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.Grammar;

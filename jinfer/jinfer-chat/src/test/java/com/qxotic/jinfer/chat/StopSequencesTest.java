@@ -1,4 +1,4 @@
-package com.qxotic.jinfer.spring.ai;
+package com.qxotic.jinfer.chat;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;

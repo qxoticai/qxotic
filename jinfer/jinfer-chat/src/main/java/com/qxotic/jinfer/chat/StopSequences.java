@@ -1,4 +1,4 @@
-package com.qxotic.jinfer.langchain4j;
+package com.qxotic.jinfer.chat;
 
 import java.util.List;
 
@@ -9,7 +9,7 @@ import java.util.List;
  * starts before already-emitted text, so streamed partials always concatenate to {@link
  * #beforeCut}.
  */
-final class StopSequences {
+public final class StopSequences {
 
     private final List<String> stops;
     private final int holdback;
@@ -25,12 +25,12 @@ final class StopSequences {
     }
 
     /** null when there is nothing to match - the common case costs nothing. */
-    static StopSequences of(List<String> stops) {
+    public static StopSequences of(List<String> stops) {
         return stops == null || stops.isEmpty() ? null : new StopSequences(stops);
     }
 
     /** Feeds a content fragment; returns the chars now safe to emit ("" while held back). */
-    String feed(String fragment) {
+    public String feed(String fragment) {
         text.append(fragment);
         if (cut < 0) {
             int from = Math.max(0, text.length() - fragment.length() - holdback);
@@ -46,19 +46,19 @@ final class StopSequences {
     }
 
     /** The held-back tail once generation ends: everything before the cut, nothing after it. */
-    String flush() {
+    public String flush() {
         int end = cut >= 0 ? cut : text.length();
         String out = text.substring(Math.min(emitted, end), end);
         emitted = Math.max(emitted, end);
         return out;
     }
 
-    boolean hit() {
+    public boolean hit() {
         return cut >= 0;
     }
 
     /** The whole content up to the first stop - the text a hit trims the reply to. */
-    String beforeCut() {
+    public String beforeCut() {
         return cut >= 0 ? text.substring(0, cut) : text.toString();
     }
 }
