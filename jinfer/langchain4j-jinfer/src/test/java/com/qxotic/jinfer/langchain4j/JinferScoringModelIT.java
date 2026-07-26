@@ -59,6 +59,20 @@ class JinferScoringModelIT {
     }
 
     @Test
+    void frameRewindLeavesNoResidue() {
+        // the shared-prefix reuse law: the same (query, document) pair scored first and last
+        // in one batch must agree - the cursor rewind may leave nothing behind (tolerance
+        // covers scheduling-order FP jitter, orders of magnitude below any relevance gap)
+        TextSegment doc = TextSegment.from("The Eiffel Tower is a lattice tower in Paris.");
+        TextSegment other = TextSegment.from("Photosynthesis happens in plant chloroplasts.");
+        List<Double> scores =
+                scorer.scoreAll(List.of(doc, other, doc), "Where is the Eiffel Tower?").content();
+        assertTrue(
+                Math.abs(scores.get(0) - scores.get(2)) < 1e-3,
+                "rewound pair must score like the fresh one: " + scores);
+    }
+
+    @Test
     void rankingIsQuerySensitive() {
         // the same corpus reranks differently under a different question - scores are a
         // function of the PAIR, not of the documents alone (the whole point of a reranker)

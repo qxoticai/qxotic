@@ -72,26 +72,40 @@ public final class JinferScoringModel implements ScoringModel {
     @Override
     public Response<List<Double>> scoreAll(List<TextSegment> segments, String query) {
         List<Double> scores = new ArrayList<>(segments.size());
-        int promptTokens = 0;
+        // Every pair of this call shares an identical frame up to the document (the card's
+        // format deliberately puts the document LAST): prefill it ONCE, then per document
+        // rewind the cursor with resumeAt and ingest only (document + suffix). Sound because
+        // qwen3 is pure attention - stale KV rows beyond the cursor are masked, the same law
+        // the reset gates pin. The seam sits after the ':' so the leading space tokenizes
+        // with the document's first word, exactly as the joint encoding would.
+        Batch frame =
+                new TokenRuns(model.tokenizer())
+                        .trusted(PREFIX)
+                        .text(
+                                "<Instruct>: "
+                                        + instruction
+                                        + "\n<Query>: "
+                                        + query
+                                        + "\n<Document>:")
+                        .batch();
+        int promptTokens = frame.count();
         // one serial scoring pipeline per instance (the concurrency contract): concurrent
         // callers queue fairly, exactly like the chat and embedding surfaces
         lock.lock();
         try {
+            state.reset();
+            ingest(frame);
+            int framePositions = state.position();
             for (TextSegment segment : segments) {
-                Batch prompt =
+                Batch tail =
                         new TokenRuns(model.tokenizer())
-                                .trusted(PREFIX)
-                                .text(
-                                        "<Instruct>: "
-                                                + instruction
-                                                + "\n<Query>: "
-                                                + query
-                                                + "\n<Document>: "
-                                                + segment.text())
+                                .text(" " + segment.text())
                                 .trusted(SUFFIX)
                                 .batch();
-                promptTokens += prompt.count();
-                scores.add(score(prompt));
+                promptTokens += tail.count();
+                state.resumeAt(framePositions);
+                ingest(tail);
+                scores.add(score());
             }
         } finally {
             lock.unlock();
@@ -99,11 +113,13 @@ public final class JinferScoringModel implements ScoringModel {
         return Response.from(scores, new TokenUsage(promptTokens, 0));
     }
 
-    private double score(Batch prompt) {
-        state.reset();
-        for (Batch chunk : Batch.prepare(List.of(prompt), state.batchCapacity())) {
+    private void ingest(Batch batch) {
+        for (Batch chunk : Batch.prepare(List.of(batch), state.batchCapacity())) {
             model.ingest(state, chunk);
         }
+    }
+
+    private double score() {
         // exactly two logits via the tied head - no full-vocabulary matmul per pair
         float[] yn = model.logits(state, state.outputCount() - 1, new int[] {yes, no});
         // softmax over the {yes, no} pair, per the model card
