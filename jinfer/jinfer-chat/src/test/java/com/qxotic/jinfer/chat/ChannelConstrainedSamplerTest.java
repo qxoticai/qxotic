@@ -190,7 +190,33 @@ class ChannelConstrainedSamplerTest {
         assertEquals('R', s.sampleToken(favoring('R')), "reasoning free (spends the escape)");
         assertEquals(SPECIAL, s.sampleToken(favoring(SPECIAL)), "span close (free channel)");
         // the model still PREFERS reopening - the retired escape forces the grammar instead
-        assertEquals('y', s.sampleToken(favoring(SPECIAL, NL, 'y')), "no reopen: grammar decides");
+        assertEquals('y', s.sampleToken(favoring(SPECIAL, 'y')), "no reopen: grammar decides");
+    }
+
+    @Test
+    void innerSamplesExactlyOncePerPosition() {
+        // the tolerance is a mask union, not a peek: a discarded peek would burn an RNG draw
+        // and nudge stateful inners (capBudget) - stateful inners are sampled ONCE per position
+        int[] calls = {0};
+        Sampler counting =
+                logits -> {
+                    calls[0]++;
+                    return ARGMAX.sampleToken(logits);
+                };
+        var s =
+                new ChannelConstrainedSampler(
+                        counting,
+                        new ScriptedParser("reasoning", "content", "content", "content"),
+                        Map.of("content", yesNo())::get,
+                        t -> t == SPECIAL,
+                        new int[] {SPECIAL},
+                        new int[] {NL},
+                        EOS);
+        s.sampleToken(favoring(SPECIAL)); // span close
+        s.sampleToken(favoring(NL, 'X')); // tolerance pass
+        s.sampleToken(favoring('X', 'y')); // armed but NOT a newline: the old peek double-called
+        s.sampleToken(favoring('X', 'e'));
+        assertEquals(4, calls[0], "one inner sample per position, tolerance armed or not");
     }
 
     @Test

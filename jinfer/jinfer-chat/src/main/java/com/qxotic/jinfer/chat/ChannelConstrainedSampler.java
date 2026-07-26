@@ -31,6 +31,8 @@ final class ChannelConstrainedSampler implements Sampler {
     private final int[] escapeIds; // span-openers re-allowed pre-start (the escape)
     private final int[] newlineIds;
     private final int stopToken;
+    private final float[] savedEscape; // reusable saved-logit buffers (single-threaded sampler)
+    private final float[] savedNewlines;
     private final Map<Grammar.Cursor, Boolean> started = new HashMap<>();
     private int newlineTolerance; // boilerplate newlines still admissible (armed by a special)
     private boolean escapeSpent; // a free region was visited: reasoning happened, escape retires
@@ -50,6 +52,8 @@ final class ChannelConstrainedSampler implements Sampler {
         this.escapeIds = escapeIds;
         this.newlineIds = newlineIds == null ? new int[0] : newlineIds;
         this.stopToken = stopToken;
+        this.savedEscape = new float[this.escapeIds.length];
+        this.savedNewlines = new float[this.newlineIds.length];
     }
 
     @Override
@@ -62,44 +66,32 @@ final class ChannelConstrainedSampler implements Sampler {
             escapeSpent = true; // reasoning/structure is underway: the open marker did its job
             token = inner.sampleToken(logits); // free channel: reasoning, structure, payloads
         } else {
-            token = -1;
-            // the boilerplate-newline tolerance: models are TRAINED to emit "</think>\n\n"
-            // before the answer, so directly after a structure token (a span close), before the
-            // grammar starts, up to TWO newlines pass unconstrained - scoped (a cold start gets
-            // none: a newline-loving model must not free-run) and bounded by construction
-            if (newlineTolerance > 0 && !started.getOrDefault(cursor, false)) {
-                int peek = inner.sampleToken(logits); // unconstrained peek, grammar untouched
-                if (isNewline(peek)) {
-                    token = peek;
-                    newlinePass = true;
-                }
+            // BEFORE the grammar starts, two accommodations stay legal in the mask (restored
+            // after maskLogits, so the inner samples exactly ONCE per position - a discarded
+            // peek would burn an RNG draw and nudge stateful inners like capBudget):
+            // - the escape hatch: the span-opening marker (the model's right to reason) - never
+            //   the full special set: restoring stop tokens would let the model end the turn
+            //   instead of complying. ONE-SHOT: once a free region was visited it retires, or
+            //   an exhausted reasoning cap cycles open/force-close/newlines to the token budget
+            //   (monotonic, like the old gate's phase machine)
+            // - the boilerplate-newline tolerance: models are TRAINED to emit "</think>\n\n"
+            //   before the answer, so directly after a structure token (a span close), up to
+            //   TWO newlines pass without advancing the grammar - scoped (a cold start gets
+            //   none: a newline-loving model must not free-run) and bounded by construction
+            boolean preStart = !started.getOrDefault(cursor, false);
+            int[] escape = preStart && !escapeSpent ? escapeIds : NONE;
+            int[] tolerated = preStart && newlineTolerance > 0 ? newlineIds : NONE;
+            save(logits, escape, savedEscape);
+            save(logits, tolerated, savedNewlines);
+            if (!cursor.maskLogits(logits)) {
+                cursor.advanceWith(stopToken); // grammar complete or dead: end cleanly
+                parser.feed(stopToken);
+                return stopToken;
             }
-            if (token < 0) {
-                // the escape hatch: BEFORE the grammar starts, span-opening markers stay legal
-                // (the model's right to reason) - never the full special set: restoring stop
-                // tokens would let the model end the turn instead of complying. ONE-SHOT: once
-                // a free region was visited the escape retires, or an exhausted reasoning cap
-                // cycles open/force-close/newlines to the token budget (monotonic, like the old
-                // gate's phase machine)
-                boolean escape = !escapeSpent && !started.getOrDefault(cursor, false);
-                float[] saved = escape ? new float[escapeIds.length] : null;
-                if (escape) {
-                    for (int i = 0; i < escapeIds.length; i++) {
-                        saved[i] = logits.getFloat(escapeIds[i]);
-                    }
-                }
-                if (!cursor.maskLogits(logits)) {
-                    cursor.advanceWith(stopToken); // grammar complete or dead: end cleanly
-                    parser.feed(stopToken);
-                    return stopToken;
-                }
-                if (escape) {
-                    for (int i = 0; i < escapeIds.length; i++) {
-                        logits.setFloat(escapeIds[i], saved[i]);
-                    }
-                }
-                token = inner.sampleToken(logits);
-            }
+            restore(logits, escape, savedEscape);
+            restore(logits, tolerated, savedNewlines);
+            token = inner.sampleToken(logits);
+            newlinePass = tolerated.length > 0 && isNewline(token);
         }
         parser.feed(token);
         boolean special = isSpecial.test(token);
@@ -111,6 +103,16 @@ final class ChannelConstrainedSampler implements Sampler {
         }
         newlineTolerance = special ? 2 : newlinePass ? newlineTolerance - 1 : 0;
         return token;
+    }
+
+    private static final int[] NONE = new int[0];
+
+    private static void save(FloatTensor logits, int[] ids, float[] saved) {
+        for (int i = 0; i < ids.length; i++) saved[i] = logits.getFloat(ids[i]);
+    }
+
+    private static void restore(FloatTensor logits, int[] ids, float[] saved) {
+        for (int i = 0; i < ids.length; i++) logits.setFloat(ids[i], saved[i]);
     }
 
     private boolean isNewline(int token) {
