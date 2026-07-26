@@ -121,7 +121,9 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
             b.outputSchema(s.getOutputSchema());
         }
         if (o instanceof JinferChatOptions j) {
-            b.seed(j.seed).thinking(j.thinking).timeout(j.timeout);
+            if (j.seed != null) b.seed(j.seed);
+            if (j.thinking != null) b.thinking(j.thinking);
+            if (j.timeout != null) b.timeout(j.timeout);
         }
         return b.build();
     }

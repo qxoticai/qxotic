@@ -501,11 +501,10 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
 
     private JinferChatOptions resolveOptions(ChatOptions runtime) {
         if (runtime == null) return defaultOptions;
-        JinferChatOptions resolved =
-                runtime instanceof JinferChatOptions j
-                        ? j
-                        // foreign options carry only Spring fields: copy them over the defaults
-                        : JinferChatOptions.copyOnto(defaultOptions, runtime);
+        // runtime options MERGE over the defaults field-by-field, jinfer-typed or foreign -
+        // taking jinfer-typed options as-is silently discarded every builder default (an
+        // outputSchema-only request ran with an unlimited completion budget)
+        JinferChatOptions resolved = JinferChatOptions.copyOnto(defaultOptions, runtime);
         validate(resolved);
         return resolved;
     }
