@@ -78,10 +78,6 @@ public final class PromptCache<S extends RuntimeState> {
     private long clock;
     private long hits, misses, evictions, discards;
 
-    public PromptCache(StateCodec<S> codec, CacheStore store, long budgetBytes) {
-        this(codec, store, budgetBytes, new byte[0]);
-    }
-
     /**
      * A writable cache layered over a read-only {@link FrozenBlocks} base: the artifact's blocks
      * graft into this cache's key space (resume matches through them, commits dedup against them)

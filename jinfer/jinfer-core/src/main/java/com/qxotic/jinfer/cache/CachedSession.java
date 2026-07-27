@@ -308,11 +308,6 @@ public final class CachedSession<S extends RuntimeState> {
         return state;
     }
 
-    /** The exact ingested fingerprint stream so far (the low-level half of the dual view). */
-    long[] fingerprints() {
-        return Arrays.copyOf(fp, len);
-    }
-
     /**
      * The ingested conversation as plain token ids - only meaningful for text-only sessions; throws
      * if any position is a media digest (media cannot be replayed from ids).

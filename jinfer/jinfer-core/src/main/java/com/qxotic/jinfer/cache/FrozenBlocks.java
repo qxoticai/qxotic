@@ -204,18 +204,6 @@ public final class FrozenBlocks {
         return serve(model, codec, modelSeed, state, fp, fp.length);
     }
 
-    /** As {@link #serve} for an encoded prompt, restoring at most {@code maxPositions}. */
-    public <S extends com.qxotic.jinfer.RuntimeState> CachedSession<S> serve(
-            com.qxotic.jinfer.Model<?, ?, S> model,
-            StateCodec<S> codec,
-            byte[] modelSeed,
-            S state,
-            List<com.qxotic.jinfer.Batch> prompt,
-            int maxPositions) {
-        return serve(
-                model, codec, modelSeed, state, CachedSession.fingerprints(prompt), maxPositions);
-    }
-
     /** As {@link #serve} for a plain token-id prompt. */
     public <S extends com.qxotic.jinfer.RuntimeState> CachedSession<S> serve(
             com.qxotic.jinfer.Model<?, ?, S> model,
