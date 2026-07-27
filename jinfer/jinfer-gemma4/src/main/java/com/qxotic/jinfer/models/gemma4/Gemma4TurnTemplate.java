@@ -194,22 +194,26 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
                                                 "this Gemma 4 load carries no "
                                                         + type.getSimpleName()
                                                         + " encoder (load with an mmproj)"));
-        List<float[]> chunks = new ArrayList<>();
+        // ONE copy out of the sink's ephemeral view, straight into the caller-owned (GC-managed)
+        // return - the unbounded maxChunkSize means one chunk in practice, so the concatenation
+        // leg below is a contract-completeness fallback, not a path that runs
+        List<F32FloatTensor> parts = new ArrayList<>(1);
         embedder.embed(
                 m,
                 Integer.MAX_VALUE,
                 t -> {
-                    float[] c = new float[(int) t.size()];
-                    for (int i = 0; i < c.length; i++) c[i] = t.getFloat(i);
-                    chunks.add(c);
+                    F32FloatTensor copy = F32FloatTensor.allocate(Arena.ofAuto(), (int) t.size());
+                    t.copyTo(0, copy, 0, (int) t.size());
+                    parts.add(copy);
                 });
+        if (parts.size() == 1) return parts.get(0);
         int total = 0;
-        for (float[] c : chunks) total += c.length;
-        // returned to the caller, whose lifetime is independent of the template: GC-managed
+        for (F32FloatTensor p : parts) total += (int) p.size();
         F32FloatTensor rows = F32FloatTensor.allocate(Arena.ofAuto(), total);
         int at = 0;
-        for (float[] c : chunks) {
-            for (float v : c) rows.setFloat(at++, v);
+        for (F32FloatTensor p : parts) {
+            p.copyTo(0, rows, at, (int) p.size());
+            at += (int) p.size();
         }
         return rows;
     }
