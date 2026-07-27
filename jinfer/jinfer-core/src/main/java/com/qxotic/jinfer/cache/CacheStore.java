@@ -2,9 +2,7 @@ package com.qxotic.jinfer.cache;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
-import java.util.Collections;
 import java.util.IdentityHashMap;
-import java.util.Set;
 
 /**
  * Opaque payload storage for the prompt cache — a single-implementation seam so alternative
@@ -29,30 +27,48 @@ public interface CacheStore extends AutoCloseable {
     default void close() {}
 
     /**
-     * Default backend: one automatic arena per blob. GC owns the memory - {@link #free} drops the
-     * reference and the Cleaner reclaims after collection, and dropping the whole store (even
-     * unclosed) releases everything with it, so an abandoned cache can never leak natively. The
-     * budget is therefore soft by one GC cycle: an evicted blob's memory lingers until collected.
+     * Default backend: one shared arena per blob, closed DETERMINISTICALLY - {@link #free} and
+     * {@link #close} return the memory to the OS immediately (the budget is exact, not soft by a GC
+     * cycle). Safe because the blob lifecycle is single-threaded by contract: nothing reads a blob
+     * after free. A Cleaner backstop covers an abandoned (dropped, unclosed) store: its remaining
+     * blobs degrade to GC-eventually instead of leaking - shared arenas have no Cleaner of their
+     * own.
      */
     static CacheStore inMemory() {
-        return new CacheStore() {
-            private final Set<MemorySegment> blobs =
-                    Collections.newSetFromMap(new IdentityHashMap<>());
+        final IdentityHashMap<MemorySegment, Arena> blobs = new IdentityHashMap<>();
+        final Runnable sweep =
+                () -> {
+                    synchronized (blobs) {
+                        blobs.values().forEach(Arena::close);
+                        blobs.clear();
+                    }
+                };
+        final class Store implements CacheStore {
+            private static final java.lang.ref.Cleaner CLEANER = java.lang.ref.Cleaner.create();
+            private final java.lang.ref.Cleaner.Cleanable backstop = CLEANER.register(this, sweep);
             private volatile long used;
 
             @Override
             public MemorySegment allocate(long bytes) {
-                MemorySegment blob = Arena.ofAuto().allocate(bytes, 64);
-                blobs.add(blob);
+                Arena arena = Arena.ofShared();
+                MemorySegment blob = arena.allocate(bytes, 64);
+                synchronized (blobs) {
+                    blobs.put(blob, arena);
+                }
                 used += bytes;
                 return blob;
             }
 
             @Override
             public void free(MemorySegment blob) {
-                if (!blobs.remove(blob))
+                Arena arena;
+                synchronized (blobs) {
+                    arena = blobs.remove(blob);
+                }
+                if (arena == null)
                     throw new IllegalArgumentException("blob not allocated by this store");
                 used -= blob.byteSize();
+                arena.close();
             }
 
             @Override
@@ -62,9 +78,10 @@ public interface CacheStore extends AutoCloseable {
 
             @Override
             public void close() {
-                blobs.clear();
                 used = 0;
+                backstop.clean(); // at-most-once: frees every remaining blob now, not at GC
             }
-        };
+        }
+        return new Store();
     }
 }
