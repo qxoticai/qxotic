@@ -32,6 +32,8 @@
     <module>jinfer-spring-ai</module>
     <module>jinfer-spring-ai-autoconfigure</module>
     <module>jinfer-spring-ai-spring-boot-starter</module>
+    <module>jinfer-example-judge-advisor</module>
+    <module>jinfer-example-local-rag</module>
     <module>jinfer-bench</module>
   </modules>
 
@@ -61,6 +63,8 @@
     <!-- the Spring AI backend modules (jinfer-spring-ai*) -->
     <spring-ai.version>2.0.0</spring-ai.version>
     <spring-boot.version>4.1.0</spring-boot.version>
+    <!-- observation test assertions; matches spring-ai-model's micrometer-observation -->
+    <micrometer.version>1.17.0</micrometer.version>
 
     <!-- test libraries shared by the backend modules -->
     <assertj.version>3.27.6</assertj.version>
@@ -93,6 +97,13 @@
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-kernels</artifactId>
         <version>${project.version}</version>
+      </dependency>
+      <!-- the testkit (ModelFixture & co.) shared by the backend modules' tests -->
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>jinfer-kernels</artifactId>
+        <version>${project.version}</version>
+        <type>test-jar</type>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
@@ -132,6 +143,11 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-spring-ai-autoconfigure</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>jinfer-spring-ai-spring-boot-starter</artifactId>
         <version>${project.version}</version>
       </dependency>
       <!-- enforcer pin for the Spring AI modules: jsonschema-generator pulls jackson-core
@@ -217,6 +233,15 @@
               </configuration>
             </execution>
           </executions>
+        </plugin>
+        <!-- Shared by the Spring example apps: spring-boot:run with jinfer's JVM flags. -->
+        <plugin>
+          <groupId>org.springframework.boot</groupId>
+          <artifactId>spring-boot-maven-plugin</artifactId>
+          <version>${spring-boot.version}</version>
+          <configuration>
+            <jvmArguments>--enable-preview --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED</jvmArguments>
+          </configuration>
         </plugin>
         <plugin>
           <groupId>org.graalvm.buildtools</groupId>

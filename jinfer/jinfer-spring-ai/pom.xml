@@ -86,7 +86,7 @@
     <dependency>
       <groupId>io.micrometer</groupId>
       <artifactId>micrometer-observation-test</artifactId>
-      <version>1.17.0</version>
+      <version>${micrometer.version}</version>
       <scope>test</scope>
     </dependency>
     <!-- ChatClient for the structured-output entity() dogfood -->
@@ -98,7 +98,6 @@
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-kernels</artifactId>
-      <version>${project.version}</version>
       <type>test-jar</type>
       <scope>test</scope>
     </dependency>
