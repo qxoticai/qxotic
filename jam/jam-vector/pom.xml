@@ -63,6 +63,16 @@
           <argLine>--add-modules jdk.incubator.vector -Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0</argLine>
         </configuration>
       </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-javadoc-plugin</artifactId>
+        <configuration>
+          <additionalOptions>
+            <additionalOption>--add-modules</additionalOption>
+            <additionalOption>jdk.incubator.vector</additionalOption>
+          </additionalOptions>
+        </configuration>
+      </plugin>
     </plugins>
   </build>
 </project>

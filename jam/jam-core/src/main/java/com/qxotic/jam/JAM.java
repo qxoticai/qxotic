@@ -1,20 +1,56 @@
 package com.qxotic.jam;
 
 import java.lang.foreign.MemorySegment;
+import java.util.Comparator;
+import java.util.List;
+import java.util.ServiceLoader;
 
 /**
- * jam — fast multithreaded CPU matmul ({@code R = W @ Aᵀ}) with quantized weights.
+ * jam - fast multithreaded CPU matmul ({@code R = W @ Aᵀ}) with quantized weights.
  *
- * <p>{@code JAM} is the matmul contract. The native ({@code libjam}) implementation is {@link
- * NativeJAM} (via {@link NativeJAM#global()}); other backends (e.g. a Vector API impl) implement
- * this interface. Operands are native {@link MemorySegment}s + byte offsets; an implementation is
- * responsible for its own bounds/liveness handling (the native impl bounds-checks and rejects heap
- * segments). Liveness contract: every implementation of {@link #mm} must keep each operand segment
- * reachable across the entire kernel (a trailing {@code Reference.reachabilityFence} per operand) -
- * kernels that address via raw pointers are invisible to the GC, and an operand backed by an
- * automatic arena could otherwise be unmapped mid-call.
+ * <p>{@code JAM} is the matmul contract. Backends are discovered through {@link Provider}. Operands
+ * are native {@link MemorySegment}s + byte offsets; an implementation is responsible for its own
+ * bounds/liveness handling. Liveness contract: every implementation of {@link #mm} must keep each
+ * operand segment reachable across the entire kernel (a trailing {@code
+ * Reference.reachabilityFence} per operand) - kernels that address via raw pointers are invisible
+ * to the GC, and an operand backed by an automatic arena could otherwise be unmapped mid-call.
  */
 public interface JAM {
+
+    /** A discoverable JAM implementation. */
+    interface Provider {
+        /** Stable user-facing id, e.g. {@code native}, {@code vector}, or {@code scalar}. */
+        String id();
+
+        /** Selection hint for consumers: the highest priority provider is preferred. */
+        int priority();
+
+        /** Whether this provider can create a backend in the current JVM/process. */
+        boolean isAvailable();
+
+        /**
+         * Returns a usable backend. The returned backend may be shared; callers must handle {@link
+         * JAM#EBUSY} from {@link JAM#mm} when a provider uses a single shared context.
+         */
+        JAM create();
+    }
+
+    /** Available JAM providers, highest priority first. */
+    static List<Provider> providers() {
+        return ServiceLoader.load(Provider.class).stream()
+                .map(ServiceLoader.Provider::get)
+                .filter(JAM::available)
+                .sorted(Comparator.comparingInt(Provider::priority).reversed())
+                .toList();
+    }
+
+    private static boolean available(Provider provider) {
+        try {
+            return provider.isAvailable();
+        } catch (Throwable t) {
+            return false;
+        }
+    }
 
     // ── supported weight dtype tags: numerically identical to GGML's ggml_type ──
     int F32 = 0,
@@ -55,7 +91,7 @@ public interface JAM {
             int n,
             int k);
 
-    /** Contiguous shortcut — offsets 0, strides {@code k/k/m}, F32 activations + result. */
+    /** Contiguous shortcut - offsets 0, strides {@code k/k/m}, F32 activations + result. */
     default int mm(MemorySegment w, MemorySegment a, MemorySegment r, int wt, int m, int n, int k) {
         return mm(w, 0, wt, k, a, 0, F32, k, r, 0, F32, m, m, n, k);
     }

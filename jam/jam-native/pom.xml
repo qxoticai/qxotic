@@ -36,6 +36,9 @@
          resource it lands on the classpath, so NativeLoader finds + loads it exactly as from the fat jar. -->
     <resources>
       <resource>
+        <directory>src/main/resources</directory>
+      </resource>
+      <resource>
         <directory>dist/native</directory>
       </resource>
     </resources>

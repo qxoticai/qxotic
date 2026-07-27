@@ -4,10 +4,10 @@ import java.lang.foreign.MemorySegment;
 import java.lang.ref.Reference;
 
 /**
- * Java Vector API {@link JAM} backend — jam-vector's self-contained matmul, peer to {@link
- * ScalarJAM} and {@code NativeJAM}. Each tileable weight dtype is dispatched straight to its
- * register-tiled (Q8_0/Q4_0) or dequant-to-scratch band (k-quant/FP4) kernel on the raw operand
- * segments — no tensor reconstruction.
+ * Java Vector API {@link JAM} backend - jam-vector's self-contained matmul, peer to the scalar and
+ * native backends. Each tileable weight dtype is dispatched straight to its register-tiled
+ * (Q8_0/Q4_0) or dequant-to-scratch band (k-quant/FP4) kernel on the raw operand segments - no
+ * tensor reconstruction.
  *
  * <p>PREFILL only ({@code n > 1}) with F32 activations + result. Decode ({@code n == 1},
  * bandwidth-bound), non-tileable dtypes, strided weights, and the absence of a usable SIMD width
@@ -15,14 +15,14 @@ import java.lang.ref.Reference;
  * through {@link VectorSupport#GLOBAL} at absolute addresses (one segment type, so the access
  * folds), exactly as the kernels' own tests drive them.
  *
- * <p>The register-tile shape and vector width are resolved once in {@link VectorSupport} — auto by
+ * <p>The register-tile shape and vector width are resolved once in {@link VectorSupport} - auto by
  * default, overridable with {@code -Djam.vector.tile} / {@code -Djam.vector.width}; the k-quant/FP4
  * decoders run at 128/256/512-bit, so this backend is no longer pinned to AVX-512.
  */
 public final class VectorJAM implements JAM {
 
     /**
-     * Context-owned dequant scratch for the band kernels — reused across every {@code mm}, GC'd
+     * Context-owned dequant scratch for the band kernels - reused across every {@code mm}, GC'd
      * with this instance (no static/ThreadLocal retention). Assumes single-threaded {@code mm} per
      * instance, like the other JAM backends; the pool is concurrency-safe across band workers
      * within one call.
@@ -31,7 +31,7 @@ public final class VectorJAM implements JAM {
 
     /**
      * Create the Vector API backend. Throws {@link IllegalStateException} if the {@code
-     * jdk.incubator.vector} module is not on the module path — every kernel needs it. The check
+     * jdk.incubator.vector} module is not on the module path - every kernel needs it. The check
      * runs before any Vector API type is referenced, so the message is actually reached; a bare
      * kernel reference would instead fail class init with a cryptic {@code NoClassDefFoundError}.
      * Callers that want a silent fallback probe {@link #isAvailable()} first (e.g. to select {@code
