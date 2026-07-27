@@ -123,15 +123,17 @@ public final class JinferBench {
      */
     private static <S extends RuntimeState> double runOnce(
             LoadedModel<S> model, int ctx, int[] prompt, int count, boolean prefill, int vocab) {
-        S s = model.model().newState(ctx, Math.max(prompt.length, 16));
+        S s = model.model().newState(ctx);
+        // chunked exactly like the engine (and llama-bench's default n_ubatch=512): one giant
+        // batch would also blow the per-batch scratch working set past cache
+        List<Batch> chunks = Batch.prepare(List.of(Batch.prefill(prompt)), s.batchCapacity());
         if (prefill) {
-            // pp: one batched prefill of `count` tokens
             long t0 = System.nanoTime();
-            model.model().ingest(s, Batch.prefill(prompt));
+            for (Batch b : chunks) model.model().ingest(s, b);
             return count / ((System.nanoTime() - t0) / 1e9);
         }
         // tg: prime with one token, then time `count` single-token decode steps
-        model.model().ingest(s, Batch.prefill(prompt));
+        for (Batch b : chunks) model.model().ingest(s, b);
         int tok = argmax(model.model().logits(s), vocab);
         long t0 = System.nanoTime();
         for (int g = 0; g < count; g++) {
