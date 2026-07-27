@@ -15,8 +15,9 @@ import org.junit.jupiter.api.Test;
  * The in-fork memory-growth forensic: cycles battery-like model load/chat/close in ONE JVM and
  * prints, per cycle, RssAnon/RssFile, the NMT category deltas, and the effect of malloc_trim(0).
  * Decision tree: NMT "Other" growing = an FFM allocation we failed to free; NMT flat but RssAnon
- * growing = native memory NMT cannot see (jam's own allocations) or glibc-retained freed pages -
- * and malloc_trim collapsing RssAnon proves the latter. Run with:
+ * growing = native memory NMT cannot see (a native library's own allocations) or glibc-retained
+ * freed pages - and malloc_trim collapsing RssAnon proves the latter. It pinned the 2026-07 battery
+ * OOMs on jam's repacked-weight cache (since deleted). Run with:
  *
  * <pre>
  * JAVA_TOOL_OPTIONS=-XX:NativeMemoryTracking=summary mvn -f langchain4j-jinfer/pom.xml test \
