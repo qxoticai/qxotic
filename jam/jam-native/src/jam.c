@@ -245,14 +245,14 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
      * through the bound pointer; each kernel is a row-range worker the pool fans out automatically. */
     c->f32_kernel = jam_mm_f32_generic;
     c->q8_kernel  = NULL;   /* NULL -> generic floor */
-    c->mxfp4_kernel = NULL; c->mxfp4_rp_kernel = NULL; c->mxfp4_repack = NULL;
+    c->mxfp4_kernel = NULL;
     c->q4_0_kernel  = NULL;   /* K-quant ctx->kq[] is zero from calloc (NULL kernel -> float floor) */
     c->q1_0_kernel  = NULL;   /* NULL -> generic (float) floor */
 #ifdef JAM_HAVE_SSE3
     if (cpu >= JAM_ISA_SSE3) { c->q8_kernel = jam_mm_q8_0_sse3;   /* pre-AVX2 floor; higher tiers override below */
         c->mxfp4_kernel = jam_mm_mxfp4_sse3; c->q4_0_kernel = jam_mm_q4_0_sse3;
-        c->kq[JAM_KQ_Q4K].kernel = jam_mm_q4k_sse3;   /* K-quant int8 floor (run_quant supplies per-32 requant) */
-        c->kq[JAM_KQ_Q5K].kernel = jam_mm_q5k_sse3; c->kq[JAM_KQ_Q6K].kernel = jam_mm_q6k_sse3; }
+        c->kq[JAM_KQ_Q4K] = jam_mm_q4k_sse3;   /* K-quant int8 floor (run_quant supplies per-32 requant) */
+        c->kq[JAM_KQ_Q5K] = jam_mm_q5k_sse3; c->kq[JAM_KQ_Q6K] = jam_mm_q6k_sse3; }
 #endif
 #ifdef JAM_HAVE_SSSE3
     if (cpu >= JAM_ISA_SSSE3) { c->q8_kernel = jam_mm_q8_0_ssse3;   /* maddubs sign-trick: faster Q8_0/Q4_0 (K-quants keep the SSE3 path) */
@@ -262,14 +262,9 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
     if (cpu >= JAM_ISA_AVX2) { c->f32_kernel = jam_mm_f32_avx2;
         c->q8_kernel = jam_mm_q8_0_avx2; c->mxfp4_kernel = jam_mm_mxfp4_avx2;
         c->q4_0_kernel = jam_mm_q4_0_avx2;
-        c->kq[JAM_KQ_Q4K] = (jam_kquant){ jam_mm_q4k_rp_avx2, jam_q8k_requant, jam_q4k_repack8 };   /* 8-feat-wide cached repack */
-        c->kq[JAM_KQ_Q5K] = (jam_kquant){ jam_mm_q5k_rp_avx2, jam_q8k_requant, jam_q5k_repack8 };
-        c->kq[JAM_KQ_Q6K] = (jam_kquant){ jam_mm_q6k_rp_avx2, jam_q6k_requant, jam_q6k_repack8 };
+        /* K-quants keep the SSE3 int8 kernels (run_quant supplies the per-32 requant) */
         c->nvfp4_kernel = jam_mm_nvfp4_avx2;
         c->q1_0_kernel = jam_mm_q1_0_avx2;
-        c->q8_0_rp_kernel = jam_mm_q8_0_rp_avx2; c->q8_0_repack = jam_q8_0_repack8;   /* 8-feat-wide cached repack */
-        c->mxfp4_rp_kernel = jam_mm_mxfp4_rp_avx2; c->mxfp4_repack = jam_mxfp4_repack8;   /* int16-deferred madd */
-        c->q4_0_repack = jam_q4_0_repack8;   /* Q4_0 -> signed q-8, then the same bias-free maddubs kernel */
         c->dense_f16_kernel = jam_mm_f16_avx2; c->dense_bf16_kernel = jam_mm_bf16_avx2;
         c->dense_f32_kernel = jam_mm_f32d_avx2; }
 #endif
@@ -279,9 +274,7 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
     if (cpu >= JAM_ISA_AVX_VNNI && __builtin_cpu_supports("avxvnni")) {
         c->q8_kernel = jam_mm_q8_0_avxvnni; c->mxfp4_kernel = jam_mm_mxfp4_avxvnni;
         c->q4_0_kernel = jam_mm_q4_0_avxvnni;
-        /* cached-repack with vpdpbusd instead of maddubs (repacks/requants inherited from the avx2 rung) */
-        c->kq[JAM_KQ_Q4K].kernel = jam_mm_q4k_rp_avxvnni; c->kq[JAM_KQ_Q5K].kernel = jam_mm_q5k_rp_avxvnni; c->kq[JAM_KQ_Q6K].kernel = jam_mm_q6k_rp_avxvnni;
-        c->q8_0_rp_kernel = jam_mm_q8_0_rp_avxvnni; }
+        }
 #endif
 #ifdef JAM_HAVE_AVX512BW
     if (cpu >= JAM_ISA_AVX512)    { c->q8_kernel  = jam_mm_q8_0_avx512bw;  /* 512-bit maddubs, no VNNI */
@@ -305,15 +298,15 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
 #ifdef JAM_HAVE_NEON
     if (cpu >= JAM_ISA_NEON)  { c->q8_kernel = jam_mm_q8_0_neon;
                                 c->q4_0_kernel = jam_mm_q4_0_neon; c->mxfp4_kernel = jam_mm_mxfp4_neon;
-                                c->kq[JAM_KQ_Q4K].kernel = jam_mm_q4k_neon;
-                                c->kq[JAM_KQ_Q5K].kernel = jam_mm_q5k_neon; c->kq[JAM_KQ_Q6K].kernel = jam_mm_q6k_neon;
+                                c->kq[JAM_KQ_Q4K] = jam_mm_q4k_neon;
+                                c->kq[JAM_KQ_Q5K] = jam_mm_q5k_neon; c->kq[JAM_KQ_Q6K] = jam_mm_q6k_neon;
                                 c->nvfp4_kernel = jam_mm_nvfp4_neon;
                                 c->q1_0_kernel = jam_mm_q1_0_neon; }
 #endif
 #ifdef JAM_HAVE_DOTPROD
     if (cpu >= JAM_ISA_DOTPROD) { c->q8_kernel = jam_mm_q8_0_dotprod;   /* i8mm cores inherit these (sdot) */
         c->q4_0_kernel = jam_mm_q4_0_dotprod; c->mxfp4_kernel = jam_mm_mxfp4_dotprod;
-        c->kq[JAM_KQ_Q4K].kernel = jam_mm_q4k_dotprod; c->kq[JAM_KQ_Q5K].kernel = jam_mm_q5k_dotprod; c->kq[JAM_KQ_Q6K].kernel = jam_mm_q6k_dotprod;
+        c->kq[JAM_KQ_Q4K] = jam_mm_q4k_dotprod; c->kq[JAM_KQ_Q5K] = jam_mm_q5k_dotprod; c->kq[JAM_KQ_Q6K] = jam_mm_q6k_dotprod;
         c->nvfp4_kernel = jam_mm_nvfp4_dotprod;
         c->q1_0_kernel = jam_mm_q1_0_dotprod; }
 #endif
@@ -344,8 +337,6 @@ void jam_ctx_destroy(jam_ctx* ctx) {
     free(ctx->kq_xq); free(ctx->kq_dx); free(ctx->kq_xsum);
     for (int i = 0; i < ctx->kq_repack_n; i++) { jam_aligned_free(ctx->kq_repack[i].qs); jam_aligned_free(ctx->kq_repack[i].dw); jam_aligned_free(ctx->kq_repack[i].mw); }
     free(ctx->kq_repack);
-    for (int i = 0; i < ctx->rp_cache_n; i++) free(ctx->rp_cache[i].buf);
-    free(ctx->rp_cache);
     free(ctx);
 }
 
@@ -475,67 +466,6 @@ static jam_status run_quant(jam_ctx* ctx, jam_q8_job* q, int m, jam_task_fn simd
     return JAM_OK;
 }
 
-/* Repacked-weight cache for the avx2 Q4_K 8x8 gemm: repack each weight ONCE (keyed on its pointer+shape),
- * reuse forever. Accessed under the per-context busy lock (jam_mm), so no extra locking.
- * ONE precondition, satisfied by jinfer's mmap'd model weights (the only consumer):
- *    PINNED: the cache auto-invalidates nothing, so the bytes at `w` must stay live + unchanged for the
- *      ctx lifetime, OR the caller must jam_forget_weight(ctx, w) before freeing/replacing it — else a new
- *      weight reusing the address returns the STALE repack. Model weights are pinned for the model's life.
- * The repack honors the weight's row stride (the caller passes w_stride derived from ldw), so a strided /
- * padded quant weight view repacks correctly — same as the non-repacked quant kernels (wrow = lda/blk). */
-static void* rpcache_get(jam_ctx* ctx, const void* w, int m, int k, int block_elems, size_t block_bytes,
-                         size_t w_stride, jam_repack_fn repack) {
-    for (int i = 0; i < ctx->rp_cache_n; ++i)
-        if (ctx->rp_cache[i].w == w && ctx->rp_cache[i].m == m && ctx->rp_cache[i].k == k && ctx->rp_cache[i].repack == repack)
-            return ctx->rp_cache[i].buf;
-    int nblocks = k / block_elems;   /* 256 (K-quant super-block) or 32 (Q8_0 block) */
-    size_t grp_bytes = (size_t) nblocks * block_bytes;
-    void* buf = malloc((size_t)((m + 7) / 8) * grp_bytes);
-    if (!buf) return NULL;
-    for (int i0 = 0; i0 < m; i0 += 8)   /* w_stride = the raw weight's per-row byte stride (honors ldw) */
-        repack(w, i0, i0 + 8 < m ? i0 + 8 : m, nblocks, w_stride, (uint8_t*) buf + (size_t)(i0/8) * grp_bytes);
-    if (ctx->rp_cache_n == ctx->rp_cache_cap) {
-        int nc = ctx->rp_cache_cap ? ctx->rp_cache_cap * 2 : 16;
-        struct jam_rpentry* nn = realloc(ctx->rp_cache, (size_t) nc * sizeof *ctx->rp_cache);
-        if (!nn) { free(buf); return NULL; }
-        ctx->rp_cache = nn; ctx->rp_cache_cap = nc;
-    }
-    ctx->rp_cache[ctx->rp_cache_n].w = w; ctx->rp_cache[ctx->rp_cache_n].m = m;
-    ctx->rp_cache[ctx->rp_cache_n].k = k; ctx->rp_cache[ctx->rp_cache_n].repack = repack;
-    ctx->rp_cache[ctx->rp_cache_n].buf = buf;
-    ctx->rp_cache_n++;
-    return buf;
-}
-
-/* Run a cached-repack gemm: repack the weight ONCE (cached) into q->a, then fan out the 8-feature-wide
- * kernel. Its [rb,re) are 8-feature GROUP indices (hence jam_run over (m+7)/8), and it recovers the row
- * count from q->ldc (== m; C is token-major). q->aq/ad/asum must already be set. Returns 1 if it ran. */
-static int try_repack_run(jam_ctx* ctx, jam_q8_job* q, const void* w, int m, int k,
-                          int block_elems, size_t block_bytes, size_t w_stride,
-                          jam_repack_fn repack, jam_task_fn kernel) {
-    void* rp = rpcache_get(ctx, w, m, k, block_elems, block_bytes, w_stride, repack);
-    /* (fan below caps to one thread/core for n==1: the rp1 gemv kernels are DRAM-bound) */
-    if (!rp) return 0;
-    q->a = rp;
-    if (q->n == 1) jam_run_bw(ctx, (m + 7) / 8, kernel, q);
-    else           jam_run(ctx, (m + 7) / 8, kernel, q);
-    return 1;
-}
-
-/* Drop any cached repacked-weight buffer(s) for weight pointer `w` (ctx==NULL -> global). Call this BEFORE
- * freeing or overwriting a weight whose address might be reused: the repack cache keys on the pointer and
- * never auto-invalidates, so a different weight reallocated at the same address would otherwise hit the
- * stale repack. Serial with jam_mm on the same context (the same single-stream contract as the scratch). */
-void jam_forget_weight(jam_ctx* ctx, const void* w) {
-    if (!ctx) ctx = jam_global();
-    if (!ctx) return;
-    for (int i = 0; i < ctx->rp_cache_n; ) {
-        if (ctx->rp_cache[i].w == w) {
-            free(ctx->rp_cache[i].buf);
-            ctx->rp_cache[i] = ctx->rp_cache[--ctx->rp_cache_n];   /* swap-remove, then re-check this slot */
-        } else ++i;
-    }
-}
 
 #ifdef JAM_HAVE_AVX512
 /* AVX-512-VNNI 16-row-repack prefill band, shared by the 32-element-block quants (Q8_0/Q4_0/MXFP4). They
@@ -573,9 +503,7 @@ static int try_vnni_band(jam_ctx* ctx, const void* w, int ldw, const void* a, in
 #endif
 static jam_status dispatch_kquant(jam_ctx* ctx, const void* w, int ldw, const void* a, int lda,
                                   void* c, int ldc, int m, int n, int k, size_t kbytes,
-                                  jam_task_fn band, jam_task_fn requant,
-                                  jam_repack_fn repack, size_t rp_sbbytes,
-                                  jam_task_fn simd, jam_task_fn floor_) {
+                                  jam_task_fn band, jam_task_fn simd, jam_task_fn floor_) {
     int kblocks = k / JAM_QK;
     (void) band;
 #ifdef JAM_HAVE_AVX512
@@ -583,24 +511,7 @@ static jam_status dispatch_kquant(jam_ctx* ctx, const void* w, int ldw, const vo
                              a, lda, c, ldc, m, n, k, band)) return JAM_OK;
 #endif
     jam_q8_job q = { w, ldw, a, lda, c, ldc, n, k, kblocks, NULL, NULL }; q.m = m;
-    if (requant && simd) {                         /* per-256 (Q8_K) requant + int-scale kernel (avx2) */
-        if (!ensure_qscratch(ctx, n, k)) return JAM_EINVAL;
-        q.aq = (int8_t*) ctx->q_aq; q.ad = (float*) ctx->q_ad; q.asum = (float*) ctx->q_asum;
-        if (n == 1) requant(&q, 0, 1, 0); else jam_run(ctx, n, requant, &q);
-        if (repack) {
-#ifdef JAM_HAVE_AVX2
-            if (n == 1 && simd == jam_mm_q5k_rp_avx2) simd = jam_mm_q5k_rp1_avx2;   /* n==1 rp1 swap is AVX2-only (no NEON rp1 kernels) */
-            if (n == 1 && simd == jam_mm_q6k_rp_avx2) simd = jam_mm_q6k_rp1_avx2;
-#endif
-            if (try_repack_run(ctx, &q, w, m, k, JAM_QKK, rp_sbbytes,
-                               (size_t)(ldw / JAM_QKK) * kbytes, repack, simd)) return JAM_OK;
-            return run_quant(ctx, &q, m, NULL, floor_);   /* repack alloc failed -> float floor (simd is the group-indexed rp kernel, can't run on the raw weight) */
-        }
-        if (n == 1) jam_run_bw(ctx, m, simd, &q);
-        else        jam_run(ctx, m, simd, &q);
-        return JAM_OK;
-    }
-    return run_quant(ctx, &q, m, simd, floor_);   /* int8 (ARM / avx2) or float floor */
+    return run_quant(ctx, &q, m, simd, floor_);   /* int8 (SSE3 / ARM) or float floor */
 }
 
 
@@ -745,36 +656,12 @@ static jam_status jam_mm_run(jam_ctx* ctx,
             if (ctx->active == JAM_ISA_AVX_VNNI &&
                 try_vnni_band_256(ctx, w, ldw, a, lda, c, ldc, m, n, k, 34, jam_q8_0_repack_band_avxvnni)) return JAM_OK;
 #endif
-            /* avx2: cached-repack sign-trick maddubs 8-wide. Decode (n==1) benefits too once the weight is
-             * cached: it keeps 8 feature rows in lanes and avoids the per-row horizontal-sum dot kernel. */
-            if (ctx->q8_0_repack && ctx->q8_0_rp_kernel && ensure_qscratch(ctx, n, k)) {
-                q.aq = (int8_t*) ctx->q_aq; q.ad = (float*) ctx->q_ad; q.asum = NULL;   /* no min term */
-                jam_run(ctx, n, jam_q8_0_requant, &q);
-                jam_task_fn rp_kernel = ctx->q8_0_rp_kernel;
-#ifdef JAM_HAVE_AVX2
-                if (n == 1 && ctx->active == JAM_ISA_AVX2) rp_kernel = jam_mm_q8_0_rp1_avx2;
-#endif
-                if (try_repack_run(ctx, &q, w, m, k, JAM_QK, sizeof(jam_q8_0_rpblock),
-                                   (size_t)(ldw / JAM_QK) * 34, ctx->q8_0_repack, rp_kernel)) return JAM_OK;
-            }
             return run_quant(ctx, &q, m, ctx->q8_kernel, jam_mm_q8_0_f32_generic);   /* decode / non-VNNI */
         }
         if (wt == JAM_MXFP4) {
 #ifdef JAM_HAVE_AVX512
             if (try_vnni_band(ctx, w, ldw, a, lda, c, ldc, m, n, k, 17, jam_mxfp4_repack_band)) return JAM_OK;
 #endif
-            /* avx2: cached-repack, |code|<=12 lets int16 products accumulate across the 8 groups (one
-             * madd/block, Q4_0-class). Decode (n==1) uses the single-column sibling. */
-            if (ctx->mxfp4_repack && ctx->mxfp4_rp_kernel && ensure_qscratch(ctx, n, k)) {
-                q.aq = (int8_t*) ctx->q_aq; q.ad = (float*) ctx->q_ad; q.asum = NULL;
-                jam_run(ctx, n, jam_q8_0_requant, &q);
-                jam_task_fn rp_kernel = ctx->mxfp4_rp_kernel;
-#ifdef JAM_HAVE_AVX2
-                if (n == 1) rp_kernel = jam_mm_mxfp4_rp1_avx2;
-#endif
-                if (try_repack_run(ctx, &q, w, m, k, JAM_QK, sizeof(jam_q8_0_rpblock),
-                                   (size_t)(ldw / JAM_QK) * sizeof(jam_mxfp4_blk), ctx->mxfp4_repack, rp_kernel)) return JAM_OK;
-            }
             return run_quant(ctx, &q, m, ctx->mxfp4_kernel, jam_mm_mxfp4_f32_generic);
         }
         if (wt == JAM_Q4_0) {
@@ -785,17 +672,6 @@ static jam_status jam_mm_run(jam_ctx* ctx,
             if (ctx->active == JAM_ISA_AVX_VNNI &&
                 try_vnni_band_256(ctx, w, ldw, a, lda, c, ldc, m, n, k, 18, jam_q4_0_repack_band_avxvnni)) return JAM_OK;
 #endif
-#ifdef JAM_HAVE_AVX2
-            /* avx2: cached-repack (raw u8 nibble), then the no-sign-trick deferred-madd 8-wide kernel (prefill n>1).
-             * Needs asum (per-block Σaq) for the -8 offset correction Σ(q-8)·a = Σq·a - 8·Σa. */
-            if (ctx->q4_0_repack && (n > 1 || ctx->active == JAM_ISA_AVX2) && ensure_qscratch(ctx, n, k)) {
-                q.aq = (int8_t*) ctx->q_aq; q.ad = (float*) ctx->q_ad; q.asum = (float*) ctx->q_asum;
-                jam_run(ctx, n, jam_q8_0_requant, &q);
-                jam_task_fn rp_kernel = n == 1 ? jam_mm_q4_0_rp1_avx2 : jam_mm_q4_0_rp_avx2;
-                if (try_repack_run(ctx, &q, w, m, k, JAM_QK, sizeof(jam_q8_0_rpblock),
-                                   (size_t)(ldw / JAM_QK) * 18, ctx->q4_0_repack, rp_kernel)) return JAM_OK;
-            }
-#endif
             return run_quant(ctx, &q, m, ctx->q4_0_kernel, jam_mm_q4_0_f32_generic);
         }
     }
@@ -803,18 +679,17 @@ static jam_status jam_mm_run(jam_ctx* ctx,
     /* Q4_K/Q5_K/Q6_K weight @ F32 -> F32 (256-element super-blocks): VNNI repack fast path, else int8/floor.
      * Per-quant compile-time constants are a table; the ISA-bound kernels come from ctx->kq[] (same index). */
     static const struct {
-        jam_dtype dt; size_t block_bytes; jam_task_fn band; size_t rpblock_size; jam_task_fn floor;
+        jam_dtype dt; size_t block_bytes; jam_task_fn band; jam_task_fn floor;
     } kquant_info[JAM_KQ_N] = {
-        [JAM_KQ_Q4K] = { JAM_Q4_K, JAM_Q4K_BYTES, JAM_BAND(jam_q4k_band),        sizeof(jam_q4k_rpblock), jam_mm_q4k_f32_generic },
-        [JAM_KQ_Q5K] = { JAM_Q5_K, JAM_Q5K_BYTES, JAM_BAND(jam_q5k_repack_band), sizeof(jam_q5k_rpblock), jam_mm_q5k_f32_generic },
-        [JAM_KQ_Q6K] = { JAM_Q6_K, JAM_Q6K_BYTES, JAM_BAND(jam_q6k_band),        sizeof(jam_q6k_rpblock), jam_mm_q6k_f32_generic },
+        [JAM_KQ_Q4K] = { JAM_Q4_K, JAM_Q4K_BYTES, JAM_BAND(jam_q4k_band),        jam_mm_q4k_f32_generic },
+        [JAM_KQ_Q5K] = { JAM_Q5_K, JAM_Q5K_BYTES, JAM_BAND(jam_q5k_repack_band), jam_mm_q5k_f32_generic },
+        [JAM_KQ_Q6K] = { JAM_Q6_K, JAM_Q6K_BYTES, JAM_BAND(jam_q6k_band),        jam_mm_q6k_f32_generic },
     };
     if (at == JAM_F32 && ct == JAM_F32 && (k % JAM_QKK == 0))
         for (int i = 0; i < JAM_KQ_N; i++)
             if (wt == kquant_info[i].dt)
                 return dispatch_kquant(ctx, w, ldw, a, lda, c, ldc, m, n, k, kquant_info[i].block_bytes,
-                                       kquant_info[i].band, ctx->kq[i].requant, ctx->kq[i].repack,
-                                       kquant_info[i].rpblock_size, ctx->kq[i].kernel, kquant_info[i].floor);
+                                       kquant_info[i].band, ctx->kq[i], kquant_info[i].floor);
 
     if (jam_debug())
         fprintf(stderr, "[jam] EUNSUPPORTED dtype combo: W=%d A=%d C=%d (built: F32, F16, BF16, Q8_0, Q4_0, "

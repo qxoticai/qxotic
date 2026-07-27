@@ -35,15 +35,10 @@ int       jam_pool_spin_budget(const jam_pool* pool);    /* pauses before a spin
 /* Per-worker K-quant weight-repack scratch (VNNI layout). One per pool worker, indexed by jam tid. */
 typedef struct { uint8_t* qs; float* dw; float* mw; int cap_blocks; } jam_repack;
 
-/* A weight-repack kernel: packs feature rows [rows0,re) of a quantized weight (block stride `w_stride`
- * bytes) into the 8-feature-wide VNNI rpblock layout at `out`. One per quant family (Q4_K/Q5_K/Q6_K/Q8_0). */
-typedef void (*jam_repack_fn)(const void* w, int rows0, int re, int blocks, size_t w_stride, void* out);
-
 /* The 256-element K-quants share one dispatch path (dispatch_kquant); they differ only in a few values.
- * The ISA-bound ones (kernel/requant/repack, set per ISA at create) live in ctx->kq[], indexed by jam_kq;
- * the compile-time ones (band kernel, block bytes, rpblock size, float floor) are jam.c's kquant_info[]. */
+ * The ISA-bound int8 kernel (set per ISA at create) lives in ctx->kq[], indexed by jam_kq; the
+ * compile-time ones (band kernel, block bytes, float floor) are jam.c's kquant_info[]. */
 enum jam_kq { JAM_KQ_Q4K, JAM_KQ_Q5K, JAM_KQ_Q6K, JAM_KQ_N };
-typedef struct { jam_task_fn kernel, requant; jam_repack_fn repack; } jam_kquant;
 
 struct jam_ctx {
     jam_parallel_for parallel_for;   /* host executor; if set, takes precedence over ipool */
@@ -62,15 +57,7 @@ struct jam_ctx {
     jam_task_fn      nvfp4_kernel;   /* best NVFP4 matmul; NULL -> generic (float). No SIMD kernel yet. */
     jam_task_fn      q1_0_kernel;    /* best Q1_0 (1-bit sign) matmul; NULL -> generic (float). Int8 pipeline. */
     jam_task_fn      q4_0_kernel;    /* best Q4_0 matmul; NULL -> generic. Same int8 pipeline. */
-    jam_kquant       kq[JAM_KQ_N];   /* Q4_K/Q5_K/Q6_K ISA-bound {kernel,requant,repack}; consts in kquant_info[] */
-    struct jam_rpentry { const void* w; int m, k; jam_repack_fn repack; void* buf; } *rp_cache;
-                                          /* repacked-weight cache, keyed on (weight ptr, shape, repack fn) */
-    int rp_cache_n, rp_cache_cap;
-    jam_task_fn      q8_0_rp_kernel; /* avx2 cached-repack Q8_0 (sign-trick maddubs 8-wide); NULL -> q8_kernel */
-    jam_repack_fn    q8_0_repack;    /* non-NULL -> cached weight-repack for q8_0_rp_kernel */
-    jam_task_fn      mxfp4_rp_kernel; /* avx2 cached-repack MXFP4 (|w|<=12 int16-deferred madd); NULL -> mxfp4_kernel */
-    jam_repack_fn    mxfp4_repack;    /* non-NULL -> cached weight-repack for mxfp4_rp_kernel */
-    jam_repack_fn    q4_0_repack;    /* non-NULL -> cached weight-repack (Q4_0 raw nibble) for deferred -8 correction */
+    jam_task_fn      kq[JAM_KQ_N];   /* Q4_K/Q5_K/Q6_K ISA-bound int8 kernel; consts in kquant_info[] */
     jam_task_fn      dense_f16_kernel;   /* AVX-512 F16 dense (k%16==0); NULL -> generic floor */
     jam_task_fn      dense_f32_kernel;   /* row-blocked dense F32 (avx2, k%8==0); NULL where mnpack wins (avx512) */
     jam_task_fn      dense_bf16_kernel;  /* AVX-512 BF16 dense (k%16==0); NULL -> generic floor */
@@ -207,34 +194,10 @@ void jam_mm_bf16_f32_generic(void* job, int row_begin, int row_end, int tid);   
 void jam_q8_0_requant(void* job, int b_begin, int b_end, int tid);             /* phase 1: A -> int8 (shared) */
 
 void jam_mm_q4_0_f32_generic(void* job, int row_begin, int row_end, int tid);  /* portable floor (q8_job) */
-/* Cached-repack rpblock layouts — shared by the avx2 + avx-vnni 8-feature-wide gemms and jam.c dispatch. */
-typedef struct { float d[8], dmin[8]; uint8_t sc[64], mn[64], qs[1024]; } jam_q4k_rpblock;
-typedef struct { float d[8], dmin[8]; uint8_t sc[64], mn[64], qs[2048]; } jam_q5k_rpblock;
-typedef struct { float d[8]; int8_t sc[128]; uint8_t qs[2048]; } jam_q6k_rpblock;
-typedef struct { float d[8]; int8_t qs[256]; } jam_q8_0_rpblock;
 #ifdef JAM_HAVE_AVX2
 void jam_mm_mxfp4_avx2(void* job, int a_begin, int a_end, int tid);        /* maddubs + FP4 decode */
 void jam_mm_q4_0_avx2(void* job, int a_begin, int a_end, int tid);         /* maddubs + nibble-8 decode */
-void jam_q4k_repack8(const void* w, int rows0, int re, int sblocks, size_t w_stride, void* out);  /* repack 8 features (Q4_K) */
-void jam_mm_q4k_rp_avx2(void* job, int rb, int re, int tid);             /* cached-repack Q4_K gemm (rb..re = groups) */
-void jam_q5k_repack8(const void* w, int rows0, int re, int sblocks, size_t w_stride, void* out);  /* repack 8 features (Q5_K) */
-void jam_mm_q5k_rp_avx2(void* job, int rb, int re, int tid);
-void jam_mm_q5k_rp1_avx2(void* job, int rb, int re, int tid);
-void jam_q6k_repack8(const void* w, int rows0, int re, int sblocks, size_t w_stride, void* out);  /* repack 8 features (Q6_K) */
-void jam_mm_q6k_rp_avx2(void* job, int rb, int re, int tid);
-void jam_mm_q6k_rp1_avx2(void* job, int rb, int re, int tid);
-void jam_q8_0_repack8(const void* w, int rows0, int re, int nblocks, size_t w_stride, void* out); /* repack 8 features (Q8_0) */
-void jam_q4_0_repack8(const void* w, int rows0, int re, int nblocks, size_t w_stride, void* out); /* repack 8 features (Q4_0 -> raw u8 nibble) */
-void jam_mm_q8_0_rp_avx2(void* job, int rb, int re, int tid);
-void jam_mm_mxfp4_rp_avx2(void* job, int grp_begin, int grp_end, int tid);   /* cached-repack MXFP4 (int16-deferred) */
-void jam_mm_mxfp4_rp1_avx2(void* job, int grp_begin, int grp_end, int tid);  /* n==1 sibling */
-void jam_mxfp4_repack8(const void* w, int rows0, int re, int blocks, size_t w_stride, void* out);
             /* cached-repack Q8_0 gemm (sign-trick maddubs) */
-void jam_mm_q8_0_rp1_avx2(void* job, int rb, int re, int tid);           /* cached-repack Q8_0 gemv/decode */
-void jam_mm_q4_0_rp_avx2(void* job, int rb, int re, int tid);            /* cached-repack Q4_0 gemm (unsigned nibble, deferred madd, -8·Σa) */
-void jam_mm_q4_0_rp1_avx2(void* job, int rb, int re, int tid);           /* cached-repack Q4_0 gemv/decode */
-void jam_q8k_requant(void* job, int rb, int re, int tid);                 /* per-256 (Q8_K) activation requant, per-32 sums */
-void jam_q6k_requant(void* job, int rb, int re, int tid);                 /* per-256 requant with per-16 sums (Q6_K bias) */
 void jam_mm_nvfp4_avx2(void* job, int rb, int re, int tid);                /* NVFP4: FP4 LUT + per-16 E4M3 */
 void jam_mm_q1_0_avx2(void* job, int rb, int re, int tid);                 /* Q1_0: sign-mask xor-negate maddubs */
 #endif
@@ -260,10 +223,6 @@ void jam_mm_q8_0_avx2(void* job, int a_begin, int a_end, int tid);         /* ph
 #endif
 #ifdef JAM_HAVE_AVXVNNI
 void jam_mm_q8_0_avxvnni(void* job, int a_begin, int a_end, int tid);      /* phase 2: 256-bit vpdpbusd */
-void jam_mm_q4k_rp_avxvnni(void* job, int rb, int re, int tid);            /* cached-repack rp kernels, vpdpbusd dot */
-void jam_mm_q5k_rp_avxvnni(void* job, int rb, int re, int tid);
-void jam_mm_q6k_rp_avxvnni(void* job, int rb, int re, int tid);
-void jam_mm_q8_0_rp_avxvnni(void* job, int rb, int re, int tid);
 #endif
 #ifdef JAM_HAVE_AVX512BW
 void jam_mm_q8_0_avx512bw(void* job, int a_begin, int a_end, int tid);     /* phase 2: 512-bit maddubs (no VNNI) */

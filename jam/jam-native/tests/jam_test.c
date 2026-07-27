@@ -272,7 +272,7 @@ static void suite_dense(int dtype, const char* name, int m, int n, int k) {
 /* ---- layout contract: ldw > k (strided/padded weight view) and ldc > m (padded output) ----
  * The numeric suites above ALWAYS pass ldw==k and ldc==m, so they can't see a kernel that derives the
  * weight row stride from k instead of ldw, or one that overwrites the [m,ldc) output gap (the two bugs
- * that drifted in: K-quant ignored ldw while Q8_0 honored it; the rp kernels used ldc as the row count).
+ * that drifted in: K-quant ignored ldw while Q8_0 honored it; group kernels used ldc as the row count).
  * These are metamorphic checks — strided/padded MUST equal the tight call bit-for-bit, on the same ctx. */
 
 /* Build the contiguous weight for a dtype + report its block geometry (elems, bytes) for the strided copy. */
@@ -342,13 +342,12 @@ static void suite_layout(int dtype, const char* name, int m, int n, int k) {
         }
         if (st2||bad2){ printf("  [FAIL] %-5s ldc>m  %-15s %dx%dx%d bad=%d st=%d\n",name,CTX[c].lbl,m,n,k,bad2,st2); ++g_fail; }
 
-        /* (3) jam_forget_weight drops the cached repack; the re-run must still match */
+        /* (3) a re-run must be bit-identical (kernels are stateless - no weight-keyed caching) */
         ++g_checks;
-        jam_forget_weight(CTX[c].c, WQ);
         memset(Cs,0,4llu*(size_t)m*n);
         int st3 = jam_mm(CTX[c].c, WQ, dtype, k, B, JAM_F32, k, Cs, JAM_F32, m, m, n, k);
         int bad3=0; for (size_t i=0;i<(size_t)m*n;i++) if (Cc[i]!=Cs[i]) ++bad3;
-        if (st3||bad3){ printf("  [FAIL] %-5s forget %-15s %dx%dx%d bad=%d st=%d\n",name,CTX[c].lbl,m,n,k,bad3,st3); ++g_fail; }
+        if (st3||bad3){ printf("  [FAIL] %-5s re-run %-15s %dx%dx%d bad=%d st=%d\n",name,CTX[c].lbl,m,n,k,bad3,st3); ++g_fail; }
     }
     free(WQ); free(WS); free(B); free(Cc); free(Cs); free(Cp);
 }
@@ -485,9 +484,6 @@ static void suite_api(void) {
     OK("outer mm ok",        outer == JAM_OK);
     OK("re-entrant -> EBUSY", g_reentry_status == JAM_EBUSY);
 
-    /* jam_forget_weight: global ctx + never-cached pointer must be safe no-ops */
-    jam_forget_weight(NULL, W); jam_forget_weight(d, (const void*)0x1234);
-    OK("forget no-op survived", 1);
 
     /* jam_global_destroy: frees the global; a later jam_mm(NULL) lazily re-creates it; idempotent */
     OK("global mm pre-destroy",   jam_mm(NULL, W, JAM_F32, k, A, JAM_F32, k, C, JAM_F32, m, m, n, k) == JAM_OK);
@@ -524,10 +520,10 @@ static void suite_contract(void) {
 }
 
 /* Leak gate: create -> USE (so every lazy per-context buffer allocates: pool, requant scratch, K-quant
- * band scratch + per-worker repack, the rp_cache) -> destroy, in a loop. Under LeakSanitizer (the ASan
+ * band scratch + per-worker repack) -> destroy, in a loop. Under LeakSanitizer (the ASan
  * build) any byte destroy forgets becomes unreachable at exit and is reported, amplified 128x by the loop.
  * In the normal build we ALSO gate on mallinfo2: heap-in-use must return to its pre-loop value (a per-cycle
- * leak grows it linearly). Two ISA caps per cycle so BOTH the avx512 band scratch AND the avx2 rp_cache run. */
+ * leak grows it linearly). Two ISA caps per cycle so both the avx512 band scratch and the avx2 paths run. */
 static size_t heap_inuse(void) {
 #if defined(__GLIBC__)
     struct mallinfo2 mi = mallinfo2();
@@ -547,7 +543,6 @@ static void suite_leak(void) {
         jam_mm((ctx), w8,  JAM_Q8_0, k, B, JAM_F32, k, C, JAM_F32, m, m, n, k); \
         jam_mm((ctx), w4k, JAM_Q4_K, k, B, JAM_F32, k, C, JAM_F32, m, m, n, k); \
         jam_mm((ctx), w6k, JAM_Q6_K, k, B, JAM_F32, k, C, JAM_F32, m, m, n, k); \
-        jam_forget_weight((ctx), w8); \
     } while (0)
     jam_config av2; memset(&av2,0,sizeof av2); av2.max_isa = JAM_ISA_AVX2;
     for (int warm=0; warm<2; warm++) {   /* settle one-time allocations before measuring */
@@ -557,7 +552,7 @@ static void suite_leak(void) {
     size_t before = heap_inuse();
     for (int it=0; it<64; it++) {
         jam_ctx* c=jam_ctx_create(NULL);  USE(c); jam_ctx_destroy(c);   /* avx512: band scratch + kq_repack */
-        jam_ctx* a=jam_ctx_create(&av2);  USE(a); jam_ctx_destroy(a);   /* avx2: rp_cache + qscratch        */
+        jam_ctx* a=jam_ctx_create(&av2);  USE(a); jam_ctx_destroy(a);   /* avx2: int8 kernels + qscratch    */
     }
     long growth = (long)heap_inuse() - (long)before;
     #undef USE
@@ -581,7 +576,7 @@ int main(void) {
 
     int F[][3] = {{1,1,1},{2,3,4},{7,5,3},{8,8,8},{13,9,17},{64,64,64},{100,99,97},{128,256,64},{257,128,33},{512,512,512}};
     int Q[][3] = {{1,1,32},{4,4,64},{7,5,32},{5,7,96},{13,9,160},{64,64,256},{100,99,128},{257,33,96},{129,127,512},{512,512,512},
-                  {16,7,64},{20,3,96},{104,7,256},{40,5,128},{104,7,1024},{104,7,512},{50,6,1024}};   /* multi-group (m>8) at n<8: the cached-repack path */
+                  {16,7,64},{20,3,96},{104,7,256},{40,5,128},{104,7,1024},{104,7,512},{50,6,1024}};   /* multi-group (m>8) at n<8: the small-n int8 path */
     for (unsigned s=0;s<sizeof F/sizeof*F;++s) suite_f32(F[s][0],F[s][1],F[s][2]);
     for (unsigned s=0;s<sizeof Q/sizeof*Q;++s) suite_q8(Q[s][0],Q[s][1],Q[s][2]);
     for (unsigned s=0;s<sizeof Q/sizeof*Q;++s) suite_mxfp4(Q[s][0],Q[s][1],Q[s][2]);   /* same shapes */
@@ -601,8 +596,8 @@ int main(void) {
     for (unsigned s=0;s<sizeof DN/sizeof*DN;++s) suite_dense(JAM_F16,  "F16",  DN[s][0],DN[s][1],DN[s][2]);
     for (unsigned s=0;s<sizeof DN/sizeof*DN;++s) suite_dense(JAM_BF16, "BF16", DN[s][0],DN[s][1],DN[s][2]);
 
-    /* Layout contract (strided ldw>k · padded ldc>m · forget) for every dtype, with a partial m=37 (last
-     * 8-feature group nf<8, last 16-row band partial) at n=16 (prefill: rp kernels + avx512 VNNI band) and
+    /* Layout contract (strided ldw>k · padded ldc>m · re-run) for every dtype, with a partial m=37 (last
+     * 8-feature group nf<8, last 16-row band partial) at n=16 (prefill: int8 kernels + avx512 VNNI band) and
      * n=1 (the float floor on the generic context). This is the coverage whose absence let the drift in. */
     for (int ni=0; ni<2; ni++) { int nn = ni ? 1 : 16;
         suite_layout(JAM_Q8_0,  "Q8_0",  37, nn, 64);
@@ -619,7 +614,7 @@ int main(void) {
     }
 
     /* extreme/saturation: drive the Q8_0 int8 dot to its ±127 accumulator edges + the requant clamp,
-     * partial m, prefill (rp/band) + gemv (floor/dot). */
+     * partial m, prefill (band/int8) + gemv (floor/dot). */
     for (int mode=0; mode<2; mode++) {
         suite_extreme(37, 16, 256, mode);   /* prefill: maddubs/vpdpbusd 8-wide + the avx512 band */
         suite_extreme(33,  1, 512, mode);   /* gemv: the dot kernels + the generic floor */
@@ -633,7 +628,7 @@ int main(void) {
     suite_adversarial(JAM_BF16,"BF16",37,8,80);   suite_adversarial(JAM_F32,"F32",37,8,80);
 
     suite_leak();       /* create/use/destroy cycles must not leak (mallinfo2 gate + LeakSanitizer) */
-    suite_api();        /* context lifecycle (global + explicit), config, EUNSUPPORTED/EBUSY, forget */
+    suite_api();        /* context lifecycle (global + explicit), config, EUNSUPPORTED/EBUSY */
     suite_contract();   /* invalid-input error returns (context-independent) */
 
     for (int c=0;c<NCTX;c++) if (CTX[c].c) jam_ctx_destroy(CTX[c].c);
