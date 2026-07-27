@@ -43,12 +43,51 @@ public final class FlashAttention {
         final float[] m = new float[Br];
         final double[] l = new double[Br];
         final int[] kvOff = new int[Bc];
+        F32FloatTensor kDec, vDec; // F16-cache block decode scratch, grown to Bc*headSize
+
+        F32FloatTensor kDec(int capacity) {
+            if (kDec == null || kDec.size() < capacity) kDec = F32FloatTensor.allocate(capacity);
+            return kDec;
+        }
+
+        F32FloatTensor vDec(int capacity) {
+            if (vDec == null || vDec.size() < capacity) vDec = F32FloatTensor.allocate(capacity);
+            return vDec;
+        }
     }
 
     private static final ThreadLocal<Buffers> BUFFERS = ThreadLocal.withInitial(Buffers::new);
 
     static Buffers buffers() {
         return BUFFERS.get();
+    }
+
+    /**
+     * Decodes an F16 cache run into F32 scratch ONCE per kv-block. The F16 tile paths converted
+     * every key per row-tile (Br/QT times) through the castShape pipeline - the measured 15x
+     * cache-leg tax on F16-cache models. Decoding first runs the fast F32 tiles; f16->f32 uses the
+     * SAME vector converter (exact for normals, subnormals flushed), so results are bit-identical
+     * to the direct F16 tiles.
+     */
+    static void decodeF16Run(
+            F16FloatTensor src, int[] kvOff, int count, int headSize, F32FloatTensor dst) {
+        var sp = FloatTensor.F_SPECIES;
+        int len = sp.length();
+        int bound = sp.loopBound(headSize);
+        for (int j = 0; j < count; j++) {
+            int so = kvOff[j];
+            long dstByte = dst.vbase + (long) j * headSize * Float.BYTES;
+            for (int d = 0; d < bound; d += len) {
+                loadF16(src, so + d)
+                        .intoMemorySegment(
+                                dst.vseg,
+                                dstByte + (long) d * Float.BYTES,
+                                ByteOrder.LITTLE_ENDIAN);
+            }
+            for (int d = bound; d < headSize; d++) {
+                dst.setFloat((long) j * headSize + d, src.getFloat(so + d));
+            }
+        }
     }
 
     /** out[outOffset, +headSize] *= scale (rescale the running output on a new row max). */
@@ -837,6 +876,17 @@ public final class FlashAttention {
                                                     + kvHeadOffset
                                             : (kvPos - startPos) * batchKvStride + kvHeadOffset;
                         }
+                        FloatTensor cacheK = cK;
+                        FloatTensor cacheV = cV;
+                        if (cacheCount > 0 && cK instanceof F16FloatTensor k16) {
+                            F32FloatTensor kd = buffers.kDec(Bc * headSize);
+                            F32FloatTensor vd = buffers.vDec(Bc * headSize);
+                            decodeF16Run(k16, kvOff, cacheCount, headSize, kd);
+                            decodeF16Run((F16FloatTensor) cV, kvOff, cacheCount, headSize, vd);
+                            for (int j = 0; j < cacheCount; j++) kvOff[j] = j * headSize;
+                            cacheK = kd;
+                            cacheV = vd;
+                        }
 
                         for (int i0 = 0; i0 < BrRows; i0 += QT) {
                             int qr = Math.min(QT, BrRows - i0);
@@ -847,7 +897,7 @@ public final class FlashAttention {
                                             qF32,
                                             qBase,
                                             queryStride,
-                                            cK,
+                                            cacheK,
                                             kvOff,
                                             0,
                                             cacheCount,
@@ -877,7 +927,7 @@ public final class FlashAttention {
                                         S[(i0 + t) * BcRows + j] =
                                                 q.dot(
                                                                 qOffset,
-                                                                j < cacheCount ? cK : bK,
+                                                                j < cacheCount ? cacheK : bK,
                                                                 kvOff[j],
                                                                 headSize)
                                                         * scale;
@@ -940,7 +990,7 @@ public final class FlashAttention {
                                             outF32,
                                             oBase,
                                             queryStride,
-                                            cV,
+                                            cacheV,
                                             kvOff,
                                             0,
                                             cacheCount,
@@ -971,7 +1021,7 @@ public final class FlashAttention {
                                             accumulate(
                                                     out,
                                                     oOffset,
-                                                    j < cacheCount ? cV : bV,
+                                                    j < cacheCount ? cacheV : bV,
                                                     kvOff[j],
                                                     headSize,
                                                     p);
