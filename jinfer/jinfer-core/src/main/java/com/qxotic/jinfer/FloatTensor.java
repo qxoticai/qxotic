@@ -295,52 +295,7 @@ public abstract class FloatTensor {
     }
 
     public void matmul(FloatTensor that, FloatTensor out, int dim0, int dim1) {
-        gemv(that, out, dim0, dim1, 0);
-    }
-
-    // Compatibility alias for vector matmul with offset into this tensor.
-    void matmul(FloatTensor that, FloatTensor out, int dim0, int dim1, long thisOffset) {
-        gemv(that, 0, out, 0, dim0, dim1, thisOffset);
-    }
-
-    void matmul(
-            FloatTensor that,
-            long thatOffset,
-            FloatTensor out,
-            long outOffset,
-            int dim0,
-            int dim1) {
-        gemv(that, thatOffset, out, outOffset, dim0, dim1, 0);
-    }
-
-    void matmul(
-            FloatTensor that,
-            long thatOffset,
-            FloatTensor out,
-            long outOffset,
-            int dim0,
-            int dim1,
-            long thisOffset) {
-        gemv(that, thatOffset, out, outOffset, dim0, dim1, thisOffset);
-    }
-
-    void gemv(FloatTensor that, FloatTensor out, int dim0, int dim1) {
-        gemv(that, out, dim0, dim1, 0);
-    }
-
-    // GEMV with offset into this tensor (for expert weight slicing in 3D tensors).
-    void gemv(FloatTensor that, FloatTensor out, int dim0, int dim1, long thisOffset) {
-        gemv(that, 0, out, 0, dim0, dim1, thisOffset);
-    }
-
-    void gemv(
-            FloatTensor that,
-            long thatOffset,
-            FloatTensor out,
-            long outOffset,
-            int dim0,
-            int dim1) {
-        gemv(that, thatOffset, out, outOffset, dim0, dim1, 0);
+        gemv(that, 0, out, 0, dim0, dim1, 0);
     }
 
     // gemv/gemm are thin entry points onto MatMul, which dispatches on this.type() (the weight) to
@@ -368,37 +323,6 @@ public abstract class FloatTensor {
                         dim0,
                         1,
                         dim1);
-    }
-
-    void matmulBatch(FloatTensor that, FloatTensor out, int sequenceLength, int dim0, int dim1) {
-        gemm(that, dim1, out, dim0, sequenceLength, dim0, dim1);
-    }
-
-    void matmulBatch(
-            FloatTensor that,
-            int thatStride,
-            FloatTensor out,
-            int outStride,
-            int sequenceLength,
-            int dim0,
-            int dim1) {
-        gemm(that, thatStride, out, outStride, sequenceLength, dim0, dim1, 0);
-    }
-
-    void matmulBatch(
-            FloatTensor that,
-            int thatStride,
-            FloatTensor out,
-            int outStride,
-            int sequenceLength,
-            int dim0,
-            int dim1,
-            long thisOffset) {
-        gemm(that, thatStride, out, outStride, sequenceLength, dim0, dim1, thisOffset);
-    }
-
-    void gemm(FloatTensor that, FloatTensor out, int sequenceLength, int dim0, int dim1) {
-        gemm(that, dim1, out, dim0, sequenceLength, dim0, dim1);
     }
 
     public void gemm(
@@ -437,25 +361,16 @@ public abstract class FloatTensor {
                         dim1);
     }
 
-    @FunctionalInterface
-    public interface AggregateFunction {
-        float apply(float acc, float value);
-    }
-
-    public float reduce(long thisOffset, int size, float seed, AggregateFunction reduce) {
-        float result = seed;
-        for (int i = 0; i < size; ++i) {
-            result = reduce.apply(result, getFloat(thisOffset + i));
-        }
-        return result;
-    }
-
     float sum(long thisOffset, int size) {
-        return reduce(thisOffset, size, 0f, Float::sum);
+        float acc = 0f;
+        for (int i = 0; i < size; ++i) acc += getFloat(thisOffset + i);
+        return acc;
     }
 
     float max(long thisOffset, int size) {
-        return reduce(thisOffset, size, Float.NEGATIVE_INFINITY, Float::max);
+        float acc = Float.NEGATIVE_INFINITY;
+        for (int i = 0; i < size; ++i) acc = Math.max(acc, getFloat(thisOffset + i));
+        return acc;
     }
 
     public void copyTo(long thisOffset, FloatTensor that, long thatOffset, int size) {
