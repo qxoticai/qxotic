@@ -3,6 +3,7 @@ package com.qxotic.jinfer.langchain4j;
 import com.qxotic.jinfer.Media;
 import com.qxotic.jinfer.chat.JsonCodec;
 import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.chat.OpenAiMaps;
 import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.Tool;
@@ -168,18 +169,11 @@ final class Mappings {
                         new Part.ToolCall(
                                 r.id() == null ? "" : r.id(),
                                 r.name(),
-                                argsMap(r.arguments()),
+                                OpenAiMaps.args(r.arguments()),
                                 null));
             }
         }
         return new Message(Role.ASSISTANT, parts);
-    }
-
-    @SuppressWarnings("unchecked")
-    private static Map<String, Object> argsMap(String argumentsJson) {
-        if (argumentsJson == null || argumentsJson.isBlank()) return Map.of();
-        Object parsed = JsonCodec.parse(argumentsJson);
-        return parsed instanceof Map ? (Map<String, Object>) parsed : Map.of();
     }
 
     static List<Tool> toTools(List<ToolSpecification> specs) {
@@ -211,24 +205,13 @@ final class Mappings {
                     if (ai.hasToolExecutionRequests()) {
                         List<Object> calls = new ArrayList<>();
                         for (ToolExecutionRequest r : ai.toolExecutionRequests()) {
-                            var call = new LinkedHashMap<String, Object>();
-                            call.put("id", r.id() == null ? "" : r.id());
-                            call.put("type", "function");
-                            var fn = new LinkedHashMap<String, Object>();
-                            fn.put("name", r.name());
-                            fn.put("arguments", r.arguments());
-                            call.put("function", fn);
-                            calls.add(call);
+                            calls.add(OpenAiMaps.toolCall(r.id(), r.name(), r.arguments()));
                         }
                         map.put("tool_calls", calls);
                     }
                 }
-                case ToolExecutionResultMessage r -> {
-                    map.put("role", "tool");
-                    map.put("content", r.text());
-                    map.put("tool_call_id", r.id());
-                    map.put("name", r.toolName());
-                }
+                case ToolExecutionResultMessage r ->
+                        map.putAll(OpenAiMaps.toolResponse(r.text(), r.id(), r.toolName()));
                 default ->
                         throw new UnsupportedFeatureException(
                                 "message type " + m.type() + " is not supported");
@@ -245,16 +228,10 @@ final class Mappings {
     }
 
     private static Map<String, Object> toolMap(ToolSpecification spec) {
-        var fn = new LinkedHashMap<String, Object>();
-        fn.put("name", spec.name());
-        if (spec.description() != null) fn.put("description", spec.description());
-        if (spec.parameters() != null) {
-            fn.put("parameters", JsonSchemaElementUtils.toMap(spec.parameters()));
-        }
-        var tool = new LinkedHashMap<String, Object>();
-        tool.put("type", "function");
-        tool.put("function", fn);
-        return tool;
+        return OpenAiMaps.tool(
+                spec.name(),
+                spec.description(),
+                spec.parameters() != null ? JsonSchemaElementUtils.toMap(spec.parameters()) : null);
     }
 
     // ---- jinfer reply -> langchain4j ----

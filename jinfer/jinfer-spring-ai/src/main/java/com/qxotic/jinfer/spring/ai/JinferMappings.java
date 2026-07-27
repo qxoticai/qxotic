@@ -3,6 +3,7 @@ package com.qxotic.jinfer.spring.ai;
 import com.qxotic.jinfer.Media;
 import com.qxotic.jinfer.chat.JsonCodec;
 import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.chat.OpenAiMaps;
 import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.Tool;
@@ -167,16 +168,12 @@ final class JinferMappings {
         for (AssistantMessage.ToolCall c : ai.getToolCalls()) {
             parts.add(
                     new Part.ToolCall(
-                            c.id() == null ? "" : c.id(), c.name(), argsMap(c.arguments()), null));
+                            c.id() == null ? "" : c.id(),
+                            c.name(),
+                            OpenAiMaps.args(c.arguments()),
+                            null));
         }
         return new Message(Role.ASSISTANT, parts);
-    }
-
-    @SuppressWarnings("unchecked")
-    private static Map<String, Object> argsMap(String argumentsJson) {
-        if (argumentsJson == null || argumentsJson.isBlank()) return Map.of();
-        Object parsed = JsonCodec.parse(argumentsJson);
-        return parsed instanceof Map ? (Map<String, Object>) parsed : Map.of();
     }
 
     static List<Tool> toTools(List<ToolCallback> callbacks) {
@@ -209,14 +206,7 @@ final class JinferMappings {
                     if (ai.hasToolCalls()) {
                         List<Object> calls = new ArrayList<>();
                         for (AssistantMessage.ToolCall c : ai.getToolCalls()) {
-                            var call = new LinkedHashMap<String, Object>();
-                            call.put("id", c.id() == null ? "" : c.id());
-                            call.put("type", "function");
-                            var fn = new LinkedHashMap<String, Object>();
-                            fn.put("name", c.name());
-                            fn.put("arguments", c.arguments());
-                            call.put("function", fn);
-                            calls.add(call);
+                            calls.add(OpenAiMaps.toolCall(c.id(), c.name(), c.arguments()));
                         }
                         map.put("tool_calls", calls);
                     }
@@ -224,12 +214,7 @@ final class JinferMappings {
                 case ToolResponseMessage r -> {
                     // one OpenAI tool message per response
                     for (ToolResponseMessage.ToolResponse t : r.getResponses()) {
-                        var tool = new LinkedHashMap<String, Object>();
-                        tool.put("role", "tool");
-                        tool.put("content", t.responseData());
-                        tool.put("tool_call_id", t.id());
-                        tool.put("name", t.name());
-                        out.add(tool);
+                        out.add(OpenAiMaps.toolResponse(t.responseData(), t.id(), t.name()));
                     }
                     continue;
                 }
@@ -249,14 +234,10 @@ final class JinferMappings {
     }
 
     private static Map<String, Object> toolMap(ToolDefinition def) {
-        var fn = new LinkedHashMap<String, Object>();
-        fn.put("name", def.name());
-        if (def.description() != null) fn.put("description", def.description());
-        if (def.inputSchema() != null) fn.put("parameters", JsonCodec.parse(def.inputSchema()));
-        var tool = new LinkedHashMap<String, Object>();
-        tool.put("type", "function");
-        tool.put("function", fn);
-        return tool;
+        return OpenAiMaps.tool(
+                def.name(),
+                def.description(),
+                def.inputSchema() != null ? JsonCodec.parse(def.inputSchema()) : null);
     }
 
     // ---- jinfer reply -> Spring AI ----
