@@ -82,6 +82,53 @@ class NmtProbe {
         snapshot("post-gc+trim", trimmed2);
     }
 
+    @Test
+    void perModelAttribution() throws Throwable {
+        // CONFIRMATION experiment for the jam repack-cache attribution: each NEW model's
+        // load/chat/close leaves behind a residue ~ its jam-repacked weight bytes; REPEATING a
+        // model leaves ~0 (pointer+shape cache hit on the remapped-at-same-address weights).
+        // Residue is measured AFTER GC + malloc_trim, so arenas and glibc are out of the picture.
+        List<Cycle> order =
+                List.of(
+                        new Cycle("lfm2-8b-moe", ModelFixture.LFM25_8B_Q8.path()),
+                        new Cycle("lfm2-8b-AGAIN", ModelFixture.LFM25_8B_Q8.path()),
+                        new Cycle("lfm2-8b-3RD", ModelFixture.LFM25_8B_Q8.path()),
+                        new Cycle("granite-3b", ModelFixture.GRANITE_41_3B_Q8.path()),
+                        new Cycle("granite-3b-AGAIN", ModelFixture.GRANITE_41_3B_Q8.path()),
+                        new Cycle("qwen35-2b", ModelFixture.QWEN35_2B_Q8.path()));
+        System.out.printf("%-18s %12s %12s%n", "model", "residueMB", "fileGB");
+        settle();
+        long prev = rss("RssAnon") / 1024;
+        for (Cycle c : order) {
+            if (!Files.exists(c.path())) {
+                System.out.println(c.name() + ": absent, skipped");
+                continue;
+            }
+            try (JinferChatModel m =
+                    JinferChatModel.builder()
+                            .modelPath(c.path())
+                            .contextLength(4096)
+                            .maxOutputTokens(16)
+                            .build()) {
+                m.chat(UserMessage.from("Say hi in one word."));
+            }
+            settle();
+            long anon = rss("RssAnon") / 1024;
+            System.out.printf(
+                    "%-18s %12d %12.1f%n", c.name(), anon - prev, Files.size(c.path()) / 1e9);
+            prev = anon;
+        }
+    }
+
+    /** GC + cleaner drain + glibc trim: what remains after this is live non-JVM native memory. */
+    static void settle() throws Throwable {
+        for (int i = 0; i < 3; i++) {
+            System.gc();
+            Thread.sleep(300);
+        }
+        MALLOC_TRIM.invoke(0);
+    }
+
     static long trim() throws Throwable {
         long before = rss("RssAnon");
         MALLOC_TRIM.invoke(0);
