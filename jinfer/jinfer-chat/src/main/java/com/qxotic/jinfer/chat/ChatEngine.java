@@ -58,7 +58,8 @@ public final class ChatEngine {
                     r -> new Thread(r, "jinfer-stream"));
     private int sessionHits;
     private volatile boolean closed;
-    private final java.lang.foreign.Arena weights = java.lang.foreign.Arena.ofShared();
+    private final java.lang.foreign.Arena
+            weights; // owned by path-loading engines; forks share the creator's
     private final boolean ownsWeights;
 
     /** A finished generation's state with the batch stream of everything ingested into it. */
@@ -72,6 +73,7 @@ public final class ChatEngine {
             int cachedSessions) {
         this.sessionCapacity = Math.max(0, cachedSessions);
         this.ownsWeights = true;
+        this.weights = java.lang.foreign.Arena.ofShared();
         // the integrations' builder contract is "0 = the model's own maximum"; Models.load spells
         // that -1 - without this both integrations crashed in the port's tensor sizing on 0
         int ctx = contextLength <= 0 ? -1 : contextLength;
@@ -99,7 +101,11 @@ public final class ChatEngine {
                 this.prompts = null;
             }
         } catch (IOException e) {
+            weights.close(); // a leaked ofShared arena has no Cleaner: free before failing
             throw new UncheckedIOException("failed to load " + modelPath, e);
+        } catch (RuntimeException | Error e) {
+            weights.close();
+            throw e;
         }
         this.modelName = modelPath.getFileName().toString();
         this.jinja = new JinjaChatTemplate(loaded.tokenizer(), loaded.chatTemplateSource());
@@ -111,6 +117,7 @@ public final class ChatEngine {
      */
     private ChatEngine(ChatEngine base) {
         this.ownsWeights = false; // shared with the creator; its close() frees them (see LAW)
+        this.weights = base.weights;
         this.loaded = base.loaded;
         this.modelName = base.modelName;
         this.jinja = base.jinja; // compiled once per model; stateless at render time
@@ -310,17 +317,25 @@ public final class ChatEngine {
             restored = 0;
             remaining = prompt;
         }
-        Generator.GenerationResult result =
-                Generator.generate(
-                        model,
-                        state,
-                        Batch.prepare(remaining, state.batchCapacity()),
-                        sampler,
-                        maxTokens,
-                        timeoutNanos,
-                        loaded.stopTokens(),
-                        sink);
-        poolSession(state, prompt, total, result); // not reached on throw: torn states never pool
+        Generator.GenerationResult result;
+        try {
+            result =
+                    Generator.generate(
+                            model,
+                            state,
+                            Batch.prepare(remaining, state.batchCapacity()),
+                            sampler,
+                            maxTokens,
+                            timeoutNanos,
+                            loaded.stopTokens(),
+                            sink);
+        } catch (RuntimeException | Error e) {
+            // torn states never pool - and they must not wait for the Cleaner either: a server
+            // hammered by failing requests would otherwise stack full-context states until GC
+            ((com.qxotic.jinfer.BaseState) state).close();
+            throw e;
+        }
+        poolSession(state, prompt, total, result);
         return new Outcome(result, restored);
     }
 
@@ -436,12 +451,15 @@ public final class ChatEngine {
                         ? model.newState(
                                 model.config().contextLength(), Math.max(positions(prompt), 16))
                         : Generator.stateFor(model, positions(prompt));
-        CachedSession<S> s = CachedSession.resume(model, cache, state, prompt);
-        s.ingestGroups(
-                coarse
-                        ? List.of(prompt.subList(0, Math.max(1, prompt.size() - 1)))
-                        : prompt.stream().map(List::of).toList());
-        ((com.qxotic.jinfer.BaseState) state).close(); // define-time scratch: free now, not at GC
+        try {
+            CachedSession<S> s = CachedSession.resume(model, cache, state, prompt);
+            s.ingestGroups(
+                    coarse
+                            ? List.of(prompt.subList(0, Math.max(1, prompt.size() - 1)))
+                            : prompt.stream().map(List::of).toList());
+        } finally {
+            ((com.qxotic.jinfer.BaseState) state).close(); // define-time scratch: free now
+        }
     }
 
     /** Freezes the whole tree (mounted base + everything defined) into one artifact. */

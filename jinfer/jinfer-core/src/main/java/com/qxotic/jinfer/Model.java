@@ -43,7 +43,14 @@ public interface Model<C extends Config, W, S extends RuntimeState> {
      * backstop so a dropped unclosed state degrades to GC-eventually rather than leaking.
      */
     default S newState(int contextCapacity, int batchCapacity) {
-        S state = newState(contextCapacity, batchCapacity, java.lang.foreign.Arena.ofShared());
+        java.lang.foreign.Arena arena = java.lang.foreign.Arena.ofShared();
+        S state;
+        try {
+            state = newState(contextCapacity, batchCapacity, arena);
+        } catch (RuntimeException | Error e) {
+            arena.close(); // a leaked ofShared arena has no Cleaner: free before failing
+            throw e;
+        }
         ((BaseState) state).adoptArena();
         return state;
     }
