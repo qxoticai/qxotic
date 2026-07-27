@@ -18,6 +18,6 @@ public final class LlamaProvider implements ModelProvider {
     @Override
     public LoadedModel<?> load(FileChannel fileChannel, GGUF gguf, int contextLength, Arena arena)
             throws IOException {
-        return Llama.loadModel(fileChannel, gguf, contextLength, true, arena).loaded();
+        return Llama.loadModel(fileChannel, gguf, contextLength, arena).loaded();
     }
 }

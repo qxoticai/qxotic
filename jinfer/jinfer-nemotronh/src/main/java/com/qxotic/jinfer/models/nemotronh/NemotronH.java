@@ -38,7 +38,6 @@ import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
-import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
@@ -166,12 +165,8 @@ public final class NemotronH
 
     /** The eos / turn-delimiter ids that terminate generation (convenience for callers/tests). */
     public Set<Integer> stopTokens() {
-        Set<Integer> stops = new HashSet<>();
-        if (configuration.eosTokenId >= 0) stops.add(configuration.eosTokenId);
-        for (String name : new String[] {"<|im_end|>", "<|endoftext|>"}) {
-            SpecialTokens.find(tokenizer, name).ifPresent(stops::add);
-        }
-        return stops;
+        return SpecialTokens.stops(
+                tokenizer, configuration.eosTokenId, "<|im_end|>", "<|endoftext|>");
     }
 
     // === Forward (single token at `position`, residual written to row `row` of state.x) ===
@@ -828,8 +823,8 @@ public final class NemotronH
                 moeUpB,
                 moeSharedUpB,
                 moeSharedOutB;
-        final int[] moeRowTopE, moeExpertCounts, moeExpertOffsets, moeCursor, moeRowByExpert;
-        final float[] moeRowTopP, moeProbByExpert;
+        final int[] moeRowTopE, moeExpertCounts;
+        final float[] moeRowTopP;
         final Moe.Routing moeRouting;
         final FlashAttention.DecodeScratch decodeScratch = new FlashAttention.DecodeScratch(arena);
         final FloatTensor[] keyCache,
@@ -903,19 +898,7 @@ public final class NemotronH
             this.moeRowTopE = new int[cap * tk];
             this.moeRowTopP = new float[cap * tk];
             this.moeExpertCounts = new int[e];
-            this.moeExpertOffsets = new int[e + 1];
-            this.moeCursor = new int[e];
-            this.moeRowByExpert = new int[cap * tk];
-            this.moeProbByExpert = new float[cap * tk];
-            this.moeRouting =
-                    new Moe.Routing(
-                            moeRowTopE,
-                            moeRowTopP,
-                            moeExpertCounts,
-                            moeExpertOffsets,
-                            moeCursor,
-                            moeRowByExpert,
-                            moeProbByExpert);
+            this.moeRouting = new Moe.Routing(moeRowTopE, moeRowTopP, moeExpertCounts);
 
             this.keyCache = new FloatTensor[config.numberOfLayers];
             this.valueCache = new FloatTensor[config.numberOfLayers];

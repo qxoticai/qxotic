@@ -18,6 +18,6 @@ public final class GptOssProvider implements ModelProvider {
     @Override
     public LoadedModel<?> load(FileChannel fileChannel, GGUF gguf, int contextLength, Arena arena)
             throws IOException {
-        return GptOss.loadModel(fileChannel, gguf, contextLength, true, arena).loaded();
+        return GptOss.loadModel(fileChannel, gguf, contextLength, arena).loaded();
     }
 }

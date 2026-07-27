@@ -28,7 +28,6 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
-import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
@@ -137,11 +136,8 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
 
     /** The turn-delimiter / eos ids that terminate generation (convenience for callers/tests). */
     public Set<Integer> stopTokens() {
-        Set<Integer> stops = new HashSet<>();
-        for (String name : new String[] {"<|im_end|>", "<eos>", "<|endoftext|>", "<end_of_turn>"}) {
-            SpecialTokens.find(tokenizer, name).ifPresent(stops::add);
-        }
-        return stops;
+        return SpecialTokens.stops(
+                tokenizer, -1, "<|im_end|>", "<eos>", "<|endoftext|>", "<end_of_turn>");
     }
 
     private Lfm2ChatTemplate
@@ -654,12 +650,6 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
             return expertCount > 0 && layer >= leadingDenseBlockCount;
         }
 
-        public int maxKvDim() {
-            int max = 0;
-            for (int l = 0; l < numberOfLayers; l++) max = Math.max(max, kvDim(l));
-            return max;
-        }
-
         public int maxHiddenDim() {
             int max = expertCount > 0 ? expertFeedForwardLength : 0;
             for (int ff : feedForwardLength) max = Math.max(max, ff);
@@ -723,8 +713,8 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
         // MoE scratch (chunk-wide CSR routing); allocated only when the model has experts, else
         // null.
         final FloatTensor moeRouterB, moeGather, moeDownB, moeOutB;
-        final int[] moeExpertCounts, moeExpertOffsets, moeCursor, moeRowByExpert, moeRowTopE;
-        final float[] moeProbByExpert, moeRowTopP;
+        final int[] moeExpertCounts, moeRowTopE;
+        final float[] moeRowTopP;
         final Moe.Routing moeRouting;
 
         /**
@@ -793,27 +783,13 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
                 this.moeDownB = FloatTensor.allocateF32(arena, c * dim);
                 this.moeOutB = FloatTensor.allocateF32(arena, c * dim);
                 this.moeExpertCounts = new int[e];
-                this.moeExpertOffsets = new int[e + 1];
-                this.moeCursor = new int[e];
-                this.moeRowByExpert = new int[c * tk];
                 this.moeRowTopE = new int[c * tk];
-                this.moeProbByExpert = new float[c * tk];
                 this.moeRowTopP = new float[c * tk];
-                this.moeRouting =
-                        new Moe.Routing(
-                                moeRowTopE,
-                                moeRowTopP,
-                                moeExpertCounts,
-                                moeExpertOffsets,
-                                moeCursor,
-                                moeRowByExpert,
-                                moeProbByExpert);
+                this.moeRouting = new Moe.Routing(moeRowTopE, moeRowTopP, moeExpertCounts);
             } else {
                 this.moeRouterB = this.moeGather = this.moeDownB = this.moeOutB = null;
-                this.moeExpertCounts =
-                        this.moeExpertOffsets =
-                                this.moeCursor = this.moeRowByExpert = this.moeRowTopE = null;
-                this.moeProbByExpert = this.moeRowTopP = null;
+                this.moeExpertCounts = this.moeRowTopE = null;
+                this.moeRowTopP = null;
                 this.moeRouting = null;
             }
         }
@@ -834,16 +810,11 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
     public static Lfm2 loadModel(Path ggufPath, int contextLength, Arena arena) throws IOException {
         try (FileChannel fileChannel = FileChannel.open(ggufPath, StandardOpenOption.READ)) {
             GGUF gguf = ModelLoader.readGguf(fileChannel, ggufPath.toString());
-            return loadModel(fileChannel, gguf, contextLength, true, arena);
+            return loadModel(fileChannel, gguf, contextLength, arena);
         }
     }
 
-    public static Lfm2 loadModel(
-            FileChannel fileChannel,
-            GGUF gguf,
-            int contextLength,
-            boolean loadWeightsFlag,
-            Arena arena)
+    public static Lfm2 loadModel(FileChannel fileChannel, GGUF gguf, int contextLength, Arena arena)
             throws IOException {
         byte[] seed = com.qxotic.jinfer.cache.PromptCache.modelSeed(fileChannel);
         Tokenizer tokenizer = Tokenizers.fromGGUF(gguf);
@@ -911,8 +882,6 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
                         leadingDenseBlockCount,
                         expertGatingFunc);
 
-        if (!loadWeightsFlag)
-            return new Lfm2(config, tokenizer, Tokenizers.chatTemplateSource(gguf), seed, null);
         Map<String, GGMLTensorEntry> tensors = ModelLoader.loadTensors(fileChannel, gguf, arena);
         return new Lfm2(
                 config,

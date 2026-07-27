@@ -588,16 +588,11 @@ public final class Qwen3
             throws IOException {
         try (FileChannel fileChannel = FileChannel.open(ggufPath, StandardOpenOption.READ)) {
             GGUF gguf = ModelLoader.readGguf(fileChannel, ggufPath.toString());
-            return loadModel(fileChannel, gguf, contextLength, true, arena);
+            return loadModel(fileChannel, gguf, contextLength, arena);
         }
     }
 
-    static Qwen3 loadModel(
-            FileChannel fileChannel,
-            GGUF gguf,
-            int contextLength,
-            boolean loadWeightsFlag,
-            Arena arena)
+    static Qwen3 loadModel(FileChannel fileChannel, GGUF gguf, int contextLength, Arena arena)
             throws IOException {
         Tokenizer tokenizer = Tokenizers.fromGGUF(gguf);
         String arch = gguf.getString("general.architecture");
@@ -636,8 +631,6 @@ public final class Qwen3
                         ropeDimensionCount,
                         hiddenDim);
 
-        if (!loadWeightsFlag)
-            return new Qwen3(config, tokenizer, Tokenizers.chatTemplateSource(gguf), null);
         Map<String, GGMLTensorEntry> tensors = ModelLoader.loadTensors(fileChannel, gguf, arena);
         int ropeDim = Math.min(config.ropeDimensionCount, config.headSize);
         RoPE.Freqs rope = RoPE.precomputeFreqsCis(config.contextLength, ropeDim, config.ropeTheta);

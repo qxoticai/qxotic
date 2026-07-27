@@ -29,7 +29,6 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
-import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
@@ -143,11 +142,7 @@ public final class GptOss
      * end a reply, per the Harmony grammar.
      */
     public Set<Integer> stopTokens() {
-        Set<Integer> stops = new HashSet<>();
-        for (String name : new String[] {"<|return|>", "<|call|>", "<|endoftext|>"}) {
-            SpecialTokens.find(tokenizer, name).ifPresent(stops::add);
-        }
-        return stops;
+        return SpecialTokens.stops(tokenizer, -1, "<|return|>", "<|call|>", "<|endoftext|>");
     }
 
     private com.qxotic.jinfer.chat.TurnTemplate
@@ -700,8 +695,8 @@ public final class GptOss
         final FloatTensor[] keyCache, valueCache, batchK, batchV;
         // MoE scratch (chunk-wide CSR routing); gpt-oss is all-MoE so always allocated.
         final FloatTensor moeRouterB, moeGather, moeDownB, moeOutB, hb, hb2;
-        final int[] moeExpertCounts, moeExpertOffsets, moeCursor, moeRowByExpert, moeRowTopE;
-        final float[] moeProbByExpert, moeRowTopP;
+        final int[] moeExpertCounts, moeRowTopE;
+        final float[] moeRowTopP;
         final Moe.Routing moeRouting;
 
         /** Recycles this allocation: cursor to 0; stale KV rows beyond it are attention-masked. */
@@ -741,21 +736,9 @@ public final class GptOss
             this.moeDownB = FloatTensor.allocateF32(arena, c * dim);
             this.moeOutB = FloatTensor.allocateF32(arena, c * dim);
             this.moeExpertCounts = new int[numExperts];
-            this.moeExpertOffsets = new int[numExperts + 1];
-            this.moeCursor = new int[numExperts];
-            this.moeRowByExpert = new int[c * topK];
             this.moeRowTopE = new int[c * topK];
-            this.moeProbByExpert = new float[c * topK];
             this.moeRowTopP = new float[c * topK];
-            this.moeRouting =
-                    new Moe.Routing(
-                            moeRowTopE,
-                            moeRowTopP,
-                            moeExpertCounts,
-                            moeExpertOffsets,
-                            moeCursor,
-                            moeRowByExpert,
-                            moeProbByExpert);
+            this.moeRouting = new Moe.Routing(moeRowTopE, moeRowTopP, moeExpertCounts);
             int n = config.numberOfLayers();
             this.keyCache = new FloatTensor[n];
             this.valueCache = new FloatTensor[n];
@@ -787,17 +770,12 @@ public final class GptOss
             throws IOException {
         try (FileChannel fileChannel = FileChannel.open(ggufPath, StandardOpenOption.READ)) {
             GGUF gguf = ModelLoader.readGguf(fileChannel, ggufPath.toString());
-            return loadModel(fileChannel, gguf, contextLength, true, arena);
+            return loadModel(fileChannel, gguf, contextLength, arena);
         }
     }
 
     public static GptOss loadModel(
-            FileChannel fileChannel,
-            GGUF gguf,
-            int contextLength,
-            boolean loadWeightsFlag,
-            Arena arena)
-            throws IOException {
+            FileChannel fileChannel, GGUF gguf, int contextLength, Arena arena) throws IOException {
         byte[] seed = com.qxotic.jinfer.cache.PromptCache.modelSeed(fileChannel);
         Tokenizer tokenizer = Tokenizers.fromGGUF(gguf);
         String arch = "gpt-oss";
@@ -854,8 +832,6 @@ public final class GptOss
                         expertFeedForwardLength,
                         expertWeightsScale);
 
-        if (!loadWeightsFlag)
-            return new GptOss(config, tokenizer, Tokenizers.chatTemplateSource(gguf), seed, null);
         Map<String, GGMLTensorEntry> tensors = ModelLoader.loadTensors(fileChannel, gguf, arena);
         return new GptOss(
                 config,

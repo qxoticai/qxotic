@@ -4,12 +4,11 @@
 // tail layers, per-head Q/K RMS norms + a bare V norm, embedding scaling, GELU MLP, pre/post norms,
 // per-layer output scaling, final-logit softcap, optional per-layer embeddings) — reusing the
 // jinfer kernels (Norms, RoPE, FlashAttention, Moe, ModelLoader) now exposed for it. Dense and MoE
-// (A4B) FFN paths are both ported. gemma-4 is a multimodal, MTP-capable architecture, so this
-// implements
-// MultiModal and MultiToken (instanceof = the arch supports it). The current text-only GGUFs load
-// neither
-// the media adapters nor MTP heads, so both report "supported but not loaded" via empty gates —
-// modalities()/embedder() empty, depth() empty — never a sentinel.
+// (A4B) FFN paths are both ported. gemma-4 is a multimodal architecture, so this implements
+// MultiModal (instanceof = the arch supports it); a text-only GGUF loads no media adapters and
+// reports "supported but not loaded" via empty gates - modalities()/embedder() empty, never a
+// sentinel. MTP (the gemma4-assistant draft sidecar) is loaded via loadModel(..., mtpSidecar) and
+// driven directly by Gemma4Speculative - no core seam yet (it waits for a second MTP family).
 package com.qxotic.jinfer.models.gemma4;
 
 import static com.qxotic.jinfer.Norms.rmsnorm;
@@ -32,13 +31,10 @@ import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.Optional;
-import java.util.OptionalInt;
 import java.util.Set;
 
 public final class Gemma4
-        implements LanguageModel<Gemma4.Configuration, Gemma4.Weights, Gemma4.State>,
-                MultiModal,
-                MultiToken<Gemma4.State> {
+        implements LanguageModel<Gemma4.Configuration, Gemma4.Weights, Gemma4.State>, MultiModal {
 
     private final Configuration configuration;
     private final Tokenizer tokenizer;
@@ -195,33 +191,6 @@ public final class Gemma4
                     Activations.softcap(dst, 0, n * vocab, configuration.logitSoftcapping());
                     return null;
                 });
-    }
-
-    // === Capabilities: gemma-4's architecture supports MTP and media input, so this implements
-    // both.
-    // Whether either is usable is a runtime fact gated by un-ignorable empties — the current
-    // text-only
-    // GGUFs load no MTP heads and no media adapters, so both report supported-but-not-loaded. ===
-
-    @Override
-    public OptionalInt depth() {
-        return mtp == null
-                ? OptionalInt.empty()
-                : OptionalInt.of(2); // draft depth the loop defaults to
-    }
-
-    /**
-     * NOTE - seam gap, deliberate: {@link com.qxotic.jinfer.MultiToken}'s per-head logits view is
-     * too weak for an efficient speculative loop (it cannot expose the chained draft hidden), so
-     * the loop ({@link Gemma4Speculative}) drives {@link Gemma4MtpDecoder} directly and this seam
-     * only reports {@link #depth()}. Reading per-head logits through the seam would recompute whole
-     * draft chains; it stays unimplemented until the seam is reshaped drafter-style
-     * (draftSeed/draftNext) in core.
-     */
-    @Override
-    public FloatTensor logits(State s, int output, int head) {
-        throw new UnsupportedOperationException(
-                "drive Gemma4MtpDecoder directly (see Gemma4Speculative)");
     }
 
     @Override
@@ -506,8 +475,8 @@ public final class Gemma4
                 moeOutB,
                 moeGather,
                 moeDownB;
-        final int[] moeExpertCounts, moeExpertOffsets, moeCursor, moeRowByExpert, moeRowTopE;
-        final float[] moeProbByExpert, moeRowTopP;
+        final int[] moeExpertCounts, moeRowTopE;
+        final float[] moeRowTopP;
         final Moe.Routing moeRouting;
 
         /** Recycles this allocation: cursor to 0; stale KV rows beyond it are attention-masked. */
@@ -568,28 +537,14 @@ public final class Gemma4
                 this.moeGather = FloatTensor.allocateF32(arena, c * dim);
                 this.moeDownB = FloatTensor.allocateF32(arena, c * dim);
                 this.moeExpertCounts = new int[e];
-                this.moeExpertOffsets = new int[e + 1];
-                this.moeCursor = new int[e];
-                this.moeRowByExpert = new int[c * tk];
                 this.moeRowTopE = new int[c * tk];
-                this.moeProbByExpert = new float[c * tk];
                 this.moeRowTopP = new float[c * tk];
-                this.moeRouting =
-                        new Moe.Routing(
-                                moeRowTopE,
-                                moeRowTopP,
-                                moeExpertCounts,
-                                moeExpertOffsets,
-                                moeCursor,
-                                moeRowByExpert,
-                                moeProbByExpert);
+                this.moeRouting = new Moe.Routing(moeRowTopE, moeRowTopP, moeExpertCounts);
             } else {
                 this.moeShared = this.moeInputB = this.moeRouterScaled = this.moeRouterB = null;
                 this.moeOutB = this.moeGather = this.moeDownB = null;
-                this.moeExpertCounts =
-                        this.moeExpertOffsets =
-                                this.moeCursor = this.moeRowByExpert = this.moeRowTopE = null;
-                this.moeProbByExpert = this.moeRowTopP = null;
+                this.moeExpertCounts = this.moeRowTopE = null;
+                this.moeRowTopP = null;
                 this.moeRouting = null;
             }
         }
@@ -1160,7 +1115,7 @@ public final class Gemma4
             throws IOException {
         try (FileChannel fileChannel = FileChannel.open(ggufPath, StandardOpenOption.READ)) {
             GGUF gguf = ModelLoader.readGguf(fileChannel, ggufPath.toString());
-            return loadModel(fileChannel, gguf, maxContextLength, true, arena);
+            return loadModel(fileChannel, gguf, maxContextLength, arena);
         }
     }
 
@@ -1238,11 +1193,7 @@ public final class Gemma4
     }
 
     public static Gemma4 loadModel(
-            FileChannel fileChannel,
-            GGUF gguf,
-            int maxContextLength,
-            boolean loadWeightsFlag,
-            Arena arena)
+            FileChannel fileChannel, GGUF gguf, int maxContextLength, Arena arena)
             throws IOException {
         byte[] seed = com.qxotic.jinfer.cache.PromptCache.modelSeed(fileChannel);
         Tokenizer tokenizer = Tokenizers.fromGGUF(gguf);
@@ -1368,9 +1319,6 @@ public final class Gemma4
             }
         }
 
-        if (!loadWeightsFlag) {
-            return new Gemma4(config, tokenizer, Tokenizers.chatTemplateSource(gguf), seed, null);
-        }
         Map<String, GGMLTensorEntry> tensors = ModelLoader.loadTensors(fileChannel, gguf, arena);
         return new Gemma4(
                 config,

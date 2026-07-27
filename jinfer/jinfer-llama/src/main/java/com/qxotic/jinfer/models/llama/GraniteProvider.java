@@ -18,6 +18,6 @@ public final class GraniteProvider implements ModelProvider {
     @Override
     public LoadedModel<?> load(FileChannel fileChannel, GGUF gguf, int contextLength, Arena arena)
             throws IOException {
-        return Granite.loadModel(fileChannel, gguf, contextLength, true, arena).loaded();
+        return Granite.loadModel(fileChannel, gguf, contextLength, arena).loaded();
     }
 }

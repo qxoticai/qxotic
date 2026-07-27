@@ -33,7 +33,6 @@ import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
-import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
@@ -178,11 +177,7 @@ public final class Qwen35
 
     /** The turn-delimiter / eos ids that terminate generation (convenience for callers/tests). */
     public Set<Integer> stopTokens() {
-        Set<Integer> stops = new HashSet<>();
-        for (String name : new String[] {"<|im_end|>", "<|endoftext|>"}) {
-            SpecialTokens.find(tokenizer, name).ifPresent(stops::add);
-        }
-        return stops;
+        return SpecialTokens.stops(tokenizer, -1, "<|im_end|>", "<|endoftext|>");
     }
 
     // === Forward (single-token reference; ingest streams the prompt one token at a time) ===
@@ -1287,8 +1282,8 @@ public final class Qwen35
                 moeSharedUpB,
                 moeSharedOutB,
                 moeSharedInputGateB;
-        final int[] moeExpertCounts, moeExpertOffsets, moeCursor, moeRowByExpert, moeRowTopE;
-        final float[] moeProbByExpert, moeRowTopP;
+        final int[] moeExpertCounts, moeRowTopE;
+        final float[] moeRowTopP;
         final Moe.Routing moeRouting;
 
         State(Configuration config, int contextCapacity, int batchCapacity, Arena arena) {
@@ -1373,21 +1368,9 @@ public final class Qwen35
                 this.moeSharedOutB = FloatTensor.allocateF32(arena, c * dim);
                 this.moeSharedInputGateB = FloatTensor.allocateF32(arena, c);
                 this.moeExpertCounts = new int[e];
-                this.moeExpertOffsets = new int[e + 1];
-                this.moeCursor = new int[e];
-                this.moeRowByExpert = new int[c * tk];
                 this.moeRowTopE = new int[c * tk];
-                this.moeProbByExpert = new float[c * tk];
                 this.moeRowTopP = new float[c * tk];
-                this.moeRouting =
-                        new Moe.Routing(
-                                moeRowTopE,
-                                moeRowTopP,
-                                moeExpertCounts,
-                                moeExpertOffsets,
-                                moeCursor,
-                                moeRowByExpert,
-                                moeProbByExpert);
+                this.moeRouting = new Moe.Routing(moeRowTopE, moeRowTopP, moeExpertCounts);
             } else {
                 this.moeRouterLogits =
                         this.moeOutput =
@@ -1404,10 +1387,8 @@ public final class Qwen35
                         this.moeSharedGateB =
                                 this.moeSharedUpB =
                                         this.moeSharedOutB = this.moeSharedInputGateB = null;
-                this.moeExpertCounts =
-                        this.moeExpertOffsets =
-                                this.moeCursor = this.moeRowByExpert = this.moeRowTopE = null;
-                this.moeProbByExpert = this.moeRowTopP = null;
+                this.moeExpertCounts = this.moeRowTopE = null;
+                this.moeRowTopP = null;
                 this.moeRouting = null;
             }
 
@@ -1445,17 +1426,12 @@ public final class Qwen35
             throws IOException {
         try (FileChannel fileChannel = FileChannel.open(ggufPath, StandardOpenOption.READ)) {
             GGUF gguf = ModelLoader.readGguf(fileChannel, ggufPath.toString());
-            return loadModel(fileChannel, gguf, contextLength, true, arena);
+            return loadModel(fileChannel, gguf, contextLength, arena);
         }
     }
 
     public static Qwen35 loadModel(
-            FileChannel fileChannel,
-            GGUF gguf,
-            int contextLength,
-            boolean loadWeightsFlag,
-            Arena arena)
-            throws IOException {
+            FileChannel fileChannel, GGUF gguf, int contextLength, Arena arena) throws IOException {
         byte[] seed = com.qxotic.jinfer.cache.PromptCache.modelSeed(fileChannel);
         Tokenizer tokenizer = Tokenizers.fromGGUF(gguf);
         String arch = gguf.getString("general.architecture");
@@ -1523,9 +1499,6 @@ public final class Qwen35
                         expertFeedForwardLength,
                         expertSharedFeedForwardLength);
 
-        if (!loadWeightsFlag) {
-            return new Qwen35(config, tokenizer, Tokenizers.chatTemplateSource(gguf), seed, null);
-        }
         Map<String, GGMLTensorEntry> tensors = ModelLoader.loadTensors(fileChannel, gguf, arena);
         return new Qwen35(
                 config,

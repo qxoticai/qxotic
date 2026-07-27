@@ -31,8 +31,8 @@ import java.util.Map;
  * token-identity gate verifies.
  *
  * <p>This class is the load + capability surface (Stage 1): a shape-verified sidecar reader. The
- * draft forward and the speculative loop are the subsequent stages; {@link Gemma4} exposes MTP
- * through the core {@code MultiToken} seam once they land.
+ * draft forward and the speculative loop are {@link Gemma4MtpDecoder} and {@link
+ * Gemma4Speculative}, driven directly (a core MTP seam waits for a second family to shape it).
  */
 public final class Gemma4Mtp {
 

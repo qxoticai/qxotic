@@ -127,11 +127,6 @@ public final class Gemma4Audio implements Embedder<Media.Audio> {
         return rows;
     }
 
-    /** Number of audio tokens a clip of {@code nSamples} 16 kHz samples produces. */
-    public int tokenCount(int nSamples) {
-        return Math.max(1, (nSamples + frameSize - 1) / frameSize);
-    }
-
     /**
      * Downmix to mono and resample to 16 kHz (linear). llama.cpp resamples with a higher-order
      * kernel, so for exact parity supply already-16 kHz-mono audio; this keeps arbitrary inputs

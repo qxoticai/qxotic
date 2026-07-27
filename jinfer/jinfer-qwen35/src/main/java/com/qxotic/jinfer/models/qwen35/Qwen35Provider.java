@@ -30,7 +30,7 @@ public final class Qwen35Provider implements ModelProvider {
                     "'qwen3' is the Qwen3-Embedding architecture - load it with"
                             + " Models.loadEmbedder");
         }
-        return Qwen35.loadModel(fileChannel, gguf, contextLength, true, arena).loaded();
+        return Qwen35.loadModel(fileChannel, gguf, contextLength, arena).loaded();
     }
 
     @Override
@@ -39,7 +39,7 @@ public final class Qwen35Provider implements ModelProvider {
         if (!"qwen3".equals(gguf.getString("general.architecture"))) {
             return ModelProvider.super.loadEmbedder(fileChannel, gguf, contextLength, arena);
         }
-        Qwen3 m = Qwen3.loadModel(fileChannel, gguf, contextLength, true, arena);
+        Qwen3 m = Qwen3.loadModel(fileChannel, gguf, contextLength, arena);
         // last-token pooling wants a trailing EOS on every sequence (the llama.cpp convention)
         int eos =
                 SpecialTokens.find(m.tokenizer(), "<|endoftext|>")

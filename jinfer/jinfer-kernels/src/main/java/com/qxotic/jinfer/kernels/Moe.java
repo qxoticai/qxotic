@@ -25,9 +25,23 @@ public final class Moe {
         public int seqLen, topK, numExperts; // per-call scalars; the scratch arrays are wired once
 
         /**
-         * Wraps a State's per-call CSR scratch so {@link #dispatch} needs no per-call allocation.
+         * The caller supplies only the arrays its gating fills ({@code rowTopE}/{@code rowTopP}
+         * sized rows*topK, {@code counts} sized numExperts); the dispatch-internal CSR scratch
+         * (offsets/cursor/gather order) is allocated here, once per State - {@link #dispatch} needs
+         * no per-call allocation.
          */
-        public Routing(
+        public Routing(int[] rowTopE, float[] rowTopP, int[] counts) {
+            this(
+                    rowTopE,
+                    rowTopP,
+                    counts,
+                    new int[counts.length + 1],
+                    new int[counts.length],
+                    new int[rowTopE.length],
+                    new float[rowTopE.length]);
+        }
+
+        private Routing(
                 int[] rowTopE,
                 float[] rowTopP,
                 int[] counts,

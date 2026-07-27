@@ -24,7 +24,6 @@ import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
-import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
@@ -132,13 +131,13 @@ public final class Granite
 
     /** The eos / turn-delimiter ids that terminate generation (convenience for callers/tests). */
     public Set<Integer> stopTokens() {
-        Set<Integer> stops = new HashSet<>();
-        if (configuration.eosTokenId >= 0) stops.add(configuration.eosTokenId);
-        for (String name :
-                new String[] {"<|end_of_text|>", "<|eot_id|>", "<|im_end|>", "<|endoftext|>"}) {
-            SpecialTokens.find(tokenizer, name).ifPresent(stops::add);
-        }
-        return stops;
+        return SpecialTokens.stops(
+                tokenizer,
+                configuration.eosTokenId,
+                "<|end_of_text|>",
+                "<|eot_id|>",
+                "<|im_end|>",
+                "<|endoftext|>");
     }
 
     private com.qxotic.jinfer.chat.TurnTemplate turnTemplate; // memoized: stateless, model-lifetime
@@ -463,17 +462,12 @@ public final class Granite
             throws IOException {
         try (FileChannel fileChannel = FileChannel.open(ggufPath, StandardOpenOption.READ)) {
             GGUF gguf = ModelLoader.readGguf(fileChannel, ggufPath.toString());
-            return loadModel(fileChannel, gguf, contextLength, true, arena);
+            return loadModel(fileChannel, gguf, contextLength, arena);
         }
     }
 
     public static Granite loadModel(
-            FileChannel fileChannel,
-            GGUF gguf,
-            int contextLength,
-            boolean loadWeightsFlag,
-            Arena arena)
-            throws IOException {
+            FileChannel fileChannel, GGUF gguf, int contextLength, Arena arena) throws IOException {
         byte[] seed = com.qxotic.jinfer.cache.PromptCache.modelSeed(fileChannel);
         Tokenizer tokenizer = Tokenizers.fromGGUF(gguf);
         String arch = gguf.getString("general.architecture"); // "granite"
@@ -531,8 +525,6 @@ public final class Granite
                         addBos,
                         attentionScale);
 
-        if (!loadWeightsFlag)
-            return new Granite(config, tokenizer, Tokenizers.chatTemplateSource(gguf), seed, null);
         Map<String, GGMLTensorEntry> tensors = ModelLoader.loadTensors(fileChannel, gguf, arena);
         RoPE.Freqs rope = buildRope(config, tensors);
         return new Granite(

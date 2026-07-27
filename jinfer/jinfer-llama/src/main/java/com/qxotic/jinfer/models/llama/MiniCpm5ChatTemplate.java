@@ -54,8 +54,6 @@ public final class MiniCpm5ChatTemplate implements ChatTemplate {
     private final int imEnd; // <|im_end|>
     private final int think; // <think>
     private final int endThink; // </think>
-    private final int toolsOpen; // <tools>
-    private final int toolsClose; // </tools>
     private final int function; // <function
     private final int endFunction; // </function>
     private final int endParam; // </param>
@@ -70,8 +68,6 @@ public final class MiniCpm5ChatTemplate implements ChatTemplate {
         this.imEnd = SpecialTokens.require(tokenizer, "<|im_end|>");
         this.think = SpecialTokens.require(tokenizer, "<think>");
         this.endThink = SpecialTokens.require(tokenizer, "</think>");
-        this.toolsOpen = SpecialTokens.require(tokenizer, "<tools>");
-        this.toolsClose = SpecialTokens.require(tokenizer, "</tools>");
         this.function = SpecialTokens.require(tokenizer, "<function");
         this.endFunction = SpecialTokens.require(tokenizer, "</function>");
         this.endParam = SpecialTokens.require(tokenizer, "</param>");

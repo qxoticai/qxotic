@@ -18,7 +18,7 @@ public final class Gemma4Provider implements ModelProvider {
     @Override
     public LoadedModel<?> load(FileChannel fileChannel, GGUF gguf, int contextLength, Arena arena)
             throws IOException {
-        return Gemma4.loadModel(fileChannel, gguf, contextLength, true, arena).loaded();
+        return Gemma4.loadModel(fileChannel, gguf, contextLength, arena).loaded();
     }
 
     @Override
@@ -29,7 +29,7 @@ public final class Gemma4Provider implements ModelProvider {
             java.nio.file.Path mediaProjector,
             Arena arena)
             throws IOException {
-        return Gemma4.loadModel(fileChannel, gguf, contextLength, true, arena)
+        return Gemma4.loadModel(fileChannel, gguf, contextLength, arena)
                 .withMediaEncoders(mediaProjector, arena)
                 .loaded();
     }

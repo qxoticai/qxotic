@@ -18,6 +18,19 @@ import java.util.Set;
  */
 public final class SpecialTokens {
 
+    /**
+     * The model's stop-token set: {@code eosTokenId} (when {@code >= 0}) plus every {@code names}
+     * entry the tokenizer actually has - absent names are skipped, so one list serves every
+     * checkpoint of a family.
+     */
+    public static java.util.Set<Integer> stops(
+            Tokenizer tokenizer, int eosTokenId, String... names) {
+        java.util.Set<Integer> stops = new java.util.HashSet<>();
+        if (eosTokenId >= 0) stops.add(eosTokenId);
+        for (String name : names) find(tokenizer, name).ifPresent(stops::add);
+        return stops;
+    }
+
     private SpecialTokens() {}
 
     /** The id of {@code name} if it exists AND is a special token. */

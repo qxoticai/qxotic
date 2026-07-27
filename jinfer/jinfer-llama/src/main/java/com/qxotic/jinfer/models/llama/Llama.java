@@ -26,7 +26,6 @@ import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
-import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
@@ -128,13 +127,13 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
 
     /** The eos / turn-delimiter ids that terminate generation (convenience for callers/tests). */
     public Set<Integer> stopTokens() {
-        Set<Integer> stops = new HashSet<>();
-        if (configuration.eosTokenId >= 0) stops.add(configuration.eosTokenId);
-        for (String name :
-                new String[] {"<|eot_id|>", "<|im_end|>", "<|endoftext|>", "<|end_of_text|>"}) {
-            SpecialTokens.find(tokenizer, name).ifPresent(stops::add);
-        }
-        return stops;
+        return SpecialTokens.stops(
+                tokenizer,
+                configuration.eosTokenId,
+                "<|eot_id|>",
+                "<|im_end|>",
+                "<|endoftext|>",
+                "<|end_of_text|>");
     }
 
     private com.qxotic.jinfer.chat.TurnTemplate
@@ -667,17 +666,12 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
             throws IOException {
         try (FileChannel fileChannel = FileChannel.open(ggufPath, StandardOpenOption.READ)) {
             GGUF gguf = ModelLoader.readGguf(fileChannel, ggufPath.toString());
-            return loadModel(fileChannel, gguf, contextLength, true, arena);
+            return loadModel(fileChannel, gguf, contextLength, arena);
         }
     }
 
     public static Llama loadModel(
-            FileChannel fileChannel,
-            GGUF gguf,
-            int contextLength,
-            boolean loadWeightsFlag,
-            Arena arena)
-            throws IOException {
+            FileChannel fileChannel, GGUF gguf, int contextLength, Arena arena) throws IOException {
         byte[] seed = com.qxotic.jinfer.cache.PromptCache.modelSeed(fileChannel);
         Tokenizer tokenizer = Tokenizers.fromGGUF(gguf);
         String arch = gguf.getString("general.architecture");
@@ -757,8 +751,6 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                         attentionScale,
                         noRopeLayerStep);
 
-        if (!loadWeightsFlag)
-            return new Llama(config, tokenizer, Tokenizers.chatTemplateSource(gguf), seed, null);
         Map<String, GGMLTensorEntry> tensors = ModelLoader.loadTensors(fileChannel, gguf, arena);
         RoPE.Freqs rope = buildRope(gguf, arch, config, tensors);
         return new Llama(
