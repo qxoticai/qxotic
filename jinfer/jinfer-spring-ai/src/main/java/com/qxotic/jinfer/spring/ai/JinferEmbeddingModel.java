@@ -1,7 +1,6 @@
 package com.qxotic.jinfer.spring.ai;
 
 import com.qxotic.jinfer.BaseState;
-import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.FloatTensor;
 import com.qxotic.jinfer.RuntimeFlags;
 import com.qxotic.jinfer.RuntimeState;
@@ -147,43 +146,17 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
                         ? options.getDimensions()
                         : dimensions();
         List<String> inputs = request.getInstructions();
-        if (inputs.isEmpty()) {
-            return new EmbeddingResponse(List.of(), metadata(0));
-        }
-        int[] suffix = loaded.sequenceSuffix();
-        int[][] seqs = new int[inputs.size()][];
-        int total = 0;
-        for (int i = 0; i < inputs.size(); i++) {
-            int[] ids = loaded.tokenizer().encode(inputs.get(i)).toArray();
-            int[] seq = java.util.Arrays.copyOf(ids, ids.length + suffix.length);
-            System.arraycopy(suffix, 0, seq, ids.length, suffix.length);
-            if (seq.length > contextLength) {
-                throw new IllegalArgumentException(
-                        "input "
-                                + i
-                                + " is "
-                                + seq.length
-                                + " tokens, over the "
-                                + contextLength
-                                + "-token context - raise contextLength(...) or chunk smaller");
-            }
-            seqs[i] = seq;
-            total += seq.length;
-        }
         List<Embedding> out = new ArrayList<>(inputs.size());
+        int dim = loaded.dimension();
+        int total;
         lock.lock();
         try {
-            // greedy packing: each group fills the context, one forward pass per group
-            int start = 0;
-            while (start < seqs.length) {
-                int end = start, packed = 0;
-                while (end < seqs.length && packed + seqs[end].length <= contextLength) {
-                    packed += seqs[end].length;
-                    end++;
-                }
-                embedGroup(loaded, state, seqs, start, end, packed, truncate, out);
-                start = end;
-            }
+            total =
+                    loaded.embedAll(
+                            state,
+                            contextLength,
+                            inputs,
+                            v -> out.add(toEmbedding(v, dim, truncate, out.size())));
         } finally {
             lock.unlock();
         }
@@ -192,33 +165,6 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
 
     private EmbeddingResponseMetadata metadata(int totalTokens) {
         return new EmbeddingResponseMetadata(modelName, new DefaultUsage(totalTokens, 0));
-    }
-
-    private static <S extends RuntimeState> void embedGroup(
-            LoadedEmbedder<S> l,
-            RuntimeState state,
-            int[][] seqs,
-            int start,
-            int end,
-            int packed,
-            int truncate,
-            List<Embedding> out) {
-        int[] ids = new int[packed];
-        int[] len = new int[end - start];
-        int at = 0;
-        for (int i = start; i < end; i++) {
-            System.arraycopy(seqs[i], 0, ids, at, seqs[i].length);
-            at += seqs[i].length;
-            len[i - start] = seqs[i].length;
-        }
-        @SuppressWarnings("unchecked")
-        S s = (S) state;
-        int dim = l.dimension();
-        l.model()
-                .embed(
-                        s,
-                        new Batch.Input.Sequences(new Batch.Input.Tokens(ids), len),
-                        vector -> out.add(toEmbedding(vector, dim, truncate, out.size())));
     }
 
     private static Embedding toEmbedding(FloatTensor vector, int dim, int truncate, int index) {

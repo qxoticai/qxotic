@@ -1,7 +1,6 @@
 package com.qxotic.jinfer.langchain4j;
 
 import com.qxotic.jinfer.BaseState;
-import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.FloatTensor;
 import com.qxotic.jinfer.RuntimeFlags;
 import com.qxotic.jinfer.RuntimeState;
@@ -96,74 +95,17 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
 
     @Override
     public Response<List<Embedding>> embedAll(List<TextSegment> segments) {
-        if (segments.isEmpty()) {
-            return Response.from(List.of(), new TokenUsage(0));
-        }
-        int[] suffix = loaded.sequenceSuffix();
-        int[][] seqs = new int[segments.size()][];
-        int total = 0;
-        for (int i = 0; i < segments.size(); i++) {
-            List<Integer> ids = loaded.tokenizer().encode(segments.get(i).text()).toList();
-            int[] seq = new int[ids.size() + suffix.length];
-            for (int j = 0; j < ids.size(); j++) seq[j] = ids.get(j);
-            System.arraycopy(suffix, 0, seq, ids.size(), suffix.length);
-            if (seq.length > contextLength) {
-                throw new IllegalArgumentException(
-                        "segment "
-                                + i
-                                + " is "
-                                + seq.length
-                                + " tokens, over the "
-                                + contextLength
-                                + "-token context - raise contextLength(...) or chunk smaller");
-            }
-            seqs[i] = seq;
-            total += seq.length;
-        }
+        List<String> texts = segments.stream().map(TextSegment::text).toList();
         List<Embedding> out = new ArrayList<>(segments.size());
+        int dim = loaded.dimension();
+        int total;
         lock.lock();
         try {
-            // greedy packing: each group fills the context, one forward pass per group
-            int start = 0;
-            while (start < seqs.length) {
-                int end = start, packed = 0;
-                while (end < seqs.length && packed + seqs[end].length <= contextLength) {
-                    packed += seqs[end].length;
-                    end++;
-                }
-                embedGroup(loaded, state, seqs, start, end, packed, out);
-                start = end;
-            }
+            total = loaded.embedAll(state, contextLength, texts, v -> out.add(toEmbedding(v, dim)));
         } finally {
             lock.unlock();
         }
         return Response.from(out, new TokenUsage(total));
-    }
-
-    private static <S extends RuntimeState> void embedGroup(
-            LoadedEmbedder<S> l,
-            RuntimeState state,
-            int[][] seqs,
-            int start,
-            int end,
-            int packed,
-            List<Embedding> out) {
-        int[] ids = new int[packed];
-        int[] len = new int[end - start];
-        int at = 0;
-        for (int i = start; i < end; i++) {
-            System.arraycopy(seqs[i], 0, ids, at, seqs[i].length);
-            at += seqs[i].length;
-            len[i - start] = seqs[i].length;
-        }
-        @SuppressWarnings("unchecked")
-        S s = (S) state;
-        int dim = l.dimension();
-        l.model()
-                .embed(
-                        s,
-                        new Batch.Input.Sequences(new Batch.Input.Tokens(ids), len),
-                        vector -> out.add(toEmbedding(vector, dim)));
     }
 
     private static Embedding toEmbedding(FloatTensor vector, int dim) {
