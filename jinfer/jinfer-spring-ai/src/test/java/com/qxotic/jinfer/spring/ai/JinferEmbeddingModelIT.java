@@ -46,7 +46,10 @@ class JinferEmbeddingModelIT {
 
     @AfterAll
     static void unload() {
-        if (model != null) model.close();
+        if (model != null) {
+            model.close();
+            model.close(); // idempotency pin: a second close must be a no-op, never ISE
+        }
     }
 
     static List<String> corpus(int n) {

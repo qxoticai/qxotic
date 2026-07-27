@@ -38,6 +38,8 @@ public final class JinferScoringModel implements ScoringModel, AutoCloseable {
     private final Qwen3 model;
     private final Qwen3.State state; // one reusable state; reset() between pairs
     private final java.lang.foreign.Arena weights = java.lang.foreign.Arena.ofShared();
+    private final java.util.concurrent.atomic.AtomicBoolean closed =
+            new java.util.concurrent.atomic.AtomicBoolean();
     private final java.util.concurrent.locks.ReentrantLock lock =
             new java.util.concurrent.locks.ReentrantLock(true); // single-stream, like ChatEngine
     private final String instruction;
@@ -46,17 +48,22 @@ public final class JinferScoringModel implements ScoringModel, AutoCloseable {
 
     private JinferScoringModel(Builder b) {
         try {
-            this.model =
-                    Qwen3.loadModel(
-                            b.modelPath, b.contextLength <= 0 ? -1 : b.contextLength, weights);
-        } catch (IOException e) {
-            throw new UncheckedIOException("failed to load " + b.modelPath, e);
+            try {
+                this.model =
+                        Qwen3.loadModel(
+                                b.modelPath, b.contextLength <= 0 ? -1 : b.contextLength, weights);
+            } catch (IOException e) {
+                throw new UncheckedIOException("failed to load " + b.modelPath, e);
+            }
+            this.instruction = b.instruction;
+            this.state = model.newState(model.config().contextLength(), 512);
+            // the whole scoring convention rests on these being single tokens - fail at build
+            this.yes = singleToken("yes");
+            this.no = singleToken("no");
+        } catch (RuntimeException | Error e) {
+            weights.close(); // a leaked ofShared arena has no Cleaner: free before failing
+            throw e;
         }
-        this.instruction = b.instruction;
-        this.state = model.newState(model.config().contextLength(), 512);
-        // the whole scoring convention rests on these being single tokens - fail at build
-        this.yes = singleToken("yes");
-        this.no = singleToken("no");
     }
 
     /**
@@ -65,6 +72,7 @@ public final class JinferScoringModel implements ScoringModel, AutoCloseable {
      */
     @Override
     public void close() {
+        if (!closed.compareAndSet(false, true)) return; // idempotent: arena close is one-shot
         lock.lock();
         try {
             state.close();

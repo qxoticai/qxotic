@@ -38,7 +38,10 @@ class JinferScoringModelIT {
 
     @AfterAll
     static void unload() {
-        if (scorer != null) scorer.close();
+        if (scorer != null) {
+            scorer.close();
+            scorer.close(); // idempotency pin: a second close must be a no-op, never ISE
+        }
     }
 
     @Test

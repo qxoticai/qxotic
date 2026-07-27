@@ -34,20 +34,27 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
     private final RuntimeState state; // one reusable state; embed() resets it per group
     private final int contextLength;
     private final java.lang.foreign.Arena weights = java.lang.foreign.Arena.ofShared();
+    private final java.util.concurrent.atomic.AtomicBoolean closed =
+            new java.util.concurrent.atomic.AtomicBoolean();
     private final ReentrantLock lock = new ReentrantLock(true); // single-stream, like ChatEngine
 
     private JinferEmbeddingModel(Builder b) {
         try {
-            // same contract as the chat builders: <= 0 means the model's own maximum (-1 to the
-            // loader); a literal 0 would crash the port's tensor sizing
-            this.loaded =
-                    Models.loadEmbedder(
-                            b.modelPath, b.contextLength <= 0 ? -1 : b.contextLength, weights);
-        } catch (IOException e) {
-            throw new UncheckedIOException("failed to load " + b.modelPath, e);
+            try {
+                // same contract as the chat builders: <= 0 means the model's own maximum (-1 to the
+                // loader); a literal 0 would crash the port's tensor sizing
+                this.loaded =
+                        Models.loadEmbedder(
+                                b.modelPath, b.contextLength <= 0 ? -1 : b.contextLength, weights);
+            } catch (IOException e) {
+                throw new UncheckedIOException("failed to load " + b.modelPath, e);
+            }
+            this.contextLength = loaded.model().config().contextLength();
+            this.state = newState(loaded, contextLength);
+        } catch (RuntimeException | Error e) {
+            weights.close(); // a leaked ofShared arena has no Cleaner: free before failing
+            throw e;
         }
-        this.contextLength = loaded.model().config().contextLength();
-        this.state = newState(loaded, contextLength);
     }
 
     private static <S extends RuntimeState> S newState(LoadedEmbedder<S> l, int ctx) {
@@ -61,6 +68,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
      */
     @Override
     public void close() {
+        if (!closed.compareAndSet(false, true)) return; // idempotent: arena close is one-shot
         lock.lock();
         try {
             ((com.qxotic.jinfer.BaseState) state).close();
