@@ -58,15 +58,16 @@ public final class Gemma4Speculative {
             Set<Integer> stops,
             int depth,
             TopRecorder recorder) {
-        Gemma4MtpDecoder decoder = model.mtpDecoder();
-        if (decoder == null)
-            throw new IllegalStateException(
-                    "MTP sidecar not loaded - use loadModel(gguf, ctx, mtpSidecar)");
         int dim = model.config().embeddingLength();
         int vocab = model.config().vocabularySize();
 
-        // per-generate scratch ((depth+1)*vocab is ~4 MB at a 262k vocab), freed on exit
+        // per-generate scratch ((depth+1)*vocab is ~4 MB at a 262k vocab), freed on exit; the
+        // draft decoder is minted here too - per-generation, so pipelines never share its buffers
         try (Arena scratch = Arena.ofShared()) {
+            Gemma4MtpDecoder decoder = model.mtpDecoder(scratch);
+            if (decoder == null)
+                throw new IllegalStateException(
+                        "MTP sidecar not loaded - use loadModel(gguf, ctx, mtpSidecar)");
             return generate(
                     model, s, depth, maxTokens, stops, recorder, decoder, dim, vocab, scratch);
         }

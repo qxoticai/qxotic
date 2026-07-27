@@ -50,7 +50,6 @@ public final class Gemma4
     private Embedder<Media.Audio>
             audio; // audio encoder; null unless the mmproj carries a gemma4ua adapter
     private Gemma4Mtp mtp; // MTP draft sidecar; null unless loadModel(..., mtpSidecar) loaded one
-    private Gemma4MtpDecoder mtpDecoder; // paired draft forward (single-threaded scratch)
 
     Gemma4(
             Configuration configuration,
@@ -1189,16 +1188,18 @@ public final class Gemma4
             Path textGguf, int maxContextLength, Path mtpSidecar, Arena arena) throws IOException {
         Gemma4 model = loadModel(textGguf, maxContextLength, arena);
         model.mtp = Gemma4Mtp.loadSidecar(mtpSidecar, model.config().vocabularySize(), arena);
-        model.mtpDecoder = new Gemma4MtpDecoder(model.mtp, model, arena);
         return model;
     }
 
     /**
-     * The paired MTP draft forward, or null when no sidecar is loaded. Single-threaded (owns
-     * scratch); {@link Gemma4Speculative} is the decode loop over it.
+     * A fresh MTP draft forward over {@code arena}, or null when no sidecar is loaded. The decoder
+     * is pure per-generation scratch over the immutable {@link Gemma4Mtp} weights - mint one per
+     * speculative generation in its scratch arena (a model-level singleton was shared mutable
+     * state: concurrent speculative decodes on two states corrupted each other's draft buffers).
+     * {@link Gemma4Speculative} is the decode loop over it.
      */
-    Gemma4MtpDecoder mtpDecoder() {
-        return mtpDecoder;
+    Gemma4MtpDecoder mtpDecoder(Arena arena) {
+        return mtp == null ? null : new Gemma4MtpDecoder(mtp, this, arena);
     }
 
     /**
