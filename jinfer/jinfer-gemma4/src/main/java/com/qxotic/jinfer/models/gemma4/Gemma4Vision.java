@@ -142,11 +142,21 @@ public final class Gemma4Vision implements Embedder<Media.Image> {
      * tower.
      */
     public FloatTensor encode(Media.Image image) {
+        // Every scratch buffer of this encode (~340 MB/image at defaults) lives in one owned
+        // arena, freed on exit - per-call ofAuto here was the 51GB pathology for vision
+        // workloads (GC never runs in a native-heavy JVM). Only the projected return escapes.
+        try (Arena scratch = Arena.ofShared()) {
+            return encode(image, scratch);
+        }
+    }
+
+    private FloatTensor encode(Media.Image image, Arena scratch) {
         // 1. preprocess + patch-embed (+ 2D position) → patches: [nPatch, visionDim]
-        Patches p = patchify(image);
+        Patches p = patchify(image, scratch);
         int n = p.count;
         FloatTensor cur = p.tokens; // [n, visionDim]
-        Arena scratch = Arena.ofAuto(); // per-encode scratch: GC-managed by design
+        FloatTensor tmp = FloatTensor.allocateF32(scratch, n * visionDim); // rmsAddResidual
+        FloatTensor clampTmp = FloatTensor.allocateF32(scratch, n * ffnDim); // clampedGemm input
         FloatTensor xb = FloatTensor.allocateF32(scratch, n * visionDim);
         FloatTensor q = FloatTensor.allocateF32(scratch, n * visionDim),
                 k = FloatTensor.allocateF32(scratch, n * visionDim),
@@ -162,15 +172,15 @@ public final class Gemma4Vision implements Embedder<Media.Image> {
         // 2. tower (batched)
         for (Layer l : layers) {
             rms(xb, cur, l.ln1(), n, visionDim); // n1 = rms(cur, ln1)
-            attention(xb, q, k, v, attn, kF16, vF16, l, p.px, p.py, n); // attn(n1) -> attn
-            rmsAddResidual(cur, attn, l.attnPostNorm(), n, visionDim); // cur += rms(attn, attnPost)
+            attention(xb, q, k, v, attn, kF16, vF16, l, p.px, p.py, n, clampTmp);
+            rmsAddResidual(cur, attn, l.attnPostNorm(), n, visionDim, tmp);
             rms(xb, cur, l.ln2(), n, visionDim); // n2 = rms(cur, ln2)
-            feedForward(xb, g, u, attn, l, n); // ffn(n2) -> attn (reused)
-            rmsAddResidual(cur, attn, l.ffnPostNorm(), n, visionDim); // cur += rms(ffn, ffnPost)
+            feedForward(xb, g, u, attn, l, n, clampTmp); // ffn(n2) -> attn (reused)
+            rmsAddResidual(cur, attn, l.ffnPostNorm(), n, visionDim, tmp);
         }
 
         // 3. pool (merge x merge avg * sqrt(visionDim)) then project + final RMSNorm
-        return projectPooled(cur, p.px, p.py);
+        return projectPooled(cur, p.px, p.py, scratch, clampTmp);
     }
 
     // === batched tower steps ===
@@ -186,10 +196,11 @@ public final class Gemma4Vision implements Embedder<Media.Image> {
             Layer l,
             int px,
             int py,
-            int n) {
-        clampedGemm(x, q, n, visionDim, visionDim, l.wq(), l.wqClamp());
-        clampedGemm(x, k, n, visionDim, visionDim, l.wk(), l.wkClamp());
-        clampedGemm(x, v, n, visionDim, visionDim, l.wv(), l.wvClamp());
+            int n,
+            FloatTensor clampTmp) {
+        clampedGemm(x, q, n, visionDim, visionDim, l.wq(), l.wqClamp(), clampTmp);
+        clampedGemm(x, k, n, visionDim, visionDim, l.wk(), l.wkClamp(), clampTmp);
+        clampedGemm(x, v, n, visionDim, visionDim, l.wv(), l.wvClamp(), clampTmp);
         // per-head RMS norms (q,k with weight; v no weight) + 2D RoPE on q,k
         Parallel.forRows(
                 n,
@@ -216,16 +227,15 @@ public final class Gemma4Vision implements Embedder<Media.Image> {
         FlashAttention.bidirectionalPrefill(
                 q, out, kF16, vF16, nHead, n, headDim, visionDim, visionDim, 1, 1.0f);
         // output projection in place: x <- Wo @ out  (reuse x as scratch is unsafe; write to q)
-        clampedGemm(out, q, n, visionDim, visionDim, l.wo(), l.woClamp());
+        clampedGemm(out, q, n, visionDim, visionDim, l.wo(), l.woClamp(), clampTmp);
         q.copyTo(0, out, 0, n * visionDim);
     }
 
-    private FloatTensor
-            clampScratch; // reused input-clamp buffer (lazily grown); avoids a per-call allocation
-
     /**
      * Clamped matmul: clamp input to [inpMin,inpMax], gemm, clamp output to [outMin,outMax]
-     * (reference parity).
+     * (reference parity). {@code clampTmp} is the per-encode reused input-clamp buffer (sized
+     * n*ffnDim, the largest input) - it was an instance field before, which leaked per model AND
+     * corrupted concurrent encodes.
      */
     private void clampedGemm(
             FloatTensor in,
@@ -234,14 +244,12 @@ public final class Gemma4Vision implements Embedder<Media.Image> {
             int inDim,
             int outDim,
             FloatTensor w,
-            ClampInfo c) {
+            ClampInfo c,
+            FloatTensor clampTmp) {
         FloatTensor src = in;
         if (c != null) {
             int need = n * inDim;
-            if (clampScratch == null || clampScratch.size() < need)
-                // global scratch: GC-managed by design
-                clampScratch = FloatTensor.allocateF32(Arena.ofAuto(), need);
-            src = clampScratch;
+            src = clampTmp;
             in.copyTo(0, src, 0, need); // vectorized copy ...
             src.clampInPlace(
                     0,
@@ -254,9 +262,15 @@ public final class Gemma4Vision implements Embedder<Media.Image> {
     }
 
     private void feedForward(
-            FloatTensor x, FloatTensor g, FloatTensor u, FloatTensor out, Layer l, int n) {
-        clampedGemm(x, g, n, visionDim, ffnDim, l.ffnGate(), l.ffnGateClamp());
-        clampedGemm(x, u, n, visionDim, ffnDim, l.ffnUp(), l.ffnUpClamp());
+            FloatTensor x,
+            FloatTensor g,
+            FloatTensor u,
+            FloatTensor out,
+            Layer l,
+            int n,
+            FloatTensor clampTmp) {
+        clampedGemm(x, g, n, visionDim, ffnDim, l.ffnGate(), l.ffnGateClamp(), clampTmp);
+        clampedGemm(x, u, n, visionDim, ffnDim, l.ffnUp(), l.ffnUpClamp(), clampTmp);
         Parallel.forRows(
                 n,
                 t -> { // gelu_quick(gate)*up
@@ -267,14 +281,15 @@ public final class Gemma4Vision implements Embedder<Media.Image> {
                         g.setFloat(base + d, gq * u.getFloat(base + d));
                     }
                 });
-        clampedGemm(g, out, n, ffnDim, visionDim, l.ffnDown(), l.ffnDownClamp());
+        clampedGemm(g, out, n, ffnDim, visionDim, l.ffnDown(), l.ffnDownClamp(), clampTmp);
     }
 
-    private FloatTensor projectPooled(FloatTensor cur, int px, int py) {
+    private FloatTensor projectPooled(
+            FloatTensor cur, int px, int py, Arena scratch, FloatTensor clampTmp) {
         int outX = Math.max(1, px / merge), outY = Math.max(1, py / merge);
         int nTok = outX * outY;
         float scale = (float) Math.sqrt(visionDim);
-        FloatTensor pooled = FloatTensor.allocateF32(Arena.ofAuto(), nTok * visionDim);
+        FloatTensor pooled = FloatTensor.allocateF32(scratch, nTok * visionDim);
         for (int oy = 0; oy < outY; oy++)
             for (int ox = 0; ox < outX; ox++) {
                 int dst = (oy * outX + ox) * visionDim, cnt = 0;
@@ -303,7 +318,7 @@ public final class Gemma4Vision implements Embedder<Media.Image> {
         Parallel.forRows(nTok, t -> rmsNoWeight(pooled, t * visionDim, visionDim));
         // returned to the caller, whose lifetime is independent of the encoder: GC-managed
         FloatTensor projected = FloatTensor.allocateF32(Arena.ofAuto(), nTok * modelDim);
-        clampedGemm(pooled, projected, nTok, visionDim, modelDim, mmProj, mmProjClamp);
+        clampedGemm(pooled, projected, nTok, visionDim, modelDim, mmProj, mmProjClamp, clampTmp);
         return projected;
     }
 
@@ -315,8 +330,12 @@ public final class Gemma4Vision implements Embedder<Media.Image> {
     }
 
     private void rmsAddResidual(
-            FloatTensor residual, FloatTensor x, F32FloatTensor w, int n, int dim) {
-        FloatTensor tmp = FloatTensor.allocateF32(Arena.ofAuto(), n * dim);
+            FloatTensor residual,
+            FloatTensor x,
+            F32FloatTensor w,
+            int n,
+            int dim,
+            FloatTensor tmp) {
         Parallel.forRows(
                 n,
                 t -> {
@@ -385,7 +404,7 @@ public final class Gemma4Vision implements Embedder<Media.Image> {
         return Math.max(1, px / curMerge) * Math.max(1, py / curMerge);
     }
 
-    private Patches patchify(Media.Image image) {
+    private Patches patchify(Media.Image image, Arena scratch) {
         int ps = patchSize, factor = ps * Math.max(1, merge), tw, th;
         if (VisionPreprocess.SMART_RESIZE) {
             int maxPixels = VisionPreprocess.budget(280) * factor * factor,
@@ -399,8 +418,8 @@ public final class Gemma4Vision implements Embedder<Media.Image> {
             tw = th = imageSize; // fixed procSize square (gemma4.java-reference parity)
         }
         int px = tw / ps, py = th / ps, n = px * py, patchVec = 3 * ps * ps;
-        FloatTensor flat = VisionPreprocess.im2col(image, tw, th, ps);
-        FloatTensor tokens = FloatTensor.allocateF32(Arena.ofAuto(), n * visionDim);
+        FloatTensor flat = VisionPreprocess.im2col(image, tw, th, ps, scratch);
+        FloatTensor tokens = FloatTensor.allocateF32(scratch, n * visionDim);
         patchEmbd.gemm(flat, patchVec, tokens, visionDim, n, visionDim, patchVec); // conv as matmul
         for (int gy = 0; gy < py; gy++)
             for (int gx = 0; gx < px; gx++) { // + factorized 2D position

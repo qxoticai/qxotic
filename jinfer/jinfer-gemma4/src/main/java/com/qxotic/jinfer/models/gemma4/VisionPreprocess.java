@@ -98,12 +98,10 @@ final class VisionPreprocess {
      * Patch im2col: each {@code ps×ps} patch in channel-outer [c, ky, kx] order, pixels scaled to
      * [-1, 1], into a [nPatches, 3·ps·ps] row-major tensor (nPatches = (tw/ps)·(th/ps)).
      */
-    static FloatTensor im2col(Media.Image image, int tw, int th, int ps) {
+    static FloatTensor im2col(Media.Image image, int tw, int th, int ps, Arena scratch) {
         int px = tw / ps, py = th / ps, n = px * py, patchVec = 3 * ps * ps, plane = th * tw;
         float[] chw = toCHW(image, tw, th);
-        FloatTensor flat =
-                FloatTensor.allocateF32(
-                        Arena.ofAuto(), n * patchVec); // per-call scratch: GC-managed
+        FloatTensor flat = FloatTensor.allocateF32(scratch, n * patchVec);
         Parallel.forRows(
                 n,
                 gi -> {

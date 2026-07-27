@@ -80,36 +80,36 @@ public final class Gemma4Audio implements Embedder<Media.Audio> {
 
         // 1. frame the raw waveform: [nTok, frameSize], last frame zero-padded (no
         // windowing/normalization).
-        FloatTensor frames =
-                FloatTensor.allocateF32(
-                        Arena.ofAuto(), nTok * frameSize); // per-encode scratch: GC-managed
-        Parallel.forRows(
-                nTok,
-                t -> {
-                    long row = (long) t * frameSize;
-                    int base = t * frameSize;
-                    for (int f = 0; f < frameSize; f++) {
-                        int src = base + f;
-                        frames.setFloat(row + f, src < n ? pcm[src] : 0f);
-                    }
-                });
+        try (Arena scratch = Arena.ofShared()) { // per-encode scratch, freed on exit
+            FloatTensor frames = FloatTensor.allocateF32(scratch, nTok * frameSize);
+            Parallel.forRows(
+                    nTok,
+                    t -> {
+                        long row = (long) t * frameSize;
+                        int base = t * frameSize;
+                        for (int f = 0; f < frameSize; f++) {
+                            int src = base + f;
+                            frames.setFloat(row + f, src < n ? pcm[src] : 0f);
+                        }
+                    });
 
-        // 2. per-frame RMSNorm (no weight; embedding_pre_projection_norm), then the linear
-        // projection.
-        Parallel.forRows(
-                nTok,
-                t ->
-                        Norms.rmsnormNoWeight(
-                                frames,
-                                (long) t * frameSize,
-                                frames,
-                                (long) t * frameSize,
-                                frameSize,
-                                eps));
-        // returned to the caller, whose lifetime is independent of the encoder: GC-managed
-        FloatTensor rows = FloatTensor.allocateF32(Arena.ofAuto(), nTok * modelDim);
-        mmProj.gemm(frames, frameSize, rows, modelDim, nTok, modelDim, frameSize);
-        return rows;
+            // 2. per-frame RMSNorm (no weight; embedding_pre_projection_norm), then the linear
+            // projection.
+            Parallel.forRows(
+                    nTok,
+                    t ->
+                            Norms.rmsnormNoWeight(
+                                    frames,
+                                    (long) t * frameSize,
+                                    frames,
+                                    (long) t * frameSize,
+                                    frameSize,
+                                    eps));
+            // returned to the caller, whose lifetime is independent of the encoder: GC-managed
+            FloatTensor rows = FloatTensor.allocateF32(Arena.ofAuto(), nTok * modelDim);
+            mmProj.gemm(frames, frameSize, rows, modelDim, nTok, modelDim, frameSize);
+            return rows;
+        }
     }
 
     /** Number of audio tokens a clip of {@code nSamples} 16 kHz samples produces. */

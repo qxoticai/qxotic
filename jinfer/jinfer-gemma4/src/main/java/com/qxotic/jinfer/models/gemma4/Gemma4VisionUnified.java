@@ -112,42 +112,42 @@ public final class Gemma4VisionUnified implements Embedder<Media.Image> {
                         }; // fixed-square fallback (256 tokens)
         int tw = wh[0], th = wh[1], px = tw / ps, n = px * (th / ps);
 
-        // 1. im2col (48x48, channel-outer, [-1,1]) -> patch_norm.1 (LayerNorm)
-        FloatTensor flat = VisionPreprocess.im2col(image, tw, th, ps);
-        layerNorm(flat, n, patchVec, ln1w, ln1b);
+        try (Arena scratch = Arena.ofShared()) { // per-encode scratch, freed on exit
+            // 1. im2col (48x48, channel-outer, [-1,1]) -> patch_norm.1 (LayerNorm)
+            FloatTensor flat = VisionPreprocess.im2col(image, tw, th, ps, scratch);
+            layerNorm(flat, n, patchVec, ln1w, ln1b);
 
-        // 2. conv patch-embed + bias, LayerNorm
-        FloatTensor cur =
-                FloatTensor.allocateF32(
-                        Arena.ofAuto(), n * visionDim); // per-encode scratch: GC-managed
-        patchEmbd.gemm(flat, patchVec, cur, visionDim, n, visionDim, patchVec);
-        addBias(cur, n, visionDim, patchBias);
-        layerNorm(cur, n, visionDim, ln2w, ln2b);
+            // 2. conv patch-embed + bias, LayerNorm
+            FloatTensor cur = FloatTensor.allocateF32(scratch, n * visionDim);
+            patchEmbd.gemm(flat, patchVec, cur, visionDim, n, visionDim, patchVec);
+            addBias(cur, n, visionDim, patchBias);
+            layerNorm(cur, n, visionDim, ln2w, ln2b);
 
-        // 3. + factorized 2D position, then pos-norm (LayerNorm)
-        Parallel.forRows(
-                n,
-                gi -> {
-                    int gy = gi / px,
-                            gx = gi % px,
-                            tok = gi * visionDim,
-                            xb = visionDim * gx,
-                            yb = visionDim * (gy + posSize);
-                    for (int d = 0; d < visionDim; d++)
-                        cur.setFloat(
-                                (long) tok + d,
-                                cur.getFloat((long) tok + d)
-                                        + posEmbd.getFloat(xb + d)
-                                        + posEmbd.getFloat(yb + d));
-                });
-        layerNorm(cur, n, visionDim, ln3w, ln3b);
+            // 3. + factorized 2D position, then pos-norm (LayerNorm)
+            Parallel.forRows(
+                    n,
+                    gi -> {
+                        int gy = gi / px,
+                                gx = gi % px,
+                                tok = gi * visionDim,
+                                xb = visionDim * gx,
+                                yb = visionDim * (gy + posSize);
+                        for (int d = 0; d < visionDim; d++)
+                            cur.setFloat(
+                                    (long) tok + d,
+                                    cur.getFloat((long) tok + d)
+                                            + posEmbd.getFloat(xb + d)
+                                            + posEmbd.getFloat(yb + d));
+                    });
+            layerNorm(cur, n, visionDim, ln3w, ln3b);
 
-        // 4. pre-projection RMSNorm (no weight) then mm projection
-        Parallel.forRows(n, t -> rmsNoWeight(cur, (long) t * visionDim, visionDim, rmsEps));
-        // returned to the caller, whose lifetime is independent of the encoder: GC-managed
-        FloatTensor rows = FloatTensor.allocateF32(Arena.ofAuto(), n * modelDim);
-        mmProj.gemm(cur, visionDim, rows, modelDim, n, modelDim, visionDim);
-        return rows;
+            // 4. pre-projection RMSNorm (no weight) then mm projection
+            Parallel.forRows(n, t -> rmsNoWeight(cur, (long) t * visionDim, visionDim, rmsEps));
+            // returned to the caller, whose lifetime is independent of the encoder: GC-managed
+            FloatTensor rows = FloatTensor.allocateF32(Arena.ofAuto(), n * modelDim);
+            mmProj.gemm(cur, visionDim, rows, modelDim, n, modelDim, visionDim);
+            return rows;
+        }
     }
 
     /** PyTorch LayerNorm over each row: (x - mean) / sqrt(var + eps) * w + b. */

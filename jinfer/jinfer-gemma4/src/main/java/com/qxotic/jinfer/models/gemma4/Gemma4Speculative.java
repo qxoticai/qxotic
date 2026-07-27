@@ -65,10 +65,27 @@ public final class Gemma4Speculative {
         int dim = model.config().embeddingLength();
         int vocab = model.config().vocabularySize();
 
+        // per-generate scratch ((depth+1)*vocab is ~4 MB at a 262k vocab), freed on exit
+        try (Arena scratch = Arena.ofShared()) {
+            return generate(
+                    model, s, depth, maxTokens, stops, recorder, decoder, dim, vocab, scratch);
+        }
+    }
+
+    private static Result generate(
+            Gemma4 model,
+            Gemma4.State s,
+            int depth,
+            int maxTokens,
+            Set<Integer> stops,
+            TopRecorder recorder,
+            Gemma4MtpDecoder decoder,
+            int dim,
+            int vocab,
+            Arena scratch) {
         List<Integer> emitted = new ArrayList<>();
         List<Integer> committed = new ArrayList<>();
         int drafted = 0, acceptedTotal = 0, forwards = 0;
-        Arena scratch = Arena.ofAuto(); // per-generate scratch: GC-managed by design
         F32FloatTensor vlogits =
                 F32FloatTensor.allocate(scratch, depth + 1, vocab); // verify rows, one head GEMM
 
