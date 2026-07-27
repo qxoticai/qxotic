@@ -135,9 +135,7 @@ public final class EmbedBench {
     }
 
     private static double mean(double[] a) {
-        double s = 0;
-        for (double v : a) s += v;
-        return s / a.length;
+        return java.util.Arrays.stream(a).average().orElse(0);
     }
 
     private static double stddev(double[] a) {

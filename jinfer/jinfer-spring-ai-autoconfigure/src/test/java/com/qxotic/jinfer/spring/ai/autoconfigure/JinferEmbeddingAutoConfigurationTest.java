@@ -60,8 +60,8 @@ class JinferEmbeddingAutoConfigurationTest {
                         context -> {
                             JinferEmbeddingProperties p =
                                     context.getBean(JinferEmbeddingProperties.class);
-                            assertThat(p.getModelPath()).isEqualTo("/emb.gguf");
-                            assertThat(p.getContextLength()).isEqualTo(1024);
+                            assertThat(p.modelPath()).isEqualTo("/emb.gguf");
+                            assertThat(p.contextLength()).isEqualTo(1024);
                         });
     }
 

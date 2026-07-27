@@ -30,15 +30,15 @@ public class JinferEmbeddingAutoConfiguration {
             JinferEmbeddingProperties properties,
             ObjectProvider<ObservationRegistry> observationRegistry,
             ObjectProvider<EmbeddingModelObservationConvention> observationConvention) {
-        if (!StringUtils.hasText(properties.getModelPath())) {
+        if (!StringUtils.hasText(properties.modelPath())) {
             throw new IllegalStateException(
                     "spring.ai.jinfer.embedding.model-path is required: point it at a local"
                             + " embedding GGUF (e.g. Qwen3-Embedding)");
         }
         JinferEmbeddingModel.Builder builder =
                 JinferEmbeddingModel.builder()
-                        .modelPath(Path.of(properties.getModelPath()))
-                        .contextLength(properties.getContextLength());
+                        .modelPath(Path.of(properties.modelPath()))
+                        .contextLength(properties.contextLength());
         observationRegistry.ifAvailable(builder::observationRegistry);
         observationConvention.ifAvailable(builder::observationConvention);
         return builder.build();

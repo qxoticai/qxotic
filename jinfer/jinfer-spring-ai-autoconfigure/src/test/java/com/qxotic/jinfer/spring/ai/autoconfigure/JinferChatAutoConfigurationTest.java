@@ -55,16 +55,16 @@ class JinferChatAutoConfigurationTest {
                 .run(
                         context -> {
                             JinferChatProperties p = context.getBean(JinferChatProperties.class);
-                            assertThat(p.getModelPath()).isEqualTo("/x.gguf");
-                            assertThat(p.getMediaProjector()).isEqualTo("/mmproj.gguf");
-                            assertThat(p.getCachedPrompts()).isEqualTo("/personas.jkv");
-                            assertThat(p.getContextLength()).isEqualTo(8192);
-                            assertThat(p.getTemperature()).isEqualTo(0.7);
-                            assertThat(p.getTopP()).isEqualTo(0.9);
-                            assertThat(p.getMaxTokens()).isEqualTo(512);
-                            assertThat(p.getSeed()).isEqualTo(7L);
-                            assertThat(p.getThinking()).isFalse();
-                            assertThat(p.getTimeout()).hasSeconds(30);
+                            assertThat(p.modelPath()).isEqualTo("/x.gguf");
+                            assertThat(p.mediaProjector()).isEqualTo("/mmproj.gguf");
+                            assertThat(p.cachedPrompts()).isEqualTo("/personas.jkv");
+                            assertThat(p.contextLength()).isEqualTo(8192);
+                            assertThat(p.temperature()).isEqualTo(0.7);
+                            assertThat(p.topP()).isEqualTo(0.9);
+                            assertThat(p.maxTokens()).isEqualTo(512);
+                            assertThat(p.seed()).isEqualTo(7L);
+                            assertThat(p.thinking()).isFalse();
+                            assertThat(p.timeout()).hasSeconds(30);
                         });
     }
 

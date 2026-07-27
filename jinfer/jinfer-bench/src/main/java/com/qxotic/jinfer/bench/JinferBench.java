@@ -12,10 +12,10 @@ import java.util.concurrent.ForkJoinPool;
 
 /**
  * pp/tg throughput benchmark for the new com.qxotic.jinfer.models seam (the jinfer-gemma4 port),
- * printed in the same markdown table as {@link LegacyBench} so the new API's numbers are directly
- * comparable to the production engine. Drives the forward directly — {@code newState → ingest →
- * logits} — and times it with {@code nanoTime} (the seam has no internal timers). Greedy argmax
- * (temp 0), like llama-bench.
+ * printed in the llama-bench-style markdown table so numbers are directly comparable to the
+ * production engine. Drives the forward directly — {@code newState → ingest → logits} — and times
+ * it with {@code nanoTime} (the seam has no internal timers). Greedy argmax (temp 0), like
+ * llama-bench.
  *
  * <pre>jinfer-bench -m model.gguf [-p 512] [-n 128] [-r 5] [-w 2] [--ctx N]</pre>
  */
@@ -177,9 +177,7 @@ public final class JinferBench {
     }
 
     private static double mean(double[] a) {
-        double s = 0;
-        for (double v : a) s += v;
-        return s / a.length;
+        return java.util.Arrays.stream(a).average().orElse(0);
     }
 
     private static double stddev(double[] a) {

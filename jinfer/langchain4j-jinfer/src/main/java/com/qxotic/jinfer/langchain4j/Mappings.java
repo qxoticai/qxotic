@@ -306,12 +306,17 @@ final class Mappings {
         }
     }
 
-    /** {@code ai} with its text replaced (empty = none), thinking and tool calls preserved. */
+    /**
+     * {@code ai} with its text replaced (empty = none); thinking, tool calls AND attributes
+     * preserved - dropping attributes would lose the {@link #REPLY_ATTRIBUTE} verbatim round-trip
+     * on stop-sequence-cut replies (the Spring twin keeps its metadata the same way).
+     */
     static AiMessage withText(AiMessage ai, String text) {
         AiMessage.Builder b = AiMessage.builder();
         if (!text.isEmpty()) b.text(text);
         if (ai.thinking() != null && !ai.thinking().isEmpty()) b.thinking(ai.thinking());
         if (ai.hasToolExecutionRequests()) b.toolExecutionRequests(ai.toolExecutionRequests());
+        b.attributes(ai.attributes());
         return b.build();
     }
 

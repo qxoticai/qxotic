@@ -14,11 +14,7 @@ public final class WeatherTools {
     private final Queue<Integer> readings;
 
     public WeatherTools() {
-        this(-255, 15);
-    }
-
-    public WeatherTools(Integer... readings) {
-        this.readings = new ArrayDeque<>(List.of(readings));
+        this.readings = new ArrayDeque<>(List.of(-255, 15));
     }
 
     @Tool(description = "Get the current weather for a given location")

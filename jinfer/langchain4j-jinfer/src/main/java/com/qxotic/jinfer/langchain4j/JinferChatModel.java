@@ -267,7 +267,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             int[] parserSeed,
             List<String> stops) {}
 
-    /** Every request-shape rejection, synchronously (streaming calls this before its thread). */
+    /** Every request-shape rejection, synchronously; both entry points reach it via prepare(). */
     static void validate(JinferChatModel m, ChatRequest request) {
         ChatRequestParameters p = request.parameters();
         rejectUnsupported(p);

@@ -41,14 +41,12 @@ public final class GrammarPinnedEvaluationAdvisor implements CallAdvisor {
     private final ChatOptions judgeOptions;
     private final int maxRepeatAttempts;
     private final int successRating;
-    private final int order;
 
     private GrammarPinnedEvaluationAdvisor(Builder b) {
         this.judge = b.judge;
         this.judgeOptions = b.judgeOptions;
         this.maxRepeatAttempts = b.maxRepeatAttempts;
         this.successRating = b.successRating;
-        this.order = b.order;
     }
 
     @Override
@@ -174,7 +172,7 @@ public final class GrammarPinnedEvaluationAdvisor implements CallAdvisor {
 
     @Override
     public int getOrder() {
-        return order;
+        return 0;
     }
 
     public static Builder builder() {
@@ -186,7 +184,6 @@ public final class GrammarPinnedEvaluationAdvisor implements CallAdvisor {
         private ChatOptions judgeOptions;
         private int maxRepeatAttempts = 3;
         private int successRating = 3;
-        private int order = 0;
 
         private Builder() {}
 
@@ -209,11 +206,6 @@ public final class GrammarPinnedEvaluationAdvisor implements CallAdvisor {
         /** Verdicts with {@code rating >= successRating} pass (scale 1-4). */
         public Builder successRating(int successRating) {
             this.successRating = successRating;
-            return this;
-        }
-
-        public Builder order(int order) {
-            this.order = order;
             return this;
         }
 

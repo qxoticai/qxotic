@@ -26,28 +26,28 @@ public class JinferChatAutoConfiguration {
             JinferChatProperties properties,
             ObjectProvider<ObservationRegistry> observationRegistry,
             ObjectProvider<ChatModelObservationConvention> observationConvention) {
-        if (!StringUtils.hasText(properties.getModelPath())) {
+        if (!StringUtils.hasText(properties.modelPath())) {
             throw new IllegalStateException(
                     "spring.ai.jinfer.chat.model-path is required: point it at a local GGUF file");
         }
         JinferChatModel.Builder builder =
                 JinferChatModel.builder()
-                        .modelPath(Path.of(properties.getModelPath()))
-                        .contextLength(properties.getContextLength())
-                        .cachedSessions(properties.getCachedSessions())
-                        .temperature(properties.getTemperature())
-                        .topP(properties.getTopP())
-                        .maxTokens(properties.getMaxTokens())
-                        .seed(properties.getSeed())
-                        .thinking(properties.getThinking())
-                        .timeout(properties.getTimeout());
+                        .modelPath(Path.of(properties.modelPath()))
+                        .contextLength(properties.contextLength())
+                        .cachedSessions(properties.cachedSessions())
+                        .temperature(properties.temperature())
+                        .topP(properties.topP())
+                        .maxTokens(properties.maxTokens())
+                        .seed(properties.seed())
+                        .thinking(properties.thinking())
+                        .timeout(properties.timeout());
         observationRegistry.ifAvailable(builder::observationRegistry);
         observationConvention.ifAvailable(builder::observationConvention);
-        if (StringUtils.hasText(properties.getMediaProjector())) {
-            builder.mediaProjector(Path.of(properties.getMediaProjector()));
+        if (StringUtils.hasText(properties.mediaProjector())) {
+            builder.mediaProjector(Path.of(properties.mediaProjector()));
         }
-        if (StringUtils.hasText(properties.getCachedPrompts())) {
-            builder.loadCachedPrompts(Path.of(properties.getCachedPrompts()));
+        if (StringUtils.hasText(properties.cachedPrompts())) {
+            builder.loadCachedPrompts(Path.of(properties.cachedPrompts()));
         }
         return builder.build();
     }
