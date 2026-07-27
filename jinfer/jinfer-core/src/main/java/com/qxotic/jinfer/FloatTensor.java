@@ -463,6 +463,12 @@ public abstract class FloatTensor {
                 thatOffset, size, (value, index) -> this.getFloat(index - thatOffset + thisOffset));
     }
 
+    /**
+     * Index of the maximum WITHIN the window: relative to {@code thisOffset}, in {@code [0, size)}.
+     * Row-relative so {@code argmax(row * vocab, vocab)} is a token id - the absolute-index
+     * contract this once had made every off-row call silently return {@code row * vocab + id}
+     * (garbage emits in speculative decoding).
+     */
     public int argmax(long thisOffset, int size) {
         assert size > 0;
         long maxIndex = thisOffset;
@@ -475,7 +481,7 @@ public abstract class FloatTensor {
                 maxIndex = i;
             }
         }
-        return Math.toIntExact(maxIndex); // argmax over logits: index fits int (vocab < 2^31)
+        return Math.toIntExact(maxIndex - thisOffset); // token id fits int (vocab < 2^31)
     }
 
     public int argmax() {
