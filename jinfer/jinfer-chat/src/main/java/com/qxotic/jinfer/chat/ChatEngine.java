@@ -100,6 +100,10 @@ public final class ChatEngine {
             } else {
                 this.prompts = null;
             }
+            this.modelName = modelPath.getFileName().toString();
+            // inside the try: a malformed chat template in the GGUF throws at compile, and the
+            // weights arena must not outlive a constructor that never returns
+            this.jinja = new JinjaChatTemplate(loaded.tokenizer(), loaded.chatTemplateSource());
         } catch (IOException e) {
             weights.close(); // a leaked ofShared arena has no Cleaner: free before failing
             throw new UncheckedIOException("failed to load " + modelPath, e);
@@ -107,8 +111,6 @@ public final class ChatEngine {
             weights.close();
             throw e;
         }
-        this.modelName = modelPath.getFileName().toString();
-        this.jinja = new JinjaChatTemplate(loaded.tokenizer(), loaded.chatTemplateSource());
     }
 
     /**
