@@ -42,7 +42,11 @@ public abstract class BaseState implements RuntimeState, AutoCloseable {
         this.arena = arena;
     }
 
-    /** Marks this state as owning {@link #arena} - called only by {@code newState(ctx, batch)}. */
+    /**
+     * Marks this state as owning {@link #arena} - called only by the adopting {@code newState}
+     * flavors. A non-closeable arena (ofAuto/global) may be adopted: owning it just means there is
+     * nothing to free eagerly, and {@link #close()} stays a valid no-op on the memory.
+     */
     final void adoptArena() {
         Arena a = arena; // the cleanup action must not capture the state itself
         owned =

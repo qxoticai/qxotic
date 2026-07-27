@@ -44,14 +44,26 @@ public interface Model<C extends Config, W, S extends RuntimeState> {
      */
     default S newState(int contextCapacity, int batchCapacity) {
         java.lang.foreign.Arena arena = java.lang.foreign.Arena.ofShared();
-        S state;
         try {
-            state = newState(contextCapacity, batchCapacity, arena);
+            return newState(contextCapacity, batchCapacity, arena, true);
         } catch (RuntimeException | Error e) {
             arena.close(); // a leaked ofShared arena has no Cleaner: free before failing
             throw e;
         }
-        ((BaseState) state).adoptArena();
+    }
+
+    /**
+     * As {@link #newState(int, int, java.lang.foreign.Arena)}, but when {@code adopt} is true the
+     * state takes ownership of {@code arena}: {@code state.close()} (and its Cleaner backstop)
+     * frees it. For fusing lifetimes deliberately - a single-state owner loads weights into the
+     * arena and the state's close frees everything at once - so adopt only when nothing in the
+     * arena outlives the state. A non-closeable arena ({@code ofAuto}, {@code global}) may be
+     * adopted: it manages itself, and close stays a valid no-op on the memory.
+     */
+    default S newState(
+            int contextCapacity, int batchCapacity, java.lang.foreign.Arena arena, boolean adopt) {
+        S state = newState(contextCapacity, batchCapacity, arena);
+        if (adopt) ((BaseState) state).adoptArena();
         return state;
     }
 

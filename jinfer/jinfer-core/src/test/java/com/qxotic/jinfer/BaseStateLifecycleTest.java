@@ -130,6 +130,28 @@ class BaseStateLifecycleTest {
     }
 
     @Test
+    void adoptFusesLifetimes_everythingInTheArenaDiesWithTheState() {
+        Arena arena = Arena.ofShared();
+        F32FloatTensor.allocate(arena, 8); // a weights-like co-tenant, allocated before the state
+        ProbeState s = new ProbeState(arena);
+        s.adoptArena();
+        s.close();
+        assertFalse(arena.scope().isAlive(), "adopt: the caller-created arena dies with the state");
+    }
+
+    @Test
+    void adoptedNonCloseableArenaMakesCloseANoOpOnTheMemory() {
+        ProbeState auto = new ProbeState(Arena.ofAuto());
+        auto.adoptArena();
+        assertDoesNotThrow(auto::close); // ofAuto/global manage themselves; nothing to free eagerly
+        assertTrue(auto.isClosed());
+        ProbeState global = new ProbeState(Arena.global());
+        global.adoptArena();
+        assertDoesNotThrow(global::close);
+        assertTrue(global.isClosed());
+    }
+
+    @Test
     void closeFromWithinTheOwnComputationIsRejected() {
         ProbeState s = owned();
         s.enter();
