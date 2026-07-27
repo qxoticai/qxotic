@@ -8,6 +8,7 @@ package com.qxotic.jinfer.models.llama;
 
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.FloatTensor;
+import java.lang.foreign.Arena;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
@@ -29,7 +30,7 @@ public final class LlamaLogitsDump {
     }
 
     private static void main(String[] args) throws Exception {
-        Llama model = Llama.loadModel(Path.of(args[0]), 256);
+        Llama model = Llama.loadModel(Path.of(args[0]), 256, Arena.ofAuto());
         int vocab = model.config().vocabularySize();
         int n = 48;
         int[] ids = new int[n];

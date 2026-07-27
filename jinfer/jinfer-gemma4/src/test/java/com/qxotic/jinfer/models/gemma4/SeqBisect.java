@@ -2,6 +2,7 @@ package com.qxotic.jinfer.models.gemma4;
 
 import com.qxotic.jinfer.FloatTensor;
 import com.qxotic.jinfer.llm.SpecialTokens;
+import java.lang.foreign.Arena;
 import java.nio.file.Path;
 import java.util.Arrays;
 import org.junit.jupiter.api.Assumptions;
@@ -31,7 +32,7 @@ public final class SeqBisect {
     }
 
     private static void main(String[] args) throws Exception {
-        Gemma4 model = Gemma4.loadModel(Path.of(args[0]), 4096);
+        Gemma4 model = Gemma4.loadModel(Path.of(args[0]), 4096, Arena.ofAuto());
         int vocab = model.config().vocabularySize();
         int maxSeq = args.length > 1 ? Integer.parseInt(args[1]) : 24;
         int[] filler = filler(model, maxSeq);

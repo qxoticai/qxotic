@@ -48,7 +48,10 @@ class MappingReleaseTest {
     private static Map<String, GGMLTensorEntry> load(Path file) throws IOException {
         try (FileChannel ch = FileChannel.open(file, StandardOpenOption.READ)) {
             return ModelLoader.loadTensors(
-                    ch, 0, List.of(TensorEntry.create("t", new long[] {256}, GGMLType.F32, 0)));
+                    ch,
+                    0,
+                    List.of(TensorEntry.create("t", new long[] {256}, GGMLType.F32, 0)),
+                    java.lang.foreign.Arena.ofAuto());
         }
     }
 

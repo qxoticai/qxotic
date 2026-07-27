@@ -14,6 +14,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -55,6 +56,11 @@ class JinferChatModelIT {
                         .maxTokens(512)
                         .observationRegistry(observations)
                         .build();
+    }
+
+    @AfterAll
+    static void unload() {
+        if (model != null) model.close();
     }
 
     @Test

@@ -3,6 +3,7 @@ package com.qxotic.jinfer.models.gemma4;
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.F32FloatTensor;
 import com.qxotic.jinfer.FloatTensor;
+import java.lang.foreign.Arena;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -67,13 +68,14 @@ public final class Gemma4Speculative {
         List<Integer> emitted = new ArrayList<>();
         List<Integer> committed = new ArrayList<>();
         int drafted = 0, acceptedTotal = 0, forwards = 0;
+        Arena scratch = Arena.ofAuto(); // per-generate scratch: GC-managed by design
         F32FloatTensor vlogits =
-                F32FloatTensor.allocate(depth + 1, vocab); // verify rows, one head GEMM
+                F32FloatTensor.allocate(scratch, depth + 1, vocab); // verify rows, one head GEMM
 
         // seed from the last ingested row: its token, its hidden, and the exact next token
         int lastRow = s.lastChunkLen - 1;
         int tLast = s.lastTokens[lastRow];
-        F32FloatTensor h = F32FloatTensor.allocate(dim);
+        F32FloatTensor h = F32FloatTensor.allocate(scratch, dim);
         s.residual.copyTo((long) lastRow * dim, h, 0, dim);
         FloatTensor promptLogits = model.logits(s, s.outputCount - 1);
         int next = promptLogits.argmax(0, vocab);

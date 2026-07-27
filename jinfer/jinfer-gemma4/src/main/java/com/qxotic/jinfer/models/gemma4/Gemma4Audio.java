@@ -27,6 +27,7 @@ import com.qxotic.jinfer.Norms;
 import com.qxotic.jinfer.Parallel;
 import com.qxotic.jinfer.kernels.*;
 import java.io.IOException;
+import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -79,7 +80,9 @@ public final class Gemma4Audio implements Embedder<Media.Audio> {
 
         // 1. frame the raw waveform: [nTok, frameSize], last frame zero-padded (no
         // windowing/normalization).
-        FloatTensor frames = FloatTensor.allocateF32(nTok * frameSize);
+        FloatTensor frames =
+                FloatTensor.allocateF32(
+                        Arena.ofAuto(), nTok * frameSize); // per-encode scratch: GC-managed
         Parallel.forRows(
                 nTok,
                 t -> {
@@ -103,7 +106,8 @@ public final class Gemma4Audio implements Embedder<Media.Audio> {
                                 (long) t * frameSize,
                                 frameSize,
                                 eps));
-        FloatTensor rows = FloatTensor.allocateF32(nTok * modelDim);
+        // returned to the caller, whose lifetime is independent of the encoder: GC-managed
+        FloatTensor rows = FloatTensor.allocateF32(Arena.ofAuto(), nTok * modelDim);
         mmProj.gemm(frames, frameSize, rows, modelDim, nTok, modelDim, frameSize);
         return rows;
     }
@@ -149,10 +153,10 @@ public final class Gemma4Audio implements Embedder<Media.Audio> {
 
     // === loader ===
 
-    public static Gemma4Audio loadModel(Path mmprojPath) throws IOException {
+    public static Gemma4Audio loadModel(Path mmprojPath, Arena arena) throws IOException {
         try (FileChannel fc = FileChannel.open(mmprojPath, StandardOpenOption.READ)) {
             var gguf = ModelLoader.readGguf(fc, mmprojPath.toString());
-            Map<String, GGMLTensorEntry> t = ModelLoader.loadTensors(fc, gguf);
+            Map<String, GGMLTensorEntry> t = ModelLoader.loadTensors(fc, gguf, arena);
             int modelDim = gguf.getValueOrDefault(int.class, "clip.audio.projection_dim", 3840);
             float eps =
                     gguf.getValueOrDefault(

@@ -31,7 +31,7 @@ import java.util.Set;
 
 public class GemmaVisionMulti {
 
-    static final String MODELS = System.getProperty("user.home") + "/Desktop/playground/models/unsloth/";
+    static final String MODELS = System.getenv().getOrDefault("JINFER_MODELS_UNSLOTH", System.getProperty("user.home") + "/models/unsloth/");
 
     public static void main(String[] args) throws Exception {
         if (args.length < 3) {
@@ -50,7 +50,7 @@ public class GemmaVisionMulti {
             end -= 2;
         }
 
-        Gemma4 model = Gemma4.loadModel(textGguf, mmproj, 8192);   // more context: many image tokens
+        Gemma4 model = Gemma4.loadModel(textGguf, mmproj, 8192, java.lang.foreign.Arena.ofAuto());   // more context: many image tokens
         TurnTemplate template = model.turnTemplate().orElseThrow();
         Set<Integer> stops = model.stopTokens();
 

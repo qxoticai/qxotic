@@ -10,6 +10,7 @@ import com.qxotic.jinfer.testkit.ModelFixture;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -52,6 +53,11 @@ class CachedPromptIT {
                         .contextLength(4096)
                         .maxTokens(128)
                         .build();
+    }
+
+    @AfterAll
+    static void unload() {
+        if (base != null) base.close();
     }
 
     @Test
@@ -200,6 +206,7 @@ class CachedPromptIT {
         assertTrue(stats.contains("hits=") && !stats.contains("hits=0 "), stats);
         ChatResponse r = a2.call(new Prompt(new UserMessage("One word: ok?")));
         assertTrue(!r.getResult().getOutput().getText().isBlank());
+        base2.close();
     }
 
     @Test

@@ -8,6 +8,7 @@ import com.qxotic.jinfer.testkit.CacheScenario;
 import com.qxotic.jinfer.testkit.Harness;
 import com.qxotic.jinfer.testkit.ModelFixture;
 import com.qxotic.jinfer.testkit.Stories;
+import java.lang.foreign.Arena;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -27,7 +28,7 @@ public final class LlamaCacheRun {
     private static void main(String[] args) throws Exception {
         Path path =
                 Path.of(args.length > 0 ? args[0] : ModelFixture.LLAMA32_1B_Q8.path().toString());
-        Llama m = Llama.loadModel(path, 8192);
+        Llama m = Llama.loadModel(path, 8192, Arena.ofAuto());
         Harness<Llama.State> h =
                 new Harness<>(m.loaded(), m.turnTemplate().orElseThrow(), path, 8192);
         new CacheScenario<>(

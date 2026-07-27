@@ -8,6 +8,7 @@ import com.qxotic.jinfer.testkit.CacheScenario;
 import com.qxotic.jinfer.testkit.Harness;
 import com.qxotic.jinfer.testkit.ModelFixture;
 import com.qxotic.jinfer.testkit.Stories;
+import java.lang.foreign.Arena;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -30,7 +31,7 @@ public final class GraniteCacheRun {
                         args.length > 0
                                 ? args[0]
                                 : ModelFixture.GRANITE_41_3B_Q8.path().toString());
-        Granite m = Granite.loadModel(path, 8192);
+        Granite m = Granite.loadModel(path, 8192, Arena.ofAuto());
         Harness<Granite.State> h =
                 new Harness<>(m.loaded(), m.turnTemplate().orElseThrow(), path, 8192);
         new CacheScenario<>(

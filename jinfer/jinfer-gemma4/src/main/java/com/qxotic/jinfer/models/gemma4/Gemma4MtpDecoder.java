@@ -7,6 +7,7 @@ import com.qxotic.jinfer.F32FloatTensor;
 import com.qxotic.jinfer.FlashAttention;
 import com.qxotic.jinfer.FloatTensor;
 import com.qxotic.jinfer.RoPE;
+import java.lang.foreign.Arena;
 
 /**
  * Gemma 4 MTP draft forward (Stage 2): one self-speculative draft step. Given the backbone's
@@ -41,7 +42,7 @@ public final class Gemma4MtpDecoder {
     private final FloatTensor draftLogits;
     private final FlashAttention.DecodeScratch decodeScratch = new FlashAttention.DecodeScratch();
 
-    public Gemma4MtpDecoder(Gemma4Mtp mtp, Gemma4 backbone) {
+    public Gemma4MtpDecoder(Gemma4Mtp mtp, Gemma4 backbone, Arena arena) {
         this.cfg = mtp.config();
         this.w = mtp.weights();
         this.backbone = backbone;
@@ -54,22 +55,22 @@ public final class Gemma4MtpDecoder {
                         ? RoPE.precomputeFreqsCisFromFreqs(
                                 ctx, cfg.headSizeFull(), cfg.ropeThetaFull(), w.ropeFreqFactors)
                         : RoPE.precomputeFreqsCis(ctx, cfg.headSizeFull(), cfg.ropeThetaFull());
-        this.realSWA = F32FloatTensor.of(swa.cos());
-        this.imagSWA = F32FloatTensor.of(swa.sin());
-        this.realFull = F32FloatTensor.of(full.cos());
-        this.imagFull = F32FloatTensor.of(full.sin());
+        this.realSWA = F32FloatTensor.of(arena, swa.cos());
+        this.imagSWA = F32FloatTensor.of(arena, swa.sin());
+        this.realFull = F32FloatTensor.of(arena, full.cos());
+        this.imagFull = F32FloatTensor.of(arena, full.sin());
 
         int dim = cfg.embeddingLength();
         int maxQ = cfg.numberOfHeads() * cfg.headSizeFull();
-        this.xh = F32FloatTensor.allocate(2 * cfg.backboneDim());
-        this.cur = F32FloatTensor.allocate(dim);
-        this.xb = F32FloatTensor.allocate(dim);
-        this.q = F32FloatTensor.allocate(maxQ);
-        this.attn = F32FloatTensor.allocate(maxQ);
-        this.hb = F32FloatTensor.allocate(cfg.feedForwardLength());
-        this.hb2 = F32FloatTensor.allocate(cfg.feedForwardLength());
-        this.hNext = F32FloatTensor.allocate(cfg.backboneDim());
-        this.draftLogits = F32FloatTensor.allocate(cfg.vocabularySize());
+        this.xh = F32FloatTensor.allocate(arena, 2 * cfg.backboneDim());
+        this.cur = F32FloatTensor.allocate(arena, dim);
+        this.xb = F32FloatTensor.allocate(arena, dim);
+        this.q = F32FloatTensor.allocate(arena, maxQ);
+        this.attn = F32FloatTensor.allocate(arena, maxQ);
+        this.hb = F32FloatTensor.allocate(arena, cfg.feedForwardLength());
+        this.hb2 = F32FloatTensor.allocate(arena, cfg.feedForwardLength());
+        this.hNext = F32FloatTensor.allocate(arena, cfg.backboneDim());
+        this.draftLogits = F32FloatTensor.allocate(arena, cfg.vocabularySize());
     }
 
     /**

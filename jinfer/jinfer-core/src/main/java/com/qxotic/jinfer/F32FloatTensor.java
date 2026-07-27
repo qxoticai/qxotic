@@ -23,16 +23,20 @@ public final class F32FloatTensor extends SegmentFloatTensor {
         this.memorySegment = memorySegment;
     }
 
-    public static F32FloatTensor allocate(int... dims) {
+    /**
+     * A fresh writable F32 tensor from {@code arena} - the caller picks the lifetime policy ({@code
+     * Arena.ofAuto()} for GC-managed, {@code ofShared}/{@code global} for deterministic; the
+     * library allocates, never frees).
+     */
+    public static F32FloatTensor allocate(Arena arena, int... dims) {
         int numberOfElements = FloatTensor.numberOfElements(dims);
         return new F32FloatTensor(
-                numberOfElements,
-                Arena.ofAuto().allocate((long) numberOfElements * Float.BYTES, 64));
+                numberOfElements, arena.allocate((long) numberOfElements * Float.BYTES, 64));
     }
 
     /** Native copy of a heap float[] (e.g. computed rope frequency tables). */
-    public static F32FloatTensor of(float[] values) {
-        F32FloatTensor tensor = allocate(values.length);
+    public static F32FloatTensor of(Arena arena, float[] values) {
+        F32FloatTensor tensor = allocate(arena, values.length);
         MemorySegment.copy(
                 values,
                 0,

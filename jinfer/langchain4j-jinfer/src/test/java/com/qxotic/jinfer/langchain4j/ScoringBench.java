@@ -14,6 +14,7 @@ import com.qxotic.jinfer.chat.TokenRuns;
 import com.qxotic.jinfer.models.qwen35.Qwen3;
 import com.qxotic.jinfer.testkit.ModelFixture;
 import dev.langchain4j.data.segment.TextSegment;
+import java.lang.foreign.Arena;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -49,7 +50,8 @@ public final class ScoringBench {
                         .modelPath(ModelFixture.QWEN3_RERANKER_06B_Q8.path())
                         .contextLength(2048)
                         .build();
-        Qwen3 naiveModel = Qwen3.loadModel(ModelFixture.QWEN3_RERANKER_06B_Q8.path(), 2048);
+        Qwen3 naiveModel =
+                Qwen3.loadModel(ModelFixture.QWEN3_RERANKER_06B_Q8.path(), 2048, Arena.ofAuto());
 
         for (int k : K) {
             List<TextSegment> docs = corpus(k);
@@ -96,6 +98,7 @@ public final class ScoringBench {
                         spearman(mine, Arrays.stream(httpOut, 1, httpOut.length).boxed().toList()));
             }
         }
+        reuse.close();
     }
 
     @Test
@@ -103,7 +106,8 @@ public final class ScoringBench {
     void phases() throws Exception {
         Assumptions.assumeTrue(
                 Files.exists(ModelFixture.QWEN3_RERANKER_06B_Q8.path()), "model not found");
-        Qwen3 model = Qwen3.loadModel(ModelFixture.QWEN3_RERANKER_06B_Q8.path(), 2048);
+        Qwen3 model =
+                Qwen3.loadModel(ModelFixture.QWEN3_RERANKER_06B_Q8.path(), 2048, Arena.ofAuto());
         Qwen3.State state = model.newState(model.config().contextLength(), 512);
         String query = QUERIES[0];
         TextSegment doc = corpus(1).get(0);

@@ -6,6 +6,7 @@ import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.Sampler;
 import com.qxotic.jinfer.testkit.ModelFixture;
 import com.qxotic.toknroll.IntSequence;
+import java.lang.foreign.Arena;
 import java.nio.file.Files;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
@@ -25,12 +26,13 @@ class Gemma4ResetIdentityTest {
         Assumptions.assumeTrue(
                 Files.exists(ModelFixture.GEMMA4_E2B_QAT_Q4.path()),
                 "model not found: " + ModelFixture.GEMMA4_E2B_QAT_Q4.path());
-        Gemma4 model = Gemma4.loadModel(ModelFixture.GEMMA4_E2B_QAT_Q4.path(), 1024);
+        Gemma4 model =
+                Gemma4.loadModel(ModelFixture.GEMMA4_E2B_QAT_Q4.path(), 1024, Arena.ofAuto());
         var tokenizer = model.loaded().tokenizer();
         IntSequence first = tokenizer.encode("The capital of France is");
         IntSequence second = tokenizer.encode("Once upon a time there was");
 
-        Gemma4.State recycled = new Gemma4.State(model.config(), 1024, 64);
+        Gemma4.State recycled = new Gemma4.State(model.config(), 1024, 64, Arena.ofAuto());
         // warm the kernels (JIT tier drift flips argmax cold-vs-warm) and DIRTY the state:
         // a full generation leaves real KV rows and real conv residue behind
         for (int i = 0; i < 4; i++) {
@@ -39,7 +41,7 @@ class Gemma4ResetIdentityTest {
         }
         IntSequence viaReset = generate(model, recycled, second);
 
-        Gemma4.State fresh = new Gemma4.State(model.config(), 1024, 64);
+        Gemma4.State fresh = new Gemma4.State(model.config(), 1024, 64, Arena.ofAuto());
         IntSequence viaFresh = generate(model, fresh, second);
 
         assertEquals(

@@ -6,6 +6,7 @@
 package com.qxotic.jinfer.models.gemma4;
 
 import com.qxotic.jinfer.testkit.ModelFixture;
+import java.lang.foreign.Arena;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Assumptions;
@@ -48,7 +49,7 @@ public final class Gemma4MtpLoadTest {
         }
 
         // backbone vocab = 262144 (Gemma 4 E2B); the tied draft head must match it.
-        Gemma4Mtp mtp = Gemma4Mtp.loadSidecar(sidecar, 262144);
+        Gemma4Mtp mtp = Gemma4Mtp.loadSidecar(sidecar, 262144, Arena.ofAuto());
         Gemma4Mtp.Config c = mtp.config();
 
         check(c.embeddingLength() == 256, "draft dim 256");

@@ -35,7 +35,8 @@ public final class RingSpanTest {
         // blocks: [0,5) [5,9) wraps the edge, [9,30) longer than W (aliases 21 > 8 slots)
         int[][] blocks = {{0, 5}, {5, 9}, {9, 30}};
         try (Arena arena = Arena.ofConfined()) {
-            FloatTensor live = FloatTensor.allocateF32((int) (W * ROW));
+            FloatTensor live =
+                    FloatTensor.allocateF32(java.lang.foreign.Arena.ofAuto(), (int) (W * ROW));
             MemorySegment[] blobs = new MemorySegment[blocks.length];
             for (int i = 0; i < blocks.length; i++) {
                 int from = blocks[i][0], to = blocks[i][1];
@@ -46,7 +47,8 @@ public final class RingSpanTest {
             }
 
             // restore the whole chain ascending into a cold ring
-            FloatTensor cold = FloatTensor.allocateF32((int) (W * ROW));
+            FloatTensor cold =
+                    FloatTensor.allocateF32(java.lang.foreign.Arena.ofAuto(), (int) (W * ROW));
             for (int i = 0; i < blocks.length; i++) {
                 KvTransfer.ringSpan(cold, blocks[i][0], blocks[i][1], W, ROW, blobs[i], 0, false);
             }
@@ -70,7 +72,8 @@ public final class RingSpanTest {
     void midChainBoundaryRestoresItsOwnWindow() {
         // restoring only the first two blocks must leave the window as of position 9
         try (Arena arena = Arena.ofConfined()) {
-            FloatTensor live = FloatTensor.allocateF32((int) (W * ROW));
+            FloatTensor live =
+                    FloatTensor.allocateF32(java.lang.foreign.Arena.ofAuto(), (int) (W * ROW));
             ingest(live, 0, 5);
             MemorySegment b1 = arena.allocate(5 * ROW * 4L, 8);
             KvTransfer.ringSpan(live, 0, 5, W, ROW, b1, 0, true);
@@ -78,7 +81,8 @@ public final class RingSpanTest {
             MemorySegment b2 = arena.allocate(4 * ROW * 4L, 8);
             KvTransfer.ringSpan(live, 5, 9, W, ROW, b2, 0, true);
 
-            FloatTensor cold = FloatTensor.allocateF32((int) (W * ROW));
+            FloatTensor cold =
+                    FloatTensor.allocateF32(java.lang.foreign.Arena.ofAuto(), (int) (W * ROW));
             KvTransfer.ringSpan(cold, 0, 5, W, ROW, b1, 0, false);
             KvTransfer.ringSpan(cold, 5, 9, W, ROW, b2, 0, false);
             for (int p = 1; p < 9; p++) { // window at 9 = rows [1,9)

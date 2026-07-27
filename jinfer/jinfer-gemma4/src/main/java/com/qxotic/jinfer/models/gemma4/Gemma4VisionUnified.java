@@ -35,6 +35,7 @@ import com.qxotic.jinfer.Media;
 import com.qxotic.jinfer.Parallel;
 import com.qxotic.jinfer.kernels.*;
 import java.io.IOException;
+import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -116,7 +117,9 @@ public final class Gemma4VisionUnified implements Embedder<Media.Image> {
         layerNorm(flat, n, patchVec, ln1w, ln1b);
 
         // 2. conv patch-embed + bias, LayerNorm
-        FloatTensor cur = FloatTensor.allocateF32(n * visionDim);
+        FloatTensor cur =
+                FloatTensor.allocateF32(
+                        Arena.ofAuto(), n * visionDim); // per-encode scratch: GC-managed
         patchEmbd.gemm(flat, patchVec, cur, visionDim, n, visionDim, patchVec);
         addBias(cur, n, visionDim, patchBias);
         layerNorm(cur, n, visionDim, ln2w, ln2b);
@@ -141,7 +144,8 @@ public final class Gemma4VisionUnified implements Embedder<Media.Image> {
 
         // 4. pre-projection RMSNorm (no weight) then mm projection
         Parallel.forRows(n, t -> rmsNoWeight(cur, (long) t * visionDim, visionDim, rmsEps));
-        FloatTensor rows = FloatTensor.allocateF32(n * modelDim);
+        // returned to the caller, whose lifetime is independent of the encoder: GC-managed
+        FloatTensor rows = FloatTensor.allocateF32(Arena.ofAuto(), n * modelDim);
         mmProj.gemm(cur, visionDim, rows, modelDim, n, modelDim, visionDim);
         return rows;
     }
@@ -191,10 +195,10 @@ public final class Gemma4VisionUnified implements Embedder<Media.Image> {
 
     // === loader ===
 
-    public static Gemma4VisionUnified loadModel(Path mmprojPath) throws IOException {
+    public static Gemma4VisionUnified loadModel(Path mmprojPath, Arena arena) throws IOException {
         try (FileChannel fc = FileChannel.open(mmprojPath, StandardOpenOption.READ)) {
             var gguf = ModelLoader.readGguf(fc, mmprojPath.toString());
-            Map<String, GGMLTensorEntry> t = ModelLoader.loadTensors(fc, gguf);
+            Map<String, GGMLTensorEntry> t = ModelLoader.loadTensors(fc, gguf, arena);
             int basePatch = gguf.getValueOrDefault(int.class, "clip.vision.patch_size", 16);
             int merge = gguf.getValueOrDefault(int.class, "clip.vision.proj_scale_factor", 3);
             int patchSize =

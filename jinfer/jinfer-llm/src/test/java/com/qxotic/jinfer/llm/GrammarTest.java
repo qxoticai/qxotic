@@ -139,7 +139,7 @@ public final class GrammarTest {
         // sized by the vocab: these are off-heap tensors with NO bounds checks - a too-small
         // scratch silently corrupts (maskLogits writes past the end, reads come back garbage)
         if (scratchTensor == null || scratchTensor.size() < v.size())
-            scratchTensor = F32FloatTensor.allocate(v.size());
+            scratchTensor = F32FloatTensor.allocate(java.lang.foreign.Arena.ofAuto(), v.size());
         return scratchTensor;
     }
 
@@ -1124,7 +1124,7 @@ public final class GrammarTest {
 
         // maskLogits touches ONLY disallowed tokens; allowed logits pass through untouched
         Grammar.Cursor c4 = Grammar.of("root ::= \"a\" | \"b\"", v).cursor();
-        F32FloatTensor logits = F32FloatTensor.allocate(v.size());
+        F32FloatTensor logits = F32FloatTensor.allocate(java.lang.foreign.Arena.ofAuto(), v.size());
         for (int i = 0; i < v.size(); i++) logits.setFloat(i, i + 0.5f);
         c4.maskLogits(logits);
         int ta = tidx(v, "a"), tb = tidx(v, "b"), tx = tidx(v, "x");
@@ -1532,7 +1532,9 @@ public final class GrammarTest {
                     new Thread(
                             () -> {
                                 // per-thread tensor: the shared scratch is NOT thread-safe
-                                F32FloatTensor logits = F32FloatTensor.allocate(v.size());
+                                F32FloatTensor logits =
+                                        F32FloatTensor.allocate(
+                                                java.lang.foreign.Arena.ofAuto(), v.size());
                                 try {
                                     for (int i = 0; i < 50; i++) {
                                         Grammar.Cursor c = json.cursor();

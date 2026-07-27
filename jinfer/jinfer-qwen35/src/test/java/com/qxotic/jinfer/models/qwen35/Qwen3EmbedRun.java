@@ -6,6 +6,7 @@ package com.qxotic.jinfer.models.qwen35;
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.FloatTensor;
 import com.qxotic.jinfer.llm.SpecialTokens;
+import java.lang.foreign.Arena;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
@@ -30,7 +31,7 @@ public final class Qwen3EmbedRun {
 
     private static void main(String[] args) throws Exception {
         int ctx = 2048;
-        Qwen3 model = Qwen3.loadModel(Path.of(args[0]), ctx);
+        Qwen3 model = Qwen3.loadModel(Path.of(args[0]), ctx, Arena.ofAuto());
         var tk = model.tokenizer();
 
         int[] ids;

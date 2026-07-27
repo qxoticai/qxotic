@@ -356,9 +356,10 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     }
 
     /**
-     * Closes the shared engine, freeing the prompt tree's native arenas; every view shares it, so
-     * closing any model closes them all. Idempotent; later requests fail with {@link
-     * IllegalStateException}.
+     * Blocking, idempotent: waits out any in-flight request (including a live stream), then frees
+     * the pooled session states' arenas and the prompt tree's blobs deterministically; every view
+     * shares the engine, so closing any model closes them all. Later requests fail with {@link
+     * IllegalStateException}. Spring registers this as the bean destroy method automatically.
      */
     @Override
     public void close() {
@@ -466,14 +467,6 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         return new ChatResponse(List.of(new Generation(b.build())));
     }
 
-    /**
-     * Grammar-constrained output (llama.cpp-style token masking): the schema is compiled to a GBNF
-     * grammar whose automaton masks the logits so invalid JSON is unrepresentable, not just
-     * unlikely. For a reasoning request the grammar stays dormant until {@code </think>} so the
-     * constraint never suppresses the think span, and the boilerplate newline after it passes
-     * through unconsumed. The forced token on grammar dead-ends is one of the model's real stop
-     * tokens. Specs are cached per (schema, vocab), so repeated schemas reuse the compiled masks.
-     */
     /** The request's sampling stack via the shared policy, plus schema-grammar when asked. */
     private Sampler sampler(JinferChatOptions options, boolean think, int maxTokens) {
         Sampler sampler =
@@ -492,6 +485,14 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                 : withSchemaGrammar(sampler, think, options.getOutputSchema());
     }
 
+    /**
+     * Grammar-constrained output (llama.cpp-style token masking): the schema is compiled to a GBNF
+     * grammar whose automaton masks the logits so invalid JSON is unrepresentable, not just
+     * unlikely. For a reasoning request the grammar stays dormant until {@code </think>} so the
+     * constraint never suppresses the think span, and the boilerplate newline after it passes
+     * through unconsumed. The forced token on grammar dead-ends is one of the model's real stop
+     * tokens. Specs are cached per (schema, vocab), so repeated schemas reuse the compiled masks.
+     */
     private Sampler withSchemaGrammar(Sampler sampler, boolean think, String outputSchema) {
         @SuppressWarnings("unchecked")
         Map<String, Object> schemaMap = (Map<String, Object>) JsonCodec.parse(outputSchema);

@@ -4,6 +4,7 @@ import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.ModelProvider;
 import java.io.IOException;
+import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
 
 /** {@link ModelProvider} service: the Lfm2 port's arch-dispatch entry. */
@@ -15,8 +16,8 @@ public final class Lfm2Provider implements ModelProvider {
     }
 
     @Override
-    public LoadedModel<?> load(FileChannel fileChannel, GGUF gguf, int contextLength)
+    public LoadedModel<?> load(FileChannel fileChannel, GGUF gguf, int contextLength, Arena arena)
             throws IOException {
-        return Lfm2.loadModel(fileChannel, gguf, contextLength, true).loaded();
+        return Lfm2.loadModel(fileChannel, gguf, contextLength, true, arena).loaded();
     }
 }

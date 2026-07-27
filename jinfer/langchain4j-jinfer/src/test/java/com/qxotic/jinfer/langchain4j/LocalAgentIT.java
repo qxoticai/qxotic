@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import javax.imageio.ImageIO;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -102,19 +103,21 @@ class LocalAgentIT {
 
     static Agent agent;
     static Senses senses;
+    static JinferChatModel brain;
+    static JinferChatModel eyes;
 
     @BeforeAll
     static void wire() {
         for (Path p : List.of(BRAIN, EYES, EYES_MMPROJ)) {
             Assumptions.assumeTrue(Files.exists(p), "model not found: " + p);
         }
-        ChatModel brain =
+        brain =
                 JinferChatModel.builder()
                         .modelPath(BRAIN)
                         .contextLength(8192)
                         .maxOutputTokens(512)
                         .build();
-        ChatModel eyes =
+        eyes =
                 JinferChatModel.builder()
                         .modelPath(EYES)
                         .mediaProjector(EYES_MMPROJ)
@@ -128,6 +131,12 @@ class LocalAgentIT {
                         .tools(senses)
                         .chatMemory(MessageWindowChatMemory.withMaxMessages(20))
                         .build();
+    }
+
+    @AfterAll
+    static void unload() {
+        if (brain != null) brain.close();
+        if (eyes != null) eyes.close();
     }
 
     @Test

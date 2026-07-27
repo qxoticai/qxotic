@@ -19,6 +19,7 @@ import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.chat.UnsupportedConversation;
 import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.toknroll.Tokenizer;
+import java.lang.foreign.Arena;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -204,7 +205,8 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
                 });
         int total = 0;
         for (float[] c : chunks) total += c.length;
-        F32FloatTensor rows = F32FloatTensor.allocate(total);
+        // returned to the caller, whose lifetime is independent of the template: GC-managed
+        F32FloatTensor rows = F32FloatTensor.allocate(Arena.ofAuto(), total);
         int at = 0;
         for (float[] c : chunks) {
             for (float v : c) rows.setFloat(at++, v);

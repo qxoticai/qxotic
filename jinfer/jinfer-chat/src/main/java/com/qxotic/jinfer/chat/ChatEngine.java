@@ -58,6 +58,8 @@ public final class ChatEngine {
                     r -> new Thread(r, "jinfer-stream"));
     private int sessionHits;
     private volatile boolean closed;
+    private final java.lang.foreign.Arena weights = java.lang.foreign.Arena.ofShared();
+    private final boolean ownsWeights;
 
     /** A finished generation's state with the batch stream of everything ingested into it. */
     private record LiveSession(RuntimeState state, List<Batch> stream, int positions) {}
@@ -69,14 +71,20 @@ public final class ChatEngine {
             Path cachedPrompts,
             int cachedSessions) {
         this.sessionCapacity = Math.max(0, cachedSessions);
+        this.ownsWeights = true;
         // the integrations' builder contract is "0 = the model's own maximum"; Models.load spells
         // that -1 - without this both integrations crashed in the port's tensor sizing on 0
         int ctx = contextLength <= 0 ? -1 : contextLength;
         try {
+            // the engine OWNS its weights arena: every provider view/copy shares this one
+            // engine ("closing any closes all" - the documented contract), so close() can free
+            // the weights deterministically after quiescence - mmap pages were always
+            // kernel-reclaimable, but load-time conversions/repacks are anonymous memory that
+            // a GC-managed arena would only free at a GC that a native-heavy JVM never runs
             this.loaded =
                     mediaProjector == null
-                            ? Models.load(modelPath, ctx)
-                            : Models.load(modelPath, mediaProjector, ctx);
+                            ? Models.load(modelPath, ctx, weights)
+                            : Models.load(modelPath, mediaProjector, ctx, weights);
             this.promptStore = CacheStore.inMemory();
             // built only when the model can support it (or a mount demands it): a codec-less
             // model must still load and chat - the codec throw belongs to the first
@@ -97,8 +105,12 @@ public final class ChatEngine {
         this.jinja = new JinjaChatTemplate(loaded.tokenizer(), loaded.chatTemplateSource());
     }
 
-    /** The fork constructor: shares the immutable loaded model, owns everything mutable. */
+    /**
+     * The fork constructor: shares the immutable loaded model, owns everything mutable. LAW: the
+     * creator engine owns the shared weights - close the creator only after its forks are closed.
+     */
     private ChatEngine(ChatEngine base) {
+        this.ownsWeights = false; // shared with the creator; its close() frees them (see LAW)
         this.loaded = base.loaded;
         this.modelName = base.modelName;
         this.jinja = base.jinja; // compiled once per model; stateless at render time
@@ -135,11 +147,18 @@ public final class ChatEngine {
         return modelName;
     }
 
-    /** Idempotent: frees the tree's blobs and the pooled states; later use fails loudly. */
+    /**
+     * Idempotent, blocking: waits out any in-flight generation (the lock) and the stream driver,
+     * closes every pooled state (each frees its owned arena NOW - deterministic, not GC-eventual),
+     * and frees the tree's blobs; later use fails loudly. Returning is the quiescence certificate:
+     * no kernel of this engine touches state memory afterwards.
+     */
     public void close() {
         lock.lock();
         try {
+            if (closed) return; // idempotent: the JDK arena close below is one-shot
             closed = true;
+            for (LiveSession s : sessions) ((com.qxotic.jinfer.BaseState) s.state()).close();
             sessions.clear();
             promptStore.close();
         } finally {
@@ -147,6 +166,16 @@ public final class ChatEngine {
         }
         // no interrupt: an in-flight generation finishes; queued streams fail loudly at checkOpen
         streamDriver.shutdown();
+        try {
+            // await the driver: a live streaming generation may still be reading state memory
+            streamDriver.awaitTermination(
+                    Long.MAX_VALUE, java.util.concurrent.TimeUnit.NANOSECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        // provably quiescent (lock held once, driver drained): the weights can die now. A
+        // path-loading engine owns its weights; a fork shares its creator's (see fork()).
+        if (ownsWeights) weights.close();
     }
 
     /** Runs a streaming generation on the engine's single lazy driver thread. */
@@ -348,7 +377,9 @@ public final class ChatEngine {
             stream.add(Batch.prefill(reply));
         }
         sessions.addLast(new LiveSession(state, List.copyOf(stream), total + ingested));
-        while (sessions.size() > sessionCapacity) sessions.removeFirst();
+        while (sessions.size() > sessionCapacity) {
+            ((com.qxotic.jinfer.BaseState) sessions.removeFirst().state()).close();
+        }
     }
 
     // ---- cached prompts: the block tree behind withCachedPrompt / save / load ----
@@ -404,6 +435,7 @@ public final class ChatEngine {
                 coarse
                         ? List.of(prompt.subList(0, Math.max(1, prompt.size() - 1)))
                         : prompt.stream().map(List::of).toList());
+        ((com.qxotic.jinfer.BaseState) state).close(); // define-time scratch: free now, not at GC
     }
 
     /** Freezes the whole tree (mounted base + everything defined) into one artifact. */

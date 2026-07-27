@@ -8,6 +8,7 @@ import com.qxotic.jinfer.FloatTensor;
 import com.qxotic.jinfer.Media;
 import java.io.File;
 import java.io.RandomAccessFile;
+import java.lang.foreign.Arena;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -41,7 +42,7 @@ public final class Gemma4AudioRun {
             return;
         }
         // encode: <mmproj> <audio.*>
-        Gemma4Audio enc = Gemma4Audio.loadModel(Path.of(args[1]));
+        Gemma4Audio enc = Gemma4Audio.loadModel(Path.of(args[1]), Arena.ofAuto());
         Media.Audio audio =
                 com.qxotic.jinfer.media.AudioCodec.load(
                         Path.of(args[2])); // ffmpeg -> 16k mono, any format
@@ -86,7 +87,7 @@ public final class Gemma4AudioRun {
      */
     static void aingest(String textGguf, String mmproj, String audioPath, int reps)
             throws Exception {
-        Gemma4 model = Gemma4.loadModel(Path.of(textGguf), Path.of(mmproj), 4096);
+        Gemma4 model = Gemma4.loadModel(Path.of(textGguf), Path.of(mmproj), 4096, Arena.ofAuto());
         @SuppressWarnings("unchecked")
         var embedder =
                 (com.qxotic.jinfer.Embedder<Media.Audio>)
@@ -116,7 +117,7 @@ public final class Gemma4AudioRun {
     /** audio -> Gemma4Audio -> rows -> ingest between <|audio>/<audio|> (CAUSAL) -> generate. */
     static void e2e(String textGguf, String mmproj, String audioPath, String prompt)
             throws Exception {
-        Gemma4 model = Gemma4.loadModel(Path.of(textGguf), Path.of(mmproj), 4096);
+        Gemma4 model = Gemma4.loadModel(Path.of(textGguf), Path.of(mmproj), 4096, Arena.ofAuto());
         var tk = model.tokenizer();
         java.util.function.ToIntBiFunction<String, Integer> spFind =
                 (n, d) -> com.qxotic.jinfer.llm.SpecialTokens.find(tk, n).orElse(d);

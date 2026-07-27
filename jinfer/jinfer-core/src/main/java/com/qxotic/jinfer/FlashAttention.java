@@ -46,12 +46,14 @@ public final class FlashAttention {
         F32FloatTensor kDec, vDec; // F16-cache block decode scratch, grown to Bc*headSize
 
         F32FloatTensor kDec(int capacity) {
-            if (kDec == null || kDec.size() < capacity) kDec = F32FloatTensor.allocate(capacity);
+            if (kDec == null || kDec.size() < capacity)
+                kDec = F32FloatTensor.allocate(java.lang.foreign.Arena.ofAuto(), capacity);
             return kDec;
         }
 
         F32FloatTensor vDec(int capacity) {
-            if (vDec == null || vDec.size() < capacity) vDec = F32FloatTensor.allocate(capacity);
+            if (vDec == null || vDec.size() < capacity)
+                vDec = F32FloatTensor.allocate(java.lang.foreign.Arena.ofAuto(), capacity);
             return vDec;
         }
     }
@@ -1139,7 +1141,8 @@ public final class FlashAttention {
 
         void ensure(int totalPartials, int headSize) {
             int oFloats = totalPartials * headSize;
-            if (o == null || o.size() < oFloats) o = F32FloatTensor.allocate(oFloats);
+            if (o == null || o.size() < oFloats)
+                o = F32FloatTensor.allocate(java.lang.foreign.Arena.ofAuto(), oFloats);
             if (m == null || m.length < totalPartials) m = new float[totalPartials];
             if (l == null || l.length < totalPartials) l = new double[totalPartials];
         }

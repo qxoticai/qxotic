@@ -24,6 +24,7 @@ import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
 import com.qxotic.toknroll.Tokenizer;
 import java.io.IOException;
+import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -69,8 +70,8 @@ public final class GptOss
     }
 
     @Override
-    public State newState(int contextCapacity, int batchCapacity) {
-        State state = new State(configuration, contextCapacity, batchCapacity);
+    public State newState(int contextCapacity, int batchCapacity, Arena arena) {
+        State state = new State(configuration, contextCapacity, batchCapacity, arena);
         return state;
     }
 
@@ -709,7 +710,8 @@ public final class GptOss
             resumeAt(0);
         }
 
-        State(Configuration config, int contextCapacity, int batchCapacity) {
+        State(Configuration config, int contextCapacity, int batchCapacity, Arena arena) {
+            super(arena);
             if (contextCapacity > config.contextLength()) {
                 throw new IllegalArgumentException(
                         "contextCapacity "
@@ -724,20 +726,20 @@ public final class GptOss
             int queryDim = config.queryDim(), kvDim = config.kvDim();
             int expertFF = config.expertFeedForwardLength();
             int numExperts = config.expertCount(), topK = Math.max(1, config.expertUsedCount());
-            this.residual = FloatTensor.allocateF32(c * dim);
-            this.xb = FloatTensor.allocateF32(c * dim);
-            this.xb2 = FloatTensor.allocateF32(c * dim);
-            this.xbK = FloatTensor.allocateF32(c * queryDim);
-            this.q = FloatTensor.allocateF32(c * queryDim);
-            this.logits = FloatTensor.allocateF32(config.vocabularySize());
-            this.th = FloatTensor.allocateF32(dim);
-            this.tscratch = FloatTensor.allocateF32(dim);
-            this.hb = FloatTensor.allocateF32(c * expertFF);
-            this.hb2 = FloatTensor.allocateF32(c * expertFF);
-            this.moeRouterB = FloatTensor.allocateF32(c * numExperts);
-            this.moeGather = FloatTensor.allocateF32(c * dim);
-            this.moeDownB = FloatTensor.allocateF32(c * dim);
-            this.moeOutB = FloatTensor.allocateF32(c * dim);
+            this.residual = FloatTensor.allocateF32(arena, c * dim);
+            this.xb = FloatTensor.allocateF32(arena, c * dim);
+            this.xb2 = FloatTensor.allocateF32(arena, c * dim);
+            this.xbK = FloatTensor.allocateF32(arena, c * queryDim);
+            this.q = FloatTensor.allocateF32(arena, c * queryDim);
+            this.logits = FloatTensor.allocateF32(arena, config.vocabularySize());
+            this.th = FloatTensor.allocateF32(arena, dim);
+            this.tscratch = FloatTensor.allocateF32(arena, dim);
+            this.hb = FloatTensor.allocateF32(arena, c * expertFF);
+            this.hb2 = FloatTensor.allocateF32(arena, c * expertFF);
+            this.moeRouterB = FloatTensor.allocateF32(arena, c * numExperts);
+            this.moeGather = FloatTensor.allocateF32(arena, c * dim);
+            this.moeDownB = FloatTensor.allocateF32(arena, c * dim);
+            this.moeOutB = FloatTensor.allocateF32(arena, c * dim);
             this.moeExpertCounts = new int[numExperts];
             this.moeExpertOffsets = new int[numExperts + 1];
             this.moeCursor = new int[numExperts];
@@ -761,10 +763,10 @@ public final class GptOss
             this.batchV = new FloatTensor[n];
             for (int l = 0; l < n; l++) {
                 int positions = config.kvCachePositions(l, contextCapacity);
-                keyCache[l] = FloatTensor.allocateF16(positions, kvDim);
-                valueCache[l] = FloatTensor.allocateF16(positions, kvDim);
-                batchK[l] = FloatTensor.allocateF32(c * kvDim);
-                batchV[l] = FloatTensor.allocateF32(c * kvDim);
+                keyCache[l] = FloatTensor.allocateF16(arena, positions, kvDim);
+                valueCache[l] = FloatTensor.allocateF16(arena, positions, kvDim);
+                batchK[l] = FloatTensor.allocateF32(arena, c * kvDim);
+                batchV[l] = FloatTensor.allocateF32(arena, c * kvDim);
             }
         }
 
@@ -781,15 +783,20 @@ public final class GptOss
 
     // === Loading ===
 
-    public static GptOss loadModel(Path ggufPath, int contextLength) throws IOException {
+    public static GptOss loadModel(Path ggufPath, int contextLength, Arena arena)
+            throws IOException {
         try (FileChannel fileChannel = FileChannel.open(ggufPath, StandardOpenOption.READ)) {
             GGUF gguf = ModelLoader.readGguf(fileChannel, ggufPath.toString());
-            return loadModel(fileChannel, gguf, contextLength, true);
+            return loadModel(fileChannel, gguf, contextLength, true, arena);
         }
     }
 
     public static GptOss loadModel(
-            FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeightsFlag)
+            FileChannel fileChannel,
+            GGUF gguf,
+            int contextLength,
+            boolean loadWeightsFlag,
+            Arena arena)
             throws IOException {
         byte[] seed = com.qxotic.jinfer.cache.PromptCache.modelSeed(fileChannel);
         Tokenizer tokenizer = Tokenizers.fromGGUF(gguf);
@@ -849,7 +856,7 @@ public final class GptOss
 
         if (!loadWeightsFlag)
             return new GptOss(config, tokenizer, Tokenizers.chatTemplateSource(gguf), seed, null);
-        Map<String, GGMLTensorEntry> tensors = ModelLoader.loadTensors(fileChannel, gguf);
+        Map<String, GGMLTensorEntry> tensors = ModelLoader.loadTensors(fileChannel, gguf, arena);
         return new GptOss(
                 config,
                 tokenizer,

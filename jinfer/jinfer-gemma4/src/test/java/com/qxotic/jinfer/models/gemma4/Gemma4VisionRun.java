@@ -9,6 +9,7 @@ import com.qxotic.jinfer.Media;
 import com.qxotic.jinfer.media.FfmpegImageDecoder;
 import com.qxotic.jinfer.media.ImageCodec;
 import com.qxotic.jinfer.media.ImageIoDecoder;
+import java.lang.foreign.Arena;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -49,7 +50,7 @@ public final class Gemma4VisionRun {
             uenc(args[1], args.length > 2 ? loadImage(args[2]) : null);
             return;
         }
-        Gemma4Vision enc = Gemma4Vision.loadModel(Path.of(args[0]));
+        Gemma4Vision enc = Gemma4Vision.loadModel(Path.of(args[0]), Arena.ofAuto());
         Media.Image img = args.length > 1 ? loadImage(args[1]) : synthetic(enc.imageSize);
         System.err.printf(
                 "image %dx%d c%d ; vision: dim=%d heads=%d layers=%d ffn=%d merge=%d ->"
@@ -95,7 +96,7 @@ public final class Gemma4VisionRun {
      * [image] [reps]
      */
     static void bench(String[] args) throws Exception {
-        Gemma4Vision enc = Gemma4Vision.loadModel(Path.of(args[1]));
+        Gemma4Vision enc = Gemma4Vision.loadModel(Path.of(args[1]), Arena.ofAuto());
         Media.Image img = args.length > 2 ? loadImage(args[2]) : synthetic(enc.imageSize);
         int reps = args.length > 3 ? Integer.parseInt(args[3]) : 12, warmup = 3;
         FloatTensor r0 = enc.encode(img);
@@ -130,7 +131,7 @@ public final class Gemma4VisionRun {
      */
     static void e2e(String textGguf, String mmproj, String imagePath, String prompt)
             throws Exception {
-        Gemma4 model = Gemma4.loadModel(Path.of(textGguf), Path.of(mmproj), 4096);
+        Gemma4 model = Gemma4.loadModel(Path.of(textGguf), Path.of(mmproj), 4096, Arena.ofAuto());
         var tk = model.tokenizer();
         java.util.function.ToIntBiFunction<String, Integer> spFind =
                 (n, d) -> com.qxotic.jinfer.llm.SpecialTokens.find(tk, n).orElse(d);
@@ -189,7 +190,7 @@ public final class Gemma4VisionRun {
 
     /** Unified (gemma4uv, 12b) encoder: raw embedding stats for a numerical diff vs llama.cpp. */
     static void uenc(String mmproj, Media.Image img) throws Exception {
-        Gemma4VisionUnified enc = Gemma4VisionUnified.loadModel(Path.of(mmproj));
+        Gemma4VisionUnified enc = Gemma4VisionUnified.loadModel(Path.of(mmproj), Arena.ofAuto());
         if (img == null) img = synthetic(768);
         long t0 = System.nanoTime();
         FloatTensor rows = enc.encode(img);

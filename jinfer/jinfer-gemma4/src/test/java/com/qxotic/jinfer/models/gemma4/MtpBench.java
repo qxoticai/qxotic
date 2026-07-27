@@ -7,6 +7,7 @@ package com.qxotic.jinfer.models.gemma4;
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.jinfer.testkit.ModelFixture;
+import java.lang.foreign.Arena;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -38,7 +39,7 @@ public final class MtpBench {
             System.out.println("MtpBench: model/sidecar absent, skipping");
             return;
         }
-        Gemma4 m = Gemma4.loadModel(model, 4096, sidecar);
+        Gemma4 m = Gemma4.loadModel(model, 4096, sidecar, Arena.ofAuto());
         var tk = m.tokenizer();
         int bos = SpecialTokens.find(tk, "<bos>").orElse(2);
         Set<Integer> stops = m.stopTokens();

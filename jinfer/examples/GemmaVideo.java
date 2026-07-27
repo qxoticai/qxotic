@@ -35,7 +35,7 @@ import java.util.Set;
 
 public class GemmaVideo {
 
-    static final String MODELS = System.getProperty("user.home") + "/Desktop/playground/models/unsloth/";
+    static final String MODELS = System.getenv().getOrDefault("JINFER_MODELS_UNSLOTH", System.getProperty("user.home") + "/models/unsloth/");
 
     public static void main(String[] args) throws Exception {
         if (args.length < 1) {
@@ -55,7 +55,7 @@ public class GemmaVideo {
         System.err.printf("sampled %d frames @ %d fps (%dx%d)%n", vid.frames().length, fps,
                 vid.frames()[0].width(), vid.frames()[0].height());
 
-        Gemma4 model = Gemma4.loadModel(textGguf, mmproj, 8192);   // frame tokens need headroom
+        Gemma4 model = Gemma4.loadModel(textGguf, mmproj, 8192, java.lang.foreign.Arena.ofAuto());   // frame tokens need headroom
         TurnTemplate template = model.turnTemplate().orElseThrow();
         Set<Integer> stops = model.stopTokens();
 

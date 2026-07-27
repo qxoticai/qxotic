@@ -1,12 +1,99 @@
 package com.qxotic.jinfer;
 
+import java.lang.foreign.Arena;
+import java.lang.ref.Cleaner;
+import java.util.ConcurrentModificationException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.ReentrantLock;
+
 /**
  * The shared cursor of every model State: how far the sequence has been ingested and what the last
  * ingest retained. Owns the {@link #advance}/{@link #resumeAt} lifecycle so each model's State
  * carries no cursor boilerplate. Fields are public for the model's own forward code (hot-path reads
  * like {@code s.position} across packages); mutation belongs to the two lifecycle methods only.
+ *
+ * <p>Also owns the state's MEMORY lifetime. Every buffer of a state comes from its {@link #arena};
+ * who provided the arena owns it: {@code newState(ctx, batch)} builds an internal owned arena that
+ * {@link #close()} frees deterministically (with a {@link Cleaner} backstop, so a dropped unclosed
+ * state degrades to GC-eventually rather than leaking); {@code newState(ctx, batch, arena)} borrows
+ * the caller's arena and {@link #close()} never touches it - close YOUR arena only after your last
+ * call returns (kernels read raw addresses; a live read from a closed arena is a crash, not an
+ * exception).
+ *
+ * <p>One lock carries the three run-time laws: entry points {@code tryLock} so two concurrent
+ * computations fail fast with {@link ConcurrentModificationException} (the single-serial-pipeline
+ * contract - never queued, that would hide the bug); {@link #close()} {@code lock()}s so it BLOCKS
+ * until the in-flight call returns and is therefore the caller's quiescence certificate; entries
+ * after close fail with {@link IllegalStateException} before any kernel touches freed memory.
  */
-public abstract class BaseState implements RuntimeState {
+public abstract class BaseState implements RuntimeState, AutoCloseable {
+
+    private static final Cleaner CLEANER = Cleaner.create();
+
+    /** Every buffer of this state allocates from here; ownership per the class contract. */
+    public final Arena arena;
+
+    private final ReentrantLock lock = new ReentrantLock();
+    private final AtomicBoolean closed = new AtomicBoolean();
+    private Cleaner.Cleanable owned; // non-null iff this state owns its arena
+
+    protected BaseState(Arena arena) {
+        if (arena == null) throw new IllegalArgumentException("null arena");
+        this.arena = arena;
+    }
+
+    /** Marks this state as owning {@link #arena} - called only by {@code newState(ctx, batch)}. */
+    final void adoptArena() {
+        Arena a = arena; // the cleanup action must not capture the state itself
+        owned = CLEANER.register(this, a::close);
+    }
+
+    /**
+     * Claims this state for a computation on the current thread (reentrant - a generation may hold
+     * it across many forwards). Fails fast: another thread computing -> {@link
+     * ConcurrentModificationException}; closed -> {@link IllegalStateException}.
+     */
+    public final void enter() {
+        if (closed.get()) throw new IllegalStateException("state is closed");
+        if (!lock.tryLock()) {
+            // the holder is either another computation (contract violation) or the winning
+            // closer draining us (shutdown); `closed` tells which
+            if (closed.get()) throw new IllegalStateException("state is closed");
+            throw new ConcurrentModificationException(
+                    "model state is a single serial pipeline (one computation at a time) - for"
+                            + " parallel pipelines create separate model instances/states");
+        }
+    }
+
+    /** Releases one {@link #enter} claim. */
+    public final void exit() {
+        lock.unlock();
+    }
+
+    /**
+     * Idempotent, BLOCKING close: returns only after the in-flight computation (if any) has
+     * finished, then frees the arena iff this state owns it. After close every entry fails with
+     * {@link IllegalStateException}. Racing closers return immediately (the CAS winner waits);
+     * closing from within this state's own computation throws instead of self-freeing.
+     */
+    @Override
+    public final void close() {
+        if (lock.isHeldByCurrentThread()) {
+            throw new IllegalStateException("cannot close a state from within its own computation");
+        }
+        if (!closed.compareAndSet(false, true)) return;
+        lock.lock();
+        try {
+            if (owned != null) owned.clean(); // at-most-once: frees the arena now, not at GC
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /** True once {@link #close} has been called; entries then fail loudly. */
+    public final boolean isClosed() {
+        return closed.get();
+    }
 
     public int position; // tokens ingested so far
     public int outputCount; // hidden states the last ingest retained (1 after LAST, n after ALL)

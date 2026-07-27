@@ -28,6 +28,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -157,6 +158,11 @@ abstract class AbstractToolIT {
                         .contextLength(4096)
                         .maxOutputTokens(1024)
                         .build();
+    }
+
+    @AfterAll
+    void unload() {
+        if (model != null) model.close();
     }
 
     // ---- helpers ----

@@ -18,6 +18,7 @@ import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
 import com.qxotic.toknroll.Tokenizer;
 import java.io.IOException;
+import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -57,8 +58,8 @@ public final class Qwen3
     }
 
     @Override
-    public State newState(int contextCapacity, int batchCapacity) {
-        return new State(configuration, contextCapacity, batchCapacity);
+    public State newState(int contextCapacity, int batchCapacity, Arena arena) {
+        return new State(configuration, contextCapacity, batchCapacity, arena);
     }
 
     @Override
@@ -117,7 +118,8 @@ public final class Qwen3
                 s.lastChunkLen
                         - s.outputCount
                         + index; // retained-output index -> chunk row (mirrors logits)
-        FloatTensor out = FloatTensor.allocateF32(dim);
+        // returned to the caller, whose lifetime is independent of the state: GC-managed
+        FloatTensor out = FloatTensor.allocateF32(Arena.ofAuto(), dim);
         rmsnorm(out, 0, s.x, (long) row * dim, weights.outputNorm, dim, configuration.rmsNormEps);
         double ss = 0;
         for (int i = 0; i < dim; i++) {
@@ -521,7 +523,8 @@ public final class Qwen3
         final FloatTensor segQ, segOut, segK, segV; // per-sequence attention scratch (packed path)
         final FloatTensor[] keyCache, valueCache;
 
-        State(Configuration config, int contextCapacity, int batchCapacity) {
+        State(Configuration config, int contextCapacity, int batchCapacity, Arena arena) {
+            super(arena);
             if (contextCapacity > config.contextLength()) {
                 throw new IllegalArgumentException(
                         "contextCapacity "
@@ -536,25 +539,25 @@ public final class Qwen3
                     queryDim = config.queryDim(),
                     kvDim = config.kvDim(),
                     hidden = config.hiddenDim;
-            this.x = FloatTensor.allocateF32(c * dim);
-            this.xb = FloatTensor.allocateF32(c * dim);
-            this.k = FloatTensor.allocateF32(c * kvDim);
-            this.v = FloatTensor.allocateF32(c * kvDim);
-            this.attnQ = FloatTensor.allocateF32(c * queryDim);
-            this.attnOut = FloatTensor.allocateF32(c * queryDim);
-            this.hb = FloatTensor.allocateF32(c * hidden);
-            this.hb2 = FloatTensor.allocateF32(c * hidden);
+            this.x = FloatTensor.allocateF32(arena, c * dim);
+            this.xb = FloatTensor.allocateF32(arena, c * dim);
+            this.k = FloatTensor.allocateF32(arena, c * kvDim);
+            this.v = FloatTensor.allocateF32(arena, c * kvDim);
+            this.attnQ = FloatTensor.allocateF32(arena, c * queryDim);
+            this.attnOut = FloatTensor.allocateF32(arena, c * queryDim);
+            this.hb = FloatTensor.allocateF32(arena, c * hidden);
+            this.hb2 = FloatTensor.allocateF32(arena, c * hidden);
             // per-sequence attention scratch: q/out over a chunk's rows, K/V over a sequence's full
             // extent
-            this.segQ = FloatTensor.allocateF32(c * queryDim);
-            this.segOut = FloatTensor.allocateF32(c * queryDim);
-            this.segK = FloatTensor.allocateF32(contextCapacity * kvDim);
-            this.segV = FloatTensor.allocateF32(contextCapacity * kvDim);
+            this.segQ = FloatTensor.allocateF32(arena, c * queryDim);
+            this.segOut = FloatTensor.allocateF32(arena, c * queryDim);
+            this.segK = FloatTensor.allocateF32(arena, contextCapacity * kvDim);
+            this.segV = FloatTensor.allocateF32(arena, contextCapacity * kvDim);
             this.keyCache = new FloatTensor[config.numberOfLayers];
             this.valueCache = new FloatTensor[config.numberOfLayers];
             for (int l = 0; l < config.numberOfLayers; l++) {
-                keyCache[l] = FloatTensor.allocateF16(contextCapacity, kvDim);
-                valueCache[l] = FloatTensor.allocateF16(contextCapacity, kvDim);
+                keyCache[l] = FloatTensor.allocateF16(arena, contextCapacity, kvDim);
+                valueCache[l] = FloatTensor.allocateF16(arena, contextCapacity, kvDim);
             }
         }
 
@@ -577,15 +580,20 @@ public final class Qwen3
 
     // === Loading ===
 
-    public static Qwen3 loadModel(Path ggufPath, int contextLength) throws IOException {
+    public static Qwen3 loadModel(Path ggufPath, int contextLength, Arena arena)
+            throws IOException {
         try (FileChannel fileChannel = FileChannel.open(ggufPath, StandardOpenOption.READ)) {
             GGUF gguf = ModelLoader.readGguf(fileChannel, ggufPath.toString());
-            return loadModel(fileChannel, gguf, contextLength, true);
+            return loadModel(fileChannel, gguf, contextLength, true, arena);
         }
     }
 
     static Qwen3 loadModel(
-            FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeightsFlag)
+            FileChannel fileChannel,
+            GGUF gguf,
+            int contextLength,
+            boolean loadWeightsFlag,
+            Arena arena)
             throws IOException {
         Tokenizer tokenizer = Tokenizers.fromGGUF(gguf);
         String arch = gguf.getString("general.architecture");
@@ -626,7 +634,7 @@ public final class Qwen3
 
         if (!loadWeightsFlag)
             return new Qwen3(config, tokenizer, Tokenizers.chatTemplateSource(gguf), null);
-        Map<String, GGMLTensorEntry> tensors = ModelLoader.loadTensors(fileChannel, gguf);
+        Map<String, GGMLTensorEntry> tensors = ModelLoader.loadTensors(fileChannel, gguf, arena);
         int ropeDim = Math.min(config.ropeDimensionCount, config.headSize);
         RoPE.Freqs rope = RoPE.precomputeFreqsCis(config.contextLength, ropeDim, config.ropeTheta);
         return new Qwen3(

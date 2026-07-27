@@ -23,6 +23,7 @@ import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
 import com.qxotic.toknroll.Tokenizer;
 import java.io.IOException;
+import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -67,8 +68,8 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
     }
 
     @Override
-    public State newState(int contextCapacity, int batchCapacity) {
-        State state = new State(configuration, contextCapacity, batchCapacity);
+    public State newState(int contextCapacity, int batchCapacity, Arena arena) {
+        State state = new State(configuration, contextCapacity, batchCapacity, arena);
         return state;
     }
 
@@ -742,7 +743,8 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
             }
         }
 
-        State(Configuration config, int contextCapacity, int batchCapacity) {
+        State(Configuration config, int contextCapacity, int batchCapacity, Arena arena) {
+            super(arena);
             if (contextCapacity > config.contextLength()) {
                 throw new IllegalArgumentException(
                         "contextCapacity "
@@ -756,16 +758,16 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
             int dim = config.embeddingLength;
             int maxQueryDim = config.queryDim();
             int maxHiddenDim = config.maxHiddenDim();
-            this.residual = FloatTensor.allocateF32(c * dim);
-            this.xb = FloatTensor.allocateF32(c * dim);
-            this.xb2 = FloatTensor.allocateF32(c * dim);
-            this.xbK = FloatTensor.allocateF32(c * maxQueryDim);
-            this.query = FloatTensor.allocateF32(c * maxQueryDim);
-            this.hb = FloatTensor.allocateF32(c * maxHiddenDim);
-            this.hb2 = FloatTensor.allocateF32(c * maxHiddenDim);
-            this.logits = FloatTensor.allocateF32(config.vocabularySize);
-            this.shortConvTmp = FloatTensor.allocateF32(c * 3 * dim);
-            this.shortConvOut = FloatTensor.allocateF32(c * dim);
+            this.residual = FloatTensor.allocateF32(arena, c * dim);
+            this.xb = FloatTensor.allocateF32(arena, c * dim);
+            this.xb2 = FloatTensor.allocateF32(arena, c * dim);
+            this.xbK = FloatTensor.allocateF32(arena, c * maxQueryDim);
+            this.query = FloatTensor.allocateF32(arena, c * maxQueryDim);
+            this.hb = FloatTensor.allocateF32(arena, c * maxHiddenDim);
+            this.hb2 = FloatTensor.allocateF32(arena, c * maxHiddenDim);
+            this.logits = FloatTensor.allocateF32(arena, config.vocabularySize);
+            this.shortConvTmp = FloatTensor.allocateF32(arena, c * 3 * dim);
+            this.shortConvOut = FloatTensor.allocateF32(arena, c * dim);
             int n = config.numberOfLayers;
             this.keyCache = new FloatTensor[n];
             this.valueCache = new FloatTensor[n];
@@ -775,21 +777,21 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
             int hist = Math.max(config.shortConvLCache - 1, 0);
             for (int l = 0; l < n; l++) {
                 if (config.isRecurrentLayer(l)) {
-                    shortConvState[l] = FloatTensor.allocateF32(hist * dim);
+                    shortConvState[l] = FloatTensor.allocateF32(arena, hist * dim);
                 } else {
                     int kvDim = config.kvDim(l);
-                    keyCache[l] = FloatTensor.allocateF16(contextCapacity, kvDim);
-                    valueCache[l] = FloatTensor.allocateF16(contextCapacity, kvDim);
-                    batchK[l] = FloatTensor.allocateF32(c * kvDim);
-                    batchV[l] = FloatTensor.allocateF32(c * kvDim);
+                    keyCache[l] = FloatTensor.allocateF16(arena, contextCapacity, kvDim);
+                    valueCache[l] = FloatTensor.allocateF16(arena, contextCapacity, kvDim);
+                    batchK[l] = FloatTensor.allocateF32(arena, c * kvDim);
+                    batchV[l] = FloatTensor.allocateF32(arena, c * kvDim);
                 }
             }
             if (config.isMoE()) {
                 int e = config.expertCount, tk = config.expertUsedCount;
-                this.moeRouterB = FloatTensor.allocateF32(c * e);
-                this.moeGather = FloatTensor.allocateF32(c * dim);
-                this.moeDownB = FloatTensor.allocateF32(c * dim);
-                this.moeOutB = FloatTensor.allocateF32(c * dim);
+                this.moeRouterB = FloatTensor.allocateF32(arena, c * e);
+                this.moeGather = FloatTensor.allocateF32(arena, c * dim);
+                this.moeDownB = FloatTensor.allocateF32(arena, c * dim);
+                this.moeOutB = FloatTensor.allocateF32(arena, c * dim);
                 this.moeExpertCounts = new int[e];
                 this.moeExpertOffsets = new int[e + 1];
                 this.moeCursor = new int[e];
@@ -829,15 +831,19 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
 
     // === Loading ===
 
-    public static Lfm2 loadModel(Path ggufPath, int contextLength) throws IOException {
+    public static Lfm2 loadModel(Path ggufPath, int contextLength, Arena arena) throws IOException {
         try (FileChannel fileChannel = FileChannel.open(ggufPath, StandardOpenOption.READ)) {
             GGUF gguf = ModelLoader.readGguf(fileChannel, ggufPath.toString());
-            return loadModel(fileChannel, gguf, contextLength, true);
+            return loadModel(fileChannel, gguf, contextLength, true, arena);
         }
     }
 
     public static Lfm2 loadModel(
-            FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeightsFlag)
+            FileChannel fileChannel,
+            GGUF gguf,
+            int contextLength,
+            boolean loadWeightsFlag,
+            Arena arena)
             throws IOException {
         byte[] seed = com.qxotic.jinfer.cache.PromptCache.modelSeed(fileChannel);
         Tokenizer tokenizer = Tokenizers.fromGGUF(gguf);
@@ -907,22 +913,23 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
 
         if (!loadWeightsFlag)
             return new Lfm2(config, tokenizer, Tokenizers.chatTemplateSource(gguf), seed, null);
-        Map<String, GGMLTensorEntry> tensors = ModelLoader.loadTensors(fileChannel, gguf);
+        Map<String, GGMLTensorEntry> tensors = ModelLoader.loadTensors(fileChannel, gguf, arena);
         return new Lfm2(
                 config,
                 tokenizer,
                 Tokenizers.chatTemplateSource(gguf),
                 seed,
-                loadWeights(tensors, config));
+                loadWeights(tensors, config, arena));
     }
 
-    static Weights loadWeights(Map<String, GGMLTensorEntry> tensors, Configuration config) {
+    static Weights loadWeights(
+            Map<String, GGMLTensorEntry> tensors, Configuration config, Arena arena) {
         int n = config.numberOfLayers;
         RoPE.Freqs rope =
                 RoPE.precomputeFreqsCis(
                         config.contextLength(), config.headSizeFull, config.ropeTheta);
-        F32FloatTensor ropeReal = F32FloatTensor.of(rope.cos());
-        F32FloatTensor ropeImag = F32FloatTensor.of(rope.sin());
+        F32FloatTensor ropeReal = F32FloatTensor.of(arena, rope.cos());
+        F32FloatTensor ropeImag = F32FloatTensor.of(arena, rope.sin());
 
         FloatTensor tokenEmbeddings = ModelLoader.loadQuantized(tensors.get("token_embd.weight"));
         FloatTensor wcls =

@@ -18,6 +18,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -52,6 +53,11 @@ abstract class AbstractConstraintIT {
                         .contextLength(4096)
                         .maxOutputTokens(512)
                         .build();
+    }
+
+    @AfterAll
+    void unload() {
+        if (model != null) model.close();
     }
 
     private ChatResponse constrained(String question, String gbnf) {

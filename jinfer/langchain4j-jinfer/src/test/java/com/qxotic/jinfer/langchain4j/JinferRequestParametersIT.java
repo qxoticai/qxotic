@@ -12,6 +12,7 @@ import dev.langchain4j.exception.UnsupportedFeatureException;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.request.ResponseFormat;
 import java.util.List;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -38,6 +39,11 @@ class JinferRequestParametersIT {
                         .contextLength(2048)
                         .maxOutputTokens(48)
                         .build();
+    }
+
+    @AfterAll
+    static void unload() {
+        if (model != null) model.close();
     }
 
     @Test

@@ -449,7 +449,11 @@ public class Main {
         }
         LoadedModel<?> model = AOT.tryUsePreLoaded(options.modelPath(), options.maxTokens());
         if (model == null) {
-            model = Models.load(options.modelPath(), options.maxTokens());
+            model =
+                    Models.load(
+                            options.modelPath(),
+                            options.maxTokens(),
+                            java.lang.foreign.Arena.global());
         }
         if (options.server()) {
             Server.start(model, options);
@@ -746,7 +750,8 @@ final class AOT {
         }
         try (var timer = Timer.log("Load tensors from pre-loaded model");
                 FileChannel fileChannel = FileChannel.open(modelPath, StandardOpenOption.READ)) {
-            return Models.load(fileChannel, preLoaded.gguf(), contextLength);
+            return Models.load(
+                    fileChannel, preLoaded.gguf(), contextLength, java.lang.foreign.Arena.global());
         }
     }
 }

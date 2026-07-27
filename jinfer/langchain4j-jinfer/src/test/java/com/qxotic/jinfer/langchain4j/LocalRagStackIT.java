@@ -27,6 +27,7 @@ import dev.langchain4j.store.embedding.EmbeddingStoreIngestor;
 import dev.langchain4j.store.embedding.inmemory.InMemoryEmbeddingStore;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
@@ -103,6 +104,12 @@ class LocalRagStackIT {
                         .embeddingStore(store)
                         .maxResults(2)
                         .build();
+    }
+
+    @AfterAll
+    static void unload() {
+        if (chat != null) chat.close();
+        if (embedder != null) embedder.close();
     }
 
     @Test

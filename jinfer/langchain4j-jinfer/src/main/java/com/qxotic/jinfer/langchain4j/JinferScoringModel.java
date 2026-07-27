@@ -23,7 +23,7 @@ import java.util.List;
  * full-context state, reset between pairs); for parallel pipelines build several instances -
  * weights are shared via the OS page cache.
  */
-public final class JinferScoringModel implements ScoringModel {
+public final class JinferScoringModel implements ScoringModel, AutoCloseable {
 
     // The Qwen3-Reranker prompt frame, verbatim from the model card (the card is the oracle):
     // prefix + "<Instruct>: ..\n<Query>: ..\n<Document>: .." + suffix, then read yes/no logits.
@@ -37,6 +37,7 @@ public final class JinferScoringModel implements ScoringModel {
 
     private final Qwen3 model;
     private final Qwen3.State state; // one reusable state; reset() between pairs
+    private final java.lang.foreign.Arena weights = java.lang.foreign.Arena.ofShared();
     private final java.util.concurrent.locks.ReentrantLock lock =
             new java.util.concurrent.locks.ReentrantLock(true); // single-stream, like ChatEngine
     private final String instruction;
@@ -45,7 +46,9 @@ public final class JinferScoringModel implements ScoringModel {
 
     private JinferScoringModel(Builder b) {
         try {
-            this.model = Qwen3.loadModel(b.modelPath, b.contextLength <= 0 ? -1 : b.contextLength);
+            this.model =
+                    Qwen3.loadModel(
+                            b.modelPath, b.contextLength <= 0 ? -1 : b.contextLength, weights);
         } catch (IOException e) {
             throw new UncheckedIOException("failed to load " + b.modelPath, e);
         }
@@ -54,6 +57,21 @@ public final class JinferScoringModel implements ScoringModel {
         // the whole scoring convention rests on these being single tokens - fail at build
         this.yes = singleToken("yes");
         this.no = singleToken("no");
+    }
+
+    /**
+     * Blocking, idempotent: waits out any in-flight scoring (the fair lock), then frees the state's
+     * owned arena deterministically; later calls fail with IllegalStateException.
+     */
+    @Override
+    public void close() {
+        lock.lock();
+        try {
+            state.close();
+            weights.close(); // provably quiescent under the lock: weights die with the instance
+        } finally {
+            lock.unlock();
+        }
     }
 
     private int singleToken(String word) {

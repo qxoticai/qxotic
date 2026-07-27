@@ -134,7 +134,8 @@ public final class Generator {
             TokenSink sink,
             int actualMaxTokens,
             long deadlineNanos) {
-        StateGuard.claim(state); // the single-mutator contract, enforced
+        BaseState base = (BaseState) state;
+        base.enter(); // the single-mutator contract, held across the whole generation
         try {
             return guardedPass(
                     model,
@@ -146,7 +147,7 @@ public final class Generator {
                     actualMaxTokens,
                     deadlineNanos);
         } finally {
-            StateGuard.release(state);
+            base.exit();
         }
     }
 

@@ -91,7 +91,7 @@ public final class ServerIntegrationTest {
         Path model = modelPath();
         modelId = model.getFileName().toString();
         Assumptions.assumeTrue(Files.exists(model), "model not found: " + model);
-        LoadedModel<?> llama = Models.load(model, 2048);
+        LoadedModel<?> llama = Models.load(model, 2048, java.lang.foreign.Arena.ofAuto());
         StringBuilder manual = new StringBuilder("Agent operating manual.");
         for (int i = 1; i <= 50; i++) {
             manual.append(" Directive ")

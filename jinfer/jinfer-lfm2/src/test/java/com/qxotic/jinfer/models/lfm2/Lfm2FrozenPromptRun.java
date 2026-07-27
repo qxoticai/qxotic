@@ -24,7 +24,7 @@ public final class Lfm2FrozenPromptRun {
 
     private static void main(String[] args) throws Exception {
         Path path = Path.of(args.length > 0 ? args[0] : ModelFixture.LFM25_8B_Q8.path().toString());
-        Lfm2 m = Lfm2.loadModel(path, 8192);
+        Lfm2 m = Lfm2.loadModel(path, 8192, java.lang.foreign.Arena.ofAuto());
         new FrozenPromptScenario<>(
                         new Harness<>(m.loaded(), m.turnTemplate().orElseThrow(), path, 8192))
                 .run("Lfm2FrozenPromptRun");

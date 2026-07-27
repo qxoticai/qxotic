@@ -10,6 +10,7 @@ package com.qxotic.jinfer.models.qwen35;
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.FloatTensor;
 import com.qxotic.jinfer.testkit.ModelFixture;
+import java.lang.foreign.Arena;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Assumptions;
@@ -39,7 +40,7 @@ public final class Qwen35PrefillCheck {
             System.out.println("Qwen35PrefillCheck: model not found (" + path + "), skipping");
             return;
         }
-        Qwen35 model = Qwen35.loadModel(path, 4096);
+        Qwen35 model = Qwen35.loadModel(path, 4096, Arena.ofAuto());
         int vocab = model.config().vocabularySize();
         com.qxotic.toknroll.IntSequence prompt =
                 model.tokenizer()

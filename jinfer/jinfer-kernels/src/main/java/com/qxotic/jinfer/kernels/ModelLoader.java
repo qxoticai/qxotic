@@ -39,27 +39,32 @@ public final class ModelLoader {
     }
 
     /**
-     * Memory-maps the tensor data in one automatic-arena mapping shared by every tensor slice: the
-     * mapping lives exactly as long as any tensor of the model is reachable and is unmapped by GC
-     * once the whole model graph is dropped - weights can be released, never leak for the process.
-     * (Kernels read via raw addresses ({@code FloatTensor.GLOBAL_SEGMENT}), so liveness is carried
-     * by object reachability: the {@code Model} interface's public entry points fence the model
-     * across every kernel pass - see the lifetime note on {@code com.qxotic.jinfer.Model}.)
+     * Memory-maps the tensor data in one READ_ONLY mapping (shared by every tensor slice) into the
+     * caller's {@code arena} - who provides the arena owns the weights' lifetime ({@code ofAuto} =
+     * unmapped by GC once the model graph drops; {@code global} = process lifetime; a scoped arena
+     * = deterministic unmap, which must outlive every model sharing these weights). File-backed
+     * READ_ONLY pages are kernel-reclaimable under memory pressure regardless of arena choice.
+     * (Kernels read via raw addresses ({@code FloatTensor.GLOBAL_SEGMENT}) that bypass liveness
+     * checks; the {@code Model} entry points fence the model across every kernel pass - see the
+     * lifetime note on {@code com.qxotic.jinfer.Model}.)
      */
-    public static Map<String, GGMLTensorEntry> loadTensors(FileChannel fileChannel, GGUF gguf)
-            throws IOException {
-        return loadTensors(fileChannel, gguf.getTensorDataOffset(), gguf.getTensors());
+    public static Map<String, GGMLTensorEntry> loadTensors(
+            FileChannel fileChannel, GGUF gguf, Arena arena) throws IOException {
+        return loadTensors(fileChannel, gguf.getTensorDataOffset(), gguf.getTensors(), arena);
     }
 
     public static Map<String, GGMLTensorEntry> loadTensors(
-            FileChannel fileChannel, long tensorDataOffset, Collection<TensorEntry> tensors)
+            FileChannel fileChannel,
+            long tensorDataOffset,
+            Collection<TensorEntry> tensors,
+            Arena arena)
             throws IOException {
         MemorySegment tensorData =
                 fileChannel.map(
                         FileChannel.MapMode.READ_ONLY,
                         tensorDataOffset,
                         fileChannel.size() - tensorDataOffset,
-                        Arena.ofAuto());
+                        arena);
         Map<String, GGMLTensorEntry> tensorEntries = HashMap.newHashMap(tensors.size());
         for (TensorEntry tensor : tensors) {
             int[] shape = Arrays.stream(tensor.shape()).mapToInt(Math::toIntExact).toArray();

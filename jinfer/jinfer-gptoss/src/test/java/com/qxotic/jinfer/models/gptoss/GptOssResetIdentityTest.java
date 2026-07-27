@@ -25,12 +25,15 @@ class GptOssResetIdentityTest {
         Assumptions.assumeTrue(
                 Files.exists(ModelFixture.GPTOSS_20B_Q8.path()),
                 "model not found: " + ModelFixture.GPTOSS_20B_Q8.path());
-        GptOss model = GptOss.loadModel(ModelFixture.GPTOSS_20B_Q8.path(), 1024);
+        GptOss model =
+                GptOss.loadModel(
+                        ModelFixture.GPTOSS_20B_Q8.path(), 1024, java.lang.foreign.Arena.ofAuto());
         var tokenizer = model.loaded().tokenizer();
         IntSequence first = tokenizer.encode("The capital of France is");
         IntSequence second = tokenizer.encode("Once upon a time there was");
 
-        GptOss.State recycled = new GptOss.State(model.config(), 1024, 64);
+        GptOss.State recycled =
+                new GptOss.State(model.config(), 1024, 64, java.lang.foreign.Arena.ofAuto());
         // warm the kernels (JIT tier drift flips argmax cold-vs-warm) and DIRTY the state:
         // a full generation leaves real KV rows and real conv residue behind
         for (int i = 0; i < 4; i++) {
@@ -39,7 +42,8 @@ class GptOssResetIdentityTest {
         }
         IntSequence viaReset = generate(model, recycled, second);
 
-        GptOss.State fresh = new GptOss.State(model.config(), 1024, 64);
+        GptOss.State fresh =
+                new GptOss.State(model.config(), 1024, 64, java.lang.foreign.Arena.ofAuto());
         IntSequence viaFresh = generate(model, fresh, second);
 
         assertEquals(

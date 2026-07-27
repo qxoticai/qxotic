@@ -6,6 +6,7 @@ import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.Sampler;
 import com.qxotic.jinfer.testkit.ModelFixture;
 import com.qxotic.toknroll.IntSequence;
+import java.lang.foreign.Arena;
 import java.nio.file.Files;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
@@ -25,12 +26,13 @@ class GraniteResetIdentityTest {
         Assumptions.assumeTrue(
                 Files.exists(ModelFixture.GRANITE_41_3B_Q8.path()),
                 "model not found: " + ModelFixture.GRANITE_41_3B_Q8.path());
-        Granite model = Granite.loadModel(ModelFixture.GRANITE_41_3B_Q8.path(), 1024);
+        Granite model =
+                Granite.loadModel(ModelFixture.GRANITE_41_3B_Q8.path(), 1024, Arena.ofAuto());
         var tokenizer = model.loaded().tokenizer();
         IntSequence first = tokenizer.encode("The capital of France is");
         IntSequence second = tokenizer.encode("Once upon a time there was");
 
-        Granite.State recycled = new Granite.State(model.config(), 1024, 64);
+        Granite.State recycled = new Granite.State(model.config(), 1024, 64, Arena.ofAuto());
         // warm the kernels (JIT tier drift flips argmax cold-vs-warm) and DIRTY the state:
         // a full generation leaves real KV rows and real conv residue behind
         for (int i = 0; i < 4; i++) {
@@ -39,7 +41,7 @@ class GraniteResetIdentityTest {
         }
         IntSequence viaReset = generate(model, recycled, second);
 
-        Granite.State fresh = new Granite.State(model.config(), 1024, 64);
+        Granite.State fresh = new Granite.State(model.config(), 1024, 64, Arena.ofAuto());
         IntSequence viaFresh = generate(model, fresh, second);
 
         assertEquals(

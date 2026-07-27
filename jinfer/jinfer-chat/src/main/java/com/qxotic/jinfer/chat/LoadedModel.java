@@ -22,9 +22,11 @@ import java.util.Set;
  * <p>Produced by each model class ({@code loaded()}); the architecture-dispatching loaders (the
  * server's {@code Models.load}) bundle it into a {@code ChatModel}.
  *
- * <p>Lifetime: there is no close() - weights (one mmap shared by every tensor) and state buffers
- * release with reachability. Drop the last reference to this record (and any states/caches built
- * from it) and GC unmaps everything; see the lifetime note on {@link com.qxotic.jinfer.Model}.
+ * <p>Lifetime: there is no close() on this record - the arena given to {@code Models.load} owns the
+ * weights (one READ_ONLY mmap shared by every tensor; {@code ofAuto} = GC-unmapped, {@code global}
+ * = process, scoped = deterministic and must outlive every model sharing them). States own or
+ * borrow their memory per {@code newState}; see the lifetime note on {@link
+ * com.qxotic.jinfer.Model}.
  */
 public record LoadedModel<S extends RuntimeState>(
         LanguageModel<?, ?, S> model,

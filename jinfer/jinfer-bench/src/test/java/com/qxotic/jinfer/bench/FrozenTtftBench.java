@@ -29,23 +29,38 @@ public final class FrozenTtftBench {
         bench(
                 "LFM2.5-8B-A1B-Q8_0",
                 ModelFixture.LFM25_8B_Q8.path(),
-                p -> com.qxotic.jinfer.models.lfm2.Lfm2.loadModel(p, CTX).loaded());
+                p ->
+                        com.qxotic.jinfer.models.lfm2.Lfm2.loadModel(
+                                        p, CTX, java.lang.foreign.Arena.ofAuto())
+                                .loaded());
         bench(
                 "gemma-4-E2B-it-Q8_0",
                 ModelFixture.GEMMA4_E2B_Q8.path(),
-                p -> com.qxotic.jinfer.models.gemma4.Gemma4.loadModel(p, CTX).loaded());
+                p ->
+                        com.qxotic.jinfer.models.gemma4.Gemma4.loadModel(
+                                        p, CTX, java.lang.foreign.Arena.ofAuto())
+                                .loaded());
         bench(
                 "gpt-oss-20b-Q8_0",
                 ModelFixture.GPTOSS_20B_Q8.path(),
-                p -> com.qxotic.jinfer.models.gptoss.GptOss.loadModel(p, CTX).loaded());
+                p ->
+                        com.qxotic.jinfer.models.gptoss.GptOss.loadModel(
+                                        p, CTX, java.lang.foreign.Arena.ofAuto())
+                                .loaded());
         bench(
                 "Llama-3.2-1B-Instruct-Q8_0",
                 ModelFixture.LLAMA32_1B_Q8.path(),
-                p -> com.qxotic.jinfer.models.llama.Llama.loadModel(p, CTX).loaded());
+                p ->
+                        com.qxotic.jinfer.models.llama.Llama.loadModel(
+                                        p, CTX, java.lang.foreign.Arena.ofAuto())
+                                .loaded());
         bench(
                 "granite-4.1-3b-Q8_0",
                 ModelFixture.GRANITE_41_3B_Q8.path(),
-                p -> com.qxotic.jinfer.models.llama.Granite.loadModel(p, CTX).loaded());
+                p ->
+                        com.qxotic.jinfer.models.llama.Granite.loadModel(
+                                        p, CTX, java.lang.foreign.Arena.ofAuto())
+                                .loaded());
     }
 
     interface Loader {

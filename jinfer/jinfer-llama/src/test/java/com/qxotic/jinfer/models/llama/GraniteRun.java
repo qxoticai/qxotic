@@ -4,6 +4,7 @@
 // <model.gguf> [prompt] [nTokens]
 package com.qxotic.jinfer.models.llama;
 
+import java.lang.foreign.Arena;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -32,7 +33,7 @@ public final class GraniteRun {
         String promptStr = args.length > 1 ? args[1] : "The capital of France is";
         int nTokens = args.length > 2 ? Integer.parseInt(args[2]) : 32;
 
-        Granite model = Granite.loadModel(Path.of(path), 4096);
+        Granite model = Granite.loadModel(Path.of(path), 4096, Arena.ofAuto());
         var c = model.config();
         System.err.printf(
                 "config: dim=%d layers=%d heads=%d kvHeads=%d vocab=%d ctx=%d attnScale=%.5f%n",

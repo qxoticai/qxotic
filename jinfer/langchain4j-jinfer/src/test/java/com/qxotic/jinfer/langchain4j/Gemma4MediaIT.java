@@ -20,6 +20,7 @@ import java.nio.file.Path;
 import java.util.Base64;
 import java.util.List;
 import javax.imageio.ImageIO;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -53,6 +54,11 @@ class Gemma4MediaIT {
                         .contextLength(4096)
                         .maxOutputTokens(512)
                         .build();
+    }
+
+    @AfterAll
+    static void unload() {
+        if (model != null) model.close();
     }
 
     @Test
@@ -107,31 +113,33 @@ class Gemma4MediaIT {
     void consumesAudio() {
         Assumptions.assumeTrue(Files.exists(AUDIO_MODEL), "model not found: " + AUDIO_MODEL);
         Assumptions.assumeTrue(Files.exists(AUDIO_MMPROJ), "mmproj not found: " + AUDIO_MMPROJ);
-        JinferChatModel audioModel =
+        try (JinferChatModel audioModel =
                 JinferChatModel.builder()
                         .modelPath(AUDIO_MODEL)
                         .mediaProjector(AUDIO_MMPROJ)
                         .contextLength(4096)
                         .maxOutputTokens(512)
-                        .build();
-        Assumptions.assumeTrue(
-                engineModel(audioModel) instanceof MultiModal mm
-                        && mm.modalities().contains(Media.Audio.class),
-                "mmproj carries no audio adapter");
-        byte[] wav = toneWav(440, 1.0, 16000);
-        ChatResponse r =
-                audioModel.chat(
-                        ChatRequest.builder()
-                                .messages(
-                                        UserMessage.from(
-                                                AudioContent.from(
-                                                        Base64.getEncoder().encodeToString(wav),
-                                                        "audio/wav"),
-                                                TextContent.from(
-                                                        "Describe this audio in one sentence.")))
-                                .build());
-        assertNotNull(r.aiMessage().text());
-        assertTrue(!r.aiMessage().text().isBlank());
+                        .build()) {
+            Assumptions.assumeTrue(
+                    engineModel(audioModel) instanceof MultiModal mm
+                            && mm.modalities().contains(Media.Audio.class),
+                    "mmproj carries no audio adapter");
+            byte[] wav = toneWav(440, 1.0, 16000);
+            ChatResponse r =
+                    audioModel.chat(
+                            ChatRequest.builder()
+                                    .messages(
+                                            UserMessage.from(
+                                                    AudioContent.from(
+                                                            Base64.getEncoder().encodeToString(wav),
+                                                            "audio/wav"),
+                                                    TextContent.from(
+                                                            "Describe this audio in one"
+                                                                    + " sentence.")))
+                                    .build());
+            assertNotNull(r.aiMessage().text());
+            assertTrue(!r.aiMessage().text().isBlank());
+        }
     }
 
     @Test

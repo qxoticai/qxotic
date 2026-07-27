@@ -18,6 +18,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -47,6 +48,11 @@ class JinferChatModelIT {
                         .contextLength(4096)
                         .maxOutputTokens(512)
                         .build();
+    }
+
+    @AfterAll
+    static void unload() {
+        if (model != null) model.close();
     }
 
     @Test

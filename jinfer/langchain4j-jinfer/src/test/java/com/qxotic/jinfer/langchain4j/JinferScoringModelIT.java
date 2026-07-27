@@ -8,6 +8,7 @@ import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.output.Response;
 import java.nio.file.Files;
 import java.util.List;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -33,6 +34,11 @@ class JinferScoringModelIT {
                         .modelPath(ModelFixture.QWEN3_RERANKER_06B_Q8.path())
                         .contextLength(2048)
                         .build();
+    }
+
+    @AfterAll
+    static void unload() {
+        if (scorer != null) scorer.close();
     }
 
     @Test

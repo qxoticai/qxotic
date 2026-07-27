@@ -32,7 +32,7 @@ public final class Lfm2Run {
         String promptStr = args.length > 1 ? args[1] : "The capital of France is";
         int nTokens = args.length > 2 ? Integer.parseInt(args[2]) : 32;
 
-        Lfm2 model = Lfm2.loadModel(Path.of(path), 4096);
+        Lfm2 model = Lfm2.loadModel(Path.of(path), 4096, java.lang.foreign.Arena.ofAuto());
         var c = model.config();
         System.err.printf(
                 "config: dim=%d layers=%d heads=%d vocab=%d ctx=%d dConv=%d experts=%d%n",

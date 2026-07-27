@@ -32,9 +32,15 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * generation continues; parsed tool calls are announced via {@code onCompleteToolCall} before the
  * complete response.
  */
-public final class JinferStreamingChatModel implements StreamingChatModel {
+public final class JinferStreamingChatModel implements StreamingChatModel, AutoCloseable {
 
     private final JinferChatModel model; // the blocking twin: engine, defaults, prefix, listeners
+
+    /** Closes the shared engine (see {@link JinferChatModel#close()}); blocking, idempotent. */
+    @Override
+    public void close() {
+        model.close();
+    }
 
     JinferStreamingChatModel(JinferChatModel model) {
         this.model = model;

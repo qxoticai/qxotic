@@ -34,6 +34,7 @@ import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
 import com.qxotic.toknroll.Tokenizer;
 import java.io.IOException;
+import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -109,8 +110,8 @@ public final class NemotronH
     }
 
     @Override
-    public State newState(int contextCapacity, int batchCapacity) {
-        State state = new State(configuration, contextCapacity, batchCapacity);
+    public State newState(int contextCapacity, int batchCapacity, Arena arena) {
+        State state = new State(configuration, contextCapacity, batchCapacity, arena);
         return state;
     }
 
@@ -856,7 +857,8 @@ public final class NemotronH
             }
         }
 
-        State(Configuration config, int contextCapacity, int batchCapacity) {
+        State(Configuration config, int contextCapacity, int batchCapacity, Arena arena) {
+            super(arena);
             this.contextCapacity = contextCapacity;
             this.batchCapacity = Math.max(1, batchCapacity);
             int cap = this.batchCapacity;
@@ -864,15 +866,15 @@ public final class NemotronH
             int queryDim = config.queryDim(), kvDim = config.kvDim();
             int dInner = config.ssmInnerSize, convCh = config.ssmConvChannels();
 
-            this.x = FloatTensor.allocateF32(cap * dim);
-            this.xb = FloatTensor.allocateF32(cap * dim);
-            this.k = FloatTensor.allocateF32(cap * kvDim);
-            this.v = FloatTensor.allocateF32(cap * kvDim);
-            this.attnQ = FloatTensor.allocateF32(cap * queryDim);
-            this.attnOut = FloatTensor.allocateF32(cap * queryDim);
-            this.logits = FloatTensor.allocateF32(config.vocabularySize);
-            this.ssmInProj = FloatTensor.allocateF32(cap * config.ssmInProjSize());
-            this.ssmTmp = FloatTensor.allocateF32(cap * Math.max(1, dInner));
+            this.x = FloatTensor.allocateF32(arena, cap * dim);
+            this.xb = FloatTensor.allocateF32(arena, cap * dim);
+            this.k = FloatTensor.allocateF32(arena, cap * kvDim);
+            this.v = FloatTensor.allocateF32(arena, cap * kvDim);
+            this.attnQ = FloatTensor.allocateF32(arena, cap * queryDim);
+            this.attnOut = FloatTensor.allocateF32(arena, cap * queryDim);
+            this.logits = FloatTensor.allocateF32(arena, config.vocabularySize);
+            this.ssmInProj = FloatTensor.allocateF32(arena, cap * config.ssmInProjSize());
+            this.ssmTmp = FloatTensor.allocateF32(arena, cap * Math.max(1, dInner));
             this.ssmZ = new float[cap * Math.max(1, dInner)];
             this.ssmXbc = new float[cap * Math.max(1, convCh)];
             this.ssmConvOut = new float[cap * Math.max(1, convCh)];
@@ -883,21 +885,21 @@ public final class NemotronH
                     eff = Math.max(1, config.expertFeedForwardLength);
             int sff = Math.max(1, config.expertSharedFeedForwardLength),
                     tk = Math.max(1, config.expertUsedCount);
-            this.moeRouter = FloatTensor.allocateF32(e);
-            this.moeHidden = FloatTensor.allocateF32(eff);
-            this.moeExpertOut = FloatTensor.allocateF32(dim);
-            this.moeAccum = FloatTensor.allocateF32(dim);
-            this.moeSharedHidden = FloatTensor.allocateF32(sff);
+            this.moeRouter = FloatTensor.allocateF32(arena, e);
+            this.moeHidden = FloatTensor.allocateF32(arena, eff);
+            this.moeExpertOut = FloatTensor.allocateF32(arena, dim);
+            this.moeAccum = FloatTensor.allocateF32(arena, dim);
+            this.moeSharedHidden = FloatTensor.allocateF32(arena, sff);
             this.moeTopExperts = new int[tk];
             this.moeTopWeights = new float[tk];
-            this.moeInputB = FloatTensor.allocateF32(cap * dim);
-            this.moeRouterB = FloatTensor.allocateF32(cap * e);
-            this.moeGather = FloatTensor.allocateF32(cap * dim);
-            this.moeDownB = FloatTensor.allocateF32(cap * dim);
-            this.moeOutB = FloatTensor.allocateF32(cap * dim);
-            this.moeUpB = FloatTensor.allocateF32(cap * eff);
-            this.moeSharedUpB = FloatTensor.allocateF32(cap * sff);
-            this.moeSharedOutB = FloatTensor.allocateF32(cap * dim);
+            this.moeInputB = FloatTensor.allocateF32(arena, cap * dim);
+            this.moeRouterB = FloatTensor.allocateF32(arena, cap * e);
+            this.moeGather = FloatTensor.allocateF32(arena, cap * dim);
+            this.moeDownB = FloatTensor.allocateF32(arena, cap * dim);
+            this.moeOutB = FloatTensor.allocateF32(arena, cap * dim);
+            this.moeUpB = FloatTensor.allocateF32(arena, cap * eff);
+            this.moeSharedUpB = FloatTensor.allocateF32(arena, cap * sff);
+            this.moeSharedOutB = FloatTensor.allocateF32(arena, cap * dim);
             this.moeRowTopE = new int[cap * tk];
             this.moeRowTopP = new float[cap * tk];
             this.moeExpertCounts = new int[e];
@@ -922,12 +924,12 @@ public final class NemotronH
             for (int l = 0; l < config.numberOfLayers; l++) {
                 switch (config.layerTypes[l]) {
                     case ATTENTION -> {
-                        keyCache[l] = FloatTensor.allocateF16(contextCapacity, kvDim);
-                        valueCache[l] = FloatTensor.allocateF16(contextCapacity, kvDim);
+                        keyCache[l] = FloatTensor.allocateF16(arena, contextCapacity, kvDim);
+                        valueCache[l] = FloatTensor.allocateF16(arena, contextCapacity, kvDim);
                     }
                     case SSM -> {
                         ssmConvState[l] =
-                                FloatTensor.allocateF32((config.ssmConvKernel - 1) * convCh);
+                                FloatTensor.allocateF32(arena, (config.ssmConvKernel - 1) * convCh);
                         ssmState[l] = new float[dInner * config.ssmStateSize];
                     }
                     case MOE -> {}
@@ -948,15 +950,16 @@ public final class NemotronH
 
     // === Loading ===
 
-    public static NemotronH loadModel(Path ggufPath, int contextLength) throws IOException {
+    public static NemotronH loadModel(Path ggufPath, int contextLength, Arena arena)
+            throws IOException {
         try (FileChannel fileChannel = FileChannel.open(ggufPath, StandardOpenOption.READ)) {
             GGUF gguf = ModelLoader.readGguf(fileChannel, ggufPath.toString());
-            return loadModel(fileChannel, gguf, contextLength);
+            return loadModel(fileChannel, gguf, contextLength, arena);
         }
     }
 
-    public static NemotronH loadModel(FileChannel fileChannel, GGUF gguf, int contextLength)
-            throws IOException {
+    public static NemotronH loadModel(
+            FileChannel fileChannel, GGUF gguf, int contextLength, Arena arena) throws IOException {
         byte[] seed = com.qxotic.jinfer.cache.PromptCache.modelSeed(fileChannel);
         Tokenizer tokenizer = Tokenizers.fromGGUF(gguf);
         String arch = gguf.getString("general.architecture");
@@ -1034,7 +1037,7 @@ public final class NemotronH
                         bosTokenId,
                         eosTokenId);
 
-        Map<String, GGMLTensorEntry> tensors = ModelLoader.loadTensors(fileChannel, gguf);
+        Map<String, GGMLTensorEntry> tensors = ModelLoader.loadTensors(fileChannel, gguf, arena);
         return new NemotronH(
                 config,
                 tokenizer,

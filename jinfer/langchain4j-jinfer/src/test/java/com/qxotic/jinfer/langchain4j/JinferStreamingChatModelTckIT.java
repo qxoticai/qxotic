@@ -24,29 +24,77 @@ class JinferStreamingChatModelTckIT extends AbstractStreamingChatModelIT {
         return Files.exists(JinferChatModelTckIT.MODEL);
     }
 
-    private static StreamingChatModel model;
+    private static JinferChatModel shared;
+
+    @org.junit.jupiter.api.AfterAll
+    static void unloadShared() {
+        if (shared != null) shared.close();
+    }
 
     @Override
     protected List<StreamingChatModel> models() {
-        if (model == null) {
-            model = blocking(List.of()).streaming();
+        // one shared model behind a non-AutoCloseable wrapper - see the blocking TCK's
+        // models() note for why (JUnit autocloses arguments; fresh-per-call OOMs collection)
+        if (shared == null) {
+            shared = blocking(List.of());
         }
-        return List.of(model);
+        StreamingChatModel m = shared.streaming();
+        return List.of(
+                new StreamingChatModel() {
+                    @Override
+                    public void chat(
+                            dev.langchain4j.model.chat.request.ChatRequest request,
+                            dev.langchain4j.model.chat.response.StreamingChatResponseHandler
+                                    handler) {
+                        m.chat(request, handler);
+                    }
+
+                    @Override
+                    public void doChat(
+                            dev.langchain4j.model.chat.request.ChatRequest request,
+                            dev.langchain4j.model.chat.response.StreamingChatResponseHandler
+                                    handler) {
+                        m.chat(request, handler);
+                    }
+
+                    @Override
+                    public dev.langchain4j.model.chat.request.ChatRequestParameters
+                            defaultRequestParameters() {
+                        return m.defaultRequestParameters();
+                    }
+                });
+    }
+
+    // see the blocking TCK: createModelWith products are not parameterized arguments, so
+    // nothing closes them unless we track them ourselves
+    private static final List<JinferChatModel> created =
+            java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+
+    @org.junit.jupiter.api.AfterAll
+    static void unloadCreated() {
+        created.forEach(JinferChatModel::close);
+        created.clear();
+    }
+
+    private static JinferChatModel track(JinferChatModel m) {
+        created.add(m);
+        return m;
     }
 
     @Override
     public StreamingChatModel createModelWith(ChatModelListener listener) {
-        return blocking(List.of(listener)).streaming();
+        return track(blocking(List.of(listener))).streaming();
     }
 
     @Override
     protected StreamingChatModel createModelWith(
             dev.langchain4j.model.chat.request.ChatRequestParameters parameters) {
-        return JinferChatModel.builder()
-                .modelPath(JinferChatModelTckIT.MODEL)
-                .contextLength(8192)
-                .defaultRequestParameters(parameters)
-                .build()
+        return track(
+                        JinferChatModel.builder()
+                                .modelPath(JinferChatModelTckIT.MODEL)
+                                .contextLength(8192)
+                                .defaultRequestParameters(parameters)
+                                .build())
                 .streaming();
     }
 

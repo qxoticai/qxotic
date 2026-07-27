@@ -1,9 +1,9 @@
 package com.qxotic.jinfer.cache;
 
+import com.qxotic.jinfer.BaseState;
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.Config;
 import com.qxotic.jinfer.Model;
-import com.qxotic.jinfer.RuntimeState;
 import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;
 import java.util.List;
@@ -21,9 +21,12 @@ public final class CachedSessionPartialGroupTest {
     static int failures;
 
     /** Records every token id the model actually ingests, in order. */
-    static final class FakeState implements RuntimeState {
-        int position;
+    static final class FakeState extends BaseState {
         final List<Integer> ingested = new ArrayList<>();
+
+        FakeState() {
+            super(java.lang.foreign.Arena.ofAuto());
+        }
 
         @Override
         public int contextCapacity() {
@@ -36,18 +39,8 @@ public final class CachedSessionPartialGroupTest {
         }
 
         @Override
-        public int position() {
-            return position;
-        }
-
-        @Override
-        public int outputCount() {
-            return 1;
-        }
-
-        @Override
-        public void resumeAt(int p) {
-            position = p;
+        public void reset() {
+            resumeAt(0);
         }
     }
 
@@ -63,7 +56,8 @@ public final class CachedSessionPartialGroupTest {
         }
 
         @Override
-        public FakeState newState(int contextCapacity, int batchCapacity) {
+        public FakeState newState(
+                int contextCapacity, int batchCapacity, java.lang.foreign.Arena arena) {
             return new FakeState();
         }
 

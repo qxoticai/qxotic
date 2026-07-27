@@ -23,6 +23,7 @@ import com.qxotic.jinfer.cache.CachedSession;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.llm.*;
 import com.qxotic.jinfer.testkit.ModelFixture;
+import java.lang.foreign.Arena;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -64,7 +65,7 @@ public final class Gemma4MtpIdentityTest {
             System.out.println("Gemma4MtpIdentityTest: model/sidecar absent, skipping");
             return;
         }
-        Gemma4 m = Gemma4.loadModel(model, 4096, sidecar);
+        Gemma4 m = Gemma4.loadModel(model, 4096, sidecar, Arena.ofAuto());
         var tk = m.tokenizer();
         int bos = SpecialTokens.find(tk, "<bos>").orElse(2);
         Set<Integer> stops = m.stopTokens();

@@ -6,6 +6,7 @@ package com.qxotic.jinfer;
 
 import com.oracle.svm.shared.AlwaysInline;
 import com.qxotic.format.gguf.GGMLType;
+import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.lang.reflect.Field;
@@ -267,17 +268,17 @@ public abstract class FloatTensor {
     }
 
     /**
-     * A fresh native F32 tensor (the allocatable, writable kind) — the public factory for callers
-     * outside this package (e.g. the com.qxotic.jinfer.models model prototype) that need
-     * scratch/cache tensors.
+     * A fresh native F32 tensor (the allocatable, writable kind) from {@code arena} — the public
+     * factory for callers outside this package (model ports) that need scratch/cache tensors. The
+     * arena is the lifetime policy: who provides it owns it; the library allocates, never frees.
      */
-    public static FloatTensor allocateF32(int... dims) {
-        return F32FloatTensor.allocate(dims);
+    public static FloatTensor allocateF32(Arena arena, int... dims) {
+        return F32FloatTensor.allocate(arena, dims);
     }
 
-    /** A fresh native F16 tensor — half the footprint, used for KV caches. */
-    public static FloatTensor allocateF16(int... dims) {
-        return F16FloatTensor.allocate(dims);
+    /** A fresh native F16 tensor from {@code arena} — half the footprint, used for KV caches. */
+    public static FloatTensor allocateF16(Arena arena, int... dims) {
+        return F16FloatTensor.allocate(arena, dims);
     }
 
     static float scalarDot(

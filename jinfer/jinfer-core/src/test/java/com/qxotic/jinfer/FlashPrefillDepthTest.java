@@ -19,7 +19,7 @@ class FlashPrefillDepthTest {
     static final int Q_STRIDE = HEADS * HEAD;
 
     static F32FloatTensor rnd(int size, long seed) {
-        F32FloatTensor t = F32FloatTensor.allocate(size);
+        F32FloatTensor t = F32FloatTensor.allocate(java.lang.foreign.Arena.ofAuto(), size);
         long x = seed;
         for (int i = 0; i < size; i++) {
             x = x * 6364136223846793005L + 1442695040888963407L;
@@ -53,21 +53,27 @@ class FlashPrefillDepthTest {
         F32FloatTensor q = rnd(n * Q_STRIDE, 1);
         F32FloatTensor k = rnd(n * KV_DIM, 2);
         F32FloatTensor v = rnd(n * KV_DIM, 3);
-        F32FloatTensor empty = F32FloatTensor.allocate(1);
+        F32FloatTensor empty = F32FloatTensor.allocate(java.lang.foreign.Arena.ofAuto(), 1);
 
-        F32FloatTensor outSingle = F32FloatTensor.allocate(n * Q_STRIDE);
+        F32FloatTensor outSingle =
+                F32FloatTensor.allocate(java.lang.foreign.Arena.ofAuto(), n * Q_STRIDE);
         prefill(q, outSingle, empty, empty, k, v, 0, n);
 
         // chunked: prefix chunk at 0, then the tail attends prefix-from-cache + itself-from-batch
-        F32FloatTensor outPrefix = F32FloatTensor.allocate(n * Q_STRIDE);
+        F32FloatTensor outPrefix =
+                F32FloatTensor.allocate(java.lang.foreign.Arena.ofAuto(), n * Q_STRIDE);
         prefill(q, outPrefix, empty, empty, k, v, 0, p);
-        F32FloatTensor qTail = F32FloatTensor.allocate(tail * Q_STRIDE);
-        F32FloatTensor kTail = F32FloatTensor.allocate(tail * KV_DIM);
-        F32FloatTensor vTail = F32FloatTensor.allocate(tail * KV_DIM);
+        F32FloatTensor qTail =
+                F32FloatTensor.allocate(java.lang.foreign.Arena.ofAuto(), tail * Q_STRIDE);
+        F32FloatTensor kTail =
+                F32FloatTensor.allocate(java.lang.foreign.Arena.ofAuto(), tail * KV_DIM);
+        F32FloatTensor vTail =
+                F32FloatTensor.allocate(java.lang.foreign.Arena.ofAuto(), tail * KV_DIM);
         q.copyTo((long) p * Q_STRIDE, qTail, 0, tail * Q_STRIDE);
         k.copyTo((long) p * KV_DIM, kTail, 0, tail * KV_DIM);
         v.copyTo((long) p * KV_DIM, vTail, 0, tail * KV_DIM);
-        F32FloatTensor outTail = F32FloatTensor.allocate(tail * Q_STRIDE);
+        F32FloatTensor outTail =
+                F32FloatTensor.allocate(java.lang.foreign.Arena.ofAuto(), tail * Q_STRIDE);
         prefill(qTail, outTail, k, v, kTail, vTail, p, tail);
 
         for (int i = 0; i < tail * Q_STRIDE; i++) {
@@ -90,7 +96,7 @@ class FlashPrefillDepthTest {
         // for every key, including the scalar remainder lanes. Pure data - no JIT sensitivity.
         int keys = 61, headSize = HEAD; // odd count exercises vector bound + scalar remainder
         F32FloatTensor src = rnd(keys * KV_DIM, 31);
-        FloatTensor f16 = FloatTensor.allocateF16(keys, KV_DIM);
+        FloatTensor f16 = FloatTensor.allocateF16(java.lang.foreign.Arena.ofAuto(), keys, KV_DIM);
         for (int i = 0; i < keys * KV_DIM; i++) {
             f16.setFloat(i, src.getFloat(i));
         }
@@ -98,7 +104,8 @@ class FlashPrefillDepthTest {
         for (int j = 0; j < keys; j++) {
             kvOff[j] = j * KV_DIM + HEAD; // second head's slice, strided like the real caller
         }
-        F32FloatTensor dst = F32FloatTensor.allocate(keys * headSize);
+        F32FloatTensor dst =
+                F32FloatTensor.allocate(java.lang.foreign.Arena.ofAuto(), keys * headSize);
         FlashAttention.decodeF16Run((F16FloatTensor) f16, kvOff, keys, headSize, dst);
         for (int j = 0; j < keys; j++) {
             for (int d = 0; d < headSize; d++) {
@@ -121,10 +128,10 @@ class FlashPrefillDepthTest {
         F32FloatTensor q = rnd(tail * Q_STRIDE, 21);
         F32FloatTensor bK = rnd(tail * KV_DIM, 22);
         F32FloatTensor bV = rnd(tail * KV_DIM, 23);
-        FloatTensor cK16 = FloatTensor.allocateF16(p, KV_DIM);
-        FloatTensor cV16 = FloatTensor.allocateF16(p, KV_DIM);
-        F32FloatTensor cK32 = F32FloatTensor.allocate(p * KV_DIM);
-        F32FloatTensor cV32 = F32FloatTensor.allocate(p * KV_DIM);
+        FloatTensor cK16 = FloatTensor.allocateF16(java.lang.foreign.Arena.ofAuto(), p, KV_DIM);
+        FloatTensor cV16 = FloatTensor.allocateF16(java.lang.foreign.Arena.ofAuto(), p, KV_DIM);
+        F32FloatTensor cK32 = F32FloatTensor.allocate(java.lang.foreign.Arena.ofAuto(), p * KV_DIM);
+        F32FloatTensor cV32 = F32FloatTensor.allocate(java.lang.foreign.Arena.ofAuto(), p * KV_DIM);
         F32FloatTensor src = rnd(2 * p * KV_DIM, 24);
         for (int i = 0; i < p * KV_DIM; i++) {
             cK16.setFloat(i, src.getFloat(i));
@@ -135,8 +142,10 @@ class FlashPrefillDepthTest {
             cK32.setFloat(i, ftzWiden(cK16.getFloat(i)));
             cV32.setFloat(i, ftzWiden(cV16.getFloat(i)));
         }
-        F32FloatTensor out16 = F32FloatTensor.allocate(tail * Q_STRIDE);
-        F32FloatTensor out32 = F32FloatTensor.allocate(tail * Q_STRIDE);
+        F32FloatTensor out16 =
+                F32FloatTensor.allocate(java.lang.foreign.Arena.ofAuto(), tail * Q_STRIDE);
+        F32FloatTensor out32 =
+                F32FloatTensor.allocate(java.lang.foreign.Arena.ofAuto(), tail * Q_STRIDE);
         FlashAttention.slidingWindowPrefill(
                 q, out16, cK16, cV16, bK, bV, HEADS, p, tail, HEAD, KV_DIM, Q_STRIDE, KV_DIM,
                 KV_MUL, 1f / 8f, 0, 0, null);
@@ -161,12 +170,21 @@ class FlashPrefillDepthTest {
         for (boolean f16 : new boolean[] {false, true}) {
             for (int depth : new int[] {0, 1216}) {
                 int n = depth + tail;
-                FloatTensor cK = f16 ? FloatTensor.allocateF16(n, kvDim) : rnd(n * kvDim, 10);
-                FloatTensor cV = f16 ? FloatTensor.allocateF16(n, kvDim) : rnd(n * kvDim, 11);
+                FloatTensor cK =
+                        f16
+                                ? FloatTensor.allocateF16(
+                                        java.lang.foreign.Arena.ofAuto(), n, kvDim)
+                                : rnd(n * kvDim, 10);
+                FloatTensor cV =
+                        f16
+                                ? FloatTensor.allocateF16(
+                                        java.lang.foreign.Arena.ofAuto(), n, kvDim)
+                                : rnd(n * kvDim, 11);
                 F32FloatTensor q = rnd(tail * qStride, 12);
                 F32FloatTensor bK = rnd(tail * kvDim, 13);
                 F32FloatTensor bV = rnd(tail * kvDim, 14);
-                F32FloatTensor out = F32FloatTensor.allocate(tail * qStride);
+                F32FloatTensor out =
+                        F32FloatTensor.allocate(java.lang.foreign.Arena.ofAuto(), tail * qStride);
                 Runnable one =
                         () ->
                                 FlashAttention.slidingWindowPrefill(

@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.qxotic.jinfer.FloatTensor;
 import com.qxotic.jinfer.Media;
+import java.lang.foreign.Arena;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -20,7 +21,7 @@ class MediaPositionsIT {
     @Test
     void imagePlanMatchesEncodedRows() throws Exception {
         var mmproj = com.qxotic.jinfer.testkit.ModelFixture.GEMMA4_E2B_MMPROJ.require();
-        Gemma4Vision vision = Gemma4Vision.loadModel(mmproj);
+        Gemma4Vision vision = Gemma4Vision.loadModel(mmproj, Arena.ofAuto());
         int[][] shapes = {{256, 256}, {640, 480}, {111, 333}, {1600, 900}};
         for (int[] wh : shapes) {
             Media.Image img = solidImage(wh[0], wh[1]);
@@ -38,7 +39,7 @@ class MediaPositionsIT {
         var mmproj = com.qxotic.jinfer.testkit.ModelFixture.GEMMA4_12B_MMPROJ.require();
         Gemma4Audio audio;
         try {
-            audio = Gemma4Audio.loadModel(mmproj);
+            audio = Gemma4Audio.loadModel(mmproj, Arena.ofAuto());
         } catch (Exception e) {
             Assumptions.abort("mmproj has no audio projection: " + e);
             return;

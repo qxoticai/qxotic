@@ -25,6 +25,7 @@ import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
 import com.qxotic.toknroll.Tokenizer;
 import java.io.IOException;
+import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -81,8 +82,8 @@ public final class Gemma4
     }
 
     @Override
-    public State newState(int contextCapacity, int batchCapacity) {
-        State state = new State(configuration, contextCapacity, batchCapacity);
+    public State newState(int contextCapacity, int batchCapacity, Arena arena) {
+        State state = new State(configuration, contextCapacity, batchCapacity, arena);
         return state;
     }
 
@@ -516,7 +517,8 @@ public final class Gemma4
             resumeAt(0);
         }
 
-        State(Configuration config, int contextCapacity, int batchCapacity) {
+        State(Configuration config, int contextCapacity, int batchCapacity, Arena arena) {
+            super(arena);
             if (contextCapacity > config.contextLength()) {
                 throw new IllegalArgumentException(
                         "contextCapacity "
@@ -530,19 +532,21 @@ public final class Gemma4
             int dim = config.embeddingLength();
             int maxQueryDim = config.numberOfHeads() * config.headSizeFull();
             int maxHiddenDim = config.maxHiddenDim();
-            this.residual = FloatTensor.allocateF32(c * dim);
-            this.xb = FloatTensor.allocateF32(c * dim);
-            this.xbK = FloatTensor.allocateF32(c * maxQueryDim);
-            this.xb2 = FloatTensor.allocateF32(c * dim);
-            this.hb = FloatTensor.allocateF32(c * maxHiddenDim);
-            this.hb2 = FloatTensor.allocateF32(c * maxHiddenDim);
-            this.query = FloatTensor.allocateF32(c * maxQueryDim);
-            this.logits = FloatTensor.allocateF32(config.vocabularySize());
+            this.residual = FloatTensor.allocateF32(arena, c * dim);
+            this.xb = FloatTensor.allocateF32(arena, c * dim);
+            this.xbK = FloatTensor.allocateF32(arena, c * maxQueryDim);
+            this.xb2 = FloatTensor.allocateF32(arena, c * dim);
+            this.hb = FloatTensor.allocateF32(arena, c * maxHiddenDim);
+            this.hb2 = FloatTensor.allocateF32(arena, c * maxHiddenDim);
+            this.query = FloatTensor.allocateF32(arena, c * maxQueryDim);
+            this.logits = FloatTensor.allocateF32(arena, config.vocabularySize());
             int plDim = config.embeddingLengthPerLayer();
             this.perLayerInputs =
-                    plDim > 0 ? FloatTensor.allocateF32(c * plDim * config.numberOfLayers()) : null;
-            this.plGate = plDim > 0 ? FloatTensor.allocateF32(c * plDim) : null;
-            this.plProj = plDim > 0 ? FloatTensor.allocateF32(c * dim) : null;
+                    plDim > 0
+                            ? FloatTensor.allocateF32(arena, c * plDim * config.numberOfLayers())
+                            : null;
+            this.plGate = plDim > 0 ? FloatTensor.allocateF32(arena, c * plDim) : null;
+            this.plProj = plDim > 0 ? FloatTensor.allocateF32(arena, c * dim) : null;
             this.keyCache = new FloatTensor[config.ownKvLayers()];
             this.valueCache = new FloatTensor[config.ownKvLayers()];
             this.batchK = new FloatTensor[config.ownKvLayers()];
@@ -550,20 +554,20 @@ public final class Gemma4
             for (int l = 0; l < config.ownKvLayers(); l++) {
                 int kvDim = config.kvDim(l);
                 int kvPositions = config.kvCachePositions(l, contextCapacity);
-                keyCache[l] = FloatTensor.allocateF16(kvPositions, kvDim);
-                valueCache[l] = FloatTensor.allocateF16(kvPositions, kvDim);
-                batchK[l] = FloatTensor.allocateF32(c * kvDim);
-                batchV[l] = FloatTensor.allocateF32(c * kvDim);
+                keyCache[l] = FloatTensor.allocateF16(arena, kvPositions, kvDim);
+                valueCache[l] = FloatTensor.allocateF16(arena, kvPositions, kvDim);
+                batchK[l] = FloatTensor.allocateF32(arena, c * kvDim);
+                batchV[l] = FloatTensor.allocateF32(arena, c * kvDim);
             }
             if (config.isMoE()) {
                 int e = config.expertCount(), tk = config.expertUsedCount();
-                this.moeShared = FloatTensor.allocateF32(c * dim);
-                this.moeInputB = FloatTensor.allocateF32(c * dim);
-                this.moeRouterScaled = FloatTensor.allocateF32(c * dim);
-                this.moeRouterB = FloatTensor.allocateF32(c * e);
-                this.moeOutB = FloatTensor.allocateF32(c * dim);
-                this.moeGather = FloatTensor.allocateF32(c * dim);
-                this.moeDownB = FloatTensor.allocateF32(c * dim);
+                this.moeShared = FloatTensor.allocateF32(arena, c * dim);
+                this.moeInputB = FloatTensor.allocateF32(arena, c * dim);
+                this.moeRouterScaled = FloatTensor.allocateF32(arena, c * dim);
+                this.moeRouterB = FloatTensor.allocateF32(arena, c * e);
+                this.moeOutB = FloatTensor.allocateF32(arena, c * dim);
+                this.moeGather = FloatTensor.allocateF32(arena, c * dim);
+                this.moeDownB = FloatTensor.allocateF32(arena, c * dim);
                 this.moeExpertCounts = new int[e];
                 this.moeExpertOffsets = new int[e + 1];
                 this.moeCursor = new int[e];
@@ -1153,10 +1157,11 @@ public final class Gemma4
 
     // === Loading ===
 
-    public static Gemma4 loadModel(Path ggufPath, int maxContextLength) throws IOException {
+    public static Gemma4 loadModel(Path ggufPath, int maxContextLength, Arena arena)
+            throws IOException {
         try (FileChannel fileChannel = FileChannel.open(ggufPath, StandardOpenOption.READ)) {
             GGUF gguf = ModelLoader.readGguf(fileChannel, ggufPath.toString());
-            return loadModel(fileChannel, gguf, maxContextLength, true);
+            return loadModel(fileChannel, gguf, maxContextLength, true, arena);
         }
     }
 
@@ -1164,15 +1169,15 @@ public final class Gemma4
      * Multimodal load: the text model plus the paired vision encoder from an mmproj GGUF, which
      * enables the image {@link Embedder} ({@link #modalities()} then contains {@link Media.Image}).
      */
-    public static Gemma4 loadModel(Path textGguf, Path mmprojGguf, int maxContextLength)
-            throws IOException {
-        return loadModel(textGguf, maxContextLength).withMediaEncoders(mmprojGguf);
+    public static Gemma4 loadModel(
+            Path textGguf, Path mmprojGguf, int maxContextLength, Arena arena) throws IOException {
+        return loadModel(textGguf, maxContextLength, arena).withMediaEncoders(mmprojGguf, arena);
     }
 
     /** Attaches the mmproj GGUF's vision/audio encoders to an already-loaded text model. */
-    public Gemma4 withMediaEncoders(Path mmprojGguf) throws IOException {
-        this.vision = loadVision(mmprojGguf);
-        this.audio = loadAudio(mmprojGguf);
+    public Gemma4 withMediaEncoders(Path mmprojGguf, Arena arena) throws IOException {
+        this.vision = loadVision(mmprojGguf, arena);
+        this.audio = loadAudio(mmprojGguf, arena);
         return this;
     }
 
@@ -1180,11 +1185,11 @@ public final class Gemma4
      * MTP load: the text model plus the {@code gemma4-assistant} draft sidecar, which enables
      * self-speculative decoding ({@link #depth()} becomes present).
      */
-    public static Gemma4 loadModel(Path textGguf, int maxContextLength, Path mtpSidecar)
-            throws IOException {
-        Gemma4 model = loadModel(textGguf, maxContextLength);
-        model.mtp = Gemma4Mtp.loadSidecar(mtpSidecar, model.config().vocabularySize());
-        model.mtpDecoder = new Gemma4MtpDecoder(model.mtp, model);
+    public static Gemma4 loadModel(
+            Path textGguf, int maxContextLength, Path mtpSidecar, Arena arena) throws IOException {
+        Gemma4 model = loadModel(textGguf, maxContextLength, arena);
+        model.mtp = Gemma4Mtp.loadSidecar(mtpSidecar, model.config().vocabularySize(), arena);
+        model.mtpDecoder = new Gemma4MtpDecoder(model.mtp, model, arena);
         return model;
     }
 
@@ -1201,7 +1206,8 @@ public final class Gemma4
      * minimal {@link Gemma4VisionUnified} (12b), otherwise the full-ViT {@link Gemma4Vision}
      * (E2B/gemma4v).
      */
-    private static Embedder<Media.Image> loadVision(Path mmprojGguf) throws IOException {
+    private static Embedder<Media.Image> loadVision(Path mmprojGguf, Arena arena)
+            throws IOException {
         String type;
         try (FileChannel fc = FileChannel.open(mmprojGguf, StandardOpenOption.READ)) {
             type =
@@ -1210,8 +1216,8 @@ public final class Gemma4
         }
         if (type.isEmpty()) return null; // audio-only mmproj: no vision adapter
         return "gemma4uv".equals(type)
-                ? Gemma4VisionUnified.loadModel(mmprojGguf)
-                : Gemma4Vision.loadModel(mmprojGguf);
+                ? Gemma4VisionUnified.loadModel(mmprojGguf, arena)
+                : Gemma4Vision.loadModel(mmprojGguf, arena);
     }
 
     /**
@@ -1219,18 +1225,23 @@ public final class Gemma4
      * Gemma4Audio}); else null. (The E2B {@code gemma4a} conformer is a different, unimplemented
      * projector, so only gemma4ua matches.)
      */
-    private static Embedder<Media.Audio> loadAudio(Path mmprojGguf) throws IOException {
+    private static Embedder<Media.Audio> loadAudio(Path mmprojGguf, Arena arena)
+            throws IOException {
         String type;
         try (FileChannel fc = FileChannel.open(mmprojGguf, StandardOpenOption.READ)) {
             type =
                     ModelLoader.readGguf(fc, mmprojGguf.toString())
                             .getStringOrDefault("clip.audio.projector_type", "");
         }
-        return "gemma4ua".equals(type) ? Gemma4Audio.loadModel(mmprojGguf) : null;
+        return "gemma4ua".equals(type) ? Gemma4Audio.loadModel(mmprojGguf, arena) : null;
     }
 
     public static Gemma4 loadModel(
-            FileChannel fileChannel, GGUF gguf, int maxContextLength, boolean loadWeightsFlag)
+            FileChannel fileChannel,
+            GGUF gguf,
+            int maxContextLength,
+            boolean loadWeightsFlag,
+            Arena arena)
             throws IOException {
         byte[] seed = com.qxotic.jinfer.cache.PromptCache.modelSeed(fileChannel);
         Tokenizer tokenizer = Tokenizers.fromGGUF(gguf);
@@ -1359,16 +1370,17 @@ public final class Gemma4
         if (!loadWeightsFlag) {
             return new Gemma4(config, tokenizer, Tokenizers.chatTemplateSource(gguf), seed, null);
         }
-        Map<String, GGMLTensorEntry> tensors = ModelLoader.loadTensors(fileChannel, gguf);
+        Map<String, GGMLTensorEntry> tensors = ModelLoader.loadTensors(fileChannel, gguf, arena);
         return new Gemma4(
                 config,
                 tokenizer,
                 Tokenizers.chatTemplateSource(gguf),
                 seed,
-                loadWeights(tensors, config));
+                loadWeights(tensors, config, arena));
     }
 
-    static Weights loadWeights(Map<String, GGMLTensorEntry> tensors, Configuration config) {
+    static Weights loadWeights(
+            Map<String, GGMLTensorEntry> tensors, Configuration config, Arena arena) {
         int n = config.numberOfLayers();
         RoPE.Freqs ropeSwa =
                 RoPE.precomputeFreqsCis(
@@ -1471,10 +1483,10 @@ public final class Gemma4
                 ModelLoader.f32Array(n, i -> tensors.get("blk." + i + ".post_ffw_norm.weight")),
                 ModelLoader.toF32Tensor(tensors.get("output_norm.weight")),
                 layerOutputScales,
-                F32FloatTensor.of(ropeFull.cos()),
-                F32FloatTensor.of(ropeFull.sin()),
-                F32FloatTensor.of(ropeSwa.cos()),
-                F32FloatTensor.of(ropeSwa.sin()),
+                F32FloatTensor.of(arena, ropeFull.cos()),
+                F32FloatTensor.of(arena, ropeFull.sin()),
+                F32FloatTensor.of(arena, ropeSwa.cos()),
+                F32FloatTensor.of(arena, ropeSwa.sin()),
                 tensors.containsKey("output.weight")
                         ? ModelLoader.loadQuantized(tensors.get("output.weight"))
                         : tokenEmbeddings,

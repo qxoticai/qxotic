@@ -85,10 +85,11 @@ public final class KernelParityTest {
             for (int i = 0; i < numElements; i++) {
                 values[i] = (float) rng.nextGaussian();
             }
-            return F32FloatTensor.of(values);
+            return F32FloatTensor.of(java.lang.foreign.Arena.ofAuto(), values);
         }
         if (type == GGMLType.F16) {
-            F16FloatTensor t = F16FloatTensor.allocate(numElements);
+            F16FloatTensor t =
+                    F16FloatTensor.allocate(java.lang.foreign.Arena.ofAuto(), numElements);
             for (int i = 0; i < numElements; i++) {
                 t.setFloat(i, (float) rng.nextGaussian());
             }
@@ -218,7 +219,7 @@ public final class KernelParityTest {
             int dim0 = shape[0], dim1 = shape[1];
             FloatTensor w = makeQuant(type, dim0 * dim1, rng);
             F32FloatTensor x = makeF32(dim1, rng);
-            F32FloatTensor out = F32FloatTensor.allocate(dim0);
+            F32FloatTensor out = F32FloatTensor.allocate(java.lang.foreign.Arena.ofAuto(), dim0);
             w.gemv(x, 0, out, 0, dim0, dim1, 0);
             for (int row = 0; row < dim0; row += Math.max(1, dim0 / 17)) {
                 double[] ref = refDot(w, row * dim1, x, 0, dim1);
@@ -241,7 +242,8 @@ public final class KernelParityTest {
         for (int seqLen : new int[] {7, 13, 16}) {
             FloatTensor w = makeQuant(type, dim0 * dim1, rng);
             F32FloatTensor x = makeF32(seqLen * dim1, rng);
-            F32FloatTensor out = F32FloatTensor.allocate(seqLen * dim0);
+            F32FloatTensor out =
+                    F32FloatTensor.allocate(java.lang.foreign.Arena.ofAuto(), seqLen * dim0);
             w.gemm(x, dim1, out, dim0, seqLen, dim0, dim1);
             for (int s = 0; s < seqLen; s++) {
                 for (int row = 0; row < dim0; row += 13) {
@@ -263,7 +265,7 @@ public final class KernelParityTest {
         float eps = 1e-5f;
         F32FloatTensor x = makeF32(size, rng);
         F32FloatTensor weight = makeF32(size, rng);
-        F32FloatTensor out = F32FloatTensor.allocate(size);
+        F32FloatTensor out = F32FloatTensor.allocate(java.lang.foreign.Arena.ofAuto(), size);
         Norms.rmsnorm(out, 0, x, 0, weight, size, eps);
 
         double ss = 0;

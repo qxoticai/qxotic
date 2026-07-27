@@ -17,6 +17,7 @@ import dev.langchain4j.store.embedding.EmbeddingSearchResult;
 import dev.langchain4j.store.embedding.EmbeddingStoreIngestor;
 import dev.langchain4j.store.embedding.inmemory.InMemoryEmbeddingStore;
 import java.util.List;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -61,6 +62,11 @@ class EmbeddingRetrievalIT {
                 .embeddingStore(store)
                 .build()
                 .ingest(docs);
+    }
+
+    @AfterAll
+    static void unload() {
+        if (embedder != null) embedder.close();
     }
 
     @Test

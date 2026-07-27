@@ -5,6 +5,7 @@ package com.qxotic.jinfer.models.qwen35;
 
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.llm.SpecialTokens;
+import java.lang.foreign.Arena;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -33,7 +34,7 @@ public final class Qwen35Run {
         String promptStr = args.length > 1 ? args[1] : "The capital of France is";
         int nTokens = args.length > 2 ? Integer.parseInt(args[2]) : 32;
 
-        Qwen35 model = Qwen35.loadModel(Path.of(path), 4096);
+        Qwen35 model = Qwen35.loadModel(Path.of(path), 4096, Arena.ofAuto());
         var c = model.config();
         System.err.printf(
                 "config: dim=%d layers=%d heads=%d kvHeads=%d vocab=%d ctx=%d experts=%d"

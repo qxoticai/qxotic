@@ -3,6 +3,7 @@ package com.qxotic.jinfer.models.gemma4;
 import com.qxotic.jinfer.FloatTensor;
 import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.jinfer.testkit.ModelFixture;
+import java.lang.foreign.Arena;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -43,7 +44,7 @@ public final class PrefillDeterminism {
         String promptStr = args.length > 1 ? args[1] : "The capital of France is";
         int reps = args.length > 2 ? Integer.parseInt(args[2]) : 12;
 
-        Gemma4 model = Gemma4.loadModel(Path.of(path), 4096);
+        Gemma4 model = Gemma4.loadModel(Path.of(path), 4096, Arena.ofAuto());
         var c = model.config();
         var tk = model.tokenizer();
         int bos = SpecialTokens.find(tk, "<bos>").orElse(2);

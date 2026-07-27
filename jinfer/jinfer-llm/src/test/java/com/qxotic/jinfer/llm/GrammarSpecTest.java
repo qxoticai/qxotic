@@ -77,7 +77,7 @@ public final class GrammarSpecTest {
      */
     static int[] probe(Grammar.Spec spec, Grammar.Vocab v, byte[] bytes) {
         Grammar.Cursor c = spec.cursor();
-        F32FloatTensor logits = F32FloatTensor.allocate(v.size());
+        F32FloatTensor logits = F32FloatTensor.allocate(java.lang.foreign.Arena.ofAuto(), v.size());
         int eos = eosId(v);
         for (int i = 0; i < bytes.length; i++) {
             mask(c, logits, v.size());
@@ -787,8 +787,8 @@ public final class GrammarSpecTest {
 
         // determinism: two independent cursors give identical allowed sets along the same walk
         Grammar.Cursor c1 = j.cursor(), c2 = j.cursor();
-        F32FloatTensor l1 = F32FloatTensor.allocate(BV.size()),
-                l2 = F32FloatTensor.allocate(BV.size());
+        F32FloatTensor l1 = F32FloatTensor.allocate(java.lang.foreign.Arena.ofAuto(), BV.size()),
+                l2 = F32FloatTensor.allocate(java.lang.foreign.Arena.ofAuto(), BV.size());
         boolean same = true;
         for (byte b : "{\"a\":[1,2]}".getBytes(StandardCharsets.UTF_8)) {
             mask(c1, l1, BV.size());
@@ -814,7 +814,7 @@ public final class GrammarSpecTest {
     }
 
     static List<Boolean> snapshot(Grammar.Cursor c) {
-        F32FloatTensor l = F32FloatTensor.allocate(BV.size());
+        F32FloatTensor l = F32FloatTensor.allocate(java.lang.foreign.Arena.ofAuto(), BV.size());
         mask(c, l, BV.size());
         List<Boolean> out = new ArrayList<>();
         for (int i = 0; i < BV.size(); i++) out.add(l.getFloat(i) > -1e30f);
@@ -827,7 +827,7 @@ public final class GrammarSpecTest {
      */
     static boolean maskAdvanceAgree(Grammar.Spec spec, int steps, long seed) {
         RandomGenerator rng = RandomGeneratorFactory.getDefault().create(seed);
-        F32FloatTensor l = F32FloatTensor.allocate(BV.size());
+        F32FloatTensor l = F32FloatTensor.allocate(java.lang.foreign.Arena.ofAuto(), BV.size());
         Grammar.Cursor c = spec.cursor();
         int eos = eosId(BV);
         for (int step = 0; step < steps; step++) {
@@ -851,7 +851,7 @@ public final class GrammarSpecTest {
         Grammar.Cursor c = s.cursor();
         c.advanceWith('a');
         c.advanceWith('z'); // 'z' is impossible -> dead
-        F32FloatTensor l = F32FloatTensor.allocate(BV.size());
+        F32FloatTensor l = F32FloatTensor.allocate(java.lang.foreign.Arena.ofAuto(), BV.size());
         boolean any = c.maskLogits(zero(l));
         check("dead: nothing allowed", !any);
         boolean allNeg = true;
@@ -882,7 +882,7 @@ public final class GrammarSpecTest {
         Grammar.Spec d = Grammar.Spec.DISABLED;
         check("disabled invalid", !d.isValid());
         Grammar.Cursor dc = d.cursor();
-        F32FloatTensor l = F32FloatTensor.allocate(BV.size());
+        F32FloatTensor l = F32FloatTensor.allocate(java.lang.foreign.Arena.ofAuto(), BV.size());
         for (int i = 0; i < BV.size(); i++) l.setFloat(i, 5f);
         check("disabled passthrough true", dc.maskLogits(l));
         boolean untouched = true;
@@ -913,7 +913,10 @@ public final class GrammarSpecTest {
                 };
         Grammar.Spec zs = Grammar.of("root ::= \"a\"", zv);
         check("zero vocab valid", zs.isValid());
-        check("zero vocab mask false", !zs.cursor().maskLogits(F32FloatTensor.allocate(1)));
+        check(
+                "zero vocab mask false",
+                !zs.cursor()
+                        .maskLogits(F32FloatTensor.allocate(java.lang.foreign.Arena.ofAuto(), 1)));
 
         // spec caching identity
         check(
@@ -965,7 +968,7 @@ public final class GrammarSpecTest {
 
     static boolean acceptsTokens(Grammar.Spec spec, Grammar.Vocab v, String[] toks) {
         Grammar.Cursor c = spec.cursor();
-        F32FloatTensor l = F32FloatTensor.allocate(v.size());
+        F32FloatTensor l = F32FloatTensor.allocate(java.lang.foreign.Arena.ofAuto(), v.size());
         for (String t : toks) {
             int id = tokenId(v, t);
             if (id < 0) return false;
@@ -1210,7 +1213,7 @@ public final class GrammarSpecTest {
 
     static void roundtrip(String name, Grammar.Spec spec, int runs, long seed) {
         RandomGenerator rng = RandomGeneratorFactory.getDefault().create(seed);
-        F32FloatTensor l = F32FloatTensor.allocate(BV.size());
+        F32FloatTensor l = F32FloatTensor.allocate(java.lang.foreign.Arena.ofAuto(), BV.size());
         int eos = eosId(BV);
         int generated = 0;
         for (int run = 0; run < runs; run++) {

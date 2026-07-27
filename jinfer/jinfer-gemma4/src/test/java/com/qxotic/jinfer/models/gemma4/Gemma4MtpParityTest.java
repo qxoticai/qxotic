@@ -10,6 +10,7 @@ import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.FloatTensor;
 import com.qxotic.jinfer.llm.*;
 import com.qxotic.jinfer.testkit.ModelFixture;
+import java.lang.foreign.Arena;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -40,9 +41,10 @@ public final class Gemma4MtpParityTest {
             System.out.println("Gemma4MtpParityTest: model/sidecar absent, skipping");
             return;
         }
-        Gemma4 backbone = Gemma4.loadModel(model, 4096);
-        Gemma4Mtp mtp = Gemma4Mtp.loadSidecar(sidecar, backbone.config().vocabularySize());
-        Gemma4MtpDecoder decoder = new Gemma4MtpDecoder(mtp, backbone);
+        Gemma4 backbone = Gemma4.loadModel(model, 4096, Arena.ofAuto());
+        Gemma4Mtp mtp =
+                Gemma4Mtp.loadSidecar(sidecar, backbone.config().vocabularySize(), Arena.ofAuto());
+        Gemma4MtpDecoder decoder = new Gemma4MtpDecoder(mtp, backbone, Arena.ofAuto());
         var tk = backbone.tokenizer();
         int dim = backbone.config().embeddingLength();
 

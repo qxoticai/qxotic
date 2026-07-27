@@ -45,7 +45,7 @@ public final class ChatApiTest {
 
     @Test
     void prepareIsolatesEmbeddings() {
-        FloatTensor rows = FloatTensor.allocateF32(4 * 8);
+        FloatTensor rows = FloatTensor.allocateF32(java.lang.foreign.Arena.ofAuto(), 4 * 8);
         Batch media = Batch.embeddings(rows, 4, true);
         List<Batch> out = Batch.prepare(List.of(toks(1, 2), toks(3), media, toks(4), toks(5)), 16);
         check(out.size() == 3, "isolate: [tokens][media][tokens]");
@@ -60,7 +60,7 @@ public final class ChatApiTest {
 
     @Test
     void prepareRejectsOversizedBidirectional() {
-        FloatTensor rows = FloatTensor.allocateF32(8 * 4);
+        FloatTensor rows = FloatTensor.allocateF32(java.lang.foreign.Arena.ofAuto(), 8 * 4);
         boolean threw = false;
         try {
             Batch.prepare(List.of(Batch.embeddings(rows, 8, true)), 4);

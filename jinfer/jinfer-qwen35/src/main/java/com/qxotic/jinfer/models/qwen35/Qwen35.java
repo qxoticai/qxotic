@@ -29,6 +29,7 @@ import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
 import com.qxotic.toknroll.Tokenizer;
 import java.io.IOException;
+import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -75,8 +76,8 @@ public final class Qwen35
     }
 
     @Override
-    public State newState(int contextCapacity, int batchCapacity) {
-        State state = new State(configuration, contextCapacity, batchCapacity);
+    public State newState(int contextCapacity, int batchCapacity, Arena arena) {
+        State state = new State(configuration, contextCapacity, batchCapacity, arena);
         return state;
     }
 
@@ -1290,7 +1291,8 @@ public final class Qwen35
         final float[] moeProbByExpert, moeRowTopP;
         final Moe.Routing moeRouting;
 
-        State(Configuration config, int contextCapacity, int batchCapacity) {
+        State(Configuration config, int contextCapacity, int batchCapacity, Arena arena) {
+            super(arena);
             if (contextCapacity > config.contextLength) {
                 throw new IllegalArgumentException(
                         "contextCapacity "
@@ -1312,24 +1314,24 @@ public final class Qwen35
             int xb2Size = Math.max(queryDim, hiddenDim);
 
             int B = this.batchCapacity; // prompt chunks process B rows at once (batched GEMMs)
-            this.x = FloatTensor.allocateF32(B * dim);
-            this.xb = FloatTensor.allocateF32(B * dim);
-            this.xb2 = FloatTensor.allocateF32(xb2Size); // single-token decode only
-            this.q = FloatTensor.allocateF32(B * 2 * queryDim);
-            this.k = FloatTensor.allocateF32(B * kvDim);
-            this.v = FloatTensor.allocateF32(B * kvDim);
-            this.logits = FloatTensor.allocateF32(config.vocabularySize);
-            this.ffnUp = hiddenDim > 0 ? FloatTensor.allocateF32(B * hiddenDim) : null;
-            this.ffnGate = hiddenDim > 0 ? FloatTensor.allocateF32(B * hiddenDim) : null;
+            this.x = FloatTensor.allocateF32(arena, B * dim);
+            this.xb = FloatTensor.allocateF32(arena, B * dim);
+            this.xb2 = FloatTensor.allocateF32(arena, xb2Size); // single-token decode only
+            this.q = FloatTensor.allocateF32(arena, B * 2 * queryDim);
+            this.k = FloatTensor.allocateF32(arena, B * kvDim);
+            this.v = FloatTensor.allocateF32(arena, B * kvDim);
+            this.logits = FloatTensor.allocateF32(arena, config.vocabularySize);
+            this.ffnUp = hiddenDim > 0 ? FloatTensor.allocateF32(arena, B * hiddenDim) : null;
+            this.ffnGate = hiddenDim > 0 ? FloatTensor.allocateF32(arena, B * hiddenDim) : null;
             this.attnGateArr = new float[B * queryDim];
-            this.attnQ = FloatTensor.allocateF32(B * queryDim);
-            this.attnOut = FloatTensor.allocateF32(B * queryDim);
+            this.attnQ = FloatTensor.allocateF32(arena, B * queryDim);
+            this.attnOut = FloatTensor.allocateF32(arena, B * queryDim);
 
-            this.ssmQkv = FloatTensor.allocateF32(B * convChannels);
-            this.ssmTmp = FloatTensor.allocateF32(B * dInner);
-            this.gateProj = FloatTensor.allocateF32(B * dInner);
-            this.alphaProj = FloatTensor.allocateF32(B * dtRank);
-            this.betaProj = FloatTensor.allocateF32(B * dtRank);
+            this.ssmQkv = FloatTensor.allocateF32(arena, B * convChannels);
+            this.ssmTmp = FloatTensor.allocateF32(arena, B * dInner);
+            this.gateProj = FloatTensor.allocateF32(arena, B * dInner);
+            this.alphaProj = FloatTensor.allocateF32(arena, B * dtRank);
+            this.betaProj = FloatTensor.allocateF32(arena, B * dtRank);
             this.ssmZ = new float[B * dInner]; // all chunk rows (batched conv/norm/scan)
             this.ssmConvOut = new float[B * convChannels];
             this.ssmQ = new float[B * dtRank * headVDim];
@@ -1347,29 +1349,29 @@ public final class Qwen35
                 int e = config.expertCount, eff = config.expertFeedForwardLength;
                 int sff = Math.max(1, config.expertSharedFeedForwardLength);
                 int tk = Math.max(1, config.expertUsedCount);
-                this.moeRouterLogits = FloatTensor.allocateF32(e);
-                this.moeOutput = FloatTensor.allocateF32(dim);
-                this.moeExpertOut = FloatTensor.allocateF32(dim);
-                this.moeGateResult = FloatTensor.allocateF32(eff);
-                this.moeUpResult = FloatTensor.allocateF32(eff);
-                this.moeSharedGate = FloatTensor.allocateF32(sff);
-                this.moeSharedUp = FloatTensor.allocateF32(sff);
-                this.moeSharedOut = FloatTensor.allocateF32(dim);
-                this.moeSharedInputGate = FloatTensor.allocateF32(1);
+                this.moeRouterLogits = FloatTensor.allocateF32(arena, e);
+                this.moeOutput = FloatTensor.allocateF32(arena, dim);
+                this.moeExpertOut = FloatTensor.allocateF32(arena, dim);
+                this.moeGateResult = FloatTensor.allocateF32(arena, eff);
+                this.moeUpResult = FloatTensor.allocateF32(arena, eff);
+                this.moeSharedGate = FloatTensor.allocateF32(arena, sff);
+                this.moeSharedUp = FloatTensor.allocateF32(arena, sff);
+                this.moeSharedOut = FloatTensor.allocateF32(arena, dim);
+                this.moeSharedInputGate = FloatTensor.allocateF32(arena, 1);
                 this.moeTopExperts = new int[tk];
                 this.moeTopWeights = new float[tk];
                 int c = this.batchCapacity;
-                this.moeInputB = FloatTensor.allocateF32(c * dim);
-                this.moeRouterB = FloatTensor.allocateF32(c * e);
-                this.moeOutB = FloatTensor.allocateF32(c * dim);
-                this.moeGather = FloatTensor.allocateF32(c * dim);
-                this.moeGateUpB = FloatTensor.allocateF32(c * eff);
-                this.moeUpB = FloatTensor.allocateF32(c * eff);
-                this.moeDownB = FloatTensor.allocateF32(c * dim);
-                this.moeSharedGateB = FloatTensor.allocateF32(c * sff);
-                this.moeSharedUpB = FloatTensor.allocateF32(c * sff);
-                this.moeSharedOutB = FloatTensor.allocateF32(c * dim);
-                this.moeSharedInputGateB = FloatTensor.allocateF32(c);
+                this.moeInputB = FloatTensor.allocateF32(arena, c * dim);
+                this.moeRouterB = FloatTensor.allocateF32(arena, c * e);
+                this.moeOutB = FloatTensor.allocateF32(arena, c * dim);
+                this.moeGather = FloatTensor.allocateF32(arena, c * dim);
+                this.moeGateUpB = FloatTensor.allocateF32(arena, c * eff);
+                this.moeUpB = FloatTensor.allocateF32(arena, c * eff);
+                this.moeDownB = FloatTensor.allocateF32(arena, c * dim);
+                this.moeSharedGateB = FloatTensor.allocateF32(arena, c * sff);
+                this.moeSharedUpB = FloatTensor.allocateF32(arena, c * sff);
+                this.moeSharedOutB = FloatTensor.allocateF32(arena, c * dim);
+                this.moeSharedInputGateB = FloatTensor.allocateF32(arena, c);
                 this.moeExpertCounts = new int[e];
                 this.moeExpertOffsets = new int[e + 1];
                 this.moeCursor = new int[e];
@@ -1415,11 +1417,12 @@ public final class Qwen35
             this.ssmState = new float[config.numberOfLayers][];
             for (int l = 0; l < config.numberOfLayers; l++) {
                 if (config.isFullAttention[l]) {
-                    keyCache[l] = FloatTensor.allocateF16(contextCapacity * kvDim);
-                    valueCache[l] = FloatTensor.allocateF16(contextCapacity * kvDim);
+                    keyCache[l] = FloatTensor.allocateF16(arena, contextCapacity * kvDim);
+                    valueCache[l] = FloatTensor.allocateF16(arena, contextCapacity * kvDim);
                 } else {
                     ssmConvState[l] =
-                            FloatTensor.allocateF32((config.ssmConvKernel - 1) * convChannels);
+                            FloatTensor.allocateF32(
+                                    arena, (config.ssmConvKernel - 1) * convChannels);
                     ssmState[l] = new float[headVDim * headVDim * dtRank];
                 }
             }
@@ -1438,15 +1441,20 @@ public final class Qwen35
 
     // === Loading ===
 
-    public static Qwen35 loadModel(Path ggufPath, int contextLength) throws IOException {
+    public static Qwen35 loadModel(Path ggufPath, int contextLength, Arena arena)
+            throws IOException {
         try (FileChannel fileChannel = FileChannel.open(ggufPath, StandardOpenOption.READ)) {
             GGUF gguf = ModelLoader.readGguf(fileChannel, ggufPath.toString());
-            return loadModel(fileChannel, gguf, contextLength, true);
+            return loadModel(fileChannel, gguf, contextLength, true, arena);
         }
     }
 
     public static Qwen35 loadModel(
-            FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeightsFlag)
+            FileChannel fileChannel,
+            GGUF gguf,
+            int contextLength,
+            boolean loadWeightsFlag,
+            Arena arena)
             throws IOException {
         byte[] seed = com.qxotic.jinfer.cache.PromptCache.modelSeed(fileChannel);
         Tokenizer tokenizer = Tokenizers.fromGGUF(gguf);
@@ -1518,7 +1526,7 @@ public final class Qwen35
         if (!loadWeightsFlag) {
             return new Qwen35(config, tokenizer, Tokenizers.chatTemplateSource(gguf), seed, null);
         }
-        Map<String, GGMLTensorEntry> tensors = ModelLoader.loadTensors(fileChannel, gguf);
+        Map<String, GGMLTensorEntry> tensors = ModelLoader.loadTensors(fileChannel, gguf, arena);
         return new Qwen35(
                 config,
                 tokenizer,

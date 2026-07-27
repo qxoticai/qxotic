@@ -8,6 +8,7 @@ import com.qxotic.jinfer.testkit.ModelFixture;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import java.util.Map;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -33,6 +34,11 @@ class GptOssStructuredOutputIT {
                         .contextLength(4096)
                         .maxOutputTokens(384)
                         .build();
+    }
+
+    @AfterAll
+    static void unload() {
+        if (model != null) model.close();
     }
 
     @Test

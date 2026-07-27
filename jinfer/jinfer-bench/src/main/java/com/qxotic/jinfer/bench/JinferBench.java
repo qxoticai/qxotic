@@ -63,7 +63,7 @@ public final class JinferBench {
 
     /** Arch dispatch via the shared ModelProvider services. */
     private static LoadedModel<?> loadAny(Path path, int ctx) throws Exception {
-        return com.qxotic.jinfer.chat.Models.load(path, ctx);
+        return com.qxotic.jinfer.chat.Models.load(path, ctx, java.lang.foreign.Arena.ofAuto());
     }
 
     /**

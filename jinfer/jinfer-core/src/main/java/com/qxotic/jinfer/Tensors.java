@@ -2154,9 +2154,9 @@ final class F16FloatTensor extends SegmentFloatTensor {
         this.memorySegment = memorySegment;
     }
 
-    static F16FloatTensor allocate(int... dims) {
+    static F16FloatTensor allocate(Arena arena, int... dims) {
         int n = FloatTensor.numberOfElements(dims);
-        MemorySegment segment = Arena.ofAuto().allocate((long) n * 2);
+        MemorySegment segment = arena.allocate((long) n * 2);
         return new F16FloatTensor(n, segment);
     }
 

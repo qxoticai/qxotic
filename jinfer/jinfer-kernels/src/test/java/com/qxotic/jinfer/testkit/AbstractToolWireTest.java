@@ -333,7 +333,9 @@ public abstract class AbstractToolWireTest {
         // walk the generated wire from just after the seed; every token must keep the matcher
         // alive (something still admissible) until the pin is fully matched - the released
         // region after that is the model's own
-        var probe = com.qxotic.jinfer.F32FloatTensor.allocate(tokenizer.vocabulary().size());
+        var probe =
+                com.qxotic.jinfer.F32FloatTensor.allocate(
+                        java.lang.foreign.Arena.ofAuto(), tokenizer.vocabulary().size());
         int i = seed.length;
         while (!cursor.exhausted()) {
             assertTrue(i < wire.length, "wire ended before the pin was satisfied");

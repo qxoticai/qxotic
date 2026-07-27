@@ -5,6 +5,7 @@ import com.qxotic.jinfer.F32FloatTensor;
 import com.qxotic.jinfer.FloatTensor;
 import com.qxotic.jinfer.kernels.*;
 import java.io.IOException;
+import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -131,7 +132,8 @@ public final class Gemma4Mtp {
      * Loads and shape-verifies the MTP sidecar. {@code backboneVocab} is the backbone's vocab,
      * which the tied draft head must match (the draft predicts backbone tokens).
      */
-    public static Gemma4Mtp loadSidecar(Path sidecar, int backboneVocab) throws IOException {
+    public static Gemma4Mtp loadSidecar(Path sidecar, int backboneVocab, Arena arena)
+            throws IOException {
         try (FileChannel fc = FileChannel.open(sidecar, StandardOpenOption.READ)) {
             GGUF gguf = ModelLoader.readGguf(fc, sidecar.toString());
             String arch = gguf.getValueOrDefault(String.class, "general.architecture", "");
@@ -140,7 +142,7 @@ public final class Gemma4Mtp {
                         "not a gemma4-assistant MTP sidecar: arch=" + arch);
             }
             Config config = readConfig(gguf, backboneVocab);
-            Map<String, GGMLTensorEntry> tensors = ModelLoader.loadTensors(fc, gguf);
+            Map<String, GGMLTensorEntry> tensors = ModelLoader.loadTensors(fc, gguf, arena);
             Weights weights = loadWeights(tensors, config);
             return new Gemma4Mtp(config, weights);
         }

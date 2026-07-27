@@ -8,6 +8,7 @@ import com.qxotic.jinfer.testkit.ModelFixture;
 import io.micrometer.observation.tck.TestObservationRegistry;
 import java.util.ArrayList;
 import java.util.List;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -41,6 +42,11 @@ class JinferEmbeddingModelIT {
                         .contextLength(1024)
                         .observationRegistry(observations)
                         .build();
+    }
+
+    @AfterAll
+    static void unload() {
+        if (model != null) model.close();
     }
 
     static List<String> corpus(int n) {

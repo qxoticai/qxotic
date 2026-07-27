@@ -20,7 +20,14 @@ public interface LanguageModel<C extends Config, W, S extends RuntimeState> exte
 
     /** Vocabulary logits for the {@code output}-th retained hidden state (0 .. outputCount()-1). */
     default FloatTensor logits(S state, int output) {
-        FloatTensor logits = head(state, output);
+        BaseState base = (BaseState) state;
+        base.enter();
+        FloatTensor logits;
+        try {
+            logits = head(state, output);
+        } finally {
+            base.exit();
+        }
         java.lang.ref.Reference.reachabilityFence(this);
         return logits;
     }

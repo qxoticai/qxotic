@@ -8,6 +8,7 @@ import com.qxotic.jinfer.chat.JsonCodec;
 import com.qxotic.jinfer.testkit.ModelFixture;
 import java.nio.file.Files;
 import java.util.Map;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -43,6 +44,11 @@ class GptOssStructuredOutputIT {
                         .contextLength(4096)
                         .maxTokens(384)
                         .build();
+    }
+
+    @AfterAll
+    static void unload() {
+        if (model != null) model.close();
     }
 
     @Test

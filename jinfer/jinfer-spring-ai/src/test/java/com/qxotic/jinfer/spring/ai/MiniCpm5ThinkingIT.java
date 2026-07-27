@@ -9,6 +9,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -40,6 +41,11 @@ class MiniCpm5ThinkingIT {
     static void load() {
         Assumptions.assumeTrue(Files.exists(MODEL), "model not found: " + MODEL);
         model = JinferChatModel.builder().modelPath(MODEL).contextLength(4096).build();
+    }
+
+    @AfterAll
+    static void unload() {
+        if (model != null) model.close();
     }
 
     @Test

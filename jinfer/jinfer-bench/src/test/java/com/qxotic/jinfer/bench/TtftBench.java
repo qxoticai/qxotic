@@ -92,10 +92,10 @@ public final class TtftBench {
         String lower = path.toLowerCase();
         Bench<?> b;
         if (lower.contains("gemma")) {
-            var m = Gemma4.loadModel(Path.of(path), 4096);
+            var m = Gemma4.loadModel(Path.of(path), 4096, java.lang.foreign.Arena.ofAuto());
             b = new Bench<>(m.loaded(), m.turnTemplate().orElseThrow());
         } else {
-            var m = Lfm2.loadModel(Path.of(path), 4096);
+            var m = Lfm2.loadModel(Path.of(path), 4096, java.lang.foreign.Arena.ofAuto());
             b = new Bench<>(m.loaded(), m.turnTemplate().orElseThrow());
         }
         System.err.printf("model load: %.0f ms%n", (System.nanoTime() - t0) / 1e6);

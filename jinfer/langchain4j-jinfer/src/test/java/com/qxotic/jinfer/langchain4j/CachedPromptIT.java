@@ -16,6 +16,7 @@ import dev.langchain4j.model.chat.response.ChatResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -53,6 +54,11 @@ class CachedPromptIT {
                         .build();
     }
 
+    @AfterAll
+    static void unload() {
+        if (base != null) base.close();
+    }
+
     @Test
     void cachedSessionsMultiTurn() {
         // cachedSessions(1): turn 2 strictly extends turn 1's pooled state (the echoed reply
@@ -88,6 +94,7 @@ class CachedPromptIT {
         assertTrue(
                 warm.engine.sessionStats().contains("hits=1"),
                 "the repeat is NOT an extension and must miss: " + warm.engine.sessionStats());
+        warm.close();
     }
 
     @Test
@@ -146,6 +153,7 @@ class CachedPromptIT {
         assertTrue(stats.contains("hits=") && !stats.contains("hits=0 "), stats);
         ChatResponse r = a2.chat(UserMessage.from("One word: ok?"));
         assertTrue(!r.aiMessage().text().isBlank());
+        base2.close();
     }
 
     @Test

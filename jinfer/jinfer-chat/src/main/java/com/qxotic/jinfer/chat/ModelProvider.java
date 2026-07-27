@@ -2,6 +2,7 @@ package com.qxotic.jinfer.chat;
 
 import com.qxotic.format.gguf.GGUF;
 import java.io.IOException;
+import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 
@@ -16,10 +17,12 @@ public interface ModelProvider {
     boolean supports(String architecture);
 
     /**
-     * Loads the model from an already-parsed GGUF; {@code fileChannel} supplies the tensor data.
-     * {@code contextLength} -1 means the model's full context.
+     * Loads the model from an already-parsed GGUF; {@code fileChannel} supplies the tensor data,
+     * mapped into {@code arena} (who provides the arena owns the weights' lifetime; it must outlive
+     * every model sharing them). {@code contextLength} -1 means the model's full context.
      */
-    LoadedModel<?> load(FileChannel fileChannel, GGUF gguf, int contextLength) throws IOException;
+    LoadedModel<?> load(FileChannel fileChannel, GGUF gguf, int contextLength, Arena arena)
+            throws IOException;
 
     /**
      * As {@link #load(FileChannel, GGUF, int)} plus the architecture's media sidecar (llama.cpp's
@@ -27,7 +30,7 @@ public interface ModelProvider {
      * keep this default.
      */
     default LoadedModel<?> load(
-            FileChannel fileChannel, GGUF gguf, int contextLength, Path mediaProjector)
+            FileChannel fileChannel, GGUF gguf, int contextLength, Path mediaProjector, Arena arena)
             throws IOException {
         throw new UnsupportedOperationException("this architecture has no media sidecar support");
     }
@@ -36,8 +39,8 @@ public interface ModelProvider {
      * Loads an EMBEDDING model from an already-parsed GGUF ({@link Models#loadEmbedder}). Ports
      * whose architectures are generative-only keep this default.
      */
-    default LoadedEmbedder<?> loadEmbedder(FileChannel fileChannel, GGUF gguf, int contextLength)
-            throws IOException {
+    default LoadedEmbedder<?> loadEmbedder(
+            FileChannel fileChannel, GGUF gguf, int contextLength, Arena arena) throws IOException {
         throw new UnsupportedOperationException(
                 "'"
                         + gguf.getString("general.architecture")

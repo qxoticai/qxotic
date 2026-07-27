@@ -7,6 +7,7 @@ package com.qxotic.jinfer.models.gemma4;
 import com.qxotic.jinfer.FloatTensor;
 import com.qxotic.jinfer.Media;
 import com.qxotic.jinfer.Parallel;
+import java.lang.foreign.Arena;
 
 final class VisionPreprocess {
     private VisionPreprocess() {}
@@ -100,7 +101,9 @@ final class VisionPreprocess {
     static FloatTensor im2col(Media.Image image, int tw, int th, int ps) {
         int px = tw / ps, py = th / ps, n = px * py, patchVec = 3 * ps * ps, plane = th * tw;
         float[] chw = toCHW(image, tw, th);
-        FloatTensor flat = FloatTensor.allocateF32(n * patchVec);
+        FloatTensor flat =
+                FloatTensor.allocateF32(
+                        Arena.ofAuto(), n * patchVec); // per-call scratch: GC-managed
         Parallel.forRows(
                 n,
                 gi -> {

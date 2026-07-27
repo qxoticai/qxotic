@@ -180,9 +180,10 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     }
 
     /**
-     * Releases the engine's cached-prompt blobs and pooled session states; later use of this model
-     * (or any view sharing its engine) fails with IllegalStateException. Idempotent. Weights still
-     * release with reachability - close() is for eagerly dropping cache memory.
+     * Blocking, idempotent: waits out any in-flight request (including a live stream), then frees
+     * the pooled session states' arenas and the cached-prompt blobs deterministically; later use of
+     * this model (or any view sharing its engine) fails with IllegalStateException. Weights are a
+     * GC-managed READ_ONLY mmap (kernel-reclaimable; never pin memory) and need no close.
      */
     @Override
     public void close() {

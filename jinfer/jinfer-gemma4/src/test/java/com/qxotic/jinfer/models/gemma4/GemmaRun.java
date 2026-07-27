@@ -6,6 +6,7 @@ package com.qxotic.jinfer.models.gemma4;
 
 import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.jinfer.testkit.ModelFixture;
+import java.lang.foreign.Arena;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -33,7 +34,7 @@ public final class GemmaRun {
         int contextCapacity =
                 args.length > 3 ? Integer.parseInt(args[3]) : -1; // -1 → full model context
 
-        Gemma4 model = Gemma4.loadModel(Path.of(path), 4096);
+        Gemma4 model = Gemma4.loadModel(Path.of(path), 4096, Arena.ofAuto());
         var c = model.config();
         System.err.printf(
                 "config: dim=%d layers=%d heads=%d vocab=%d ctx=%d ownKv=%d plDim=%d%n",

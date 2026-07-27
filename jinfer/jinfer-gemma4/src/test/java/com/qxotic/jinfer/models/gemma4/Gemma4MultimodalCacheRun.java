@@ -60,7 +60,7 @@ public final class Gemma4MultimodalCacheRun {
         boolean big = args.length > 0 && args[0].equals("12b");
         Path text = big ? B12 : E2B, mmproj = big ? B12_MMPROJ : E2B_MMPROJ;
         budget = big ? 14L << 30 : 4L << 30; // 12B SWA checkpoints are ~hundreds of MB per block
-        model = Gemma4.loadModel(text, mmproj, 4096);
+        model = Gemma4.loadModel(text, mmproj, 4096, Arena.ofAuto());
         template = model.turnTemplate().orElseThrow();
         codec = model.stateCodec().orElseThrow();
         stops = model.stopTokens();
@@ -354,7 +354,8 @@ public final class Gemma4MultimodalCacheRun {
             if (!done && b.input() instanceof Batch.Input.Embeddings em) {
                 long size = em.rows().size();
                 com.qxotic.jinfer.F32FloatTensor copy =
-                        com.qxotic.jinfer.F32FloatTensor.allocate((int) size);
+                        com.qxotic.jinfer.F32FloatTensor.allocate(
+                                java.lang.foreign.Arena.ofAuto(), (int) size);
                 for (long i = 0; i < size; i++) copy.setFloat(i, em.rows().getFloat(i));
                 long mid = size / 2;
                 copy.setFloat(mid, copy.getFloat(mid) + 1f);

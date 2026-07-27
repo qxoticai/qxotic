@@ -63,7 +63,7 @@ public final class EmbedBench {
         System.err.printf(
                 "loading %s (ctx=%d; %d packed tokens across %d seqs, avg %.1f, batchCap=%d) ...%n",
                 modelPath, ctx, total, nSeq, (double) total / nSeq, batchCap);
-        Qwen3 model = Qwen3.loadModel(Path.of(modelPath), ctx);
+        Qwen3 model = Qwen3.loadModel(Path.of(modelPath), ctx, java.lang.foreign.Arena.ofAuto());
         int vocab = model.config().vocabularySize();
         int[] ids = new int[total];
         for (int i = 0; i < total; i++) ids[i] = (i * 17 + 1) % vocab;

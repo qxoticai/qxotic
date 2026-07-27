@@ -20,7 +20,14 @@ public interface EmbeddingModel<C extends Config, W, S extends RuntimeState>
      * embedding.
      */
     default FloatTensor embedding(S state, int index) {
-        FloatTensor embedding = pool(state, index);
+        BaseState base = (BaseState) state;
+        base.enter();
+        FloatTensor embedding;
+        try {
+            embedding = pool(state, index);
+        } finally {
+            base.exit();
+        }
         java.lang.ref.Reference.reachabilityFence(this);
         return embedding;
     }

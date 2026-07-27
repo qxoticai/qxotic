@@ -3,6 +3,7 @@ package com.qxotic.jinfer.chat;
 import com.qxotic.format.gguf.GGUF;
 import java.io.BufferedInputStream;
 import java.io.IOException;
+import java.lang.foreign.Arena;
 import java.nio.channels.Channels;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
@@ -24,26 +25,33 @@ public final class Models {
                     .map(ServiceLoader.Provider::get)
                     .toList();
 
-    /** Loads {@code path} at context size {@code ctx} (-1 = the model's full context). */
-    public static LoadedModel<?> load(Path path, int ctx) throws IOException {
-        return open(path, (fc, gguf) -> provider(gguf).load(fc, gguf, ctx));
+    /**
+     * Loads {@code path} at context size {@code ctx} (-1 = the model's full context). Weights map
+     * into {@code arena}: who provides the arena owns the weights' lifetime ({@code ofAuto} =
+     * GC-managed, {@code global} = process, a scoped arena = deterministic - it must outlive every
+     * model sharing the weights, and closing it while any computation runs is a crash, not an
+     * exception).
+     */
+    public static LoadedModel<?> load(Path path, int ctx, Arena arena) throws IOException {
+        return open(path, (fc, gguf) -> provider(gguf).load(fc, gguf, ctx, arena));
     }
 
     /**
      * Multimodal load: the text model plus its media sidecar (mmproj GGUF with the vision/audio
      * encoders). Throws {@link UnsupportedOperationException} for architectures without one.
      */
-    public static LoadedModel<?> load(Path path, Path mediaProjector, int ctx) throws IOException {
-        return open(path, (fc, gguf) -> provider(gguf).load(fc, gguf, ctx, mediaProjector));
+    public static LoadedModel<?> load(Path path, Path mediaProjector, int ctx, Arena arena)
+            throws IOException {
+        return open(path, (fc, gguf) -> provider(gguf).load(fc, gguf, ctx, mediaProjector, arena));
     }
 
     /**
      * As {@link #load(Path, int)} but reusing an already-parsed {@code gguf} (the header is not
      * re-read) - used by AOT preload. {@code fileChannel} supplies the tensor data to mmap.
      */
-    public static LoadedModel<?> load(FileChannel fileChannel, GGUF gguf, int ctx)
+    public static LoadedModel<?> load(FileChannel fileChannel, GGUF gguf, int ctx, Arena arena)
             throws IOException {
-        return provider(gguf).load(fileChannel, gguf, ctx);
+        return provider(gguf).load(fileChannel, gguf, ctx, arena);
     }
 
     /**
@@ -51,8 +59,9 @@ public final class Models {
      * size {@code ctx}; same architecture dispatch as {@link #load}. Generative-only architectures
      * fail with a clear {@link UnsupportedOperationException}.
      */
-    public static LoadedEmbedder<?> loadEmbedder(Path path, int ctx) throws IOException {
-        return open(path, (fc, gguf) -> provider(gguf).loadEmbedder(fc, gguf, ctx));
+    public static LoadedEmbedder<?> loadEmbedder(Path path, int ctx, Arena arena)
+            throws IOException {
+        return open(path, (fc, gguf) -> provider(gguf).loadEmbedder(fc, gguf, ctx, arena));
     }
 
     private interface Load<T> {

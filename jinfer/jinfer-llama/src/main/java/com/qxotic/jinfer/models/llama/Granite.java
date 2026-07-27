@@ -20,6 +20,7 @@ import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
 import com.qxotic.toknroll.Tokenizer;
 import java.io.IOException;
+import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -64,8 +65,8 @@ public final class Granite
     }
 
     @Override
-    public State newState(int contextCapacity, int batchCapacity) {
-        State state = new State(configuration, contextCapacity, batchCapacity);
+    public State newState(int contextCapacity, int batchCapacity, Arena arena) {
+        State state = new State(configuration, contextCapacity, batchCapacity, arena);
         return state;
     }
 
@@ -412,7 +413,8 @@ public final class Granite
             resumeAt(0);
         }
 
-        State(Configuration config, int contextCapacity, int batchCapacity) {
+        State(Configuration config, int contextCapacity, int batchCapacity, Arena arena) {
+            super(arena);
             if (contextCapacity > config.contextLength()) {
                 throw new IllegalArgumentException(
                         "contextCapacity "
@@ -427,20 +429,20 @@ public final class Granite
             int queryDim = config.queryDim();
             int kvDim = config.kvDim();
             int hidden = config.hiddenDim;
-            this.x = FloatTensor.allocateF32(c * dim);
-            this.xb = FloatTensor.allocateF32(c * dim);
-            this.k = FloatTensor.allocateF32(c * kvDim);
-            this.v = FloatTensor.allocateF32(c * kvDim);
-            this.attnQ = FloatTensor.allocateF32(c * queryDim);
-            this.attnOut = FloatTensor.allocateF32(c * queryDim);
-            this.hb = FloatTensor.allocateF32(c * hidden);
-            this.hb2 = FloatTensor.allocateF32(c * hidden);
-            this.logits = FloatTensor.allocateF32(config.vocabularySize);
+            this.x = FloatTensor.allocateF32(arena, c * dim);
+            this.xb = FloatTensor.allocateF32(arena, c * dim);
+            this.k = FloatTensor.allocateF32(arena, c * kvDim);
+            this.v = FloatTensor.allocateF32(arena, c * kvDim);
+            this.attnQ = FloatTensor.allocateF32(arena, c * queryDim);
+            this.attnOut = FloatTensor.allocateF32(arena, c * queryDim);
+            this.hb = FloatTensor.allocateF32(arena, c * hidden);
+            this.hb2 = FloatTensor.allocateF32(arena, c * hidden);
+            this.logits = FloatTensor.allocateF32(arena, config.vocabularySize);
             this.keyCache = new FloatTensor[config.numberOfLayers];
             this.valueCache = new FloatTensor[config.numberOfLayers];
             for (int l = 0; l < config.numberOfLayers; l++) {
-                keyCache[l] = FloatTensor.allocateF16(contextCapacity, kvDim);
-                valueCache[l] = FloatTensor.allocateF16(contextCapacity, kvDim);
+                keyCache[l] = FloatTensor.allocateF16(arena, contextCapacity, kvDim);
+                valueCache[l] = FloatTensor.allocateF16(arena, contextCapacity, kvDim);
             }
         }
 
@@ -457,15 +459,20 @@ public final class Granite
 
     // === Loading ===
 
-    public static Granite loadModel(Path ggufPath, int contextLength) throws IOException {
+    public static Granite loadModel(Path ggufPath, int contextLength, Arena arena)
+            throws IOException {
         try (FileChannel fileChannel = FileChannel.open(ggufPath, StandardOpenOption.READ)) {
             GGUF gguf = ModelLoader.readGguf(fileChannel, ggufPath.toString());
-            return loadModel(fileChannel, gguf, contextLength, true);
+            return loadModel(fileChannel, gguf, contextLength, true, arena);
         }
     }
 
     public static Granite loadModel(
-            FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeightsFlag)
+            FileChannel fileChannel,
+            GGUF gguf,
+            int contextLength,
+            boolean loadWeightsFlag,
+            Arena arena)
             throws IOException {
         byte[] seed = com.qxotic.jinfer.cache.PromptCache.modelSeed(fileChannel);
         Tokenizer tokenizer = Tokenizers.fromGGUF(gguf);
@@ -526,7 +533,7 @@ public final class Granite
 
         if (!loadWeightsFlag)
             return new Granite(config, tokenizer, Tokenizers.chatTemplateSource(gguf), seed, null);
-        Map<String, GGMLTensorEntry> tensors = ModelLoader.loadTensors(fileChannel, gguf);
+        Map<String, GGMLTensorEntry> tensors = ModelLoader.loadTensors(fileChannel, gguf, arena);
         RoPE.Freqs rope = buildRope(config, tensors);
         return new Granite(
                 config,

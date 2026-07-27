@@ -28,10 +28,21 @@ class JinferChatModelTckIT extends AbstractChatModelIT {
         return Files.exists(MODEL);
     }
 
-    private static ChatModel model;
+    private static JinferChatModel model;
+
+    @org.junit.jupiter.api.AfterAll
+    static void unload() {
+        if (model != null) model.close();
+    }
 
     @Override
     protected List<ChatModel> models() {
+        // ONE shared model, shielded: JUnit closes AutoCloseable parameterized-test arguments
+        // after EVERY invocation (params autoCloseArguments default), which would kill a shared
+        // model after its first test - and a fresh model per call is untenable (models() runs
+        // once per test method at collection time; ~37 eager 8B loads OOM'd the fork). The
+        // wrapper is deliberately NOT AutoCloseable, so JUnit has nothing to close; @AfterAll
+        // closes the real model once.
         if (model == null) {
             model =
                     JinferChatModel.builder()
@@ -40,17 +51,52 @@ class JinferChatModelTckIT extends AbstractChatModelIT {
                             .maxOutputTokens(512) // bound unconstrained TCK requests
                             .build();
         }
-        return List.of(model);
+        JinferChatModel m = model;
+        return List.of(
+                new ChatModel() {
+                    @Override
+                    public dev.langchain4j.model.chat.response.ChatResponse chat(
+                            dev.langchain4j.model.chat.request.ChatRequest request) {
+                        return m.chat(request);
+                    }
+
+                    @Override
+                    public dev.langchain4j.model.chat.response.ChatResponse doChat(
+                            dev.langchain4j.model.chat.request.ChatRequest request) {
+                        return m.chat(request);
+                    }
+
+                    @Override
+                    public dev.langchain4j.model.chat.request.ChatRequestParameters
+                            defaultRequestParameters() {
+                        return m.defaultRequestParameters();
+                    }
+                });
+    }
+
+    // createModelWith products are built INSIDE test bodies - they are not parameterized
+    // arguments, so JUnit's autoCloseArguments never touches them; without tracking, each one's
+    // states wait for a GC that never comes (the 30+GB TCK fork ballooning)
+    private static final List<JinferChatModel> created =
+            java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+
+    @org.junit.jupiter.api.AfterAll
+    static void unloadCreated() {
+        created.forEach(JinferChatModel::close);
+        created.clear();
     }
 
     @Override
     protected ChatModel createModelWith(
             dev.langchain4j.model.chat.request.ChatRequestParameters parameters) {
-        return JinferChatModel.builder()
-                .modelPath(MODEL)
-                .contextLength(8192)
-                .defaultRequestParameters(parameters)
-                .build();
+        JinferChatModel m =
+                JinferChatModel.builder()
+                        .modelPath(MODEL)
+                        .contextLength(8192)
+                        .defaultRequestParameters(parameters)
+                        .build();
+        created.add(m);
+        return m;
     }
 
     @Override
