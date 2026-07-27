@@ -5,10 +5,16 @@
  *
  * Same bounded per-worker scratch as the VNNI bands (jam_repack, sized by ensure_kquant: the
  * 4-groups-of-8 layouts are byte-for-byte the 2-groups-of-16 ones), same two-phase launch, same
- * deferred-float scale/min math. Only the int8 dot differs: no vpdpbusd, so each 32-byte group is
- * maddubs(w_u8, x_s8) -> madd(1) -> add. The K-quant weight operand is UNSIGNED and small
- * (Q4_K 0..15, Q5_K 0..31, Q6_K 0..63), so the int16 intermediate peaks at 63*127*2 = 16002 —
- * far under saturation; no sign trick needed (unlike Q8_0's a+128 scheme). */
+ * deferred-float scale/min math. Only the int8 dot differs: no vpdpbusd, so the base ladder is
+ * maddubs(w_u8, x_s8) -> madd(1) -> add int32 — and wherever the per-maddubs int16 bound allows,
+ * products ACCUMULATE IN INT16 (plain add_epi16, wrap provably unreachable) with ONE deferred
+ * madd, cutting the ladder to ~2 ops/group:
+ *   Q4_K, Q4_0 : peak 2*15*127 = 3810/maddubs -> all 8 groups chain (8*3810 = 30480 < 32767)
+ *   MXFP4      : peak 2*255*12 = 6120        -> chains of 4 (24480)
+ *   Q5_K       : peak 2*31*127 = 7874        -> chains of 4 (31496)
+ *   Q6_K       : peak 2*63*127 = 16002       -> NO chaining (2 already wrap); per-group madd
+ *   Q8_0       : sign trick peaks at 32258   -> NO chaining; per-group madd
+ * Weight operands are UNSIGNED for every quant except Q8_0 (sign trick: u = |x|, s = sign(w,x)). */
 #include "jam_internal.h"
 #include "jam_kquant.h"
 #include "jam_mxfp4.h"
@@ -16,15 +22,30 @@
 #include <stdint.h>
 #include <immintrin.h>
 
-#ifndef JAM_B8_NR
-#define JAM_B8_NR 4   /* activation columns per register tile (mirrors JAM_VNNI_NR) */
-#endif
+/* Activation columns per register tile, per quant - measured optima (m=4096 n=512 k=2048,
+ * JAM_ISA=avx2): Q4_K peaks at 4 (dual lo/hi accumulators fill the file), the single-accumulator
+ * chained kernels at 6, and Q8_0's sign-trick pipeline at 8 (the extra independent columns hide
+ * the abs/sign latency). */
+#define B8_NR_Q4K 4
+#define B8_NR_KQ  6
+#define B8_NR_Q8  8
 
 static inline float b8_h2f(uint16_t h) { return _cvtsh_ss(h); }
 
 /* one 32-byte weight group (8 rows x 4 elems) dotted against a 4-elem activation broadcast */
 static inline __m256i b8_dot(__m256i acc, __m256i wu, __m256i xb) {
     return _mm256_add_epi32(acc, _mm256_madd_epi16(_mm256_maddubs_epi16(wu, xb), _mm256_set1_epi16(1)));
+}
+
+/* int16-chained variants: accumulate maddubs products with a plain (wrapping) add_epi16 - callers
+ * guarantee the chain length keeps |sum| under 32767 (see the header table) - then fold the chain
+ * to int32 with one madd. */
+static inline __m256i b8_chain(__m256i i16, __m256i wu, __m256i xb) {
+    return _mm256_add_epi16(i16, _mm256_maddubs_epi16(wu, xb));
+}
+
+static inline __m256i b8_fold(__m256i acc, __m256i i16) {
+    return _mm256_add_epi32(acc, _mm256_madd_epi16(i16, _mm256_set1_epi16(1)));
 }
 
 /* ---- phase 1: F32 activations -> int8 + per-32 scale + per-16 RAW float sums ----
@@ -125,13 +146,15 @@ static inline __m256 q4k_block8(const uint8_t* qs, const float* dw, const float*
     const __m256i m4 = _mm256_set1_epi8(0x0F);
     __m256 f = _mm256_setzero_ps();
     for (int p = 0; p < pairs; p++) {
-        __m256i aLo = _mm256_setzero_si256(), aHi = _mm256_setzero_si256();
-        for (int g = 0; g < 8; g++) {
+        __m256i iLo = _mm256_setzero_si256(), iHi = _mm256_setzero_si256();
+        for (int g = 0; g < 8; g++) {   /* 8 chained maddubs stay under int16 (8*3810) */
             __m256i pk = _mm256_load_si256((const void*) (qs + g * 32));
-            aLo = b8_dot(aLo, _mm256_and_si256(pk, m4), _mm256_set1_epi32(((const int*) x)[g]));
-            aHi = b8_dot(aHi, _mm256_and_si256(_mm256_srli_epi16(pk, 4), m4),
-                         _mm256_set1_epi32(((const int*) (x + JAM_QK))[g]));
+            iLo = b8_chain(iLo, _mm256_and_si256(pk, m4), _mm256_set1_epi32(((const int*) x)[g]));
+            iHi = b8_chain(iHi, _mm256_and_si256(_mm256_srli_epi16(pk, 4), m4),
+                           _mm256_set1_epi32(((const int*) (x + JAM_QK))[g]));
         }
+        __m256i aLo = b8_fold(_mm256_setzero_si256(), iLo);
+        __m256i aHi = b8_fold(_mm256_setzero_si256(), iHi);
         f = _mm256_fmadd_ps(_mm256_cvtepi32_ps(aLo), _mm256_mul_ps(_mm256_load_ps(dw),     _mm256_set1_ps(d[2*p])),   f);
         f = _mm256_fnmadd_ps(_mm256_load_ps(mw),     _mm256_set1_ps(s[4*p] + s[4*p+1]), f);
         f = _mm256_fmadd_ps(_mm256_cvtepi32_ps(aHi), _mm256_mul_ps(_mm256_load_ps(dw + 8), _mm256_set1_ps(d[2*p+1])), f);
@@ -141,43 +164,45 @@ static inline __m256 q4k_block8(const uint8_t* qs, const float* dw, const float*
     return f;
 }
 
-/* register-tiled: decode each packed block once, dot against JAM_B8_NR columns */
+/* register-tiled: decode each packed block once, dot against the per-quant column tile */
 static inline void q4k_block8_nr(const uint8_t* qs, const float* dw, const float* mw, const int8_t* xq,
                                  const float* dx, const float* xs, int s0, int pairs, int kblocks,
                                  int64_t ldc, float* out, int r) {
     const __m256i m4 = _mm256_set1_epi8(0x0F);
-    __m256 f[JAM_B8_NR];
-    const int8_t* x[JAM_B8_NR]; const float* d[JAM_B8_NR]; const float* sc[JAM_B8_NR];
-    for (int c = 0; c < JAM_B8_NR; c++) {
+    __m256 f[B8_NR_Q4K];
+    const int8_t* x[B8_NR_Q4K]; const float* d[B8_NR_Q4K]; const float* sc[B8_NR_Q4K];
+    for (int c = 0; c < B8_NR_Q4K; c++) {
         f[c] = _mm256_setzero_ps();
         x[c]  = xq + (int64_t)(s0 + c) * kblocks * JAM_QK;
         d[c]  = dx + (int64_t)(s0 + c) * kblocks;
         sc[c] = xs + (int64_t)(s0 + c) * kblocks * 2;
     }
     for (int p = 0; p < pairs; p++) {
-        __m256i aLo[JAM_B8_NR], aHi[JAM_B8_NR];
-        for (int c = 0; c < JAM_B8_NR; c++) { aLo[c] = _mm256_setzero_si256(); aHi[c] = _mm256_setzero_si256(); }
-        for (int g = 0; g < 8; g++) {
+        __m256i iLo[B8_NR_Q4K], iHi[B8_NR_Q4K];
+        for (int c = 0; c < B8_NR_Q4K; c++) { iLo[c] = _mm256_setzero_si256(); iHi[c] = _mm256_setzero_si256(); }
+        for (int g = 0; g < 8; g++) {   /* 8 chained maddubs stay under int16 (8*3810) */
             __m256i pk = _mm256_load_si256((const void*) (qs + g * 32));
             __m256i lo = _mm256_and_si256(pk, m4);                       /* decode once, reuse NR cols */
             __m256i hi = _mm256_and_si256(_mm256_srli_epi16(pk, 4), m4);
-            for (int c = 0; c < JAM_B8_NR; c++) {
-                aLo[c] = b8_dot(aLo[c], lo, _mm256_set1_epi32(((const int*) x[c])[g]));
-                aHi[c] = b8_dot(aHi[c], hi, _mm256_set1_epi32(((const int*) (x[c] + JAM_QK))[g]));
+            for (int c = 0; c < B8_NR_Q4K; c++) {
+                iLo[c] = b8_chain(iLo[c], lo, _mm256_set1_epi32(((const int*) x[c])[g]));
+                iHi[c] = b8_chain(iHi[c], hi, _mm256_set1_epi32(((const int*) (x[c] + JAM_QK))[g]));
             }
         }
         __m256 dwLo = _mm256_load_ps(dw), mwLo = _mm256_load_ps(mw);
         __m256 dwHi = _mm256_load_ps(dw + 8), mwHi = _mm256_load_ps(mw + 8);
-        for (int c = 0; c < JAM_B8_NR; c++) {
-            f[c] = _mm256_fmadd_ps(_mm256_cvtepi32_ps(aLo[c]), _mm256_mul_ps(dwLo, _mm256_set1_ps(d[c][2*p])),   f[c]);
+        for (int c = 0; c < B8_NR_Q4K; c++) {
+            __m256i aLo = b8_fold(_mm256_setzero_si256(), iLo[c]);
+            __m256i aHi = b8_fold(_mm256_setzero_si256(), iHi[c]);
+            f[c] = _mm256_fmadd_ps(_mm256_cvtepi32_ps(aLo), _mm256_mul_ps(dwLo, _mm256_set1_ps(d[c][2*p])),   f[c]);
             f[c] = _mm256_fnmadd_ps(mwLo, _mm256_set1_ps(sc[c][4*p] + sc[c][4*p+1]), f[c]);
-            f[c] = _mm256_fmadd_ps(_mm256_cvtepi32_ps(aHi[c]), _mm256_mul_ps(dwHi, _mm256_set1_ps(d[c][2*p+1])), f[c]);
+            f[c] = _mm256_fmadd_ps(_mm256_cvtepi32_ps(aHi), _mm256_mul_ps(dwHi, _mm256_set1_ps(d[c][2*p+1])), f[c]);
             f[c] = _mm256_fnmadd_ps(mwHi, _mm256_set1_ps(sc[c][4*p+2] + sc[c][4*p+3]), f[c]);
             x[c] += 2 * JAM_QK;
         }
         qs += 256; dw += 16; mw += 16;
     }
-    for (int c = 0; c < JAM_B8_NR; c++)
+    for (int c = 0; c < B8_NR_Q4K; c++)
         _mm256_storeu_ps(out + (int64_t)(s0 + c) * ldc + r, f[c]);
 }
 
@@ -196,7 +221,7 @@ void jam_q4k_band8_avx2(void* arg, int t0, int t1, int tid) {
             float* mw = rp->mw + (int64_t) group * kblocks * 8;
             repack_q4k_group8(J->w + (int64_t) r * J->w_stride, J->w_stride, sblocks, qs, dw, mw);
             int s = 0;
-            for (; s + JAM_B8_NR <= seq; s += JAM_B8_NR)
+            for (; s + B8_NR_Q4K <= seq; s += B8_NR_Q4K)
                 q4k_block8_nr(qs, dw, mw, J->xq, J->dx, J->xsum, s, kblocks / 2, kblocks, ldc, J->out, r);
             for (; s < seq; s++) {
                 const int8_t* x = J->xq + (int64_t) s * kblocks * JAM_QK;
@@ -263,9 +288,13 @@ static inline __m256 q5k_block8(const uint8_t* qs, const float* dw, const float*
     __m256 f = _mm256_setzero_ps();
     for (int b = 0; b < subs; b++) {
         __m256i acc = _mm256_setzero_si256();
-        for (int g = 0; g < 8; g++)
-            acc = b8_dot(acc, _mm256_load_si256((const void*) (qs + g * 32)),
-                         _mm256_set1_epi32(((const int*) x)[g]));
+        for (int h = 0; h < 2; h++) {   /* chains of 4 maddubs stay under int16 (4*7874) */
+            __m256i i16 = _mm256_setzero_si256();
+            for (int g = h * 4; g < h * 4 + 4; g++)
+                i16 = b8_chain(i16, _mm256_load_si256((const void*) (qs + g * 32)),
+                               _mm256_set1_epi32(((const int*) x)[g]));
+            acc = b8_fold(acc, i16);
+        }
         f = _mm256_fmadd_ps(_mm256_cvtepi32_ps(acc), _mm256_mul_ps(_mm256_load_ps(dw), _mm256_set1_ps(d[b])), f);
         f = _mm256_fnmadd_ps(_mm256_load_ps(mw), _mm256_set1_ps(s[2 * b] + s[2 * b + 1]), f);
         qs += 256; dw += 8; mw += 8; x += JAM_QK;
@@ -276,31 +305,36 @@ static inline __m256 q5k_block8(const uint8_t* qs, const float* dw, const float*
 static inline void q5k_block8_nr(const uint8_t* qs, const float* dw, const float* mw, const int8_t* xq,
                                  const float* dx, const float* xs, int s0, int kblocks, int64_t ldc,
                                  float* out, int r) {
-    __m256 f[JAM_B8_NR];
-    const int8_t* x[JAM_B8_NR]; const float* d[JAM_B8_NR]; const float* sc[JAM_B8_NR];
-    for (int c = 0; c < JAM_B8_NR; c++) {
+    __m256 f[B8_NR_KQ];
+    const int8_t* x[B8_NR_KQ]; const float* d[B8_NR_KQ]; const float* sc[B8_NR_KQ];
+    for (int c = 0; c < B8_NR_KQ; c++) {
         f[c] = _mm256_setzero_ps();
         x[c]  = xq + (int64_t)(s0 + c) * kblocks * JAM_QK;
         d[c]  = dx + (int64_t)(s0 + c) * kblocks;
         sc[c] = xs + (int64_t)(s0 + c) * kblocks * 2;
     }
     for (int b = 0; b < kblocks; b++) {
-        __m256i acc[JAM_B8_NR];
-        for (int c = 0; c < JAM_B8_NR; c++) acc[c] = _mm256_setzero_si256();
-        for (int g = 0; g < 8; g++) {
-            __m256i w = _mm256_load_si256((const void*) (qs + g * 32));   /* shared across NR cols */
-            for (int c = 0; c < JAM_B8_NR; c++)
-                acc[c] = b8_dot(acc[c], w, _mm256_set1_epi32(((const int*) x[c])[g]));
+        __m256i acc[B8_NR_KQ];
+        for (int c = 0; c < B8_NR_KQ; c++) acc[c] = _mm256_setzero_si256();
+        for (int h = 0; h < 2; h++) {   /* chains of 4 maddubs stay under int16 (4*7874) */
+            __m256i i16[B8_NR_KQ];
+            for (int c = 0; c < B8_NR_KQ; c++) i16[c] = _mm256_setzero_si256();
+            for (int g = h * 4; g < h * 4 + 4; g++) {
+                __m256i w = _mm256_load_si256((const void*) (qs + g * 32));   /* shared across NR cols */
+                for (int c = 0; c < B8_NR_KQ; c++)
+                    i16[c] = b8_chain(i16[c], w, _mm256_set1_epi32(((const int*) x[c])[g]));
+            }
+            for (int c = 0; c < B8_NR_KQ; c++) acc[c] = b8_fold(acc[c], i16[c]);
         }
         __m256 dwv = _mm256_load_ps(dw), mwv = _mm256_load_ps(mw);
-        for (int c = 0; c < JAM_B8_NR; c++) {
+        for (int c = 0; c < B8_NR_KQ; c++) {
             f[c] = _mm256_fmadd_ps(_mm256_cvtepi32_ps(acc[c]), _mm256_mul_ps(dwv, _mm256_set1_ps(d[c][b])), f[c]);
             f[c] = _mm256_fnmadd_ps(mwv, _mm256_set1_ps(sc[c][2 * b] + sc[c][2 * b + 1]), f[c]);
             x[c] += JAM_QK;
         }
         qs += 256; dw += 8; mw += 8;
     }
-    for (int c = 0; c < JAM_B8_NR; c++)
+    for (int c = 0; c < B8_NR_KQ; c++)
         _mm256_storeu_ps(out + (int64_t)(s0 + c) * ldc + r, f[c]);
 }
 
@@ -319,7 +353,7 @@ void jam_q5k_band8_avx2(void* arg, int t0, int t1, int tid) {
             float* mw = rp->mw + (int64_t) group * kblocks * 8;
             repack_q5k_group8(J->w + (int64_t) r * J->w_stride, J->w_stride, sblocks, qs, dw, mw);
             int s = 0;
-            for (; s + JAM_B8_NR <= seq; s += JAM_B8_NR)
+            for (; s + B8_NR_KQ <= seq; s += B8_NR_KQ)
                 q5k_block8_nr(qs, dw, mw, J->xq, J->dx, J->xsum, s, kblocks, ldc, J->out, r);
             for (; s < seq; s++)
                 _mm256_storeu_ps(J->out + (int64_t) s * ldc + r,
@@ -403,31 +437,31 @@ static inline __m256 q6k_block8(const uint8_t* qs, const float* dw,
 static inline void q6k_block8_nr(const uint8_t* qs, const float* dw, const int8_t* xq,
                                  const float* dx, const float* xs, int s0, int subs,
                                  int kblocks, int64_t ldc, float* out, int r) {
-    __m256 f[JAM_B8_NR];
-    const int8_t* x[JAM_B8_NR]; const float* d[JAM_B8_NR]; const float* sc[JAM_B8_NR];
-    for (int c = 0; c < JAM_B8_NR; c++) {
+    __m256 f[B8_NR_KQ];
+    const int8_t* x[B8_NR_KQ]; const float* d[B8_NR_KQ]; const float* sc[B8_NR_KQ];
+    for (int c = 0; c < B8_NR_KQ; c++) {
         f[c] = _mm256_setzero_ps();
         x[c]  = xq + (int64_t)(s0 + c) * kblocks * JAM_QK;
         d[c]  = dx + (int64_t)(s0 + c) * kblocks;
         sc[c] = xs + (int64_t)(s0 + c) * kblocks * 2;
     }
     for (int b = 0; b < subs; b++) {
-        __m256i acc[JAM_B8_NR];
-        for (int c = 0; c < JAM_B8_NR; c++) acc[c] = _mm256_setzero_si256();
+        __m256i acc[B8_NR_KQ];
+        for (int c = 0; c < B8_NR_KQ; c++) acc[c] = _mm256_setzero_si256();
         for (int g = 0; g < 4; g++) {
             __m256i w = _mm256_load_si256((const void*) (qs + g * 32));   /* shared across NR cols */
-            for (int c = 0; c < JAM_B8_NR; c++)
+            for (int c = 0; c < B8_NR_KQ; c++)
                 acc[c] = b8_dot(acc[c], w, _mm256_set1_epi32(((const int*) x[c])[g]));
         }
         __m256 dwv = _mm256_load_ps(dw);
-        for (int c = 0; c < JAM_B8_NR; c++) {
+        for (int c = 0; c < B8_NR_KQ; c++) {
             f[c] = _mm256_fmadd_ps(_mm256_cvtepi32_ps(acc[c]), _mm256_mul_ps(dwv, _mm256_set1_ps(d[c][b >> 1])), f[c]);
             f[c] = _mm256_fnmadd_ps(dwv, _mm256_set1_ps(32.0f * sc[c][b]), f[c]);
             x[c] += 16;
         }
         qs += 128; dw += 8;
     }
-    for (int c = 0; c < JAM_B8_NR; c++)
+    for (int c = 0; c < B8_NR_KQ; c++)
         _mm256_storeu_ps(out + (int64_t)(s0 + c) * ldc + r, f[c]);
 }
 
@@ -445,7 +479,7 @@ void jam_q6k_band8_avx2(void* arg, int t0, int t1, int tid) {
             float* dw = rp->dw + (int64_t) group * subs16 * 8;
             repack_q6k_group8(J->w + (int64_t) r * J->w_stride, J->w_stride, sblocks, qs, dw);
             int s = 0;
-            for (; s + JAM_B8_NR <= seq; s += JAM_B8_NR)
+            for (; s + B8_NR_KQ <= seq; s += B8_NR_KQ)
                 q6k_block8_nr(qs, dw, J->xq, J->dx, J->xsum, s, subs16, kblocks, ldc, J->out, r);
             for (; s < seq; s++) {
                 const int8_t* x = J->xq + (int64_t) s * kblocks * JAM_QK;
@@ -504,19 +538,19 @@ static inline __m256 q8s_block8(const uint8_t* qs, const float* dw, const int8_t
 
 static inline void q8s_block8_nr(const uint8_t* qs, const float* dw, const int8_t* xq,
                                  const float* dx, int s0, int nb, int64_t ldc, float* out, int r) {
-    __m256 f[JAM_B8_NR];
-    const int8_t* x[JAM_B8_NR]; const float* d[JAM_B8_NR];
-    for (int c = 0; c < JAM_B8_NR; c++) {
+    __m256 f[B8_NR_Q8];
+    const int8_t* x[B8_NR_Q8]; const float* d[B8_NR_Q8];
+    for (int c = 0; c < B8_NR_Q8; c++) {
         f[c] = _mm256_setzero_ps();
         x[c] = xq + (int64_t)(s0 + c) * nb * JAM_QK;
         d[c] = dx + (int64_t)(s0 + c) * nb;
     }
     for (int b = 0; b < nb; b++) {
-        __m256i acc[JAM_B8_NR];
-        for (int c = 0; c < JAM_B8_NR; c++) acc[c] = _mm256_setzero_si256();
+        __m256i acc[B8_NR_Q8];
+        for (int c = 0; c < B8_NR_Q8; c++) acc[c] = _mm256_setzero_si256();
         for (int g = 0; g < 8; g++) {
             __m256i w = _mm256_load_si256((const void*) (qs + g * 32));   /* shared across NR cols */
-            for (int c = 0; c < JAM_B8_NR; c++) {
+            for (int c = 0; c < B8_NR_Q8; c++) {
                 __m256i xb = _mm256_set1_epi32(((const int*) x[c])[g]);
                 acc[c] = _mm256_add_epi32(acc[c], _mm256_madd_epi16(
                              _mm256_maddubs_epi16(_mm256_abs_epi8(xb), _mm256_sign_epi8(w, xb)),
@@ -524,13 +558,13 @@ static inline void q8s_block8_nr(const uint8_t* qs, const float* dw, const int8_
             }
         }
         __m256 dwv = _mm256_load_ps(dw);
-        for (int c = 0; c < JAM_B8_NR; c++) {
+        for (int c = 0; c < B8_NR_Q8; c++) {
             f[c] = _mm256_fmadd_ps(_mm256_cvtepi32_ps(acc[c]), _mm256_mul_ps(dwv, _mm256_set1_ps(d[c][b])), f[c]);
             x[c] += JAM_QK;
         }
         qs += 256; dw += 8;
     }
-    for (int c = 0; c < JAM_B8_NR; c++)
+    for (int c = 0; c < B8_NR_Q8; c++)
         _mm256_storeu_ps(out + (int64_t)(s0 + c) * ldc + r, f[c]);
 }
 
@@ -560,7 +594,7 @@ void jam_q8_0_band8_avx2(void* arg, int t0, int t1, int tid) {
             float* dw = rp->dw + (int64_t) group * nb * 8;
             repack_q8s_group8(J->w + (int64_t) r * J->w_stride, J->w_stride, nb, qs, dw);
             int s = 0;
-            for (; s + JAM_B8_NR <= seq; s += JAM_B8_NR)
+            for (; s + B8_NR_Q8 <= seq; s += B8_NR_Q8)
                 q8s_block8_nr(qs, dw, J->xq, J->dx, s, nb, ldc, J->out, r);
             for (; s < seq; s++)
                 _mm256_storeu_ps(J->out + (int64_t) s * ldc + r,
@@ -596,10 +630,11 @@ static inline __m256 q4_0_block8(const uint8_t* qs, const float* dw, const float
                                  const int8_t* x, const float* d, const float* s, int nb) {
     __m256 f = _mm256_setzero_ps();
     for (int b = 0; b < nb; b++) {
-        __m256i acc = _mm256_setzero_si256();
-        for (int g = 0; g < 8; g++)
-            acc = b8_dot(acc, _mm256_load_si256((const void*) (qs + g * 32)),
-                         _mm256_set1_epi32(((const int*) x)[g]));
+        __m256i i16 = _mm256_setzero_si256();
+        for (int g = 0; g < 8; g++)   /* 8 chained maddubs stay under int16 (8*3810) */
+            i16 = b8_chain(i16, _mm256_load_si256((const void*) (qs + g * 32)),
+                           _mm256_set1_epi32(((const int*) x)[g]));
+        __m256i acc = b8_fold(_mm256_setzero_si256(), i16);
         f = _mm256_fmadd_ps(_mm256_cvtepi32_ps(acc), _mm256_mul_ps(_mm256_load_ps(dw), _mm256_set1_ps(d[b])), f);
         f = _mm256_fnmadd_ps(_mm256_load_ps(mw), _mm256_set1_ps(s[2 * b] + s[2 * b + 1]), f);
         qs += 256; dw += 8; mw += 8; x += JAM_QK;
@@ -610,31 +645,32 @@ static inline __m256 q4_0_block8(const uint8_t* qs, const float* dw, const float
 static inline void q4_0_block8_nr(const uint8_t* qs, const float* dw, const float* mw, const int8_t* xq,
                                   const float* dx, const float* xs, int s0, int nb, int64_t ldc,
                                   float* out, int r) {
-    __m256 f[JAM_B8_NR];
-    const int8_t* x[JAM_B8_NR]; const float* d[JAM_B8_NR]; const float* sc[JAM_B8_NR];
-    for (int c = 0; c < JAM_B8_NR; c++) {
+    __m256 f[B8_NR_KQ];
+    const int8_t* x[B8_NR_KQ]; const float* d[B8_NR_KQ]; const float* sc[B8_NR_KQ];
+    for (int c = 0; c < B8_NR_KQ; c++) {
         f[c] = _mm256_setzero_ps();
         x[c]  = xq + (int64_t)(s0 + c) * nb * JAM_QK;
         d[c]  = dx + (int64_t)(s0 + c) * nb;
         sc[c] = xs + (int64_t)(s0 + c) * nb * 2;
     }
     for (int b = 0; b < nb; b++) {
-        __m256i acc[JAM_B8_NR];
-        for (int c = 0; c < JAM_B8_NR; c++) acc[c] = _mm256_setzero_si256();
-        for (int g = 0; g < 8; g++) {
+        __m256i i16[B8_NR_KQ];
+        for (int c = 0; c < B8_NR_KQ; c++) i16[c] = _mm256_setzero_si256();
+        for (int g = 0; g < 8; g++) {   /* 8 chained maddubs stay under int16 (8*3810) */
             __m256i w = _mm256_load_si256((const void*) (qs + g * 32));
-            for (int c = 0; c < JAM_B8_NR; c++)
-                acc[c] = b8_dot(acc[c], w, _mm256_set1_epi32(((const int*) x[c])[g]));
+            for (int c = 0; c < B8_NR_KQ; c++)
+                i16[c] = b8_chain(i16[c], w, _mm256_set1_epi32(((const int*) x[c])[g]));
         }
         __m256 dwv = _mm256_load_ps(dw), mwv = _mm256_load_ps(mw);
-        for (int c = 0; c < JAM_B8_NR; c++) {
-            f[c] = _mm256_fmadd_ps(_mm256_cvtepi32_ps(acc[c]), _mm256_mul_ps(dwv, _mm256_set1_ps(d[c][b])), f[c]);
+        for (int c = 0; c < B8_NR_KQ; c++) {
+            __m256i acc = b8_fold(_mm256_setzero_si256(), i16[c]);
+            f[c] = _mm256_fmadd_ps(_mm256_cvtepi32_ps(acc), _mm256_mul_ps(dwv, _mm256_set1_ps(d[c][b])), f[c]);
             f[c] = _mm256_fnmadd_ps(mwv, _mm256_set1_ps(sc[c][2 * b] + sc[c][2 * b + 1]), f[c]);
             x[c] += JAM_QK;
         }
         qs += 256; dw += 8; mw += 8;
     }
-    for (int c = 0; c < JAM_B8_NR; c++)
+    for (int c = 0; c < B8_NR_KQ; c++)
         _mm256_storeu_ps(out + (int64_t)(s0 + c) * ldc + r, f[c]);
 }
 
@@ -668,7 +704,7 @@ void jam_q4_0_band8_avx2(void* arg, int t0, int t1, int tid) {
             float* mw = rp->mw + (int64_t) group * nb * 8;
             repack_q4_0_group8(J->w + (int64_t) r * J->w_stride, J->w_stride, nb, qs, dw, mw);
             int s = 0;
-            for (; s + JAM_B8_NR <= seq; s += JAM_B8_NR)
+            for (; s + B8_NR_KQ <= seq; s += B8_NR_KQ)
                 q4_0_block8_nr(qs, dw, mw, J->xq, J->dx, J->xsum, s, nb, ldc, J->out, r);
             for (; s < seq; s++)
                 _mm256_storeu_ps(J->out + (int64_t) s * ldc + r,
@@ -710,9 +746,13 @@ static inline __m256 mxfp4_block8(const uint8_t* qs, const float* dw, const floa
     __m256 f = _mm256_setzero_ps();
     for (int b = 0; b < nb; b++) {
         __m256i acc = _mm256_setzero_si256();
-        for (int g = 0; g < 8; g++)
-            acc = b8_dot(acc, _mm256_set1_epi32((int) (((const uint32_t*) x)[g] ^ 0x80808080u)),
-                         _mm256_load_si256((const void*) (qs + g * 32)));
+        for (int h = 0; h < 2; h++) {   /* chains of 4 maddubs stay under int16 (4*6120) */
+            __m256i i16 = _mm256_setzero_si256();
+            for (int g = h * 4; g < h * 4 + 4; g++)
+                i16 = b8_chain(i16, _mm256_set1_epi32((int) (((const uint32_t*) x)[g] ^ 0x80808080u)),
+                               _mm256_load_si256((const void*) (qs + g * 32)));
+            acc = b8_fold(acc, i16);
+        }
         __m256 da = _mm256_set1_ps(d[b]);
         f = _mm256_fmadd_ps(_mm256_cvtepi32_ps(acc), _mm256_mul_ps(_mm256_load_ps(dw), da), f);
         f = _mm256_fnmadd_ps(_mm256_load_ps(cw), da, f);
@@ -723,23 +763,28 @@ static inline __m256 mxfp4_block8(const uint8_t* qs, const float* dw, const floa
 
 static inline void mxfp4_block8_nr(const uint8_t* qs, const float* dw, const float* cw, const int8_t* xq,
                                    const float* dx, int s0, int nb, int64_t ldc, float* out, int r) {
-    __m256 f[JAM_B8_NR];
-    const int8_t* x[JAM_B8_NR]; const float* d[JAM_B8_NR];
-    for (int c = 0; c < JAM_B8_NR; c++) {
+    __m256 f[B8_NR_KQ];
+    const int8_t* x[B8_NR_KQ]; const float* d[B8_NR_KQ];
+    for (int c = 0; c < B8_NR_KQ; c++) {
         f[c] = _mm256_setzero_ps();
         x[c] = xq + (int64_t)(s0 + c) * nb * JAM_QK;
         d[c] = dx + (int64_t)(s0 + c) * nb;
     }
     for (int b = 0; b < nb; b++) {
-        __m256i acc[JAM_B8_NR];
-        for (int c = 0; c < JAM_B8_NR; c++) acc[c] = _mm256_setzero_si256();
-        for (int g = 0; g < 8; g++) {
-            __m256i w = _mm256_load_si256((const void*) (qs + g * 32));
-            for (int c = 0; c < JAM_B8_NR; c++)
-                acc[c] = b8_dot(acc[c], _mm256_set1_epi32((int) (((const uint32_t*) x[c])[g] ^ 0x80808080u)), w);
+        __m256i acc[B8_NR_KQ];
+        for (int c = 0; c < B8_NR_KQ; c++) acc[c] = _mm256_setzero_si256();
+        for (int h = 0; h < 2; h++) {   /* chains of 4 maddubs stay under int16 (4*6120) */
+            __m256i i16[B8_NR_KQ];
+            for (int c = 0; c < B8_NR_KQ; c++) i16[c] = _mm256_setzero_si256();
+            for (int g = h * 4; g < h * 4 + 4; g++) {
+                __m256i w = _mm256_load_si256((const void*) (qs + g * 32));
+                for (int c = 0; c < B8_NR_KQ; c++)
+                    i16[c] = b8_chain(i16[c], _mm256_set1_epi32((int) (((const uint32_t*) x[c])[g] ^ 0x80808080u)), w);
+            }
+            for (int c = 0; c < B8_NR_KQ; c++) acc[c] = b8_fold(acc[c], i16[c]);
         }
         __m256 dwv = _mm256_load_ps(dw), cwv = _mm256_load_ps(cw);
-        for (int c = 0; c < JAM_B8_NR; c++) {
+        for (int c = 0; c < B8_NR_KQ; c++) {
             __m256 da = _mm256_set1_ps(d[c][b]);
             f[c] = _mm256_fmadd_ps(_mm256_cvtepi32_ps(acc[c]), _mm256_mul_ps(dwv, da), f[c]);
             f[c] = _mm256_fnmadd_ps(cwv, da, f[c]);
@@ -747,7 +792,7 @@ static inline void mxfp4_block8_nr(const uint8_t* qs, const float* dw, const flo
         }
         qs += 256; dw += 8; cw += 8;
     }
-    for (int c = 0; c < JAM_B8_NR; c++)
+    for (int c = 0; c < B8_NR_KQ; c++)
         _mm256_storeu_ps(out + (int64_t)(s0 + c) * ldc + r, f[c]);
 }
 
@@ -781,7 +826,7 @@ void jam_mxfp4_band8_avx2(void* arg, int t0, int t1, int tid) {
             float* cw = rp->mw + (int64_t) group * nb * 8;
             repack_mxfp4_group8(J->w + (int64_t) r * J->w_stride, J->w_stride, nb, qs, dw, cw);
             int s = 0;
-            for (; s + JAM_B8_NR <= seq; s += JAM_B8_NR)
+            for (; s + B8_NR_KQ <= seq; s += B8_NR_KQ)
                 mxfp4_block8_nr(qs, dw, cw, J->xq, J->dx, s, nb, ldc, J->out, r);
             for (; s < seq; s++)
                 _mm256_storeu_ps(J->out + (int64_t) s * ldc + r,
