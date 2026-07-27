@@ -25,15 +25,22 @@
       <artifactId>jam-core</artifactId>
       <!-- the JAM interface + dtype tags -->
     </dependency>
+    <!-- JAM backends are ServiceLoader-discovered (JAM.Provider): runtime-only - Dispatch never
+         references their classes. Selection at run time is by Provider.priority(). -->
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jam-native</artifactId>
-      <!-- NativeJAM + the bundled libjam -->
+      <scope>runtime</scope>
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jam-vector</artifactId>
-      <!-- VectorJAM + the relocated SIMD kernels -->
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jam-scalar</artifactId>
+      <scope>runtime</scope>
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>

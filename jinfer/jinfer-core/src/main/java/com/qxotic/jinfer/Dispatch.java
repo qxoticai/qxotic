@@ -2,15 +2,14 @@ package com.qxotic.jinfer;
 
 import com.qxotic.format.gguf.GGMLType;
 import com.qxotic.jam.JAM;
-import com.qxotic.jam.NativeJAM;
-import com.qxotic.jam.VectorJAM;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Routes each matmul to the fastest applicable backend, with {@link ScalarMatMul} as the universal
- * floor — so {@code mm} is total ({@code void}). The policy is the measured one:
+ * floor - so {@code mm} is total ({@code void}). The policy is the measured one:
  *
  * <ul>
  *   <li><b>prefill</b> (n&gt;1, compute-bound): jam → Vector tile → scalar.
@@ -38,13 +37,16 @@ final class Dispatch implements MatMul {
 
     static Dispatch create() {
         MatMul scalar = new ScalarMatMul();
+        List<JAM.Provider> providers = JAM.providers();
         // Both fast backends are the same JamMatMul adapter over a different JAM; each declines to
         // the floor.
-        MatMul vector = VectorJAM.isAvailable() ? new JamMatMul(new VectorJAM(), scalar) : null;
-        JAM nativeJam = loadNative();
+        JAM vectorJam = loadJam(providers, "vector");
+        MatMul vector = vectorJam != null ? new JamMatMul(vectorJam, scalar) : null;
+        JAM nativeJam = boolFlag("jinfer.disableJam") ? null : loadJam(providers, "native");
         // A native runtime decline (EBUSY, or an older libjam without a dtype's kernel) falls to
-        // the Vector tile when one exists - VectorJAM re-gates per call and itself declines to the
-        // floor - so a stale native library degrades to the fast Java path, never the scalar floor.
+        // the vector tile when one exists. The vector backend re-gates per call and itself declines
+        // to the floor, so a stale native library degrades to the fast Java path, never the scalar
+        // floor.
         MatMul jam =
                 nativeJam != null
                         ? new JamMatMul(nativeJam, vector != null ? vector : scalar)
@@ -53,19 +55,20 @@ final class Dispatch implements MatMul {
     }
 
     /**
-     * The native jam backend, or {@code null} if unavailable / disabled. Direct touch triggers
-     * NativeJAM's static init (libjam load) — deliberately NOT Class.forName, whose reflective
-     * lookup needs registration on native image and would silently disable jam there.
+     * The named JAM backend, or {@code null} if absent/unavailable. Selection by id is jinfer
+     * policy; jam-core only discovers available providers.
      */
-    private static JAM loadNative() {
-        if (boolFlag("jinfer.disableJam")) return null; // force the Java backends (testing)
-        try {
-            return NativeJAM.global();
-        } catch (Throwable t) {
-            System.err.println(
-                    "jam native library unavailable (" + t + "); using the Java backends.");
-            return null;
+    private static JAM loadJam(List<JAM.Provider> providers, String id) {
+        for (JAM.Provider provider : providers) {
+            if (!provider.id().equals(id)) continue;
+            try {
+                return provider.create();
+            } catch (Throwable t) {
+                System.err.println("jam " + id + " backend unavailable (" + t + ").");
+                return null;
+            }
         }
+        return null;
     }
 
     /**
@@ -138,7 +141,7 @@ final class Dispatch implements MatMul {
         // Vector tile, else floor.
         MatMul chosen;
         if (n == 1) {
-            // decode matvec: the scalar floor's dot() vectorizes per row in parallel — measured
+            // decode matvec: the scalar floor's dot() vectorizes per row in parallel - measured
             // identical to
             // the old specialized Vector gemv on this memory-bound kernel. jam only when there's no
             // Vector API.
@@ -172,7 +175,7 @@ final class Dispatch implements MatMul {
     }
 
     /**
-     * "vectors present AND 512-bit" — the precondition for the Vector prefill tile (constant,
+     * "vectors present AND 512-bit" - the precondition for the Vector prefill tile (constant,
      * JIT-folded).
      */
     private static final boolean IS_512 =

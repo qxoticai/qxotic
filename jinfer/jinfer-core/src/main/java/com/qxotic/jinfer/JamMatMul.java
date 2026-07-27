@@ -4,14 +4,14 @@ import com.qxotic.format.gguf.GGMLType;
 import com.qxotic.jam.JAM;
 
 /**
- * Runs any {@link JAM} backend (native {@code NativeJAM} or Vector API {@code VectorJAM}) over
- * jinfer's {@link SegmentFloatTensor} view. This is the one place the tensor-to-JAM translation
- * lives: an operand's {@code (vseg, vbase)} = (GLOBAL segment, absolute byte base) with ELEMENT
- * offsets/strides becomes JAM's {@code (segment, BYTE operand offset, element stride)} contract, so
- * jam reads it zero-copy and bounds-checks against {@code vseg}. On a runtime decline ({@code st !=
- * OK} — EBUSY contention, or a shape the backend won't take) it hands off to the scalar floor.
- * {@link Dispatch} gates every call, so a decline is rare. Offsets are {@code long} (a weight byte
- * offset can exceed 2³¹ on large models).
+ * Runs any {@link JAM} backend (native, vector, or scalar) over jinfer's {@link SegmentFloatTensor}
+ * view. This is the one place the tensor-to-JAM translation lives: an operand's {@code (vseg,
+ * vbase)} = (GLOBAL segment, absolute byte base) with ELEMENT offsets/strides becomes JAM's {@code
+ * (segment, BYTE operand offset, element stride)} contract, so jam reads it zero-copy and
+ * bounds-checks against {@code vseg}. On a runtime decline ({@code st != OK} - EBUSY contention, or
+ * a shape the backend won't take) it hands off to the scalar floor. {@link Dispatch} gates every
+ * call, so a decline is rare. Offsets are {@code long} (a weight byte offset can exceed 2³¹ on
+ * large models).
  */
 final class JamMatMul implements MatMul {
 
