@@ -51,11 +51,17 @@ public interface CacheStore extends AutoCloseable {
             @Override
             public MemorySegment allocate(long bytes) {
                 Arena arena = Arena.ofShared();
-                MemorySegment blob = arena.allocate(bytes, 64);
+                MemorySegment blob;
+                try {
+                    blob = arena.allocate(bytes, 64);
+                } catch (RuntimeException | Error e) {
+                    arena.close(); // blobs are GB-scale: a failed allocation must not leak
+                    throw e;
+                }
                 synchronized (blobs) {
                     blobs.put(blob, arena);
+                    used += bytes; // volatile += is not atomic: mutate only under the map's lock
                 }
-                used += bytes;
                 return blob;
             }
 
@@ -64,10 +70,10 @@ public interface CacheStore extends AutoCloseable {
                 Arena arena;
                 synchronized (blobs) {
                     arena = blobs.remove(blob);
+                    if (arena != null) used -= blob.byteSize();
                 }
                 if (arena == null)
                     throw new IllegalArgumentException("blob not allocated by this store");
-                used -= blob.byteSize();
                 arena.close();
             }
 
