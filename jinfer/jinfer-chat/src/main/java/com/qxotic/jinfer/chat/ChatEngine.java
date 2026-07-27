@@ -61,6 +61,7 @@ public final class ChatEngine {
     private final java.lang.foreign.Arena
             weights; // owned by path-loading engines; forks share the creator's
     private final boolean ownsWeights;
+    private final Runnable leakWatch; // -Djinfer.leakDetection: reports a GC'd unclosed engine
 
     /** A finished generation's state with the batch stream of everything ingested into it. */
     private record LiveSession(RuntimeState state, List<Batch> stream, int positions) {}
@@ -111,6 +112,9 @@ public final class ChatEngine {
             weights.close();
             throw e;
         }
+        // armed last: a ctor throw already cleaned up above and must not read as a leak
+        this.leakWatch =
+                com.qxotic.jinfer.LeakWatch.arm(this, "ChatEngine (owns the weights arena)");
     }
 
     /**
@@ -129,6 +133,7 @@ public final class ChatEngine {
                 base.mounted; // immutable artifact: safely shared, zero-prefill for forks too
         // a fresh live tree over the shared frozen base; codec-less models stay treeless
         this.prompts = base.prompts == null ? null : tree(loaded, promptStore, mounted);
+        this.leakWatch = com.qxotic.jinfer.LeakWatch.arm(this, "ChatEngine fork");
     }
 
     /**
@@ -167,6 +172,7 @@ public final class ChatEngine {
         try {
             if (closed) return; // idempotent: the JDK arena close below is one-shot
             closed = true;
+            leakWatch.run(); // disarm: this engine was closed properly
             for (LiveSession s : sessions) ((com.qxotic.jinfer.BaseState) s.state()).close();
             sessions.clear();
             promptStore.close();

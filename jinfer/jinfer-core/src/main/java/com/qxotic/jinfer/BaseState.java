@@ -48,11 +48,16 @@ public abstract class BaseState implements RuntimeState, AutoCloseable {
      * nothing to free eagerly, and {@link #close()} stays a valid no-op on the memory.
      */
     final void adoptArena() {
-        Arena a = arena; // the cleanup action must not capture the state itself
+        // the cleanup action must not capture the state itself - only the arena, the closed
+        // flag (its own object), and the optional LeakWatch site
+        Arena a = arena;
+        AtomicBoolean closedFlag = closed;
+        Throwable site = LeakWatch.site("owned state arena");
         owned =
                 CLEANER.register(
                         this,
                         () -> {
+                            if (site != null && !closedFlag.get()) LeakWatch.report(site);
                             try {
                                 a.close();
                             } catch (UnsupportedOperationException ignored) {

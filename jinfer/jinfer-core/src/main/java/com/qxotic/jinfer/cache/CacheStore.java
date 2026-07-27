@@ -46,6 +46,8 @@ public interface CacheStore extends AutoCloseable {
         final class Store implements CacheStore {
             private static final java.lang.ref.Cleaner CLEANER = java.lang.ref.Cleaner.create();
             private final java.lang.ref.Cleaner.Cleanable backstop = CLEANER.register(this, sweep);
+            private final Runnable leakWatch =
+                    com.qxotic.jinfer.LeakWatch.arm(this, "in-memory CacheStore");
             private volatile long used;
 
             @Override
@@ -85,6 +87,7 @@ public interface CacheStore extends AutoCloseable {
             @Override
             public void close() {
                 used = 0;
+                leakWatch.run(); // disarm: this store was closed properly
                 backstop.clean(); // at-most-once: frees every remaining blob now, not at GC
             }
         }
