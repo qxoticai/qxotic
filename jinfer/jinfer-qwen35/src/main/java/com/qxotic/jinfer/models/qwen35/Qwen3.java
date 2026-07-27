@@ -118,8 +118,10 @@ public final class Qwen3
                 s.lastChunkLen
                         - s.outputCount
                         + index; // retained-output index -> chunk row (mirrors logits)
-        // returned to the caller, whose lifetime is independent of the state: GC-managed
-        FloatTensor out = FloatTensor.allocateF32(Arena.ofAuto(), dim);
+        // reused per call from the state's arena: valid until the NEXT pool()/embedding() on
+        // this state - every consumer copies to float[] immediately. A fresh ofAuto tensor per
+        // document was ~1 GB of GC-eventual segments in a 100k-chunk RAG ingest.
+        FloatTensor out = s.embOut;
         rmsnorm(out, 0, s.x, (long) row * dim, weights.outputNorm, dim, configuration.rmsNormEps);
         double ss = 0;
         for (int i = 0; i < dim; i++) {
@@ -521,6 +523,7 @@ public final class Qwen3
         final int contextCapacity, batchCapacity;
         final FloatTensor x, xb, k, v, attnQ, attnOut, hb, hb2;
         final FloatTensor segQ, segOut, segK, segV; // per-sequence attention scratch (packed path)
+        final FloatTensor embOut; // pooled-embedding output, reused per pool() call
         final FloatTensor[] keyCache, valueCache;
 
         State(Configuration config, int contextCapacity, int batchCapacity, Arena arena) {
@@ -553,6 +556,7 @@ public final class Qwen3
             this.segOut = FloatTensor.allocateF32(arena, c * queryDim);
             this.segK = FloatTensor.allocateF32(arena, contextCapacity * kvDim);
             this.segV = FloatTensor.allocateF32(arena, contextCapacity * kvDim);
+            this.embOut = FloatTensor.allocateF32(arena, dim); // pool() output, reused per call
             this.keyCache = new FloatTensor[config.numberOfLayers];
             this.valueCache = new FloatTensor[config.numberOfLayers];
             for (int l = 0; l < config.numberOfLayers; l++) {

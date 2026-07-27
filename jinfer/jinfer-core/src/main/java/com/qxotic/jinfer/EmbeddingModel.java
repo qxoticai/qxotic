@@ -45,7 +45,8 @@ public interface EmbeddingModel<C extends Config, W, S extends RuntimeState>
      * in {@code batchCapacity}-sized chunks over one KV context, and streams each sequence's pooled
      * vector to {@code sink} in input order. The whole packed context must fit in {@code
      * contextCapacity} ({@code batchCapacity} may be smaller - it only bounds the per-chunk
-     * forward). The {@code FloatTensor} handed to the sink is freshly allocated per call.
+     * forward). The {@code FloatTensor} handed to the sink may be a REUSED per-state buffer: it is
+     * valid only until the next sink call - copy it out before returning.
      */
     default void embed(S state, Batch.Input.Sequences seqs, Consumer<FloatTensor> sink) {
         int[] len = seqs.seqLen();
