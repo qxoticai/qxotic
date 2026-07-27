@@ -38,17 +38,10 @@ public final class Thinking {
      * Caps the think span: once {@code budget} tokens have been sampled inside {@code <think>}, the
      * close marker is forced so the remaining completion budget always goes to content (thinking
      * models otherwise starve the answer under tight max_tokens). Cumulative across spans; the
-     * forced token consumes no RNG draw. Negative = uncapped.
-     */
-    public static Sampler capBudget(Sampler inner, Tokenizer tokenizer, int budget) {
-        return capBudget(inner, tokenizer, budget, false);
-    }
-
-    /**
-     * As above, but starting INSIDE the think span - for templates whose generation prompt opens
-     * {@code <think>} itself (Qwen3.5, MiniCPM5, Nemotron): the open token never passes through the
-     * sampler, so without this the budget silently never arms and a long reasoning run can starve
-     * the visible answer to LENGTH.
+     * forced token consumes no RNG draw. Negative = uncapped. {@code startInThink} starts INSIDE
+     * the think span - for templates whose generation prompt opens {@code <think>} itself (Qwen3.5,
+     * MiniCPM5, Nemotron): the open token never passes through the sampler, so without this the
+     * budget silently never arms and a long reasoning run can starve the visible answer to LENGTH.
      */
     public static Sampler capBudget(
             Sampler inner, Tokenizer tokenizer, int budget, boolean startInThink) {

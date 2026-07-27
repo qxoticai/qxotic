@@ -32,9 +32,9 @@ public sealed interface Media permits Media.Image, Media.Audio, Media.Video {
     record Audio(float[] pcm, int sampleRate, int channels) implements Media {}
 
     /**
-     * Decoded frames at a constant {@code fps}, with an optional synchronized track ({@code audio}
-     * may be null for silent video). Variable frame rate and unbounded/streaming sources are out of
-     * scope — sample the frames you want before constructing this.
+     * Decoded frames at a constant {@code fps}. Variable frame rate and unbounded/streaming sources
+     * are out of scope — sample the frames you want before constructing this. (No audio track: no
+     * consumer reads one; add the component back when a model ingests synchronized audio.)
      */
-    record Video(Image[] frames, float fps, java.util.Optional<Audio> audio) implements Media {}
+    record Video(Image[] frames, float fps) implements Media {}
 }

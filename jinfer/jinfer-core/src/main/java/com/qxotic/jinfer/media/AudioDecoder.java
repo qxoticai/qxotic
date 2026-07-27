@@ -26,7 +26,4 @@ public interface AudioDecoder {
 
     /** Decode encoded audio bytes into 16 kHz mono float PCM. */
     Media.Audio decode(byte[] encoded) throws IOException;
-
-    /** Short backend name, for logging/diagnostics ("ffmpeg" / "javasound"). */
-    String name();
 }

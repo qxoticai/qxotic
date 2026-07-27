@@ -26,11 +26,6 @@ public final class JavaSoundAudioDecoder implements AudioDecoder {
     private final FfmpegAudioDecoder fallback = new FfmpegAudioDecoder();
 
     @Override
-    public String name() {
-        return "javasound";
-    }
-
-    @Override
     public Media.Audio load(Path path) throws IOException {
         try (AudioInputStream in = AudioSystem.getAudioInputStream(path.toFile())) {
             return convert(in);

@@ -26,11 +26,6 @@ public final class FfmpegAudioDecoder implements AudioDecoder {
     public static final int SAMPLE_RATE = 16000;
 
     @Override
-    public String name() {
-        return "ffmpeg";
-    }
-
-    @Override
     public Media.Audio load(Path path) throws IOException {
         return toAudio(runFfmpeg(ffmpegArgs(path.toString()), null));
     }

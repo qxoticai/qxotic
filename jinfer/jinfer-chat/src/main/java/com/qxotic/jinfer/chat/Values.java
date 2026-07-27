@@ -2,7 +2,6 @@
 // defaults and lenient (string-encoded) number parsing. Shared leaf utility, no dependencies.
 package com.qxotic.jinfer.chat;
 
-import com.qxotic.jinfer.*;
 import java.util.List;
 import java.util.Map;
 

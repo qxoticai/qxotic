@@ -90,12 +90,6 @@ public final class Norms {
         }
     }
 
-    /** Convenience overload normalizing from offset 0. */
-    public static void rmsnorm(
-            FloatTensor out, FloatTensor x, F32FloatTensor weight, int size, float eps) {
-        rmsnorm(out, 0, x, 0, weight, size, eps);
-    }
-
     /**
      * Sum of squares of {@code size} contiguous lanes from {@code xOffset}. Vectorized for F32
      * (same fma accumulation + scalar tail as {@link #rmsnorm}, so a caller can derive the rms
