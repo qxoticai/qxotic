@@ -175,7 +175,13 @@ public final class ChatEngine {
         }
         // provably quiescent (lock held once, driver drained): the weights can die now. A
         // path-loading engine owns its weights; a fork shares its creator's (see fork()).
-        if (ownsWeights) weights.close();
+        if (ownsWeights) {
+            try {
+                weights.close();
+            } catch (UnsupportedOperationException ignored) {
+                // a non-closeable arena manages itself; nothing to free eagerly
+            }
+        }
     }
 
     /** Runs a streaming generation on the engine's single lazy driver thread. */

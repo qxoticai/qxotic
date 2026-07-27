@@ -83,7 +83,11 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
         lock.lock();
         try {
             ((com.qxotic.jinfer.BaseState) state).close();
-            weights.close(); // provably quiescent under the lock: weights die with the instance
+            try {
+                weights.close(); // provably quiescent under the lock: dies with the instance
+            } catch (UnsupportedOperationException ignored) {
+                // a non-closeable arena manages itself; nothing to free eagerly
+            }
         } finally {
             lock.unlock();
         }

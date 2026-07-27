@@ -45,7 +45,17 @@ public abstract class BaseState implements RuntimeState, AutoCloseable {
     /** Marks this state as owning {@link #arena} - called only by {@code newState(ctx, batch)}. */
     final void adoptArena() {
         Arena a = arena; // the cleanup action must not capture the state itself
-        owned = CLEANER.register(this, a::close);
+        owned =
+                CLEANER.register(
+                        this,
+                        () -> {
+                            try {
+                                a.close();
+                            } catch (UnsupportedOperationException ignored) {
+                                // a non-closeable arena (ofAuto/global) already manages itself;
+                                // owning it just means there is nothing to free eagerly
+                            }
+                        });
     }
 
     /**
