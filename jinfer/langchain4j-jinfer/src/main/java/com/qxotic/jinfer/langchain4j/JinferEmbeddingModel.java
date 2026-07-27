@@ -33,50 +33,45 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
     private final LoadedEmbedder<?> loaded;
     private final RuntimeState state; // one reusable state; embed() resets it per group
     private final int contextLength;
-    private final java.lang.foreign.Arena weights = java.lang.foreign.Arena.ofShared();
-    private final java.util.concurrent.atomic.AtomicBoolean closed =
-            new java.util.concurrent.atomic.AtomicBoolean();
     private final ReentrantLock lock = new ReentrantLock(true); // single-stream, like ChatEngine
 
     private JinferEmbeddingModel(Builder b) {
+        // ONE arena for weights and state, adopted by the state: state.close() frees everything
+        // (idempotent, blocking, Cleaner-backstopped - all BaseState's laws, implemented once)
+        java.lang.foreign.Arena arena = java.lang.foreign.Arena.ofShared();
         try {
             try {
                 // same contract as the chat builders: <= 0 means the model's own maximum (-1 to the
                 // loader); a literal 0 would crash the port's tensor sizing
                 this.loaded =
                         Models.loadEmbedder(
-                                b.modelPath, b.contextLength <= 0 ? -1 : b.contextLength, weights);
+                                b.modelPath, b.contextLength <= 0 ? -1 : b.contextLength, arena);
             } catch (IOException e) {
                 throw new UncheckedIOException("failed to load " + b.modelPath, e);
             }
             this.contextLength = loaded.model().config().contextLength();
-            this.state = newState(loaded, contextLength);
+            this.state = newState(loaded, contextLength, arena);
         } catch (RuntimeException | Error e) {
-            weights.close(); // a leaked ofShared arena has no Cleaner: free before failing
+            arena.close(); // a leaked ofShared arena has no Cleaner: free before failing
             throw e;
         }
     }
 
-    private static <S extends RuntimeState> S newState(LoadedEmbedder<S> l, int ctx) {
-        return l.model().newState(ctx);
+    private static <S extends RuntimeState> S newState(
+            LoadedEmbedder<S> l, int ctx, java.lang.foreign.Arena arena) {
+        return l.model().newState(ctx, com.qxotic.jinfer.RuntimeFlags.BATCH_CAPACITY, arena, true);
     }
 
     /**
-     * Blocking, idempotent: waits out any in-flight embed (the fair lock), then frees the state's
-     * owned arena deterministically; later calls fail with IllegalStateException. Weights are a
-     * GC-managed mmap and need no close.
+     * Blocking, idempotent: waits out any in-flight embed (the fair lock), then frees the single
+     * arena holding weights and state deterministically; later calls fail with
+     * IllegalStateException.
      */
     @Override
     public void close() {
-        if (!closed.compareAndSet(false, true)) return; // idempotent: arena close is one-shot
         lock.lock();
         try {
             ((com.qxotic.jinfer.BaseState) state).close();
-            try {
-                weights.close(); // provably quiescent under the lock: dies with the instance
-            } catch (UnsupportedOperationException ignored) {
-                // a non-closeable arena manages itself; nothing to free eagerly
-            }
         } finally {
             lock.unlock();
         }

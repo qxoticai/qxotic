@@ -37,9 +37,6 @@ public final class JinferScoringModel implements ScoringModel, AutoCloseable {
 
     private final Qwen3 model;
     private final Qwen3.State state; // one reusable state; reset() between pairs
-    private final java.lang.foreign.Arena weights = java.lang.foreign.Arena.ofShared();
-    private final java.util.concurrent.atomic.AtomicBoolean closed =
-            new java.util.concurrent.atomic.AtomicBoolean();
     private final java.util.concurrent.locks.ReentrantLock lock =
             new java.util.concurrent.locks.ReentrantLock(true); // single-stream, like ChatEngine
     private final String instruction;
@@ -47,40 +44,38 @@ public final class JinferScoringModel implements ScoringModel, AutoCloseable {
     private final int no;
 
     private JinferScoringModel(Builder b) {
+        // ONE arena for weights and state, adopted by the state: state.close() frees everything
+        // (idempotent, blocking, Cleaner-backstopped - all BaseState's laws, implemented once)
+        java.lang.foreign.Arena arena = java.lang.foreign.Arena.ofShared();
         try {
             try {
                 this.model =
                         Qwen3.loadModel(
-                                b.modelPath, b.contextLength <= 0 ? -1 : b.contextLength, weights);
+                                b.modelPath, b.contextLength <= 0 ? -1 : b.contextLength, arena);
             } catch (IOException e) {
                 throw new UncheckedIOException("failed to load " + b.modelPath, e);
             }
             this.instruction = b.instruction;
-            this.state = model.newState(model.config().contextLength(), 512);
+            this.state = model.newState(model.config().contextLength(), 512, arena, true);
             // the whole scoring convention rests on these being single tokens - fail at build
             this.yes = singleToken("yes");
             this.no = singleToken("no");
         } catch (RuntimeException | Error e) {
-            weights.close(); // a leaked ofShared arena has no Cleaner: free before failing
+            arena.close(); // a leaked ofShared arena has no Cleaner: free before failing
             throw e;
         }
     }
 
     /**
-     * Blocking, idempotent: waits out any in-flight scoring (the fair lock), then frees the state's
-     * owned arena deterministically; later calls fail with IllegalStateException.
+     * Blocking, idempotent: waits out any in-flight scoring (the fair lock), then frees the single
+     * arena holding weights and state deterministically; later calls fail with
+     * IllegalStateException.
      */
     @Override
     public void close() {
-        if (!closed.compareAndSet(false, true)) return; // idempotent: arena close is one-shot
         lock.lock();
         try {
             state.close();
-            try {
-                weights.close(); // provably quiescent under the lock: dies with the instance
-            } catch (UnsupportedOperationException ignored) {
-                // a non-closeable arena manages itself; nothing to free eagerly
-            }
         } finally {
             lock.unlock();
         }
