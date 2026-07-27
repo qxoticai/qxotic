@@ -1,13 +1,15 @@
-# [Quixotic AI][website]
+<h1 align="center"><a href="https://qxotic.ai">Quixotic AI</a></h1>
 
-[![License][badge-license]](LICENSE)
-[![GraalVM Native Image][badge-native-image]](https://www.graalvm.org/latest/reference-manual/native-image/)
-[![Qxotic AI on X][badge-x]][social-x]
-[![Qxotic AI on Bluesky][badge-bluesky]][social-bluesky]
+<p align="center"><strong>AI sovereignty for the JVM.</strong></p>
 
-**AI sovereignty for the JVM.**
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-green" alt="License"></a>
+  <a href="https://www.graalvm.org/latest/reference-manual/native-image/"><img src="https://img.shields.io/badge/GraalVM-Native_Image-F29111?labelColor=00758F" alt="GraalVM Native Image"></a>
+  <a href="https://x.com/qxoticai"><img src="https://img.shields.io/badge/-grey?logo=X" alt="Qxotic AI on X"></a>
+  <a href="https://bsky.app/profile/qxotic.ai"><img src="https://img.shields.io/badge/-grey?logo=bluesky&logoColor=f5f5f5" alt="Qxotic AI on Bluesky"></a>
+</p>
 
-The JVM powers global finance, big data, and mission-critical infrastructure. Quixotic provides core building blocks for running LLM inference natively on the JVM -- model loading, tokenization, tensor operations, a native quantized matmul engine, and an LLM inference server -- with native-performance CPU/GPU backends where needed. No external services, no Python interop, no ONNX bridges.
+The JVM powers global finance, big data, and mission-critical infrastructure. Quixotic provides core building blocks for running LLM inference natively on the JVM, including model loading, tokenization, tensor operations, a native quantized matmul engine, and an LLM inference server with native-performance CPU/GPU backends where needed. No external services, no Python interop, no ONNX bridges.
 
 ---
 
@@ -71,13 +73,3 @@ The tensor engine supports multiple backends, packaged as separate artifacts:
 Just include the backend JAR on the classpath, it becomes available automatically. No `-Djava.library.path` required.
 
 For GraalVM Native Image, add `jota-graal`.
-
-[website]: https://qxotic.ai
-
-[social-x]: https://x.com/qxoticai
-[social-bluesky]: https://bsky.app/profile/qxotic.ai
-
-[badge-x]: https://img.shields.io/badge/-grey?logo=X
-[badge-bluesky]: https://img.shields.io/badge/-grey?logo=bluesky&logoColor=f5f5f5
-[badge-license]: https://img.shields.io/badge/license-Apache%202.0-green
-[badge-native-image]: https://img.shields.io/badge/GraalVM-Native_Image-F29111?labelColor=00758F
