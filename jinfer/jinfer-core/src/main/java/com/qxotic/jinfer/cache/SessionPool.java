@@ -57,9 +57,17 @@ public final class SessionPool<S extends RuntimeState> {
      * state is freed; its blocks remain in the shared {@link PromptCache}).
      */
     void release(CachedSession<S> session) {
-        if (capacity == 0) return;
+        if (capacity == 0) {
+            close(session); // pooling disabled: free the state now, not at GC
+            return;
+        }
         pool.addLast(session);
-        while (pool.size() > capacity) pool.removeFirst();
+        while (pool.size() > capacity) close(pool.removeFirst());
+    }
+
+    /** An owned state must be freed deterministically - a dropped one only degrades to GC. */
+    private static void close(CachedSession<?> session) {
+        if (session.state() instanceof com.qxotic.jinfer.BaseState base) base.close();
     }
 
     public int size() {
@@ -96,7 +104,13 @@ public final class SessionPool<S extends RuntimeState> {
             session =
                     CachedSession.resume(model, cache, freshState.get(), fingerprints, resumeLimit);
         }
-        R result = work.run(session, tier1); // a throw skips release: the session is dropped
+        R result;
+        try {
+            result = work.run(session, tier1);
+        } catch (RuntimeException | Error e) {
+            close(session); // a torn state must never serve again - and must not wait for GC
+            throw e;
+        }
         release(session);
         return result;
     }
