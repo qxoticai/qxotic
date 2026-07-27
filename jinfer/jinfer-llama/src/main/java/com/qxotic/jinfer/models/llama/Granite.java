@@ -404,7 +404,7 @@ public final class Granite
     public static final class State extends com.qxotic.jinfer.BaseState {
         final int contextCapacity, batchCapacity;
         final FloatTensor x, xb, k, v, attnQ, attnOut, hb, hb2, logits;
-        final FlashAttention.DecodeScratch decodeScratch = new FlashAttention.DecodeScratch();
+        final FlashAttention.DecodeScratch decodeScratch = new FlashAttention.DecodeScratch(arena);
         final FloatTensor[] keyCache, valueCache;
 
         /** Recycles this allocation: cursor to 0; stale KV rows beyond it are attention-masked. */

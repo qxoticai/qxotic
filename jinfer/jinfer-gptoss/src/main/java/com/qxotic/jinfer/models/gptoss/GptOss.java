@@ -696,7 +696,7 @@ public final class GptOss
     public static final class State extends com.qxotic.jinfer.BaseState {
         final int contextCapacity, batchCapacity;
         final FloatTensor residual, xb, xb2, xbK, q, logits, th, tscratch;
-        final FlashAttention.DecodeScratch decodeScratch = new FlashAttention.DecodeScratch();
+        final FlashAttention.DecodeScratch decodeScratch = new FlashAttention.DecodeScratch(arena);
         final FloatTensor[] keyCache, valueCache, batchK, batchV;
         // MoE scratch (chunk-wide CSR routing); gpt-oss is all-MoE so always allocated.
         final FloatTensor moeRouterB, moeGather, moeDownB, moeOutB, hb, hb2;

@@ -1248,7 +1248,7 @@ public final class Qwen35
                 gateProj,
                 alphaProj,
                 betaProj; // batched-prefill scratch (chunk rows)
-        final FlashAttention.DecodeScratch decodeScratch = new FlashAttention.DecodeScratch();
+        final FlashAttention.DecodeScratch decodeScratch = new FlashAttention.DecodeScratch(arena);
         final float[] attnGateArr,
                 ssmZ,
                 ssmConvOut,

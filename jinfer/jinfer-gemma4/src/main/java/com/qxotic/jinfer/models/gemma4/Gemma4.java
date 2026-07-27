@@ -494,7 +494,7 @@ public final class Gemma4
         final FloatTensor residual, xb, xbK, xb2, hb, hb2, query, logits;
         int[] lastTokens; // ids of the last ingested token batch (row->token, for the MTP draft
         // seam)
-        final FlashAttention.DecodeScratch decodeScratch = new FlashAttention.DecodeScratch();
+        final FlashAttention.DecodeScratch decodeScratch = new FlashAttention.DecodeScratch(arena);
         final FloatTensor[] keyCache, valueCache; // own-KV layers only (ring/linear F16)
         final FloatTensor[] batchK, batchV; // current chunk's linear K/V, committed at chunk end
         final FloatTensor perLayerInputs, plGate, plProj;

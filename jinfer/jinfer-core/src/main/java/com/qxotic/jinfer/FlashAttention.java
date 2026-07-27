@@ -1133,16 +1133,24 @@ public final class FlashAttention {
                 });
     }
 
-    /** Reusable per-sequence scratch for {@link #flashDecode} partials (one per {@code State}). */
+    /**
+     * Reusable per-sequence scratch for {@link #flashDecode} partials (one per {@code State}).
+     * Draws from the state's arena so it dies with the state - it is state memory, and an ofAuto
+     * buffer here survived close() in every family (plus one orphaned copy per lazy regrowth).
+     */
     public static final class DecodeScratch {
+        private final java.lang.foreign.Arena arena;
         F32FloatTensor o;
         float[] m;
         double[] l;
 
+        public DecodeScratch(java.lang.foreign.Arena arena) {
+            this.arena = arena;
+        }
+
         void ensure(int totalPartials, int headSize) {
             int oFloats = totalPartials * headSize;
-            if (o == null || o.size() < oFloats)
-                o = F32FloatTensor.allocate(java.lang.foreign.Arena.ofAuto(), oFloats);
+            if (o == null || o.size() < oFloats) o = F32FloatTensor.allocate(arena, oFloats);
             if (m == null || m.length < totalPartials) m = new float[totalPartials];
             if (l == null || l.length < totalPartials) l = new double[totalPartials];
         }

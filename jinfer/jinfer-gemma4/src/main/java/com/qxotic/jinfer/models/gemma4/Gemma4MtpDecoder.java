@@ -40,9 +40,10 @@ public final class Gemma4MtpDecoder {
     // scratch (single-token draft; small)
     private final F32FloatTensor xh, cur, xb, q, attn, hb, hb2, hNext;
     private final FloatTensor draftLogits;
-    private final FlashAttention.DecodeScratch decodeScratch = new FlashAttention.DecodeScratch();
+    private final FlashAttention.DecodeScratch decodeScratch;
 
     public Gemma4MtpDecoder(Gemma4Mtp mtp, Gemma4 backbone, Arena arena) {
+        this.decodeScratch = new FlashAttention.DecodeScratch(arena);
         this.cfg = mtp.config();
         this.w = mtp.weights();
         this.backbone = backbone;

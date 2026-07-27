@@ -831,7 +831,7 @@ public final class NemotronH
         final int[] moeRowTopE, moeExpertCounts, moeExpertOffsets, moeCursor, moeRowByExpert;
         final float[] moeRowTopP, moeProbByExpert;
         final Moe.Routing moeRouting;
-        final FlashAttention.DecodeScratch decodeScratch = new FlashAttention.DecodeScratch();
+        final FlashAttention.DecodeScratch decodeScratch = new FlashAttention.DecodeScratch(arena);
         final FloatTensor[] keyCache,
                 valueCache,
                 ssmConvState; // attention / SSM layers respectively

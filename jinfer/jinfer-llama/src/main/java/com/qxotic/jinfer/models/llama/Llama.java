@@ -606,7 +606,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
         // stay
         // read-only across queries (any retained row can be finished, in any order, repeatedly).
         final FloatTensor th, tscratch;
-        final FlashAttention.DecodeScratch decodeScratch = new FlashAttention.DecodeScratch();
+        final FlashAttention.DecodeScratch decodeScratch = new FlashAttention.DecodeScratch(arena);
         final FloatTensor[] keyCache, valueCache;
 
         /** Recycles this allocation: cursor to 0; stale KV rows beyond it are attention-masked. */

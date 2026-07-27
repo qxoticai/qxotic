@@ -713,7 +713,7 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
     public static final class State extends com.qxotic.jinfer.BaseState {
         final int contextCapacity, batchCapacity;
         final FloatTensor residual, xb, xbK, xb2, hb, hb2, query, logits;
-        final FlashAttention.DecodeScratch decodeScratch = new FlashAttention.DecodeScratch();
+        final FlashAttention.DecodeScratch decodeScratch = new FlashAttention.DecodeScratch(arena);
         final FloatTensor[] keyCache,
                 valueCache,
                 batchK,
