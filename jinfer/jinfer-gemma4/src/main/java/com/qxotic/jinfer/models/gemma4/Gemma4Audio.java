@@ -52,7 +52,11 @@ public final class Gemma4Audio implements Embedder<Media.Audio> {
 
     @Override
     public void embed(Media.Audio audio, int maxChunkSize, Consumer<FloatTensor> sink) {
-        sink.accept(encode(audio));
+        // NOTHING escapes: rows live in the per-encode scratch; the sink sees an ephemeral view
+        // (the Embedder contract) and must copy what it keeps.
+        try (Arena scratch = Arena.ofShared()) {
+            sink.accept(encode(audio, scratch));
+        }
     }
 
     /** The plan's row count for {@code audio}: mono-16k length over non-overlapping frames. */
@@ -72,44 +76,55 @@ public final class Gemma4Audio implements Embedder<Media.Audio> {
         return Math.max(1, (n + frameSize - 1) / frameSize);
     }
 
-    /** Encode one audio clip -> projected rows (nTokens x modelDim). */
+    /**
+     * Encode one audio clip -> projected rows (nTokens x modelDim), returned as a caller-owned
+     * GC-managed copy (the {@link #embed} seam skips the copy: its rows die with the per-encode
+     * scratch). Contract: at most one encode at a time per pipeline (the state's serial-pipeline
+     * law covers its media encodes); the tower is stateless, so many pipelines may share it.
+     */
     public FloatTensor encode(Media.Audio audio) {
+        try (Arena scratch = Arena.ofShared()) {
+            FloatTensor rows = encode(audio, scratch);
+            FloatTensor out = FloatTensor.allocateF32(Arena.ofAuto(), (int) rows.size());
+            rows.copyTo(0, out, 0, (int) rows.size());
+            return out;
+        }
+    }
+
+    private FloatTensor encode(Media.Audio audio, Arena scratch) {
         float[] pcm = toMono16k(audio);
         int n = pcm.length;
         int nTok = Math.max(1, (n + frameSize - 1) / frameSize); // ceil, non-overlapping frames
 
         // 1. frame the raw waveform: [nTok, frameSize], last frame zero-padded (no
         // windowing/normalization).
-        try (Arena scratch = Arena.ofShared()) { // per-encode scratch, freed on exit
-            FloatTensor frames = FloatTensor.allocateF32(scratch, nTok * frameSize);
-            Parallel.forRows(
-                    nTok,
-                    t -> {
-                        long row = (long) t * frameSize;
-                        int base = t * frameSize;
-                        for (int f = 0; f < frameSize; f++) {
-                            int src = base + f;
-                            frames.setFloat(row + f, src < n ? pcm[src] : 0f);
-                        }
-                    });
+        FloatTensor frames = FloatTensor.allocateF32(scratch, nTok * frameSize);
+        Parallel.forRows(
+                nTok,
+                t -> {
+                    long row = (long) t * frameSize;
+                    int base = t * frameSize;
+                    for (int f = 0; f < frameSize; f++) {
+                        int src = base + f;
+                        frames.setFloat(row + f, src < n ? pcm[src] : 0f);
+                    }
+                });
 
-            // 2. per-frame RMSNorm (no weight; embedding_pre_projection_norm), then the linear
-            // projection.
-            Parallel.forRows(
-                    nTok,
-                    t ->
-                            Norms.rmsnormNoWeight(
-                                    frames,
-                                    (long) t * frameSize,
-                                    frames,
-                                    (long) t * frameSize,
-                                    frameSize,
-                                    eps));
-            // returned to the caller, whose lifetime is independent of the encoder: GC-managed
-            FloatTensor rows = FloatTensor.allocateF32(Arena.ofAuto(), nTok * modelDim);
-            mmProj.gemm(frames, frameSize, rows, modelDim, nTok, modelDim, frameSize);
-            return rows;
-        }
+        // 2. per-frame RMSNorm (no weight; embedding_pre_projection_norm), then the linear
+        // projection.
+        Parallel.forRows(
+                nTok,
+                t ->
+                        Norms.rmsnormNoWeight(
+                                frames,
+                                (long) t * frameSize,
+                                frames,
+                                (long) t * frameSize,
+                                frameSize,
+                                eps));
+        FloatTensor rows = FloatTensor.allocateF32(scratch, nTok * modelDim);
+        mmProj.gemm(frames, frameSize, rows, modelDim, nTok, modelDim, frameSize);
+        return rows;
     }
 
     /** Number of audio tokens a clip of {@code nSamples} 16 kHz samples produces. */

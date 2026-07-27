@@ -133,20 +133,28 @@ public final class Gemma4Vision implements Embedder<Media.Image> {
 
     @Override
     public void embed(Media.Image image, int maxChunkSize, Consumer<FloatTensor> sink) {
-        FloatTensor rows = encode(image); // [nTokens, modelDim]
-        sink.accept(rows);
+        // Everything this encode touches (~340 MB/image at defaults), the projected rows
+        // included, lives in one owned arena freed on exit - per-call ofAuto here was the 51GB
+        // pathology for vision workloads (GC never runs in a native-heavy JVM). NOTHING escapes:
+        // the sink sees an ephemeral view (the Embedder contract) and must copy what it keeps.
+        try (Arena scratch = Arena.ofShared()) {
+            sink.accept(encode(image, scratch)); // [nTokens, modelDim]
+        }
     }
 
     /**
      * Encode one image → projected rows (nTokens × modelDim), all patches batched through the
-     * tower.
+     * tower, returned as a caller-owned GC-managed copy (the {@link #embed} seam skips the copy:
+     * its rows die with the per-encode scratch). Contract: at most one encode at a time per
+     * pipeline (the state's serial-pipeline law covers its media encodes); the tower itself is
+     * stateless - every mutable buffer is per-encode scratch - so many pipelines may share it.
      */
     public FloatTensor encode(Media.Image image) {
-        // Every scratch buffer of this encode (~340 MB/image at defaults) lives in one owned
-        // arena, freed on exit - per-call ofAuto here was the 51GB pathology for vision
-        // workloads (GC never runs in a native-heavy JVM). Only the projected return escapes.
         try (Arena scratch = Arena.ofShared()) {
-            return encode(image, scratch);
+            FloatTensor rows = encode(image, scratch);
+            FloatTensor out = FloatTensor.allocateF32(Arena.ofAuto(), (int) rows.size());
+            rows.copyTo(0, out, 0, (int) rows.size());
+            return out;
         }
     }
 
@@ -316,8 +324,7 @@ public final class Gemma4Vision implements Embedder<Media.Image> {
         // llama.cpp,
         // vs project→RMSNorm which let outliers to ~7.4 and drowned small-object features.
         Parallel.forRows(nTok, t -> rmsNoWeight(pooled, t * visionDim, visionDim));
-        // returned to the caller, whose lifetime is independent of the encoder: GC-managed
-        FloatTensor projected = FloatTensor.allocateF32(Arena.ofAuto(), nTok * modelDim);
+        FloatTensor projected = FloatTensor.allocateF32(scratch, nTok * modelDim);
         clampedGemm(pooled, projected, nTok, visionDim, modelDim, mmProj, mmProjClamp, clampTmp);
         return projected;
     }

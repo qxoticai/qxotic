@@ -95,11 +95,29 @@ public final class Gemma4VisionUnified implements Embedder<Media.Image> {
 
     @Override
     public void embed(Media.Image image, int maxChunkSize, Consumer<FloatTensor> sink) {
-        sink.accept(encode(image));
+        // NOTHING escapes: rows live in the per-encode scratch; the sink sees an ephemeral view
+        // (the Embedder contract) and must copy what it keeps.
+        try (Arena scratch = Arena.ofShared()) {
+            sink.accept(encode(image, scratch));
+        }
     }
 
-    /** Encode one image -> projected rows (nTokens x modelDim). */
+    /**
+     * Encode one image -> projected rows (nTokens x modelDim), returned as a caller-owned
+     * GC-managed copy (the {@link #embed} seam skips the copy: its rows die with the per-encode
+     * scratch). Contract: at most one encode at a time per pipeline (the state's serial-pipeline
+     * law covers its media encodes); the tower is stateless, so many pipelines may share it.
+     */
     public FloatTensor encode(Media.Image image) {
+        try (Arena scratch = Arena.ofShared()) {
+            FloatTensor rows = encode(image, scratch);
+            FloatTensor out = FloatTensor.allocateF32(Arena.ofAuto(), (int) rows.size());
+            rows.copyTo(0, out, 0, (int) rows.size());
+            return out;
+        }
+    }
+
+    private FloatTensor encode(Media.Image image, Arena scratch) {
         int ps = patchSize, factor = ps; // merge already baked into the conv patch
         int maxPixels = VisionPreprocess.budget(280) * factor * factor,
                 minPixels = 40 * factor * factor;
@@ -112,42 +130,39 @@ public final class Gemma4VisionUnified implements Embedder<Media.Image> {
                         }; // fixed-square fallback (256 tokens)
         int tw = wh[0], th = wh[1], px = tw / ps, n = px * (th / ps);
 
-        try (Arena scratch = Arena.ofShared()) { // per-encode scratch, freed on exit
-            // 1. im2col (48x48, channel-outer, [-1,1]) -> patch_norm.1 (LayerNorm)
-            FloatTensor flat = VisionPreprocess.im2col(image, tw, th, ps, scratch);
-            layerNorm(flat, n, patchVec, ln1w, ln1b);
+        // 1. im2col (48x48, channel-outer, [-1,1]) -> patch_norm.1 (LayerNorm)
+        FloatTensor flat = VisionPreprocess.im2col(image, tw, th, ps, scratch);
+        layerNorm(flat, n, patchVec, ln1w, ln1b);
 
-            // 2. conv patch-embed + bias, LayerNorm
-            FloatTensor cur = FloatTensor.allocateF32(scratch, n * visionDim);
-            patchEmbd.gemm(flat, patchVec, cur, visionDim, n, visionDim, patchVec);
-            addBias(cur, n, visionDim, patchBias);
-            layerNorm(cur, n, visionDim, ln2w, ln2b);
+        // 2. conv patch-embed + bias, LayerNorm
+        FloatTensor cur = FloatTensor.allocateF32(scratch, n * visionDim);
+        patchEmbd.gemm(flat, patchVec, cur, visionDim, n, visionDim, patchVec);
+        addBias(cur, n, visionDim, patchBias);
+        layerNorm(cur, n, visionDim, ln2w, ln2b);
 
-            // 3. + factorized 2D position, then pos-norm (LayerNorm)
-            Parallel.forRows(
-                    n,
-                    gi -> {
-                        int gy = gi / px,
-                                gx = gi % px,
-                                tok = gi * visionDim,
-                                xb = visionDim * gx,
-                                yb = visionDim * (gy + posSize);
-                        for (int d = 0; d < visionDim; d++)
-                            cur.setFloat(
-                                    (long) tok + d,
-                                    cur.getFloat((long) tok + d)
-                                            + posEmbd.getFloat(xb + d)
-                                            + posEmbd.getFloat(yb + d));
-                    });
-            layerNorm(cur, n, visionDim, ln3w, ln3b);
+        // 3. + factorized 2D position, then pos-norm (LayerNorm)
+        Parallel.forRows(
+                n,
+                gi -> {
+                    int gy = gi / px,
+                            gx = gi % px,
+                            tok = gi * visionDim,
+                            xb = visionDim * gx,
+                            yb = visionDim * (gy + posSize);
+                    for (int d = 0; d < visionDim; d++)
+                        cur.setFloat(
+                                (long) tok + d,
+                                cur.getFloat((long) tok + d)
+                                        + posEmbd.getFloat(xb + d)
+                                        + posEmbd.getFloat(yb + d));
+                });
+        layerNorm(cur, n, visionDim, ln3w, ln3b);
 
-            // 4. pre-projection RMSNorm (no weight) then mm projection
-            Parallel.forRows(n, t -> rmsNoWeight(cur, (long) t * visionDim, visionDim, rmsEps));
-            // returned to the caller, whose lifetime is independent of the encoder: GC-managed
-            FloatTensor rows = FloatTensor.allocateF32(Arena.ofAuto(), n * modelDim);
-            mmProj.gemm(cur, visionDim, rows, modelDim, n, modelDim, visionDim);
-            return rows;
-        }
+        // 4. pre-projection RMSNorm (no weight) then mm projection
+        Parallel.forRows(n, t -> rmsNoWeight(cur, (long) t * visionDim, visionDim, rmsEps));
+        FloatTensor rows = FloatTensor.allocateF32(scratch, n * modelDim);
+        mmProj.gemm(cur, visionDim, rows, modelDim, n, modelDim, visionDim);
+        return rows;
     }
 
     /** PyTorch LayerNorm over each row: (x - mean) / sqrt(var + eps) * w + b. */
