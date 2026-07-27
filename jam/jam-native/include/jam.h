@@ -145,10 +145,6 @@ JAM_API jam_status jam_mm(jam_ctx* ctx,
 JAM_API jam_isa     jam_active_isa(const jam_ctx* ctx);   /* the live kernel level; ctx==NULL -> global */
 JAM_API const char* jam_ctx_name(const jam_ctx* ctx);    /* the context's label ("" if unnamed); ctx==NULL -> global */
 
-/* Drop the internal repacked-weight cache entry for `w` (ctx==NULL -> global). The quant fast path repacks
- * each weight once and caches it keyed on the pointer, reused for the ctx lifetime. Call this BEFORE freeing
- * or overwriting a weight whose address may be reused, else a new weight at that address hits the stale
- * repack. No-op if `w` was never cached. Not safe to call concurrently with jam_mm on the same context. */
 
 /* Destroy the process-global context (the one jam_mm(NULL,...) uses) and free its pool + scratch. A no-op
  * if it was never created; a later jam_mm(NULL,...) lazily re-creates it (idempotent). Most callers never
