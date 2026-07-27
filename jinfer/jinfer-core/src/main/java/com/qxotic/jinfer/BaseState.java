@@ -73,6 +73,13 @@ public abstract class BaseState implements RuntimeState, AutoCloseable {
                     "model state is a single serial pipeline (one computation at a time) - for"
                             + " parallel pipelines create separate model instances/states");
         }
+        if (closed.get()) {
+            // barged the non-fair lock ahead of the draining closer: hand it straight over -
+            // this recheck makes "no computation begins once close is called" strict, not just
+            // "freed memory is never touched" (that one the lock alone guarantees)
+            lock.unlock();
+            throw new IllegalStateException("state is closed");
+        }
     }
 
     /** Releases one {@link #enter} claim. */
