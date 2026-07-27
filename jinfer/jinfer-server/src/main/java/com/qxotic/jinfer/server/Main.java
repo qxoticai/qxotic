@@ -243,7 +243,6 @@ public class Main {
         out.println("  --host <host>                 server bind host, default 127.0.0.1");
         out.println("  --port <int>                  server bind port, default 17325");
         out.println("  --prompt, -p <string>         input prompt");
-        out.println("  --suffix <string>             suffix for fill-in-the-middle request");
         out.println("  --system-prompt, -sp <string> system prompt for chat/instruct mode");
         out.println("  --temperature, -temp <float>  temperature in [0,inf], default 1.0");
         out.println(
@@ -266,9 +265,6 @@ public class Main {
         out.println(
                 "  --think <off|on|inline>       on: show thinking (default), off: hide thinking"
                         + " from output (model still generates it), inline: thoughts to stdout");
-        out.println(
-                "  --keep-past-thinking <bool>   keep prior assistant thinking in history (default"
-                        + " false)");
         out.println(
                 "  --raw-prompt                  bypass chat template and tokenize --prompt"
                         + " directly");
@@ -298,7 +294,6 @@ public class Main {
 
     static LLMOptions parseOptions(String[] args) {
         String prompt = null;
-        String suffix = null;
         String systemPrompt = null;
         float temperature = 1f;
         float topp = 0.95f;
@@ -314,7 +309,6 @@ public class Main {
         boolean think = true;
         boolean thinkInline = false;
         String colorMode = "auto";
-        boolean keepPastThinking = false;
         boolean rawPrompt = false;
         boolean noGrammar = false;
         Path promptCache = null;
@@ -347,7 +341,6 @@ public class Main {
                     }
                     switch (optionName) {
                         case "--prompt", "-p" -> prompt = nextArg;
-                        case "--suffix" -> suffix = nextArg;
                         case "--system-prompt", "-sp" -> systemPrompt = nextArg;
                         case "--temperature", "--temp" -> temperature = Float.parseFloat(nextArg);
                         case "--top-p" -> topp = Float.parseFloat(nextArg);
@@ -360,9 +353,6 @@ public class Main {
                                 stream = LLMOptions.parseBooleanOption(optionName, nextArg);
                         case "--echo" -> echo = LLMOptions.parseBooleanOption(optionName, nextArg);
                         case "--color" -> colorMode = nextArg.toLowerCase(Locale.ROOT);
-                        case "--keep-past-thinking" ->
-                                keepPastThinking =
-                                        LLMOptions.parseBooleanOption(optionName, nextArg);
                         case "--cache" -> promptCache = Path.of(nextArg);
                         case "--cache-ro" -> {
                             promptCache = Path.of(nextArg);
@@ -395,7 +385,6 @@ public class Main {
         return new LLMOptions(
                 modelPath,
                 prompt,
-                suffix,
                 systemPrompt,
                 interactive,
                 server,
@@ -410,7 +399,6 @@ public class Main {
                 think,
                 thinkInline,
                 color,
-                keepPastThinking,
                 rawPrompt,
                 noGrammar,
                 promptCache,

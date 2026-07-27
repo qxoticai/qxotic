@@ -7,7 +7,6 @@ import java.util.Locale;
 public record LLMOptions(
         Path modelPath,
         String prompt,
-        String suffix,
         String systemPrompt,
         boolean interactive,
         boolean server,
@@ -22,7 +21,6 @@ public record LLMOptions(
         boolean think,
         boolean thinkInline,
         boolean colors,
-        boolean keepPastThinking,
         boolean rawPrompt,
         boolean noGrammar,
         Path promptCache,
