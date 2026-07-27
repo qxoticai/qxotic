@@ -67,13 +67,13 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
         src/kernels/jam_kernels_ssse3.c)
 
     # AVX2 (Haswell 2013+): F32 mnpack + dense F16/BF16 + every quant via maddubs (no VNNI) — 32-block
-    # quants, K-quants + cached-repack rp kernels, NVFP4, Q1_0. Covers consumer/older CPUs.
+    # quants, the 8-row K-quant repack bands, NVFP4, Q1_0. Covers consumer/older CPUs.
     jam_isa_tu(jam_avx2 JAM_HAVE_AVX2 ON "-mavx2 -mfma -mf16c"
-        src/kernels/jam_kernels_avx2.c
+        src/kernels/jam_kernels_avx2.c src/kernels/jam_kernels_band8_avx2.c
         src/kernels/jam_kernels_nvfp4_avx2.c src/kernels/jam_kernels_q1_0_avx2.c)
 
-    # AVX-VNNI (Alder/Raptor Lake): 256-bit vpdpbusd without AVX-512 — the Q8_0/Q4_0 8-row repack bands,
-    # the pure-256 requant, and the *_rp_avxvnni cached-repack kernels (F32 reuses AVX2).
+    # AVX-VNNI (Alder/Raptor Lake): 256-bit vpdpbusd without AVX-512 — the Q8_0/Q4_0 8-row repack bands
+    # and the pure-256 requant (F32 reuses AVX2; K-quants use the avx2 8-row bands).
     jam_isa_tu(jam_avxvnni JAM_HAVE_AVXVNNI ON "-mavxvnni -mavx2 -mfma -mf16c"
         src/kernels/jam_kernels_avxvnni.c)
 

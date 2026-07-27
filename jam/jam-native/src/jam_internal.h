@@ -196,6 +196,15 @@ void jam_q8_0_requant(void* job, int b_begin, int b_end, int tid);             /
 void jam_mm_q4_0_f32_generic(void* job, int row_begin, int row_end, int tid);  /* portable floor (q8_job) */
 #ifdef JAM_HAVE_AVX2
 void jam_mm_mxfp4_avx2(void* job, int a_begin, int a_end, int tid);        /* maddubs + FP4 decode */
+/* 8-row K-quant repack bands (ymm + maddubs; jam_kernels_band8_avx2.c) - the K-quant prefill
+ * fast path below avx512-vnni. Same jam_q4k_job/jam_repack machinery as the VNNI bands. */
+void jam_q4k_quant_avx2(void* job, int s0, int s1, int tid);   /* phase 1: F32 -> s8 + per-16 raw sums */
+void jam_q4k_band8_avx2(void* job, int t0, int t1, int tid);
+void jam_q5k_band8_avx2(void* job, int t0, int t1, int tid);
+void jam_q6k_band8_avx2(void* job, int t0, int t1, int tid);
+void jam_q8_0_band8_avx2(void* job, int t0, int t1, int tid);  /* sign-trick maddubs */
+void jam_q4_0_band8_avx2(void* job, int t0, int t1, int tid);  /* unsigned nibble + 8d*sum(x) */
+void jam_mxfp4_band8_avx2(void* job, int t0, int t1, int tid); /* a+128 scheme (|code| <= 12) */
 void jam_mm_q4_0_avx2(void* job, int a_begin, int a_end, int tid);         /* maddubs + nibble-8 decode */
             /* cached-repack Q8_0 gemm (sign-trick maddubs) */
 void jam_mm_nvfp4_avx2(void* job, int rb, int re, int tid);                /* NVFP4: FP4 LUT + per-16 E4M3 */
