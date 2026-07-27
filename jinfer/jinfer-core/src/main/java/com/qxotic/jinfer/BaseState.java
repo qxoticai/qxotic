@@ -18,7 +18,8 @@ import java.util.concurrent.locks.ReentrantLock;
  * state degrades to GC-eventually rather than leaking); {@code newState(ctx, batch, arena)} borrows
  * the caller's arena and {@link #close()} never touches it - close YOUR arena only after your last
  * call returns (kernels read raw addresses; a live read from a closed arena is a crash, not an
- * exception).
+ * exception); {@code newState(ctx, batch, arena, true)} ADOPTS the caller's arena, fusing its
+ * lifetime into the state's (close frees it, co-tenants like weights included).
  *
  * <p>One lock carries the three run-time laws: entry points {@code tryLock} so two concurrent
  * computations fail fast with {@link ConcurrentModificationException} (the single-serial-pipeline

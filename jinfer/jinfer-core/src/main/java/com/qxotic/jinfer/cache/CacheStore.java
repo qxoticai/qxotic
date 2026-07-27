@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.cache;
 
+import com.qxotic.jinfer.LeakWatch;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.util.IdentityHashMap;
@@ -46,8 +47,7 @@ public interface CacheStore extends AutoCloseable {
         final class Store implements CacheStore {
             private static final java.lang.ref.Cleaner CLEANER = java.lang.ref.Cleaner.create();
             private final java.lang.ref.Cleaner.Cleanable backstop = CLEANER.register(this, sweep);
-            private final Runnable leakWatch =
-                    com.qxotic.jinfer.LeakWatch.arm(this, "in-memory CacheStore");
+            private final Runnable leakWatch = LeakWatch.arm(this, "in-memory CacheStore");
             private volatile long used;
 
             @Override

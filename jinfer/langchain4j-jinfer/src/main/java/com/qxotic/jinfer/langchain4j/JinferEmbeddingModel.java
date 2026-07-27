@@ -1,7 +1,9 @@
 package com.qxotic.jinfer.langchain4j;
 
+import com.qxotic.jinfer.BaseState;
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.FloatTensor;
+import com.qxotic.jinfer.RuntimeFlags;
 import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.jinfer.chat.LoadedEmbedder;
 import com.qxotic.jinfer.chat.Models;
@@ -12,6 +14,7 @@ import dev.langchain4j.model.output.Response;
 import dev.langchain4j.model.output.TokenUsage;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.lang.foreign.Arena;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -38,7 +41,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
     private JinferEmbeddingModel(Builder b) {
         // ONE arena for weights and state, adopted by the state: state.close() frees everything
         // (idempotent, blocking, Cleaner-backstopped - all BaseState's laws, implemented once)
-        java.lang.foreign.Arena arena = java.lang.foreign.Arena.ofShared();
+        Arena arena = Arena.ofShared();
         try {
             try {
                 // same contract as the chat builders: <= 0 means the model's own maximum (-1 to the
@@ -57,9 +60,8 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
         }
     }
 
-    private static <S extends RuntimeState> S newState(
-            LoadedEmbedder<S> l, int ctx, java.lang.foreign.Arena arena) {
-        return l.model().newState(ctx, com.qxotic.jinfer.RuntimeFlags.BATCH_CAPACITY, arena, true);
+    private static <S extends RuntimeState> S newState(LoadedEmbedder<S> l, int ctx, Arena arena) {
+        return l.model().newState(ctx, RuntimeFlags.BATCH_CAPACITY, arena, true);
     }
 
     /**
@@ -71,7 +73,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
     public void close() {
         lock.lock();
         try {
-            ((com.qxotic.jinfer.BaseState) state).close();
+            ((BaseState) state).close();
         } finally {
             lock.unlock();
         }

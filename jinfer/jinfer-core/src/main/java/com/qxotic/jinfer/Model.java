@@ -12,15 +12,17 @@ package com.qxotic.jinfer;
  *
  * <p>Lifetime: every buffer comes from a {@link java.lang.foreign.Arena}, and who provides the
  * arena owns it. Weights map into the arena given at load; states allocate from the arena given at
- * {@link #newState(int, int, java.lang.foreign.Arena)}, or from an internal owned arena that {@code
- * state.close()} frees deterministically ({@link #newState(int, int)}). Two laws the code cannot
- * enforce: an arena must outlive every read from it (kernels read raw addresses via {@code
- * FloatTensor.GLOBAL_SEGMENT} - the JDK's close handshake cannot save a raw read, so a violation is
- * a crash, not an exception), and the weights arena must outlive every model sharing those weights.
- * Every public entry point that runs kernels ({@link #ingest}, a head projection) is a default
- * wrapper: it claims the state (fail-fast single-pipeline contract, see {@link BaseState#enter()})
- * and its trailing reachability fence pins the model across the call - implementations override the
- * unfenced seam ({@link #forward}, ...) and callers never think about it.
+ * {@link #newState(int, int, java.lang.foreign.Arena)}, from an internal owned arena that {@code
+ * state.close()} frees deterministically ({@link #newState(int, int)}), or from a caller-created
+ * arena the state adopts and frees as its own ({@link #newState(int, int, java.lang.foreign.Arena,
+ * boolean)}). Two laws the code cannot enforce: an arena must outlive every read from it (kernels
+ * read raw addresses via {@code FloatTensor.GLOBAL_SEGMENT} - the JDK's close handshake cannot save
+ * a raw read, so a violation is a crash, not an exception), and the weights arena must outlive
+ * every model sharing those weights. Every public entry point that runs kernels ({@link #ingest}, a
+ * head projection) is a default wrapper: it claims the state (fail-fast single-pipeline contract,
+ * see {@link BaseState#enter()}) and its trailing reachability fence pins the model across the call
+ * - implementations override the unfenced seam ({@link #forward}, ...) and callers never think
+ * about it.
  */
 public interface Model<C extends Config, W, S extends RuntimeState> {
 

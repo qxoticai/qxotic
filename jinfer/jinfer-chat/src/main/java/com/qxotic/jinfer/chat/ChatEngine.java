@@ -2,6 +2,7 @@ package com.qxotic.jinfer.chat;
 
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.LanguageModel;
+import com.qxotic.jinfer.LeakWatch;
 import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.jinfer.cache.CacheStore;
 import com.qxotic.jinfer.cache.CachedSession;
@@ -18,6 +19,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
 
@@ -56,6 +58,7 @@ public final class ChatEngine {
                     java.util.concurrent.TimeUnit.SECONDS,
                     new java.util.concurrent.LinkedBlockingQueue<>(),
                     r -> new Thread(r, "jinfer-stream"));
+    private final AtomicReference<Thread> streamThread = new AtomicReference<>();
     private int sessionHits;
     private volatile boolean closed;
     private final java.lang.foreign.Arena
@@ -113,8 +116,7 @@ public final class ChatEngine {
             throw e;
         }
         // armed last: a ctor throw already cleaned up above and must not read as a leak
-        this.leakWatch =
-                com.qxotic.jinfer.LeakWatch.arm(this, "ChatEngine (owns the weights arena)");
+        this.leakWatch = LeakWatch.arm(this, "ChatEngine (owns the weights arena)");
     }
 
     /**
@@ -133,7 +135,7 @@ public final class ChatEngine {
                 base.mounted; // immutable artifact: safely shared, zero-prefill for forks too
         // a fresh live tree over the shared frozen base; codec-less models stay treeless
         this.prompts = base.prompts == null ? null : tree(loaded, promptStore, mounted);
-        this.leakWatch = com.qxotic.jinfer.LeakWatch.arm(this, "ChatEngine fork");
+        this.leakWatch = LeakWatch.arm(this, "ChatEngine fork");
     }
 
     /**
@@ -168,6 +170,11 @@ public final class ChatEngine {
      * no kernel of this engine touches state memory afterwards.
      */
     public void close() {
+        if (Thread.currentThread() == streamThread.get()) {
+            throw new IllegalStateException(
+                    "cannot close the model from its streaming callback; cancel the stream and"
+                            + " close after it ends");
+        }
         lock.lock();
         try {
             if (closed) return; // idempotent: the JDK arena close below is one-shot
@@ -202,7 +209,15 @@ public final class ChatEngine {
     /** Runs a streaming generation on the engine's single lazy driver thread. */
     public void stream(Runnable generation) {
         try {
-            streamDriver.execute(generation);
+            streamDriver.execute(
+                    () -> {
+                        streamThread.set(Thread.currentThread());
+                        try {
+                            generation.run();
+                        } finally {
+                            streamThread.compareAndSet(Thread.currentThread(), null);
+                        }
+                    });
         } catch (java.util.concurrent.RejectedExecutionException closed) {
             // the unbounded queue never rejects; rejection means the driver was shut down
             throw new IllegalStateException("the model is closed");

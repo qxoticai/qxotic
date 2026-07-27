@@ -9,6 +9,7 @@ import dev.langchain4j.model.output.TokenUsage;
 import dev.langchain4j.model.scoring.ScoringModel;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.lang.foreign.Arena;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -46,7 +47,7 @@ public final class JinferScoringModel implements ScoringModel, AutoCloseable {
     private JinferScoringModel(Builder b) {
         // ONE arena for weights and state, adopted by the state: state.close() frees everything
         // (idempotent, blocking, Cleaner-backstopped - all BaseState's laws, implemented once)
-        java.lang.foreign.Arena arena = java.lang.foreign.Arena.ofShared();
+        Arena arena = Arena.ofShared();
         try {
             try {
                 this.model =
