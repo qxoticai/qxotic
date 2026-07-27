@@ -17,6 +17,7 @@
   <properties>
     <jinfer.image.name>jinfer-bench</jinfer.image.name>
     <jinfer.image.mainClass>com.qxotic.jinfer.bench.JinferBench</jinfer.image.mainClass>
+    <maven.deploy.skip>true</maven.deploy.skip>
     <!-- no HTTP server here: jinfer.image.addModules stays at the inherited jdk.incubator.vector -->
   </properties>
 

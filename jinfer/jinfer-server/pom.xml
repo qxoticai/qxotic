@@ -18,6 +18,7 @@
     <jinfer.image.name>jinfer</jinfer.image.name>
     <jinfer.image.mainClass>com.qxotic.jinfer.server.Main</jinfer.image.mainClass>
     <jinfer.image.addModules>jdk.incubator.vector,jdk.httpserver</jinfer.image.addModules>
+    <maven.deploy.skip>true</maven.deploy.skip>
   </properties>
 
   <dependencies>
