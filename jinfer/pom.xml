@@ -29,7 +29,7 @@
     <module>jinfer-nemotronh</module>
     <module>jinfer-lfm2</module>
     <module>jinfer-server</module>
-    <module>langchain4j-jinfer</module>
+    <module>jinfer-langchain4j</module>
     <module>jinfer-spring-ai</module>
     <module>jinfer-spring-ai-autoconfigure</module>
     <module>jinfer-spring-ai-spring-boot-starter</module>
