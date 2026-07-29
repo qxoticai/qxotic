@@ -2,7 +2,14 @@
  * Spring AI provider backed by jinfer: in-process CPU inference over a local GGUF, no server.
  * {@link com.qxotic.jinfer.spring.ai.JinferChatModel} is the entry point (blocking {@code call} and
  * reactive {@code stream} on one object); configure per request via {@link
- * com.qxotic.jinfer.spring.ai.JinferChatOptions}.
+ * com.qxotic.jinfer.spring.ai.JinferChatOptions}. {@link
+ * com.qxotic.jinfer.spring.ai.JinferEmbeddingModel} covers embeddings and {@link
+ * com.qxotic.jinfer.spring.ai.JinferDocumentPostProcessor} reranks retrieved documents in a RAG
+ * pipeline's post-retrieval stage (Spring AI models reranking as a step, not as a model type).
+ *
+ * <p>One model instance is ONE serial inference pipeline: concurrent calls queue fairly on it, and
+ * a second pipeline means a second model over the same GGUF (the weight pages are shared by the OS
+ * page cache, so the added cost is one context plus one load).
  *
  * <h2>Structured output</h2>
  *
