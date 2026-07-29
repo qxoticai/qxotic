@@ -1,6 +1,8 @@
 package com.qxotic.jinfer.langchain4j;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.testkit.ModelFixture;
 import dev.langchain4j.data.message.SystemMessage;
@@ -113,6 +115,40 @@ class JinferLifecycleIT {
         if (failure.get() != null) {
             org.junit.jupiter.api.Assertions.assertInstanceOf(
                     IllegalStateException.class, failure.get(), String.valueOf(failure.get()));
+        }
+    }
+
+    @Test
+    void requestsReuseOneContextInsteadOfAllocatingPerGeneration() {
+        // the pool IS the allocator: the first request allocates this pipeline's context, every
+        // later one reuses it (reset between requests). N requests cost ONE context, and the
+        // stateless default never keeps a conversation across them.
+        Assumptions.assumeTrue(Files.exists(SMALL), "model not found: " + SMALL);
+        try (JinferChatModel model = load()) {
+            for (int i = 0; i < 5; i++) {
+                model.chat(UserMessage.from("say hi to guest " + i));
+            }
+            String stats = model.engine.sessionStats();
+            assertTrue(stats.contains("allocations=1"), "one context for five requests: " + stats);
+            assertTrue(stats.contains("hits=0"), "the default matches nothing: " + stats);
+            assertTrue(stats.contains("sessions=1"), "the allocation stays pooled: " + stats);
+        }
+    }
+
+    @Test
+    void theStatelessDefaultKeepsNoConversationBetweenRequests() {
+        // "nothing persists" has to mean the KV too: the pooled allocation is wiped when its
+        // reply ends, so an unrelated request cannot see the previous conversation - and an
+        // identical request must re-prefill rather than extend anything
+        Assumptions.assumeTrue(Files.exists(SMALL), "model not found: " + SMALL);
+        try (JinferChatModel model = load()) {
+            String first = model.chat(UserMessage.from("name a colour")).aiMessage().text();
+            model.chat(UserMessage.from("name a country"));
+            String again = model.chat(UserMessage.from("name a colour")).aiMessage().text();
+            assertEquals(first, again, "a greedy request must not depend on what ran before it");
+            assertTrue(
+                    model.engine.sessionStats().contains("hits=0"),
+                    "the stateless default must never serve from a kept conversation");
         }
     }
 

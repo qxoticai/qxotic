@@ -1,9 +1,7 @@
 package com.qxotic.jinfer.langchain4j;
 
 import com.qxotic.jinfer.chat.ChatEngine;
-import com.qxotic.jinfer.chat.ReplyLanes;
 import com.qxotic.jinfer.chat.ReplyParser;
-import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.TextStops;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.model.chat.StreamingChatModel;
@@ -65,7 +63,7 @@ public final class JinferStreamingChatModel implements StreamingChatModel, AutoC
     public void doChat(ChatRequest request, StreamingChatResponseHandler handler) {
         // the WHOLE preparation is synchronous: every request-shape rejection (unsupported
         // params, media the model cannot frame, remote URLs) throws raw from chat(), unwrapped
-        JinferChatModel.Prepared p = JinferChatModel.prepare(model, request);
+        ChatEngine.Prepared p = model.prepare(request);
         model.engine.stream(
                 () -> {
                     try {
@@ -76,12 +74,8 @@ public final class JinferStreamingChatModel implements StreamingChatModel, AutoC
                 });
     }
 
-    private void stream(JinferChatModel.Prepared p, StreamingChatResponseHandler handler) {
+    private void stream(ChatEngine.Prepared p, StreamingChatResponseHandler handler) {
         ChatEngine engine = model.engine;
-        List<String> stops = p.stops() == null ? List.of() : p.stops();
-        ReplyLanes lanes =
-                new ReplyLanes(p.encoded().template(), engine.loaded().tokenizer(), p.parserSeed());
-
         AtomicBoolean cancelled = new AtomicBoolean();
         StreamingHandle handle =
                 new StreamingHandle() {
@@ -96,52 +90,39 @@ public final class JinferStreamingChatModel implements StreamingChatModel, AutoC
                     }
                 };
         PartialResponseContext context = new PartialResponseContext(handle);
-
-        // the holdback keeps any could-still-be-a-stop suffix unemitted; safe chars flow through
-        TextStops.Holdback watch =
-                new TextStops.Holdback(
-                        stops,
-                        out ->
+        ChatEngine.Completion done =
+                engine.complete(
+                        p,
+                        new ChatEngine.ReplySink() {
+                            @Override
+                            public void content(String delta) {
                                 safely(
                                         handler,
                                         () ->
                                                 handler.onPartialResponse(
-                                                        new PartialResponse(out), context)));
-        Generator.TokenSink sink =
-                token -> {
-                    if (cancelled.get()) return false;
-                    String fragment = lanes.feed(token);
-                    boolean reasoning = lanes.reasoning();
-                    if (!fragment.isEmpty()) {
-                        if (reasoning) {
-                            safely(
-                                    handler,
-                                    () -> handler.onPartialThinking(new PartialThinking(fragment)));
-                        } else {
-                            watch.accept(fragment); // stop strings match the content lane only
-                        }
-                    }
-                    return !cancelled.get() && !watch.stopped();
-                };
+                                                        new PartialResponse(delta), context));
+                            }
 
-        Generator.GenerationResult result =
-                engine.generate(
-                                p.encoded().prompt(),
-                                p.sampler(),
-                                p.maxTokens(),
-                                model.timeoutNanos,
-                                sink,
-                                p.cached())
-                        .result();
+                            @Override
+                            public void thinking(String delta) {
+                                safely(
+                                        handler,
+                                        () ->
+                                                handler.onPartialThinking(
+                                                        new PartialThinking(delta)));
+                            }
 
-        if (cancelled.get()) {
+                            @Override
+                            public boolean cancelled() {
+                                return cancelled.get();
+                            }
+                        });
+        if (done.cancelled()) {
             return; // a cancelled stream ends silently: no complete callback
         }
-        watch.flush(); // release the held-back chars (a stopped watch emits nothing past the cut)
-        AiMessage ai = Mappings.toAiMessage(lanes.finish());
-        boolean stopHit = watch.stopped();
-        if (stopHit) {
-            ai = Mappings.withText(ai, TextStops.apply(ai.text(), stops).text());
+        AiMessage ai = Mappings.toAiMessage(done.reply());
+        if (done.stopped()) {
+            ai = Mappings.withText(ai, TextStops.apply(ai.text(), p.stops()).text());
         }
         if (ai.hasToolExecutionRequests()) {
             for (int i = 0; i < ai.toolExecutionRequests().size(); i++) {
@@ -150,7 +131,8 @@ public final class JinferStreamingChatModel implements StreamingChatModel, AutoC
             }
         }
         ChatResponse response =
-                Mappings.response(engine.modelName(), ai, p.promptTokens(), result, stopHit);
+                Mappings.response(
+                        engine.modelName(), ai, p.promptTokens(), done.result(), done.stopped());
         safely(handler, () -> handler.onCompleteResponse(response));
     }
 

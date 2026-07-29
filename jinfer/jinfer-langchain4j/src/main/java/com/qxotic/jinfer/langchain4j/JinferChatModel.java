@@ -1,21 +1,14 @@
 package com.qxotic.jinfer.langchain4j;
 
-import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.chat.CachedPrompt;
 import com.qxotic.jinfer.chat.ChatEngine;
-import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.Message;
-import com.qxotic.jinfer.chat.ReplyLanes;
-import com.qxotic.jinfer.chat.RequestPolicy;
-import com.qxotic.jinfer.chat.Tool;
-import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.Grammar;
-import com.qxotic.jinfer.llm.Sampler;
 import com.qxotic.jinfer.llm.TextStops;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.exception.UnsupportedFeatureException;
-import dev.langchain4j.internal.JsonSchemaElementUtils;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.listener.ChatModelListener;
 import dev.langchain4j.model.chat.request.ChatRequest;
@@ -36,11 +29,11 @@ import java.util.List;
  * models or unframeable requests.
  *
  * <p>Concurrency contract: an instance is ONE serial inference pipeline - concurrent requests queue
- * fairly on it. For parallel pipelines call {@code copy()}: siblings share the already-loaded model
- * (zero reload, no extra weight memory) and each owns its own serial pipeline. Footprint: an
- * instance holds its weights (shared across copies), at most {@code cachedSessions} full-context
- * states (recycled - extended on a prefix hit, reset on a miss, never re-allocated per request),
- * plus one KV block set per defined cached prompt (explicit and deliberately paid for).
+ * fairly on it. For a second pipeline, build a second model: the weight PAGES are shared by the OS
+ * page cache, so the added cost is one context plus one load. Footprint: an instance holds its
+ * weights, ONE full-context state reused for every request (extended on a prefix hit when {@code
+ * cachedSessions} is set, reset otherwise - never re-allocated per request), plus one KV block set
+ * per defined cached prompt (explicit and deliberately paid for).
  *
  * <p>Three caching tiers, near-homonyms with distinct jobs: {@code withCachedPrompt} defines a LIVE
  * shared prefix (prefilled once, restored per request - the system-prompt/tools/few-shot case);
@@ -65,15 +58,6 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     // prefix, its KV restored from the engine's block tree instead of re-prefilled.
     final CachedPrompt prefix;
 
-    /** A view's prefix in jinfer types; {@link #EMPTY} for the base model. */
-    record CachedPrompt(List<Message> messages, List<Tool> tools) {
-        static final CachedPrompt EMPTY = new CachedPrompt(List.of(), List.of());
-
-        boolean isEmpty() {
-            return messages.isEmpty() && tools.isEmpty();
-        }
-    }
-
     private JinferChatModel(Builder b) {
         this.engine =
                 new ChatEngine(
@@ -86,7 +70,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         this.seed = b.seed;
         this.timeoutNanos = b.timeout == null ? 0 : b.timeout.toNanos();
         this.listeners = List.copyOf(b.listeners);
-        this.prefix = CachedPrompt.EMPTY;
+        this.prefix = CachedPrompt.NONE;
         // Jinfer-typed ALWAYS: ChatModel.chat merges defaults.overrideWith(request), and only a
         // jinfer-typed receiver preserves grammar/seed from either side of the merge
         JinferChatRequestParameters base =
@@ -103,16 +87,6 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             rejectUnsupported(this.defaults);
             rejectModelSwitch(engine, this.defaults);
         }
-    }
-
-    private JinferChatModel(JinferChatModel base, ChatEngine fork) {
-        this.engine = fork;
-        this.defaults = base.defaults;
-        this.thinking = base.thinking;
-        this.seed = base.seed;
-        this.timeoutNanos = base.timeoutNanos;
-        this.listeners = base.listeners;
-        this.prefix = CachedPrompt.EMPTY;
     }
 
     private JinferChatModel(JinferChatModel base, CachedPrompt prefix) {
@@ -142,35 +116,14 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
      */
     public JinferChatModel withCachedPrompt(
             List<ChatMessage> prefixMessages, List<ToolSpecification> tools) {
-        List<Message> messages = new ArrayList<>(prefix.messages());
-        messages.addAll(Mappings.toMessages(prefixMessages)); // converted ONCE, media decoded here
-        List<Tool> welded = new ArrayList<>(prefix.tools());
-        if (tools != null) {
-            welded.addAll(Mappings.toTools(tools));
-        }
-        return withPrefix(new CachedPrompt(List.copyOf(messages), List.copyOf(welded)));
-    }
-
-    /**
-     * An independent sibling of this model: shares the loaded weights/tokenizer/template (nothing
-     * reloads, no extra weight memory) but owns its OWN serial inference pipeline - lock, caches,
-     * stream driver. THE way to run several pipelines of one model in parallel. A copy's lifecycle
-     * is independent: closing it never affects the base or other copies (views, by contrast, share
-     * their creator's engine - closing any of them closes all). Cached-prompt definitions are not
-     * carried over, but a MOUNTED artifact is (the frozen tier is immutable, shared safely);
-     * defaults and knobs are. A copy of a VIEW re-defines its prefix on the fresh pipeline (one
-     * prefill).
-     */
-    public JinferChatModel copy() {
-        JinferChatModel base = new JinferChatModel(this, engine.fork());
-        return prefix.isEmpty() ? base : base.withPrefix(prefix);
+        return withPrefix(
+                prefix.merge(
+                        Mappings.toMessages(prefixMessages),
+                        tools == null ? List.of() : Mappings.toTools(tools)));
     }
 
     private JinferChatModel withPrefix(CachedPrompt merged) {
-        framed(
-                () ->
-                        engine.define(
-                                new Conversation(merged.messages(), merged.tools(), thinking, "")));
+        framed(() -> engine.define(merged.conversation(thinking)));
         return new JinferChatModel(this, merged);
     }
 
@@ -209,35 +162,14 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
 
     @Override
     public ChatResponse doChat(ChatRequest request) {
-        Prepared p = prepare(this, request);
-        List<String> stops = p.stops() == null ? List.of() : p.stops();
-        TextStops.Holdback watch =
-                stops.isEmpty() ? null : new TextStops.Holdback(stops, ignored -> {});
-        ReplyLanes lanes =
-                new ReplyLanes(p.encoded().template(), engine.loaded().tokenizer(), p.parserSeed());
-        Generator.TokenSink sink =
-                token -> {
-                    String fragment = lanes.feed(token);
-                    if (watch != null && !lanes.reasoning() && !fragment.isEmpty()) {
-                        watch.accept(fragment); // stop strings match the content lane only
-                    }
-                    return watch == null || !watch.stopped();
-                };
-        Generator.GenerationResult result =
-                engine.generate(
-                                p.encoded().prompt(),
-                                p.sampler(),
-                                p.maxTokens(),
-                                timeoutNanos,
-                                sink,
-                                p.cached())
-                        .result();
-        AiMessage ai = Mappings.toAiMessage(lanes.finish());
-        boolean stopHit = watch != null && watch.stopped();
-        if (stopHit) {
-            ai = Mappings.withText(ai, TextStops.apply(ai.text(), stops).text());
+        ChatEngine.Prepared p = prepare(request);
+        ChatEngine.Completion done = engine.complete(p, ChatEngine.ReplySink.NONE);
+        AiMessage ai = Mappings.toAiMessage(done.reply());
+        if (done.stopped()) {
+            ai = Mappings.withText(ai, TextStops.apply(ai.text(), p.stops()).text());
         }
-        return Mappings.response(engine.modelName(), ai, p.promptTokens(), result, stopHit);
+        return Mappings.response(
+                engine.modelName(), ai, p.promptTokens(), done.result(), done.stopped());
     }
 
     /**
@@ -258,148 +190,84 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
 
     // ---- shared request preparation (also used by the streaming twin) ----
 
-    record Prepared(
-            ChatEngine.Encoded encoded,
-            Sampler sampler,
-            int maxTokens,
-            int promptTokens,
-            boolean cached,
-            int[] parserSeed,
-            List<String> stops) {}
-
     /** Every request-shape rejection, synchronously; both entry points reach it via prepare(). */
-    static void validate(JinferChatModel m, ChatRequest request) {
+    void validate(ChatRequest request) {
         ChatRequestParameters p = request.parameters();
         rejectUnsupported(p);
-        rejectModelSwitch(m.engine, p);
+        rejectModelSwitch(engine, p);
         boolean requestHasTools =
                 p.toolSpecifications() != null && !p.toolSpecifications().isEmpty();
-        if (!m.prefix.isEmpty() && requestHasTools) {
+        if (!prefix.isEmpty() && requestHasTools) {
             throw new UnsupportedFeatureException(
                     "a cached-prompt view welds its tools into the cached prefix; per-request"
                             + " toolSpecifications would silently forfeit the cache - put tools on"
                             + " withCachedPrompt(...) instead");
         }
-        if (p.toolChoice() == ToolChoice.REQUIRED
-                && !requestHasTools
-                && m.prefix.tools().isEmpty()) {
+        if (p.toolChoice() == ToolChoice.REQUIRED && !requestHasTools && prefix.tools().isEmpty()) {
             throw new IllegalArgumentException("toolChoice REQUIRED without any tools");
         }
-        if (p.toolChoice() == ToolChoice.NONE && !m.prefix.tools().isEmpty()) {
+        if (p.toolChoice() == ToolChoice.NONE && !prefix.tools().isEmpty()) {
             throw new UnsupportedFeatureException(
                     "toolChoice NONE on a cached-prompt view is not supported: the view's tools"
                             + " are welded into its cached prefix and cannot be un-offered");
         }
     }
 
-    static Prepared prepare(JinferChatModel m, ChatRequest request) {
-        validate(m, request);
+    /** Framework types mapped away; every policy below this line lives in {@link ChatEngine}. */
+    ChatEngine.Prepared prepare(ChatRequest request) {
+        validate(request);
         ChatRequestParameters p = request.parameters();
-        boolean cached = !m.prefix.isEmpty();
+        boolean cached = !prefix.isEmpty();
         // NONE = the model cannot use tools: never offer them, and there is nothing to call
         List<ToolSpecification> requestTools =
                 p.toolChoice() == ToolChoice.NONE || p.toolSpecifications() == null
                         ? List.of()
                         : p.toolSpecifications();
-        ChatEngine engine = m.engine;
-        int maxTokens = p.maxOutputTokens() == null ? -1 : p.maxOutputTokens();
-        boolean required = p.toolChoice() == ToolChoice.REQUIRED;
-        // a think span cannot fit a tiny completion budget: below the floor, reasoning is
-        // disabled outright (scaffold and sampler both) so the budget buys VISIBLE text.
-        // A forced call also skips thinking: the reply is seeded INTO the call block.
-        boolean think =
-                m.thinking
-                        && (maxTokens < 0 || maxTokens >= RequestPolicy.THINK_FLOOR)
-                        && !required;
-        List<Message> messages = new ArrayList<>(m.prefix.messages());
+        List<Message> messages = new ArrayList<>(prefix.messages());
         messages.addAll(Mappings.toMessages(request.messages()));
-        Conversation conversation =
-                new Conversation(
-                        messages,
-                        cached ? m.prefix.tools() : Mappings.toTools(requestTools),
-                        think,
-                        "");
-        // cached views are native-only (define enforced it); the base keeps the Jinja fallback
+        JinferChatRequestParameters j = p instanceof JinferChatRequestParameters jp ? jp : null;
         List<ChatMessage> requestMessages = request.messages();
-        ChatEngine.Encoded encoded =
-                framed(
-                        () ->
-                                cached
-                                        ? engine.encodeNative(conversation)
-                                        : engine.encode(
-                                                conversation,
-                                                () -> Mappings.toMessageMaps(requestMessages),
-                                                () -> Mappings.toToolMaps(requestTools)));
-        Sampler sampler = sampler(m, p, think, maxTokens);
-        // the parser pre-feed: the generation prompt's reply-grammar tail (a prompt-opened think
-        // span); a forced call replaces it with the recipe's own (reply seeded into the call block)
-        int[] parserSeed = encoded.template().map(t -> t.replySeed(think)).orElse(new int[0]);
-        if (required) {
-            // the shared recipe: seed the family's call marker into the prompt, prefix-pin the
-            // offered names + header epilogue, pre-feed the parser - one unsplittable value
-            RequestPolicy.ForcedCall f =
-                    RequestPolicy.forceCall(engine.loaded(), conversation.tools(), sampler)
-                            .orElseThrow(
-                                    () ->
-                                            new UnsupportedFeatureException(
-                                                    "ToolChoice.REQUIRED is not supported by this"
-                                                        + " model: forcing seeds the reply with the"
-                                                        + " family's call marker, which needs a"
-                                                        + " native codec that declares one"));
-            List<Batch> prompt = new ArrayList<>(encoded.prompt());
-            prompt.add(f.seed());
-            encoded = new ChatEngine.Encoded(List.copyOf(prompt), encoded.template());
-            sampler = f.sampler();
-            parserSeed = f.parserSeed();
-        }
-        int promptTokens = encoded.prompt().stream().mapToInt(Batch::count).sum();
-        return new Prepared(
-                encoded, sampler, maxTokens, promptTokens, cached, parserSeed, p.stopSequences());
+        ChatEngine.Request lowered =
+                new ChatEngine.Request(
+                        messages,
+                        cached ? prefix.tools() : Mappings.toTools(requestTools),
+                        thinking,
+                        p.maxOutputTokens() == null ? -1 : p.maxOutputTokens(),
+                        timeoutNanos,
+                        p.temperature() == null ? 0.0f : p.temperature().floatValue(),
+                        p.topP() == null ? 0.95f : p.topP().floatValue(),
+                        j != null && j.seed() != null ? j.seed() : seed,
+                        grammar(p, j),
+                        p.toolChoice() == ToolChoice.REQUIRED,
+                        cached,
+                        p.stopSequences());
+        return framed(
+                () ->
+                        engine.prepare(
+                                lowered,
+                                () -> Mappings.toMessageMaps(requestMessages),
+                                () -> Mappings.toToolMaps(requestTools)));
     }
 
     /**
-     * The request's sampling stack via the shared {@link ChatEngine} policy, plus
-     * grammar-constrained JSON when the request asks for it (schema compiled here - the framework
-     * conversion is this adapter's; specs are cached per grammar source, so repeated schemas reuse
-     * the compiled masks).
+     * The request's decoding constraint, if any - the one piece of the sampling stack that is
+     * genuinely framework-shaped: langchain4j spells it as a response format (schemaless JSON or a
+     * typed schema) or, jinfer-typed, as raw GBNF. Specs cache per (source, vocab), so repeated
+     * schemas reuse the compiled masks.
      */
-    private static Sampler sampler(
-            JinferChatModel m, ChatRequestParameters p, boolean think, int maxTokens) {
-        var loaded = m.engine.loaded();
-        JinferChatRequestParameters j = p instanceof JinferChatRequestParameters jp ? jp : null;
-        long seed = j != null && j.seed() != null ? j.seed() : m.seed;
-        Sampler sampler =
-                RequestPolicy.sampler(
-                        loaded,
-                        p.temperature() == null ? 0.0f : p.temperature().floatValue(),
-                        p.topP() == null ? 0.95f : p.topP().floatValue(),
-                        seed,
-                        think,
-                        maxTokens,
-                        null);
+    private Grammar.Spec grammar(ChatRequestParameters p, JinferChatRequestParameters j) {
+        var tokenizer = engine.loaded().tokenizer();
         ResponseFormat rf = p.responseFormat();
         if (rf != null && rf.type() == ResponseFormatType.JSON) {
-            Grammar.Spec spec =
-                    rf.jsonSchema() == null
-                            ? Grammar.json(loaded.tokenizer())
-                            : Grammar.fromSchema(
-                                    JsonSchemaElementUtils.toMap(rf.jsonSchema().rootElement()),
-                                    loaded.tokenizer());
-            sampler = RequestPolicy.constrained(loaded, sampler, spec.cursor(), think);
-        } else if (j != null && j.grammar() != null) {
-            // raw GBNF - the JSON format's generalization, same think gating (validate()
-            // guaranteed the two are not combined); specs cache by source, repeats are free
-            sampler =
-                    RequestPolicy.constrained(
-                            loaded,
-                            sampler,
-                            Grammar.of(j.grammar(), loaded.tokenizer()).cursor(),
-                            think);
+            return rf.jsonSchema() == null
+                    ? Grammar.json(tokenizer)
+                    : Grammar.fromSchema(
+                            Mappings.toSchemaMap(rf.jsonSchema().rootElement()), tokenizer);
         }
-        return sampler;
+        // raw GBNF: the JSON format's generalization (validate() guaranteed they are not combined)
+        return j == null || j.grammar() == null ? null : Grammar.of(j.grammar(), tokenizer);
     }
 
-    /** The engine's neutral unsupported signal, as the framework's typed exception. */
     private static <T> T framed(java.util.function.Supplier<T> op) {
         try {
             return op.get();
@@ -491,8 +359,13 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
          * request whose prompt strictly extends a kept conversation (its echoed turns re-encoding
          * to the exact generated tokens - the native codec's verbatim splice guarantees this for
          * unmodified echoes) pays prefill only for the delta. Purely a runtime warmth knob: output
-         * is byte-identical to a cold run, nothing persists, and the default 0 keeps the model
-         * fully stateless. Each kept state holds a full context of KV.
+         * is byte-identical to a cold run and nothing persists. Each kept conversation holds a full
+         * context of KV.
+         *
+         * <p>The default 0 keeps the model stateless between requests - its state is wiped the
+         * moment a reply ends, so no conversation survives the call - but the ALLOCATION is still
+         * reused: a pipeline allocates its context once and never per request, whatever this is set
+         * to. This knob buys warmth, not memory reuse.
          */
         public Builder cachedSessions(int cachedSessions) {
             this.cachedSessions = cachedSessions;

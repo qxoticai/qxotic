@@ -5,6 +5,7 @@ import com.qxotic.jinfer.chat.JsonCodec;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.OpenAiMaps;
 import com.qxotic.jinfer.chat.Part;
+import com.qxotic.jinfer.chat.ReplyParts;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.chat.ToolCallSyntax;
@@ -25,7 +26,18 @@ import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.data.message.VideoContent;
 import dev.langchain4j.exception.UnsupportedFeatureException;
-import dev.langchain4j.internal.JsonSchemaElementUtils;
+import dev.langchain4j.model.chat.request.json.JsonAnyOfSchema;
+import dev.langchain4j.model.chat.request.json.JsonArraySchema;
+import dev.langchain4j.model.chat.request.json.JsonBooleanSchema;
+import dev.langchain4j.model.chat.request.json.JsonEnumSchema;
+import dev.langchain4j.model.chat.request.json.JsonIntegerSchema;
+import dev.langchain4j.model.chat.request.json.JsonNullSchema;
+import dev.langchain4j.model.chat.request.json.JsonNumberSchema;
+import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
+import dev.langchain4j.model.chat.request.json.JsonRawSchema;
+import dev.langchain4j.model.chat.request.json.JsonReferenceSchema;
+import dev.langchain4j.model.chat.request.json.JsonSchemaElement;
+import dev.langchain4j.model.chat.request.json.JsonStringSchema;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.output.FinishReason;
 import dev.langchain4j.model.output.TokenUsage;
@@ -231,7 +243,90 @@ final class Mappings {
         return OpenAiMaps.tool(
                 spec.name(),
                 spec.description(),
-                spec.parameters() != null ? JsonSchemaElementUtils.toMap(spec.parameters()) : null);
+                spec.parameters() != null ? toSchemaMap(spec.parameters()) : null);
+    }
+
+    // ---- JSON Schema: langchain4j's typed tree -> the plain map jinfer's grammar and templates
+    // consume. Deliberately written against the PUBLIC dev.langchain4j.model.chat.request.json
+    // types: langchain4j ships an internal JsonSchemaElementUtils.toMap that does this, but an
+    // internal class can change in a patch release, and this is the one conversion both the tool
+    // declarations and the structured-output grammar rest on. MappingsTest pins it against that
+    // internal implementation as an oracle, so a semantic drift upstream fails a test rather than
+    // a user's prompt. ----
+
+    /** One schema element as a plain JSON-Schema map (recursive; ordering is insertion order). */
+    static Map<String, Object> toSchemaMap(JsonSchemaElement element) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        switch (element) {
+            case JsonObjectSchema o -> {
+                map.put("type", "object");
+                putIfPresent(map, "description", o.description());
+                Map<String, Object> properties = new LinkedHashMap<>();
+                if (o.properties() != null) {
+                    o.properties()
+                            .forEach((name, child) -> properties.put(name, toSchemaMap(child)));
+                }
+                map.put("properties", properties);
+                // ALWAYS present, empty list included: an object with no required properties still
+                // renders "required": [] in the declaration models were trained on. Note
+                // additionalProperties is deliberately NOT emitted - langchain4j's own conversion
+                // drops it here, and these bytes go into the prompt
+                map.put("required", o.required() == null ? List.of() : List.copyOf(o.required()));
+                if (o.definitions() != null && !o.definitions().isEmpty()) {
+                    Map<String, Object> defs = new LinkedHashMap<>();
+                    o.definitions().forEach((name, child) -> defs.put(name, toSchemaMap(child)));
+                    map.put("$defs", defs);
+                }
+            }
+            case JsonArraySchema a -> {
+                map.put("type", "array");
+                putIfPresent(map, "description", a.description());
+                map.put("items", toSchemaMap(a.items()));
+            }
+            case JsonEnumSchema e -> {
+                map.put("type", "string");
+                putIfPresent(map, "description", e.description());
+                map.put("enum", List.copyOf(e.enumValues()));
+            }
+            case JsonAnyOfSchema anyOf -> {
+                putIfPresent(map, "description", anyOf.description());
+                List<Object> alternatives = new ArrayList<>();
+                for (JsonSchemaElement child : anyOf.anyOf()) alternatives.add(toSchemaMap(child));
+                map.put("anyOf", alternatives);
+            }
+            // the reference holds the DEFINITION NAME; the pointer prefix is added here (same rule
+            // as langchain4j's conversion, so a name already spelled as a pointer double-prefixes)
+            case JsonReferenceSchema r -> putIfPresent(map, "$ref", "#/$defs/" + r.reference());
+            case JsonRawSchema raw -> {
+                // already JSON text: parse it rather than re-describe it
+                Object parsed = JsonCodec.parse(raw.schema());
+                if (!(parsed instanceof Map)) {
+                    throw new UnsupportedFeatureException(
+                            "a raw JSON schema must be a JSON object, got: " + raw.schema());
+                }
+                @SuppressWarnings("unchecked")
+                Map<String, Object> object = (Map<String, Object>) parsed;
+                return object;
+            }
+            case JsonStringSchema s -> scalar(map, "string", s.description());
+            case JsonIntegerSchema i -> scalar(map, "integer", i.description());
+            case JsonNumberSchema n -> scalar(map, "number", n.description());
+            case JsonBooleanSchema b -> scalar(map, "boolean", b.description());
+            case JsonNullSchema ignored -> map.put("type", "null");
+            default ->
+                    throw new UnsupportedFeatureException(
+                            "unsupported JSON schema element: " + element.getClass().getName());
+        }
+        return map;
+    }
+
+    private static void scalar(Map<String, Object> map, String type, String description) {
+        map.put("type", type);
+        putIfPresent(map, "description", description);
+    }
+
+    private static void putIfPresent(Map<String, Object> map, String key, Object value) {
+        if (value != null) map.put(key, value);
     }
 
     // ---- jinfer reply -> langchain4j ----
@@ -246,47 +341,31 @@ final class Mappings {
     static final String REPLY_ATTRIBUTE = "jinfer.reply";
 
     static AiMessage toAiMessage(Message reply) {
-        StringBuilder text = new StringBuilder();
-        StringBuilder thinking = new StringBuilder();
-        List<ToolExecutionRequest> calls = new ArrayList<>();
-        collect(reply.content(), text, thinking, calls, false);
+        ReplyParts parts = ReplyParts.of(reply);
         AiMessage.Builder b = AiMessage.builder();
-        if (!text.isEmpty()) b.text(text.toString());
-        if (!thinking.isEmpty()) b.thinking(thinking.toString());
-        if (!calls.isEmpty()) b.toolExecutionRequests(calls);
+        if (!parts.text().isEmpty()) b.text(parts.text());
+        if (!parts.thinking().isEmpty()) b.thinking(parts.thinking());
+        if (!parts.toolCalls().isEmpty()) {
+            List<ToolExecutionRequest> calls = new ArrayList<>(parts.toolCalls().size());
+            for (ReplyParts.ToolCall c : parts.toolCalls()) {
+                calls.add(
+                        ToolExecutionRequest.builder()
+                                .id(c.id())
+                                .name(c.name())
+                                .arguments(c.argumentsJson())
+                                .build());
+            }
+            b.toolExecutionRequests(calls);
+        }
+        // the parsed reply rides along whole: an unmodified echo restores verbatim ids instead of
+        // re-tokenizing (what makes cachedSessions extension hits byte-exact)
         b.attributes(Map.of(REPLY_ATTRIBUTE, reply));
         return b.build();
     }
 
-    private static void collect(
-            List<Part> parts,
-            StringBuilder text,
-            StringBuilder thinking,
-            List<ToolExecutionRequest> calls,
-            boolean inReasoning) {
-        for (Part part : parts) {
-            switch (part) {
-                case Part.Text t -> (inReasoning ? thinking : text).append(t.text());
-                case Part.Reasoning r -> collect(r.content(), text, thinking, calls, true);
-                case Part.ToolCall c ->
-                        // pythonic syntaxes carry no call ids: mint stable positional ones (what
-                        // Ollama's server does); ids never render back into the prompt (the
-                        // template's call syntax has no id slot), so echoes stay byte-identical
-                        calls.add(
-                                ToolExecutionRequest.builder()
-                                        .id(c.id().isEmpty() ? "call_" + calls.size() : c.id())
-                                        .name(c.name())
-                                        .arguments(JsonCodec.stringify(c.arguments()))
-                                        .build());
-                default -> {} // ToolResult/Blob never appear in a generated reply
-            }
-        }
-    }
-
     /**
-     * {@code ai} with its text replaced (empty = none); thinking, tool calls AND attributes
-     * preserved - dropping attributes would lose the {@link #REPLY_ATTRIBUTE} verbatim round-trip
-     * on stop-sequence-cut replies (the Spring twin keeps its metadata the same way).
+     * The same reply with replaced text - a stop-sequence cut. Attributes ride along: the reply
+     * attribute is what lets an unmodified echo re-encode to the exact generated tokens.
      */
     static AiMessage withText(AiMessage ai, String text) {
         AiMessage.Builder b = AiMessage.builder();
@@ -297,7 +376,6 @@ final class Mappings {
         return b.build();
     }
 
-    /** The shared ChatResponse assembly (blocking and streaming build the identical shape). */
     static ChatResponse response(
             String modelName,
             AiMessage ai,

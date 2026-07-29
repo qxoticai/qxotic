@@ -157,11 +157,12 @@ class CachedPromptIT {
     }
 
     @Test
-    void copyIsAParallelPipelineSharingTheModel() throws Exception {
-        // the concurrency contract's usability face: copy() = second pipeline, same weights.
-        // Both pipelines generate CONCURRENTLY (forbidden on one instance - StateGuard would
-        // reject shared-state misuse; here each owns its state) and answer coherently.
-        JinferChatModel twin = base.copy();
+    void twoModelsAreTwoParallelPipelines() throws Exception {
+        // the concurrency contract: one instance is one serial pipeline, so a second pipeline is
+        // a second model. Both generate CONCURRENTLY (forbidden on one instance - StateGuard
+        // would reject shared-state misuse; here each owns its state) and answer coherently.
+        JinferChatModel twin =
+                JinferChatModel.builder().modelPath(MODEL).contextLength(2048).build();
         var pool = java.util.concurrent.Executors.newFixedThreadPool(2);
         try {
             var a =

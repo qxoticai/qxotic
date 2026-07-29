@@ -1,8 +1,14 @@
 /**
  * langchain4j provider backed by jinfer: in-process CPU inference over a local GGUF, no server.
  * {@link com.qxotic.jinfer.langchain4j.JinferChatModel} is the entry point (blocking; {@code
- * streaming()} for the twin); {@link com.qxotic.jinfer.langchain4j.JinferEmbeddingModel} covers
- * embeddings.
+ * streaming()} for the twin), {@link com.qxotic.jinfer.langchain4j.JinferEmbeddingModel} covers
+ * embeddings, and {@link com.qxotic.jinfer.langchain4j.JinferScoringModel} reranks retrieved
+ * segments (a {@code ScoringModel}, so langchain4j's {@code ReRankingContentAggregator} takes it
+ * as-is).
+ *
+ * <p>One model instance is ONE serial inference pipeline: concurrent calls queue fairly on it, and
+ * a second pipeline means a second model over the same GGUF (the weight pages are shared by the OS
+ * page cache, so the added cost is one context plus one load).
  *
  * <h2>Structured output</h2>
  *
