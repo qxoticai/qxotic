@@ -1,0 +1,12 @@
+{
+  "resources": {
+    "includes": [
+      {
+        "pattern": "lexicon\\.bin"
+      },
+      {
+        "pattern": ".*\\.gguf"
+      }
+    ]
+  }
+}

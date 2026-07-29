@@ -226,7 +226,16 @@ public abstract class FloatTensor {
 
     abstract FloatVector getFloatVector(VectorSpecies<Float> species, long offset);
 
-    abstract GGMLType type();
+    public abstract GGMLType type();
+
+    /**
+     * Batch-copy {@code count} elements starting at {@code srcOff} into {@code dst[dstOff..]}.
+     * Overridden by quantized subclasses to dequant entire blocks at once instead of per-element
+     * {@link #getFloat}. F16 subclasses use a simple loop.
+     */
+    public void copyRow(long srcOff, float[] dst, int dstOff, int count) {
+        for (int i = 0; i < count; i++) dst[dstOff + i] = getFloat(srcOff + i);
+    }
 
     public static int numberOfElements(int... dimensions) {
         assert Arrays.stream(dimensions).allMatch(i -> i > 0);

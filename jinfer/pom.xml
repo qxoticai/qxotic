@@ -35,6 +35,7 @@
     <module>jinfer-spring-ai-spring-boot-starter</module>
     <module>jinfer-example-judge-advisor</module>
     <module>jinfer-example-local-rag</module>
+    <module>jinfer-inflect2</module>
     <module>jinfer-bench</module>
   </modules>
 
@@ -139,6 +140,11 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-lfm2</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>jinfer-inflect2</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>

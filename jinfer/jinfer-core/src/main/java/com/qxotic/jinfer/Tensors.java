@@ -1474,6 +1474,28 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
         return quant * scale;
     }
 
+    /**
+     * Batch-dequant a contiguous range: one scale read per 32-element block, avoiding per-element
+     * division/modulo overhead.
+     */
+    @Override
+    public void copyRow(long srcOff, float[] dst, int dstOff, int count) {
+        final int B = 32, BS = 34;
+        int di = dstOff, rem = count;
+        long idx = srcOff;
+        while (rem > 0) {
+            long bi = idx / B;
+            int wi = (int) (idx % B);
+            int chunk = Math.min(B - wi, rem);
+            long bo = bi * BS;
+            float scale = readFloat16(memorySegment, bo);
+            long pt = bo + Float16.BYTES + wi;
+            for (int j = 0; j < chunk; j++) dst[di++] = readByte(memorySegment, pt + j) * scale;
+            idx += chunk;
+            rem -= chunk;
+        }
+    }
+
     @Override
     public float dot(long thisOffset, FloatTensor that, long thatOffset, int size) {
         if (FloatTensor.USE_VECTOR_API && that instanceof F32FloatTensor f32) {
@@ -2211,6 +2233,20 @@ final class F16FloatTensor extends SegmentFloatTensor {
     @Override
     public void setFloat(long index, float value) {
         writeShort(memorySegment, (long) index * 2, Float.floatToFloat16(value));
+    }
+
+    /** Bulk-convert F16→F32 using the Vector API: 16 half values per iteration. */
+    @Override
+    public void copyRow(long srcOff, float[] dst, int dstOff, int count) {
+        if (count == 0) return;
+        int i = 0, bound = S_SPECIES_HALF.loopBound(count);
+        long byteOff = srcOff * 2;
+        for (; i < bound; i += S_SPECIES_HALF.length()) {
+            FloatVector f = f16ToF32Vector(memorySegment, byteOff);
+            f.intoArray(dst, dstOff + i);
+            byteOff += S_SPECIES_HALF.length() * 2;
+        }
+        for (; i < count; i++) dst[dstOff + i] = readFloat16(memorySegment, (srcOff + i) * 2);
     }
 
     @Override

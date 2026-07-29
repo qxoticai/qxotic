@@ -53,6 +53,17 @@ public final class ModelLoader {
         return loadTensors(fileChannel, gguf.getTensorDataOffset(), gguf.getTensors(), arena);
     }
 
+    /**
+     * Like {@link #loadTensors(FileChannel, GGUF, Arena)} but tensor data is at {@code baseOffset
+     * +} the GGUF tensor data offset — used for self-archives where the GGUF blob is embedded at a
+     * non-zero position in the file.
+     */
+    public static Map<String, GGMLTensorEntry> loadTensors(
+            FileChannel fileChannel, GGUF gguf, long baseOffset, Arena arena) throws IOException {
+        return loadTensors(
+                fileChannel, baseOffset + gguf.getTensorDataOffset(), gguf.getTensors(), arena);
+    }
+
     public static Map<String, GGMLTensorEntry> loadTensors(
             FileChannel fileChannel,
             long tensorDataOffset,
