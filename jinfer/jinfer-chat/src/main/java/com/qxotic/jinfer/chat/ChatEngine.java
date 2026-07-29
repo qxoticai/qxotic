@@ -41,7 +41,7 @@ public final class ChatEngine {
     private final JinjaChatTemplate jinja;
     private final ReentrantLock lock = new ReentrantLock(true);
     private final CacheStore promptStore; // owned: closed (freed) with the engine
-    private final FrozenBlocks mounted; // the read-only artifact, shared with forks (null = none)
+    private final FrozenBlocks mounted; // the read-only mounted artifact (null = none)
     private final PromptCache<?> prompts; // the cached-prompt block tree (null = unsupported)
     // cachedSessions(n): the last n live conversation states, reused append-only when a new
     // prompt's batch stream strictly extends one (all access under the generation lock)
@@ -62,9 +62,7 @@ public final class ChatEngine {
     private int sessionHits;
     private int statesAllocated; // contexts this engine has had to allocate (steady state: 1)
     private volatile boolean closed;
-    private final java.lang.foreign.Arena
-            weights; // owned by path-loading engines; forks share the creator's
-    private final boolean ownsWeights;
+    private final java.lang.foreign.Arena weights; // owned: freed at close(), never shared
     private final Runnable leakWatch; // -Djinfer.leakDetection: reports a GC'd unclosed engine
 
     /** A finished generation's state with the batch stream of everything ingested into it. */
@@ -77,15 +75,14 @@ public final class ChatEngine {
             Path cachedPrompts,
             int cachedSessions) {
         this.sessionCapacity = Math.max(0, cachedSessions);
-        this.ownsWeights = true;
         this.weights = java.lang.foreign.Arena.ofShared();
         // the integrations' builder contract is "0 = the model's own maximum"; Models.load spells
         // that -1 - without this both integrations crashed in the port's tensor sizing on 0
         int ctx = contextLength <= 0 ? -1 : contextLength;
         try {
-            // the engine OWNS its weights arena: every provider view/copy shares this one
-            // engine ("closing any closes all" - the documented contract), so close() can free
-            // the weights deterministically after quiescence - mmap pages were always
+            // the engine OWNS its weights arena and nothing outside it holds a reference (views
+            // share this very engine - "closing any closes all"), so close() can free the weights
+            // deterministically after quiescence - mmap pages were always
             // kernel-reclaimable, but load-time conversions/repacks are anonymous memory that
             // a GC-managed arena would only free at a GC that a native-heavy JVM never runs
             this.loaded =
@@ -118,36 +115,6 @@ public final class ChatEngine {
         }
         // armed last: a ctor throw already cleaned up above and must not read as a leak
         this.leakWatch = LeakWatch.arm(this, "ChatEngine (owns the weights arena)");
-    }
-
-    /**
-     * The fork constructor: shares the immutable loaded model, owns everything mutable. LAW: the
-     * creator engine owns the shared weights - close the creator only after its forks are closed.
-     */
-    private ChatEngine(ChatEngine base) {
-        this.ownsWeights = false; // shared with the creator; its close() frees them (see LAW)
-        this.weights = base.weights;
-        this.loaded = base.loaded;
-        this.modelName = base.modelName;
-        this.jinja = base.jinja; // compiled once per model; stateless at render time
-        this.sessionCapacity = base.sessionCapacity;
-        this.promptStore = CacheStore.inMemory();
-        this.mounted =
-                base.mounted; // immutable artifact: safely shared, zero-prefill for forks too
-        // a fresh live tree over the shared frozen base; codec-less models stay treeless
-        this.prompts = base.prompts == null ? null : tree(loaded, promptStore, mounted);
-        this.leakWatch = LeakWatch.arm(this, "ChatEngine fork");
-    }
-
-    /**
-     * A sibling engine sharing this one's loaded model - weights, tokenizer and template are
-     * immutable and thread-safe to share (all per-run scratch lives in {@link
-     * com.qxotic.jinfer.RuntimeState}); the fork owns its own serial pipeline: lock, empty prompt
-     * tree, session pool and stream driver. THE cheap answer to "one instance = one pipeline":
-     * parallelism without reloading the model.
-     */
-    public ChatEngine fork() {
-        return new ChatEngine(this);
     }
 
     private static <S extends RuntimeState> PromptCache<S> tree(
@@ -196,14 +163,11 @@ public final class ChatEngine {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
-        // provably quiescent (lock held once, driver drained): the weights can die now. A
-        // path-loading engine owns its weights; a fork shares its creator's (see fork()).
-        if (ownsWeights) {
-            try {
-                weights.close();
-            } catch (UnsupportedOperationException ignored) {
-                // a non-closeable arena manages itself; nothing to free eagerly
-            }
+        // provably quiescent (lock held once, driver drained): the weights can die now
+        try {
+            weights.close();
+        } catch (UnsupportedOperationException ignored) {
+            // a non-closeable arena manages itself; nothing to free eagerly
         }
     }
 
