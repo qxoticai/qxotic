@@ -12,7 +12,10 @@ jinfer-jinja    Jinja template engine (CompiledTemplate) - used by the server fa
 jinfer-kernels  ModelLoader, FlashAttention, GEMM dispatch (JAM native / Vector API);
                 test-jar ships the shared testkit (Harness + scenario batteries)
 jinfer-<model>  one module per curated model (lfm2, gemma4, llama, gptoss, qwen35, ...):
-                the arch port + its TurnTemplate + its StateCodec
+                the arch port + its TurnTemplate + its StateCodec. Retrieval families are
+                ports too: jinfer-qwen3 is arch "qwen3" (Qwen3-Embedding pooling +
+                Qwen3-Reranker judging), no chat template, loaded via Models.loadEmbedder
+                / loadReranker
 jinfer-server   OpenAI-compatible HTTP server on top
 ```
 

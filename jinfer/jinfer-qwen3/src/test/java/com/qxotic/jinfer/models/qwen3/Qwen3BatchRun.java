@@ -2,7 +2,7 @@
 // one-by-one.
 //   correctness: java ... Qwen3BatchRun <model.gguf>            [-Dbc=N to force chunking]
 //   benchmark:   java ... Qwen3BatchRun <model.gguf> -Dbench=NSEQ -Dlen=L -Dwarm=W -Dreps=R
-package com.qxotic.jinfer.models.qwen35;
+package com.qxotic.jinfer.models.qwen3;
 
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.FloatTensor;

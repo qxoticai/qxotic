@@ -24,6 +24,7 @@
     <module>jinfer-gemma4</module>
     <module>jinfer-llama</module>
     <module>jinfer-qwen35</module>
+    <module>jinfer-qwen3</module>
     <module>jinfer-gptoss</module>
     <module>jinfer-nemotronh</module>
     <module>jinfer-lfm2</module>
@@ -118,6 +119,11 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-qwen35</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>jinfer-qwen3</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>

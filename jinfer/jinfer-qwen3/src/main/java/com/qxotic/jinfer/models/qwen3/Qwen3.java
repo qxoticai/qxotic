@@ -8,7 +8,7 @@
 // (pooling_type=LAST,
 // matching llama.cpp --pooling last). No LM head / vocab projection. Single batched causal prefill,
 // no decode.
-package com.qxotic.jinfer.models.qwen35;
+package com.qxotic.jinfer.models.qwen3;
 
 import static com.qxotic.jinfer.Norms.rmsnorm;
 
@@ -90,27 +90,38 @@ public final class Qwen3
     }
 
     /**
+     * The raw LM logit of ONE token at the last ingested row, via the TIED token-embedding head
+     * (Qwen3 small variants tie the LM head; reranker GGUFs carry no separate output.weight). A
+     * reranker reads its two verdict tokens with two of these - two dot products, where a
+     * generative head would project the whole vocabulary (~155 MB streamed at Q8) to reach them.
+     * Claims the state and fences the model, like every other public entry point that runs kernels;
+     * {@link #targetedHead} is the unfenced seam.
+     */
+    public float logit(State s, int token) {
+        s.enter();
+        float out;
+        try {
+            out = targetedHead(s, token);
+        } finally {
+            s.exit();
+        }
+        java.lang.ref.Reference.reachabilityFence(this);
+        return out;
+    }
+
+    private float targetedHead(State s, int token) {
+        int dim = configuration.embeddingLength;
+        // the last retained row IS the last row of the chunk just ingested
+        int row = s.lastChunkLen - 1;
+        rmsnorm(s.xb, 0, s.x, (long) row * dim, weights.outputNorm, dim, configuration.rmsNormEps);
+        return weights.tokenEmbeddingTable.dot((long) token * dim, s.xb, 0, dim);
+    }
+
+    /**
      * The sentence embedding: pool the {@code index}-th retained row (last-token pooling per
      * sequence), L2-normalized. {@code index} addresses the retained rows exactly as {@code
      * logits}' output does.
      */
-    /**
-     * Raw LM logits for exactly {@code tokens}, via the TIED token-embedding head (Qwen3 small
-     * variants tie the LM head; reranker GGUFs carry no separate output.weight). Rerankers read two
-     * tokens (yes/no) - a couple of dot products instead of the full-vocabulary matmul a generative
-     * head would pay per pair.
-     */
-    public float[] logits(State s, int output, int[] tokens) {
-        int dim = configuration.embeddingLength;
-        int row = s.lastChunkLen - s.outputCount + output;
-        rmsnorm(s.xb, 0, s.x, (long) row * dim, weights.outputNorm, dim, configuration.rmsNormEps);
-        float[] out = new float[tokens.length];
-        for (int i = 0; i < tokens.length; i++) {
-            out[i] = weights.tokenEmbeddingTable.dot((long) tokens[i] * dim, s.xb, 0, dim);
-        }
-        return out;
-    }
-
     @Override
     public FloatTensor pool(State s, int index) {
         int dim = configuration.embeddingLength;

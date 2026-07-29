@@ -1,7 +1,7 @@
 package com.qxotic.jinfer.bench;
 
 import com.qxotic.jinfer.*;
-import com.qxotic.jinfer.models.qwen35.Qwen3;
+import com.qxotic.jinfer.models.qwen3.Qwen3;
 import java.io.PrintStream;
 import java.nio.file.Path;
 import java.util.concurrent.ForkJoinPool;

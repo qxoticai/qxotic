@@ -1,7 +1,7 @@
 // Qwen3-Embedding runner: text (or explicit -Dtokens=..) -> embedding vector on stdout
 // (space-separated),
 // stats on stderr. -Dwarm=N runs N warmup passes first. Used to cosine-compare against llama.cpp.
-package com.qxotic.jinfer.models.qwen35;
+package com.qxotic.jinfer.models.qwen3;
 
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.FloatTensor;
