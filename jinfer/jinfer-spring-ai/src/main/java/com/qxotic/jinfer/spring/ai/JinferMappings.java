@@ -5,6 +5,7 @@ import com.qxotic.jinfer.chat.JsonCodec;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.OpenAiMaps;
 import com.qxotic.jinfer.chat.Part;
+import com.qxotic.jinfer.chat.ReplyParts;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.chat.ToolCallSyntax;
@@ -243,12 +244,14 @@ final class JinferMappings {
     // ---- jinfer reply -> Spring AI ----
 
     static AssistantMessage toAssistantMessage(Message reply) {
-        StringBuilder text = new StringBuilder();
-        StringBuilder thinking = new StringBuilder();
-        List<AssistantMessage.ToolCall> calls = new ArrayList<>();
-        collect(reply.content(), text, thinking, calls, false);
+        ReplyParts parts = ReplyParts.of(reply);
+        List<AssistantMessage.ToolCall> calls = new ArrayList<>(parts.toolCalls().size());
+        for (ReplyParts.ToolCall c : parts.toolCalls()) {
+            calls.add(
+                    new AssistantMessage.ToolCall(c.id(), "function", c.name(), c.argumentsJson()));
+        }
         AssistantMessage.Builder<?> b =
-                AssistantMessage.builder().content(text.toString()).toolCalls(calls);
+                AssistantMessage.builder().content(parts.text()).toolCalls(calls);
         // reasoning survives in metadata (Spring AI's AssistantMessage has no thinking slot) and
         // is replayed into the next request's assistant turn - the Ollama/OpenAI convention.
         // Blank-only reasoning (a prompt-opened span's scaffold newlines, e.g. the closed empty
@@ -256,35 +259,10 @@ final class JinferMappings {
         // so an unmodified echo restores verbatim ids instead of re-tokenizing.
         Map<String, Object> properties = new java.util.HashMap<>();
         properties.put(REPLY_KEY, reply);
-        if (!thinking.toString().isBlank()) {
-            properties.put(THINKING_KEY, thinking.toString());
+        if (!parts.thinking().isBlank()) {
+            properties.put(THINKING_KEY, parts.thinking());
         }
         b.properties(properties);
         return b.build();
-    }
-
-    private static void collect(
-            List<Part> parts,
-            StringBuilder text,
-            StringBuilder thinking,
-            List<AssistantMessage.ToolCall> calls,
-            boolean inReasoning) {
-        for (Part part : parts) {
-            switch (part) {
-                case Part.Text t -> (inReasoning ? thinking : text).append(t.text());
-                case Part.Reasoning r -> collect(r.content(), text, thinking, calls, true);
-                case Part.ToolCall c ->
-                        // pythonic syntaxes carry no call ids: mint stable positional ones (what
-                        // Ollama's server does); ids never render back into the prompt (the
-                        // template's call syntax has no id slot), so echoes stay byte-identical
-                        calls.add(
-                                new AssistantMessage.ToolCall(
-                                        c.id().isEmpty() ? "call_" + calls.size() : c.id(),
-                                        "function",
-                                        c.name(),
-                                        JsonCodec.stringify(c.arguments())));
-                default -> {} // ToolResult/Blob never appear in a generated reply
-            }
-        }
     }
 }

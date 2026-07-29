@@ -1,16 +1,11 @@
 package com.qxotic.jinfer.spring.ai;
 
-import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.chat.CachedPrompt;
 import com.qxotic.jinfer.chat.ChatEngine;
-import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.JsonCodec;
 import com.qxotic.jinfer.chat.Message;
-import com.qxotic.jinfer.chat.ReplyLanes;
-import com.qxotic.jinfer.chat.RequestPolicy;
-import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.Grammar;
-import com.qxotic.jinfer.llm.Sampler;
 import com.qxotic.jinfer.llm.TextStops;
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationRegistry;
@@ -48,11 +43,11 @@ import reactor.core.publisher.FluxSink;
  * models or unframeable requests.
  *
  * <p>Concurrency contract: an instance is ONE serial inference pipeline - concurrent requests queue
- * fairly on it. For parallel pipelines call {@code copy()}: siblings share the already-loaded model
- * (zero reload, no extra weight memory) and each owns its own serial pipeline. Footprint: an
- * instance holds its weights (shared across copies), at most {@code cachedSessions} full-context
- * states (recycled - extended on a prefix hit, reset on a miss, never re-allocated per request),
- * plus one KV block set per defined cached prompt (explicit and deliberately paid for).
+ * fairly on it. For a second pipeline, build a second model: the weight PAGES are shared by the OS
+ * page cache, so the added cost is one context plus one load. Footprint: an instance holds its
+ * weights, ONE full-context state reused for every request (extended on a prefix hit when {@code
+ * cachedSessions} is set, reset otherwise - never re-allocated per request), plus one KV block set
+ * per defined cached prompt (explicit and deliberately paid for).
  *
  * <p>Three caching tiers, near-homonyms with distinct jobs: {@code withCachedPrompt} defines a LIVE
  * shared prefix (prefilled once, restored per request - the system-prompt/tools/few-shot case);
@@ -85,15 +80,6 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     // prefix, its KV restored from the engine's block tree instead of re-prefilled.
     final CachedPrompt prefix;
 
-    /** A view's prefix in jinfer types; {@link #EMPTY} for the base model. */
-    record CachedPrompt(List<Message> messages, List<Tool> tools) {
-        static final CachedPrompt EMPTY = new CachedPrompt(List.of(), List.of());
-
-        boolean isEmpty() {
-            return messages.isEmpty() && tools.isEmpty();
-        }
-    }
-
     private JinferChatModel(Builder b) {
         if (b.defaultOptions != null && hasKnobs(b)) {
             throw new IllegalArgumentException(
@@ -106,7 +92,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                         b.contextLength,
                         b.cachedPrompts,
                         b.cachedSessions);
-        this.prefix = CachedPrompt.EMPTY;
+        this.prefix = CachedPrompt.NONE;
         this.observationRegistry =
                 b.observationRegistry == null ? ObservationRegistry.NOOP : b.observationRegistry;
         this.observationConvention = b.observationConvention;
@@ -126,14 +112,6 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         } else {
             this.defaultOptions = knobs;
         }
-    }
-
-    private JinferChatModel(JinferChatModel base, ChatEngine fork) {
-        this.engine = fork;
-        this.defaultOptions = base.defaultOptions;
-        this.observationRegistry = base.observationRegistry;
-        this.observationConvention = base.observationConvention;
-        this.prefix = CachedPrompt.EMPTY;
     }
 
     private JinferChatModel(JinferChatModel base, CachedPrompt prefix) {
@@ -162,38 +140,14 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     public JinferChatModel withCachedPrompt(
             List<org.springframework.ai.chat.messages.Message> prefixMessages,
             List<ToolCallback> tools) {
-        List<Message> messages = new ArrayList<>(prefix.messages());
-        messages.addAll(
-                JinferMappings.toMessages(prefixMessages)); // converted ONCE, media decoded here
-        List<Tool> welded = new ArrayList<>(prefix.tools());
-        if (tools != null) {
-            welded.addAll(JinferMappings.toTools(tools));
-        }
-        return withPrefix(new CachedPrompt(List.copyOf(messages), List.copyOf(welded)));
-    }
-
-    /**
-     * An independent sibling of this model: shares the loaded weights/tokenizer/template (nothing
-     * reloads, no extra weight memory) but owns its OWN serial inference pipeline - lock, caches,
-     * stream driver. THE way to run several pipelines of one model in parallel. A copy's lifecycle
-     * is independent: closing it never affects the base or other copies (views, by contrast, share
-     * their creator's engine - closing any of them closes all). Cached-prompt definitions are not
-     * carried over, but a MOUNTED artifact is (the frozen tier is immutable, shared safely);
-     * options and conventions are. A copy of a VIEW re-defines its prefix on the fresh pipeline
-     * (one prefill).
-     */
-    public JinferChatModel copy() {
-        JinferChatModel base = new JinferChatModel(this, engine.fork());
-        return prefix.isEmpty() ? base : base.withPrefix(prefix);
+        return withPrefix(
+                prefix.merge(
+                        JinferMappings.toMessages(prefixMessages),
+                        tools == null ? List.of() : JinferMappings.toTools(tools)));
     }
 
     private JinferChatModel withPrefix(CachedPrompt merged) {
-        engine.define(
-                new Conversation(
-                        merged.messages(),
-                        merged.tools(),
-                        defaultOptions.getThinking() != Boolean.FALSE,
-                        ""));
+        engine.define(merged.conversation(defaultOptions.getThinking() != Boolean.FALSE));
         return new JinferChatModel(this, merged);
     }
 
@@ -217,18 +171,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     }
 
     /** Everything the blocking and streaming paths share, computed once per request. */
-    private record Prepared(
-            ChatEngine.Encoded encoded,
-            Sampler sampler,
-            int maxTokens,
-            long timeoutNanos,
-            int promptTokens,
-            List<String> stops,
-            boolean cached,
-            int[] parserSeed) {}
-
-    /** All request-shape validation happens here, synchronously (before any thread starts). */
-    private Prepared prepare(Prompt prompt) {
+    /** Framework types mapped away; every policy below this line lives in {@link ChatEngine}. */
+    private ChatEngine.Prepared prepare(Prompt prompt) {
         JinferChatOptions options = resolveOptions(prompt.getOptions());
         boolean cached = !prefix.isEmpty();
         List<ToolCallback> callbacks = options.getToolCallbacks();
@@ -238,49 +182,45 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                             + " toolCallbacks would silently forfeit the cache - put tools on"
                             + " withCachedPrompt(...) instead");
         }
-        int maxTokens = options.getMaxTokens() == null ? -1 : options.getMaxTokens();
-        // a think span cannot fit a tiny completion budget: below the floor, reasoning is
-        // disabled outright (scaffold and sampler both) so the budget buys VISIBLE text
-        boolean think =
-                options.getThinking() != Boolean.FALSE
-                        && (maxTokens < 0 || maxTokens >= RequestPolicy.THINK_FLOOR);
-        List<Tool> tools =
-                cached
-                        ? prefix.tools()
-                        : callbacks == null ? List.of() : JinferMappings.toTools(callbacks);
         List<Message> messages = new ArrayList<>(prefix.messages());
         messages.addAll(JinferMappings.toMessages(prompt.getInstructions()));
-        Conversation conversation = new Conversation(messages, tools, think, "");
-        // cached views are native-only (define enforced it); the base keeps the Jinja fallback
         List<org.springframework.ai.chat.messages.Message> instructions = prompt.getInstructions();
-        ChatEngine.Encoded encoded =
-                cached
-                        ? engine.encodeNative(conversation)
-                        : engine.encode(
-                                conversation,
-                                () -> JinferMappings.toMessageMaps(instructions),
-                                () ->
-                                        callbacks == null
-                                                ? List.of()
-                                                : JinferMappings.toToolMaps(callbacks));
+        ChatEngine.Request lowered =
+                new ChatEngine.Request(
+                        messages,
+                        cached
+                                ? prefix.tools()
+                                : callbacks == null ? List.of() : JinferMappings.toTools(callbacks),
+                        options.getThinking() != Boolean.FALSE,
+                        options.getMaxTokens() == null ? -1 : options.getMaxTokens(),
+                        options.getTimeout() == null ? 0 : options.getTimeout().toNanos(),
+                        options.getTemperature() == null
+                                ? 0.0f
+                                : options.getTemperature().floatValue(),
+                        options.getTopP() == null ? 0.95f : options.getTopP().floatValue(),
+                        options.getSeed() == null ? 42 : options.getSeed(),
+                        grammar(options.getOutputSchema()),
+                        false, // Spring AI has no forced-tool-call knob
+                        cached,
+                        options.getStopSequences());
+        return engine.prepare(
+                lowered,
+                () -> JinferMappings.toMessageMaps(instructions),
+                () -> callbacks == null ? List.of() : JinferMappings.toToolMaps(callbacks));
+    }
 
-        Sampler sampler = sampler(options, think, maxTokens);
-
-        int promptTokens = encoded.prompt().stream().mapToInt(Batch::count).sum();
-        long timeoutNanos = options.getTimeout() == null ? 0 : options.getTimeout().toNanos();
-        // the generation prompt's reply-grammar tail (a prompt-opened think span): the parser
-        // must start in the span state the prompt left the model in, or reasoning routes to
-        // the content lane (Qwen3.5, MiniCPM5, Nemotron, SmolLM3 open the span in the prompt)
-        int[] parserSeed = encoded.template().map(t -> t.replySeed(think)).orElse(new int[0]);
-        return new Prepared(
-                encoded,
-                sampler,
-                maxTokens,
-                timeoutNanos,
-                promptTokens,
-                options.getStopSequences() == null ? List.of() : options.getStopSequences(),
-                cached,
-                parserSeed);
+    /**
+     * Grammar-constrained output (llama.cpp-style token masking): the schema is compiled to a GBNF
+     * grammar whose automaton masks the logits so invalid JSON is unrepresentable, not just
+     * unlikely. Compiling it is the framework-shaped half (Spring AI spells a schema as JSON text);
+     * the think gating and the dead-end stop token are the engine's. Specs are cached per (schema,
+     * vocab), so repeated schemas reuse the compiled masks.
+     */
+    private Grammar.Spec grammar(String outputSchema) {
+        if (outputSchema == null) return null;
+        @SuppressWarnings("unchecked")
+        Map<String, Object> schemaMap = (Map<String, Object>) JsonCodec.parse(outputSchema);
+        return Grammar.fromSchema(schemaMap, engine.loaded().tokenizer());
     }
 
     @Override
@@ -317,50 +257,20 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     }
 
     private ChatResponse doCall(Prompt prompt) {
-        Prepared p = prepare(prompt);
-        ReplyLanes feed =
-                new ReplyLanes(p.encoded().template(), engine.loaded().tokenizer(), p.parserSeed());
-        List<String> stops = p.stops();
-        TextStops.Holdback watch =
-                stops.isEmpty() ? null : new TextStops.Holdback(stops, ignored -> {});
-        Generator.TokenSink sink =
-                token -> {
-                    String fragment = feed.feed(token);
-                    if (watch != null && !feed.reasoning() && !fragment.isEmpty()) {
-                        watch.accept(fragment); // stop strings match the content lane only
-                    }
-                    return watch == null || !watch.stopped();
-                };
-        ChatEngine.Outcome outcome =
-                engine.generate(
-                        p.encoded().prompt(),
-                        p.sampler(),
-                        p.maxTokens(),
-                        p.timeoutNanos(),
-                        sink,
-                        p.cached());
-
-        // the same parse that fed the stop watch finishes the message - no second decode pass
-        Message reply = feed.finish();
-        AssistantMessage ai = JinferMappings.toAssistantMessage(reply);
-        boolean stopHit = watch != null && watch.stopped();
-        if (stopHit) {
+        ChatEngine.Prepared p = prepare(prompt);
+        ChatEngine.Completion done = engine.complete(p, ChatEngine.ReplySink.NONE);
+        AssistantMessage ai = JinferMappings.toAssistantMessage(done.reply());
+        if (done.stopped()) {
             ai =
                     AssistantMessage.builder()
-                            .content(TextStops.apply(ai.getText(), stops).text())
+                            .content(TextStops.apply(ai.getText(), p.stops()).text())
                             .properties(ai.getMetadata())
                             .toolCalls(ai.getToolCalls())
                             .build();
         }
-        return response(ai, p.promptTokens(), outcome, stopHit);
+        return response(ai, p, done);
     }
 
-    /**
-     * Blocking, idempotent: waits out any in-flight request (including a live stream), then frees
-     * the pooled session states' arenas and the prompt tree's blobs deterministically; every view
-     * shares the engine, so closing any model closes them all. Later requests fail with {@link
-     * IllegalStateException}. Spring registers this as the bean destroy method automatically.
-     */
     @Override
     public void close() {
         engine.close();
@@ -375,7 +285,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     @Override
     public Flux<ChatResponse> stream(Prompt prompt) {
         Prompt requestPrompt = buildRequestPrompt(prompt);
-        Prepared p = prepare(requestPrompt); // invalid requests throw here, not on the thread
+        ChatEngine.Prepared p =
+                prepare(requestPrompt); // invalid requests throw here, not on the thread
         // per-subscription observation state: a flux is re-subscribable, and a shared
         // Observation would race on start()/setResponse across subscriptions
         return Flux.deferContextual(
@@ -407,97 +318,55 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                 });
     }
 
-    private void streamInto(Prepared p, FluxSink<ChatResponse> sink) {
+    private void streamInto(ChatEngine.Prepared p, FluxSink<ChatResponse> sink) {
         AtomicBoolean cancelled = new AtomicBoolean();
         sink.onCancel(() -> cancelled.set(true));
         sink.onDispose(() -> cancelled.set(true));
-        ReplyLanes feed =
-                new ReplyLanes(p.encoded().template(), engine.loaded().tokenizer(), p.parserSeed());
-        List<String> stops = p.stops();
-        // the holdback keeps any could-still-be-a-stop suffix unemitted; safe chars flow through
-        TextStops.Holdback watch =
-                new TextStops.Holdback(stops, out -> sink.next(chunk(out, false)));
-        Generator.TokenSink tokenSink =
-                token -> {
-                    if (cancelled.get()) return false;
-                    String fragment = feed.feed(token);
-                    if (fragment.isEmpty()) return true;
-                    // reasoning streams too, flagged so consumers can keep it off the content
-                    // lane; stop sequences stay armed on content only
-                    boolean thought = feed.reasoning();
-                    if (thought) sink.next(chunk(fragment, true));
-                    else watch.accept(fragment);
-                    return thought || !watch.stopped();
-                };
         try {
-            ChatEngine.Outcome outcome =
-                    engine.generate(
-                            p.encoded().prompt(),
-                            p.sampler(),
-                            p.maxTokens(),
-                            p.timeoutNanos(),
-                            tokenSink,
-                            p.cached());
-            if (cancelled.get()) return; // cancelled subscriptions end silently
-            watch.flush(); // release held-back chars (a stopped watch emits nothing past the cut)
+            ChatEngine.Completion done =
+                    engine.complete(
+                            p,
+                            new ChatEngine.ReplySink() {
+                                @Override
+                                public void content(String delta) {
+                                    sink.next(chunk(delta, false));
+                                }
+
+                                @Override
+                                public void thinking(String delta) {
+                                    // reasoning streams too, flagged so consumers can keep it off
+                                    // the content lane
+                                    sink.next(chunk(delta, true));
+                                }
+
+                                @Override
+                                public boolean cancelled() {
+                                    return cancelled.get();
+                                }
+                            });
+            if (done.cancelled()) return; // cancelled subscriptions end silently
             // the final chunk: no text (deltas carried it), but complete tool calls + metadata,
             // from the same parse that streamed
-            Message reply = feed.finish();
-            AssistantMessage parsed = JinferMappings.toAssistantMessage(reply);
-            boolean stopHit = watch.stopped();
+            AssistantMessage parsed = JinferMappings.toAssistantMessage(done.reply());
             AssistantMessage ai =
                     AssistantMessage.builder()
                             .content("")
                             .properties(parsed.getMetadata())
                             .toolCalls(parsed.getToolCalls())
                             .build();
-            sink.next(response(ai, p.promptTokens(), outcome, stopHit));
+            sink.next(response(ai, p, done));
             sink.complete();
         } catch (Throwable e) {
             sink.error(e);
         }
     }
 
-    /** One delta chunk: text only, no metadata (that lives on the final chunk). */
     static ChatResponse chunk(String delta, boolean thought) {
         AssistantMessage.Builder<?> b = AssistantMessage.builder().content(delta);
         if (thought) {
             b.properties(Map.of(IS_THOUGHT_KEY, true));
         }
         return new ChatResponse(List.of(new Generation(b.build())));
-    }
-
-    /** The request's sampling stack via the shared policy, plus schema-grammar when asked. */
-    private Sampler sampler(JinferChatOptions options, boolean think, int maxTokens) {
-        Sampler sampler =
-                RequestPolicy.sampler(
-                        engine.loaded(),
-                        options.getTemperature() == null
-                                ? 0.0f
-                                : options.getTemperature().floatValue(),
-                        options.getTopP() == null ? 0.95f : options.getTopP().floatValue(),
-                        options.getSeed() == null ? 42 : options.getSeed(),
-                        think,
-                        maxTokens,
-                        null);
-        return options.getOutputSchema() == null
-                ? sampler
-                : withSchemaGrammar(sampler, think, options.getOutputSchema());
-    }
-
-    /**
-     * Grammar-constrained output (llama.cpp-style token masking): the schema is compiled to a GBNF
-     * grammar whose automaton masks the logits so invalid JSON is unrepresentable, not just
-     * unlikely. For a reasoning request the grammar stays dormant until {@code </think>} so the
-     * constraint never suppresses the think span, and the boilerplate newline after it passes
-     * through unconsumed. The forced token on grammar dead-ends is one of the model's real stop
-     * tokens. Specs are cached per (schema, vocab), so repeated schemas reuse the compiled masks.
-     */
-    private Sampler withSchemaGrammar(Sampler sampler, boolean think, String outputSchema) {
-        @SuppressWarnings("unchecked")
-        Map<String, Object> schemaMap = (Map<String, Object>) JsonCodec.parse(outputSchema);
-        Grammar.Spec spec = Grammar.fromSchema(schemaMap, engine.loaded().tokenizer());
-        return RequestPolicy.constrained(engine.loaded(), sampler, spec.cursor(), think);
     }
 
     private JinferChatOptions resolveOptions(ChatOptions runtime) {
@@ -532,13 +401,10 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     }
 
     private ChatResponse response(
-            AssistantMessage ai,
-            int promptTokens,
-            ChatEngine.Outcome outcome,
-            boolean stoppedBySequence) {
-        Generator.GenerationResult result = outcome.result();
+            AssistantMessage ai, ChatEngine.Prepared p, ChatEngine.Completion done) {
+        Generator.GenerationResult result = done.result();
         String finishReason =
-                stoppedBySequence // a stop-sequence cut IS a stop, not an abort
+                done.stopped() // a stop-sequence cut IS a stop, not an abort
                         ? "stop"
                         : toFinishReason(result.finishReason(), ai.hasToolCalls());
         Generation generation =
@@ -554,13 +420,13 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                         .model(engine.modelName())
                         .usage(
                                 new DefaultUsage(
-                                        promptTokens,
+                                        p.promptTokens(),
                                         result.completionTokens(),
                                         null,
                                         new JinferUsage(
                                                 result.promptNanos(), result.predictedNanos()),
-                                        outcome.restoredTokens() > 0
-                                                ? Long.valueOf(outcome.restoredTokens())
+                                        done.restoredTokens() > 0
+                                                ? Long.valueOf(done.restoredTokens())
                                                 : null,
                                         null))
                         .rateLimit(new EmptyRateLimit())
@@ -622,9 +488,12 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
 
         /**
          * Keeps the last {@code n} live conversation states resident, reused append-only when a
-         * request's conversation strictly extends one (the multi-turn zero-restore tier). 0
-         * (default) disables the pool. Each kept state holds a full context of KV; on a miss the
-         * evictee's allocation is recycled, never re-allocated.
+         * request's conversation strictly extends one (the multi-turn zero-restore tier). Each kept
+         * conversation holds a full context of KV.
+         *
+         * <p>0 (default) keeps the model stateless between requests - its state is wiped the moment
+         * a reply ends - but the ALLOCATION is still reused: a pipeline allocates its context once
+         * and never per request, whatever this is set to. This knob buys warmth, not memory reuse.
          */
         public Builder cachedSessions(int cachedSessions) {
             this.cachedSessions = cachedSessions;

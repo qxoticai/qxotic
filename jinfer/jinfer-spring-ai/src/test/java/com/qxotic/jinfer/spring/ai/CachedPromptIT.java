@@ -61,14 +61,19 @@ class CachedPromptIT {
     }
 
     @Test
-    void copyIsAParallelPipelineSharingTheModel() throws Exception {
+    void twoModelsAreTwoParallelPipelines() throws Exception {
         JinferChatModel base =
                 JinferChatModel.builder()
                         .modelPath(MODEL)
                         .contextLength(2048)
                         .maxTokens(32)
                         .build();
-        JinferChatModel twin = base.copy();
+        JinferChatModel twin =
+                JinferChatModel.builder()
+                        .modelPath(MODEL)
+                        .contextLength(2048)
+                        .maxTokens(32)
+                        .build();
         var pool = java.util.concurrent.Executors.newFixedThreadPool(2);
         try {
             var a =
