@@ -60,6 +60,7 @@ public final class ChatEngine {
                     r -> new Thread(r, "jinfer-stream"));
     private final AtomicReference<Thread> streamThread = new AtomicReference<>();
     private int sessionHits;
+    private int statesAllocated; // contexts this engine has had to allocate (steady state: 1)
     private volatile boolean closed;
     private final java.lang.foreign.Arena
             weights; // owned by path-loading engines; forks share the creator's
@@ -369,30 +370,50 @@ public final class ChatEngine {
     }
 
     /**
-     * The state for a pool-miss pass: when the pool is FULL, this request's pooling would evict the
-     * oldest session anyway - so its allocation is recycled NOW ({@code reset()} + reuse, skipping
-     * a full-context allocation) instead of dropped. Families without a {@code reset()} port keep
-     * today's fresh-allocation behavior; states are full-context by {@link Generator#stateFor}
-     * sizing, so any pooled allocation fits any request.
+     * The state for a pass that cannot extend a pooled session. THE POOL IS THE ALLOCATOR: at
+     * capacity, the oldest entry's allocation is recycled ({@code reset()} - mandatory on {@link
+     * com.qxotic.jinfer.BaseState}, so every family has decided what a fresh sequence must clear)
+     * rather than dropped, and only an empty pool allocates. A steady pipeline therefore allocates
+     * its context ONCE and reuses it for every later request - a full context is the dominant
+     * per-pipeline cost, and allocating it per request also pays first-touch page faults every
+     * time.
      */
     @SuppressWarnings("unchecked")
     private <S extends RuntimeState> S obtainState(LanguageModel<?, ?, S> model, int total) {
-        if (sessionCapacity > 0 && sessions.size() >= sessionCapacity) {
+        if (sessions.size() >= poolCapacity()) {
             LiveSession oldest = sessions.peekFirst();
             if (oldest != null && oldest.state().contextCapacity() >= total) {
-                oldest.state().reset(); // mandatory on BaseState: every generative state recycles
                 sessions.removeFirst();
+                // cursor 0 means the entry was already wiped on release (the stateless default);
+                // a warm conversation's entry carries KV and must be cleared before reuse
+                if (oldest.state().position() != 0) oldest.state().reset();
                 return (S) oldest.state();
             }
         }
-        return Generator.stateFor(model, total);
+        // full BATCH capacity, not prompt-sized: this allocation serves every later request too,
+        // and one born from a 20-token prompt would chunk a 2000-token prefill into ~125 forwards
+        statesAllocated++;
+        return model.newState(
+                model.config().contextLength(), com.qxotic.jinfer.RuntimeFlags.BATCH_CAPACITY);
+    }
+
+    /**
+     * Entries kept: the warm conversations asked for, and never fewer than the one reused state.
+     */
+    private int poolCapacity() {
+        return Math.max(1, sessionCapacity);
     }
 
     /** A pooled hit: the live session plus how many prompt positions its stream covers. */
     private record Pooled(LiveSession session, int prefixPositions) {}
 
-    /** The pooled session with the LONGEST stream strictly prefixing {@code prompt}, removed. */
+    /**
+     * The pooled session with the LONGEST stream strictly prefixing {@code prompt}, removed. The
+     * stateless default matches nothing: its single pooled entry is a bare allocation, wiped when
+     * its generation ended.
+     */
     private Pooled acquireSession(List<Batch> prompt, int total) {
+        if (sessionCapacity == 0) return null;
         LiveSession best = null;
         int bestLen = -1;
         for (LiveSession s : sessions) {
@@ -408,20 +429,32 @@ public final class ChatEngine {
         return new Pooled(best, bestLen);
     }
 
-    /** Pools the finished state under prompt + ingested-reply stream; evicts past cap. */
+    /**
+     * Returns the finished state to the pool - it is never dropped, so the next request reuses the
+     * allocation instead of paying a full context again.
+     *
+     * <p>With warm conversations enabled it keeps its stream and can be EXTENDED by a later request
+     * that strictly prefixes it. With the stateless default (0) it is wiped HERE, the moment the
+     * reply is done, and pooled as a bare allocation: nothing of the conversation lingers between
+     * requests, which is what "the default keeps the model stateless" has to mean.
+     */
     private void poolSession(
             RuntimeState state, List<Batch> prompt, int total, Generator.GenerationResult r) {
-        if (sessionCapacity == 0) return;
-        int ingested = state.position() - total;
-        if (ingested < 0) return;
-        List<Batch> stream = new ArrayList<>(prompt);
-        if (ingested > 0) {
-            int[] reply = new int[ingested];
-            for (int i = 0; i < ingested; i++) reply[i] = r.tokens().intAt(i);
-            stream.add(Batch.prefill(reply));
+        // a stream we cannot describe (fewer positions than the prompt) is not matchable either
+        int ingested = sessionCapacity == 0 ? -1 : state.position() - total;
+        if (ingested < 0) {
+            state.reset();
+            sessions.addLast(new LiveSession(state, List.of(), 0));
+        } else {
+            List<Batch> stream = new ArrayList<>(prompt);
+            if (ingested > 0) {
+                int[] reply = new int[ingested];
+                for (int i = 0; i < ingested; i++) reply[i] = r.tokens().intAt(i);
+                stream.add(Batch.prefill(reply));
+            }
+            sessions.addLast(new LiveSession(state, List.copyOf(stream), total + ingested));
         }
-        sessions.addLast(new LiveSession(state, List.copyOf(stream), total + ingested));
-        while (sessions.size() > sessionCapacity) {
+        while (sessions.size() > poolCapacity()) {
             ((com.qxotic.jinfer.BaseState) sessions.removeFirst().state()).close();
         }
     }
@@ -503,11 +536,19 @@ public final class ChatEngine {
         return tree().stats();
     }
 
-    /** Test seam: live-session pool occupancy and hit count. */
+    /**
+     * Test seam: pool occupancy, prefix-hit count, and how many contexts this engine ever had to
+     * allocate - the pool is the allocator, so a steady pipeline stays at {@code allocations=1}.
+     */
     public String sessionStats() {
         lock.lock();
         try {
-            return "sessions=" + sessions.size() + " hits=" + sessionHits;
+            return "sessions="
+                    + sessions.size()
+                    + " hits="
+                    + sessionHits
+                    + " allocations="
+                    + statesAllocated;
         } finally {
             lock.unlock();
         }
