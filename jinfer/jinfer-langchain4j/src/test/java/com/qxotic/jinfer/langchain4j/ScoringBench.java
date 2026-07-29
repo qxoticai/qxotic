@@ -2,16 +2,19 @@
 // and (optionally) any /v1/rerank server fed the IDENTICAL workload by this same harness.
 //
 //   jinfer legs:  mvn test -Dsurefire.excludedGroups= -Dgroups=bench -Dtest=ScoringBench \
-//                     -pl langchain4j-jinfer
+//                     -pl jinfer-langchain4j
 //   + llama.cpp:  add -Djinfer.args="http://127.0.0.1:8080"   (llama-server --reranking, same
 //                 source weights + quant; note its GGUF is the rerank CONVERSION - cls_out head -
 //                 while jinfer scores the stock causal GGUF; scores are compared for parity)
 package com.qxotic.jinfer.langchain4j;
 
 import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.RuntimeFlags;
+import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.jinfer.chat.JsonCodec;
-import com.qxotic.jinfer.chat.TokenRuns;
-import com.qxotic.jinfer.models.qwen35.Qwen3;
+import com.qxotic.jinfer.chat.LoadedReranker;
+import com.qxotic.jinfer.chat.Models;
+import com.qxotic.jinfer.chat.Reranker;
 import com.qxotic.jinfer.testkit.ModelFixture;
 import dev.langchain4j.data.segment.TextSegment;
 import java.lang.foreign.Arena;
@@ -50,8 +53,9 @@ public final class ScoringBench {
                         .modelPath(ModelFixture.QWEN3_RERANKER_06B_Q8.path())
                         .contextLength(2048)
                         .build();
-        Qwen3 naiveModel =
-                Qwen3.loadModel(ModelFixture.QWEN3_RERANKER_06B_Q8.path(), 2048, Arena.ofAuto());
+        LoadedReranker<?> naive =
+                Models.loadReranker(
+                        ModelFixture.QWEN3_RERANKER_06B_Q8.path(), 2048, Arena.ofAuto());
 
         for (int k : K) {
             List<TextSegment> docs = corpus(k);
@@ -59,8 +63,8 @@ public final class ScoringBench {
 
             // cross-warm BOTH legs before timing EITHER, then interleave the timed reps -
             // leg order must not encode JIT tier state into the comparison
-            Leg reuseLeg = () -> reuse.scoreAll(docs, query);
-            Leg naiveLeg = () -> naiveScoreAll(naiveModel, docs, query);
+            Runnable reuseLeg = () -> reuse.scoreAll(docs, query);
+            Runnable naiveLeg = () -> naiveScoreAll(naive, docs, query);
             for (int w = 0; w < 2; w++) {
                 reuseLeg.run();
                 naiveLeg.run();
@@ -73,8 +77,8 @@ public final class ScoringBench {
             }
             double reuseMs = median(reuseTimes);
             double naiveMs = median(naiveTimes);
-            int frameTokens = frameTokens(naiveModel, query);
-            int docTokens = k * tailTokens(naiveModel, docs.get(0));
+            int frameTokens = frameTokens(naive, query);
+            int docTokens = k * tailTokens(naive, docs.get(0));
             System.out.printf(
                     "k=%-3d reuse %8.1f ms (%5.1f pairs/s)   naive %8.1f ms (%5.1f pairs/s)"
                             + "   tokens: reuse=%d naive=%d%n",
@@ -106,140 +110,123 @@ public final class ScoringBench {
     void phases() throws Exception {
         Assumptions.assumeTrue(
                 Files.exists(ModelFixture.QWEN3_RERANKER_06B_Q8.path()), "model not found");
-        Qwen3 model =
-                Qwen3.loadModel(ModelFixture.QWEN3_RERANKER_06B_Q8.path(), 2048, Arena.ofAuto());
-        Qwen3.State state = model.newState(model.config().contextLength(), 512);
+        phases(
+                Models.loadReranker(
+                        ModelFixture.QWEN3_RERANKER_06B_Q8.path(), 2048, Arena.ofAuto()));
+    }
+
+    static <S extends RuntimeState> void phases(LoadedReranker<S> loaded) {
+        Reranker<S> reranker = loaded.reranker();
+        S state = newState(loaded);
         String query = QUERIES[0];
         TextSegment doc = corpus(1).get(0);
-        Batch frame =
-                new TokenRuns(model.tokenizer())
-                        .trusted(JinferScoringModel.PREFIX)
-                        .text(
-                                "<Instruct>: "
-                                        + JinferScoringModel.DEFAULT_INSTRUCTION
-                                        + "\n<Query>: "
-                                        + query
-                                        + "\n<Document>:")
-                        .batch();
-        Batch tail =
-                new TokenRuns(model.tokenizer())
-                        .text(" " + doc.text())
-                        .trusted(JinferScoringModel.SUFFIX)
-                        .batch();
-        Batch full =
-                new TokenRuns(model.tokenizer())
-                        .trusted(JinferScoringModel.PREFIX)
-                        .text(
-                                "<Instruct>: "
-                                        + JinferScoringModel.DEFAULT_INSTRUCTION
-                                        + "\n<Query>: "
-                                        + query
-                                        + "\n<Document>: "
-                                        + doc.text())
-                        .trusted(JinferScoringModel.SUFFIX)
-                        .batch();
-        int yes = model.tokenizer().encode("yes").intAt(0);
-        int no = model.tokenizer().encode("no").intAt(0);
+        // frame + tail ARE the full prompt: the seam after "<Document>:" is token-identical to
+        // one continuous encoding, so "full" is simply both ingested from a reset state
+        Batch frame = reranker.head(reranker.defaultInstruction(), query);
+        Batch tail = reranker.document(doc.text());
         // warm
         for (int w = 0; w < 3; w++) {
             state.reset();
-            model.ingest(state, frame);
+            ingest(loaded, state, frame);
             int p = state.position();
             state.resumeAt(p);
-            model.ingest(state, tail);
-            model.logits(state, state.outputCount() - 1, new int[] {yes, no});
+            ingest(loaded, state, tail);
+            reranker.score(state);
             state.reset();
-            model.ingest(state, full);
+            ingest(loaded, state, frame);
+            ingest(loaded, state, tail);
         }
         int n = 10;
         state.reset();
-        model.ingest(state, frame);
+        ingest(loaded, state, frame);
         int p = state.position();
         long t0 = System.nanoTime();
         for (int i = 0; i < n; i++) {
             state.resumeAt(p);
-            model.ingest(state, tail);
+            ingest(loaded, state, tail);
         }
         double tailMs = (System.nanoTime() - t0) / 1e6 / n;
         t0 = System.nanoTime();
         for (int i = 0; i < n; i++) {
             state.reset();
-            model.ingest(state, tail);
+            ingest(loaded, state, tail);
         }
         double tailAt0Ms = (System.nanoTime() - t0) / 1e6 / n;
         t0 = System.nanoTime();
         for (int i = 0; i < n; i++) {
             state.reset();
-            model.ingest(state, full);
+            ingest(loaded, state, frame);
+            ingest(loaded, state, tail);
         }
         double fullMs = (System.nanoTime() - t0) / 1e6 / n;
         t0 = System.nanoTime();
         for (int i = 0; i < n; i++) {
             state.reset();
-            model.ingest(state, frame);
+            ingest(loaded, state, frame);
         }
         double frameMs = (System.nanoTime() - t0) / 1e6 / n;
         state.reset();
-        model.ingest(state, full);
+        ingest(loaded, state, frame);
+        ingest(loaded, state, tail);
         t0 = System.nanoTime();
         for (int i = 0; i < n; i++) {
-            model.logits(state, state.outputCount() - 1, new int[] {yes, no});
+            reranker.score(state);
         }
+        double scoreMs = (System.nanoTime() - t0) / 1e6 / n; // stop the clock BEFORE the sweep
         // depth sweep: does the tail cost scale with prefix depth (attention) or not (path)?
         for (int reps : new int[] {4, 16}) {
             state.reset();
             for (int i = 0; i < reps; i++) {
-                model.ingest(state, frame);
+                ingest(loaded, state, frame);
             }
             int depth = state.position();
             long td = System.nanoTime();
             for (int i = 0; i < n; i++) {
                 state.resumeAt(depth);
-                model.ingest(state, tail);
+                ingest(loaded, state, tail);
             }
             System.out.printf("tail@%d %.1f ms%n", depth, (System.nanoTime() - td) / 1e6 / n);
         }
-        double logitsMs = (System.nanoTime() - t0) / 1e6 / n;
         System.out.printf(
                 "phases: frame(%d tok) %.1f ms   tail(%d tok @pos %d) %.1f ms   tail@0 %.1f ms  "
-                        + " full(%d tok) %.1f ms   logits %.2f ms%n",
+                        + " full(%d tok) %.1f ms   score %.2f ms%n",
                 frame.count(),
                 frameMs,
                 tail.count(),
                 p,
                 tailMs,
                 tailAt0Ms,
-                full.count(),
+                frame.count() + tail.count(),
                 fullMs,
-                logitsMs);
+                scoreMs);
     }
 
     // ---- naive baseline: the pre-reuse scorer - full frame prefill per pair ----
 
-    static double naiveScoreAll(Qwen3 model, List<TextSegment> docs, String query) {
-        int yes = model.tokenizer().encode("yes").intAt(0);
-        int no = model.tokenizer().encode("no").intAt(0);
-        Qwen3.State state = model.newState(model.config().contextLength(), 512);
+    static <S extends RuntimeState> void naiveScoreAll(
+            LoadedReranker<S> loaded, List<TextSegment> docs, String query) {
+        Reranker<S> reranker = loaded.reranker();
+        String instruction = reranker.defaultInstruction();
+        S state = newState(loaded);
         for (TextSegment doc : docs) {
-            Batch prompt =
-                    new TokenRuns(model.tokenizer())
-                            .trusted(JinferScoringModel.PREFIX)
-                            .text(
-                                    "<Instruct>: "
-                                            + JinferScoringModel.DEFAULT_INSTRUCTION
-                                            + "\n<Query>: "
-                                            + query
-                                            + "\n<Document>: "
-                                            + doc.text())
-                            .trusted(JinferScoringModel.SUFFIX)
-                            .batch();
+            // token-identical to the reuse leg's frame + tail, but re-prefilled per pair: no
+            // resumeAt, so every candidate pays the whole judge frame again
             state.reset();
-            for (Batch chunk : Batch.prepare(List.of(prompt), state.batchCapacity())) {
-                model.ingest(state, chunk);
-            }
-            model.logits(state, state.outputCount() - 1, new int[] {yes, no});
+            ingest(loaded, state, reranker.head(instruction, query));
+            ingest(loaded, state, reranker.document(doc.text()));
+            reranker.score(state);
         }
-        return 0;
+    }
+
+    static <S extends RuntimeState> S newState(LoadedReranker<S> loaded) {
+        return loaded.model()
+                .newState(loaded.model().config().contextLength(), RuntimeFlags.BATCH_CAPACITY);
+    }
+
+    static <S extends RuntimeState> void ingest(LoadedReranker<S> loaded, S state, Batch batch) {
+        for (Batch chunk : Batch.prepare(List.of(batch), state.batchCapacity())) {
+            loaded.model().ingest(state, chunk);
+        }
     }
 
     // ---- shared workload ----
@@ -266,34 +253,18 @@ public final class ScoringBench {
         return docs;
     }
 
-    static int frameTokens(Qwen3 model, String query) {
-        return new TokenRuns(model.tokenizer())
-                .trusted(JinferScoringModel.PREFIX)
-                .text(
-                        "<Instruct>: "
-                                + JinferScoringModel.DEFAULT_INSTRUCTION
-                                + "\n<Query>: "
-                                + query
-                                + "\n<Document>:")
-                .batch()
-                .count();
+    static int frameTokens(LoadedReranker<?> loaded, String query) {
+        Reranker<?> reranker = loaded.reranker();
+        return reranker.head(reranker.defaultInstruction(), query).count();
     }
 
-    static int tailTokens(Qwen3 model, TextSegment doc) {
-        return new TokenRuns(model.tokenizer())
-                .text(" " + doc.text())
-                .trusted(JinferScoringModel.SUFFIX)
-                .batch()
-                .count();
+    static int tailTokens(LoadedReranker<?> loaded, TextSegment doc) {
+        return loaded.reranker().document(doc.text()).count();
     }
 
     // ---- harness ----
 
-    interface Leg {
-        Object run();
-    }
-
-    static double timeMs(Leg leg) {
+    static double timeMs(Runnable leg) {
         long t0 = System.nanoTime();
         leg.run();
         return (System.nanoTime() - t0) / 1e6;

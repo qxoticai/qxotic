@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.langchain4j;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.testkit.ModelFixture;
@@ -15,9 +16,9 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
- * The reranking laws on a real reranker GGUF (Qwen3-Reranker 0.6B). Assertions are ORDERING-based,
- * never absolute scores - relevance gaps dwarf the backend's warm FP jitter. Model-gated:
- * assume-skips when the file is absent.
+ * The reranking laws on a real reranker GGUF (Qwen3-Reranker 0.6B). Assertions are ORDERING-based
+ * or contract bounds, never absolute scores - relevance gaps dwarf the backend's warm FP jitter.
+ * Model-gated: assume-skips when the file is absent.
  */
 @Tag("integration")
 class JinferScoringModelIT {
@@ -79,6 +80,71 @@ class JinferScoringModelIT {
         assertTrue(
                 Math.abs(scores.get(0) - scores.get(2)) < 1e-3,
                 "rewound pair must score like the fresh one: " + scores);
+    }
+
+    @Test
+    void scoresAreProbabilities() {
+        // the documented contract: [0,1], higher is more relevant - consumers threshold on it
+        // (langchain4j's ReRankingContentAggregator.minScore gates the whole RAG context this way)
+        List<Double> scores =
+                scorer.scoreAll(
+                                List.of(
+                                        TextSegment.from("The Eiffel Tower stands in Paris."),
+                                        TextSegment.from(
+                                                "Bread dough needs to rest before" + " baking.")),
+                                "Where is the Eiffel Tower?")
+                        .content();
+        for (double score : scores) {
+            assertTrue(score >= 0.0 && score <= 1.0, "score out of [0,1]: " + score);
+        }
+    }
+
+    @Test
+    void nothingToScoreIsNotAnError() {
+        // a retriever that found nothing must cost nothing - not a crash, not a wasted prefill
+        Response<List<Double>> empty = scorer.scoreAll(List.of(), "anything at all");
+        assertTrue(empty.content().isEmpty());
+        assertEquals(0, empty.tokenUsage().inputTokenCount(), "no candidates, no tokens billed");
+    }
+
+    @Test
+    void documentOverTheContextIsRefusedByIndex() {
+        TextSegment small = TextSegment.from("The Eiffel Tower is in Paris.");
+        TextSegment huge = TextSegment.from("lattice tower ".repeat(2000)); // way past 2048 tokens
+        IllegalArgumentException e =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> scorer.scoreAll(List.of(small, huge), "Where is the Eiffel Tower?"));
+        assertTrue(e.getMessage().contains("document 1"), e.getMessage());
+        assertTrue(e.getMessage().contains("contextLength"), e.getMessage());
+    }
+
+    @Test
+    void aChatModelIsNotAReranker() {
+        // the mistake to expect: pointing the scorer at the chat GGUF already on disk. The
+        // architecture dispatch must say so by name, before any weight is mapped
+        UnsupportedOperationException e =
+                assertThrows(
+                        UnsupportedOperationException.class,
+                        () ->
+                                JinferScoringModel.builder()
+                                        .modelPath(ModelFixture.LFM25_350M_Q8.require())
+                                        .build());
+        assertTrue(e.getMessage().contains("not a reranker architecture"), e.getMessage());
+    }
+
+    @Test
+    void useAfterCloseFailsLoudly() {
+        JinferScoringModel closed =
+                JinferScoringModel.builder()
+                        .modelPath(ModelFixture.QWEN3_RERANKER_06B_Q8.path())
+                        .contextLength(512)
+                        .build();
+        closed.close();
+        assertThrows(
+                IllegalStateException.class,
+                () -> closed.scoreAll(List.of(TextSegment.from("anything")), "a query"),
+                "scoring a closed model must fail, never read freed memory");
     }
 
     @Test
