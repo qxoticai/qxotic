@@ -10,7 +10,9 @@ import com.qxotic.jinfer.cache.FrozenBlocks;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.cache.StateCodec;
 import com.qxotic.jinfer.llm.Generator;
+import com.qxotic.jinfer.llm.Grammar;
 import com.qxotic.jinfer.llm.Sampler;
+import com.qxotic.jinfer.llm.TextStops;
 import com.qxotic.toknroll.IntSequence;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -197,6 +199,135 @@ public final class ChatEngine {
     public record Encoded(List<Batch> prompt, Optional<ChatTemplate> template) {}
 
     /**
+     * One request in jinfer terms - what both integrations mean once their own option types are
+     * mapped away. The framework-specific parts stay in the adapters: validating their own knobs,
+     * compiling a {@code grammar} from their schema type, and resolving their defaults into these
+     * fields.
+     *
+     * @param thinking the caller's intent; {@link #prepare} still applies the completion-budget
+     *     floor and a forced call's override, so a request cannot ask for a think span it cannot
+     *     afford
+     * @param maxTokens completion budget, -1 = bounded only by the context
+     * @param grammar constrains decoding (JSON schema, raw GBNF, ...); null = free
+     * @param forceToolCall seed the family's call marker so the reply IS a tool call
+     * @param cachedView this request runs on a cached-prompt view: native codec only, since the
+     *     Jinja whole-render makes no prefix-stability promise
+     */
+    public record Request(
+            List<Message> messages,
+            List<Tool> tools,
+            boolean thinking,
+            int maxTokens,
+            long timeoutNanos,
+            float temperature,
+            float topP,
+            long seed,
+            Grammar.Spec grammar,
+            boolean forceToolCall,
+            boolean cachedView,
+            List<String> stops) {
+
+        // ranges, not taste: this is a positional record with adjacent same-typed knobs, so a
+        // transposed temperature/topP would otherwise sample differently and silently
+        public Request {
+            if (messages == null || messages.isEmpty())
+                throw new IllegalArgumentException("a request needs at least one message");
+            if (temperature < 0) throw new IllegalArgumentException("temperature " + temperature);
+            if (topP <= 0 || topP > 1) throw new IllegalArgumentException("topP " + topP);
+            if (maxTokens < -1) throw new IllegalArgumentException("maxTokens " + maxTokens);
+            if (timeoutNanos < 0) throw new IllegalArgumentException("timeout " + timeoutNanos);
+            messages = List.copyOf(messages);
+            tools = tools == null ? List.of() : List.copyOf(tools);
+            stops = stops == null ? List.of() : List.copyOf(stops);
+        }
+    }
+
+    /** A request lowered to everything a generation pass needs; see {@link #prepare}. */
+    public record Prepared(
+            Encoded encoded,
+            Sampler sampler,
+            int maxTokens,
+            long timeoutNanos,
+            int promptTokens,
+            int[] parserSeed,
+            List<String> stops,
+            boolean cachedView) {}
+
+    /**
+     * Lowers a request to a prompt, a sampler and a parser seed - the policy both integrations were
+     * duplicating:
+     *
+     * <ul>
+     *   <li>the THINK FLOOR: a think span cannot fit a tiny completion budget, so below it (or on a
+     *       forced call, whose reply is seeded into the call block) reasoning is disabled in the
+     *       scaffold AND the sampler, and the budget buys visible text
+     *   <li>encoding: the native codec, falling back to the hardened Jinja whole-render - except on
+     *       a view, which is native-only
+     *   <li>the sampling stack, with the request's grammar layered on under the same think gating
+     *   <li>the parser seed: the generation prompt's reply-grammar tail (a prompt-opened think
+     *       span), or a forced call's own seed - the parser must start in the span state the prompt
+     *       left the model in, or reasoning routes to the content lane
+     *   <li>a forced call's unsplittable recipe: marker seeded into the prompt, names
+     *       prefix-pinned, parser pre-fed
+     * </ul>
+     *
+     * {@code messageMaps}/{@code toolMaps} supply the OpenAI-shaped maps the Jinja fallback renders
+     * (framework-shaped, hence suppliers - they are never called on the native path).
+     */
+    public Prepared prepare(
+            Request request, Supplier<List<Object>> messageMaps, Supplier<List<Object>> toolMaps) {
+        boolean think =
+                request.thinking()
+                        && !request.forceToolCall()
+                        && (request.maxTokens() < 0
+                                || request.maxTokens() >= RequestPolicy.THINK_FLOOR);
+        Conversation conversation =
+                new Conversation(request.messages(), request.tools(), think, "");
+        Encoded encoded =
+                request.cachedView()
+                        ? encodeNative(conversation)
+                        : encode(conversation, messageMaps, toolMaps);
+        Sampler sampler =
+                RequestPolicy.sampler(
+                        loaded,
+                        request.temperature(),
+                        request.topP(),
+                        request.seed(),
+                        think,
+                        request.maxTokens(),
+                        null);
+        if (request.grammar() != null) {
+            sampler = RequestPolicy.constrained(loaded, sampler, request.grammar().cursor(), think);
+        }
+        int[] parserSeed = encoded.template().map(t -> t.replySeed(think)).orElse(new int[0]);
+        if (request.forceToolCall()) {
+            RequestPolicy.ForcedCall forced =
+                    RequestPolicy.forceCall(loaded, conversation.tools(), sampler)
+                            .orElseThrow(
+                                    () ->
+                                            new UnsupportedOperationException(
+                                                    "forcing a tool call is not supported by this"
+                                                            + " model: it seeds the reply with the"
+                                                            + " family's call marker, which needs a"
+                                                            + " native codec that declares one"));
+            List<Batch> prompt = new ArrayList<>(encoded.prompt());
+            prompt.add(forced.seed());
+            encoded = new Encoded(List.copyOf(prompt), encoded.template());
+            sampler = forced.sampler();
+            parserSeed = forced.parserSeed();
+        }
+        return new Prepared(
+                encoded,
+                sampler,
+                request.maxTokens(),
+                request.timeoutNanos(),
+                encoded.prompt().stream().mapToInt(Batch::count).sum(),
+                parserSeed,
+                request.stops(),
+                request.cachedView());
+    }
+
+    /**
      * Native-first encode: the model's own codec when it can frame the conversation byte-exactly,
      * else the scrubbed Jinja whole-render over the caller's lazily-built framework maps (only
      * built when the punt actually happens). Media never reaches the text-only fallback - it fails
@@ -244,6 +375,86 @@ public final class ChatEngine {
      * instead of prefill (block-tree restore or a pooled live session).
      */
     public record Outcome(Generator.GenerationResult result, int restoredTokens) {}
+
+    /**
+     * Where a running generation's deltas go. A blocking caller passes {@link #NONE} and reads the
+     * finished {@link Completion}; a streaming one emits each delta and answers {@link #cancelled}.
+     * The two lanes are separate because reasoning is not content: consumers show it differently,
+     * and stop sequences arm on content only.
+     */
+    public interface ReplySink {
+
+        ReplySink NONE = new ReplySink() {};
+
+        /** A content delta, already past the stop-sequence holdback (safe to show). */
+        default void content(String delta) {}
+
+        /** A reasoning delta, when the model has a think span and it is open. */
+        default void thinking(String delta) {}
+
+        /** Checked before every token: true ends the pass, and the caller gets no reply. */
+        default boolean cancelled() {
+            return false;
+        }
+    }
+
+    /**
+     * A finished generation in jinfer terms. {@code reply} is null exactly when {@code cancelled} -
+     * a cancelled pass has nothing to report. {@code stopped} means a stop sequence cut the content
+     * lane: the reply still carries the full text (with its verbatim token ids intact), and the
+     * caller truncates its own message with {@link TextStops#apply}.
+     */
+    public record Completion(
+            Message reply,
+            Generator.GenerationResult result,
+            boolean stopped,
+            boolean cancelled,
+            int restoredTokens) {}
+
+    /**
+     * Runs a prepared request and parses the reply - the loop both integrations wrote twice each
+     * (blocking and streaming): reply lanes seeded from the prompt's own grammar tail, the stop
+     * holdback that keeps a could-still-be-a-stop suffix unemitted, cancellation checked per token,
+     * and ONE parse that both streams the deltas and finishes the message (no second decode pass).
+     *
+     * <p>Blocking is streaming with a sink that discards: {@code complete(p, ReplySink.NONE)}.
+     */
+    public Completion complete(Prepared prepared, ReplySink out) {
+        ReplyLanes lanes =
+                new ReplyLanes(
+                        prepared.encoded().template(), loaded.tokenizer(), prepared.parserSeed());
+        // over an empty stop list the holdback is a transparent pass-through, so there is no
+        // "no stops" special case to carry
+        TextStops.Holdback watch = new TextStops.Holdback(prepared.stops(), out::content);
+        Generator.TokenSink sink =
+                token -> {
+                    if (out.cancelled()) return false;
+                    String fragment = lanes.feed(token);
+                    if (!fragment.isEmpty()) {
+                        if (lanes.reasoning()) {
+                            out.thinking(fragment);
+                        } else {
+                            watch.accept(fragment); // stop strings match the content lane only
+                        }
+                    }
+                    return !out.cancelled() && !watch.stopped();
+                };
+        Outcome outcome =
+                generate(
+                        prepared.encoded().prompt(),
+                        prepared.sampler(),
+                        prepared.maxTokens(),
+                        prepared.timeoutNanos(),
+                        sink,
+                        prepared.cachedView());
+        if (out.cancelled()) {
+            // a cancelled pass ends silently: no reply, no completion callback upstream
+            return new Completion(null, outcome.result(), false, true, outcome.restoredTokens());
+        }
+        watch.flush(); // release held-back chars (a stopped watch emits nothing past the cut)
+        return new Completion(
+                lanes.finish(), outcome.result(), watch.stopped(), false, outcome.restoredTokens());
+    }
 
     /**
      * One generation pass under the engine lock. {@code cached} routes through the prompt tree
