@@ -19,7 +19,7 @@ import org.junit.jupiter.api.Test;
  * Coarse block caching against Nemotron-H (Mamba2 hybrid: the SSM residue is ~90MB per block at 30B
  * dims, so cached prompts commit as ONE block per prompt - {@code coarseBlocks}). Model-gated (30B
  * - slow to load): assume-skips when the file is absent. Run: {@code mvn test
- * -Dsurefire.excludedGroups= -Dgroups=integration -pl langchain4j-jinfer}
+ * -Dsurefire.excludedGroups= -Dgroups=integration -pl jinfer-langchain4j}
  */
 @Tag("integration")
 class JinferCoarseCacheIT {

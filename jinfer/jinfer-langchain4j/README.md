@@ -1,4 +1,4 @@
-# langchain4j-jinfer
+# jinfer-langchain4j
 
 [langchain4j](https://github.com/langchain4j/langchain4j) chat models backed by [jinfer](../README.md): in-process CPU inference over local GGUF files.
 No server, no HTTP - the model runs inside your JVM.
@@ -7,7 +7,7 @@ Prompts go through jinfer's hand-written, oracle-validated chat-template codecs 
 ```xml
 <dependency>
   <groupId>com.qxotic</groupId>
-  <artifactId>langchain4j-jinfer</artifactId>
+  <artifactId>jinfer-langchain4j</artifactId>
   <version>0.1.0</version>
 </dependency>
 ```

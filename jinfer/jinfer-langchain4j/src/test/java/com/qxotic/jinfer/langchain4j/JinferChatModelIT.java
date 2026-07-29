@@ -27,7 +27,7 @@ import org.junit.jupiter.api.Test;
 /**
  * End-to-end against a real GGUF (LFM2: native template port, tool-capable). Model-gated:
  * assume-skips when the file is absent. Run: {@code mvn test -Dsurefire.excludedGroups=
- * -Dgroups=integration -pl langchain4j-jinfer}
+ * -Dgroups=integration -pl jinfer-langchain4j}
  */
 @Tag("integration")
 class JinferChatModelIT {

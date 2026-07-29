@@ -20,7 +20,7 @@ import org.junit.jupiter.api.Test;
  * OOMs on jam's repacked-weight cache (since deleted). Run with:
  *
  * <pre>
- * JAVA_TOOL_OPTIONS=-XX:NativeMemoryTracking=summary mvn -f langchain4j-jinfer/pom.xml test \
+ * JAVA_TOOL_OPTIONS=-XX:NativeMemoryTracking=summary mvn -f jinfer-langchain4j/pom.xml test \
  *   -Dsurefire.excludedGroups= -Dgroups=bench -Dtest=NmtProbe
  * </pre>
  */
