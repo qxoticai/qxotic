@@ -46,4 +46,15 @@ public interface ModelProvider {
                         + gguf.getString("general.architecture")
                         + "' is not an embedding architecture");
     }
+
+    /**
+     * Loads a RERANKER from an already-parsed GGUF ({@link Models#loadReranker}): the backbone plus
+     * this family's {@link Reranker} recipe. Ports with no reranker in the family keep this
+     * default.
+     */
+    default LoadedReranker<?> loadReranker(
+            FileChannel fileChannel, GGUF gguf, int contextLength, Arena arena) throws IOException {
+        throw new UnsupportedOperationException(
+                "'" + gguf.getString("general.architecture") + "' is not a reranker architecture");
+    }
 }

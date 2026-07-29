@@ -64,6 +64,18 @@ public final class Models {
         return open(path, (fc, gguf) -> provider(gguf).loadEmbedder(fc, gguf, ctx, arena));
     }
 
+    /**
+     * Loads a RERANKER (a cross-encoder recipe over a port's backbone, e.g. Qwen3-Reranker) at
+     * context size {@code ctx}; same architecture dispatch as {@link #load}. Architectures with no
+     * reranker recipe fail with a clear {@link UnsupportedOperationException}. The GGUF must be the
+     * reranker of its family - an architecture cannot tell its reranker and embedder apart, so a
+     * wrong file scores rather than refuses.
+     */
+    public static LoadedReranker<?> loadReranker(Path path, int ctx, Arena arena)
+            throws IOException {
+        return open(path, (fc, gguf) -> provider(gguf).loadReranker(fc, gguf, ctx, arena));
+    }
+
     private interface Load<T> {
         T apply(FileChannel fc, GGUF gguf) throws IOException;
     }
