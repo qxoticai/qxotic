@@ -120,6 +120,9 @@ desktop.ini
 # No models in the repo
 *.gguf
 
+# Synthesized audio (the TTS CLI writes output.wav when --output is omitted)
+*.wav
+
 # Claude/opencode cache
 .claude/
 .opencode/
