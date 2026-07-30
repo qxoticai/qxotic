@@ -229,6 +229,62 @@ public final class Norms {
         }
     }
 
+    /**
+     * LayerNorm over native F32 activations: {@code out = gamma·(x-mean)/σ + beta}, time-major
+     * ({@code data[t*C + c]}, channels contiguous). {@code out} and {@code x} may be the same
+     * tensor. The float[] overloads above are the same math on heap data.
+     */
+    public static void layerNorm(
+            F32FloatTensor out,
+            F32FloatTensor x,
+            FloatTensor gamma,
+            FloatTensor beta,
+            int C,
+            int T,
+            float eps) {
+        var sp = FloatTensor.F_SPECIES;
+        // Only F32 weights can be read as vectors; F16/quantized gamma go down the scalar path.
+        boolean vector =
+                FloatTensor.USE_VECTOR_API
+                        && sp != null
+                        && gamma instanceof F32FloatTensor
+                        && beta instanceof F32FloatTensor;
+        int bound = vector ? sp.loopBound(C) : 0;
+        for (int t = 0; t < T; t++) {
+            long row = (long) t * C;
+            float mean = 0;
+            for (int c = 0; c < C; c++) mean += x.getFloat(row + c);
+            mean /= C;
+            float variance = 0;
+            for (int c = 0; c < C; c++) {
+                float d = x.getFloat(row + c) - mean;
+                variance += d * d;
+            }
+            float inv = (float) (1.0 / Math.sqrt(variance / C + eps));
+            int c = 0;
+            if (vector) {
+                var means = FloatVector.broadcast(sp, mean);
+                var invs = FloatVector.broadcast(sp, inv);
+                for (; c < bound; c += sp.length()) {
+                    long byteOff = x.vbase + (row + c) * Float.BYTES;
+                    var v =
+                            FloatVector.fromMemorySegment(
+                                            sp, x.vseg, byteOff, ByteOrder.LITTLE_ENDIAN)
+                                    .sub(means)
+                                    .mul(invs)
+                                    .mul(gamma.getFloatVector(sp, c))
+                                    .add(beta.getFloatVector(sp, c));
+                    v.intoMemorySegment(
+                            out.vseg, out.vbase + (row + c) * Float.BYTES, ByteOrder.LITTLE_ENDIAN);
+                }
+            }
+            for (; c < C; c++)
+                out.setFloat(
+                        row + c,
+                        (x.getFloat(row + c) - mean) * inv * gamma.getFloat(c) + beta.getFloat(c));
+        }
+    }
+
     private static void layerNormF32(
             float[] out,
             float[] x,
