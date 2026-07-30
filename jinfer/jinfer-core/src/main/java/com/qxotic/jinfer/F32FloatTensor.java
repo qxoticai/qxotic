@@ -214,6 +214,32 @@ public final class F32FloatTensor extends SegmentFloatTensor {
     @Override
     public FloatTensor saxpyInPlace(
             long thisOffset, FloatTensor that, long thatOffset, int size, float a) {
+        if (that instanceof F32FloatTensor f32 && USE_VECTOR_API) {
+            // this += a * that, both dense F32 — the vocoder's per-tap convolution sweep, and the
+            // MoE expert accumulation. Without this the pair fell to the scalar floor.
+            FloatVector va = FloatVector.broadcast(F_SPECIES, a);
+            int upperBound = F_SPECIES.loopBound(size);
+            int i = 0;
+            for (; i < upperBound; i += F_SPECIES.length()) {
+                long thisByte = vbase + (long) (thisOffset + i) * Float.BYTES;
+                var thatVector =
+                        FloatVector.fromMemorySegment(
+                                F_SPECIES,
+                                f32.vseg,
+                                f32.vbase + (long) (thatOffset + i) * Float.BYTES,
+                                ByteOrder.LITTLE_ENDIAN);
+                va.fma(
+                                thatVector,
+                                FloatVector.fromMemorySegment(
+                                        F_SPECIES, vseg, thisByte, ByteOrder.LITTLE_ENDIAN))
+                        .intoMemorySegment(vseg, thisByte, ByteOrder.LITTLE_ENDIAN);
+            }
+            for (; i < size; i++)
+                setFloat(
+                        thisOffset + i,
+                        Math.fma(a, f32.getFloat(thatOffset + i), getFloat(thisOffset + i)));
+            return this;
+        }
         if (that instanceof F16FloatTensor f16 && USE_VECTOR_API) {
             FloatVector va = FloatVector.broadcast(F_SPECIES, a);
             int upperBound = F_SPECIES.loopBound(size);
