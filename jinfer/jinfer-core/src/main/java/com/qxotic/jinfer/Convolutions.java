@@ -23,6 +23,62 @@ public final class Convolutions {
     private static final int TILE = 4096;
 
     /**
+     * Opt-in shape census ({@code -Djinfer.convProfile}): tally every call by shape and dump it at
+     * exit, ranked by share of total FLOPs. Exists because tuning {@link #TILE_CODE} against a
+     * hand-written shape ladder guesses both the shapes and their weights, and guessed both wrong
+     * for Inflect2 — the real ladder runs 3x longer per chunk and is dominated by dilation 1, which
+     * inverted the answer. Feed the dump to {@code bench/ConvPeak.java} to benchmark what a model
+     * actually runs, weighted how it runs it.
+     *
+     * <p>Off by default: one {@code static final} false, so the branch folds away. NOT available in
+     * a native image — {@code com.qxotic.*} initializes at build time, so this freezes to the build
+     * machine's value (see {@link #TILE_CODE}).
+     */
+    private static final boolean PROFILE = Boolean.getBoolean("jinfer.convProfile");
+
+    private static final java.util.Map<String, long[]> CENSUS =
+            PROFILE ? new java.util.concurrent.ConcurrentHashMap<>() : java.util.Map.of();
+
+    static {
+        if (PROFILE) Runtime.getRuntime().addShutdownHook(new Thread(Convolutions::dumpCensus));
+    }
+
+    private static void tally(int inChannels, int outChannels, int time, int kernel, int dilation) {
+        String key =
+                String.format(
+                        "%4d->%4d ch  %7dt  k=%-2d d=%-2d",
+                        inChannels, outChannels, time, kernel, dilation);
+        long flops = 2L * outChannels * inChannels * kernel * time;
+        CENSUS.compute(
+                key,
+                (k, cell) -> {
+                    long[] counts = cell == null ? new long[2] : cell;
+                    counts[0]++;
+                    counts[1] += flops;
+                    return counts;
+                });
+    }
+
+    private static void dumpCensus() {
+        long total = CENSUS.values().stream().mapToLong(cell -> cell[1]).sum();
+        if (total == 0) return;
+        System.err.printf(
+                "%n[conv census] %d distinct shapes, %.2f GFLOP total%n",
+                CENSUS.size(), total / 1e9);
+        System.err.printf("%-34s %8s %12s %8s%n", "shape", "calls", "GFLOP", "share");
+        CENSUS.entrySet().stream()
+                .sorted((a, b) -> Long.compare(b.getValue()[1], a.getValue()[1]))
+                .forEach(
+                        e ->
+                                System.err.printf(
+                                        "%-34s %8d %12.3f %7.1f%%%n",
+                                        e.getKey(),
+                                        e.getValue()[0],
+                                        e.getValue()[1] / 1e9,
+                                        100.0 * e.getValue()[1] / total));
+    }
+
+    /**
      * Dilated 1-D convolution, "same" padding: {@code out[oc][t] = bias[oc] + Σ_ic Σ_k
      * taps[oc][ic][k] * in[ic][t + k*dilation - pad]}.
      *
@@ -43,6 +99,7 @@ public final class Convolutions {
             int dilation,
             float[] taps,
             FloatTensor bias) {
+        if (PROFILE) tally(inChannels, outChannels, time, kernel, dilation);
         int pad = ((kernel - 1) * dilation) / 2;
         int tapsPerOutput = kernel * inChannels;
         int tiles = (time + TILE - 1) / TILE;
