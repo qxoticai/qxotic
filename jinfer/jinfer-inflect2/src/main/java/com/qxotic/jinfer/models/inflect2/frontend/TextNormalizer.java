@@ -1,36 +1,57 @@
-// English text normalizer. Mirrors inflect_nano_v2_frontend.py normalize_text().
-// Converts numbers, dates, times, money, ordinals, acronyms into readable English.
-// Pure Java — no external dependencies.
+// English text normalizer: numbers, dates, times, money, ordinals and acronyms rewritten as the
+// words a reader would say. Mirrors inflect_nano_v2_frontend.py's normalize_text().
+//
+// The steps run in a fixed order and each consumes what it recognizes, so the narrow patterns
+// (money, dates, times, phone numbers, versions) must come before the general ones (decimals,
+// ordinals, bare numbers). Pure Java, no dependencies.
 package com.qxotic.jinfer.models.inflect2.frontend;
 
-import java.util.*;
-import java.util.regex.*;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.regex.MatchResult;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public final class TextNormalizer {
     private TextNormalizer() {}
 
+    // ── vocabulary ────────────────────────────────────────────────────────
+
     private static final String[] ONES = {
-        "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
-        "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen",
-                "eighteen", "nineteen"
+        "zero",
+        "one",
+        "two",
+        "three",
+        "four",
+        "five",
+        "six",
+        "seven",
+        "eight",
+        "nine",
+        "ten",
+        "eleven",
+        "twelve",
+        "thirteen",
+        "fourteen",
+        "fifteen",
+        "sixteen",
+        "seventeen",
+        "eighteen",
+        "nineteen"
     };
     private static final String[] TENS = {
         "", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"
     };
     private static final String[] MONTHS = {
-        "January",
-        "February",
-        "March",
-        "April",
-        "May",
-        "June",
-        "July",
-        "August",
-        "September",
-        "October",
-        "November",
-        "December"
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December"
     };
+
+    /** How each letter is said when a word is spelled out. Indexed by {@code letter - 'A'}. */
+    private static final String[] LETTER_NAMES =
+            ("ay,bee,see,dee,ee,eff,gee,aitch,eye,jay,kay,ell,em,en,"
+                            + "oh,pee,cue,ar,ess,tee,you,vee,double you,ex,why,zee")
+                    .split(",");
 
     private static final Map<String, String> ABBREVIATIONS =
             Map.ofEntries(
@@ -45,40 +66,7 @@ public final class TextNormalizer {
                     Map.entry("e.g.", "for example"),
                     Map.entry("i.e.", "that is"));
 
-    private static final Map<String, String> LETTERS = new HashMap<>();
-
-    static {
-        for (String[] p :
-                new String[][] {
-                    {"A", "ay"},
-                    {"B", "bee"},
-                    {"C", "see"},
-                    {"D", "dee"},
-                    {"E", "ee"},
-                    {"F", "eff"},
-                    {"G", "gee"},
-                    {"H", "aitch"},
-                    {"I", "eye"},
-                    {"J", "jay"},
-                    {"K", "kay"},
-                    {"L", "ell"},
-                    {"M", "em"},
-                    {"N", "en"},
-                    {"O", "oh"},
-                    {"P", "pee"},
-                    {"Q", "cue"},
-                    {"R", "ar"},
-                    {"S", "ess"},
-                    {"T", "tee"},
-                    {"U", "you"},
-                    {"V", "vee"},
-                    {"W", "double you"},
-                    {"X", "ex"},
-                    {"Y", "why"},
-                    {"Z", "zee"}
-                }) LETTERS.put(p[0], p[1]);
-    }
-
+    /** Built-in pronunciations for names the letter-by-letter rules would mangle. */
     private static final Map<String, String> OVERRIDES =
             Map.ofEntries(
                     Map.entry("Qwen3", "Qwen three"),
@@ -92,190 +80,260 @@ public final class TextNormalizer {
                     Map.entry("RTX 5080", "ar tee ex fifty eighty"),
                     Map.entry("RTX 5090", "ar tee ex fifty ninety"));
 
-    // ── public ──────────────────────────────────────────────────────────────
+    // ── the pipeline's patterns, in the order they run ────────────────────
 
-    /** Normalize with built-in word overrides only. */
+    private static final Pattern WHITESPACE = Pattern.compile("\\s+");
+    private static final Pattern BRACKETS = Pattern.compile("[()\\[\\]{}]");
+    private static final Pattern DOTTED_ACRONYM = Pattern.compile("\\b([A-Z])(?:\\.([A-Z]))+\\.?");
+    private static final Pattern LABELLED_NUMBER =
+            Pattern.compile(
+                    "\\b(apartment|apt\\.?|suite|unit|room|flight|extension|order|invoice|locker"
+                            + "|aisle|gate)\\s+([A-Za-z]?\\d{1,4}[A-Za-z]?)\\b",
+                    Pattern.CASE_INSENSITIVE);
+    private static final Pattern STREET_NUMBER =
+            Pattern.compile(
+                    "\\b(\\d{3})(?=\\s+(?:North|South|East|West)\\b)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern MONEY = Pattern.compile("\\$(\\d[\\d,]*(?:\\.\\d{1,2})?)");
+    private static final Pattern DATE =
+            Pattern.compile("\\b(0?[1-9]|1[0-2])/(0?[1-9]|[12]\\d|3[01])/(20\\d{2}|19\\d{2})\\b");
+    private static final Pattern CLOCK_TIME =
+            Pattern.compile("\\b(\\d{1,2}):(\\d{2})\\s*([AaPp]\\.?\\s*[Mm]\\.?)?\\b");
+    private static final Pattern BARE_TIME =
+            Pattern.compile("\\b(\\d{1,2})\\s*([AaPp]\\.?\\s*[Mm]\\.?)\\b");
+    private static final Pattern PHONE = Pattern.compile("\\b(\\d{3})-(\\d{4})\\b");
+    private static final Pattern VERSION = Pattern.compile("\\b\\d+(?:\\.\\d+){2,}\\b");
+    private static final Pattern DECIMAL = Pattern.compile("\\b(\\d+)\\.(\\d+)\\b");
+    private static final Pattern ORDINAL =
+            Pattern.compile("\\b(\\d+)(st|nd|rd|th)\\b", Pattern.CASE_INSENSITIVE);
+    private static final Pattern NUMBER = Pattern.compile("\\b\\d[\\d,]*\\b");
+    private static final Pattern UPPERCASE_ACRONYM = Pattern.compile("\\b[A-Z]{2,}\\b");
+    private static final Pattern IDENTIFIER = Pattern.compile("([A-Za-z]?)(\\d+)([A-Za-z]?)");
+
+    private static final Pattern REPEATED_COMMA = Pattern.compile(",(?:\\s*,)+");
+    private static final Pattern COMMA_THEN_STOP = Pattern.compile(",\\s*([.!?])");
+    private static final Pattern SPACE_BEFORE_PUNCTUATION = Pattern.compile("\\s+([,;:.!?])");
+    private static final Pattern PUNCTUATION_RUN_ON = Pattern.compile("([,;:.!?])(?=\\S)");
+
+    /** Digits above this many cannot be an {@code int}, so they get spelled out. */
+    private static final int MAX_NUMBER_DIGITS = 9;
+
+    // ── public ────────────────────────────────────────────────────────────
+
+    /** Normalize with the built-in pronunciations only. */
     public static String normalize(String text) {
         return normalize(text, Map.of());
     }
 
     /**
-     * Normalize English text for synthesis. {@code userOverrides} are applied <em>before</em> the
-     * built-in pronunciation table — user entries take priority. Override values should be readable
-     * English (e.g. {@code "PyTorch" → "pie torch"}).
+     * Normalize English text for synthesis. {@code userOverrides} join the built-in pronunciation
+     * table and take priority over it. Values should be readable English, e.g. {@code "PyTorch" →
+     * "pie torch"}.
      */
     public static String normalize(String text, Map<String, String> userOverrides) {
-        // 1. Unicode punctuation normalisation
-        text =
-                text.replace('\u2018', '\'')
-                        .replace('\u2019', '\'')
-                        .replace('\u201c', '"')
-                        .replace('\u201d', '"')
-                        .replace("\u2013", "-")
-                        .replace("\u2014", ",")
-                        .replace("\u2026", "...");
-        text =
-                text.replace("(", " ")
-                        .replace(")", " ")
-                        .replace("[", " ")
-                        .replace("]", " ")
-                        .replace("{", " ")
-                        .replace("}", " ");
-        text = text.replaceAll("\\s+", " ").trim();
+        text = punctuation(text);
+        text = WHITESPACE.matcher(BRACKETS.matcher(text).replaceAll(" ")).replaceAll(" ").trim();
 
-        // 2. Word overrides (user overrides take priority over built-in)
-        Map<String, String> merged = new HashMap<>(OVERRIDES);
-        merged.putAll(userOverrides);
-        for (var e : merged.entrySet())
-            text = text.replaceAll("\\b" + Pattern.quote(e.getKey()) + "\\b", e.getValue());
+        Map<String, String> pronunciations = new HashMap<>(OVERRIDES);
+        pronunciations.putAll(userOverrides);
+        for (var entry : pronunciations.entrySet())
+            text = replaceWord(text, entry.getKey(), entry.getValue(), true);
+        for (var entry : ABBREVIATIONS.entrySet())
+            text = replaceWord(text, entry.getKey(), entry.getValue(), false);
 
-        // 3. Abbreviations
-        for (var e : ABBREVIATIONS.entrySet())
-            text = text.replaceAll("\\b" + Pattern.quote(e.getKey()), e.getValue());
-
-        // 4. Acronyms with periods
+        text = DOTTED_ACRONYM.matcher(text).replaceAll(r -> separateLetters(r.group()));
         text =
-                Pattern.compile("\\b([A-Z])(?:\\.([A-Z]))+\\.?")
+                LABELLED_NUMBER
                         .matcher(text)
-                        .replaceAll(
-                                r -> {
-                                    var sb = new StringBuilder();
-                                    for (char c : r.group().toCharArray())
-                                        if (c >= 'A' && c <= 'Z') sb.append(c).append(' ');
-                                    return sb.toString().trim();
-                                });
-
-        // 5. Labeled identifiers: "apt 42A"
+                        .replaceAll(r -> r.group(1) + " " + identifier(r.group(2)));
+        text = STREET_NUMBER.matcher(text).replaceAll(r -> digitWords(r.group(1)));
+        text = MONEY.matcher(text).replaceAll(TextNormalizer::money);
+        text = DATE.matcher(text).replaceAll(TextNormalizer::date);
+        text = CLOCK_TIME.matcher(text).replaceAll(TextNormalizer::clockTime);
+        text = BARE_TIME.matcher(text).replaceAll(TextNormalizer::bareTime);
         text =
-                Pattern.compile(
-                                "\\b(apartment|apt\\.?|suite|unit|room|flight|extension|order|invoice|locker|aisle|gate)\\s+([A-Za-z]?\\d{1,4}[A-Za-z]?)\\b",
-                                Pattern.CASE_INSENSITIVE)
-                        .matcher(text)
-                        .replaceAll(r -> r.group(1) + " " + expandIdent(r.group(2)));
-
-        // 6. Street numbers
-        text =
-                Pattern.compile(
-                                "\\b(\\d{3})(?=\\s+(?:North|South|East|West)\\b)",
-                                Pattern.CASE_INSENSITIVE)
-                        .matcher(text)
-                        .replaceAll(r -> digitWords(r.group(1)));
-
-        // 7. Money
-        text =
-                Pattern.compile("\\$(\\d[\\d,]*(?:\\.\\d{1,2})?)")
-                        .matcher(text)
-                        .replaceAll(TextNormalizer::money);
-
-        // 8. Dates
-        text =
-                Pattern.compile(
-                                "\\b(0?[1-9]|1[0-2])/(0?[1-9]|[12]\\d|3[01])/(20\\d{2}|19\\d{2})\\b")
-                        .matcher(text)
-                        .replaceAll(TextNormalizer::date);
-
-        // 9. Time
-        text =
-                Pattern.compile("\\b(\\d{1,2}):(\\d{2})\\s*([AaPp]\\.?\\s*[Mm]\\.?)?\\b")
-                        .matcher(text)
-                        .replaceAll(TextNormalizer::time);
-        text =
-                Pattern.compile("\\b(\\d{1,2})\\s*([AaPp]\\.?\\s*[Mm]\\.?)\\b")
-                        .matcher(text)
-                        .replaceAll(TextNormalizer::bareTime);
-
-        // 10. Phone
-        text =
-                Pattern.compile("\\b(\\d{3})-(\\d{4})\\b")
-                        .matcher(text)
+                PHONE.matcher(text)
                         .replaceAll(r -> digitWords(r.group(1)) + ", " + digitWords(r.group(2)));
-
-        // 11. Version strings
+        text = VERSION.matcher(text).replaceAll(TextNormalizer::version);
         text =
-                Pattern.compile("\\b\\d+(?:\\.\\d+){2,}\\b")
-                        .matcher(text)
+                DECIMAL.matcher(text)
                         .replaceAll(
-                                r -> {
-                                    var sb = new StringBuilder();
-                                    for (String p : r.group().split("\\."))
-                                        sb.append(numberWords(Integer.parseInt(p)))
-                                                .append(" point ");
-                                    return sb.substring(0, sb.length() - 7);
-                                });
+                                r -> spokenNumber(r.group(1)) + " point " + digitWords(r.group(2)));
+        text = ORDINAL.matcher(text).replaceAll(r -> ordinalWords(Integer.parseInt(r.group(1))));
+        text = NUMBER.matcher(text).replaceAll(TextNormalizer::number);
+        text = UPPERCASE_ACRONYM.matcher(text).replaceAll(r -> spellLetters(r.group()));
 
-        // 12. Decimals
-        text =
-                Pattern.compile("\\b(\\d+)\\.(\\d+)\\b")
-                        .matcher(text)
-                        .replaceAll(
-                                r ->
-                                        numberWords(Integer.parseInt(r.group(1)))
-                                                + " point "
-                                                + digitWords(r.group(2)));
-
-        // 13. Ordinals
-        text =
-                Pattern.compile("\\b(\\d+)(st|nd|rd|th)\\b", Pattern.CASE_INSENSITIVE)
-                        .matcher(text)
-                        .replaceAll(r -> ordinalWords(Integer.parseInt(r.group(1))));
-
-        // 14. Plain numbers
-        text =
-                Pattern.compile("\\b\\d[\\d,]*\\b")
-                        .matcher(text)
-                        .replaceAll(
-                                r -> {
-                                    String v = r.group().replace(",", "");
-                                    if (v.length() >= 5 && !v.startsWith("20"))
-                                        return digitWords(v);
-                                    return numberWords(Integer.parseInt(v));
-                                });
-
-        // 15. Uppercase acronyms
-        text =
-                Pattern.compile("\\b[A-Z]{2,}\\b")
-                        .matcher(text)
-                        .replaceAll(
-                                r -> {
-                                    var sb = new StringBuilder();
-                                    for (char c : r.group().toCharArray())
-                                        sb.append(
-                                                        LETTERS.getOrDefault(
-                                                                String.valueOf(c),
-                                                                String.valueOf(c)))
-                                                .append(' ');
-                                    return sb.toString().trim();
-                                });
-
-        // 16. Cleanup spacing
-        text = text.replaceAll(",(?:\\s*,)+", ",");
-        text = text.replaceAll(",\\s*([.!?])", "$1");
-        text = text.replaceAll("\\s+([,;:.!?])", "$1");
-        text = text.replaceAll("([,;:.!?])(?=\\S)", "$1 ");
-        return text.replaceAll("\\s+", " ").trim();
+        return tidy(text);
     }
 
-    // ── number converters ──────────────────────────────────────────────────
+    // ── steps ─────────────────────────────────────────────────────────────
+
+    /** Curly quotes, dashes and ellipses down to what the symbol table can carry. */
+    private static String punctuation(String text) {
+        return text.replace('\u2018', '\'')
+                .replace('\u2019', '\'')
+                .replace('\u201c', '"')
+                .replace('\u201d', '"')
+                .replace("\u2013", "-")
+                .replace("\u2014", ",")
+                .replace("\u2026", "...");
+    }
+
+    /** Collapse the spacing that the expansions above leave behind. */
+    private static String tidy(String text) {
+        text = REPEATED_COMMA.matcher(text).replaceAll(",");
+        text = COMMA_THEN_STOP.matcher(text).replaceAll("$1");
+        text = SPACE_BEFORE_PUNCTUATION.matcher(text).replaceAll("$1");
+        text = PUNCTUATION_RUN_ON.matcher(text).replaceAll("$1 ");
+        return WHITESPACE.matcher(text).replaceAll(" ").trim();
+    }
+
+    /**
+     * Replace a literal term where it starts a word. {@code wholeWord} also requires the term to
+     * *end* one, which abbreviations must not: "Dr." is followed by a space, not a word boundary.
+     * The key is quoted as a literal and so is the replacement, so a {@code $} in either is data.
+     */
+    private static String replaceWord(
+            String text, String term, String replacement, boolean wholeWord) {
+        return text.replaceAll(
+                "\\b" + Pattern.quote(term) + (wholeWord ? "\\b" : ""),
+                Matcher.quoteReplacement(replacement));
+    }
+
+    /**
+     * "U.S.A." → "U S A". Single letters are left as letters on purpose: the phonemizer already
+     * says a lone letter by name, and a later pass only spells out runs of two or more.
+     */
+    private static String separateLetters(String word) {
+        var out = new StringBuilder();
+        for (char c : word.toCharArray()) {
+            if (c < 'A' || c > 'Z') continue;
+            if (!out.isEmpty()) out.append(' ');
+            out.append(c);
+        }
+        return out.toString();
+    }
+
+    /** "ABC" → "ay bee see". */
+    private static String spellLetters(String word) {
+        var out = new StringBuilder();
+        for (char c : word.toCharArray()) {
+            if (c < 'A' || c > 'Z') continue;
+            if (!out.isEmpty()) out.append(' ');
+            out.append(LETTER_NAMES[c - 'A']);
+        }
+        return out.toString();
+    }
+
+    /** "42A" → "forty two ay"; a three-digit or leading-zero run is read digit by digit. */
+    static String identifier(String token) {
+        Matcher matched = IDENTIFIER.matcher(token);
+        if (!matched.matches()) return token;
+        String prefix = matched.group(1), digits = matched.group(2), suffix = matched.group(3);
+        var out = new StringBuilder();
+        if (!prefix.isEmpty()) out.append(letterName(prefix)).append(' ');
+        if (digits.length() == 3 || digits.startsWith("0"))
+            for (int i = 0; i < digits.length(); i++) {
+                char digit = digits.charAt(i);
+                out.append(digit == '0' && i > 0 ? "oh" : ONES[digit - '0']).append(' ');
+            }
+        else out.append(spokenNumber(digits)).append(' ');
+        if (!suffix.isEmpty()) out.append(letterName(suffix)).append(' ');
+        return out.toString().trim();
+    }
+
+    private static String letterName(String letter) {
+        char c = Character.toUpperCase(letter.charAt(0));
+        return c >= 'A' && c <= 'Z' ? LETTER_NAMES[c - 'A'] : letter;
+    }
+
+    private static String money(MatchResult match) {
+        String[] parts = match.group(1).replace(",", "").split("\\.");
+        var out = new StringBuilder(spokenNumber(parts[0]));
+        out.append("1".equals(parts[0]) ? " dollar" : " dollars");
+        if (parts.length > 1 && !parts[1].isEmpty()) {
+            int cents = Integer.parseInt((parts[1] + "00").substring(0, 2));
+            if (cents > 0)
+                out.append(" and ")
+                        .append(numberWords(cents))
+                        .append(cents == 1 ? " cent" : " cents");
+        }
+        return out.toString();
+    }
+
+    private static String date(MatchResult match) {
+        return MONTHS[Integer.parseInt(match.group(1)) - 1]
+                + " "
+                + ordinalWords(Integer.parseInt(match.group(2)))
+                + " "
+                + numberWords(Integer.parseInt(match.group(3)));
+    }
+
+    private static String clockTime(MatchResult match) {
+        int hour = Integer.parseInt(match.group(1)), minute = Integer.parseInt(match.group(2));
+        var out = new StringBuilder(numberWords(hour));
+        if (minute == 0) out.append(" o clock");
+        else if (minute < 10) out.append(" oh ").append(numberWords(minute));
+        else out.append(' ').append(numberWords(minute));
+        return out.append(meridiem(match.group(3))).toString();
+    }
+
+    private static String bareTime(MatchResult match) {
+        return numberWords(Integer.parseInt(match.group(1))) + meridiem(match.group(2));
+    }
+
+    /** "p.m." → " p m" — the letters are said, and an absent suffix contributes nothing. */
+    private static String meridiem(String suffix) {
+        if (suffix == null) return "";
+        var out = new StringBuilder();
+        for (char c : suffix.toLowerCase().replaceAll("[^a-z]", "").toCharArray())
+            out.append(' ').append(c);
+        return out.toString();
+    }
+
+    private static String version(MatchResult match) {
+        var out = new StringBuilder();
+        for (String part : match.group().split("\\.")) {
+            if (!out.isEmpty()) out.append(" point ");
+            out.append(spokenNumber(part));
+        }
+        return out.toString();
+    }
+
+    /** A long run of digits is an identifier, not a quantity — except a year-like 20xx. */
+    private static String number(MatchResult match) {
+        String digits = match.group().replace(",", "");
+        return digits.length() >= 5 && !digits.startsWith("20")
+                ? digitWords(digits)
+                : spokenNumber(digits);
+    }
+
+    // ── numbers to words ──────────────────────────────────────────────────
+
+    /** As a quantity when it fits an {@code int}, else digit by digit. */
+    static String spokenNumber(String digits) {
+        return digits.length() > MAX_NUMBER_DIGITS
+                ? digitWords(digits)
+                : numberWords(Integer.parseInt(digits));
+    }
 
     static String numberWords(int n) {
         if (n < 20) return ONES[n];
         if (n < 100) return TENS[n / 10] + (n % 10 > 0 ? " " + ONES[n % 10] : "");
-        if (n < 1000) {
-            int h = n / 100, r = n % 100;
-            return ONES[h] + " hundred" + (r > 0 ? " " + numberWords(r) : "");
+        if (n < 1_000) {
+            int rest = n % 100;
+            return ONES[n / 100] + " hundred" + (rest > 0 ? " " + numberWords(rest) : "");
         }
         if (n < 1_000_000) {
-            int th = n / 1000, r = n % 1000;
-            return numberWords(th) + " thousand" + (r > 0 ? " " + numberWords(r) : "");
+            int rest = n % 1_000;
+            return numberWords(n / 1_000) + " thousand" + (rest > 0 ? " " + numberWords(rest) : "");
         }
         return digitWords(String.valueOf(n));
     }
 
     static String ordinalWords(int n) {
-        String w = numberWords(n);
-        String[] parts = w.split(" ");
-        String last = parts[parts.length - 1];
-        String replacement =
+        String[] words = numberWords(n).split(" ");
+        String last = words[words.length - 1];
+        words[words.length - 1] =
                 switch (last) {
                     case "one" -> "first";
                     case "two" -> "second";
@@ -289,77 +347,16 @@ public final class TextNormalizer {
                                     ? last.substring(0, last.length() - 1) + "ieth"
                                     : last + "th";
                 };
-        parts[parts.length - 1] = replacement;
-        return String.join(" ", parts);
+        return String.join(" ", words);
     }
 
-    static String digitWords(String s) {
-        var sb = new StringBuilder();
-        for (char c : s.toCharArray()) sb.append(ONES[c - '0']).append(' ');
-        return sb.toString().trim();
-    }
-
-    static String expandIdent(String token) {
-        Matcher m = Pattern.compile("([A-Za-z]?)(\\d+)([A-Za-z]?)").matcher(token);
-        if (!m.matches()) return token;
-        String prefix = m.group(1), digits = m.group(2), suffix = m.group(3);
-        var sb = new StringBuilder();
-        if (!prefix.isEmpty()) sb.append(LETTERS.get(prefix.toUpperCase())).append(' ');
-        if (digits.length() == 3 || digits.startsWith("0")) {
-            for (int i = 0; i < digits.length(); i++) {
-                char c = digits.charAt(i);
-                sb.append((c == '0' && i > 0) ? "oh " : ONES[c - '0'] + " ");
-            }
-        } else {
-            sb.append(numberWords(Integer.parseInt(digits))).append(' ');
+    static String digitWords(String digits) {
+        var out = new StringBuilder();
+        for (char digit : digits.toCharArray()) {
+            if (digit < '0' || digit > '9') continue;
+            if (!out.isEmpty()) out.append(' ');
+            out.append(ONES[digit - '0']);
         }
-        if (!suffix.isEmpty()) sb.append(LETTERS.get(suffix.toUpperCase())).append(' ');
-        return sb.toString().trim();
-    }
-
-    // ── regex lambdas ──────────────────────────────────────────────────────
-
-    private static String money(MatchResult r) {
-        String raw = r.group(1).replace(",", "");
-        String[] parts = raw.split("\\.");
-        int dollars = Integer.parseInt(parts[0]);
-        var sb =
-                new StringBuilder(numberWords(dollars))
-                        .append(dollars == 1 ? " dollar" : " dollars");
-        if (parts.length > 1 && !parts[1].isEmpty()) {
-            int cents = Integer.parseInt((parts[1] + "00").substring(0, 2));
-            if (cents > 0)
-                sb.append(" and ")
-                        .append(numberWords(cents))
-                        .append(cents == 1 ? " cent" : " cents");
-        }
-        return sb.toString();
-    }
-
-    private static String date(MatchResult r) {
-        return MONTHS[Integer.parseInt(r.group(1)) - 1]
-                + " "
-                + ordinalWords(Integer.parseInt(r.group(2)))
-                + " "
-                + numberWords(Integer.parseInt(r.group(3)));
-    }
-
-    private static String time(MatchResult r) {
-        int hour = Integer.parseInt(r.group(1)), min = Integer.parseInt(r.group(2));
-        String suffix = r.group(3) != null ? r.group(3).replace(".", "").toLowerCase() : "";
-        var sb = new StringBuilder(numberWords(hour));
-        if (min == 0) sb.append(" o clock");
-        else if (min < 10) sb.append(" oh ").append(numberWords(min));
-        else sb.append(' ').append(numberWords(min));
-        if (!suffix.isEmpty()) for (char c : suffix.toCharArray()) sb.append(' ').append(c);
-        return sb.toString();
-    }
-
-    private static String bareTime(MatchResult r) {
-        int hour = Integer.parseInt(r.group(1));
-        String suffix = r.group(2).replaceAll("[^A-Za-z]", "").toLowerCase();
-        var sb = new StringBuilder(numberWords(hour));
-        for (char c : suffix.toCharArray()) sb.append(' ').append(c);
-        return sb.toString();
+        return out.toString();
     }
 }
