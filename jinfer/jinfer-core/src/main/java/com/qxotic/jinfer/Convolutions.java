@@ -200,13 +200,30 @@ public final class Convolutions {
      *
      * <p>Deeper tiles issue fewer instructions per multiply-add — 4x1 spends 1 load + 4 broadcasts
      * on 4 FMAs, while 4x2 spends 2 + 4 on 8 — but only while the accumulators stay in registers.
-     * The ceiling is not the ISA's 32 zmm: stock C2 and Graal allocate only zmm0-15, the same limit
-     * that pins jam's Q8_0 gemm to a 3x2 tile (see VectorSupport.autoTileCode). 4x1 holds 6 live
-     * vectors and 4x2 holds 11, both under it; 4x4 needs 21 and spills, so it is here to be
-     * measured, not to be selected.
+     * Live vectors are {@code channels*time + time + 1}: 4x1 holds 6, 4x2 11, 4x4 21, 6x4 29, 4x6
+     * 31. Stock C2 and Graal allocate only zmm0-15, the same limit that pins jam's Q8_0 gemm to a
+     * 3x2 tile (see VectorSupport.autoTileCode); a native image allocates from all 32 zmm, which is
+     * why the ranking inverts between the two runtimes.
      *
-     * <p>Default stays 4x1 — 4x4 measured slower on Zen 4 (avx512, 16 lanes), and 4x2 has not yet
-     * been measured on an unloaded machine.
+     * <p>Measured on Zen 5 (9950X3D, avx512) against the Inflect2 census, idle machine:
+     *
+     * <ul>
+     *   <li>NATIVE IMAGE — 4x4 wins by a wide margin: +14% (nano) / +29% (micro) end to end over
+     *       4x1, and roughly half the convolution time. Deeper does NOT continue to pay: 4x6 (31
+     *       live) and 6x4 (29 live) are 51-67% and 40-134% slower than 4x4 at every thread count,
+     *       so the usable register ceiling is somewhere between 21 and 29 rather than at 32.
+     *   <li>JIT — 4x1 is right. 4x2 is model- and JVM-dependent (nano regresses ~5% on GraalVM
+     *       25.2.4 while micro gains ~5%), and 4x4 loses outright. Note the JIT is ~1.9x slower
+     *       than the image on the same single-threaded convolutions either way.
+     *   <li>Forcing {@code load}/{@code store} inline via hotspot_compiler made the JIT 10-20%
+     *       SLOWER (the loop is already register-starved) and did nothing at all in the image.
+     * </ul>
+     *
+     * <p>So: default stays 4x1 for the JIT, and an image should be built with 4x4 — which it can
+     * only be at BUILD time. {@code com.qxotic.*} initializes at build time, so this constant
+     * freezes then and {@code -Djinfer.convTile} on a binary is silently ignored; pass it to the
+     * image build instead (the {@code jinfer.convTile} pom property). Being a true constant is also
+     * what lets the tile branch fold away entirely in the image.
      */
     private static final int TILE_CODE =
             switch (System.getProperty("jinfer.convTile", "auto")) {

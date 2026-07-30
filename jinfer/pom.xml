@@ -55,6 +55,21 @@
     <!-- native builder opt-in: wide 512-bit register tiles (needs a 32-ZMM Graal, GR-13757) -->
     <jam.wideTiles>false</jam.wideTiles>
 
+    <!-- Convolutions' register tile. A BUILD-time knob for the image, not a run-time one: the
+         image initializes com.qxotic.* at build time, so Convolutions.TILE_CODE is frozen here
+         and -Djinfer.convTile on the binary is silently ignored (measured: identical throughput
+         for every value). Passing it here is also what keeps TILE_CODE a true constant, so the
+         tile branch folds away entirely in the image.
+
+         4x4 rather than the JIT's 4x1: native-image allocates from all 32 zmm, so the 21 live
+         vectors of a 4x4 tile stay in registers where a JIT limited to zmm0-15 spills them.
+         Measured on Oracle GraalVM 25.2.4+7.1 / Zen 5, Inflect2 end to end: +14% (nano) and +29%
+         (micro), output bit-identical. VALIDATED ON THAT BUILDER — an older native-image whose
+         allocator only uses 16 vector registers would spill exactly as the JIT does, so build with
+         -Djinfer.convTile=auto there. Deeper does not pay: 4x6 and 6x4 were measured and are
+         slower than 4x4 everywhere (see Convolutions.TILE_CODE). -->
+    <jinfer.convTile>4x4</jinfer.convTile>
+
     <!-- Tagged suites excluded from the default build:
          integration = model-loading gates (run: mvn test -Dsurefire.excludedGroups= -Dgroups=integration)
          bench       = measurement harnesses (run by name: mvn test -Dtest=GemvBench -Dsurefire.excludedGroups=)
@@ -280,6 +295,7 @@
               <buildArg>-H:IncludeResources=com/qxotic/jam/native/.*</buildArg>
               <buildArg>-Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0</buildArg>
               <buildArg>-Djinfer.PreloadGGUF=${jinfer.PreloadGGUF}</buildArg>
+              <buildArg>-Djinfer.convTile=${jinfer.convTile}</buildArg>
             </buildArgs>
           </configuration>
           <executions>
