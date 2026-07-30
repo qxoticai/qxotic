@@ -1,12 +1,25 @@
-// Inflect2 — VITS-family text-to-waveform model.
-//   model = Inflect2.load(Path.of("model.gguf"));
-//   Media.Audio audio = model.synthesize(state, tokens, speed, variation, seed);
+// Inflect2 — VITS-family text-to-waveform model (Nano 3.97M, Micro 9.36M; F16/Q8_0/Q4_0 GGUF).
 //
-// Supports F16, Q8_0, Q4_0 GGUF; Nano (3.97M), Micro (9.36M) variants.
+//   Inflect2 model = Inflect2.load(Path.of("model.gguf"));
+//   Media.Audio audio = model.synthesize(model.newState(), tokens, 1.0f, 0.667f, seed);
+//
+// The pipeline, one step each: embed the phoneme tokens and run a relative-attention transformer
+// (encoder); project to a per-token latent mean/log-scale and a log-duration; repeat each token's
+// latent for its duration and add noise (prior); invert the coupling layers (flow); upsample to a
+// waveform with a HiFi-GAN decoder.
+//
+// A loaded model is immutable and its weights are read-only, so one instance serves any number of
+// concurrent synthesize() calls, each with its own State.
 package com.qxotic.jinfer.models.inflect2;
 
 import com.qxotic.format.gguf.GGUF;
-import com.qxotic.jinfer.*;
+import com.qxotic.jinfer.Convolutions;
+import com.qxotic.jinfer.F32FloatTensor;
+import com.qxotic.jinfer.FloatTensor;
+import com.qxotic.jinfer.Media;
+import com.qxotic.jinfer.Norms;
+import com.qxotic.jinfer.Parallel;
+import com.qxotic.jinfer.kernels.GGMLTensorEntry;
 import com.qxotic.jinfer.kernels.ModelLoader;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -14,30 +27,29 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.nio.channels.Channels;
 import java.nio.channels.FileChannel;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
-import java.util.HashMap;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.Random;
-import jdk.incubator.vector.FloatVector;
-import jdk.incubator.vector.VectorOperators;
-import jdk.incubator.vector.VectorSpecies;
 
 public final class Inflect2 {
 
-    static {
-        if (System.getProperty("jam.vector.threads") == null)
-            System.setProperty("jam.vector.threads", "4");
-    }
+    /** HiFi-GAN leaky-ReLU slope, and torch's default slope for the activation before conv_post. */
+    private static final float LEAKY = 0.1f, FINAL_LEAKY = 0.01f;
 
-    // ── Configuration ────────────────────────────────────────────────────
+    /** Frame ceiling per call — a runaway log-duration must fail, not exhaust memory. */
+    private static final int MAX_FRAMES = 4000;
 
-    /**
-     * Model dimensions read from GGUF metadata. Both Nano (3.97M params) and Micro (9.36M params)
-     * share this layout; the values differ. See {@link Inflect2#load} for how the fields map to
-     * GGUF keys.
-     */
+    // Kernel sizes the GGUF metadata does not carry — they are part of the architecture, exactly as
+    // in the reference model definition (the rest come from the config: the encoder FFN's, the
+    // resblocks', the upsamplers').
+    private static final int POINTWISE = 1; // projections: attention q/k/v/o, res/skip, proj
+    private static final int VOCODER_KERNEL = 7; // dec.conv_pre and dec.conv_post
+    private static final int WAVENET_KERNEL = 5; // the flow's WaveNet gates
+    private static final int DURATION_KERNEL = 3; // the duration predictor's two convolutions
+
+    /** Model dimensions read from GGUF metadata; the layer shapes come from the weights. */
     public record Configuration(
             int symbolCount,
             int interChannels,
@@ -51,685 +63,1017 @@ public final class Inflect2 {
             int[] resblockKernelSizes,
             int[] resblockDilationSizes,
             int[] upsampleRates,
-            int[] upsampleKernelSizes)
-            implements Config {
+            int[] upsampleKernelSizes) {}
 
-        @Override
-        public int vocabularySize() {
-            return symbolCount;
+    // ── weights ───────────────────────────────────────────────────────────
+    // Resolved once at load, so the forward pass names layers instead of building tensor keys and
+    // carrying dimensions. Each layer's widths come from the file where the file is unambiguous:
+    // the output width always, the attention window from the relative embedding's shape, the
+    // duration predictor's width from its first convolution. Kernels cannot: a dense file keeps the
+    // PyTorch shape [kernel, inChannels, outChannels], but a quantized one flattens it to
+    // [kernel*inChannels, outChannels] and pads that row to a block boundary, so the split is lost.
+    // They are stated below and by the config, as the reference model definition states them.
+
+    /** One 1-D convolution. {@code bias} is null where folded weight norm left none. */
+    public record Conv(
+            FloatTensor weight, FloatTensor bias, int kernel, int inChannels, int outChannels) {
+
+        /** Taps per output channel. */
+        int taps() {
+            return kernel * inChannels;
         }
 
-        @Override
-        public int contextLength() {
-            return 512;
-        }
-    }
-
-    // ── Weights ───────────────────────────────────────────────────────────
-
-    /**
-     * All weight tensors keyed by GGUF name — the only practical layout for 302 heterogeneous
-     * tensors (unlike LLMs where every layer shares the same tensor shapes and {@code
-     * FloatTensor[]} arrays suffice). A {@code record} following the jinfer model convention. Use
-     * {@link #get} for access.
-     */
-    public record Weights(Map<String, FloatTensor> tensors) {
-        public FloatTensor get(String name) {
-            FloatTensor t = tensors.get(name);
-            if (t == null) throw new IllegalArgumentException("missing tensor: " + name);
-            return t;
-        }
-    }
-
-    // ── State ─────────────────────────────────────────────────────────────
-
-    public static final class State extends BaseState {
-        State(Arena arena) {
-            super(arena);
+        /** Elements per stored row — more than {@link #taps} when rows are padded to a block. */
+        int rowStride() {
+            return Math.toIntExact(weight.size() / outChannels);
         }
 
-        @Override
-        public int contextCapacity() {
-            return 512;
-        }
-
-        @Override
-        public int batchCapacity() {
-            return 1;
-        }
-
-        /**
-         * Nothing here carries information across positions: the pools are scratch, fully written
-         * before each gemm reads them, so rewinding the cursor is the whole reset.
-         */
-        @Override
-        public void reset() {
-            resumeAt(0);
-        }
-
-        /** Native tensor pools for gemm — reused across synthesize() calls. */
-        F32FloatTensor im2col, out;
-
-        F32FloatTensor getIm2col(int size) {
-            if (im2col == null || im2col.size() < size)
-                im2col = F32FloatTensor.allocate(arena, size);
-            return im2col;
-        }
-
-        F32FloatTensor getOut(int size) {
-            if (out == null || out.size() < size) out = F32FloatTensor.allocate(arena, size);
-            return out;
+        float bias(int outChannel) {
+            return bias == null ? 0f : bias.getFloat(outChannel);
         }
     }
 
-    // ── Instance ──────────────────────────────────────────────────────────
+    /** LayerNorm parameters over {@code channels} contiguous channels. */
+    public record Norm(FloatTensor gamma, FloatTensor beta, int channels) {}
+
+    /** One encoder block: relative-position self-attention, then a convolutional feed-forward. */
+    public record EncoderLayer(
+            Conv query,
+            Conv key,
+            Conv value,
+            Conv output,
+            FloatTensor relativeKeys,
+            FloatTensor relativeValues,
+            int window,
+            Norm attentionNorm,
+            Conv expand,
+            Conv contract,
+            Norm ffnNorm) {}
+
+    /** The deterministic duration predictor. */
+    public record Durations(
+            Conv first, Norm firstNorm, Conv second, Norm secondNorm, Conv project) {}
+
+    /** One coupling layer: a WaveNet over half the channels predicts a shift for the other half. */
+    public record Coupling(Conv pre, Conv[] gates, Conv[] residualSkip, Conv post) {}
+
+    /** One resblock: dilated convolution pairs, each added back into the block's running value. */
+    public record ResBlock(Conv[] filter, Conv[] project, int[] dilations) {}
+
+    /** The HiFi-GAN decoder: upsample, and at each rate a bank of resblocks that gets averaged. */
+    public record Decoder(
+            Conv pre, Conv[] upsample, int[] rates, ResBlock[][] resblocks, Conv post) {}
+
+    public record Weights(
+            FloatTensor embedding,
+            int embeddingStride,
+            EncoderLayer[] encoder,
+            Conv project,
+            Durations durations,
+            Coupling[] flow,
+            Decoder decoder) {}
 
     private final Configuration cfg;
-    private final Weights weights;
+    private final Weights w;
 
-    private static final float LEAKY = 0.1f;
-    private static final boolean TRACE = Boolean.getBoolean("inflect.debug");
-    private static final VectorSpecies<Float> VS = FloatVector.SPECIES_PREFERRED;
-    private static final int VW = VS.length();
+    /** What the file held, for reporting — the weights themselves are resolved into {@link #w}. */
+    private final int tensorCount;
 
-    private Inflect2(Configuration cfg, Weights weights) {
+    private final long parameterCount;
+
+    private Inflect2(Configuration cfg, Weights weights, int tensorCount, long parameterCount) {
         this.cfg = cfg;
-        this.weights = weights;
+        this.w = weights;
+        this.tensorCount = tensorCount;
+        this.parameterCount = parameterCount;
     }
+
+    // ── loading ───────────────────────────────────────────────────────────
+
+    public static Inflect2 load(Path path) throws IOException {
+        try (FileChannel channel = FileChannel.open(path, StandardOpenOption.READ)) {
+            GGUF gguf = ModelLoader.readGguf(channel, path.toString());
+            return load(gguf, ModelLoader.loadTensors(channel, gguf, 0, Arena.ofAuto()));
+        }
+    }
+
+    /**
+     * Load from a GGUF stored in a ZIP overlay appended to the running executable — the tensor data
+     * is mapped straight out of the executable, with no temp file and no copy.
+     */
+    public static Inflect2 loadSelfArchive(String entryName) throws IOException {
+        try (SelfArchive archive = SelfArchive.open()) {
+            SelfArchive.Entry entry = archive.entry(entryName);
+            // The header is small (< 64 KB even for Inflect2's 302 tensors).
+            byte[] header = archive.readAt(entry.offset(), Math.min(entry.size(), 1 << 16));
+            GGUF gguf = GGUF.read(Channels.newChannel(new ByteArrayInputStream(header)));
+            return load(
+                    gguf,
+                    ModelLoader.loadTensors(
+                            archive.channel(), gguf, entry.offset(), Arena.ofAuto()));
+        }
+    }
+
+    private static Inflect2 load(GGUF gguf, Map<String, GGMLTensorEntry> tensors) {
+        Configuration config = readConfig(gguf);
+        long parameters = 0;
+        for (GGMLTensorEntry tensor : tensors.values())
+            parameters += FloatTensor.numberOfElementsLong(tensor.shape());
+        return new Inflect2(config, loadWeights(tensors, config), tensors.size(), parameters);
+    }
+
+    static Weights loadWeights(Map<String, GGMLTensorEntry> tensors, Configuration config) {
+        int hidden = config.hiddenChannels(), latent = config.interChannels();
+        GGMLTensorEntry embedding = require(tensors, "enc_p.emb.weight");
+
+        EncoderLayer[] encoder = new EncoderLayer[config.nLayers()];
+        for (int i = 0; i < encoder.length; i++) {
+            String attention = "enc_p.encoder.attn_layers." + i + ".";
+            String ffn = "enc_p.encoder.ffn_layers." + i + ".";
+            GGMLTensorEntry relativeKeys = require(tensors, attention + "emb_rel_k");
+            encoder[i] =
+                    new EncoderLayer(
+                            conv(tensors, attention + "conv_q", POINTWISE, hidden),
+                            conv(tensors, attention + "conv_k", POINTWISE, hidden),
+                            conv(tensors, attention + "conv_v", POINTWISE, hidden),
+                            conv(tensors, attention + "conv_o", POINTWISE, hidden),
+                            ModelLoader.loadQuantized(relativeKeys),
+                            ModelLoader.loadQuantized(require(tensors, attention + "emb_rel_v")),
+                            // [headChannels, 2*window+1]: keys this far either side get an
+                            // embedding
+                            (relativeKeys.shape()[1] - 1) / 2,
+                            norm(tensors, "enc_p.encoder.norm_layers_1." + i),
+                            conv(tensors, ffn + "conv_1", config.kernelSize(), hidden),
+                            conv(
+                                    tensors,
+                                    ffn + "conv_2",
+                                    config.kernelSize(),
+                                    config.filterChannels()),
+                            norm(tensors, "enc_p.encoder.norm_layers_2." + i));
+        }
+
+        // The file interleaves the couplings with the flips applied between them, hence the 2*i.
+        int couplings = 0;
+        while (tensors.containsKey("flow.flows." + (2 * couplings) + ".pre.weight")) couplings++;
+        if (couplings == 0) throw new IllegalArgumentException("no flow coupling layers in model");
+        Coupling[] flow = new Coupling[couplings];
+        for (int i = 0; i < couplings; i++) {
+            String root = "flow.flows." + (2 * i) + ".";
+            Conv pre = conv(tensors, root + "pre", POINTWISE, latent / 2);
+            int wide = pre.outChannels();
+            int layers = 0;
+            while (tensors.containsKey(root + "enc.in_layers." + layers + ".weight")) layers++;
+            Conv[] gates = new Conv[layers], residualSkip = new Conv[layers];
+            for (int layer = 0; layer < layers; layer++) {
+                gates[layer] = conv(tensors, root + "enc.in_layers." + layer, WAVENET_KERNEL, wide);
+                residualSkip[layer] =
+                        conv(tensors, root + "enc.res_skip_layers." + layer, POINTWISE, wide);
+            }
+            flow[i] =
+                    new Coupling(
+                            pre,
+                            gates,
+                            residualSkip,
+                            conv(tensors, root + "post", POINTWISE, wide));
+        }
+
+        int[] rates = config.upsampleRates(), dilations = config.resblockDilationSizes();
+        int[] upsampleKernels = config.upsampleKernelSizes();
+        int[] blockKernels = config.resblockKernelSizes();
+        int blocks = blockKernels.length, perBlock = dilations.length / blocks;
+        Conv pre = conv(tensors, "dec.conv_pre", VOCODER_KERNEL, latent);
+        Conv[] upsample = new Conv[rates.length];
+        ResBlock[][] resblocks = new ResBlock[rates.length][blocks];
+        int channels = pre.outChannels();
+        for (int stage = 0; stage < rates.length; stage++) {
+            upsample[stage] =
+                    transposedConv(tensors, "dec.ups." + stage, upsampleKernels[stage], channels);
+            channels = upsample[stage].outChannels();
+            for (int block = 0; block < blocks; block++) {
+                String root = "dec.resblocks." + (stage * blocks + block) + ".";
+                Conv[] filter = new Conv[perBlock], project = new Conv[perBlock];
+                for (int d = 0; d < perBlock; d++) {
+                    filter[d] = conv(tensors, root + "convs1." + d, blockKernels[block], channels);
+                    project[d] = conv(tensors, root + "convs2." + d, blockKernels[block], channels);
+                }
+                resblocks[stage][block] =
+                        new ResBlock(
+                                filter,
+                                project,
+                                Arrays.copyOfRange(
+                                        dilations, block * perBlock, (block + 1) * perBlock));
+            }
+        }
+
+        FloatTensor embeddingTable = ModelLoader.loadQuantized(embedding);
+        return new Weights(
+                embeddingTable,
+                // Row stride, not the hidden width: a quantized row is padded up to a block.
+                Math.toIntExact(embeddingTable.size() / config.symbolCount()),
+                encoder,
+                conv(tensors, "enc_p.proj", POINTWISE, hidden),
+                new Durations(
+                        conv(tensors, "dp.conv_1", DURATION_KERNEL, hidden),
+                        norm(tensors, "dp.norm_1"),
+                        conv(
+                                tensors,
+                                "dp.conv_2",
+                                DURATION_KERNEL,
+                                outChannels(require(tensors, "dp.conv_1.weight"))),
+                        norm(tensors, "dp.norm_2"),
+                        conv(
+                                tensors,
+                                "dp.proj",
+                                POINTWISE,
+                                outChannels(require(tensors, "dp.conv_2.weight")))),
+                flow,
+                new Decoder(
+                        pre,
+                        upsample,
+                        rates,
+                        resblocks,
+                        conv(tensors, "dec.conv_post", VOCODER_KERNEL, channels)));
+    }
+
+    /**
+     * One convolution, as a model definition would name it: its kernel and input width, with the
+     * output width read from the file.
+     *
+     * <p>Dense files keep the PyTorch shape {@code [kernel, inChannels, outChannels]} (trailing 1s
+     * dropped), while quantized ones flatten it to {@code [kernel*inChannels, outChannels]} and pad
+     * that row up to a block boundary — so the output width is the only dimension both agree on.
+     */
+    private static Conv conv(
+            Map<String, GGMLTensorEntry> tensors, String name, int kernel, int inChannels) {
+        GGMLTensorEntry entry = require(tensors, name + ".weight");
+        return new Conv(
+                ModelLoader.loadQuantized(entry),
+                ModelLoader.quantOrNull(tensors, name + ".bias"),
+                kernel,
+                inChannels,
+                outChannels(entry));
+    }
+
+    private static int outChannels(GGMLTensorEntry entry) {
+        int[] shape = entry.shape();
+        return entry.ggmlType().isQuantized()
+                ? (shape.length > 1 ? shape[1] : 1)
+                : (shape.length > 2 ? shape[2] : 1);
+    }
+
+    /**
+     * An upsampling transposed convolution. Dense files shape it {@code [kernel, outChannels,
+     * inChannels]} — output channels in the middle, the opposite of a forward convolution — while
+     * quantized ones flatten to {@code [kernel*inChannels, outChannels]} like everything else, so
+     * either way the output width is the second dimension.
+     */
+    private static Conv transposedConv(
+            Map<String, GGMLTensorEntry> tensors, String name, int kernel, int inChannels) {
+        GGMLTensorEntry entry = require(tensors, name + ".weight");
+        return new Conv(
+                ModelLoader.loadQuantized(entry),
+                ModelLoader.quantOrNull(tensors, name + ".bias"),
+                kernel,
+                inChannels,
+                entry.shape()[1]);
+    }
+
+    private static Norm norm(Map<String, GGMLTensorEntry> tensors, String name) {
+        GGMLTensorEntry gamma = require(tensors, name + ".gamma");
+        return new Norm(
+                ModelLoader.loadQuantized(gamma),
+                ModelLoader.loadQuantized(require(tensors, name + ".beta")),
+                gamma.shape()[0]);
+    }
+
+    private static GGMLTensorEntry require(Map<String, GGMLTensorEntry> tensors, String name) {
+        GGMLTensorEntry tensor = tensors.get(name);
+        if (tensor == null) throw new IllegalArgumentException("missing tensor: " + name);
+        return tensor;
+    }
+
+    private static Configuration readConfig(GGUF gguf) {
+        return new Configuration(
+                gguf.getValue(int.class, "inflect.v2.symbol_count"),
+                gguf.getValue(int.class, "inflect.v2.inter_channels"),
+                gguf.getValue(int.class, "inflect.v2.hidden_channels"),
+                gguf.getValue(int.class, "inflect.v2.filter_channels"),
+                gguf.getValue(int.class, "inflect.v2.n_heads"),
+                gguf.getValue(int.class, "inflect.v2.n_layers"),
+                gguf.getValue(int.class, "inflect.v2.kernel_size"),
+                gguf.getValue(int.class, "inflect.v2.sample_rate"),
+                gguf.getValue(int.class, "inflect.v2.upsample_initial_channel"),
+                gguf.getValue(int[].class, "inflect.v2.resblock_kernel_sizes"),
+                gguf.getValue(int[].class, "inflect.v2.resblock_dilation_sizes"),
+                gguf.getValue(int[].class, "inflect.v2.upsample_rates"),
+                gguf.getValue(int[].class, "inflect.v2.upsample_kernel_sizes"));
+    }
+
+    // ── model ─────────────────────────────────────────────────────────────
 
     public Configuration config() {
         return cfg;
     }
 
     public Weights weights() {
-        return weights;
-    }
-
-    /** GC-managed state memory; {@link #newState(Arena)} to own the lifetime yourself. */
-    public State newState() {
-        return new State(Arena.ofAuto());
-    }
-
-    public State newState(Arena arena) {
-        return new State(arena);
+        return w;
     }
 
     public int sampleRate() {
         return cfg.sampleRate();
     }
 
-    // ── State (set per-synthesize call for conv scratch pools) ──────────
-
-    private State st;
-
-    public static Inflect2 load(Path path) throws IOException {
-        try (FileChannel ch = FileChannel.open(path, StandardOpenOption.READ)) {
-            return load(ch, path.toString());
-        }
+    public int tensorCount() {
+        return tensorCount;
     }
 
-    /** Load from a classpath resource (embedded GGUF, e.g. for native image). */
-    public static Inflect2 loadResource(String resourcePath) throws IOException {
-        var in = Inflect2.class.getResourceAsStream(resourcePath);
-        if (in == null) throw new IOException("resource not found: " + resourcePath);
-        byte[] bytes = in.readAllBytes();
-        Path tmp = Files.createTempFile("inflect2-", ".gguf");
-        Files.write(tmp, bytes);
-        tmp.toFile().deleteOnExit();
-        return load(tmp);
+    public long parameterCount() {
+        return parameterCount;
+    }
+
+    /** A fresh scratch state; reuse one across calls to keep synthesis allocation-free. */
+    public State newState() {
+        return new State();
+    }
+
+    /** Convenience for a one-off call: allocates a state, synthesizes, drops it. */
+    public Media.Audio synthesize(int[] tokens, float lengthScale, float variation, long seed) {
+        return synthesize(newState(), tokens, lengthScale, variation, seed);
     }
 
     /**
-     * Load from the executable itself — z://default.gguf. The executable must have a ZIP overlay
-     * (appended after the ELF) containing STORED GGUF(s). The GGUF header is parsed from bytes read
-     * at the ZIP entry offset, and tensor data is mmap'd directly from the executable file — no
-     * temp files, no copy of tensor data.
+     * Synthesize a waveform from blank-interspersed phoneme tokens (see {@link Symbols}).
+     *
+     * @param lengthScale stretches every predicted duration — 1/speed, so 1.25 speaks slower
+     * @param variation scale of the latent noise (0 = deterministic, 0.667 is the reference
+     *     default)
      */
-    public static Inflect2 loadSelfArchive(String entryName) throws IOException {
-        SelfArchive sa = SelfArchive.open();
-        try {
-            SelfArchive.Entry e = sa.entry(entryName);
+    public Media.Audio synthesize(
+            State state, int[] tokens, float lengthScale, float variation, long seed) {
+        if (tokens.length == 0) throw new IllegalArgumentException("tokens must not be empty");
+        for (int token : tokens)
+            if (token < 0 || token >= cfg.symbolCount())
+                throw new IllegalArgumentException(
+                        "token " + token + " outside [0," + cfg.symbolCount() + ")");
+        if (!(lengthScale > 0) || !Float.isFinite(lengthScale))
+            throw new IllegalArgumentException(
+                    "lengthScale must be finite and > 0: " + lengthScale);
+        if (!(variation >= 0) || !Float.isFinite(variation))
+            throw new IllegalArgumentException("variation must be finite and >= 0: " + variation);
 
-            // Read GGUF header (small: < 64 KB for Inflect2's 302 tensors)
-            byte[] headerBytes = sa.readAt(e.offset(), Math.min(e.size(), 65536));
-            GGUF gguf = GGUF.read(Channels.newChannel(new ByteArrayInputStream(headerBytes)));
+        state.rewind();
+        int tokenCount = tokens.length;
 
-            var raw = ModelLoader.loadTensors(sa.channel(), gguf, e.offset(), Arena.ofAuto());
-            Map<String, FloatTensor> map = new HashMap<>();
-            for (var entry : raw.entrySet())
-                map.put(entry.getKey(), ModelLoader.loadQuantized(entry.getValue()));
-            return new Inflect2(readConfig(gguf), new Weights(map));
-        } finally {
-            sa.channel().close();
-            sa.close();
-        }
-    }
+        F32FloatTensor encoded = encode(state, tokens);
+        // Per-token prior: [mean | logScale] interleaved over 2*interChannels.
+        F32FloatTensor stats = conv(state, encoded, w.project(), 1, tokenCount);
+        int[] repeats = state.takeInts(tokenCount);
+        int frames = predictDurations(state, repeats, encoded, tokenCount, lengthScale);
 
-    private static Configuration readConfig(GGUF g) {
-        return new Configuration(
-                g.getValue(int.class, "inflect.v2.symbol_count"),
-                g.getValue(int.class, "inflect.v2.inter_channels"),
-                g.getValue(int.class, "inflect.v2.hidden_channels"),
-                g.getValue(int.class, "inflect.v2.filter_channels"),
-                g.getValue(int.class, "inflect.v2.n_heads"),
-                g.getValue(int.class, "inflect.v2.n_layers"),
-                g.getValue(int.class, "inflect.v2.kernel_size"),
-                g.getValue(int.class, "inflect.v2.sample_rate"),
-                g.getValue(int.class, "inflect.v2.upsample_initial_channel"),
-                g.getValue(int[].class, "inflect.v2.resblock_kernel_sizes"),
-                g.getValue(int[].class, "inflect.v2.resblock_dilation_sizes"),
-                g.getValue(int[].class, "inflect.v2.upsample_rates"),
-                g.getValue(int[].class, "inflect.v2.upsample_kernel_sizes"));
-    }
+        F32FloatTensor prior = samplePrior(state, stats, repeats, frames, variation, seed);
+        F32FloatTensor flowed = flow(state, prior, frames);
+        // The vocoder is the bandwidth-bound part and fires thousands of small parallel regions;
+        // onDecodePool runs them on the spin pool, which dispatches without a task tree.
+        F32FloatTensor waveform = Parallel.onDecodePool(() -> decode(state, flowed, frames));
 
-    private static Inflect2 load(FileChannel ch, String name) throws IOException {
-        GGUF g = ModelLoader.readGguf(ch, name);
-        var raw = ModelLoader.loadTensors(ch, g, Arena.ofAuto());
-        Map<String, FloatTensor> map = new HashMap<>();
-        for (var e : raw.entrySet()) map.put(e.getKey(), ModelLoader.loadQuantized(e.getValue()));
-        return new Inflect2(readConfig(g), new Weights(map));
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════
-    // PIPELINE
-    // ═══════════════════════════════════════════════════════════════════════
-
-    public Media.Audio synthesize(State st, int[] tok, float speed, float noise, long seed) {
-        this.st = st;
-        int T = tok.length, H = cfg.hiddenChannels(), L = cfg.interChannels();
-
-        float[] hid = encode(tok, T, H);
-        float[] proj =
-                conv1d(hid, wt("enc_p.proj.weight"), wt("enc_p.proj.bias"), H, 2 * L, 1, 1, T);
-        float[] mean = new float[L * T], lvar = new float[L * T];
-        for (int s = 0; s < T; s++)
-            for (int c = 0; c < L; c++) {
-                mean[c * T + s] = proj[s * 2 * L + c];
-                lvar[c * T + s] = proj[s * 2 * L + L + c];
-            }
-
-        float[] logDur = duration(hid, T, H);
-        int[] dur = new int[T];
-        int F = 0;
-        for (int s = 0; s < T; s++) {
-            dur[s] = Math.max((int) Math.ceil(Math.exp(logDur[s]) * speed), 0);
-            F += dur[s];
-        }
-        F = Math.max(F, 1);
-        float[] mE = new float[L * F], lE = new float[L * F];
-        int fr = 0;
-        for (int s = 0; s < T; s++)
-            for (int r = 0; r < dur[s] && fr < F; r++) {
-                for (int c = 0; c < L; c++) {
-                    mE[c * F + fr] = mean[c * T + s];
-                    lE[c * F + fr] = lvar[c * T + s];
-                }
-                fr++;
-            }
-        for (; fr < F; fr++)
-            for (int c = 0; c < L; c++) {
-                mE[c * F + fr] = mean[c * T + T - 1];
-                lE[c * F + fr] = lvar[c * T + T - 1];
-            }
-
-        Random rng = new Random(seed);
-        float[] zC = new float[L * F];
-        for (int i = 0; i < L * F; i++)
-            zC[i] = mE[i] + (float) rng.nextGaussian() * (float) Math.exp(lE[i]) * noise;
-        float[] z = new float[L * F];
-        for (int f = 0; f < F; f++) for (int c = 0; c < L; c++) z[f * L + c] = zC[c * F + f];
-        trace("z-p", z);
-
-        float[] pcm = decode(flow(z, L, F), L, F);
+        // The one allocation of the pass: the waveform escapes to the caller as a plain array.
+        float[] pcm = new float[waveformSamples(frames)];
+        waveform.copyRawTo(0, MemorySegment.ofArray(pcm), 0, pcm.length);
         return new Media.Audio(pcm, cfg.sampleRate(), 1);
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // ENCODER
-    // ═══════════════════════════════════════════════════════════════════════
+    // ── encoder ───────────────────────────────────────────────────────────
 
-    private float[] encode(int[] tok, int T, int H) {
-        FloatTensor emb = wt("enc_p.emb.weight");
-        int embStride = Math.toIntExact(emb.size() / cfg.symbolCount());
-        float[] x = new float[H * T];
-        float scl = (float) Math.sqrt(H);
-        for (int s = 0; s < T; s++) {
-            int off = tok[s] * embStride;
-            for (int i = 0; i < H; i++) x[s * H + i] = emb.getFloat(i + off) * scl;
+    /**
+     * Embed the tokens and run the transformer. Time-major throughout: {@code x[token][channel]}.
+     */
+    private F32FloatTensor encode(State state, int[] tokens) {
+        int hidden = cfg.hiddenChannels(), tokenCount = tokens.length;
+        float scale = (float) Math.sqrt(hidden);
+        F32FloatTensor x = state.take(hidden * tokenCount);
+        for (int token = 0; token < tokenCount; token++) {
+            long row = (long) tokens[token] * w.embeddingStride();
+            for (int c = 0; c < hidden; c++)
+                x.setFloat((long) token * hidden + c, w.embedding().getFloat(row + c) * scale);
         }
-        for (int l = 0; l < cfg.nLayers(); l++) {
-            x = transformer(x, T, H, l);
-            trace("enc-l" + l, x);
-        }
+        for (EncoderLayer layer : w.encoder()) x = encoderLayer(state, x, layer, tokenCount);
         return x;
     }
 
-    private float[] transformer(float[] x, int T, int H, int l) {
-        String b = "enc_p.encoder.";
-        float[] attn = mha(x, T, H, l);
-        float[] a1 =
-                addNorm(
-                        x,
-                        attn,
-                        wt(b + "norm_layers_1." + l + ".gamma"),
-                        wt(b + "norm_layers_1." + l + ".beta"),
-                        H,
-                        T);
-        float[] ffn =
-                conv1d(
-                        a1,
-                        wt(b + "ffn_layers." + l + ".conv_1.weight"),
-                        wt(b + "ffn_layers." + l + ".conv_1.bias"),
-                        H,
-                        cfg.filterChannels(),
-                        3,
-                        1,
-                        T);
-        relu(ffn);
-        float[] ff2 =
-                conv1d(
-                        ffn,
-                        wt(b + "ffn_layers." + l + ".conv_2.weight"),
-                        wt(b + "ffn_layers." + l + ".conv_2.bias"),
-                        cfg.filterChannels(),
-                        H,
-                        3,
-                        1,
-                        T);
+    private F32FloatTensor encoderLayer(
+            State state, F32FloatTensor x, EncoderLayer layer, int tokenCount) {
+        F32FloatTensor attended = attention(state, x, layer, tokenCount);
+        x = addNorm(state, x, attended, layer.attentionNorm(), tokenCount);
+        F32FloatTensor wide = conv(state, x, layer.expand(), 1, tokenCount);
+        relu(wide, layer.expand().outChannels() * tokenCount);
         return addNorm(
-                a1,
-                ff2,
-                wt(b + "norm_layers_2." + l + ".gamma"),
-                wt(b + "norm_layers_2." + l + ".beta"),
-                H,
-                T);
+                state,
+                x,
+                conv(state, wide, layer.contract(), 1, tokenCount),
+                layer.ffnNorm(),
+                tokenCount);
     }
 
-    private float[] mha(float[] x, int T, int H, int l) {
-        String b = "enc_p.encoder.attn_layers." + l + ".";
-        float[] Q = conv1d(x, wt(b + "conv_q.weight"), wt(b + "conv_q.bias"), H, H, 1, 1, T);
-        float[] K = conv1d(x, wt(b + "conv_k.weight"), wt(b + "conv_k.bias"), H, H, 1, 1, T);
-        float[] V = conv1d(x, wt(b + "conv_v.weight"), wt(b + "conv_v.bias"), H, H, 1, 1, T);
-        int nH = cfg.nHeads(), hd = H / nH;
-        FloatTensor rk = wt(b + "emb_rel_k"), rv = wt(b + "emb_rel_v");
-        float scl = 1f / (float) Math.sqrt(hd);
-        float[] out = new float[H * T], scores = new float[T];
+    /**
+     * Multi-head self-attention with learned relative positions: a key within the layer's window of
+     * the query contributes an extra term to both the score and the value.
+     */
+    private F32FloatTensor attention(
+            State state, F32FloatTensor x, EncoderLayer layer, int tokenCount) {
+        int hidden = layer.query().outChannels(), heads = cfg.nHeads(), headDim = hidden / heads;
+        int window = layer.window();
+        F32FloatTensor q = conv(state, x, layer.query(), 1, tokenCount);
+        F32FloatTensor k = conv(state, x, layer.key(), 1, tokenCount);
+        F32FloatTensor v = conv(state, x, layer.value(), 1, tokenCount);
+        // `attended` accumulates across heads, so it starts zeroed.
+        F32FloatTensor attended = state.takeZeroed(hidden * tokenCount);
+        F32FloatTensor scores = state.take(tokenCount);
+        float scale = 1f / (float) Math.sqrt(headDim);
 
-        for (int h = 0; h < nH; h++) {
-            int co = h * hd;
-            for (int qi = 0; qi < T; qi++) {
-                float mx = Float.NEGATIVE_INFINITY;
-                for (int kj = 0; kj < T; kj++) {
-                    float s = 0;
-                    for (int d = 0; d < hd; d++) s += Q[qi * H + co + d] * K[kj * H + co + d];
-                    s *= scl;
-                    int dist = kj - qi;
-                    if (dist >= -4 && dist <= 4) {
-                        float rs = 0;
-                        for (int d = 0; d < hd; d++)
-                            rs += Q[qi * H + co + d] * rk.getFloat(d + (dist + 4) * hd);
-                        s += rs * scl;
-                    }
-                    scores[kj] = s;
-                    if (s > mx) mx = s;
+        for (int head = 0; head < heads; head++) {
+            int channel = head * headDim;
+            for (int query = 0; query < tokenCount; query++) {
+                long queryRow = (long) query * hidden + channel;
+                float max = Float.NEGATIVE_INFINITY;
+                for (int key = 0; key < tokenCount; key++) {
+                    float score = q.dot(queryRow, k, (long) key * hidden + channel, headDim);
+                    int distance = key - query;
+                    if (Math.abs(distance) <= window)
+                        score +=
+                                q.dot(
+                                        queryRow,
+                                        layer.relativeKeys(),
+                                        (long) (distance + window) * headDim,
+                                        headDim);
+                    score *= scale;
+                    scores.setFloat(key, score);
+                    max = Math.max(max, score);
                 }
-                float den = 0;
-                for (int kj = 0; kj < T; kj++) {
-                    scores[kj] = (float) Math.exp(scores[kj] - mx);
-                    den += scores[kj];
+                float total = 0;
+                for (int key = 0; key < tokenCount; key++) {
+                    float weight = (float) Math.exp(scores.getFloat(key) - max);
+                    scores.setFloat(key, weight);
+                    total += weight;
                 }
-                for (int kj = 0; kj < T; kj++) {
-                    float pv = scores[kj] / den;
-                    int dist = kj - qi;
-                    for (int d = 0; d < hd; d++) {
-                        float val = V[kj * H + co + d];
-                        if (dist >= -4 && dist <= 4) val += rv.getFloat(d + (dist + 4) * hd);
-                        out[qi * H + co + d] += pv * val;
-                    }
+                for (int key = 0; key < tokenCount; key++) {
+                    float weight = scores.getFloat(key) / total;
+                    attended.saxpyInPlace(
+                            queryRow, v, (long) key * hidden + channel, headDim, weight);
+                    int distance = key - query;
+                    if (Math.abs(distance) <= window)
+                        attended.saxpyInPlace(
+                                queryRow,
+                                layer.relativeValues(),
+                                (long) (distance + window) * headDim,
+                                headDim,
+                                weight);
                 }
             }
         }
-        return conv1d(out, wt(b + "conv_o.weight"), wt(b + "conv_o.bias"), H, H, 1, 1, T);
+        return conv(state, attended, layer.output(), 1, tokenCount);
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // DURATION + FLOW
-    // ═══════════════════════════════════════════════════════════════════════
+    // ── durations and prior ───────────────────────────────────────────────
 
-    private float[] duration(float[] x, int T, int H) {
-        float[] h = conv1d(x, wt("dp.conv_1.weight"), wt("dp.conv_1.bias"), H, 256, 3, 1, T);
-        relu(h);
-        h = norm(h, wt("dp.norm_1.gamma"), wt("dp.norm_1.beta"), 256, T);
-        h = conv1d(h, wt("dp.conv_2.weight"), wt("dp.conv_2.bias"), 256, 256, 3, 1, T);
-        relu(h);
-        h = norm(h, wt("dp.norm_2.gamma"), wt("dp.norm_2.beta"), 256, T);
-        return conv1d(h, wt("dp.proj.weight"), wt("dp.proj.bias"), 256, 1, 1, 1, T);
+    /**
+     * Predict how many frames each token lasts, filling {@code repeats} and returning the total. A
+     * degenerate prediction still yields one frame rather than an empty waveform.
+     */
+    private int predictDurations(
+            State state, int[] repeats, F32FloatTensor encoded, int tokenCount, float lengthScale) {
+        Durations dp = w.durations();
+        int width = dp.first().outChannels();
+        F32FloatTensor h = conv(state, encoded, dp.first(), 1, tokenCount);
+        relu(h, width * tokenCount);
+        h = norm(state, h, dp.firstNorm(), tokenCount);
+        h = conv(state, h, dp.second(), 1, tokenCount);
+        relu(h, width * tokenCount);
+        h = norm(state, h, dp.secondNorm(), tokenCount);
+        F32FloatTensor logDuration = conv(state, h, dp.project(), 1, tokenCount);
+
+        long total = 0;
+        for (int token = 0; token < tokenCount; token++) {
+            double frames = Math.ceil(Math.exp(logDuration.getFloat(token)) * lengthScale);
+            repeats[token] = (int) Math.max(0, Math.min(frames, MAX_FRAMES));
+            total += repeats[token];
+        }
+        if (total > MAX_FRAMES)
+            throw new IllegalArgumentException(
+                    "chunk needs " + total + " frames, over the " + MAX_FRAMES + " ceiling");
+        return (int) Math.max(total, 1);
     }
 
-    private float[] flow(float[] z, int L, int F) {
-        int half = L / 2;
-        for (int fi = 6; fi >= 0; fi -= 2) {
-            flip(z, L, F);
-            z = coupling(z, half, L, F, fi);
+    /**
+     * Repeat each token's latent for its duration and add noise. The Gaussian is drawn
+     * channel-major because that order is what the seed means — a frame-major walk would give the
+     * same distribution but different audio. The last token also covers any frames left over.
+     */
+    private F32FloatTensor samplePrior(
+            State state,
+            F32FloatTensor stats,
+            int[] repeats,
+            int frames,
+            float variation,
+            long seed) {
+        int latent = cfg.interChannels(), tokenCount = repeats.length;
+        Random random = state.random;
+        random.setSeed(seed); // same sequence as a fresh Random(seed)
+        F32FloatTensor prior = state.take(latent * frames);
+        for (int channel = 0; channel < latent; channel++) {
+            int frame = 0;
+            for (int token = 0; token < tokenCount && frame < frames; token++) {
+                long row = (long) token * 2 * latent;
+                float mean = stats.getFloat(row + channel);
+                float deviation = (float) Math.exp(stats.getFloat(row + latent + channel));
+                int last =
+                        token == tokenCount - 1 ? frames : Math.min(frames, frame + repeats[token]);
+                for (; frame < last; frame++)
+                    prior.setFloat(
+                            (long) frame * latent + channel,
+                            mean + (float) random.nextGaussian() * deviation * variation);
+            }
+        }
+        return prior;
+    }
+
+    // ── flow ──────────────────────────────────────────────────────────────
+
+    /** Invert the coupling stack: last coupling first, each preceded by a channel flip. */
+    private F32FloatTensor flow(State state, F32FloatTensor z, int frames) {
+        int channels = cfg.interChannels();
+        for (int i = w.flow().length - 1; i >= 0; i--) {
+            flip(z, channels, frames);
+            F32FloatTensor next = state.take(channels * frames); // outlives the scope below
+            try (var scope = state.scope()) {
+                coupling(state, z, next, w.flow()[i], frames);
+            }
+            z = next;
         }
         return z;
     }
 
-    private float[] coupling(float[] z, int half, int L, int F, int fi) {
-        String b = "flow.flows." + fi + ".";
-        float[] z0 = new float[half * F];
-        for (int t = 0; t < F; t++) System.arraycopy(z, t * L, z0, t * half, half);
-        int H = cfg.hiddenChannels();
-        float[] h = conv1d(z0, wt(b + "pre.weight"), wt(b + "pre.bias"), half, H, 1, 1, F);
-        float[] skip = new float[H * F];
-        for (int l = 0; l < 4; l++) {
-            float[] gates =
-                    conv1d(
-                            h,
-                            wt(b + "enc.in_layers." + l + ".weight"),
-                            wt(b + "enc.in_layers." + l + ".bias"),
-                            H,
-                            2 * H,
-                            5,
-                            1,
-                            F);
-            float[] acts = new float[H * F];
-            for (int s = 0; s < F; s++)
-                for (int c = 0; c < H; c++)
-                    acts[s * H + c] =
-                            (float) Math.tanh(gates[s * 2 * H + c])
-                                    / (1f + (float) Math.exp(-gates[s * 2 * H + H + c]));
-            int oc = l < 3 ? 2 * H : H;
-            float[] proj =
-                    conv1d(
-                            acts,
-                            wt(b + "enc.res_skip_layers." + l + ".weight"),
-                            wt(b + "enc.res_skip_layers." + l + ".bias"),
-                            H,
-                            oc,
-                            1,
-                            1,
-                            F);
-            if (l < 3)
-                for (int s = 0; s < F; s++)
-                    for (int c = 0; c < H; c++) {
-                        h[s * H + c] += proj[s * oc + c];
-                        skip[s * H + c] += proj[s * oc + H + c];
-                    }
-            else for (int i = 0; i < skip.length; i++) skip[i] += proj[i];
-        }
-        float[] mean = conv1d(skip, wt(b + "post.weight"), wt(b + "post.bias"), H, half, 1, 1, F);
-        float[] out = z.clone();
-        for (int s = 0; s < F; s++)
-            for (int c = 0; c < half; c++) out[s * L + half + c] -= mean[s * half + c];
-        return out;
-    }
+    /**
+     * Reversed affine coupling: a WaveNet over the first half of the channels predicts a shift,
+     * which is subtracted from the second half; the first half passes through untouched.
+     */
+    private void coupling(
+            State state, F32FloatTensor z, F32FloatTensor out, Coupling layer, int frames) {
+        int channels = cfg.interChannels(), half = channels / 2;
+        int hidden = layer.pre().outChannels();
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // DECODER
-    // ═══════════════════════════════════════════════════════════════════════
+        F32FloatTensor first = state.take(half * frames);
+        for (int frame = 0; frame < frames; frame++)
+            z.copyTo((long) frame * channels, first, (long) frame * half, half);
 
-    private float[] decode(float[] z, int L, int F) {
-        int[] rates = cfg.upsampleRates(),
-                kerns = cfg.upsampleKernelSizes(),
-                rkerns = cfg.resblockKernelSizes(),
-                dils = cfg.resblockDilationSizes();
-
-        float[] x =
-                conv1d(
-                        z,
-                        wt("dec.conv_pre.weight"),
-                        wt("dec.conv_pre.bias"),
-                        L,
-                        cfg.upsampleInitialChannel(),
-                        7,
-                        1,
-                        F);
-        trace("dec-pre", x);
-
-        int ch = cfg.upsampleInitialChannel(), T = F;
-        for (int stage = 0; stage < 4; stage++) {
-            int nCh = ch / 2, rate = rates[stage], upK = kerns[stage];
-            for (int i = 0; i < ch * T; i++) {
-                float v = x[i];
-                x[i] = v > 0 ? v : v * LEAKY;
-            }
-
-            int T2 = (T - 1) * rate + upK - 2 * ((upK - rate) / 2);
-            x =
-                    convT(
-                            x,
-                            wt("dec.ups." + stage + ".weight"),
-                            wt("dec.ups." + stage + ".bias"),
-                            ch,
-                            nCh,
-                            T,
-                            T2,
-                            upK,
-                            rate);
-            trace("dec-s" + stage + "-ct", x);
-
-            float[] acc = new float[x.length];
-            for (int rb = 0; rb < 3; rb++) {
-                int idx = stage * 3 + rb, rk = rkerns[rb];
-                float[] branch = x.clone();
-                for (int d = 0; d < 3; d++) {
-                    int dil = dils[rb * 3 + d];
-                    float[] lk = new float[branch.length];
-                    for (int i = 0; i < branch.length; i++) {
-                        float v = branch[i];
-                        lk[i] = v > 0 ? v : v * LEAKY;
-                    }
-                    float[] xt =
-                            conv1dLeaky(
-                                    lk,
-                                    wt("dec.resblocks." + idx + ".convs1." + d + ".weight"),
-                                    wt("dec.resblocks." + idx + ".convs1." + d + ".bias"),
-                                    nCh,
-                                    nCh,
-                                    rk,
-                                    dil,
-                                    T2,
-                                    LEAKY);
-                    xt =
-                            conv1d(
-                                    xt,
-                                    wt("dec.resblocks." + idx + ".convs2." + d + ".weight"),
-                                    wt("dec.resblocks." + idx + ".convs2." + d + ".bias"),
-                                    nCh,
-                                    nCh,
-                                    rk,
-                                    1,
-                                    T2);
-                    for (int i = 0; i < branch.length; i++) branch[i] += xt[i];
+        F32FloatTensor h = conv(state, first, layer.pre(), 1, frames);
+        F32FloatTensor skip = state.takeZeroed(hidden * frames); // accumulates over the layers
+        for (int i = 0; i < layer.gates().length; i++) {
+            F32FloatTensor gates = conv(state, h, layer.gates()[i], 1, frames);
+            F32FloatTensor activated = state.take(hidden * frames);
+            for (int frame = 0; frame < frames; frame++)
+                for (int c = 0; c < hidden; c++) {
+                    // tanh(filter half) * sigmoid(gate half) — the WaveNet gate
+                    float filter = gates.getFloat((long) frame * 2 * hidden + c);
+                    float gate = gates.getFloat((long) frame * 2 * hidden + hidden + c);
+                    activated.setFloat(
+                            (long) frame * hidden + c,
+                            (float) Math.tanh(filter) / (1f + (float) Math.exp(-gate)));
                 }
-                for (int i = 0; i < acc.length; i++) acc[i] += branch[i];
-            }
-            for (int i = 0; i < acc.length; i++) x[i] = acc[i] / 3f;
-            ch = nCh;
-            T = T2;
-            trace("dec-s" + stage, x);
-        }
 
-        for (int i = 0; i < x.length; i++) {
-            float v = x[i];
-            x[i] = v > 0 ? v : v * 0.01f;
-        }
-        x = conv1d(x, wt("dec.conv_post.weight"), null, ch, 1, 7, 1, T);
-        for (int i = 0; i < x.length; i++) x[i] = (float) Math.tanh(x[i]);
-        return x;
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════
-    // CONVOLUTION PRIMITIVES
-
-    private FloatTensor wt(String name) {
-        return weights.get(name);
-    }
-
-    private float[] conv1d(
-            float[] in,
-            FloatTensor wt,
-            FloatTensor bias,
-            int inC,
-            int outC,
-            int K,
-            int dil,
-            int T) {
-        return conv1dCore(in, wt, bias, inC, outC, K, dil, T, false, 0f);
-    }
-
-    private float[] conv1dLeaky(
-            float[] in,
-            FloatTensor wt,
-            FloatTensor bias,
-            int inC,
-            int outC,
-            int K,
-            int dil,
-            int T,
-            float slope) {
-        return conv1dCore(in, wt, bias, inC, outC, K, dil, T, true, slope);
-    }
-
-    private float[] conv1dCore(
-            float[] in,
-            FloatTensor wt,
-            FloatTensor bias,
-            int inC,
-            int outC,
-            int K,
-            int dil,
-            int T,
-            boolean leaky,
-            float slope) {
-        int pad = ((K - 1) * dil) / 2, flat = K * inC;
-        int rowStride =
-                ((long) flat * outC == wt.size()) ? flat : Math.toIntExact(wt.size() / outC);
-        float[] out = new float[outC * T];
-
-        float[] cols = new float[T * rowStride];
-        if (K > 1) {
-            for (int t = 0; t < T; t++) {
-                int dstOff = t * rowStride;
-                for (int k = 0; k < K; k++) {
-                    int st = t + k * dil - pad;
-                    if (st >= 0 && st < T) {
-                        for (int ic = 0; ic < inC; ic++)
-                            cols[dstOff + k + ic * K] = in[st * inC + ic];
-                    }
+            Conv projection = layer.residualSkip()[i];
+            F32FloatTensor projected = conv(state, activated, projection, 1, frames);
+            int width = projection.outChannels();
+            // Every layer but the last splits its projection into a residual and a skip half.
+            if (width == 2 * hidden)
+                for (int frame = 0; frame < frames; frame++) {
+                    h.addInPlace((long) frame * hidden, projected, (long) frame * width, hidden);
+                    skip.addInPlace(
+                            (long) frame * hidden,
+                            projected,
+                            (long) frame * width + hidden,
+                            hidden);
                 }
+            else skip.addInPlace(0, projected, 0, hidden * frames);
+        }
+
+        F32FloatTensor shift = conv(state, skip, layer.post(), 1, frames);
+        z.copyTo(0, out, 0, channels * frames);
+        for (int frame = 0; frame < frames; frame++)
+            out.saxpyInPlace((long) frame * channels + half, shift, (long) frame * half, half, -1f);
+    }
+
+    // ── decoder ───────────────────────────────────────────────────────────
+
+    /**
+     * HiFi-GAN vocoder. It runs <b>channel-major</b> — {@code rows[channel][time]}, one contiguous
+     * row per channel — unlike the encoder's time-major layout. The shapes are why: the decoder is
+     * 12 to 96 channels wide and up to ~110k samples long, so time is the only axis worth
+     * vectorizing, and with it contiguous a convolution is an FMA sweep per tap rather than an
+     * im2col matrix K times the size of its input.
+     */
+    private F32FloatTensor decode(State state, F32FloatTensor z, int frames) {
+        Decoder decoder = w.decoder();
+        F32FloatTensor rows = state.take(cfg.interChannels() * frames);
+        toChannelMajor(z, rows, frames, cfg.interChannels());
+
+        int channels = decoder.pre().outChannels(), time = frames;
+        F32FloatTensor x = state.take(channels * time);
+        convRows(state, rows, x, decoder.pre(), 1, time);
+
+        for (int stage = 0; stage < decoder.upsample().length; stage++) {
+            Conv up = decoder.upsample()[stage];
+            int stride = decoder.rates()[stage];
+            int upTime = upsampledLength(time, up.kernel(), stride);
+            int size = up.outChannels() * upTime;
+
+            leaky(x, channels * time, LEAKY);
+            // Taken before the scope: the stage's output outlives the resblocks' scratch.
+            F32FloatTensor upsampled = state.take(size);
+            upsampleRows(state, x, upsampled, up, stride, time, upTime);
+
+            // Every resblock reads the stage's output; their results are averaged back into it.
+            ResBlock[] blocks = decoder.resblocks()[stage];
+            try (var scope = state.scope()) {
+                F32FloatTensor sum = state.takeZeroed(size);
+                for (ResBlock block : blocks) resblock(state, upsampled, sum, block, upTime);
+                sum.copyTo(0, upsampled, 0, size);
+                upsampled.divideInPlace(0, size, blocks.length);
             }
-        } else {
-            for (int t = 0; t < T; t++) System.arraycopy(in, t * inC, cols, t * rowStride, inC);
+
+            x = upsampled;
+            channels = up.outChannels();
+            time = upTime;
         }
 
-        F32FloatTensor im2col = st.getIm2col(T * rowStride);
-        im2col.copyRawFrom(MemorySegment.ofArray(cols), 0, 0, T * rowStride);
-        F32FloatTensor on = st.getOut(outC * T);
-        wt.gemm(im2col, rowStride, on, outC, T, outC, rowStride, 0);
+        leaky(x, channels * time, FINAL_LEAKY);
+        // A single output channel, so channel-major already IS the waveform.
+        F32FloatTensor waveform = state.take(time);
+        convRows(state, x, waveform, decoder.post(), 1, time);
+        for (int i = 0; i < time; i++)
+            waveform.setFloat(i, (float) Math.tanh(waveform.getFloat(i)));
+        return waveform;
+    }
 
-        for (int i = 0; i < out.length; i++) {
-            int oc = i % outC;
-            float bv = bias != null ? bias.getFloat(oc) : 0f;
-            float val = on.getFloat(i) + bv;
-            out[i] = leaky ? (val > 0 ? val : val * slope) : val;
+    /** One resblock, its result added into {@code sum}. {@code x} is read, not modified. */
+    private void resblock(
+            State state, F32FloatTensor x, F32FloatTensor sum, ResBlock block, int time) {
+        int size = block.filter()[0].outChannels() * time;
+        try (var scope = state.scope()) {
+            F32FloatTensor value = state.take(size);
+            F32FloatTensor activated = state.take(size);
+            F32FloatTensor filtered = state.take(size);
+            x.copyTo(0, value, 0, size);
+            for (int d = 0; d < block.dilations().length; d++) {
+                value.copyTo(0, activated, 0, size);
+                leaky(activated, size, LEAKY);
+                convRows(state, activated, filtered, block.filter()[d], block.dilations()[d], time);
+                leaky(filtered, size, LEAKY);
+                convRows(state, filtered, activated, block.project()[d], 1, time);
+                value.addInPlace(0, activated, 0, size);
+            }
+            sum.addInPlace(0, value, 0, size);
         }
+    }
+
+    /** Samples the decoder produces from {@code frames} — the upsampling recurrence. */
+    private int waveformSamples(int frames) {
+        Decoder decoder = w.decoder();
+        int time = frames;
+        for (int stage = 0; stage < decoder.upsample().length; stage++)
+            time =
+                    upsampledLength(
+                            time, decoder.upsample()[stage].kernel(), decoder.rates()[stage]);
+        return time;
+    }
+
+    private static int upsampledLength(int time, int kernel, int stride) {
+        return (time - 1) * stride + kernel - 2 * ((kernel - stride) / 2);
+    }
+
+    // ── convolutions ──────────────────────────────────────────────────────
+
+    /**
+     * Time-major convolution, {@code [time][channel]} in and out: gather each output step's window
+     * into a row (im2col) and let the tensor backend do the matrix multiply. Right for the
+     * encoder's shapes — few steps, many channels.
+     */
+    private F32FloatTensor conv(
+            State state, F32FloatTensor in, Conv layer, int dilation, int time) {
+        int outChannels = layer.outChannels(), rowStride = layer.rowStride();
+
+        // A 1x1 convolution's input already IS the matrix the gemm wants, one row per step — so
+        // most of the encoder and the whole flow skip the gather. The exception is a quantized
+        // weight whose rows are padded past their taps: then the rows need the padding zeros.
+        F32FloatTensor matrix =
+                layer.kernel() == 1 && rowStride == layer.inChannels()
+                        ? in
+                        : gather(state, in, layer, dilation, time);
+
+        F32FloatTensor product = state.product(outChannels * time);
+        layer.weight()
+                .gemm(matrix, rowStride, product, outChannels, time, outChannels, rowStride, 0);
+
+        F32FloatTensor out = state.take(outChannels * time);
+        product.copyTo(0, out, 0, outChannels * time);
+        if (layer.bias() != null)
+            for (int t = 0; t < time; t++)
+                out.addInPlace((long) t * outChannels, layer.bias(), 0, outChannels);
         return out;
     }
 
-    private float[] convT(
-            float[] in,
-            FloatTensor wt,
-            FloatTensor bias,
-            int inC,
-            int outC,
-            int T,
-            int T2,
-            int K,
-            int stride) {
-        int pad = (K - stride) / 2, flat = K * inC;
-        boolean quant = wt.type().isQuantized();
-        int rowStride = quant ? Math.toIntExact(wt.size() / outC) : flat;
-        float[] out = new float[outC * T2];
-        float[] wk = new float[flat];
-        int loopBound = VW >= inC ? 0 : (inC / VW) * VW;
+    /**
+     * im2col: each output step's window laid out as one row, in the gemm's native staging. Zeroed
+     * first, because the gather writes only the taps that fall inside the sequence and relies on
+     * zeros for the padding either end — and a padded weight row is wider than it fills.
+     */
+    private F32FloatTensor gather(
+            State state, F32FloatTensor in, Conv layer, int dilation, int time) {
+        int kernel = layer.kernel(), inChannels = layer.inChannels();
+        int rowStride = layer.rowStride(), pad = ((kernel - 1) * dilation) / 2;
 
-        for (int oc = 0; oc < outC; oc++) {
-            if (quant) {
-                wt.copyRow(oc * (long) rowStride, wk, 0, flat);
-            } else {
-                for (int k = 0; k < K; k++)
-                    for (int ic = 0; ic < inC; ic++)
-                        wk[k * inC + ic] = wt.getFloat(k + oc * K + ic * K * outC);
+        F32FloatTensor columns = state.columns(time * rowStride);
+        columns.fillInPlace(0, time * rowStride, 0f);
+        for (int t = 0; t < time; t++)
+            for (int k = 0; k < kernel; k++) {
+                int source = t + k * dilation - pad;
+                if (source < 0 || source >= time) continue;
+                for (int c = 0; c < inChannels; c++)
+                    columns.setFloat(
+                            (long) t * rowStride + k + c * kernel,
+                            in.getFloat((long) source * inChannels + c));
             }
-            float bv = bias != null ? bias.getFloat(oc) : 0f;
+        return columns;
+    }
 
-            for (int op = 0; op < T2; op++) {
-                float sum = bv;
-                for (int k = 0; k < K; k++) {
-                    int t = (op + pad - k) / stride;
-                    if (t < 0 || t >= T || (op + pad - k) % stride != 0) continue;
-                    int inpOff = t * inC, wkOff = k * inC;
-                    int i = 0;
-                    FloatVector acc = FloatVector.zero(VS);
-                    for (; i < loopBound; i += VW) {
-                        acc =
-                                FloatVector.fromArray(VS, wk, wkOff + i)
-                                        .fma(FloatVector.fromArray(VS, in, inpOff + i), acc);
-                    }
-                    float dot = acc.reduceLanes(VectorOperators.ADD);
-                    for (; i < inC; i++) dot += wk[wkOff + i] * in[inpOff + i];
-                    sum += dot;
-                }
-                out[op * outC + oc] = sum;
-            }
+    /**
+     * Channel-major convolution: the layer's taps dequantized once, then {@link
+     * Convolutions#conv1dRows}, which owns the tiling, the fan-out and the vector accumulation.
+     */
+    private void convRows(
+            State state,
+            F32FloatTensor in,
+            F32FloatTensor out,
+            Conv layer,
+            int dilation,
+            int time) {
+        try (var scope = state.scope()) {
+            Convolutions.conv1dRows(
+                    in,
+                    layer.inChannels(),
+                    out,
+                    layer.outChannels(),
+                    time,
+                    layer.kernel(),
+                    dilation,
+                    dequantize(state, layer),
+                    layer.bias());
         }
+    }
+
+    /**
+     * Channel-major transposed convolution — the decoder's upsampling step.
+     *
+     * <p>Upsampling by {@code stride} is {@code stride} independent convolutions, one per output
+     * phase: among outputs {@code op = j*stride + phase} only taps with {@code k ≡ phase + pad (mod
+     * stride)} contribute, and {@code j} then walks the input contiguously. Each phase is built in
+     * its channel's slice of scratch and scattered into the row once, which keeps the sweeps
+     * vectorized where a strided write would not be.
+     */
+    private void upsampleRows(
+            State state,
+            F32FloatTensor in,
+            F32FloatTensor out,
+            Conv layer,
+            int stride,
+            int time,
+            int outTime) {
+        int kernel = layer.kernel(), inChannels = layer.inChannels();
+        int outChannels = layer.outChannels(), taps = layer.taps();
+        int pad = (kernel - stride) / 2;
+        int phaseLength = (outTime + stride - 1) / stride;
+
+        try (var scope = state.scope()) {
+            float[] weights = dequantizeTransposed(state, layer);
+            // One phase buffer per output channel: built concurrently, scattered as they finish.
+            F32FloatTensor phases = state.take(outChannels * phaseLength);
+
+            Parallel.parallelFor(
+                    0,
+                    outChannels,
+                    channel -> {
+                        long phase = (long) channel * phaseLength;
+                        long outRow = (long) channel * outTime;
+                        for (int p = 0; p < stride; p++) {
+                            int count = (outTime - p + stride - 1) / stride;
+                            if (count <= 0) continue;
+                            phases.fillInPlace(phase, count, layer.bias(channel));
+                            for (int k = Math.floorMod(p + pad, stride); k < kernel; k += stride) {
+                                int shift = (p + pad - k) / stride; // exact, by the choice of k
+                                int start = Math.max(0, -shift);
+                                int end = Math.min(count, time - shift);
+                                if (end <= start) continue;
+                                for (int ic = 0; ic < inChannels; ic++)
+                                    phases.saxpyInPlace(
+                                            phase + start,
+                                            in,
+                                            (long) ic * time + start + shift,
+                                            end - start,
+                                            weights[channel * taps + k * inChannels + ic]);
+                            }
+                            for (int j = 0, op = p; j < count; j++, op += stride)
+                                out.setFloat(outRow + op, phases.getFloat(phase + j));
+                        }
+                    });
+        }
+    }
+
+    /** One row of taps per output channel, as stored. */
+    private float[] dequantize(State state, Conv layer) {
+        int taps = layer.taps(), rowStride = layer.rowStride();
+        float[] weights = state.takeWeights(layer.outChannels() * taps);
+        for (int oc = 0; oc < layer.outChannels(); oc++)
+            layer.weight().copyRow((long) oc * rowStride, weights, oc * taps, taps);
+        return weights;
+    }
+
+    /**
+     * The same for a transposed convolution. Its dense encoding interleaves output channels, so a
+     * row is gathered element by element; quantized files are already repacked per output channel.
+     */
+    private float[] dequantizeTransposed(State state, Conv layer) {
+        if (layer.weight().type().isQuantized()) return dequantize(state, layer);
+        int kernel = layer.kernel(), inChannels = layer.inChannels();
+        int outChannels = layer.outChannels(), taps = layer.taps();
+        float[] weights = state.takeWeights(outChannels * taps);
+        for (int oc = 0; oc < outChannels; oc++)
+            for (int k = 0; k < kernel; k++)
+                for (int ic = 0; ic < inChannels; ic++)
+                    weights[oc * taps + k * inChannels + ic] =
+                            layer.weight()
+                                    .getFloat(
+                                            k
+                                                    + (long) oc * kernel
+                                                    + (long) ic * kernel * outChannels);
+        return weights;
+    }
+
+    // ── small operations ──────────────────────────────────────────────────
+
+    private F32FloatTensor addNorm(
+            State state, F32FloatTensor x, F32FloatTensor y, Norm layer, int time) {
+        int size = layer.channels() * time;
+        F32FloatTensor sum = state.take(size);
+        x.copyTo(0, sum, 0, size);
+        sum.addInPlace(0, y, 0, size);
+        return norm(state, sum, layer, time);
+    }
+
+    private F32FloatTensor norm(State state, F32FloatTensor x, Norm layer, int time) {
+        F32FloatTensor out = state.take(layer.channels() * time);
+        Norms.layerNorm(out, x, layer.gamma(), layer.beta(), layer.channels(), time, 1e-5f);
         return out;
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // UTILITIES
-    // ═══════════════════════════════════════════════════════════════════════
-
-    private static float[] addNorm(
-            float[] x, float[] y, FloatTensor gamma, FloatTensor beta, int C, int T) {
-        float[] out = new float[C * T];
-        for (int s = 0; s < T; s++)
-            for (int c = 0; c < C; c++) out[s * C + c] = x[s * C + c] + y[s * C + c];
-        return norm(out, gamma, beta, C, T);
+    private static void relu(F32FloatTensor x, int size) {
+        x.clampInPlace(0, size, 0f, Float.MAX_VALUE);
     }
 
-    private static float[] norm(float[] x, FloatTensor gamma, FloatTensor beta, int C, int T) {
-        float[] out = new float[C * T];
-        Norms.layerNorm(out, x, gamma, beta, C, T, 1e-5f);
-        return out;
+    private static void leaky(F32FloatTensor x, int size, float slope) {
+        x.leakyReluInPlace(0, size, slope);
     }
 
-    private static void relu(float[] x) {
-        for (int i = 0; i < x.length; i++) {
-            float v = x[i];
-            x[i] = v > 0 ? v : 0;
-        }
-    }
-
-    private static void flip(float[] x, int C, int T) {
-        for (int s = 0; s < T; s++)
-            for (int c = 0; c < C / 2; c++) {
-                int a = s * C + c, b = s * C + (C - 1 - c);
-                float tmp = x[a];
-                x[a] = x[b];
-                x[b] = tmp;
+    /** Reverse the channel order of every frame — the flow's Flip layer. */
+    private static void flip(F32FloatTensor x, int channels, int time) {
+        for (int t = 0; t < time; t++)
+            for (int c = 0; c < channels / 2; c++) {
+                long low = (long) t * channels + c, high = (long) t * channels + (channels - 1 - c);
+                float swap = x.getFloat(low);
+                x.setFloat(low, x.getFloat(high));
+                x.setFloat(high, swap);
             }
     }
 
-    private static void trace(String l, float[] a) {
-        if (!TRACE) return;
-        float mn = Float.POSITIVE_INFINITY, mx = Float.NEGATIVE_INFINITY;
-        for (float v : a) {
-            if (v < mn) mn = v;
-            if (v > mx) mx = v;
+    /** {@code [time][channel]} to {@code [channel][time]} — the decoder's entry layout. */
+    private static void toChannelMajor(
+            F32FloatTensor in, F32FloatTensor out, int time, int channels) {
+        for (int c = 0; c < channels; c++)
+            for (int t = 0; t < time; t++)
+                out.setFloat((long) c * time + t, in.getFloat((long) t * channels + c));
+    }
+
+    // ── state ─────────────────────────────────────────────────────────────
+
+    /**
+     * Reusable scratch for one synthesis at a time — the forward pass allocates nothing once a
+     * state has been warmed up.
+     *
+     * <p>Buffers are handed out in stack order and returned by closing a {@link Scope}; each grows
+     * to the largest size this state has ever been asked for, so only the first call (or a longer
+     * text than before) allocates.
+     *
+     * <p>Not thread-safe: one state per concurrent synthesis. A state is cheap to create and holds
+     * on the order of the largest waveform it has produced.
+     */
+    public static final class State {
+
+        /** Native scratch; GC-managed, so a dropped state needs no closing. */
+        private final Arena arena = Arena.ofAuto();
+
+        private F32FloatTensor columns, product;
+        private F32FloatTensor[] buffers = new F32FloatTensor[64];
+        private float[][] weightBuffers = new float[8][];
+        private int[][] intBuffers = new int[8][];
+        private int top, weightTop, intTop, depth;
+        private final Random random = new Random();
+
+        /** Start of a fresh pass: every buffer becomes available again. */
+        void rewind() {
+            top = 0;
+            weightTop = 0;
+            intTop = 0;
+            depth = 0;
         }
-        System.out.printf("[trace] %-14s len=%d [%+.4f, %+.4f]%n", l, a.length, mn, mx);
+
+        /**
+         * A scope of the buffer stack: every buffer taken inside is handed back when it closes.
+         * Scopes nest and are pooled, so this costs nothing per pass. A value that must outlive the
+         * scope is taken before it opens.
+         */
+        final class Scope implements AutoCloseable {
+            private int buffers, weights;
+
+            @Override
+            public void close() {
+                top = buffers;
+                weightTop = weights;
+                depth--;
+            }
+        }
+
+        private final Scope[] scopes = new Scope[16]; // deeper than the pipeline ever nests
+
+        {
+            for (int i = 0; i < scopes.length; i++) scopes[i] = new Scope();
+        }
+
+        Scope scope() {
+            Scope scope = scopes[depth++];
+            scope.buffers = top;
+            scope.weights = weightTop;
+            return scope;
+        }
+
+        /** A tensor of at least {@code size} floats; contents undefined. */
+        F32FloatTensor take(int size) {
+            if (top == buffers.length) buffers = Arrays.copyOf(buffers, buffers.length * 2);
+            F32FloatTensor buffer = buffers[top];
+            if (buffer == null || buffer.size() < size)
+                buffer = buffers[top] = F32FloatTensor.allocate(arena, size);
+            top++;
+            return buffer;
+        }
+
+        /** A tensor of at least {@code size} floats, zeroed — for accumulators. */
+        F32FloatTensor takeZeroed(int size) {
+            F32FloatTensor buffer = take(size);
+            buffer.fillInPlace(0, size, 0f);
+            return buffer;
+        }
+
+        /**
+         * Heap staging for one convolution's dequantized weights. A {@code float[]} on purpose:
+         * {@link FloatTensor#copyRow} dequantizes into one, and the taps are then read as scalars.
+         */
+        float[] takeWeights(int size) {
+            if (weightTop == weightBuffers.length)
+                weightBuffers = Arrays.copyOf(weightBuffers, weightBuffers.length * 2);
+            float[] buffer = weightBuffers[weightTop];
+            if (buffer == null || buffer.length < size)
+                buffer = weightBuffers[weightTop] = new float[size];
+            weightTop++;
+            return buffer;
+        }
+
+        int[] takeInts(int size) {
+            if (intTop == intBuffers.length)
+                intBuffers = Arrays.copyOf(intBuffers, intBuffers.length * 2);
+            int[] buffer = intBuffers[intTop];
+            if (buffer == null || buffer.length < size) buffer = intBuffers[intTop] = new int[size];
+            intTop++;
+            return buffer;
+        }
+
+        /** The gemm's im2col staging, and the gemm's output. */
+        F32FloatTensor columns(int size) {
+            if (columns == null || columns.size() < size)
+                columns = F32FloatTensor.allocate(arena, size);
+            return columns;
+        }
+
+        F32FloatTensor product(int size) {
+            if (product == null || product.size() < size)
+                product = F32FloatTensor.allocate(arena, size);
+            return product;
+        }
     }
 }

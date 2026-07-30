@@ -16,7 +16,7 @@
 
   <properties>
     <jinfer.image.name>inflect</jinfer.image.name>
-    <jinfer.image.mainClass>com.qxotic.jinfer.models.inflect2.InflectTTS</jinfer.image.mainClass>
+    <jinfer.image.mainClass>com.qxotic.jinfer.models.inflect2.InflectCli</jinfer.image.mainClass>
     <!-- Directory of .gguf files to ZIP-embed into the native binary (no compression) -->
     <inflect.embed.models />
   </properties>
