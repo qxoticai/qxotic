@@ -2,9 +2,11 @@
 // Implementations: EspeakPhonemizer (native espeak-ng), LexiconPhonemizer (pure Java).
 package com.qxotic.jinfer.models.inflect2.frontend;
 
+import java.io.IOException;
+
 public interface Phonemizer {
     /** Convert English text to blank-interspersed model tokens. */
-    int[] phonemize(String text) throws Exception;
+    int[] phonemize(String text) throws IOException;
 
     /** Best available implementation, or null if none. */
     static Phonemizer tryCreate() {
