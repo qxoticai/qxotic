@@ -139,6 +139,47 @@ public final class F32FloatTensor extends SegmentFloatTensor {
     }
 
     @Override
+    public FloatTensor leakyReluInPlace(long thisOffset, int size, float slope) {
+        if (USE_VECTOR_API) {
+            // scale the whole vector, then keep the original lanes wherever it was not negative
+            int upperBound = F_SPECIES.loopBound(size);
+            int i = 0;
+            for (; i < upperBound; i += F_SPECIES.length()) {
+                long byteOff = vbase + (long) (thisOffset + i) * Float.BYTES;
+                var v =
+                        FloatVector.fromMemorySegment(
+                                F_SPECIES, vseg, byteOff, ByteOrder.LITTLE_ENDIAN);
+                v.mul(slope)
+                        .blend(v, v.compare(VectorOperators.GE, 0f))
+                        .intoMemorySegment(vseg, byteOff, ByteOrder.LITTLE_ENDIAN);
+            }
+            for (; i < size; i++) {
+                float v = getFloat(thisOffset + i);
+                if (v < 0) setFloat(thisOffset + i, v * slope);
+            }
+            return this;
+        }
+        return super.leakyReluInPlace(thisOffset, size, slope);
+    }
+
+    @Override
+    public FloatTensor divideInPlace(long thisOffset, int size, float value) {
+        if (USE_VECTOR_API) {
+            int upperBound = F_SPECIES.loopBound(size);
+            int i = 0;
+            for (; i < upperBound; i += F_SPECIES.length()) {
+                long byteOff = vbase + (long) (thisOffset + i) * Float.BYTES;
+                FloatVector.fromMemorySegment(F_SPECIES, vseg, byteOff, ByteOrder.LITTLE_ENDIAN)
+                        .div(value)
+                        .intoMemorySegment(vseg, byteOff, ByteOrder.LITTLE_ENDIAN);
+            }
+            for (; i < size; i++) setFloat(thisOffset + i, getFloat(thisOffset + i) / value);
+            return this;
+        }
+        return super.divideInPlace(thisOffset, size, value);
+    }
+
+    @Override
     public FloatTensor addInPlace(long thisOffset, FloatTensor that, long thatOffset, int size) {
         if (that instanceof F32FloatTensor f32 && USE_VECTOR_API) {
             int upperBound = F_SPECIES.loopBound(size);

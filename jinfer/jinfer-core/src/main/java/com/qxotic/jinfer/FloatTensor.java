@@ -482,6 +482,18 @@ public abstract class FloatTensor {
         return this;
     }
 
+    /**
+     * Leaky ReLU in place: {@code x = x < 0 ? x * slope : x} — the vocoder/HiFi-GAN activation.
+     * Scalar floor; F32 overrides with SIMD.
+     */
+    public FloatTensor leakyReluInPlace(long thisOffset, int size, float slope) {
+        for (int i = 0; i < size; i++) {
+            float v = getFloat(thisOffset + i);
+            if (v < 0) setFloat(thisOffset + i, v * slope);
+        }
+        return this;
+    }
+
     /** Squared-ReLU in place: x = max(0, x)^2 (Nemotron's FFN/expert activation). */
     FloatTensor reluSqrInPlace(long thisOffset, int size) {
         for (int i = 0; i < size; i++) {
