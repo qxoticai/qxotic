@@ -13,6 +13,7 @@
 package com.qxotic.jinfer.models.inflect2;
 
 import com.qxotic.format.gguf.GGUF;
+import com.qxotic.jinfer.Activations;
 import com.qxotic.jinfer.Convolutions;
 import com.qxotic.jinfer.F32FloatTensor;
 import com.qxotic.jinfer.FloatTensor;
@@ -629,16 +630,17 @@ public final class Inflect2 {
         F32FloatTensor skip = state.takeZeroed(hidden * frames); // accumulates over the layers
         for (int i = 0; i < layer.gates().length; i++) {
             F32FloatTensor gates = conv(state, h, layer.gates()[i], 1, frames);
+            // Each step's channels are contiguous, and its two halves are one hidden apart.
             F32FloatTensor activated = state.take(hidden * frames);
             for (int frame = 0; frame < frames; frame++)
-                for (int c = 0; c < hidden; c++) {
-                    // tanh(filter half) * sigmoid(gate half) — the WaveNet gate
-                    float filter = gates.getFloat((long) frame * 2 * hidden + c);
-                    float gate = gates.getFloat((long) frame * 2 * hidden + hidden + c);
-                    activated.setFloat(
-                            (long) frame * hidden + c,
-                            (float) Math.tanh(filter) / (1f + (float) Math.exp(-gate)));
-                }
+                Activations.tanhSigmoidGate(
+                        activated,
+                        (long) frame * hidden,
+                        gates,
+                        (long) frame * 2 * hidden,
+                        gates,
+                        (long) frame * 2 * hidden + hidden,
+                        hidden);
 
             Conv projection = layer.residualSkip()[i];
             F32FloatTensor projected = conv(state, activated, projection, 1, frames);

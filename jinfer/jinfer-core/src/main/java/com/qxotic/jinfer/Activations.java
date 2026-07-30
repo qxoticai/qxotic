@@ -169,6 +169,80 @@ public final class Activations {
         gate.siluMultiplyInPlace(gateOff, up, upOff, n);
     }
 
+    /** The WaveNet gate {@code tanh(filter) * sigmoid(gate)} — the scalar-fallback oracle. */
+    public static float tanhSigmoid(float filter, float gate) {
+        return (float) Math.tanh(filter) * sigmoid(gate);
+    }
+
+    /**
+     * Scalar twin of {@link #tanhSigmoidGate}'s vector body (tanhApprox for both halves), so the
+     * vector loop's scalar tail applies the identical approximation as the lanes.
+     */
+    private static float tanhSigmoidApprox(float filter, float gate) {
+        return F32FloatTensor.tanhApprox(filter)
+                * 0.5f
+                * (1.0f + F32FloatTensor.tanhApprox(0.5f * gate));
+    }
+
+    /**
+     * The WaveNet gate over a span: {@code out[i] = tanh(filter[i]) * sigmoid(gate[i])} for {@code
+     * n} elements — vectorized for F32, scalar otherwise.
+     *
+     * <p>One approximation covers both halves: {@code sigmoid(x) = 0.5(1 + tanh(x/2))}, so the
+     * minimax-rational {@code tanhVec} serves the gate as well as the filter and neither half needs
+     * a lanewise EXP (which Graal does not intrinsify). Its ~1.9e-5 is far under Q8_0's ~3.9e-3
+     * quantization noise, the same trade {@link #clampedSwigluMultiply} makes.
+     *
+     * <p>{@code filter} and {@code gate} are usually two halves of one tensor, passed as the same
+     * tensor at two offsets. Callers parallelize across rows.
+     */
+    public static void tanhSigmoidGate(
+            FloatTensor out,
+            long outOff,
+            FloatTensor filter,
+            long filterOff,
+            FloatTensor gate,
+            long gateOff,
+            int n) {
+        if (FloatTensor.USE_VECTOR_API
+                && out instanceof F32FloatTensor o
+                && filter instanceof F32FloatTensor f
+                && gate instanceof F32FloatTensor g) {
+            VectorSpecies<Float> sp = FloatTensor.F_SPECIES;
+            int bound = sp.loopBound(n);
+            for (int i = 0; i < bound; i += sp.length()) {
+                FloatVector x =
+                        FloatVector.fromMemorySegment(
+                                sp,
+                                f.vseg,
+                                f.vbase + (filterOff + i) * Float.BYTES,
+                                ByteOrder.LITTLE_ENDIAN);
+                FloatVector y =
+                        FloatVector.fromMemorySegment(
+                                sp,
+                                g.vseg,
+                                g.vbase + (gateOff + i) * Float.BYTES,
+                                ByteOrder.LITTLE_ENDIAN);
+                F32FloatTensor.tanhVec(x)
+                        .mul(F32FloatTensor.tanhVec(y.mul(0.5f)).add(1.0f).mul(0.5f))
+                        .intoMemorySegment(
+                                o.vseg,
+                                o.vbase + (outOff + i) * Float.BYTES,
+                                ByteOrder.LITTLE_ENDIAN);
+            }
+            for (int i = bound; i < n; i++)
+                out.setFloat(
+                        outOff + i,
+                        tanhSigmoidApprox(
+                                filter.getFloat(filterOff + i), gate.getFloat(gateOff + i)));
+            return;
+        }
+        for (int i = 0; i < n; i++)
+            out.setFloat(
+                    outOff + i,
+                    tanhSigmoid(filter.getFloat(filterOff + i), gate.getFloat(gateOff + i)));
+    }
+
     /**
      * In-place logit soft-cap {@code x = cap * tanh(x / cap)} over {@code n} elements (no-op when
      * {@code cap <= 0}) — vectorized for F32 tensors.
