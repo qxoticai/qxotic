@@ -1,47 +1,53 @@
-// WAV file writer for Inflect TTS output (24kHz mono float → 24kHz 16-bit PCM WAV).
+// WAV output for synthesized audio: float [-1,1] mono → 16-bit PCM.
+//
+// Hand-written rather than javax.sound.sampled, which would pull the java.desktop module into a
+// native image for the sake of a 44-byte header.
 package com.qxotic.jinfer.models.inflect2;
 
-import java.io.*;
+import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 public final class AudioIO {
     private AudioIO() {}
 
-    /** Convert float[-1,1] waveform to 16-bit signed little-endian bytes. */
+    private static final int HEADER_BYTES = 44;
+    private static final short PCM_FORMAT = 1, MONO = 1, BITS_PER_SAMPLE = 16;
+
+    /** Convert a float [-1,1] waveform to 16-bit signed little-endian samples. */
     public static byte[] toS16LE(float[] waveform) {
-        byte[] buf = new byte[waveform.length * 2];
+        byte[] bytes = new byte[waveform.length * 2];
         for (int i = 0; i < waveform.length; i++) {
-            int s = (int) (waveform[i] * 32767);
-            if (s > 32767) s = 32767;
-            else if (s < -32768) s = -32768;
-            buf[i * 2] = (byte) s;
-            buf[i * 2 + 1] = (byte) (s >> 8);
+            int sample = Math.clamp((int) (waveform[i] * Short.MAX_VALUE), -32768, 32767);
+            bytes[i * 2] = (byte) sample;
+            bytes[i * 2 + 1] = (byte) (sample >> 8);
         }
-        return buf;
+        return bytes;
     }
 
-    /** Write float[-1,1] mono waveform as 24kHz 16-bit WAV. */
-    public static void writeWav(float[] waveform, int sampleRate, Path outputPath)
-            throws IOException {
-        int dataSize = waveform.length * 2;
-        try (var out = new FileOutputStream(outputPath.toFile())) {
-            ByteBuffer hdr = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN);
-            hdr.put("RIFF".getBytes());
-            hdr.putInt(36 + dataSize);
-            hdr.put("WAVE".getBytes());
-            hdr.put("fmt ".getBytes());
-            hdr.putInt(16);
-            hdr.putShort((short) 1);
-            hdr.putShort((short) 1);
-            hdr.putInt(sampleRate);
-            hdr.putInt(sampleRate * 2);
-            hdr.putShort((short) 2);
-            hdr.putShort((short) 16);
-            hdr.put("data".getBytes());
-            hdr.putInt(dataSize);
-            out.write(hdr.array());
+    /** Write a float [-1,1] mono waveform as a 16-bit PCM WAV file. */
+    public static void writeWav(float[] waveform, int sampleRate, Path path) throws IOException {
+        int dataBytes = waveform.length * 2;
+        int byteRate = sampleRate * MONO * BITS_PER_SAMPLE / 8;
+        ByteBuffer header = ByteBuffer.allocate(HEADER_BYTES).order(ByteOrder.LITTLE_ENDIAN);
+        header.put("RIFF".getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+        header.putInt(HEADER_BYTES - 8 + dataBytes); // size of everything after this field
+        header.put("WAVEfmt ".getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+        header.putInt(16); // fmt chunk size
+        header.putShort(PCM_FORMAT);
+        header.putShort(MONO);
+        header.putInt(sampleRate);
+        header.putInt(byteRate);
+        header.putShort((short) (MONO * BITS_PER_SAMPLE / 8)); // block align
+        header.putShort(BITS_PER_SAMPLE);
+        header.put("data".getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+        header.putInt(dataBytes);
+
+        try (OutputStream out = Files.newOutputStream(path)) {
+            out.write(header.array());
             out.write(toS16LE(waveform));
         }
     }
