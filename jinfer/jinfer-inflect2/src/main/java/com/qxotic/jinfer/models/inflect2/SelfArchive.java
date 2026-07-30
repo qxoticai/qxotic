@@ -1,13 +1,19 @@
-// Self-archive reader: the executable itself has a ZIP overlay appended.
-// Uses Apache Commons Compress for ZipArchiveEntry.getDataOffset() — the exact
-// byte offset where a STORED entry's data begins, so we can mmap from there.
+// Reads a ZIP overlay appended to a file — normally the running executable itself, so a native
+// image can carry its GGUF models inside the binary:
 //
-//   SelfArchive sa = SelfArchive.open();
-//   SelfArchive.Entry e = sa.entry("models/nano.gguf");
-//   byte[] header = sa.readAt(e.offset(), 65536);     // GGUF header
-//   // mmap tensor data: sa.channel().map(..., e.offset + tensorDataOff, ...)
+//   try (SelfArchive archive = SelfArchive.open()) {
+//       SelfArchive.Entry entry = archive.entry("models/nano.gguf");
+//       byte[] header = archive.readAt(entry.offset(), 65536);
+//       // tensor data maps straight from archive.channel() at entry.offset() + ...
+//   }
+//
+// Entries must be STORED (uncompressed) so their bytes can be mapped in place. Commons Compress is
+// the dependency here for one reason: ZipArchiveEntry.getDataOffset() gives the exact byte where an
+// entry's data begins, which the JDK's java.util.zip does not expose and which cannot be derived
+// without parsing the central directory by hand.
 package com.qxotic.jinfer.models.inflect2;
 
+import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
@@ -16,6 +22,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Enumeration;
 import java.util.HashSet;
 import java.util.List;
@@ -25,6 +32,9 @@ import org.apache.commons.compress.archivers.zip.ZipFile;
 
 public final class SelfArchive implements AutoCloseable {
 
+    /** How many symlinks may be followed before assuming the archive is malformed. */
+    private static final int MAX_SYMLINK_DEPTH = 8;
+
     private final ZipFile zip;
     private final FileChannel channel;
 
@@ -33,91 +43,103 @@ public final class SelfArchive implements AutoCloseable {
         this.channel = channel;
     }
 
-    /** Open the running executable itself as a self-archive. */
+    /** Open the running executable as an archive. */
     public static SelfArchive open() throws IOException {
         Path self =
                 ProcessHandle.current()
                         .info()
                         .command()
                         .map(Path::of)
-                        .orElseThrow(() -> new IOException("cannot find current process binary"));
-        return new SelfArchive(new ZipFile(self), FileChannel.open(self, StandardOpenOption.READ));
+                        .orElseThrow(() -> new IOException("cannot find the current executable"));
+        return open(self);
     }
 
+    /** Open an arbitrary file that has a ZIP overlay appended. */
+    static SelfArchive open(Path file) throws IOException {
+        FileChannel channel = FileChannel.open(file, StandardOpenOption.READ);
+        try {
+            return new SelfArchive(new ZipFile.Builder().setPath(file).get(), channel);
+        } catch (IOException e) {
+            channel.close();
+            throw e;
+        }
+    }
+
+    /** The channel over the archive file, for mapping entry data in place. */
     public FileChannel channel() {
         return channel;
     }
 
+    /** One STORED entry: its name, the absolute offset of its data, and its length. */
     public record Entry(String name, long offset, int size) {}
 
-    /** Look up a STORED entry by name. Symlinks are resolved transparently (max depth 8). */
+    /** Look up an entry by name, following Unix symlinks. */
     public Entry entry(String name) throws IOException {
-        return resolveEntry(name, new HashSet<>());
+        return resolve(name, name, new HashSet<>());
     }
 
-    private Entry resolveEntry(String name, Set<String> visited) throws IOException {
-        if (!visited.add(name)) throw new IOException("symlink cycle: " + name);
-        if (visited.size() > 8) throw new IOException("symlink depth exceeded: " + name);
-
-        ZipArchiveEntry e = zip.getEntry(name);
-        if (e == null) throw new IOException("entry not found: " + name);
-
-        // Follow Unix symlinks — the entry data is the target path
-        if (e.isUnixSymlink()) {
+    private Entry resolve(String name, String as, Set<String> seen) throws IOException {
+        if (!seen.add(name)) throw new IOException("symlink cycle at " + name);
+        if (seen.size() > MAX_SYMLINK_DEPTH) throw new IOException("symlinks too deep at " + name);
+        ZipArchiveEntry entry = zip.getEntry(name);
+        if (entry == null) throw new IOException("entry not found: " + name);
+        if (entry.isUnixSymlink()) {
             String target;
-            try (InputStream in = zip.getInputStream(e)) {
+            try (InputStream in = zip.getInputStream(entry)) {
                 target = new String(in.readAllBytes(), StandardCharsets.UTF_8).trim();
             }
-            return resolveEntry(target, visited);
+            return resolve(target, as, seen);
         }
-
-        if (e.getMethod() != ZipArchiveEntry.STORED)
-            throw new IOException("entry must be STORED: " + name);
-        return new Entry(name, e.getDataOffset(), (int) e.getSize());
+        if (entry.getMethod() != ZipArchiveEntry.STORED)
+            throw new IOException("entry must be STORED to be mapped: " + name);
+        // Keep the name the caller asked for, so a listing shows the link, not its target.
+        return new Entry(as, entry.getDataOffset(), (int) entry.getSize());
     }
 
-    /** All STORED entries, sorted by name. Symlinks show their target. */
+    /**
+     * Every usable entry, by name. Symlinks appear under their own name, resolved to the target's
+     * data; entries that are compressed, broken or dangling are left out — a listing should not
+     * fail because one entry is unusable.
+     */
     public List<Entry> entries() {
-        List<Entry> list = new ArrayList<>();
+        List<Entry> usable = new ArrayList<>();
         for (Enumeration<ZipArchiveEntry> e = zip.getEntries(); e.hasMoreElements(); ) {
-            ZipArchiveEntry z = e.nextElement();
-            if (z.isUnixSymlink()) {
-                String target;
-                try (InputStream in = zip.getInputStream(z)) {
-                    target = new String(in.readAllBytes(), StandardCharsets.UTF_8).trim();
-                } catch (IOException ignored) {
-                    target = "?";
-                }
-                // Symlink entry — use the name + resolved size
-                try {
-                    Entry resolved = resolveEntry(z.getName(), new HashSet<>());
-                    list.add(
-                            new Entry(
-                                    z.getName() + " → " + target,
-                                    resolved.offset(),
-                                    resolved.size()));
-                } catch (IOException ignored) {
-                    list.add(new Entry(z.getName() + " → " + target + " (broken)", 0, 0));
-                }
-            } else if (z.getMethod() == ZipArchiveEntry.STORED) {
-                list.add(new Entry(z.getName(), z.getDataOffset(), (int) z.getSize()));
+            String name = e.nextElement().getName();
+            try {
+                usable.add(entry(name));
+            } catch (IOException unusable) {
+                // not mappable: skipped rather than reported, see above
             }
         }
-        list.sort((a, b) -> a.name.compareTo(b.name));
-        return list;
+        usable.sort(Comparator.comparing(Entry::name));
+        return usable;
     }
 
+    /** Read exactly {@code count} bytes at {@code offset}. */
     public byte[] readAt(long offset, int count) throws IOException {
-        byte[] buf = new byte[count];
-        ByteBuffer bb = ByteBuffer.wrap(buf);
-        channel.position(offset);
-        while (bb.hasRemaining() && channel.read(bb) >= 0) {}
-        return buf;
+        byte[] bytes = new byte[count];
+        ByteBuffer buffer = ByteBuffer.wrap(bytes);
+        long at = offset;
+        while (buffer.hasRemaining()) {
+            int read = channel.read(buffer, at);
+            if (read < 0)
+                throw new EOFException(
+                        "archive ends after "
+                                + buffer.position()
+                                + " of "
+                                + count
+                                + " bytes at offset "
+                                + offset);
+            at += read;
+        }
+        return bytes;
     }
 
     @Override
     public void close() throws IOException {
-        zip.close();
-        channel.close();
+        try (zip;
+                channel) {
+            // both closed, first failure wins, second still attempted
+        }
     }
 }
