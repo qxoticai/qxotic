@@ -70,6 +70,11 @@
          slower than 4x4 everywhere (see Convolutions.TILE_CODE). -->
     <jinfer.convTile>4x4</jinfer.convTile>
 
+    <!-- Per-layer tensor tracing, build-time for the same reason as the tile: Trace.ENABLED guards
+         hot loops, so it must fold to a constant. Empty would read as ON (the flag tests for
+         presence), hence "false" rather than a blank default. -->
+    <jinfer.trace>false</jinfer.trace>
+
     <!-- Tagged suites excluded from the default build:
          integration = model-loading gates (run: mvn test -Dsurefire.excludedGroups= -Dgroups=integration)
          bench       = measurement harnesses (run by name: mvn test -Dtest=GemvBench -Dsurefire.excludedGroups=)
@@ -291,11 +296,15 @@
               <buildArg>--enable-native-access=ALL-UNNAMED</buildArg>
               <buildArg>-J--enable-native-access=ALL-UNNAMED</buildArg>
               <buildArg>--initialize-at-build-time=com.qxotic.</buildArg>
-              <buildArg>--initialize-at-run-time=com.qxotic.jinfer.RuntimeFlags,com.qxotic.jinfer.server.ServerFlags,com.qxotic.jinfer.Parallel,com.qxotic.jinfer.MatMul,com.qxotic.jinfer.Dispatch,com.qxotic.jinfer.JamMatMul,com.qxotic.jam.NativeJAM,com.qxotic.jam.NativeLoader</buildArg>
+              <!-- LeakWatch for two reasons: its Cleaner cannot live in the image heap (the daemon
+                   thread does not survive the build), and -Djinfer.leakDetection is a RUN-time flag
+                   that build-time initialization would freeze to the builder's value. -->
+              <buildArg>--initialize-at-run-time=com.qxotic.jinfer.RuntimeFlags,com.qxotic.jinfer.server.ServerFlags,com.qxotic.jinfer.Parallel,com.qxotic.jinfer.MatMul,com.qxotic.jinfer.Dispatch,com.qxotic.jinfer.JamMatMul,com.qxotic.jinfer.LeakWatch,com.qxotic.jinfer.models.gemma4.VisionPreprocess,com.qxotic.jam.NativeJAM,com.qxotic.jam.NativeLoader</buildArg>
               <buildArg>-H:IncludeResources=com/qxotic/jam/native/.*</buildArg>
               <buildArg>-Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0</buildArg>
               <buildArg>-Djinfer.PreloadGGUF=${jinfer.PreloadGGUF}</buildArg>
               <buildArg>-Djinfer.convTile=${jinfer.convTile}</buildArg>
+              <buildArg>-Djinfer.trace=${jinfer.trace}</buildArg>
             </buildArgs>
           </configuration>
           <executions>

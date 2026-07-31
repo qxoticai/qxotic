@@ -10,7 +10,15 @@ import com.qxotic.jinfer.*;
 public final class Trace {
     private Trace() {}
 
-    public static final boolean ENABLED = System.getProperty("jinfer.trace") != null;
+    /**
+     * {@code -Djinfer.trace} (or {@code =false} to force off). Read at class init and deliberately
+     * NOT run-time-initialized in a native image: its call sites sit inside per-layer loops, so a
+     * folded constant erases the branch entirely, which a run-time flag could not. The cost is that
+     * an image freezes this at BUILD time — pass it to the image build (the {@code jinfer.trace}
+     * pom property) rather than to the binary, exactly as with {@code jinfer.convTile}.
+     */
+    public static final boolean ENABLED =
+            !"false".equals(System.getProperty("jinfer.trace", "false"));
 
     /** Prints the span's sum and first three elements, tagged with {@code name}. */
     public static void sum(String name, FloatTensor t, int n) {
