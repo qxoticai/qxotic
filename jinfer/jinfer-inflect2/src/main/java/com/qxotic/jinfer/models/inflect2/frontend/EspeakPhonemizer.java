@@ -55,7 +55,8 @@ final class EspeakPhonemizer implements Phonemizer {
      * Where the word ends and its trailing punctuation begins. An apostrophe between letters is
      * part of the word ("don't"), not punctuation.
      */
-    private static int wordEnd(String token) {
+    /** Where the word ends and its trailing punctuation begins; shared with the lexicon path. */
+    static int wordEnd(String token) {
         int end = token.length();
         while (end > 0) {
             int codePoint = token.codePointAt(end - 1);

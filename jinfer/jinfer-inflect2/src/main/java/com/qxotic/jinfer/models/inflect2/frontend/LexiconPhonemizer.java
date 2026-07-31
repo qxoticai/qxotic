@@ -22,6 +22,7 @@ final class LexiconPhonemizer implements Phonemizer {
     private static final int SPACE = Symbols.idOf(' ');
 
     private final Map<String, int[]> lexicon;
+    private boolean warned;
 
     private LexiconPhonemizer(Map<String, int[]> lexicon) {
         this.lexicon = lexicon;
@@ -31,6 +32,7 @@ final class LexiconPhonemizer implements Phonemizer {
      * The bundled lexicon, or the {@code -Dinflect.lexicon} override, or null when there is none. A
      * lexicon that is present but unreadable says so — silently spelling every word out letter by
      * letter is worse than one line on stderr.
+     *
      */
     static LexiconPhonemizer tryCreate() {
         String override = System.getProperty(OVERRIDE_PROPERTY);
@@ -48,22 +50,46 @@ final class LexiconPhonemizer implements Phonemizer {
 
     /**
      * Look each word up and join with the separator symbol. The text is expected to be normalized
-     * already (see {@link Phonemizer}); a word that is not in the lexicon is dropped, since there
-     * is no letter-to-sound model behind this one.
+     * already (see {@link Phonemizer}).
+     *
+     * <p>Trailing punctuation is split off before the lookup and re-emitted after it, exactly as
+     * the espeak path does — it carries the prosody the model needs, and a lexicon keyed on bare
+     * words would otherwise miss every clause-final word in ordinary prose ("grows." and "thin."
+     * are in the lexicon; "grows." and "thin." with the stop attached are not).
+     *
+     * <p>There is no letter-to-sound model behind this one, so a word it does not know is dropped —
+     * and says so once on stderr, because silence for a missing word is invisible downstream.
      */
     @Override
     public int[] phonemize(String text) {
         int[] symbols = new int[64];
         int length = 0;
-        for (String word : text.split("\\s+")) {
-            if (word.isEmpty()) continue;
-            int[] ids = lookup(word.toLowerCase());
-            if (ids == null || ids.length == 0) continue;
-            if (length + ids.length + 1 > symbols.length)
-                symbols = Arrays.copyOf(symbols, (length + ids.length + 1) * 2);
+        int dropped = 0;
+        for (String token : text.split("\\s+")) {
+            if (token.isEmpty()) continue;
+            int end = EspeakPhonemizer.wordEnd(token);
+            int[] ids = end > 0 ? lookup(token.substring(0, end).toLowerCase()) : null;
+            if (end > 0 && (ids == null || ids.length == 0)) dropped++;
+            int[] marks = Symbols.toRaw(token.substring(end));
+            int width = (ids == null ? 0 : ids.length) + marks.length;
+            if (width == 0) continue;
+            if (length + width + 1 > symbols.length)
+                symbols = Arrays.copyOf(symbols, (length + width + 1) * 2);
             if (length > 0) symbols[length++] = SPACE;
-            System.arraycopy(ids, 0, symbols, length, ids.length);
-            length += ids.length;
+            if (ids != null) {
+                System.arraycopy(ids, 0, symbols, length, ids.length);
+                length += ids.length;
+            }
+            System.arraycopy(marks, 0, symbols, length, marks.length);
+            length += marks.length;
+        }
+        if (dropped > 0 && !warned) {
+            warned = true;
+            System.err.println(
+                    "[inflect2] "
+                            + dropped
+                            + " word(s) are not in the lexicon and were left unspoken; install"
+                            + " espeak-ng and remove the lexicon to phonemize them instead");
         }
         return Symbols.blankIntersperse(Arrays.copyOf(symbols, length));
     }
