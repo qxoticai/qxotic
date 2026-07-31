@@ -152,9 +152,20 @@ public final class Inflect2 {
     // ── loading ───────────────────────────────────────────────────────────
 
     public static Inflect2 load(Path path) throws IOException {
+        return load(path, Arena.ofAuto());
+    }
+
+    /**
+     * Weights map into {@code arena}, and whoever provides it owns its lifetime — the same contract
+     * as {@link com.qxotic.jinfer.Model}: {@code ofAuto} is GC-managed, {@code global} lasts the
+     * process, a scoped arena is deterministic and must outlive every model sharing the weights.
+     * Closing one while a synthesis is running is a crash, not an exception: the kernels read raw
+     * addresses.
+     */
+    public static Inflect2 load(Path path, Arena arena) throws IOException {
         try (FileChannel channel = FileChannel.open(path, StandardOpenOption.READ)) {
             GGUF gguf = ModelLoader.readGguf(channel, path.toString());
-            return load(gguf, ModelLoader.loadTensors(channel, gguf, 0, Arena.ofAuto()));
+            return load(gguf, ModelLoader.loadTensors(channel, gguf, 0, arena));
         }
     }
 
@@ -163,6 +174,11 @@ public final class Inflect2 {
      * is mapped straight out of the executable, with no temp file and no copy.
      */
     public static Inflect2 loadSelfArchive(String entryName) throws IOException {
+        return loadSelfArchive(entryName, Arena.ofAuto());
+    }
+
+    /** As {@link #loadSelfArchive(String)}, with the weights mapped into {@code arena}. */
+    public static Inflect2 loadSelfArchive(String entryName, Arena arena) throws IOException {
         try (SelfArchive archive = SelfArchive.open()) {
             SelfArchive.Entry entry = archive.entry(entryName);
             // The header is small (< 64 KB even for Inflect2's 302 tensors).
@@ -170,8 +186,7 @@ public final class Inflect2 {
             GGUF gguf = GGUF.read(Channels.newChannel(new ByteArrayInputStream(header)));
             return load(
                     gguf,
-                    ModelLoader.loadTensors(
-                            archive.channel(), gguf, entry.offset(), Arena.ofAuto()));
+                    ModelLoader.loadTensors(archive.channel(), gguf, entry.offset(), arena));
         }
     }
 
@@ -394,7 +409,17 @@ public final class Inflect2 {
 
     /** A fresh scratch state; reuse one across calls to keep synthesis allocation-free. */
     public State newState() {
-        return new State();
+        return new State(Arena.ofAuto());
+    }
+
+    /**
+     * A state whose scratch comes from {@code arena}, which the caller owns and frees. Close YOUR
+     * arena only after the last synthesis using this state returns — the kernels read raw
+     * addresses, so a live read from a closed arena is a crash, not an exception.
+     */
+    public State newState(Arena arena) {
+        if (arena == null) throw new IllegalArgumentException("null arena");
+        return new State(arena);
     }
 
     /** Convenience for a one-off call: allocates a state, synthesizes, drops it. */
@@ -975,11 +1000,20 @@ public final class Inflect2 {
      *
      * <p>Not thread-safe: one state per concurrent synthesis. A state is cheap to create and holds
      * on the order of the largest waveform it has produced.
+     *
+     * <p>Scratch comes from an arena, on the same "who provides it owns it" contract the rest of
+     * jinfer uses: {@link #newState()} takes a GC-managed one, so a dropped state needs no closing,
+     * and {@link #newState(Arena)} takes the caller's, freed when they free it. Deliberately no
+     * owned-and-closeable flavour — this scratch is a few MB, and buying deterministic free for it
+     * would cost a Cleaner that cannot live in a native image heap.
      */
     public static final class State {
 
-        /** Native scratch; GC-managed, so a dropped state needs no closing. */
-        private final Arena arena = Arena.ofAuto();
+        private final Arena arena;
+
+        State(Arena arena) {
+            this.arena = arena;
+        }
 
         private F32FloatTensor columns, product;
         private F32FloatTensor[] buffers = new F32FloatTensor[64];

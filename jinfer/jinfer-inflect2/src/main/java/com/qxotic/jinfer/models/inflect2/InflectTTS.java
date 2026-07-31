@@ -12,6 +12,7 @@ import com.qxotic.jinfer.models.inflect2.frontend.Phonemizer;
 import com.qxotic.jinfer.models.inflect2.frontend.TextNormalizer;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.lang.foreign.Arena;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -39,9 +40,23 @@ public final class InflectTTS {
         return new InflectTTS(Inflect2.load(ggufPath));
     }
 
+    /**
+     * Weights map into {@code arena}, whose owner is whoever provided it — see {@link
+     * Inflect2#load(Path, Arena)} for the lifetime rules. Synthesis states are separate and own
+     * their own scratch.
+     */
+    public static InflectTTS load(Path ggufPath, Arena arena) throws IOException {
+        return new InflectTTS(Inflect2.load(ggufPath, arena));
+    }
+
     /** Load from a ZIP overlay appended to the running executable, e.g. {@code "default.gguf"}. */
     public static InflectTTS loadSelfArchive(String entryName) throws IOException {
         return new InflectTTS(Inflect2.loadSelfArchive(entryName));
+    }
+
+    /** As {@link #loadSelfArchive(String)}, with the weights mapped into {@code arena}. */
+    public static InflectTTS loadSelfArchive(String entryName, Arena arena) throws IOException {
+        return new InflectTTS(Inflect2.loadSelfArchive(entryName, arena));
     }
 
     public Inflect2 model() {
@@ -65,10 +80,10 @@ public final class InflectTTS {
     public Media.Audio synthesize(String text, double speed, double variation, long seed)
             throws IOException {
         List<String> chunks = split(text);
-        // One scratch state for the whole text: the second chunk onward allocates nothing.
-        Inflect2.State state = model.newState();
         List<float[]> pieces = new ArrayList<>(chunks.size() * 2);
         int total = 0;
+        // One scratch state for the whole text: the second chunk onward allocates nothing.
+        Inflect2.State state = model.newState();
         for (int i = 0; i < chunks.size(); i++) {
             if (i > 0) {
                 float[] pause = new float[pauseSamples(chunks.get(i - 1))];
