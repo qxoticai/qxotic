@@ -280,6 +280,16 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         return response(ai, p, done);
     }
 
+    /**
+     * Blocking, idempotent: waits out any in-flight request (including a live stream), then frees
+     * the pooled session states' arenas and the cached-prompt blobs deterministically; later use of
+     * this model (or any view sharing its engine) fails with IllegalStateException.
+     *
+     * <p>Weights are freed too, LAST and only if this model loaded them: mapped tensor pages are
+     * kernel-reclaimable, but load-time conversions and repacks are anonymous memory that a
+     * GC-managed arena would free only at a GC a native-heavy JVM never runs. A model built with
+     * {@code model(...)} borrows its weights instead - close YOUR arena after this, never before.
+     */
     @Override
     public void close() {
         engine.close();
@@ -479,7 +489,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         private ObservationRegistry observationRegistry;
         private ChatModelObservationConvention observationConvention;
 
-        /** The GGUF to load. Required unless {@link #loaded}. */
+        /** The GGUF to load. Required unless {@link #model}. */
         public Builder modelPath(Path modelPath) {
             this.modelPath = modelPath;
             return this;
@@ -493,12 +503,12 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
          * <p>You own its weights arena: {@link JinferChatModel#close()} quiesces this model but
          * frees only what it allocated, so close your arena after it, never before.
          */
-        public Builder loaded(LoadedModel<?> loaded) {
+        public Builder model(LoadedModel<?> loaded) {
             this.loaded = loaded;
             return this;
         }
 
-        /** Reported as the response's model name; defaults to the model class. {@link #loaded} only. */
+        /** Reported as the response's model name; defaults to the model class. {@link #model} only. */
         public Builder modelName(String modelName) {
             this.modelName = modelName;
             return this;
@@ -608,11 +618,11 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         public JinferChatModel build() {
             if ((modelPath == null) == (loaded == null))
                 throw new IllegalArgumentException(
-                        "exactly one of modelPath(...) or loaded(...) is required");
+                        "exactly one of modelPath(...) or model(...) is required");
             if (loaded != null && (mediaProjector != null || contextLength != 0))
                 throw new IllegalArgumentException(
                         "mediaProjector/contextLength are load-time settings; apply them when you"
-                                + " build the LoadedModel passed to loaded(...)");
+                                + " build the LoadedModel passed to model(...)");
             return new JinferChatModel(this);
         }
     }

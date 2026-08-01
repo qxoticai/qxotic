@@ -15,7 +15,7 @@ class JinferChatModelTest {
         IllegalArgumentException e =
                 assertThrows(
                         IllegalArgumentException.class, () -> JinferChatModel.builder().build());
-        assertEquals("exactly one of modelPath(...) or loaded(...) is required", e.getMessage());
+        assertEquals("exactly one of modelPath(...) or model(...) is required", e.getMessage());
     }
 
 
