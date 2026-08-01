@@ -104,6 +104,10 @@
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-inflect2</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
       <artifactId>jinfer-lfm2</artifactId>
       <scope>runtime</scope>
     </dependency>
