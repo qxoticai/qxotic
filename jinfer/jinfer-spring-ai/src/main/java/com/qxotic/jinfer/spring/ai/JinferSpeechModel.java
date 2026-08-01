@@ -40,28 +40,35 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
     private final ReentrantLock lock = new ReentrantLock(true); // fair: no request starves
     private final SpeechOptions defaults;
     private final int maxInputChars;
+    private boolean closed; // guarded by lock
 
     @SuppressWarnings("unchecked") // the state below comes from this very model, so it IS S
     private JinferSpeechModel(Builder b) {
         this.defaults = b.speed == null ? SpeechOptions.NONE : SpeechOptions.speed(b.speed);
         this.maxInputChars = b.maxInputChars;
-        if (b.model != null) {
-            this.owned = null;
-            this.model = (SpeechModel<?, ?, SpeechState>) b.model;
-        } else {
-            Arena weights = b.arena == null ? Arena.ofShared() : b.arena;
-            try {
-                this.model = (SpeechModel<?, ?, SpeechState>) Models.loadSpeech(b.modelPath, weights);
-            } catch (IOException e) {
-                if (b.arena == null) weights.close();
-                throw new UncheckedIOException("failed to load " + b.modelPath, e);
-            } catch (RuntimeException | Error e) {
-                if (b.arena == null) weights.close();
-                throw e;
-            }
-            this.owned = b.arena == null ? weights : null; // a caller's arena stays the caller's
+        // an arena this instance creates is this instance's to free on EVERY path out of here,
+        // including a state allocation that fails after the weights are already mapped
+        Arena created = b.model == null && b.arena == null ? Arena.ofShared() : null;
+        try {
+            this.model =
+                    (SpeechModel<?, ?, SpeechState>)
+                            (b.model != null
+                                    ? b.model
+                                    : Models.loadSpeech(
+                                            b.modelPath, created != null ? created : b.arena));
+            this.state = model.newState();
+        } catch (IOException e) {
+            closeQuietly(created); // a leaked ofShared arena has no backstop: free before failing
+            throw new UncheckedIOException("failed to load " + b.modelPath, e);
+        } catch (RuntimeException | Error e) {
+            closeQuietly(created);
+            throw e;
         }
-        this.state = model.newState();
+        this.owned = created; // a caller's arena stays the caller's
+    }
+
+    private static void closeQuietly(Arena arena) {
+        if (arena != null) arena.close();
     }
 
     @Override
@@ -70,6 +77,7 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
         SpeechOptions options = options(prompt);
         lock.lock(); // the port fails fast on concurrent use of one state; this queues instead
         try {
+            checkOpen();
             Media.Audio audio = model.speak(state, text, options);
             return new TextToSpeechResponse(List.of(new Speech(AudioCodec.wav(audio))));
         } finally {
@@ -93,6 +101,7 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
                 emitter -> {
                     lock.lock();
                     try {
+                        checkOpen();
                         model.speak(
                                 state,
                                 text,
@@ -145,15 +154,31 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
                     knob + " '" + value + "' is not supported: " + why);
     }
 
+    private void checkOpen() {
+        if (closed) throw new IllegalStateException("this model is closed");
+    }
+
     /**
-     * Closes the synthesis state, and the weights arena IFF this instance created it - a model or
-     * an arena you passed in stays yours, so close yours after this one, never before. Call once
-     * every synthesis has returned.
+     * Idempotent, BLOCKING close: returns only after the in-flight synthesis (if any) has
+     * finished, so its returning is the caller's quiescence certificate - the only thing standing
+     * between a shutdown and a kernel reading freed memory. Frees the synthesis state, and the
+     * weights arena IFF this instance created it: a model or an arena you passed in stays yours,
+     * so close yours after this one, never before. Requests after this fail loudly.
      */
     @Override
     public void close() {
-        state.close();
-        if (owned != null) owned.close();
+        lock.lock();
+        try {
+            if (closed) return; // Arena.close is one-shot; this makes the adapter idempotent
+            closed = true;
+            try {
+                state.close();
+            } finally {
+                closeQuietly(owned); // freed even if the state's close threw
+            }
+        } finally {
+            lock.unlock();
+        }
     }
 
     public static Builder builder() {

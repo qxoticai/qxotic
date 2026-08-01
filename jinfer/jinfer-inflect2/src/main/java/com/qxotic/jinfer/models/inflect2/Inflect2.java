@@ -472,6 +472,7 @@ public final class Inflect2 {
      */
     public Media.Audio synthesize(
             State state, int[] tokens, float lengthScale, float variation, long seed) {
+        state.checkOpen();
         if (tokens.length == 0) throw new IllegalArgumentException("tokens must not be empty");
         for (int token : tokens)
             if (token < 0 || token >= cfg.symbolCount())
@@ -1054,6 +1055,16 @@ public final class Inflect2 {
             this.owned = owned;
             // armed last: nothing above can throw, and a ctor throw must not read as a leak
             this.disarm = com.qxotic.jinfer.LeakWatch.arm(this, "Inflect2.State");
+        }
+
+        /**
+         * Fails a synthesis that starts after {@link #close}. This catches the SEQUENTIAL misuse -
+         * close, then speak - and turns it into an exception instead of a read of freed memory. It
+         * cannot catch the CONCURRENT one: a close racing an in-flight synthesis is still a crash,
+         * and quiescing before closing remains the caller's job.
+         */
+        void checkOpen() {
+            if (closed) throw new IllegalStateException("speech state is closed");
         }
 
         /**
