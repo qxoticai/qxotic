@@ -17,12 +17,21 @@ public interface ModelProvider {
     boolean supports(String architecture);
 
     /**
-     * Loads the model from an already-parsed GGUF; {@code fileChannel} supplies the tensor data,
-     * mapped into {@code arena} (who provides the arena owns the weights' lifetime; it must outlive
-     * every model sharing them). {@code contextLength} -1 means the model's full context.
+     * Loads a GENERATIVE model from an already-parsed GGUF; {@code fileChannel} supplies the tensor
+     * data, mapped into {@code arena} (who provides the arena owns the weights' lifetime; it must
+     * outlive every model sharing them). {@code contextLength} -1 means the model's full context.
+     *
+     * <p>Every capability here is optional and {@link #supports} is the only requirement: a port
+     * overrides the loads its architecture actually has, and a speech-only or embedding-only port
+     * keeps the rest of these defaults.
      */
-    LoadedModel<?> load(FileChannel fileChannel, GGUF gguf, int contextLength, Arena arena)
-            throws IOException;
+    default LoadedModel<?> load(
+            FileChannel fileChannel, GGUF gguf, int contextLength, Arena arena) throws IOException {
+        throw new UnsupportedOperationException(
+                "'"
+                        + gguf.getString("general.architecture")
+                        + "' is not a generative architecture");
+    }
 
     /**
      * As {@link #load(FileChannel, GGUF, int)} plus the architecture's media sidecar (llama.cpp's
@@ -45,6 +54,20 @@ public interface ModelProvider {
                 "'"
                         + gguf.getString("general.architecture")
                         + "' is not an embedding architecture");
+    }
+
+    /**
+     * Loads a SPEECH model from an already-parsed GGUF ({@link Models#loadSpeech}) at the port's
+     * own defaults. Ports whose architectures do not synthesize speech keep this default.
+     *
+     * <p>{@code path} is where the GGUF lives, passed because a speech front end has companions the
+     * container does not carry - a phoneme port looks for its pronunciation lexicon beside the
+     * model before falling back.
+     */
+    default com.qxotic.jinfer.SpeechModel<?, ?, ?> loadSpeech(
+            FileChannel fileChannel, GGUF gguf, Path path, Arena arena) throws IOException {
+        throw new UnsupportedOperationException(
+                "'" + gguf.getString("general.architecture") + "' is not a speech architecture");
     }
 
     /**

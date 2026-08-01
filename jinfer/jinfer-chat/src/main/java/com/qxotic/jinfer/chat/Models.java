@@ -76,6 +76,20 @@ public final class Models {
         return open(path, (fc, gguf) -> provider(gguf).loadReranker(fc, gguf, ctx, arena));
     }
 
+    /**
+     * Loads a SPEECH model (a {@code SpeechModel} port, e.g. Inflect2); same architecture dispatch
+     * as {@link #load}. Non-speech architectures fail with a clear {@link
+     * UnsupportedOperationException}.
+     *
+     * <p>Defaults only. Anything a port lets you tune - a lexicon, a language, a family's own
+     * knobs - lives on that port's own loader, typed; this is the entry for a caller that must not
+     * name the port.
+     */
+    public static com.qxotic.jinfer.SpeechModel<?, ?, ?> loadSpeech(Path path, Arena arena)
+            throws IOException {
+        return open(path, (fc, gguf) -> provider(gguf).loadSpeech(fc, gguf, path, arena));
+    }
+
     private interface Load<T> {
         T apply(FileChannel fc, GGUF gguf) throws IOException;
     }

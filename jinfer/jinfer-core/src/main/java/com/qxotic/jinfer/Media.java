@@ -29,7 +29,40 @@ public sealed interface Media permits Media.Image, Media.Audio, Media.Video {
      * sampleRate} Hz. {@code pcm[frame*channels + ch]}; frame count is {@code pcm.length /
      * channels} (derived).
      */
-    record Audio(float[] pcm, int sampleRate, int channels) implements Media {}
+    record Audio(float[] pcm, int sampleRate, int channels) implements Media {
+
+        /**
+         * The clips end to end. Every clip must share one {@code sampleRate} and {@code channels} -
+         * a mismatch is a resampling job, not a concatenation, and silently picking one of the two
+         * would play back at the wrong pitch. An empty list is not a waveform.
+         */
+        public static Audio concat(java.util.List<Audio> clips) {
+            if (clips.isEmpty()) throw new IllegalArgumentException("no clips to join");
+            Audio first = clips.get(0);
+            int total = 0;
+            for (Audio clip : clips) {
+                if (clip.sampleRate() != first.sampleRate() || clip.channels() != first.channels())
+                    throw new IllegalArgumentException(
+                            "clips differ: "
+                                    + first.sampleRate()
+                                    + " Hz/"
+                                    + first.channels()
+                                    + "ch vs "
+                                    + clip.sampleRate()
+                                    + " Hz/"
+                                    + clip.channels()
+                                    + "ch");
+                total += clip.pcm().length;
+            }
+            float[] pcm = new float[total];
+            int at = 0;
+            for (Audio clip : clips) {
+                System.arraycopy(clip.pcm(), 0, pcm, at, clip.pcm().length);
+                at += clip.pcm().length;
+            }
+            return new Audio(pcm, first.sampleRate(), first.channels());
+        }
+    }
 
     /**
      * Decoded frames at a constant {@code fps}. Variable frame rate and unbounded/streaming sources
