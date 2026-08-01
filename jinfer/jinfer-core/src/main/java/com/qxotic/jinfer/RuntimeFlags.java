@@ -47,7 +47,7 @@ public final class RuntimeFlags {
     // sibling only
     // contends for the core's load/store ports. -Djinfer.decodeSpin=false forces the plain ForkJoin
     // path.
-    static final int DECODE_THREADS =
+    public static final int DECODE_THREADS =
             Integer.getInteger("jinfer.decodeThreads", physicalCoreCount());
     static final boolean DECODE_SPIN = !"false".equals(System.getProperty("jinfer.decodeSpin"));
 

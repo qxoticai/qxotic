@@ -11,19 +11,50 @@ import java.util.List;
 import java.util.concurrent.ForkJoinPool;
 
 /**
- * pp/tg throughput benchmark for the new com.qxotic.jinfer.models seam (the jinfer-gemma4 port),
- * printed in the llama-bench-style markdown table so numbers are directly comparable to the
- * production engine. Drives the forward directly — {@code newState → ingest → logits} — and times
- * it with {@code nanoTime} (the seam has no internal timers). Greedy argmax (temp 0), like
- * llama-bench.
+ * pp/tg throughput benchmark, printed as llama-bench's markdown table so the two are directly
+ * comparable. Drives the forward seam ({@code newState -> ingest -> logits}) and times it with
+ * {@code nanoTime}.
  *
  * <pre>jinfer-bench -m model.gguf [-p 512] [-n 128] [-r 5] [-w 2] [--ctx N]</pre>
+ *
+ * <h2>Parity with llama-bench</h2>
+ *
+ * Matched deliberately, and verified against {@code tools/llama-bench/llama-bench.cpp}:
+ *
+ * <ul>
+ *   <li>defaults: {@code -p 512 -n 128 -r 5}, same as llama-bench's
+ *   <li>prompt chunking at the state's batch capacity (512), llama-bench's {@code n_ubatch}
+ *   <li>KV cache F16 both sides ({@code type_k}/{@code type_v} default to F16 there)
+ *   <li>fresh state per rep here == {@code llama_memory_clear} per rep there
+ *   <li>token content is synthetic in-range ids both sides - throughput is content-independent
+ *   <li>ONE vocab projection per pp batch and per tg step, because {@code llama_decode} projects
+ *       the last token of every batch. jinfer's {@code ingest} stops at the hidden states, so the
+ *       bench calls {@code logits} explicitly rather than measure itself doing less work
+ *   <li>NO argmax in the timed loop: llama-bench never reads the logits, it feeds back {@code
+ *       rand() % n_vocab}. Scanning a 262k-entry vocab per step is a tax the reference does not pay
+ * </ul>
+ *
+ * <h2>What the CALLER must equalize</h2>
+ *
+ * <ul>
+ *   <li><b>Threads.</b> {@code -t} defaults to PHYSICAL cores, the same quantity llama-bench
+ *       defaults to, and pins the decode pool and the common pool (which otherwise sizes to
+ *       LOGICAL cpus - 2x on an SMT box). It CANNOT pin the native gemm backend: that pool is
+ *       sized from an environment variable and Java cannot setenv itself, so run
+ *       {@code JAM_NUM_THREADS=<t>} or the bench warns and the pp number is not comparable.
+ *       Measured on a 16P/32L box: pp512 1836 t/s unpinned against 1669 pinned.
+ *   <li><b>Flash attention.</b> llama-bench defaults to {@code -fa auto}; force it on or off on
+ *       both sides if you care which path you are measuring.
+ *   <li><b>Warmup.</b> llama-bench runs one warmup pass; a JVM needs more, so this warms
+ *       adaptively to a stable window. That is not a thumb on the scale - it is the same steady
+ *       state llama-bench reaches on its first pass.
+ * </ul>
  */
 public final class JinferBench {
 
     public static void main(String[] args) throws Exception {
         List<String> models = new ArrayList<>();
-        int p = 512, n = 128, reps = 5, warmup = 2, ctx = 0;
+        int p = 512, n = 128, reps = 5, warmup = 2, ctx = 0, threads = 0;
         for (int i = 0; i < args.length; i++) {
             switch (args[i]) {
                 case "-m", "--model" -> models.add(args[++i]);
@@ -32,6 +63,7 @@ public final class JinferBench {
                 case "-r", "--repetitions" -> reps = Integer.parseInt(args[++i]);
                 case "-w", "--warmup" -> warmup = Integer.parseInt(args[++i]);
                 case "--ctx" -> ctx = Integer.parseInt(args[++i]);
+                case "-t", "--threads" -> threads = Integer.parseInt(args[++i]);
                 case "-h", "--help" -> {
                     usage(System.out);
                     return;
@@ -48,17 +80,69 @@ public final class JinferBench {
             System.exit(2);
         }
         if (ctx == 0) ctx = Math.max(p, 1) + n + 64;
-        int threads = ForkJoinPool.commonPool().getParallelism();
+
+        // THREAD PARITY, and it is the difference between a comparison and a press release.
+        // llama-bench runs BOTH tests at common_cpu_get_num_math() = physical cores. jinfer
+        // decodes at physical width already, but prefills on the common pool, which sizes to
+        // LOGICAL cpus - on an SMT box that is 2x llama-bench's width for pp.
+        //
+        // Set BEFORE any jinfer class loads: RuntimeFlags reads jinfer.decodeThreads in a static
+        // initializer, and the common pool's parallelism is fixed the first time it is touched.
+        if (threads <= 0) threads = physicalCores();
+        System.setProperty("jinfer.decodeThreads", Integer.toString(threads));
+        System.setProperty(
+                "java.util.concurrent.ForkJoinPool.common.parallelism",
+                Integer.toString(Math.max(1, threads - 1))); // +1 for the submitting thread
+        int prefillThreads = ForkJoinPool.commonPool().getParallelism() + 1;
+        int decodeThreads = RuntimeFlags.DECODE_THREADS;
+        System.err.printf(
+                "threads: prefill=%d decode=%d (requested %d)%n",
+                prefillThreads, decodeThreads, threads);
+        // The native gemm backend has its OWN pool, sized from its own topology probe, and Java
+        // cannot setenv itself. Unpinned it runs at every logical cpu - measured 1836 vs 1669
+        // pp512 t/s on a 16P/32L box, i.e. a tenth of the number is threads llama-bench is not
+        // using. Say so loudly rather than print a 16-thread heading over a 32-thread run.
+        String jamThreads = System.getenv("JAM_NUM_THREADS");
+        if (jamThreads == null || !jamThreads.trim().equals(Integer.toString(threads))) {
+            System.err.printf(
+                    "WARNING: JAM_NUM_THREADS=%s, so the native gemm backend is NOT at %d threads"
+                        + " and pp is not comparable to llama-bench -t %d.%n         Re-run as:"
+                        + " JAM_NUM_THREADS=%d jinfer-bench ...%n",
+                    jamThreads == null ? "<unset>" : jamThreads, threads, threads, threads);
+        }
 
         List<Row> rows = new ArrayList<>();
         for (String path : models) {
             System.err.printf("loading %s (ctx=%d) via com.qxotic.jinfer.models ...%n", path, ctx);
             LoadedModel<?> model = loadAny(Path.of(path), ctx);
             String name = name(path);
-            if (p > 0) rows.add(measure(model, name, threads, "pp" + p, p, true, warmup, reps));
-            if (n > 0) rows.add(measure(model, name, threads, "tg" + n, n, false, warmup, reps));
+            if (p > 0)
+                rows.add(measure(model, name, prefillThreads, "pp" + p, p, true, warmup, reps));
+            if (n > 0)
+                rows.add(measure(model, name, decodeThreads, "tg" + n, n, false, warmup, reps));
         }
         printTable(rows);
+    }
+
+    /**
+     * Physical cores, the same quantity llama-bench defaults to. Duplicated from RuntimeFlags
+     * rather than imported because it must run BEFORE RuntimeFlags is initialized.
+     */
+    private static int physicalCores() {
+        int logical = Runtime.getRuntime().availableProcessors();
+        try {
+            boolean smt =
+                    !"0".equals(
+                            java.nio.file.Files.readString(
+                                            Path.of("/sys/devices/system/cpu/smt/active"))
+                                    .trim());
+            return smt ? Math.max(1, logical / 2) : logical;
+        } catch (Exception notLinux) {
+            String arch = System.getProperty("os.arch", "");
+            return arch.contains("aarch64") || arch.contains("arm")
+                    ? logical
+                    : Math.max(1, logical / 2);
+        }
     }
 
     /** Arch dispatch via the shared ModelProvider services. */
@@ -130,17 +214,34 @@ public final class JinferBench {
         if (prefill) {
             long t0 = System.nanoTime();
             for (Batch b : chunks) model.model().ingest(s, b);
+            // llama_decode projects the LAST token of a batch to logits, so pp pays one vocab
+            // projection. jinfer's ingest stops at the hidden states, so charge it explicitly or
+            // pp is measured doing strictly less work than the reference.
+            sink += model.model().logits(s).getFloat(0);
             return count / ((System.nanoTime() - t0) / 1e9);
         }
         // tg: prime with one token, then time `count` single-token decode steps
         for (Batch b : chunks) model.model().ingest(s, b);
-        int tok = argmax(model.model().logits(s), vocab);
+        int tok = nextToken(prompt[0], vocab);
         long t0 = System.nanoTime();
         for (int g = 0; g < count; g++) {
             model.model().ingest(s, Batch.step(tok));
-            tok = argmax(model.model().logits(s), vocab);
+            // Project to logits (llama_decode does) but do NOT argmax: llama-bench never reads
+            // them, it feeds back `rand() % n_vocab`. An argmax here is a vocab-wide scan per
+            // step - 262k reads on Gemma - that the reference does not pay, so it would tax
+            // jinfer's tg for nothing. One float keeps the projection from being dead code.
+            sink += model.model().logits(s).getFloat(0);
+            tok = nextToken(tok, vocab);
         }
         return count / ((System.nanoTime() - t0) / 1e9);
+    }
+
+    /** Consumed so the logits projection cannot be optimized away; never read. */
+    private static volatile float sink;
+
+    /** A cheap in-range successor, standing in for llama-bench's {@code rand() % n_vocab}. */
+    private static int nextToken(int previous, int vocab) {
+        return (previous * 1103515245 + 12345 & 0x7fffffff) % vocab;
     }
 
     /**
@@ -151,12 +252,6 @@ public final class JinferBench {
         int[] ids = new int[count];
         for (int i = 0; i < count; i++) ids[i] = (i * 17 + 1) % vocab;
         return ids;
-    }
-
-    private static int argmax(FloatTensor t, int n) {
-        int best = 0;
-        for (int i = 1; i < n; i++) if (t.getFloat(i) > t.getFloat(best)) best = i;
-        return best;
     }
 
     private record Row(String model, int threads, String test, double mean, double stddev) {}
