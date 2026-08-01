@@ -5,6 +5,9 @@
 package com.qxotic.jinfer.models.inflect2;
 
 import java.io.IOException;
+import com.qxotic.jinfer.Media;
+import com.qxotic.jinfer.SpeechOptions;
+import com.qxotic.jinfer.media.AudioCodec;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -36,10 +39,19 @@ public final class InflectCli {
             return;
         }
 
-        InflectTTS tts = open(options.model);
-        if (!options.overrides.isEmpty()) tts.setWordOverrides(options.overrides);
-        if (options.play) play(tts, options);
-        else write(tts, options);
+        InflectTTS tts = tuned(open(options.model), options);
+        // one state for the whole run: minting one per utterance repays every sizing allocation
+        // and closes a shared arena, which is a JVM-wide handshake
+        try (Inflect2.State state = tts.newState()) {
+            if (options.play) play(tts, state, options);
+            else write(tts, state, options);
+        }
+    }
+
+    /** The knobs that are this model's own, applied as a re-wrap over the same weights. */
+    private static InflectTTS tuned(InflectTTS tts, Options options) {
+        InflectTTS tuned = tts.variation(options.variation).seed(options.seed);
+        return options.overrides.isEmpty() ? tuned : tuned.wordOverrides(options.overrides);
     }
 
     /** Resolve a model: a {@code z://} entry, a file path, or the embedded default. */
@@ -52,9 +64,10 @@ public final class InflectCli {
         return InflectTTS.load(path);
     }
 
-    private static void write(InflectTTS tts, Options options) throws IOException {
+    private static void write(InflectTTS tts, Inflect2.State state, Options options)
+            throws IOException {
         long start = System.nanoTime();
-        var audio = tts.synthesize(options.text, options.speed, options.variation, options.seed);
+        var audio = tts.speak(state, options.text, delivery(options));
         double elapsed = (System.nanoTime() - start) / 1e9;
         float[] pcm = audio.pcm();
         double seconds = pcm.length / (double) audio.sampleRate();
@@ -75,33 +88,49 @@ public final class InflectCli {
      * Stream to a system player. The player is a separate process, so writing into its pipe is
      * already the overlap: synthesis of the next chunk proceeds while the player drains this one.
      */
-    private static void play(InflectTTS tts, Options options) throws IOException {
+    private static SpeechOptions delivery(Options options) {
+        return SpeechOptions.speed(options.speed);
+    }
+
+    private static void play(InflectTTS tts, Inflect2.State state, Options options)
+            throws IOException {
         Process player =
                 new ProcessBuilder(playerCommand(tts.sampleRate()))
                         .redirectError(ProcessBuilder.Redirect.DISCARD)
                         .start();
         long start = System.nanoTime();
-        boolean first = true;
-        int samples = 0;
-        try (OutputStream pipe = player.getOutputStream();
-                var chunks =
-                        tts.stream(options.text, options.speed, options.variation, options.seed)) {
+        int[] samples = {0};
+        boolean[] first = {true};
+        try (OutputStream pipe = player.getOutputStream()) {
             // A short lead-in keeps the player from starving before the first chunk lands.
-            pipe.write(AudioIO.toS16LE(new float[tts.sampleRate() / 32]));
-            for (var iterator = chunks.iterator(); iterator.hasNext(); ) {
-                float[] chunk = iterator.next();
-                if (first) {
-                    System.out.printf(
-                            "first audio after %.2f s%n", (System.nanoTime() - start) / 1e9);
-                    first = false;
-                }
-                samples += chunk.length;
-                pipe.write(AudioIO.toS16LE(chunk));
-                pipe.flush();
-            }
+            pipe.write(AudioCodec.pcm16(new Media.Audio(new float[tts.sampleRate() / 32],
+                    tts.sampleRate(), 1)));
+            // Headerless PCM, so the pieces concatenate; the player was told the format on its
+            // command line. A pipe that closes (the user quit the player) cancels the synthesis
+            // instead of filling a dead buffer.
+            tts.speak(
+                    state,
+                    options.text,
+                    delivery(options),
+                    clip -> {
+                        if (first[0]) {
+                            System.out.printf(
+                                    "first audio after %.2f s%n",
+                                    (System.nanoTime() - start) / 1e9);
+                            first[0] = false;
+                        }
+                        samples[0] += clip.pcm().length;
+                        try {
+                            pipe.write(AudioCodec.pcm16(clip));
+                            pipe.flush();
+                            return true;
+                        } catch (IOException e) {
+                            return false; // the player quit: stop synthesizing for a dead pipe
+                        }
+                    });
         }
         double elapsed = (System.nanoTime() - start) / 1e9;
-        double seconds = samples / (double) tts.sampleRate();
+        double seconds = samples[0] / (double) tts.sampleRate();
         System.out.printf(
                 "%.2f s of audio in %.2f s (%.1f× realtime)%n",
                 seconds, elapsed, seconds / elapsed);

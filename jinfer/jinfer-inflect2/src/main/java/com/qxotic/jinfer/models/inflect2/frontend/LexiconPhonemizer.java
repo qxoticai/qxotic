@@ -1,5 +1,5 @@
 // Pure-Java phonemizer: an IVL2 lexicon of pre-phonemized words, plus a suffix fallback.
-// The lexicon ships as a classpath resource; -Dinflect.lexicon=<path> overrides it.
+// Read from a file the caller names, or from the classpath when a jar or image bundles one.
 package com.qxotic.jinfer.models.inflect2.frontend;
 
 import com.qxotic.jinfer.models.inflect2.Symbols;
@@ -16,7 +16,6 @@ import java.util.Map;
 final class LexiconPhonemizer implements Phonemizer {
 
     private static final String RESOURCE = "/lexicon.bin";
-    private static final String OVERRIDE_PROPERTY = "inflect.lexicon";
 
     /** Word separator in the symbol table — the model hears a space as a symbol of its own. */
     private static final int SPACE = Symbols.idOf(' ');
@@ -29,22 +28,21 @@ final class LexiconPhonemizer implements Phonemizer {
     }
 
     /**
-     * The bundled lexicon, or the {@code -Dinflect.lexicon} override, or null when there is none. A
-     * lexicon that is present but unreadable says so — silently spelling every word out letter by
-     * letter is worse than one line on stderr.
-     *
+     * The lexicon at {@code path}. THROWS when it cannot be read or parsed: a caller who named a
+     * file and silently got a fallback has been lied to, and spelling every word out letter by
+     * letter is a far worse outcome than a load failure.
      */
-    static LexiconPhonemizer tryCreate() {
-        String override = System.getProperty(OVERRIDE_PROPERTY);
-        try {
-            if (override != null)
-                return new LexiconPhonemizer(readTrie(Files.readAllBytes(Path.of(override))));
-            try (var in = LexiconPhonemizer.class.getResourceAsStream(RESOURCE)) {
-                return in == null ? null : new LexiconPhonemizer(readTrie(in.readAllBytes()));
-            }
-        } catch (IOException e) {
-            System.err.println("[inflect2] lexicon unusable (" + e.getMessage() + ")");
-            return null;
+    static LexiconPhonemizer read(Path path) throws IOException {
+        return new LexiconPhonemizer(readTrie(Files.readAllBytes(path)));
+    }
+
+    /**
+     * The lexicon bundled on the classpath, or null when the jar or image carries none. This is the
+     * rung a single-file native binary lands on: it has no directory to sit beside.
+     */
+    static LexiconPhonemizer bundled() throws IOException {
+        try (var in = LexiconPhonemizer.class.getResourceAsStream(RESOURCE)) {
+            return in == null ? null : new LexiconPhonemizer(readTrie(in.readAllBytes()));
         }
     }
 

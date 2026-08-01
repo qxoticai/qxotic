@@ -20,6 +20,7 @@ import com.qxotic.jinfer.FloatTensor;
 import com.qxotic.jinfer.Media;
 import com.qxotic.jinfer.Norms;
 import com.qxotic.jinfer.Parallel;
+import com.qxotic.jinfer.Config;
 import com.qxotic.jinfer.kernels.GGMLTensorEntry;
 import com.qxotic.jinfer.kernels.ModelLoader;
 import java.io.ByteArrayInputStream;
@@ -39,7 +40,12 @@ public final class Inflect2 {
     /** HiFi-GAN leaky-ReLU slope, and torch's default slope for the activation before conv_post. */
     private static final float LEAKY = 0.1f, FINAL_LEAKY = 0.01f;
 
-    /** Frame ceiling per call — a runaway log-duration must fail, not exhaust memory. */
+    /**
+     * Frame ceiling per call — a runaway log-duration must fail, not exhaust memory. A DoS BOUND,
+     * not a modelling constant: it caps one chunk at ~43 s of audio and every buffer sized off it,
+     * and it is what stops adversarial text (or a tiny speed) from turning one request into a
+     * multi-gigabyte allocation. Raising it raises the worst case a single request can cost.
+     */
     private static final int MAX_FRAMES = 4000;
 
     // Kernel sizes the GGUF metadata does not carry — they are part of the architecture, exactly as
@@ -64,7 +70,21 @@ public final class Inflect2 {
             int[] resblockKernelSizes,
             int[] resblockDilationSizes,
             int[] upsampleRates,
-            int[] upsampleKernelSizes) {}
+            int[] upsampleKernelSizes)
+            implements Config {
+
+        /** The phoneme symbol table this model consumes — its token space. */
+        @Override
+        public int vocabularySize() {
+            return symbolCount;
+        }
+
+        /** The frame ceiling: a runaway log-duration must fail, not exhaust memory. */
+        @Override
+        public int contextLength() {
+            return MAX_FRAMES;
+        }
+    }
 
     // ── weights ───────────────────────────────────────────────────────────
     // Resolved once at load, so the forward pass names layers instead of building tensor keys and
@@ -165,8 +185,14 @@ public final class Inflect2 {
     public static Inflect2 load(Path path, Arena arena) throws IOException {
         try (FileChannel channel = FileChannel.open(path, StandardOpenOption.READ)) {
             GGUF gguf = ModelLoader.readGguf(channel, path.toString());
-            return load(gguf, ModelLoader.loadTensors(channel, gguf, 0, arena));
+            return load(channel, gguf, arena);
         }
+    }
+
+    /** As {@link #load(Path, Arena)} but reusing an already-parsed {@code gguf} - the arch-dispatch
+     *  entry, where the header has been read to decide which port to call. */
+    public static Inflect2 load(FileChannel channel, GGUF gguf, Arena arena) throws IOException {
+        return load(gguf, ModelLoader.loadTensors(channel, gguf, 0, arena));
     }
 
     /**
@@ -407,24 +433,34 @@ public final class Inflect2 {
         return parameterCount;
     }
 
-    /** A fresh scratch state; reuse one across calls to keep synthesis allocation-free. */
+    /**
+     * A state over {@code arena}; {@code adopt} makes {@code state.close()} free that arena. See
+     * {@link com.qxotic.jinfer.SpeechModel#newState(Arena, boolean)} for the ownership contract.
+     */
+    public State newState(Arena arena, boolean adopt) {
+        if (arena == null) throw new IllegalArgumentException("null arena");
+        return new State(arena, adopt ? arena : null);
+    }
+
+    /** A state that owns its scratch: an internal {@code ofShared} freed by {@code close()}. */
     public State newState() {
-        return new State(Arena.ofAuto());
+        Arena arena = Arena.ofShared();
+        try {
+            return newState(arena, true);
+        } catch (RuntimeException | Error e) {
+            arena.close();
+            throw e;
+        }
     }
 
     /**
-     * A state whose scratch comes from {@code arena}, which the caller owns and frees. Close YOUR
-     * arena only after the last synthesis using this state returns — the kernels read raw
-     * addresses, so a live read from a closed arena is a crash, not an exception.
+     * A state whose scratch comes from {@code arena}, BORROWED: the caller owns and frees it, and
+     * {@code state.close()} never touches it. Close YOUR arena only after the last synthesis using
+     * this state returns — the kernels read raw addresses, so a live read from a closed arena is a
+     * crash, not an exception.
      */
     public State newState(Arena arena) {
-        if (arena == null) throw new IllegalArgumentException("null arena");
-        return new State(arena);
-    }
-
-    /** Convenience for a one-off call: allocates a state, synthesizes, drops it. */
-    public Media.Audio synthesize(int[] tokens, float lengthScale, float variation, long seed) {
-        return synthesize(newState(), tokens, lengthScale, variation, seed);
+        return newState(arena, false);
     }
 
     /**
@@ -1001,18 +1037,41 @@ public final class Inflect2 {
      * <p>Not thread-safe: one state per concurrent synthesis. A state is cheap to create and holds
      * on the order of the largest waveform it has produced.
      *
-     * <p>Scratch comes from an arena, on the same "who provides it owns it" contract the rest of
-     * jinfer uses: {@link #newState()} takes a GC-managed one, so a dropped state needs no closing,
-     * and {@link #newState(Arena)} takes the caller's, freed when they free it. Deliberately no
-     * owned-and-closeable flavour — this scratch is a few MB, and buying deterministic free for it
-     * would cost a Cleaner that cannot live in a native image heap.
+     * <p>Scratch comes from an arena on the "who provides it owns it" contract: ownership is
+     * decided at construction and never mutated, so {@code owned} is final and there is no Cleaner
+     * — which is also why this state can live in a native image heap. A dropped unclosed state
+     * leaks its arena until exit; {@code -Djinfer.leakDetection} names the line that dropped it.
      */
-    public static final class State {
+    public static final class State implements com.qxotic.jinfer.SpeechState {
 
         private final Arena arena;
+        private final Arena owned; // null when borrowed: closing this state must not free it
+        private final Runnable disarm;
+        private boolean closed;
 
-        State(Arena arena) {
+        State(Arena arena, Arena owned) {
             this.arena = arena;
+            this.owned = owned;
+            // armed last: nothing above can throw, and a ctor throw must not read as a leak
+            this.disarm = com.qxotic.jinfer.LeakWatch.arm(this, "Inflect2.State");
+        }
+
+        /**
+         * Frees the arena iff this state owns it. Idempotent, and it must come AFTER the last
+         * synthesis using this state returns — the kernels read raw addresses, so a live read from
+         * a closed arena is a crash, not an exception.
+         */
+        @Override
+        public void close() {
+            if (closed) return; // Arena.close is one-shot; this makes the state idempotent
+            closed = true;
+            disarm.run();
+            if (owned == null) return;
+            try {
+                owned.close();
+            } catch (UnsupportedOperationException nonCloseable) {
+                // an adopted ofAuto/global manages itself: owning it just means nothing to free
+            }
         }
 
         private F32FloatTensor columns, product;
