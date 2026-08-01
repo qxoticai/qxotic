@@ -23,12 +23,18 @@ __attribute__((constructor)) static void jam_ue4m3_lut_init(void) {
 /* Essential, always-on: one line so the user can SEE the auto-selected cores/ISA/pinning without JAM_DEBUG. */
 static void cpu_report(const jam_ctx* c) {
     const jam_cpu_plan* p = &c->cpu;
+    /* n_toptier counts top-tier LOGICAL cpus; n_primary is one per physical top-tier core. The
+     * SMT factor is therefore toptier/primary - dividing by p->n (which includes the appended
+     * siblings) made it print 1x on every SMT machine. */
     int ecore = p->n_logical - p->n_toptier;
-    int smt   = p->n > 0 ? p->n_toptier / p->n : 1;
+    int pcore = p->n_primary > 0 ? p->n_primary : p->n;
+    int smt   = pcore > 0 ? p->n_toptier / pcore : 1;
+    if (smt < 1) smt = 1;
     char cg[24];
     if (p->quota > 0) snprintf(cg, sizeof cg, "%d cores", p->quota); else snprintf(cg, sizeof cg, "none");
-    fprintf(stderr, "[jam] cpu: %d threads (of %d logical: P=%d E=%d smt=%dx)  isa=%s  cgroup=%s  pinned=%s\n",
-            c->nthreads, p->n_logical, p->n_toptier, ecore, smt,
+    fprintf(stderr, "[jam] cpu: %d threads (%d P-core%s x %d SMT, %d E-core%s, of %d logical)  isa=%s  cgroup=%s  pinned=%s\n",
+            c->nthreads, pcore, pcore == 1 ? "" : "s", smt, ecore, ecore == 1 ? "" : "s",
+            p->n_logical,
             jam_isa_name(c->active), cg, p->pinned ? "yes" : "no");
 }
 
@@ -225,7 +231,11 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
      * selection is pinned too; a larger explicit count (e.g. opting into SMT) runs unpinned. */
     c->cpu = jam_cpu_plan_make();
     const int* pin = NULL;
-    if (c->nthreads <= 0) { c->nthreads = c->cpu.n; pin = c->cpu.cpu; }
+    /* AUTO = one thread per physical PERFORMANCE core (cpu.n_primary), matching llama.cpp's
+     * common_cpu_get_num_math(): E-cores harm lockstep threading and an SMT sibling shares one
+     * core's load/store ports. The siblings are still in cpu.cpu after the primaries, so an
+     * explicit JAM_NUM_THREADS above n_primary widens onto them and still pins sanely. */
+    if (c->nthreads <= 0) { c->nthreads = c->cpu.n_primary; pin = c->cpu.cpu; }
     else if (c->nthreads <= c->cpu.n)              pin = c->cpu.cpu;
     c->nthreads_bw = c->cpu.n_primary < c->nthreads ? c->cpu.n_primary : c->nthreads;
     c->cpu.pinned = (pin != NULL) && jam_cpu_can_pin();

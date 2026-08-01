@@ -102,13 +102,21 @@ public final class JinferBench {
         // cannot setenv itself. Unpinned it runs at every logical cpu - measured 1836 vs 1669
         // pp512 t/s on a 16P/32L box, i.e. a tenth of the number is threads llama-bench is not
         // using. Say so loudly rather than print a 16-thread heading over a 32-thread run.
+        // jam's own AUTO is one thread per physical performance core, which is exactly this
+        // bench's default - so the mismatch is only real when the env var disagrees, or when -t
+        // asked for something other than physical cores (jam would still auto-pick physical).
         String jamThreads = System.getenv("JAM_NUM_THREADS");
-        if (jamThreads == null || !jamThreads.trim().equals(Integer.toString(threads))) {
+        boolean jamAgrees =
+                jamThreads == null
+                        ? threads == physicalCores()
+                        : jamThreads.trim().equals(Integer.toString(threads));
+        if (!jamAgrees) {
             System.err.printf(
                     "WARNING: JAM_NUM_THREADS=%s, so the native gemm backend is NOT at %d threads"
                         + " and pp is not comparable to llama-bench -t %d.%n         Re-run as:"
                         + " JAM_NUM_THREADS=%d jinfer-bench ...%n",
-                    jamThreads == null ? "<unset>" : jamThreads, threads, threads, threads);
+                    jamThreads == null ? "<unset, jam auto-picks physical cores>" : jamThreads,
+                    threads, threads, threads);
         }
 
         List<Row> rows = new ArrayList<>();
