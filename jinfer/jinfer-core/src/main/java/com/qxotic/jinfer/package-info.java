@@ -44,6 +44,14 @@
  *   <li>{@code global} - a one-model process: the CLI, the server.
  * </ul>
  *
+ * <p>The flavour is a per-call PARAMETER and deliberately not a {@code jinfer.*} property. A global
+ * switch would change what {@code close()} means for every state in the process, including ones
+ * created by library code the caller never wrote, so "why was this not freed" would depend on
+ * invisible policy. It would also buy nothing: an owned {@code ofShared} state already degrades to
+ * GC-eventually if you drop it unclosed, which is the whole of what a global {@code auto} would
+ * give you, minus the determinism you get by closing. If you truly want an owned auto state, say
+ * so where it happens - {@code newState(..., Arena.ofAuto(), true)}.
+ *
  * <h2>The three laws the compiler cannot enforce</h2>
  *
  * <ol>
