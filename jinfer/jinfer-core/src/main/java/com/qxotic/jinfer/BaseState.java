@@ -49,6 +49,10 @@ public abstract class BaseState implements RuntimeState, AutoCloseable {
      * nothing to free eagerly, and {@link #close()} stays a valid no-op on the memory.
      */
     final void adoptArena() {
+        // at-most-once: a second registration would mean two Cleanables racing to close one arena.
+        // Package-private and called from exactly one place today, so this is a tripwire for a
+        // future caller, not a live bug
+        if (owned != null) throw new IllegalStateException("this state already owns its arena");
         // the cleanup action must not capture the state itself - only the arena, the closed
         // flag (its own object), and the optional LeakWatch site
         Arena a = arena;
