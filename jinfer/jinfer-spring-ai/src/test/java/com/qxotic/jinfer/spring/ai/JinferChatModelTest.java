@@ -11,12 +11,13 @@ import org.junit.jupiter.api.Test;
 class JinferChatModelTest {
 
     @Test
-    void modelPathIsRequired() {
+    void aModelIsRequired() {
         IllegalArgumentException e =
                 assertThrows(
                         IllegalArgumentException.class, () -> JinferChatModel.builder().build());
-        assertEquals("modelPath is required", e.getMessage());
+        assertEquals("exactly one of modelPath(...) or loaded(...) is required", e.getMessage());
     }
+
 
     @Test
     void defaultOptionsAndKnobsAreMutuallyExclusive() {

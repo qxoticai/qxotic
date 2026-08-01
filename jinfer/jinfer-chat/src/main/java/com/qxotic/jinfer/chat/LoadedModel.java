@@ -4,6 +4,9 @@ import com.qxotic.jinfer.LanguageModel;
 import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.jinfer.cache.StateCodec;
 import com.qxotic.toknroll.Tokenizer;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Optional;
 import java.util.Set;
 
@@ -44,6 +47,39 @@ public record LoadedModel<S extends RuntimeState>(
         if (template == null) throw new IllegalArgumentException("null template optional");
         stopTokens = Set.copyOf(stopTokens);
         seed = seed.clone();
+    }
+
+    /**
+     * The same model with a different tokenizer - the supported way to override the one the
+     * container carries, for a GGUF whose vocabulary metadata is wrong or a caller who has a
+     * better one.
+     *
+     * <p>{@link #seed} is RE-ROOTED, not copied. Prompt-cache artifacts are keyed by the seed and
+     * hold token ids, so one built with the container's tokenizer must not mount under a
+     * replacement that encodes differently - and must still mount under one that encodes the
+     * same. Only behaviour can say which, so the seed folds in a probe: the vocabulary size and
+     * the ids of a fixed sentence.
+     */
+    public LoadedModel<S> withTokenizer(Tokenizer tokenizer) {
+        if (tokenizer == null) throw new IllegalArgumentException("null tokenizer");
+        return new LoadedModel<>(
+                model, tokenizer, chatTemplateSource, stopTokens, reseed(seed, tokenizer), template);
+    }
+
+    /** Letters, digits, whitespace and non-Latin script: enough to separate any two real vocabularies. */
+    private static final String SEED_PROBE =
+            "The quick brown fox jumps over 0123456789 éß中文";
+
+    private static byte[] reseed(byte[] seed, Tokenizer tokenizer) {
+        StringBuilder probe = new StringBuilder().append(tokenizer.vocabulary().size());
+        for (int id : tokenizer.encodeToArray(SEED_PROBE)) probe.append(' ').append(id);
+        try {
+            MessageDigest sha = MessageDigest.getInstance("SHA-256");
+            sha.update(seed);
+            return sha.digest(probe.toString().getBytes(StandardCharsets.UTF_8));
+        } catch (NoSuchAlgorithmException e) {
+            throw new AssertionError(e);
+        }
     }
 
     /**

@@ -64,11 +64,43 @@ public final class ChatEngine {
     private int sessionHits;
     private int statesAllocated; // contexts this engine has had to allocate (steady state: 1)
     private volatile boolean closed;
-    private final java.lang.foreign.Arena weights; // owned: freed at close(), never shared
+    // owned: freed at close(), never shared. null when the CALLER loaded the model and keeps the
+    // arena - then close() quiesces and frees this engine's own memory, and nothing else
+    private final java.lang.foreign.Arena weights;
     private final Runnable leakWatch; // -Djinfer.leakDetection: reports a GC'd unclosed engine
 
     /** A finished generation's state with the batch stream of everything ingested into it. */
     private record LiveSession(RuntimeState state, List<Batch> stream, int positions) {}
+
+    /** A loaded model with the arena this engine owns - {@code weights} null = the caller's. */
+    private record Owned(LoadedModel<?> loaded, java.lang.foreign.Arena weights) {}
+
+    /**
+     * Loads {@code modelPath} into an arena the engine will own. The engine OWNS that arena and
+     * nothing outside it holds a reference (views share this very engine - "closing any closes
+     * all"), so close() can free the weights deterministically after quiescence - mmap pages were
+     * always kernel-reclaimable, but load-time conversions/repacks are anonymous memory that a
+     * GC-managed arena would only free at a GC that a native-heavy JVM never runs.
+     */
+    private static Owned load(Path modelPath, Path mediaProjector, int contextLength) {
+        java.lang.foreign.Arena weights = java.lang.foreign.Arena.ofShared();
+        // the integrations' builder contract is "0 = the model's own maximum"; Models.load spells
+        // that -1 - without this both integrations crashed in the port's tensor sizing on 0
+        int ctx = contextLength <= 0 ? -1 : contextLength;
+        try {
+            return new Owned(
+                    mediaProjector == null
+                            ? Models.load(modelPath, ctx, weights)
+                            : Models.load(modelPath, mediaProjector, ctx, weights),
+                    weights);
+        } catch (IOException e) {
+            weights.close(); // a leaked ofShared arena has no Cleaner: free before failing
+            throw new UncheckedIOException("failed to load " + modelPath, e);
+        } catch (RuntimeException | Error e) {
+            weights.close();
+            throw e;
+        }
+    }
 
     public ChatEngine(
             Path modelPath,
@@ -76,21 +108,35 @@ public final class ChatEngine {
             int contextLength,
             Path cachedPrompts,
             int cachedSessions) {
+        this(
+                load(modelPath, mediaProjector, contextLength),
+                modelPath.getFileName().toString(),
+                cachedPrompts,
+                cachedSessions);
+    }
+
+    /**
+     * Over a model the CALLER loaded: the seam for a hand-built {@link LoadedModel}, e.g. one
+     * carrying a different tokenizer via {@link LoadedModel#withTokenizer}, or a model whose
+     * weights are shared with something else in the process.
+     *
+     * <p>The caller owns the weights arena. {@link #close()} frees this engine's states and blobs
+     * and is still the quiescence certificate, but it does NOT free weights it did not allocate -
+     * close your arena after this engine, never before.
+     */
+    public ChatEngine(
+            LoadedModel<?> loaded, String modelName, Path cachedPrompts, int cachedSessions) {
+        this(new Owned(loaded, null), modelName, cachedPrompts, cachedSessions);
+    }
+
+    private ChatEngine(Owned owned, String modelName, Path cachedPrompts, int cachedSessions) {
+        if (owned.loaded() == null) throw new IllegalArgumentException("null model");
+        if (modelName == null) throw new IllegalArgumentException("null modelName");
         this.sessionCapacity = Math.max(0, cachedSessions);
-        this.weights = java.lang.foreign.Arena.ofShared();
-        // the integrations' builder contract is "0 = the model's own maximum"; Models.load spells
-        // that -1 - without this both integrations crashed in the port's tensor sizing on 0
-        int ctx = contextLength <= 0 ? -1 : contextLength;
+        this.weights = owned.weights();
+        this.loaded = owned.loaded();
+        this.modelName = modelName;
         try {
-            // the engine OWNS its weights arena and nothing outside it holds a reference (views
-            // share this very engine - "closing any closes all"), so close() can free the weights
-            // deterministically after quiescence - mmap pages were always
-            // kernel-reclaimable, but load-time conversions/repacks are anonymous memory that
-            // a GC-managed arena would only free at a GC that a native-heavy JVM never runs
-            this.loaded =
-                    mediaProjector == null
-                            ? Models.load(modelPath, ctx, weights)
-                            : Models.load(modelPath, mediaProjector, ctx, weights);
             this.promptStore = CacheStore.inMemory();
             // built only when the model can support it (or a mount demands it): a codec-less
             // model must still load and chat - the codec throw belongs to the first
@@ -104,19 +150,33 @@ public final class ChatEngine {
             } else {
                 this.prompts = null;
             }
-            this.modelName = modelPath.getFileName().toString();
-            // inside the try: a malformed chat template in the GGUF throws at compile, and the
-            // weights arena must not outlive a constructor that never returns
+            // inside the try: a malformed chat template in the GGUF throws at compile, and an
+            // OWNED weights arena must not outlive a constructor that never returns
             this.jinja = new JinjaChatTemplate(loaded.tokenizer(), loaded.chatTemplateSource());
         } catch (IOException e) {
-            weights.close(); // a leaked ofShared arena has no Cleaner: free before failing
-            throw new UncheckedIOException("failed to load " + modelPath, e);
+            freeOwnedWeights();
+            throw new UncheckedIOException("failed to prepare " + modelName, e);
         } catch (RuntimeException | Error e) {
-            weights.close();
+            freeOwnedWeights();
             throw e;
         }
         // armed last: a ctor throw already cleaned up above and must not read as a leak
-        this.leakWatch = LeakWatch.arm(this, "ChatEngine (owns the weights arena)");
+        this.leakWatch =
+                LeakWatch.arm(
+                        this,
+                        weights == null
+                                ? "ChatEngine (borrowed weights)"
+                                : "ChatEngine (owns the weights arena)");
+    }
+
+    /** Frees the weights arena iff this engine allocated it. */
+    private void freeOwnedWeights() {
+        if (weights == null) return; // the caller's arena, and the caller's to close
+        try {
+            weights.close();
+        } catch (UnsupportedOperationException ignored) {
+            // a non-closeable arena manages itself; nothing to free eagerly
+        }
     }
 
     private static <S extends RuntimeState> PromptCache<S> tree(
@@ -166,11 +226,7 @@ public final class ChatEngine {
             Thread.currentThread().interrupt();
         }
         // provably quiescent (lock held once, driver drained): the weights can die now
-        try {
-            weights.close();
-        } catch (UnsupportedOperationException ignored) {
-            // a non-closeable arena manages itself; nothing to free eagerly
-        }
+        freeOwnedWeights();
     }
 
     /** Runs a streaming generation on the engine's single lazy driver thread. */

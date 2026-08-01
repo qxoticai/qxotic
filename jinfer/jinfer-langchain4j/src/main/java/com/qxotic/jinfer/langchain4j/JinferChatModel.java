@@ -2,6 +2,7 @@ package com.qxotic.jinfer.langchain4j;
 
 import com.qxotic.jinfer.chat.CachedPrompt;
 import com.qxotic.jinfer.chat.ChatEngine;
+import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.llm.Grammar;
 import com.qxotic.jinfer.llm.TextStops;
@@ -60,12 +61,20 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
 
     private JinferChatModel(Builder b) {
         this.engine =
-                new ChatEngine(
-                        b.modelPath,
-                        b.mediaProjector,
-                        b.contextLength,
-                        b.cachedPrompts,
-                        b.cachedSessions);
+                b.loaded == null
+                        ? new ChatEngine(
+                                b.modelPath,
+                                b.mediaProjector,
+                                b.contextLength,
+                                b.cachedPrompts,
+                                b.cachedSessions)
+                        : new ChatEngine(
+                                b.loaded,
+                                b.modelName == null
+                                        ? b.loaded.model().getClass().getSimpleName()
+                                        : b.modelName,
+                                b.cachedPrompts,
+                                b.cachedSessions);
         this.thinking = b.thinking;
         this.seed = b.seed;
         this.timeoutNanos = b.timeout == null ? 0 : b.timeout.toNanos();
@@ -323,6 +332,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
 
     public static final class Builder {
         private Path modelPath;
+        private LoadedModel<?> loaded;
+        private String modelName;
         private Path mediaProjector;
         private Path cachedPrompts;
         private int cachedSessions;
@@ -336,9 +347,28 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         private long seed = 42;
         private Duration timeout;
 
-        /** The GGUF to load. Required. */
+        /** The GGUF to load. Required unless {@link #loaded}. */
         public Builder modelPath(Path modelPath) {
             this.modelPath = modelPath;
+            return this;
+        }
+
+        /**
+         * A model you loaded yourself - the seam for a hand-built {@link LoadedModel}, e.g. one
+         * carrying your own tokenizer via {@code LoadedModel.withTokenizer(...)}. Mutually
+         * exclusive with {@link #modelPath}.
+         *
+         * <p>You own its weights arena: {@link JinferChatModel#close()} quiesces this model but
+         * frees only what it allocated, so close your arena after it, never before.
+         */
+        public Builder loaded(LoadedModel<?> loaded) {
+            this.loaded = loaded;
+            return this;
+        }
+
+        /** Reported as the response's model name; defaults to the model class. {@link #loaded} only. */
+        public Builder modelName(String modelName) {
+            this.modelName = modelName;
             return this;
         }
 
@@ -443,7 +473,13 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         }
 
         public JinferChatModel build() {
-            if (modelPath == null) throw new IllegalArgumentException("modelPath is required");
+            if ((modelPath == null) == (loaded == null))
+                throw new IllegalArgumentException(
+                        "exactly one of modelPath(...) or loaded(...) is required");
+            if (loaded != null && (mediaProjector != null || contextLength != 0))
+                throw new IllegalArgumentException(
+                        "mediaProjector/contextLength are load-time settings; apply them when you"
+                                + " build the LoadedModel passed to loaded(...)");
             return new JinferChatModel(this);
         }
     }
