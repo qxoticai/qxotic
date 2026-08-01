@@ -25,3 +25,7 @@ hf.co bartowski nvidia_Nemotron-Cascade-2-30B-A3B-GGUF nvidia_Nemotron-Cascade-2
 hf.co prism-ml Bonsai-27B-gguf Bonsai-27B-Q1_0.gguf
 hf.co Qwen Qwen3-Embedding-0.6B-GGUF Qwen3-Embedding-0.6B-Q8_0.gguf
 hf.co mradermacher Qwen3-Reranker-0.6B-GGUF Qwen3-Reranker-0.6B.Q8_0.gguf
+hf.co remixerdec Inflect-Nano-v2-GGUF inflect_nano_v2_q8_0.gguf
+hf.co remixerdec Inflect-Nano-v2-GGUF lexicon.bin
+hf.co remixerdec Inflect-Micro-v2-GGUF inflect_micro_v2_q8_0.gguf
+hf.co remixerdec Inflect-Micro-v2-GGUF lexicon.bin

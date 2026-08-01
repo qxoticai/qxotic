@@ -117,6 +117,19 @@ public final class ModelFixture {
     public static final Gguf BONSAI_27B_Q1 =
             hf("prism-ml", "Bonsai-27B-gguf", "Bonsai-27B-Q1_0.gguf");
 
+    // Speech. The lexicon is a fixture in its own right, not a sidecar of the GGUF: it is a
+    // separate file in the same repo, the port looks for it BESIDE the model, and a checkout with
+    // the GGUF but no lexicon takes a different (espeak) code path - so a test that needs the
+    // lexicon path must be able to say so and skip when it is missing.
+    public static final Gguf INFLECT_NANO_V2_Q8 =
+            hf("remixerdec", "Inflect-Nano-v2-GGUF", "inflect_nano_v2_q8_0.gguf");
+    public static final Gguf INFLECT_NANO_V2_LEXICON =
+            hf("remixerdec", "Inflect-Nano-v2-GGUF", "lexicon.bin");
+    public static final Gguf INFLECT_MICRO_V2_Q8 =
+            hf("remixerdec", "Inflect-Micro-v2-GGUF", "inflect_micro_v2_q8_0.gguf");
+    public static final Gguf INFLECT_MICRO_V2_LEXICON =
+            hf("remixerdec", "Inflect-Micro-v2-GGUF", "lexicon.bin");
+
     /** Every declared model, for the manifest-consistency check. */
     public static List<Gguf> all() {
         return List.copyOf(ALL);

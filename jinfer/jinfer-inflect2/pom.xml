@@ -34,6 +34,10 @@
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-chat</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
       <artifactId>jinfer-kernels</artifactId>
     </dependency>
     <dependency>
@@ -45,13 +49,54 @@
       <artifactId>commons-compress</artifactId>
       <version>1.28.0</version>
     </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-kernels</artifactId>
+      <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <profiles>
     <profile>
       <id>native</id>
+      <properties>
+        <!-- Where the model fixtures live, same resolution as the testkit's ModelFixture:
+             -Djinfer.models, else the models directory beside the checkout. -->
+        <jinfer.models>${maven.multiModuleProjectDirectory}/../../models</jinfer.models>
+        <jinfer.lexicon.dir>${jinfer.models}/hf.co/remixerdec/Inflect-Nano-v2-GGUF</jinfer.lexicon.dir>
+      </properties>
       <build>
         <plugins>
+          <!-- The lexicon is 1.5 MB of downloaded fixture and MUST NOT enter the repository. A
+               single-file binary has no directory to sit beside, so it is copied into the image's
+               classpath here, at build time, from wherever the fixtures were downloaded. Absent =
+               the image falls back to espeak-ng at run time, which is a working image, not a
+               broken one. -->
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-resources-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>embed-lexicon</id>
+                <phase>process-classes</phase>
+                <goals>
+                  <goal>copy-resources</goal>
+                </goals>
+                <configuration>
+                  <outputDirectory>${project.build.outputDirectory}</outputDirectory>
+                  <resources>
+                    <resource>
+                      <directory>${jinfer.lexicon.dir}</directory>
+                      <includes>
+                        <include>lexicon.bin</include>
+                      </includes>
+                    </resource>
+                  </resources>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
           <plugin>
             <groupId>org.graalvm.buildtools</groupId>
             <artifactId>native-maven-plugin</artifactId>
