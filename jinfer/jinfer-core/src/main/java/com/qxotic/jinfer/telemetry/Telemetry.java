@@ -17,6 +17,20 @@ import jdk.jfr.FlightRecorder;
  * enable/disable, per-event settings and, through {@code RecordingStream}, in-process subscription
  * - so a Micrometer or OpenTelemetry exporter consumes the same events a user sees in JMC rather
  * than a second, parallel telemetry path.
+ *
+ * <h2>Deliberate gaps</h2>
+ *
+ * <p>There is NO KV-cache gauge, though the obvious comparison (vLLM's cache-usage metric) has one.
+ * That metric earns its place because paged attention allocates and frees KV blocks under pressure,
+ * so occupancy genuinely fluctuates and predicts failure. jinfer pre-allocates each state's KV at
+ * full context, once, so the same gauge would report two constants forever. The part that does vary
+ * - running out of context - already surfaces per request as {@code finishReason=length}.
+ *
+ * <p>Consequently native memory is attributed only as far as {@link ModelLoadEvent}'s weights.
+ * Per-state cost is not reported, because nothing exposes a state's footprint. The useful event
+ * would be a rare {@code StateAllocated} - state allocation is expensive and should happen once per
+ * engine, so every repeat is a signal that the session pool is not working - but it needs that
+ * accessor first, and is worth adding deliberately rather than approximating.
  */
 public final class Telemetry {
 
