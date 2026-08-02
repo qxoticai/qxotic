@@ -15,6 +15,10 @@ public final class Models {
 
     static Path gemmaVision(String[] a, int at) { return pick(a, at, "hf.co/unsloth/gemma-4-E2B-it-GGUF/gemma-4-E2B-it-Q8_0.gguf"); }
     static Path gemmaMmproj(String[] a, int at) { return pick(a, at, "hf.co/unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf"); }
+
+    // Detection needs a bigger model than description does - see the note in Detect.java.
+    static Path gemmaDetect(String[] a, int at)       { return pick(a, at, "hf.co/unsloth/gemma-4-12b-it-GGUF/gemma-4-12b-it-Q8_0.gguf"); }
+    static Path gemmaDetectMmproj(String[] a, int at) { return pick(a, at, "hf.co/unsloth/gemma-4-12b-it-GGUF/mmproj-F32.gguf"); }
     static Path gemmaMtp(String[] a, int at)    { return pick(a, at, "hf.co/unsloth/gemma-4-E2B-it-GGUF/mtp-gemma-4-E2B-it.gguf"); }
 
     private static Path pick(String[] args, int at, String relative) {

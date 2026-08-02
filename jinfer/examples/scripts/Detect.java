@@ -14,6 +14,12 @@
 //
 // Detection is prompt-driven - the same model that describes an image also localizes in it, so
 // there is no detector to train, load or wire up.
+//
+// USE A BIG MODEL FOR THIS ONE. Describing an image and LOCALIZING in it are very different asks:
+// E2B labels correctly and places badly (asked for the llama and the mug in a test photo, it
+// labelled both right and put the llama's box inside the mug). 12B places both correctly from the
+// same prompt and the same code. Pass a smaller GGUF explicitly if you want to see it fail:
+//     jbang Detect.java photo.jpg "a llama" ~/models/.../gemma-4-E2B-it-Q8_0.gguf ~/models/.../mmproj-F32.gguf
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.Media;
 import com.qxotic.jinfer.chat.Message;
@@ -37,8 +43,8 @@ public class Detect {
         if (args.length < 1) { System.err.println("usage: Detect <image> [labels] [gguf] [mmproj]"); System.exit(2); }
         Path image  = Path.of(args[0]);
         String what = args.length > 1 ? args[1] : "every prominent object";
-        Path gguf   = Models.gemmaVision(args, 2);
-        Path mmproj = Models.gemmaMmproj(args, 3);
+        Path gguf   = Models.gemmaDetect(args, 2);
+        Path mmproj = Models.gemmaDetectMmproj(args, 3);
 
         var model = Gemma4.loadModel(gguf, mmproj, 4096, Arena.ofAuto());
         var template = model.turnTemplate().orElseThrow();

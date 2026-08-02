@@ -20,7 +20,7 @@ Each script takes the model path as a trailing argument if you'd rather be expli
 | `Search.java` | semantic search, no vector database | Qwen3-Embedding-0.6B |
 | `Rerank.java` | cross-encoder reranking, the second stage of RAG | Qwen3-Reranker-0.6B |
 | `CachedPrompt.java` | prompt caching, with a measured speedup | Llama-3.2-1B |
-| `Detect.java` | object detection with the boxes **drawn** on the image | Gemma 4 E2B + mmproj |
+| `Detect.java` | object detection with the boxes **drawn** on the image | Gemma 4 12B + mmproj |
 
 ## Vision
 
@@ -32,9 +32,15 @@ jbang Detect.java photo.jpg "person, dog, bicycle"
 ```
 
 Detection is prompt-driven — the same model that describes an image localizes in it, so there is no
-detector to train, load or wire up. Field order in the JSON is not stable (`box_2d` comes before
-`label` about as often as after), so the parser reads each object's fields independently rather
-than assuming a layout.
+detector to train, load or wire up. Two things that cost me time and are now handled:
+
+- **Field order is not stable.** `box_2d` comes before `label` about as often as after, so the
+  parser reads each object's fields independently instead of assuming a layout. The first version
+  assumed one and silently drew zero boxes on a perfectly good detection.
+- **Detection needs a bigger model than description does.** E2B labels correctly and places badly —
+  asked for the llama and the mug, it named both right and put the llama's box inside the mug. 12B
+  places both correctly from the same prompt and the same code, so `Detect.java` defaults to 12B.
+  Every other vision script here is fine on E2B.
 
 ## The two worth reading first
 
