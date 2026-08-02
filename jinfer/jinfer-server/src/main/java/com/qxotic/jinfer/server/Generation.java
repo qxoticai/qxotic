@@ -48,6 +48,7 @@ final class Generation {
 
     private final LoadedModel<?> model;
     private final LLMOptions options;
+    private final String servedModel;
     private final ChatTemplate template; // memoized model framing, null when the model has none
     private final JinjaChatTemplate jinjaTemplate; // whole-render fallback, compiled once
     private final Set<Integer> stopTokens; // memoized model stops
@@ -57,6 +58,7 @@ final class Generation {
             sessionPool; // tier 1: last-N live conversations (append-only reuse)
 
     Generation(LoadedModel<?> chatModel, LLMOptions options) {
+        this.servedModel = options.modelPath().getFileName().toString();
         this.model = chatModel;
         this.options = options;
         this.template = chatModel.template().orElse(null);
@@ -462,7 +464,7 @@ final class Generation {
         Message structured = parser.finish();
         router.flush();
         Reply reply = router.reply(result, structured, billedPrompt, cachedTokens, textStops);
-        Metrics.record(reply);
+        Metrics.record(servedModel, reply);
         return reply;
     }
 

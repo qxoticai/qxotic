@@ -85,6 +85,10 @@ public final class InferenceEvent extends Event {
     @Label("Cached Tokens")
     public int cachedTokens;
 
+    @Label("Queue Time")
+    @Timespan(Timespan.NANOSECONDS)
+    public long queueTime;
+
     @Label("Prefill Time")
     @Timespan(Timespan.NANOSECONDS)
     public long prefillTime;

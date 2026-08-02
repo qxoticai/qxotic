@@ -52,8 +52,12 @@ final class Worker {
      */
     boolean submitAndWait(Runnable job) {
         CountDownLatch done = new CountDownLatch(1);
+        long queuedAt = System.nanoTime();
         if (!queue.offer(
                 () -> {
+                    // published on the worker thread, which is also the thread the generation and
+                    // its telemetry event run on - so the wait lands on the right request
+                    com.qxotic.jinfer.telemetry.Telemetry.queueWait(System.nanoTime() - queuedAt);
                     try {
                         job.run();
                     } finally {

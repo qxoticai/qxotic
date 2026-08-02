@@ -6,6 +6,7 @@ import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.Values;
 import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
+import com.qxotic.jinfer.telemetry.InferenceEvent;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -31,8 +32,11 @@ public final class Server {
     private final Worker worker = new Worker();
     private final Generation generation;
 
+    private final String servedModel;
+
     private Server(LoadedModel<?> model, LLMOptions options) {
         this.generation = new Generation(model, options);
+        this.servedModel = options.modelPath().getFileName().toString();
     }
 
     /**
@@ -578,6 +582,15 @@ public final class Server {
      */
     private void runQueued(HttpExchange exchange, Runnable work) throws IOException {
         if (!worker.submitAndWait(work)) {
+            // a shed request never reaches the engine, so nothing else would report it - and going
+            // silent exactly when the server is saturated is the worst possible time to do so
+            InferenceEvent rejected = new InferenceEvent();
+            if (rejected.isEnabled()) {
+                rejected.model = servedModel;
+                rejected.operation = InferenceEvent.CHAT;
+                rejected.errorType = "queue-full";
+                rejected.commit();
+            }
             exchange.getResponseHeaders()
                     .set("Retry-After", String.valueOf(Worker.retryAfterSeconds()));
             Http.sendError(

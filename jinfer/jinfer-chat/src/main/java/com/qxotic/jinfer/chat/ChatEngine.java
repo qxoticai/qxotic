@@ -14,6 +14,7 @@ import com.qxotic.jinfer.llm.Grammar;
 import com.qxotic.jinfer.llm.Sampler;
 import com.qxotic.jinfer.llm.TextStops;
 import com.qxotic.jinfer.telemetry.InferenceEvent;
+import com.qxotic.jinfer.telemetry.Telemetry;
 import com.qxotic.toknroll.IntSequence;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -502,6 +503,7 @@ public final class ChatEngine {
         event.outputType = InferenceEvent.TEXT;
         event.inputTokens = prepared.promptTokens();
         event.cachedTokens = completion.restoredTokens();
+        event.queueTime = Telemetry.takeQueueWait(); // 0 unless something queued this thread
         event.errorType = "";
         Generator.GenerationResult result = completion.result();
         if (result != null) {

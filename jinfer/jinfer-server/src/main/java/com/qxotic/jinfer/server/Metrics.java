@@ -2,6 +2,8 @@ package com.qxotic.jinfer.server;
 
 import com.qxotic.jinfer.*;
 import com.qxotic.jinfer.llm.*;
+import com.qxotic.jinfer.telemetry.InferenceEvent;
+import com.qxotic.jinfer.telemetry.Telemetry;
 
 /**
  * Server observability: lifetime request/token counters and the Prometheus text exposition
@@ -18,11 +20,38 @@ final class Metrics {
     private static volatile long requests, promptTokens, completionTokens;
     private static volatile long sessionPoolHits, cachedTokens;
 
-    /** Record one finished generation (called on the worker thread). */
-    static void record(Reply reply) {
+    /**
+     * Record one finished generation (called on the worker thread).
+     *
+     * <p>Also emits {@code jinfer.Inference}: the server runs {@link Generator} directly rather
+     * than through {@code ChatEngine}, so this is its own generation seam and nothing else would
+     * report a served request. The Prometheus counters below stay - they are five volatiles that
+     * aggregate for a scrape endpoint, and rebuilding them on a {@code RecordingStream} would add
+     * an always-on recording and a background thread to compute the same numbers.
+     */
+    static void record(String model, Reply reply) {
         requests++;
         promptTokens += reply.promptTokens();
         completionTokens += reply.completionTokens();
+
+        InferenceEvent event = new InferenceEvent();
+        if (!event.isEnabled()) return;
+        event.model = model;
+        event.operation = InferenceEvent.CHAT;
+        event.outputType = InferenceEvent.TEXT;
+        event.inputTokens = reply.promptTokens();
+        event.outputTokens = reply.completionTokens();
+        event.cachedTokens = reply.cachedTokens();
+        event.reasoningTokens = 0; // the server carries reasoning as text, not as counted ids
+        event.queueTime = Telemetry.takeQueueWait();
+        Generator.GenerationResult result = reply.result();
+        if (result != null) {
+            event.prefillTime = result.promptNanos();
+            event.decodeTime = result.predictedNanos();
+        }
+        event.finishReason = reply.finishReason() == null ? "" : reply.finishReason();
+        event.errorType = "";
+        event.commit();
     }
 
     /**

@@ -36,6 +36,7 @@ class EventSchemaTest {
                         "outputTokens",
                         "reasoningTokens",
                         "cachedTokens",
+                        "queueTime",
                         "prefillTime",
                         "decodeTime",
                         "finishReason",

@@ -83,6 +83,34 @@ class TelemetryEmissionTest {
         }
     }
 
+    /** Embeddings are inference too: one event, an honest zero decode, and a batch's tokens. */
+    @Test
+    void embeddingEmitsAnInferenceEventWithNoDecodePhase() throws Exception {
+        Path gguf = ModelFixture.QWEN3_EMBED_06B_Q8.require();
+        Path jfr = Files.createTempFile("jinfer-embed", ".jfr");
+        try (var embedder = JinferEmbeddingModel.builder().modelPath(gguf).build()) {
+            try (Recording recording = new Recording()) {
+                recording.enable("jinfer.Inference");
+                recording.start();
+                embedder.embedAll(
+                        List.of(
+                                dev.langchain4j.data.segment.TextSegment.from("grind the beans"),
+                                dev.langchain4j.data.segment.TextSegment.from("steep the tea")));
+                recording.stop();
+                recording.dump(jfr);
+            }
+        }
+        List<RecordedEvent> events = eventsOf(jfr, "jinfer.Inference");
+        assertEquals(1, events.size(), "one embedAll call, one event");
+        RecordedEvent event = events.get(0);
+        assertEquals("embeddings", event.getString("operation"));
+        assertEquals("", event.getString("errorType"));
+        assertTrue(event.getInt("inputTokens") > 0, "the batch had tokens");
+        assertEquals(0, event.getInt("outputTokens"), "an encode generates nothing");
+        assertEquals(0, event.getLong("decodeTime"), "an encode runs no decode loop");
+        assertTrue(event.getLong("prefillTime") > 0);
+    }
+
     private static List<RecordedEvent> eventsOf(Path jfr, String name) throws Exception {
         try (RecordingFile file = new RecordingFile(jfr)) {
             List<RecordedEvent> found = new java.util.ArrayList<>();
