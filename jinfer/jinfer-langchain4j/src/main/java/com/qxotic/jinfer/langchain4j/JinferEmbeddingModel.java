@@ -35,11 +35,9 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
     private final LoadedEmbedder<?> loaded;
     private final RuntimeState state; // one reusable state; embed() resets it per group
     private final int contextLength;
-    private final String modelName;
     private final ReentrantLock lock = new ReentrantLock(true); // single-stream, like ChatEngine
 
     private JinferEmbeddingModel(Builder b) {
-        this.modelName = b.modelPath.getFileName().toString();
         // ONE arena for weights and state, adopted by the state: state.close() frees everything
         // (idempotent, blocking, Cleaner-backstopped - all BaseState's laws, implemented once)
         Arena arena = Arena.ofShared();
