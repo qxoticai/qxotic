@@ -196,8 +196,16 @@ public final class ChatEngine {
 
     private static <S extends RuntimeState> PromptCache<S> tree(
             LoadedModel<S> loaded, CacheStore store, FrozenBlocks base) {
-        // unbounded: prompts are explicit, few, and deliberately paid for
-        return new PromptCache<>(loaded.codec(), store, Long.MAX_VALUE, loaded.seed(), base);
+        // Bounded, because this tree no longer holds only declared prompts: since it resumes
+        // EVERY prompt under jinfer.promptCache, an unbounded budget would grow without limit
+        // across arbitrary conversations. jinfer.promptCacheMB caps it, LRU-leaf eviction trims it.
+        //
+        // Consequence worth knowing: a prompt defined via withCachedPrompt is now cached
+        // best-effort, not pinned - an idle one can be evicted and re-prefilled on next use.
+        // Permanent residency is what freezePrompts + a mounted artifact is for; frozen blocks
+        // never count against this budget and are never evicted.
+        return new PromptCache<>(
+                loaded.codec(), store, RuntimeFlags.PROMPT_CACHE_BUDGET_BYTES, loaded.seed(), base);
     }
 
     public LoadedModel<?> loaded() {
