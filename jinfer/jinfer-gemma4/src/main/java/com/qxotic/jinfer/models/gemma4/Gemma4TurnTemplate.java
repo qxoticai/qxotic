@@ -56,6 +56,12 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
     private final int turnClose; // <turn|>
     private final List<Integer> newline; // encode("\n"), constant
     private final List<Batch> generationPrompt; // <|turn>model\n, constant
+    // <|turn>model\n<|channel>thought\n<channel|> - the NON-thinking prefix. The template's rule
+    // is inverted from the obvious reading: thinking OFF is what needs scaffold, an EMPTY and
+    // already-closed thought channel, so the model goes straight to the answer. Omit it and the
+    // model helpfully writes the header itself, whose channel NAME is plain text and lands in the
+    // reply as a literal "thought" in front of every answer.
+    private final List<Batch> generationPromptNoThink;
     private final List<Batch> closeTurn; // <turn|>\n, constant
     private final TokenRuns proto; // compiled spelling table, forked per turn
 
@@ -75,6 +81,15 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
         gen.add(turnOpen);
         gen.addAll(tokenizer.encode("model\n").toList());
         this.generationPrompt = List.of(Batch.prefill(gen));
+        List<Integer> noThink = new ArrayList<>(gen);
+        Integer channelOpen = tokenizer.vocabulary().findId("<|channel>").orElse(-1);
+        Integer channelClose = tokenizer.vocabulary().findId("<channel|>").orElse(-1);
+        if (channelOpen >= 0 && channelClose >= 0) { // vocabularies without channels: unchanged
+            noThink.add(channelOpen);
+            noThink.addAll(tokenizer.encode("thought\n").toList());
+            noThink.add(channelClose);
+        }
+        this.generationPromptNoThink = List.of(Batch.prefill(noThink));
         List<Integer> close = new ArrayList<>();
         close.add(turnClose);
         close.addAll(newline);
@@ -370,7 +385,7 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
 
     @Override
     public List<Batch> generationPrompt(boolean thinking) {
-        return generationPrompt;
+        return thinking ? generationPrompt : generationPromptNoThink;
     }
 
     @Override
