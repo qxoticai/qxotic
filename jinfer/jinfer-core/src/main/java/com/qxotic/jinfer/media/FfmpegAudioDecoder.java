@@ -1,12 +1,3 @@
-// ffmpeg-based audio decoder: decodes any container/codec (mp3, wav, flac, ogg, m4a, ...) to raw
-// PCM,
-// resampled to 16 kHz MONO float32 - the universal speech-encoder input. Native-image-safe: no
-// javax.sound.sampled (its ServiceLoader/SPI plugin discovery + reflection need build-time config,
-// and
-// compressed-format support depends on optional providers). ffmpeg owns decode + resample
-// (swresample,
-// far higher quality than a hand-rolled linear resampler) + downmix in one pass. Requires ffmpeg on
-// PATH.
 package com.qxotic.jinfer.media;
 
 import com.qxotic.jinfer.Media;
@@ -20,6 +11,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
 
+/**
+ * The ffmpeg audio decoder: any container or codec to 16 kHz mono float32 in ONE pass - decode,
+ * resample and downmix. The resampling is swresample's, not a hand-rolled linear interpolation,
+ * which is the reason to shell out rather than convert in Java. Needs ffmpeg on PATH.
+ */
 public final class FfmpegAudioDecoder implements AudioDecoder {
 
     /** gemma4ua and every other speech encoder fix the input at 16 kHz mono. */

@@ -1,10 +1,3 @@
-// ffmpeg-based image decoder: shells out to ffmpeg to decode PNG/JPEG/WebP/... into raw RGB,
-// producing a
-// generic Media.Image (values in [0,1], HWC-interleaved, 3 channels R,G,B). Native-image-safe (no
-// javax.imageio, whose IIORegistry ServiceLoader + reflection are fragile under GraalVM
-// native-image) and
-// cross-platform (works wherever ffmpeg is on PATH: Linux/macOS/Windows). Mirrors the audio path
-// (ffmpeg mp3 -> wav). DECODE ONLY: the model-specific smart_resize stays in the vision module.
 package com.qxotic.jinfer.media;
 
 import com.qxotic.jinfer.Media;
@@ -13,6 +6,10 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 
+/**
+ * The ffmpeg image decoder: broad format support, native-image-safe, and portable to wherever
+ * ffmpeg is on PATH. DECODE ONLY - model-specific resizing belongs to the vision port.
+ */
 public final class FfmpegImageDecoder implements ImageDecoder {
 
     @Override

@@ -1,13 +1,15 @@
-// Activation functions shared across architectures. Scalar element-wise forms (Mamba SSM gates, MoE
-// routers, ...) plus a couple of whole-span vectorized fused ops (GELU-gate, logit soft-cap) that
-// reach FloatTensor's F32 vector internals — exposed so out-of-package model impls (jinfer-gemma4)
-// run the same kernels as the production engine instead of scalar fallbacks.
 package com.qxotic.jinfer;
 
 import java.nio.ByteOrder;
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.VectorSpecies;
 
+/**
+ * Activation kernels shared across architectures: scalar element-wise forms (SSM gates, MoE
+ * routers) plus a few fused whole-span ops (GELU-gate, logit soft-cap) that reach {@link
+ * FloatTensor}'s vector internals. Public so an out-of-package port runs these rather than its own
+ * scalar fallbacks.
+ */
 public final class Activations {
     private Activations() {}
 

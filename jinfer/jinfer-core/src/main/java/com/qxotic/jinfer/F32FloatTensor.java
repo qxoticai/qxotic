@@ -1,6 +1,3 @@
-// F32FloatTensor split out of Tensors.java so it can be public: the allocatable, writable native
-// float tensor used for scratch / KV cache and returned by the model loaders. Consumed by the
-// jinfer-gemma4 model port; the quantized subclasses stay package-private in Tensors.java.
 package com.qxotic.jinfer;
 
 import com.oracle.svm.shared.AlwaysInline;
@@ -14,6 +11,10 @@ import jdk.incubator.vector.ShortVector;
 import jdk.incubator.vector.VectorOperators;
 import jdk.incubator.vector.VectorSpecies;
 
+/**
+ * The writable F32 tensor: state scratch, KV cache, and what the loaders hand back. The one {@link
+ * FloatTensor} a port allocates for itself.
+ */
 public final class F32FloatTensor extends SegmentFloatTensor {
 
     final MemorySegment memorySegment;

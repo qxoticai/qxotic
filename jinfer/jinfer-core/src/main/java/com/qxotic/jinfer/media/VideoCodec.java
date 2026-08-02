@@ -1,13 +1,3 @@
-// Decodes a video file into a Media.Video by sampling frames with ffmpeg. Unlike images/audio there
-// is
-// no non-ffmpeg fallback (the JDK cannot demux mp4/webm), so this is ffmpeg-only -
-// native-image-safe since
-// ffmpeg is referenced directly (no reflection, no java.desktop). Frames are extracted at a fixed
-// rate,
-// each decoded through ImageCodec (so it inherits the same RGB/[0,1]/HWC contract), and capped so
-// the
-// per-frame image tokens do not blow the context. Audio is not captured (frames only) - a
-// follow-up.
 package com.qxotic.jinfer.media;
 
 import com.qxotic.jinfer.Media;
@@ -19,6 +9,12 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Stream;
 
+/**
+ * Samples a video into a {@link com.qxotic.jinfer.Media.Video} with ffmpeg - the only backend here,
+ * because the JDK cannot demux mp4/webm. Frames are taken at a fixed rate, decoded through {@link
+ * ImageCodec} (so they inherit its RGB/[0,1]/HWC contract), and capped so the per-frame image
+ * tokens cannot blow the context. No audio track.
+ */
 public final class VideoCodec {
 
     private VideoCodec() {}

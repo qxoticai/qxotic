@@ -1,7 +1,3 @@
-// The FloatTensor hierarchy's public base: the tensor read/write/dot/gemm seam shared by every
-// GGML quantization. Split out of Tensors.java so it can be public (consumed by the
-// com.qxotic.jinfer.models
-// model-API prototype); the concrete quantized subclasses stay package-private in Tensors.java.
 package com.qxotic.jinfer;
 
 import com.oracle.svm.shared.AlwaysInline;
@@ -15,6 +11,11 @@ import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.VectorShape;
 import jdk.incubator.vector.VectorSpecies;
 
+/**
+ * The read/write/dot/gemm seam every GGML quantization implements, and the only tensor type a port
+ * sees - the concrete quantized classes stay package-private, so a model expresses layers without
+ * naming a quantization.
+ */
 public abstract class FloatTensor {
 
     // GGML super-block sizes (== GGMLType.{Q*_K,MXFP4}.getElementsPerBlock(); javac-foldable

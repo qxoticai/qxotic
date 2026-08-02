@@ -1,7 +1,3 @@
-// Shared flash-attention primitives: online-softmax accumulate/normalize over a head vector and
-// the per-thread tile scratch. Architecture-agnostic (operate on FloatTensors), used by the
-// batched attention of any Model. Vector-API fast paths for an F32 output with an F32 or F16
-// value source; scalar fallback otherwise.
 package com.qxotic.jinfer;
 
 import com.oracle.svm.shared.AlwaysInline;
@@ -10,6 +6,12 @@ import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.ShortVector;
 import jdk.incubator.vector.VectorOperators;
 
+/**
+ * Online-softmax accumulate and normalize over a head vector, plus the per-thread tile scratch.
+ * Architecture-agnostic: it operates on {@link FloatTensor}s, so any {@link Model}'s batched
+ * attention can use it. Vector paths cover an F32 output over F32 or F16 values; anything else
+ * falls back to scalar.
+ */
 public final class FlashAttention {
 
     /**

@@ -1,11 +1,3 @@
-// New-API generation driver: prefill via Batch.prepare (the port chunks internally), decode via
-// logits(state) + Sampler + Batch.step. Tokens in, tokens out - the loop knows sampling, token
-// stops, the completion budget and the wall-clock deadline, and NOTHING else: no text, no
-// reasoning, no tool calls, no billing. Reply STRUCTURE (think spans, tool-call spans, UTF-8
-// assembly) is the chat layer's ReplyParser; string-level stop handling is TextStops; billing
-// policy (BOS discounts, cache restores) is the server's; all are driven by the caller through
-// the TokenSink. NOTE: prompt caching / prefix resume is not (yet) supported on this path - the
-// cache path decodes from a resumed state via generate() with an empty prompt.
 package com.qxotic.jinfer.llm;
 
 import com.qxotic.jinfer.*;
@@ -13,6 +5,15 @@ import com.qxotic.toknroll.IntSequence;
 import java.util.List;
 import java.util.Set;
 
+/**
+ * The generation loop: prefill, then sample and decode until a stop token, the completion budget or
+ * the wall-clock deadline.
+ *
+ * <p>It knows TOKENS and nothing else. Reply structure - think spans, tool-call spans, UTF-8
+ * assembly - is the chat layer's {@code ReplyParser}; string-level stops are {@code TextStops};
+ * billing policy is the server's. All of them observe this loop through the token sink rather than
+ * living inside it.
+ */
 public final class Generator {
 
     private Generator() {}

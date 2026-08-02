@@ -1,12 +1,3 @@
-// Facade over the pluggable ImageDecoder. Selects the backend at runtime and caches it:
-//   -Djinfer.imageDecoder=ffmpeg|imageio   (explicit override)
-//   default: ffmpeg under GraalVM native-image (where javax.imageio is impractical), imageio on a
-// normal JVM.
-// ffmpeg is referenced directly (native-image-safe, always present). imageio is loaded REFLECTIVELY
-// via a
-// non-constant class name so native-image does not fold the Class.forName and pull java.desktop
-// into the
-// image; if it is requested but unavailable (e.g. inside a native image), it falls back to ffmpeg.
 package com.qxotic.jinfer.media;
 
 import com.qxotic.jinfer.Media;
@@ -14,6 +5,13 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Locale;
 
+/**
+ * Selects and caches an {@link ImageDecoder}: ffmpeg under native-image, ImageIO on a JVM,
+ * overridden by {@code -Djinfer.imageDecoder=ffmpeg|imageio}.
+ *
+ * <p>ImageIO is loaded through a NON-CONSTANT class name on purpose - a constant one would let
+ * native-image fold the {@code Class.forName} and pull {@code java.desktop} into the image.
+ */
 public final class ImageCodec {
 
     private ImageCodec() {}

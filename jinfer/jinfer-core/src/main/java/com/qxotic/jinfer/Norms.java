@@ -1,14 +1,15 @@
-// Normalization kernels shared across architectures. Like RoPE/Activations, this is shared
-// infrastructure: every model normalizes rows the same way, only the learned weights and eps
-// differ. Each kernel keeps a vectorized fast path AND a pure-Java scalar fallback — the fallback
-// runs when the Vector API is unavailable and is the correctness oracle the parity tests check
-// the vector path against (their summation orders differ at the ulp level; see FIXES.md).
 package com.qxotic.jinfer;
 
 import java.nio.ByteOrder;
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.VectorOperators;
 
+/**
+ * Normalization kernels shared across architectures - every model normalizes rows the same way,
+ * only the learned weights and epsilon differ. Each keeps a vectorized path and a scalar fallback;
+ * the fallback runs where the Vector API is unavailable and is the oracle the parity tests check
+ * the fast path against.
+ */
 public final class Norms {
     private Norms() {}
 

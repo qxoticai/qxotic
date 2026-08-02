@@ -1,12 +1,3 @@
-// javax.imageio-based image decoder: PNG/JPEG/... -> Media.Image (RGB, values in [0,1], HWC). No
-// external
-// process, so it is the natural default on a normal JVM. NOT used under GraalVM native-image:
-// ImageIO's
-// IIORegistry discovers codec plugins via ServiceLoader + reflection, which is fragile to configure
-// in a
-// native image - so ImageCodec loads this class REFLECTIVELY (never statically references it),
-// which keeps
-// it and java.desktop out of native images, where ffmpeg is the default instead.
 package com.qxotic.jinfer.media;
 
 import com.qxotic.jinfer.Media;
@@ -16,6 +7,11 @@ import java.io.IOException;
 import java.nio.file.Path;
 import javax.imageio.ImageIO;
 
+/**
+ * The {@code javax.imageio} decoder, and the JVM default: no external process. Never referenced
+ * statically - {@link ImageCodec} loads it reflectively so a native image does not pull in {@code
+ * java.desktop}.
+ */
 public final class ImageIoDecoder implements ImageDecoder {
 
     @Override

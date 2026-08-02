@@ -1,6 +1,3 @@
-// Thin JSON facade over com.qxotic:json: parse/stringify with this project's null and
-// number conventions (Json.NULL <-> Java null, decimals as double). The single place the
-// external JSON library is adapted to the engine's Map/List/null value model.
 package com.qxotic.jinfer.chat;
 
 import com.qxotic.format.json.Json;
@@ -9,6 +6,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * The one place the external JSON library meets the engine's value model: {@code Json.NULL} maps to
+ * Java {@code null}, and decimals to {@code double}.
+ */
 public final class JsonCodec {
     private static final Json.ParseOptions OPTIONS =
             Json.ParseOptions.defaults().decimalsAsBigDecimal(false);

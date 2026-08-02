@@ -1,13 +1,3 @@
-// javax.sound.sampled audio decoder: decodes WAV/AIFF/AU natively (no external process) and
-// converts to
-// 16 kHz mono float PCM via the JDK's built-in format converters. JVM-only - AudioSystem's
-// ServiceLoader/
-// SPI discovery is fragile under GraalVM native-image, so AudioCodec loads this reflectively and
-// never
-// pulls it into a native image. For anything AudioSystem can't handle (mp3/flac/ogg without SPI
-// providers,
-// or an unsupported target conversion) it falls back to ffmpeg, so the facade always yields 16 kHz
-// mono.
 package com.qxotic.jinfer.media;
 
 import com.qxotic.jinfer.Media;
@@ -20,6 +10,12 @@ import javax.sound.sampled.AudioInputStream;
 import javax.sound.sampled.AudioSystem;
 import javax.sound.sampled.UnsupportedAudioFileException;
 
+/**
+ * The {@code javax.sound.sampled} decoder: WAV/AIFF/AU with no external process, falling back to
+ * ffmpeg for anything {@code AudioSystem} cannot handle, so the facade always yields 16 kHz mono.
+ * JVM only - {@code AudioSystem}'s SPI discovery is fragile under native-image, so {@link
+ * AudioCodec} loads this reflectively.
+ */
 public final class JavaSoundAudioDecoder implements AudioDecoder {
 
     private static final int SR = FfmpegAudioDecoder.SAMPLE_RATE; // 16000

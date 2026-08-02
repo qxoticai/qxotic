@@ -1,5 +1,3 @@
-// Parallel work runner. General concurrency utilities, independent of
-// the tensor/kernel code that uses them.
 package com.qxotic.jinfer;
 
 import java.util.concurrent.Callable;
@@ -9,6 +7,13 @@ import java.util.function.IntConsumer;
 import java.util.function.Supplier;
 import java.util.stream.IntStream;
 
+/**
+ * jinfer's work runners, and the reason there are two. {@link #parallelFor} fans out on the common
+ * pool - right for the compute-bound prefill gemm. A decode step runs on a spin-barrier pool at
+ * physical-core width instead: decode is memory-bandwidth bound, so a second SMT sibling only
+ * contends for its core's load/store ports, and the persistent workers dispatch the ~360 tiny
+ * regions a single token fires without building a task tree or parking between them.
+ */
 public final class Parallel {
     public static void parallelFor(int startInclusive, int endExclusive, IntConsumer action) {
         if (SPIN_OWNER.get()

@@ -1,15 +1,3 @@
-// Facade over the pluggable AudioDecoder. Selects the backend at runtime and caches it:
-//   -Djinfer.audioDecoder=ffmpeg|javasound   (explicit override)
-//   default: ffmpeg under GraalVM native-image (where javax.sound.sampled is impractical),
-// javasound on a
-//   normal JVM (no process spawn for WAV/AIFF; ffmpeg fallback for mp3/compressed).
-// ffmpeg is referenced directly (native-image-safe, always present). javasound is loaded
-// REFLECTIVELY via a
-// non-constant class name so native-image does not fold the Class.forName and pull
-// javax.sound.sampled into
-// the image; if requested but unavailable (e.g. inside a native image), it falls back to ffmpeg.
-// Output is
-// always 16 kHz mono float PCM.
 package com.qxotic.jinfer.media;
 
 import com.qxotic.jinfer.Media;
@@ -17,6 +5,15 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Locale;
 
+/**
+ * The audio seam in both directions: {@link #wav}/{@link #pcm16} encode a {@link
+ * com.qxotic.jinfer.Media.Audio}, and {@link #decoder()} selects and caches an {@link AudioDecoder}
+ * - ffmpeg under native-image, {@code javax.sound} on a JVM, overridden by {@code
+ * -Djinfer.audioDecoder=ffmpeg|javasound}. Decoded output is always 16 kHz mono.
+ *
+ * <p>{@code javax.sound} is loaded through a NON-CONSTANT class name on purpose - a constant one
+ * would let native-image fold the {@code Class.forName} and pull {@code javax.sound.sampled} in.
+ */
 public final class AudioCodec {
 
     private AudioCodec() {}

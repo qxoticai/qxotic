@@ -1,16 +1,15 @@
-// Convolution kernels over channel-major activations — {@code rows[channel][time]}, one contiguous
-// row per channel. Sits beside Norms and Activations: the tensor-level operation a convolutional
-// model (vocoder, encoder, any TDNN) needs, so ports express layers rather than SIMD.
-//
-// The shape that matters here is narrow and long: a vocoder ends up 12 to 96 channels wide and
-// ~100k samples long. Time is then the only axis worth vectorizing, and with it contiguous a
-// convolution is an FMA sweep per tap — no im2col, nothing materialized.
 package com.qxotic.jinfer;
 
 import java.nio.ByteOrder;
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.VectorSpecies;
 
+/**
+ * 1-D convolution kernels over channel-major activations - {@code rows[channel][time]}, one
+ * contiguous row per channel. The tensor-level operation a convolutional model (vocoder, encoder,
+ * TDNN) needs, so ports express layers instead of SIMD. Sits beside {@link Norms} and {@link
+ * Activations}.
+ */
 public final class Convolutions {
     private Convolutions() {}
 

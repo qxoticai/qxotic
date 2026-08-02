@@ -1,10 +1,11 @@
-// Rotary position embedding tables, shared across architectures. Each method precomputes the
-// per-(position, pair) cos/sin tables a model's attention applies; the three variants cover plain
-// RoPE, "llama3" per-frequency scaling (rope_freqs.weight), and YaRN scaling. The tables use one
-// interleaved per-pair layout consumed by both interleaved (ROPE_TYPE_NORM) and rotate-half (NEOX)
-// attention — only the application pairing differs, not the table.
 package com.qxotic.jinfer;
 
+/**
+ * Precomputed rotary position embedding tables: plain RoPE, llama3 per-frequency scaling ({@code
+ * rope_freqs.weight}) and YaRN. One interleaved per-pair cos/sin layout serves both application
+ * styles - interleaved ({@code ROPE_TYPE_NORM}) and rotate-half ({@code NEOX}) - so a port picks a
+ * table, not a layout.
+ */
 public final class RoPE {
     /**
      * Regular (GPT-J / interleaved) RoPE over the first {@code 2*ropeHalf} dims of one head: pairs
