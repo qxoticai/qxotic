@@ -78,7 +78,21 @@ final class Generation {
     // ---- chat / completion -------------------------------------------------
 
     @SuppressWarnings("unchecked")
+    /**
+     * Every served request records here, whichever path produced it. Deliberately at the ENTRY and
+     * not down in the generation pass: a path that bypasses that pass stops incrementing /metrics
+     * silently, which is exactly what a migration is likely to do.
+     */
     Reply chat(Map<String, Object> request, List<Object> messages, Sinks sinks) {
+        return recorded(chat0(request, messages, sinks));
+    }
+
+    private Reply recorded(Reply reply) {
+        Metrics.record(servedModel, reply);
+        return reply;
+    }
+
+    private Reply chat0(Map<String, Object> request, List<Object> messages, Sinks sinks) {
         boolean tools = ToolUse.offered(request);
         // Codec path: the model's own framing, whenever the template supports the conversation
         // byte-exactly. Forced calls ride it too when the template declares its call seed (the
@@ -311,6 +325,10 @@ final class Generation {
     }
 
     Reply completion(Map<String, Object> request, String prompt, Sinks sinks) {
+        return recorded(completion0(request, prompt, sinks));
+    }
+
+    private Reply completion0(Map<String, Object> request, String prompt, Sinks sinks) {
         Tokenizer tokenizer = model.tokenizer();
         IntSequence promptTokens =
                 options.rawPrompt() ? jinjaTemplate.encodeRaw(prompt) : tokenizer.encode(prompt);
@@ -463,9 +481,7 @@ final class Generation {
                         sink);
         Message structured = parser.finish();
         router.flush();
-        Reply reply = router.reply(result, structured, billedPrompt, cachedTokens, textStops);
-        Metrics.record(servedModel, reply);
-        return reply;
+        return router.reply(result, structured, billedPrompt, cachedTokens, textStops);
     }
 
     /**

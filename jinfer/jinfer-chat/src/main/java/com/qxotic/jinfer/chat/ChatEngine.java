@@ -454,7 +454,22 @@ public final class ChatEngine {
      * The generation result plus the request's cache accounting: positions served from retained KV
      * instead of prefill (block-tree restore or a pooled live session).
      */
-    public record Outcome(Generator.GenerationResult result, int restoredTokens) {}
+    /** Which source served a generation's prompt - see {@link Outcome#tier}. */
+    public enum Tier {
+        /** A pooled live session the prompt strictly extends: zero restore, only the delta. */
+        SESSION,
+        /** The block tree: the longest cached prefix restored into a fresh state. */
+        BLOCKS,
+        /** Nothing reusable: a fresh state prefilled the whole prompt. */
+        FRESH
+    }
+
+    /**
+     * {@code tier} says WHICH source served the prompt, which {@code restoredTokens} alone cannot:
+     * a session hit and a block restore can reuse the same count at very different cost (one
+     * restores nothing at all). It is the difference worth tuning jinfer.sessions on.
+     */
+    public record Outcome(Generator.GenerationResult result, int restoredTokens, Tier tier) {}
 
     /**
      * Where a running generation's deltas go. A blocking caller passes {@link #NONE} and reads the
@@ -489,7 +504,8 @@ public final class ChatEngine {
             Generator.GenerationResult result,
             boolean stopped,
             boolean cancelled,
-            int restoredTokens) {}
+            int restoredTokens,
+            Tier tier) {}
 
     /**
      * Runs a prepared request and parses the reply - the loop both integrations wrote twice each
@@ -521,6 +537,8 @@ public final class ChatEngine {
         // outputType stays TEXT until Prepared carries the grammar; JSON lands with that accessor
         event.inputTokens = prepared.promptTokens();
         event.cachedTokens = completion.restoredTokens();
+        if (completion.tier() != null)
+            event.cacheTier = completion.tier().name().toLowerCase(java.util.Locale.ROOT);
         event.queueTime = Telemetry.takeQueueWait(); // 0 unless something queued this thread
         Generator.GenerationResult result = completion.result();
         if (result != null) {
@@ -574,11 +592,17 @@ public final class ChatEngine {
                         prepared.cachedView());
         if (out.cancelled()) {
             // a cancelled pass ends silently: no reply, no completion callback upstream
-            return new Completion(null, outcome.result(), false, true, outcome.restoredTokens());
+            return new Completion(
+                    null, outcome.result(), false, true, outcome.restoredTokens(), outcome.tier());
         }
         watch.flush(); // release held-back chars (a stopped watch emits nothing past the cut)
         return new Completion(
-                lanes.finish(), outcome.result(), watch.stopped(), false, outcome.restoredTokens());
+                lanes.finish(),
+                outcome.result(),
+                watch.stopped(),
+                false,
+                outcome.restoredTokens(),
+                outcome.tier());
     }
 
     /**
@@ -626,8 +650,10 @@ public final class ChatEngine {
         S state;
         List<Batch> remaining;
         int restored;
+        Tier tier;
         Pooled pooled = acquireSession(prompt, total);
         if (pooled != null) {
+            tier = Tier.SESSION;
             sessionHits++;
             @SuppressWarnings("unchecked")
             S reused = (S) pooled.session().state();
@@ -639,12 +665,14 @@ public final class ChatEngine {
             // jinfer.promptCache is on (the default): a second turn of any conversation reuses the
             // first, not just one that was declared ahead of time. Models without a state codec
             // have no tree and fall through - caching is an optimisation, never a requirement.
+            tier = Tier.BLOCKS;
             state = obtainState(model, total);
             CachedSession<S> resumed =
                     CachedSession.resume(model, tree(), state, prompt, total - 1);
             restored = resumed.position();
             remaining = CachedSession.tail(prompt, restored);
         } else {
+            tier = Tier.FRESH;
             state = obtainState(model, total);
             restored = 0;
             remaining = prompt;
@@ -668,7 +696,7 @@ public final class ChatEngine {
             throw e;
         }
         poolSession(state, prompt, total, result);
-        return new Outcome(result, restored);
+        return new Outcome(result, restored, tier);
     }
 
     private static int positions(List<Batch> prompt) {

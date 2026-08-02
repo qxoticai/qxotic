@@ -81,6 +81,7 @@ public final class InferenceEvent extends Event {
         event.outputType = outputType;
         event.finishReason = "";
         event.errorType = "";
+        event.cacheTier = "";
         event.begin();
         return event;
     }
@@ -105,6 +106,15 @@ public final class InferenceEvent extends Event {
 
     @Label("Cached Tokens")
     public int cachedTokens;
+
+    /**
+     * Which source served the prompt: {@code session} (append-only reuse, nothing restored), {@code
+     * blocks} (a restore from the block tree), or {@code fresh}. Cut from an earlier draft as
+     * "server internals" - wrongly: the two reuse paths cost very differently, and the ratio is
+     * what tells you whether jinfer.sessions is set high enough.
+     */
+    @Label("Cache Tier")
+    public String cacheTier;
 
     @Label("Queue Time")
     @Timespan(Timespan.NANOSECONDS)

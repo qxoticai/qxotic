@@ -73,7 +73,13 @@ class InferenceVocabularyTest {
 
         for (RecordedEvent event : events) {
             for (String field :
-                    List.of("model", "operation", "outputType", "finishReason", "errorType")) {
+                    List.of(
+                            "model",
+                            "operation",
+                            "outputType",
+                            "finishReason",
+                            "errorType",
+                            "cacheTier")) {
                 assertTrue(
                         event.getString(field) != null,
                         field + " must never be null - a filter on it would skip this event");
