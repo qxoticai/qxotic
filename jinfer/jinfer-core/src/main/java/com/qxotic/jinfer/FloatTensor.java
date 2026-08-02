@@ -35,11 +35,22 @@ public abstract class FloatTensor {
      */
     private static int vectorBitSize() {
         Integer override = Integer.getInteger("jinfer.VectorBitSize");
-        if (override != null) return override;
         try {
-            return VectorShape.preferredShape().vectorBitSize();
-        } catch (Throwable noVectorApi) { // module absent from the graph: run scalar
-            return 0;
+            int preferred = VectorShape.preferredShape().vectorBitSize();
+            return override != null ? override : preferred;
+        } catch (Throwable noVectorApi) {
+            // The module is not on the graph. Fail HERE, with the fix in the message: the
+            // alternative is a NoClassDefFoundError thrown minutes later from inside a model
+            // loader, naming a JDK class the user never heard of. -Djinfer.VectorBitSize=0 does
+            // not rescue this - it silences jinfer's own vector paths, but the tensor layer still
+            // names vector types and cannot link without the module.
+            throw new UnsupportedOperationException(
+                    "jinfer needs the Vector API: add '--add-modules jdk.incubator.vector' to the"
+                        + " JVM arguments (or JAVA_TOOL_OPTIONS). It is an incubator module, so the"
+                        + " flag is required until the Vector API is finalized."
+                        + " -Djinfer.VectorBitSize=0 selects jinfer's scalar kernels but still"
+                        + " needs the module present.",
+                    noVectorApi);
         }
     }
 
