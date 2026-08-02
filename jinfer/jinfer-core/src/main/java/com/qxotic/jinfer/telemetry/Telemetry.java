@@ -95,9 +95,16 @@ public final class Telemetry {
 
     private static final List<WeakReference<CacheGauge>> GAUGES = new CopyOnWriteArrayList<>();
 
-    /** Registers a cache for sampling; pair it with {@link #unregister} in the owner's close. */
+    /**
+     * Registers a cache for sampling; pair it with {@link #unregister} in the owner's close.
+     *
+     * <p>Prunes on the way in, because the periodic sweep only runs while a recording is active: a
+     * process that never records and never closes its engines would otherwise accumulate one dead
+     * reference per engine forever. Bounded by the number of live engines either way.
+     */
     public static void register(CacheGauge gauge) {
         install();
+        GAUGES.removeIf(reference -> reference.get() == null);
         GAUGES.add(new WeakReference<>(gauge));
     }
 

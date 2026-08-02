@@ -73,6 +73,11 @@ public final class ChatEngine {
     // held STRONGLY here on purpose: the telemetry registry keeps only a weak reference, so this
     // field is what keeps the gauge alive exactly as long as the engine it samples
     private final Telemetry.CacheGauge cacheGauge;
+    // Published by the generation thread UNDER THE LOCK and read by the JFR sampler. PromptCache
+    // is single-threaded by design, so the sampler must never touch it: it reads this immutable
+    // snapshot instead. Stale while idle, which is exactly right for a gauge - an idle cache is
+    // not changing.
+    private volatile PromptCache.Sample cacheSnapshot;
 
     /** A finished generation's state with the batch stream of everything ingested into it. */
     private record LiveSession(RuntimeState state, List<Batch> stream, int positions) {}
@@ -167,9 +172,7 @@ public final class ChatEngine {
         }
         // registered after the cache exists, and after every throwing step: publishing `this`
         // to a registry from a constructor that may still fail would hand out a half-built engine
-        this.cacheGauge =
-                new Telemetry.CacheGauge(
-                        modelName, () -> prompts == null ? null : prompts.sample());
+        this.cacheGauge = new Telemetry.CacheGauge(modelName, () -> cacheSnapshot);
         Telemetry.register(cacheGauge);
         // armed last: a ctor throw already cleaned up above and must not read as a leak
         this.leakWatch =
@@ -590,7 +593,11 @@ public final class ChatEngine {
         lock.lock();
         try {
             checkOpen();
-            return run(loaded.model(), prompt, sampler, maxTokens, timeoutNanos, sink, cached);
+            Outcome outcome =
+                    run(loaded.model(), prompt, sampler, maxTokens, timeoutNanos, sink, cached);
+            // sampled here, on the owning thread, while the lock still excludes other generations
+            if (prompts != null) cacheSnapshot = prompts.sample();
+            return outcome;
         } finally {
             lock.unlock();
         }
