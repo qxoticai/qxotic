@@ -472,7 +472,19 @@ public final class Inflect2 {
      */
     public Media.Audio synthesize(
             State state, int[] tokens, float lengthScale, float variation, long seed) {
-        state.checkOpen();
+        // Claims the state for this synthesis: a concurrent one fails fast, and a close waits for
+        // this to return rather than freeing the arena under the kernels. Reentrant, so a caller
+        // (InflectTTS.speak) may hold it across a whole multi-chunk utterance.
+        state.enter();
+        try {
+            return synthesize0(state, tokens, lengthScale, variation, seed);
+        } finally {
+            state.exit();
+        }
+    }
+
+    private Media.Audio synthesize0(
+            State state, int[] tokens, float lengthScale, float variation, long seed) {
         if (tokens.length == 0) throw new IllegalArgumentException("tokens must not be empty");
         for (int token : tokens)
             if (token < 0 || token >= cfg.symbolCount())
@@ -1048,7 +1060,12 @@ public final class Inflect2 {
         private final Arena arena;
         private final Arena owned; // null when borrowed: closing this state must not free it
         private final Runnable disarm;
-        private boolean closed;
+        // One lock, three laws - the same contract BaseState carries for generative states:
+        // concurrent synthesis fails fast, close BLOCKS to quiescence, entry after close throws.
+        private final java.util.concurrent.locks.ReentrantLock lock =
+                new java.util.concurrent.locks.ReentrantLock();
+        private final java.util.concurrent.atomic.AtomicBoolean closed =
+                new java.util.concurrent.atomic.AtomicBoolean();
 
         State(Arena arena, Arena owned) {
             this.arena = arena;
@@ -1058,30 +1075,62 @@ public final class Inflect2 {
         }
 
         /**
-         * Fails a synthesis that starts after {@link #close}. This catches the SEQUENTIAL misuse -
-         * close, then speak - and turns it into an exception instead of a read of freed memory. It
-         * cannot catch the CONCURRENT one: a close racing an in-flight synthesis is still a crash,
-         * and quiescing before closing remains the caller's job.
+         * Claims this state for a synthesis on the current thread (reentrant - one utterance may
+         * hold it across many chunks). Fails fast: another thread synthesizing -> {@link
+         * java.util.ConcurrentModificationException}; closed -> {@link IllegalStateException}.
          */
-        void checkOpen() {
-            if (closed) throw new IllegalStateException("speech state is closed");
+        void enter() {
+            if (closed.get()) throw new IllegalStateException("speech state is closed");
+            if (!lock.tryLock()) {
+                // the holder is either another synthesis (a contract violation) or the winning
+                // closer draining us; `closed` says which
+                if (closed.get()) throw new IllegalStateException("speech state is closed");
+                throw new java.util.ConcurrentModificationException(
+                        "a speech state is a single serial pipeline (one synthesis at a time) -"
+                                + " for parallel pipelines create one state each");
+            }
+            if (closed.get()) { // barged the non-fair lock ahead of a draining closer
+                lock.unlock();
+                throw new IllegalStateException("speech state is closed");
+            }
+        }
+
+        /** Releases one {@link #enter} claim. */
+        void exit() {
+            lock.unlock();
+        }
+
+        /** True once {@link #close} has been called; entries then fail loudly. */
+        public boolean isClosed() {
+            return closed.get();
         }
 
         /**
-         * Frees the arena iff this state owns it. Idempotent, and it must come AFTER the last
-         * synthesis using this state returns — the kernels read raw addresses, so a live read from
-         * a closed arena is a crash, not an exception.
+         * Idempotent, BLOCKING close: returns only after the in-flight synthesis (if any) has
+         * finished, then frees the arena iff this state owns it. Its returning is therefore the
+         * caller's quiescence certificate - closing DURING a synthesis is safe, because it waits
+         * rather than freeing memory the kernels are reading. After close every entry fails with
+         * {@link IllegalStateException}. Racing closers return immediately (the CAS winner waits);
+         * closing from within this state's own synthesis throws instead of self-freeing.
          */
         @Override
         public void close() {
-            if (closed) return; // Arena.close is one-shot; this makes the state idempotent
-            closed = true;
-            disarm.run();
-            if (owned == null) return;
+            if (lock.isHeldByCurrentThread()) {
+                throw new IllegalStateException(
+                        "cannot close a speech state from within its own synthesis");
+            }
+            if (!closed.compareAndSet(false, true)) return; // Arena.close is one-shot
+            lock.lock(); // BLOCKS until the in-flight synthesis returns
             try {
-                owned.close();
-            } catch (UnsupportedOperationException nonCloseable) {
-                // an adopted ofAuto/global manages itself: owning it just means nothing to free
+                disarm.run();
+                if (owned == null) return;
+                try {
+                    owned.close();
+                } catch (UnsupportedOperationException nonCloseable) {
+                    // an adopted ofAuto/global manages itself: owning it means nothing to free
+                }
+            } finally {
+                lock.unlock();
             }
         }
 

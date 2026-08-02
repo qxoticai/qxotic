@@ -206,6 +206,10 @@ public final class InflectTTS
             Inflect2.State state, String text, SpeechOptions options, Predicate<Media.Audio> sink) {
         double speed = speed(options);
         List<String> chunks = split(text);
+        // Claim the state for the WHOLE utterance, not per chunk: a close arriving between chunks
+        // would otherwise free the arena mid-utterance. Reentrant, so the per-chunk synthesize
+        // nests inside this one.
+        state.enter();
         try {
             for (int i = 0; i < chunks.size(); i++) {
                 if (i > 0 && !sink.test(silence(pauseSamples(chunks.get(i - 1))))) return;
@@ -214,6 +218,8 @@ public final class InflectTTS
             }
         } catch (IOException e) {
             throw new UncheckedIOException(e);
+        } finally {
+            state.exit();
         }
     }
 
