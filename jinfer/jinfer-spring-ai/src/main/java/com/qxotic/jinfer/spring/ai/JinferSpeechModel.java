@@ -21,6 +21,7 @@ import org.springframework.ai.audio.tts.TextToSpeechOptions;
 import org.springframework.ai.audio.tts.TextToSpeechPrompt;
 import org.springframework.ai.audio.tts.TextToSpeechResponse;
 import reactor.core.publisher.Flux;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * One model, one synthesis state, one lock. A jinfer speech state is ONE SERIAL PIPELINE, so
@@ -97,7 +98,7 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
     public Flux<TextToSpeechResponse> stream(TextToSpeechPrompt prompt) {
         String text = text(prompt);
         SpeechOptions options = options(prompt);
-        return Flux.create(
+        return Flux.<TextToSpeechResponse>create(
                 emitter -> {
                     lock.lock();
                     try {
@@ -119,7 +120,12 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
                     } finally {
                         lock.unlock();
                     }
-                });
+                })
+                // The synthesis is BLOCKING and holds the pipeline for its whole emission, so it
+                // must not run on the subscriber's thread - in WebFlux that is an event-loop
+                // thread, and parking one there stalls every other request on that loop. The chat
+                // side solves the same problem with the engine's own driver thread.
+                .subscribeOn(Schedulers.boundedElastic());
     }
 
     private String text(TextToSpeechPrompt prompt) {
