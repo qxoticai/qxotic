@@ -143,7 +143,15 @@ public final class Server {
         // so a fixed pool also caps the threads slow-loris connections can pin
         server.setExecutor(Executors.newFixedThreadPool(ServerFlags.SERVER_THREADS));
         server.start();
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> server.stop(1)));
+        Runtime.getRuntime()
+                .addShutdownHook(
+                        new Thread(
+                                () -> {
+                                    server.stop(1);
+                                    // the engine owns states and cache blobs now; free them after
+                                    // the listener stops rather than leaving it to process exit
+                                    generation.close();
+                                }));
         System.out.printf(
                 "OpenAI-compatible server listening on http://%s:%d%n",
                 options.host(), server.getAddress().getPort());

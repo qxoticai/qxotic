@@ -1,12 +1,10 @@
 package com.qxotic.jinfer.server;
 
 import com.qxotic.jinfer.*;
-import com.qxotic.jinfer.cache.CacheStore;
 import com.qxotic.jinfer.cache.PromptCache;
-import com.qxotic.jinfer.cache.SessionPool;
 import com.qxotic.jinfer.cache.StateCodec;
+import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.ChatTemplate;
-import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.JinjaChatTemplate;
 import com.qxotic.jinfer.chat.JsonCodec;
 import com.qxotic.jinfer.chat.LoadedModel;
@@ -17,7 +15,6 @@ import com.qxotic.jinfer.chat.RequestPolicy;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.chat.ToolCallSyntax;
-import com.qxotic.jinfer.chat.UnsupportedConversation;
 import com.qxotic.jinfer.chat.Values;
 import com.qxotic.jinfer.llm.*;
 import com.qxotic.jinfer.llm.Generator.GenerationResult;
@@ -52,10 +49,9 @@ final class Generation {
     private final ChatTemplate template; // memoized model framing, null when the model has none
     private final JinjaChatTemplate jinjaTemplate; // whole-render fallback, compiled once
     private final Set<Integer> stopTokens; // memoized model stops
-    private final PromptCache<?>
-            promptCache; // per-model cache; null without a StateCodec or when disabled
-    private final SessionPool<?>
-            sessionPool; // tier 1: last-N live conversations (append-only reuse)
+    // The shared runtime: template stack, sampling policy, block tree and session pool. This
+    // class predates all of it and had its own of each; what remains here is the OpenAI wire.
+    private final ChatEngine engine;
 
     Generation(LoadedModel<?> chatModel, LLMOptions options) {
         this.servedModel = options.modelPath().getFileName().toString();
@@ -64,15 +60,13 @@ final class Generation {
         this.template = chatModel.template().orElse(null);
         this.jinjaTemplate = new JinjaChatTemplate(model.tokenizer(), model.chatTemplateSource());
         this.stopTokens = model.stopTokens();
-        this.promptCache = RuntimeFlags.PROMPT_CACHE ? buildCache(model) : null;
-        this.sessionPool = promptCache != null ? new SessionPool<>(RuntimeFlags.SESSIONS) : null;
+        // borrowed weights: the server loaded the model and keeps its arena
+        this.engine = new ChatEngine(chatModel, servedModel, null, RuntimeFlags.SESSIONS);
     }
 
-    private static <S extends RuntimeState> PromptCache<S> buildCache(LoadedModel<S> m) {
-        StateCodec<S> codec = m.model().stateCodec().orElse(null);
-        if (codec == null) return null;
-        return new PromptCache<>(
-                codec, CacheStore.inMemory(), RuntimeFlags.PROMPT_CACHE_BUDGET_BYTES, m.seed());
+    /** Frees the engine's states and blocks; the weights arena stays the server's. */
+    void close() {
+        engine.close();
     }
 
     // ---- chat / completion -------------------------------------------------
@@ -88,57 +82,91 @@ final class Generation {
     }
 
     private Reply recorded(Reply reply) {
-        Metrics.record(servedModel, reply);
+        Metrics.record(reply);
         return reply;
     }
 
     private Reply chat0(Map<String, Object> request, List<Object> messages, Sinks sinks) {
         boolean tools = ToolUse.offered(request);
-        // Codec path: the model's own framing, whenever the template supports the conversation
-        // byte-exactly. Forced calls ride it too when the template declares its call seed (the
-        // seed batch + prefix-pin + epilogue recipe, same as the langchain4j provider); only
-        // templates without the hook, or a named choice the request does not offer, still take
-        // the whole-render legacy path. Caching is a separate, optional layer on top.
-        if (template != null && nativeForcedOk(request) && onlyKnownKwargs(request)) {
-            List<Message> turns = toConversation(messages);
-            if (turns != null) {
-                Conversation conversation =
-                        new Conversation(
-                                turns,
-                                tools ? buildTools(request) : List.of(),
-                                requestThink(request),
-                                "");
-                try {
-                    Reply reply = chatTemplated(model, request, conversation, sinks);
-                    // Bare-call recovery (llama.cpp #21242): LFM2.5 sometimes emits pythonic
-                    // calls WITHOUT its markers; the structural parser found nothing, so run the
-                    // string-scan fallback (no-op when the parser produced calls; names
-                    // allow-listed).
-                    return tools ? ToolUse.parse(model, reply, request) : reply;
-                } catch (UnsupportedConversation fallback) {
-                    // the port cannot frame this shape byte-exactly: whole-render below
-                }
-            }
-        }
+        List<Message> turns = toConversation(messages);
         Map<String, Object> kwargs =
                 request.get("chat_template_kwargs") instanceof Map<?, ?> kw
                         ? (Map<String, Object>) kw
                         : null;
-        IntSequence promptTokens =
-                ToolUse.seedForced(
-                        model.tokenizer(),
+        // ONE lowering for both framings. prepare() tries the model's own codec and falls back to
+        // the scrubbed whole-render itself - the decision this class used to make by hand, with a
+        // second prompt build behind it. Forced calls, the think floor, the grammar and the parser
+        // seed all ride the shared recipe.
+        ChatEngine.Request lowered =
+                new ChatEngine.Request(
+                        turns,
+                        tools ? buildTools(request) : List.of(),
+                        requestThink(request),
+                        maxTokens(request),
+                        ServerFlags.SERVER_REQUEST_TIMEOUT_NANOS,
+                        Values.floatValue(request.get("temperature"), options.temperature()),
+                        Values.floatValue(request.get("top_p"), options.topp()),
+                        Values.longValue(request.get("seed"), options.seed()),
+                        grammarSpec(request),
+                        ToolUse.forced(request) != null && nativeForcedOk(request),
+                        false,
+                        textStops(request.get("stop")),
+                        kwargs);
+        Reply reply =
+                run(
+                        lowered,
+                        () -> messages,
+                        () -> tools ? Values.asArray(request.get("tools"), "tools") : null,
                         request,
-                        jinjaTemplate.render(
-                                messages,
-                                tools ? Values.asArray(request.get("tools"), "tools") : null,
-                                true,
-                                requestThink(request),
-                                kwargs));
-        if (System.getProperty("jinfer.debugPrompt") != null) {
-            System.err.println("[prompt] " + model.tokenizer().decode(promptTokens));
-        }
-        Reply reply = generate(request, promptTokens, sinks);
+                        sinks);
+        // Bare-call recovery (llama.cpp #21242): LFM2.5 sometimes emits pythonic calls WITHOUT its
+        // markers, so the structural parser finds nothing; the string scan is a no-op otherwise.
         return tools ? ToolUse.parse(model, reply, request) : reply;
+    }
+
+    /** Generate through the engine and shape the reply the OpenAI schema expects. */
+    private Reply run(
+            ChatEngine.Request lowered,
+            java.util.function.Supplier<List<Object>> messageMaps,
+            java.util.function.Supplier<List<Object>> toolMaps,
+            Map<String, Object> request,
+            Sinks sinks) {
+        ChatEngine.Prepared prepared = engine.prepare(lowered, messageMaps, toolMaps);
+        // stops belong to the engine now: it holds back a could-still-be-a-stop suffix and ends the
+        // pass, so the router only accumulates and projects inline reasoning
+        FragmentRouter router =
+                new FragmentRouter(
+                        List.of(), sinks.onText(), sinks.onReasoning(), inlineReasoning(request));
+        ChatEngine.Completion done =
+                engine.complete(
+                        prepared,
+                        new ChatEngine.ReplySink() {
+                            @Override
+                            public void content(String delta) {
+                                router.fragment(delta, false);
+                            }
+
+                            @Override
+                            public void thinking(String delta) {
+                                router.fragment(delta, true);
+                            }
+
+                            @Override
+                            public boolean cancelled() {
+                                return false; // the worker owns the request; SSE has its watchdog
+                            }
+                        });
+        router.flush();
+        int billed = consumedPromptTokens(model.tokenizer(), prepared.encoded().prompt());
+        OpenAiSchema.Usage usage = sinks.usage();
+        if (usage != null) {
+            usage.promptTokens = billed;
+            usage.cachedTokens = done.restoredTokens();
+            usage.completionTokens = done.result().completionTokens();
+        }
+        Metrics.recordPromptCache(done.tier() == ChatEngine.Tier.SESSION, done.restoredTokens());
+        return router.reply(
+                done.result(), done.reply(), billed, done.restoredTokens(), lowered.stops());
     }
 
     /** Forced requests stay native only when the template's forced-call recipe covers them. */
@@ -259,71 +287,6 @@ final class Generation {
      * from text - best-effort, but the framing is byte-exact with the model's Jinja template
      * (validated by the per-model oracle), so a stable client echo reuses the whole prefix.
      */
-    private <S extends RuntimeState> Reply chatTemplated(
-            LoadedModel<S> m, Map<String, Object> request, Conversation conversation, Sinks sinks) {
-        // Batch-aligned blocks: the codec's batch boundaries are its turn-stable cache boundaries
-        // (preamble, each turn, scaffold last) - so a follow-up request that diverges after turn
-        // k still reuses turns 0..k-1 (blocks match completely, so one giant block would be
-        // unusable the moment the conversation grows).
-        List<List<Batch>> groups = new ArrayList<>();
-        for (Batch b : template.encode(conversation)) groups.add(List.of(b));
-        if (ToolUse.forced(request) != null) {
-            // the forcing trick: the family's call marker joins the prompt, so the model can
-            // only COMPLETE a call (the parser is pre-fed the same seed in runGeneration)
-            groups.add(List.of(Batch.prefill(template.callSeed())));
-        }
-
-        int total = 0;
-        for (List<Batch> group : groups) for (Batch b : group) total += b.count();
-        @SuppressWarnings("unchecked")
-        PromptCache<S> cache = (PromptCache<S>) promptCache;
-        if (cache == null) {
-            S state = m.model().newState(m.model().config().contextLength());
-            List<Batch> all = new ArrayList<>(); // uncached: plain ingest, framing unchanged
-            for (List<Batch> group : groups) all.addAll(group);
-            for (Batch b : Batch.prepare(all, state.batchCapacity())) m.model().ingest(state, b);
-            return generateFrom(m, state, request, sinks, 0);
-        }
-        // Tier 1: a live pooled session whose whole stream strictly prefixes this conversation
-        // continues append-only (no restore at all). Otherwise tier 2: resume the longest block
-        // prefix into a fresh state - the pool derives both from the groups (content addressing
-        // is the cache package's own law; the server never sees it).
-        @SuppressWarnings("unchecked")
-        SessionPool<S> pool = (SessionPool<S>) sessionPool;
-        int billed = total;
-        return pool.withSession(
-                m.model(),
-                cache,
-                () -> m.model().newState(m.model().config().contextLength()),
-                groups,
-                (session, tier1) -> {
-                    int restored = session.position(); // reused positions: a BLOCK boundary
-                    session.ingestGroups(groups); // (or the pooled stream end), not
-                    // necessarily a group one - the
-                    // session slices the partial group
-                    Metrics.recordPromptCache(tier1, restored);
-                    if (System.getProperty("jinfer.debugPrompt") != null) {
-                        System.err.printf(
-                                "[prompt-cache] %s %d/%d positions reused (%s)%n",
-                                tier1 ? "tier1-append" : "tier2-restore",
-                                restored,
-                                billed,
-                                cache.stats());
-                    }
-                    // decode from the retained logits (empty prompt continues at the cursor);
-                    // the whole prompt was billed, of which `restored` came from the cache
-                    Reply result = generateFrom(m, session.state(), request, sinks, restored);
-                    // Bring the decode back into the session (the generator stepped the state
-                    // directly): the reply extends the stream and commits as a block, and the
-                    // live session returns to the pool ready for the next echo to continue
-                    // append-only.
-                    int ingested = session.state().position() - billed;
-                    if (ingested > 0)
-                        session.adopt(result.tokens().subSequence(0, ingested).toList());
-                    return result;
-                });
-    }
-
     Reply completion(Map<String, Object> request, String prompt, Sinks sinks) {
         return recorded(completion0(request, prompt, sinks));
     }
@@ -336,8 +299,81 @@ final class Generation {
     }
 
     /** One pass through the tokens-only {@link Generator}: a fresh state prefills the prompt. */
+    /**
+     * A raw prompt is a conversation that is already encoded, so it skips the template stack and
+     * lowers straight to a {@link ChatEngine.Prepared} - the same generation pass, sampling policy,
+     * stop handling and telemetry as chat, with no framing of its own.
+     */
     private Reply generate(Map<String, Object> request, IntSequence promptTokens, Sinks sinks) {
-        return runGeneration(model, null, request, promptTokens, sinks, 0);
+        int maxTokens = maxTokens(request);
+        boolean think = requestThink(request);
+        Grammar.Spec grammar = grammarSpec(request);
+        Sampler sampler =
+                RequestPolicy.sampler(
+                        model,
+                        Values.floatValue(request.get("temperature"), options.temperature()),
+                        Values.floatValue(request.get("top_p"), options.topp()),
+                        Values.longValue(request.get("seed"), options.seed()),
+                        think,
+                        maxTokens,
+                        reasoningMax(request));
+        if (grammar != null) {
+            sampler = RequestPolicy.constrained(model, sampler, grammar.cursor(), think);
+        }
+        List<Batch> prompt = List.of(Batch.prefill(promptTokens.toArray()));
+        ChatEngine.Prepared prepared =
+                new ChatEngine.Prepared(
+                        new ChatEngine.Encoded(prompt, java.util.Optional.empty()),
+                        sampler,
+                        maxTokens,
+                        ServerFlags.SERVER_REQUEST_TIMEOUT_NANOS,
+                        promptTokens.length(),
+                        new int[0], // no template, so no reply-grammar tail to pre-feed
+                        textStops(request.get("stop")),
+                        false,
+                        false); // a completion offers no tools, so call syntax stays text
+        FragmentRouter router =
+                new FragmentRouter(
+                        List.of(), sinks.onText(), sinks.onReasoning(), inlineReasoning(request));
+        ChatEngine.Completion done =
+                engine.complete(
+                        prepared,
+                        new ChatEngine.ReplySink() {
+                            @Override
+                            public void content(String delta) {
+                                router.fragment(delta, false);
+                            }
+
+                            @Override
+                            public void thinking(String delta) {
+                                router.fragment(delta, true);
+                            }
+
+                            @Override
+                            public boolean cancelled() {
+                                return false;
+                            }
+                        });
+        router.flush();
+        int billed = consumedPromptTokens(model.tokenizer(), promptTokens);
+        OpenAiSchema.Usage usage = sinks.usage();
+        if (usage != null) {
+            usage.promptTokens = billed;
+            usage.cachedTokens = done.restoredTokens();
+            usage.completionTokens = done.result().completionTokens();
+        }
+        return router.reply(
+                done.result(),
+                done.reply(),
+                billed,
+                done.restoredTokens(),
+                textStops(request.get("stop")));
+    }
+
+    /** The server's per-request override of the half-budget reasoning default. */
+    private static Integer reasoningMax(Map<String, Object> request) {
+        Object rmt = request.get("reasoning_max_tokens");
+        return rmt == null ? null : Values.intValue(rmt, -1);
     }
 
     /** Prompt size as billed to the client: a leading BOS is template overhead, not user input. */
@@ -347,141 +383,6 @@ final class Generation {
             return promptTokens.length() - 1;
         }
         return promptTokens.length();
-    }
-
-    /**
-     * Decode a request onto an already-resumed state (empty prompt, the state continues at its
-     * cursor); {@code cachedTokens} is the restored prefix length billed to the client.
-     */
-    private <S extends RuntimeState> Reply generateFrom(
-            LoadedModel<S> m, S state, Map<String, Object> request, Sinks sinks, int cachedTokens) {
-        return runGeneration(m, state, request, IntSequence.empty(), sinks, cachedTokens);
-    }
-
-    /**
-     * Request sampling/limit fields plus the decode-side plumbing, then one generation pass. The
-     * model's {@link ReplyParser} structures the raw token stream into text / reasoning / tool-call
-     * parts, routed to the streaming sinks live and coalesced into the {@link Reply}. Streaming
-     * counters mirror the final usage: generated tokens are counted unless they are the trailing
-     * stop token removed from the result.
-     */
-    private <S extends RuntimeState> Reply runGeneration(
-            LoadedModel<S> m,
-            S resumedState,
-            Map<String, Object> request,
-            IntSequence promptTokens,
-            Sinks sinks,
-            int cachedTokens) {
-        Tokenizer tokenizer = m.tokenizer();
-        OpenAiSchema.Usage usageCounts = sinks.usage();
-        float temperature = Values.floatValue(request.get("temperature"), options.temperature());
-        float topp = Values.floatValue(request.get("top_p"), options.topp());
-        long seed = Values.longValue(request.get("seed"), options.seed());
-        int maxTokens =
-                Values.intValue(
-                        request.getOrDefault("max_tokens", request.get("max_completion_tokens")),
-                        options.maxTokens());
-        // server-side completion-token ceiling: an unbounded (or oversized) request can never run
-        // the worker past jinfer.serverMaxTokens; hitting it reports finish_reason "length"
-        if (ServerFlags.SERVER_MAX_TOKENS > 0)
-            maxTokens =
-                    maxTokens < 0
-                            ? ServerFlags.SERVER_MAX_TOKENS
-                            : Math.min(maxTokens, ServerFlags.SERVER_MAX_TOKENS);
-        // defense in depth: server requests were already checked by validateGenerationParams on the
-        // handler thread; these guards keep the method safe for any future non-HTTP caller
-        LLMOptions.require(Values.intValue(request.get("n"), 1) == 1, "Only n=1 is supported");
-        LLMOptions.require(0 <= maxTokens, "Invalid argument: max_tokens must be non-negative");
-        List<String> textStops = textStops(request.get("stop"));
-        // Forced call on the CODEC path: only chatTemplated seeds callSeed into the prompt, and
-        // it always arrives here with a resumed state - the whole-render fallback (legacy
-        // seedForced marker) must NOT get the pin or the parser pre-feed. requestThink already
-        // turns thinking off for any forced request.
-        boolean forced = resumedState != null && ToolUse.forced(request) != null;
-        boolean think = requestThink(request);
-        // the shared sampling stack (RequestPolicy): base sampling + the reasoning policy;
-        // reasoning_max_tokens is the server's per-request override of the half-budget default
-        Object rmt = request.get("reasoning_max_tokens");
-        Sampler sampler =
-                RequestPolicy.sampler(
-                        model,
-                        temperature,
-                        topp,
-                        seed,
-                        think,
-                        maxTokens,
-                        rmt == null ? null : Values.intValue(rmt, -1));
-        Grammar.Cursor grammarCursor = buildGrammarCursor(tokenizer, request);
-        if (grammarCursor != null) {
-            // shared wiring (RequestPolicy.constrained): think-gated, newline-skipped, dead-ending
-            // on one of the model's OWN stops (previously a vocab scan for <eos>, which is not
-            // guaranteed to be a stop token - the pin path always used stops.first)
-            sampler = RequestPolicy.constrained(model, sampler, grammarCursor, think);
-        }
-        // the shared forced-call recipe: prefix-pin the offered (or THE named) tool + the
-        // family epilogue, and the parser pre-feed below starts in the seeded span state
-        // (chatTemplated already put the call seed in the prompt on this path)
-        RequestPolicy.ForcedCall forcedCall =
-                forced
-                        ? RequestPolicy.forceCall(model, pinTools(request), sampler).orElseThrow()
-                        : null;
-        if (forcedCall != null) sampler = forcedCall.sampler();
-        // Billed prompt: the whole conversation. On the cached path the state is pre-resumed to the
-        // full prompt (position == total), of which cachedTokens were restored from the cache.
-        int billedPrompt =
-                resumedState != null
-                        ? resumedState.position()
-                        : consumedPromptTokens(tokenizer, promptTokens);
-        if (usageCounts != null) usageCounts.promptTokens = billedPrompt;
-
-        // Decode side: the model's parser structures the reply. Without tools a plain span
-        // parser (no call claimer) keeps the behavior: markers drop as specials, payload text
-        // stays visible.
-        ReplyParser parser =
-                ToolUse.offered(request) && template != null
-                        ? template.parser()
-                        : ReplyParser.spans(tokenizer);
-        // pre-feed the prompt's reply-grammar tail - the parser starts in the exact span
-        // state the prompt left the model in (without this, a prompt-opened think span routes
-        // reasoning into the CONTENT channel); a forced call uses the recipe's own pre-feed
-        if (forcedCall != null) {
-            for (int t : forcedCall.parserSeed()) parser.feed(t);
-        } else if (template != null) {
-            for (int t : template.replySeed(think)) parser.feed(t);
-        }
-        FragmentRouter router =
-                new FragmentRouter(
-                        textStops, sinks.onText(), sinks.onReasoning(), inlineReasoning(request));
-        Generator.TokenSink sink =
-                token -> {
-                    if (usageCounts != null) {
-                        usageCounts.cachedTokens = cachedTokens;
-                        if (!stopTokens.contains(token)) usageCounts.completionTokens++;
-                    }
-                    String fragment = parser.feed(token);
-                    if (!fragment.isEmpty()) router.fragment(fragment, parser.reasoning());
-                    return !router.stopped();
-                };
-        S state =
-                resumedState != null
-                        ? resumedState
-                        : m.model()
-                                .newState(
-                                        m.model().config().contextLength(),
-                                        Math.max(promptTokens.length(), 16));
-        GenerationResult result =
-                Generator.generate(
-                        m.model(),
-                        state,
-                        promptTokens,
-                        sampler,
-                        maxTokens,
-                        ServerFlags.SERVER_REQUEST_TIMEOUT_NANOS,
-                        stopTokens,
-                        sink);
-        Message structured = parser.finish();
-        router.flush();
-        return router.reply(result, structured, billedPrompt, cachedTokens, textStops);
     }
 
     /**
@@ -579,18 +480,41 @@ final class Generation {
      * Builds a grammar cursor from request params: {@code grammar} (GBNF string) or {@code
      * response_format: {type: "json_object"}}. Returns null when no constraint.
      */
-    private static Grammar.Cursor buildGrammarCursor(
-            Tokenizer tokenizer, Map<String, Object> request) {
+    /** The request's output grammar, if any; the engine turns it into a cursor. */
+    private Grammar.Spec grammarSpec(Map<String, Object> request) {
         if (!RuntimeFlags.GRAMMAR) return null;
+        Tokenizer tokenizer = model.tokenizer();
         Object gbnf = request.get("grammar");
-        if (gbnf instanceof String s && !s.isBlank()) {
-            return Grammar.of(s, tokenizer).cursor();
+        if (gbnf instanceof String g && !g.isBlank()) {
+            return Grammar.of(g, tokenizer);
         }
         Object fmt = request.get("response_format");
         if (fmt instanceof Map<?, ?> f && "json_object".equals(f.get("type"))) {
-            return Grammar.json(tokenizer).cursor();
+            return Grammar.json(tokenizer);
         }
         return null;
+    }
+
+    /** Request budget under the server's own ceiling ({@code jinfer.serverMaxTokens}). */
+    private int maxTokens(Map<String, Object> request) {
+        int maxTokens =
+                Values.intValue(
+                        request.getOrDefault("max_tokens", request.get("max_completion_tokens")),
+                        options.maxTokens());
+        LLMOptions.require(Values.intValue(request.get("n"), 1) == 1, "Only n=1 is supported");
+        LLMOptions.require(0 <= maxTokens, "Invalid argument: max_tokens must be non-negative");
+        if (ServerFlags.SERVER_MAX_TOKENS > 0) {
+            maxTokens =
+                    maxTokens < 0
+                            ? ServerFlags.SERVER_MAX_TOKENS
+                            : Math.min(maxTokens, ServerFlags.SERVER_MAX_TOKENS);
+        }
+        return maxTokens;
+    }
+
+    /** Prompt size as billed: a leading BOS is template overhead, not user input. */
+    private static int consumedPromptTokens(Tokenizer tokenizer, List<Batch> prompt) {
+        return consumedPromptTokens(tokenizer, IntSequence.wrap(Batch.tokenIds(prompt)));
     }
 
     /**

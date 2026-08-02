@@ -2,8 +2,6 @@ package com.qxotic.jinfer.server;
 
 import com.qxotic.jinfer.*;
 import com.qxotic.jinfer.llm.*;
-import com.qxotic.jinfer.telemetry.InferenceEvent;
-import com.qxotic.jinfer.telemetry.Telemetry;
 
 /**
  * Server observability: lifetime request/token counters and the Prometheus text exposition
@@ -23,33 +21,15 @@ final class Metrics {
     /**
      * Record one finished generation (called on the worker thread).
      *
-     * <p>Also emits {@code jinfer.Inference}: the server runs {@link Generator} directly rather
-     * than through {@code ChatEngine}, so this is its own generation seam and nothing else would
-     * report a served request. The Prometheus counters below stay - they are five volatiles that
-     * aggregate for a scrape endpoint, and rebuilding them on a {@code RecordingStream} would add
-     * an always-on recording and a background thread to compute the same numbers.
+     * <p>Prometheus counters ONLY. jinfer.Inference is emitted by ChatEngine, which the server now
+     * generates through - this class emitted it too while the server had its own pass, and kept
+     * emitting after the migration until a test caught two events per request. These five volatiles
+     * stay because a scrape endpoint is a different consumer than a JFR recording.
      */
-    static void record(String model, Reply reply) {
+    static void record(Reply reply) {
         requests++;
         promptTokens += reply.promptTokens();
         completionTokens += reply.completionTokens();
-
-        InferenceEvent event =
-                InferenceEvent.started(model, InferenceEvent.CHAT, InferenceEvent.TEXT);
-        if (!event.isEnabled()) return;
-        event.inputTokens = reply.promptTokens();
-        event.outputTokens = reply.completionTokens();
-        event.cachedTokens = reply.cachedTokens();
-        event.reasoningTokens = 0; // the server carries reasoning as text, not as counted ids
-        event.queueTime = Telemetry.takeQueueWait();
-        Generator.GenerationResult result = reply.result();
-        if (result != null) {
-            event.prefillTime = result.promptNanos();
-            event.decodeTime = result.predictedNanos();
-        }
-        if (reply.finishReason() != null) event.finishReason = reply.finishReason();
-        event.end();
-        event.commit();
     }
 
     /**
