@@ -20,6 +20,21 @@ Each script takes the model path as a trailing argument if you'd rather be expli
 | `Search.java` | semantic search, no vector database | Qwen3-Embedding-0.6B |
 | `Rerank.java` | cross-encoder reranking, the second stage of RAG | Qwen3-Reranker-0.6B |
 | `CachedPrompt.java` | prompt caching, with a measured speedup | Llama-3.2-1B |
+| `Detect.java` | object detection with the boxes **drawn** on the image | Gemma 4 E2B + mmproj |
+
+## Vision
+
+`Detect.java` is the Gemma detection guide, ported and finished: the model returns normalized
+0-1024 boxes as JSON, and the script rescales them onto the real pixels and writes `detected.png`.
+
+```bash
+jbang Detect.java photo.jpg "person, dog, bicycle"
+```
+
+Detection is prompt-driven — the same model that describes an image localizes in it, so there is no
+detector to train, load or wire up. Field order in the JSON is not stable (`box_2d` comes before
+`label` about as often as after), so the parser reads each object's fields independently rather
+than assuming a layout.
 
 ## The two worth reading first
 
