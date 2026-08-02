@@ -491,8 +491,8 @@ public final class ChatEngine {
      * <p>Blocking is streaming with a sink that discards: {@code complete(p, ReplySink.NONE)}.
      */
     public Completion complete(Prepared prepared, ReplySink out) {
-        InferenceEvent event = new InferenceEvent();
-        event.begin();
+        InferenceEvent event =
+                InferenceEvent.started(modelName, InferenceEvent.CHAT, InferenceEvent.TEXT);
         try {
             Completion completion = complete0(prepared, out);
             record(event, prepared, completion);
@@ -509,15 +509,10 @@ public final class ChatEngine {
 
     /** Fills the telemetry event from a finished pass; a cancelled pass reports no reply. */
     private void record(InferenceEvent event, Prepared prepared, Completion completion) {
-        event.model = modelName;
-        event.operation = InferenceEvent.CHAT;
-        // JSON when a grammar binds the output channel; Prepared does not carry that yet, so
-        // Phase 1 reports text and the distinction lands with the grammar accessor.
-        event.outputType = InferenceEvent.TEXT;
+        // outputType stays TEXT until Prepared carries the grammar; JSON lands with that accessor
         event.inputTokens = prepared.promptTokens();
         event.cachedTokens = completion.restoredTokens();
         event.queueTime = Telemetry.takeQueueWait(); // 0 unless something queued this thread
-        event.errorType = "";
         Generator.GenerationResult result = completion.result();
         if (result != null) {
             event.outputTokens = result.completionTokens();

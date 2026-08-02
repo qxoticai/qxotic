@@ -584,13 +584,11 @@ public final class Server {
         if (!worker.submitAndWait(work)) {
             // a shed request never reaches the engine, so nothing else would report it - and going
             // silent exactly when the server is saturated is the worst possible time to do so
-            InferenceEvent rejected = new InferenceEvent();
-            if (rejected.isEnabled()) {
-                rejected.model = servedModel;
-                rejected.operation = InferenceEvent.CHAT;
-                rejected.errorType = "queue-full";
-                rejected.commit();
-            }
+            InferenceEvent rejected =
+                    InferenceEvent.started(servedModel, InferenceEvent.CHAT, InferenceEvent.TEXT);
+            rejected.errorType = "queue-full";
+            rejected.end();
+            rejected.commit();
             exchange.getResponseHeaders()
                     .set("Retry-After", String.valueOf(Worker.retryAfterSeconds()));
             Http.sendError(

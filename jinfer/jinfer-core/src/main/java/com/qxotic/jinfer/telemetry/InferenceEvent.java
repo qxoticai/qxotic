@@ -64,6 +64,27 @@ public final class InferenceEvent extends Event {
     public static final String JSON = "json";
     public static final String SPEECH = "speech";
 
+    /**
+     * A started event with the identity fields set and the string fields defaulted to empty rather
+     * than null - every emission site goes through here.
+     *
+     * <p>There are several such sites (chat, embeddings, the server's own generation seam, a
+     * rejected request) and hand-filling them let the defaults drift once already: a rejected
+     * request reported a null {@code outputType} and {@code finishReason} while every other path
+     * reported a string. A consumer filtering on those fields silently missed a whole class of
+     * event. Fill identity and defaults in one place; callers add only what they measured.
+     */
+    public static InferenceEvent started(String model, String operation, String outputType) {
+        InferenceEvent event = new InferenceEvent();
+        event.model = model;
+        event.operation = operation;
+        event.outputType = outputType;
+        event.finishReason = "";
+        event.errorType = "";
+        event.begin();
+        return event;
+    }
+
     @Label("Model")
     public String model;
 

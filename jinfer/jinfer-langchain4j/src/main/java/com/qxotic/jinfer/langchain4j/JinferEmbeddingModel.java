@@ -102,14 +102,13 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
         List<Embedding> out = new ArrayList<>(segments.size());
         int dim = loaded.dimension();
         int total;
-        InferenceEvent event = new InferenceEvent();
-        event.begin();
+        InferenceEvent event =
+                InferenceEvent.started(modelName, InferenceEvent.EMBEDDINGS, InferenceEvent.TEXT);
         long startNanos = System.nanoTime();
         lock.lock();
         try {
             total = loaded.embedAll(state, contextLength, texts, v -> out.add(toEmbedding(v, dim)));
             event.inputTokens = total;
-            event.errorType = "";
         } catch (RuntimeException | Error failure) {
             event.errorType = failure.getClass().getSimpleName();
             throw failure;
@@ -117,9 +116,6 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
             lock.unlock();
             event.end();
             // an encode has no decode loop, so outputTokens and decodeTime are a true zero here
-            event.model = modelName;
-            event.operation = InferenceEvent.EMBEDDINGS;
-            event.outputType = InferenceEvent.TEXT;
             event.prefillTime = System.nanoTime() - startNanos;
             event.commit();
         }

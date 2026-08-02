@@ -34,11 +34,9 @@ final class Metrics {
         promptTokens += reply.promptTokens();
         completionTokens += reply.completionTokens();
 
-        InferenceEvent event = new InferenceEvent();
+        InferenceEvent event =
+                InferenceEvent.started(model, InferenceEvent.CHAT, InferenceEvent.TEXT);
         if (!event.isEnabled()) return;
-        event.model = model;
-        event.operation = InferenceEvent.CHAT;
-        event.outputType = InferenceEvent.TEXT;
         event.inputTokens = reply.promptTokens();
         event.outputTokens = reply.completionTokens();
         event.cachedTokens = reply.cachedTokens();
@@ -49,8 +47,8 @@ final class Metrics {
             event.prefillTime = result.promptNanos();
             event.decodeTime = result.predictedNanos();
         }
-        event.finishReason = reply.finishReason() == null ? "" : reply.finishReason();
-        event.errorType = "";
+        if (reply.finishReason() != null) event.finishReason = reply.finishReason();
+        event.end();
         event.commit();
     }
 
