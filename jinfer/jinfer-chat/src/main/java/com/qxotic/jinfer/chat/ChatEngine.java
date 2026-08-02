@@ -9,6 +9,7 @@ import com.qxotic.jinfer.cache.CacheStore;
 import com.qxotic.jinfer.cache.CachedSession;
 import com.qxotic.jinfer.cache.FrozenBlocks;
 import com.qxotic.jinfer.cache.PromptCache;
+import com.qxotic.jinfer.cache.SessionPool;
 import com.qxotic.jinfer.cache.StateCodec;
 import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.Grammar;
@@ -20,7 +21,6 @@ import com.qxotic.toknroll.IntSequence;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Path;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -50,7 +50,7 @@ public final class ChatEngine {
     private final PromptCache<?> prompts; // the cached-prompt block tree (null = unsupported)
     // cachedSessions(n): the last n live conversation states, reused append-only when a new
     // prompt's batch stream strictly extends one (all access under the generation lock)
-    private final ArrayDeque<LiveSession> sessions = new ArrayDeque<>();
+    private final SessionPool<?> pool;
     private final int sessionCapacity;
     // the streaming driver: at most ONE lazy platform thread, reused while streams keep coming,
     // gone after an idle minute. One is enough - generations serialize on the engine lock anyway,
@@ -81,7 +81,6 @@ public final class ChatEngine {
     private volatile PromptCache.Sample cacheSnapshot;
 
     /** A finished generation's state with the batch stream of everything ingested into it. */
-    private record LiveSession(RuntimeState state, List<Batch> stream, int positions) {}
 
     /** A loaded model with the arena this engine owns - {@code weights} null = the caller's. */
     private record Owned(LoadedModel<?> loaded, java.lang.foreign.Arena weights) {}
@@ -144,6 +143,7 @@ public final class ChatEngine {
         if (owned.loaded() == null) throw new IllegalArgumentException("null model");
         if (modelName == null) throw new IllegalArgumentException("null modelName");
         this.sessionCapacity = Math.max(0, cachedSessions);
+        this.pool = new SessionPool<>(this.sessionCapacity);
         this.weights = owned.weights();
         this.loaded = owned.loaded();
         this.modelName = modelName;
@@ -234,8 +234,7 @@ public final class ChatEngine {
             closed = true;
             leakWatch.run(); // disarm: this engine was closed properly
             Telemetry.unregister(cacheGauge); // stop sampling a cache that is about to be freed
-            for (LiveSession s : sessions) ((com.qxotic.jinfer.BaseState) s.state()).close();
-            sessions.clear();
+            pool.close();
             promptStore.close();
         } finally {
             lock.unlock();
@@ -631,8 +630,7 @@ public final class ChatEngine {
         lock.lock();
         try {
             checkOpen();
-            Outcome outcome =
-                    run(loaded.model(), prompt, sampler, maxTokens, timeoutNanos, sink, cached);
+            Outcome outcome = run(loaded.model(), prompt, sampler, maxTokens, timeoutNanos, sink);
             // sampled here, on the owning thread, while the lock still excludes other generations
             if (prompts != null) cacheSnapshot = prompts.sample();
             return outcome;
@@ -654,60 +652,78 @@ public final class ChatEngine {
             Sampler sampler,
             int maxTokens,
             long timeoutNanos,
-            Generator.TokenSink sink,
-            boolean cached) {
+            Generator.TokenSink sink) {
         int total = positions(prompt);
-        S state;
-        List<Batch> remaining;
-        int restored;
-        Tier tier;
-        Pooled pooled = acquireSession(prompt, total);
-        if (pooled != null) {
-            tier = Tier.SESSION;
-            sessionHits++;
-            @SuppressWarnings("unchecked")
-            S reused = (S) pooled.session().state();
-            state = reused;
-            restored = pooled.prefixPositions();
-            remaining = CachedSession.tail(prompt, restored);
-        } else if (cached) {
-            // Declared views only. Resuming EVERY prompt was tried and reverted: this method
-            // generates the tail through Generator directly and never commits blocks back, so
-            // only define() ever populates the tree - an always-on resume finds nothing to reuse.
-            // Making it real means adopting the commit flow the server's Generation still owns
-            // (resume, ingest through CachedSession, adopt the decode), not flipping this branch.
-            tier = Tier.BLOCKS;
-            state = obtainState(model, total);
-            CachedSession<S> resumed =
-                    CachedSession.resume(model, tree(), state, prompt, total - 1);
-            restored = resumed.position();
-            remaining = CachedSession.tail(prompt, restored);
-        } else {
-            tier = Tier.FRESH;
-            state = obtainState(model, total);
-            restored = 0;
-            remaining = prompt;
+        if (prompts == null) {
+            // no state codec: no tree, no pooling, every prompt prefills from scratch
+            S fresh = obtainState(model, total);
+            return new Outcome(
+                    generate(model, fresh, prompt, sampler, maxTokens, timeoutNanos, sink),
+                    0,
+                    Tier.FRESH);
         }
-        Generator.GenerationResult result;
+        // ONE group per batch, so the codec's turn boundaries ARE the block boundaries: a
+        // follow-up that diverges after turn k still reuses turns 0..k-1. A single giant block
+        // would be unusable the moment the conversation grows by a token.
+        List<List<Batch>> groups = new ArrayList<>(prompt.size());
+        for (Batch b : prompt) groups.add(List.of(b));
+        @SuppressWarnings("unchecked")
+        SessionPool<S> sessionPool = (SessionPool<S>) pool;
+        return sessionPool.withSession(
+                model,
+                tree(),
+                () -> obtainState(model, total),
+                groups,
+                (session, tier1) -> {
+                    int restored = session.position();
+                    if (tier1) sessionHits++;
+                    // commits what was not restored, block per group
+                    session.ingestGroups(groups);
+                    @SuppressWarnings("unchecked")
+                    S state = (S) session.state();
+                    Generator.GenerationResult result =
+                            generate(
+                                    model,
+                                    state,
+                                    List.of(),
+                                    sampler,
+                                    maxTokens,
+                                    timeoutNanos,
+                                    sink);
+                    // bring the decode back into the session: the reply extends the stream and
+                    // commits as a block, so the next turn's echo continues append-only
+                    int ingested = state.position() - total;
+                    if (ingested > 0) {
+                        session.adopt(result.tokens().subSequence(0, ingested).toList());
+                    }
+                    return new Outcome(result, restored, tier1 ? Tier.SESSION : Tier.BLOCKS);
+                });
+    }
+
+    /** One generation pass; a torn state is freed here rather than left to the Cleaner. */
+    private <S extends RuntimeState> Generator.GenerationResult generate(
+            LanguageModel<?, ?, S> model,
+            S state,
+            List<Batch> prompt,
+            Sampler sampler,
+            int maxTokens,
+            long timeoutNanos,
+            Generator.TokenSink sink) {
         try {
-            result =
-                    Generator.generate(
-                            model,
-                            state,
-                            Batch.prepare(remaining, state.batchCapacity()),
-                            sampler,
-                            maxTokens,
-                            timeoutNanos,
-                            loaded.stopTokens(),
-                            sink);
+            return Generator.generate(
+                    model,
+                    state,
+                    Batch.prepare(prompt, state.batchCapacity()),
+                    sampler,
+                    maxTokens,
+                    timeoutNanos,
+                    loaded.stopTokens(),
+                    sink);
         } catch (RuntimeException | Error e) {
-            // torn states never pool - and they must not wait for the Cleaner either: a server
-            // hammered by failing requests would otherwise stack full-context states until GC
+            // a server hammered by failing requests would otherwise stack full-context states
             ((com.qxotic.jinfer.BaseState) state).close();
             throw e;
         }
-        poolSession(state, prompt, total, result);
-        return new Outcome(result, restored, tier);
     }
 
     private static int positions(List<Batch> prompt) {
@@ -717,97 +733,25 @@ public final class ChatEngine {
     }
 
     /**
-     * The state for a pass that cannot extend a pooled session. THE POOL IS THE ALLOCATOR: at
-     * capacity, the oldest entry's allocation is recycled ({@code reset()} - mandatory on {@link
-     * com.qxotic.jinfer.BaseState}, so every family has decided what a fresh sequence must clear)
-     * rather than dropped, and only an empty pool allocates. A steady pipeline therefore allocates
-     * its context ONCE and reuses it for every later request - a full context is the dominant
-     * per-pipeline cost, and allocating it per request also pays first-touch page faults every
-     * time.
+     * A fresh context for a pass the pool could not serve. Allocated at FULL batch capacity, not
+     * prompt-sized: it serves every later request through the pool too, and one born from a
+     * 20-token prompt would chunk a 2000-token prefill into ~125 forwards.
+     *
+     * <p>{@link SessionPool} owns these once handed over - it frees an evicted session's state
+     * deterministically, so a steady pipeline holds N contexts and allocates no more.
      */
-    @SuppressWarnings("unchecked")
     private <S extends RuntimeState> S obtainState(LanguageModel<?, ?, S> model, int total) {
-        if (sessions.size() >= poolCapacity()) {
-            LiveSession oldest = sessions.peekFirst();
-            if (oldest != null && oldest.state().contextCapacity() >= total) {
-                sessions.removeFirst();
-                // cursor 0 means the entry was already wiped on release (the stateless default);
-                // a warm conversation's entry carries KV and must be cleared before reuse
-                if (oldest.state().position() != 0) oldest.state().reset();
-                return (S) oldest.state();
-            }
-        }
-        // full BATCH capacity, not prompt-sized: this allocation serves every later request too,
-        // and one born from a 20-token prompt would chunk a 2000-token prefill into ~125 forwards
         statesAllocated++;
         return model.newState(
                 model.config().contextLength(), com.qxotic.jinfer.RuntimeFlags.BATCH_CAPACITY);
     }
 
     /**
-     * Entries kept: the warm conversations asked for, and never fewer than the one reused state.
+     * Defines (prefills) a cached prompt: dedups against the tree, commits one block per encoded
+     * batch (turn boundaries) - or ONE block for the whole prompt when the model's codec has a
+     * coarse residue ({@link StateCodec#coarseBlocks()}) - then discards the working state: the
+     * blocks hold the KV.
      */
-    private int poolCapacity() {
-        return Math.max(1, sessionCapacity);
-    }
-
-    /** A pooled hit: the live session plus how many prompt positions its stream covers. */
-    private record Pooled(LiveSession session, int prefixPositions) {}
-
-    /**
-     * The pooled session with the LONGEST stream strictly prefixing {@code prompt}, removed. The
-     * stateless default matches nothing: its single pooled entry is a bare allocation, wiped when
-     * its generation ended.
-     */
-    private Pooled acquireSession(List<Batch> prompt, int total) {
-        if (sessionCapacity == 0) return null;
-        LiveSession best = null;
-        int bestLen = -1;
-        for (LiveSession s : sessions) {
-            if (s.positions() <= bestLen || s.state().contextCapacity() < total) continue;
-            int n = CachedSession.strictPrefixPositions(s.stream(), prompt);
-            if (n > bestLen) {
-                best = s;
-                bestLen = n;
-            }
-        }
-        if (best == null) return null;
-        sessions.remove(best);
-        return new Pooled(best, bestLen);
-    }
-
-    /**
-     * Returns the finished state to the pool - it is never dropped, so the next request reuses the
-     * allocation instead of paying a full context again.
-     *
-     * <p>With warm conversations enabled it keeps its stream and can be EXTENDED by a later request
-     * that strictly prefixes it. With the stateless default (0) it is wiped HERE, the moment the
-     * reply is done, and pooled as a bare allocation: nothing of the conversation lingers between
-     * requests, which is what "the default keeps the model stateless" has to mean.
-     */
-    private void poolSession(
-            RuntimeState state, List<Batch> prompt, int total, Generator.GenerationResult r) {
-        // a stream we cannot describe (fewer positions than the prompt) is not matchable either
-        int ingested = sessionCapacity == 0 ? -1 : state.position() - total;
-        if (ingested < 0) {
-            state.reset();
-            sessions.addLast(new LiveSession(state, List.of(), 0));
-        } else {
-            List<Batch> stream = new ArrayList<>(prompt);
-            if (ingested > 0) {
-                int[] reply = new int[ingested];
-                for (int i = 0; i < ingested; i++) reply[i] = r.tokens().intAt(i);
-                stream.add(Batch.prefill(reply));
-            }
-            sessions.addLast(new LiveSession(state, List.copyOf(stream), total + ingested));
-        }
-        while (sessions.size() > poolCapacity()) {
-            ((com.qxotic.jinfer.BaseState) sessions.removeFirst().state()).close();
-        }
-    }
-
-    // ---- cached prompts: the block tree behind withCachedPrompt / save / load ----
-
     /**
      * Encode via the native codec only - cached prompts are a prefix-stability bet the Jinja
      * whole-render cannot honor. Throws {@link UnsupportedOperationException} when the model has no
@@ -825,12 +769,6 @@ public final class ChatEngine {
         return new Encoded(template.encode(conversation), Optional.of(template));
     }
 
-    /**
-     * Defines (prefills) a cached prompt: dedups against the tree, commits one block per encoded
-     * batch (turn boundaries) - or ONE block for the whole prompt when the model's codec has a
-     * coarse residue ({@link StateCodec#coarseBlocks()}) - then discards the working state: the
-     * blocks hold the KV.
-     */
     public void define(Conversation prefix) {
         List<Batch> prompt = encodeNative(prefix).prompt();
         lock.lock();
@@ -891,7 +829,7 @@ public final class ChatEngine {
         lock.lock();
         try {
             return "sessions="
-                    + sessions.size()
+                    + pool.size()
                     + " hits="
                     + sessionHits
                     + " allocations="

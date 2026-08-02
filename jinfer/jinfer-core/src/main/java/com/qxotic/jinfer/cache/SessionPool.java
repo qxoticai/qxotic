@@ -75,6 +75,14 @@ public final class SessionPool<S extends RuntimeState> {
     }
 
     /**
+     * Frees every pooled state now. Their blocks stay in the shared {@link PromptCache}, so this
+     * costs only the zero-copy continuations - call it when the owner closes.
+     */
+    public void close() {
+        while (!pool.isEmpty()) close(pool.removeFirst());
+    }
+
+    /**
      * The tier-1/tier-2 arbitration protocol, owned here so callers cannot mis-sequence it: acquire
      * a pooled session (tier 1, append-only) or resume a fresh state from the block cache (tier 2,
      * at most {@code resumeLimit} positions so the caller re-ingests the final block and gets fresh
