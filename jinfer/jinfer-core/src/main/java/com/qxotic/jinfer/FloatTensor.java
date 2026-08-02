@@ -26,6 +26,15 @@ public abstract class FloatTensor {
     static final int VECTOR_BIT_SIZE = vectorBitSize();
 
     /**
+     * The Vector API width these kernels are running at, or 0 when they fell back to scalar - a
+     * missing {@code --add-modules jdk.incubator.vector}, or {@code -Djinfer.VectorBitSize=0}.
+     * Fixed for the life of the JVM.
+     */
+    public static int vectorBits() {
+        return VECTOR_BIT_SIZE;
+    }
+
+    /**
      * Vector width, or 0 when there is no Vector API to use. Computed in a method, not as a default
      * argument to {@code Integer.getInteger}: Java evaluates that argument EAGERLY, so the old form
      * called {@code VectorShape.preferredShape()} even when the property said 0 - which made {@code

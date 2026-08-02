@@ -1,11 +1,14 @@
 package com.qxotic.jinfer.chat;
 
 import com.qxotic.format.gguf.GGUF;
+import com.qxotic.jinfer.telemetry.ModelLoadEvent;
+import com.qxotic.jinfer.telemetry.Telemetry;
 import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.nio.channels.Channels;
 import java.nio.channels.FileChannel;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.List;
@@ -94,15 +97,37 @@ public final class Models {
         T apply(FileChannel fc, GGUF gguf) throws IOException;
     }
 
-    /** Opens {@code path}, reads the GGUF header, and hands both to {@code load}. */
+    /**
+     * Opens {@code path}, reads the GGUF header, and hands both to {@code load}. The single
+     * chokepoint for every architecture and every model kind, so it is also where {@code
+     * jinfer.ModelLoad} is emitted and the sampled events are installed. A port loaded directly
+     * (e.g. {@code Gemma4.loadModel}) bypasses this and reports nothing.
+     */
     private static <T> T open(Path path, Load<T> load) throws IOException {
+        Telemetry.install();
+        ModelLoadEvent event = new ModelLoadEvent();
+        event.begin();
         try (FileChannel fc = FileChannel.open(path, StandardOpenOption.READ)) {
             fc.position(0L);
             GGUF gguf =
                     GGUF.read(
                             Channels.newChannel(
                                     new BufferedInputStream(Channels.newInputStream(fc), 1 << 20)));
-            return load.apply(fc, gguf);
+            T loaded = load.apply(fc, gguf);
+            if (event.isEnabled()) {
+                String arch = gguf.getString("general.architecture");
+                event.model = path.getFileName().toString();
+                event.architecture = arch;
+                event.contextLength =
+                        gguf.getValueOrDefault(int.class, arch + ".context_length", 0);
+                event.dimensions = gguf.getValueOrDefault(int.class, arch + ".embedding_length", 0);
+                event.weightsBytes = Files.size(path);
+                event.mapped = true; // jinfer maps tensor data; it never reads it into the heap
+            }
+            return loaded;
+        } finally {
+            event.end();
+            event.commit();
         }
     }
 

@@ -13,6 +13,7 @@ import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.Grammar;
 import com.qxotic.jinfer.llm.Sampler;
 import com.qxotic.jinfer.llm.TextStops;
+import com.qxotic.jinfer.telemetry.InferenceEvent;
 import com.qxotic.toknroll.IntSequence;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -476,6 +477,55 @@ public final class ChatEngine {
      * <p>Blocking is streaming with a sink that discards: {@code complete(p, ReplySink.NONE)}.
      */
     public Completion complete(Prepared prepared, ReplySink out) {
+        InferenceEvent event = new InferenceEvent();
+        event.begin();
+        try {
+            Completion completion = complete0(prepared, out);
+            record(event, prepared, completion);
+            return completion;
+        } catch (RuntimeException | Error failure) {
+            // the failures worth seeing are exactly the ones that would otherwise emit nothing
+            event.errorType = failure.getClass().getSimpleName();
+            throw failure;
+        } finally {
+            event.end();
+            event.commit();
+        }
+    }
+
+    /** Fills the telemetry event from a finished pass; a cancelled pass reports no reply. */
+    private void record(InferenceEvent event, Prepared prepared, Completion completion) {
+        event.model = modelName;
+        event.operation = InferenceEvent.CHAT;
+        // JSON when a grammar binds the output channel; Prepared does not carry that yet, so
+        // Phase 1 reports text and the distinction lands with the grammar accessor.
+        event.outputType = InferenceEvent.TEXT;
+        event.inputTokens = prepared.promptTokens();
+        event.cachedTokens = completion.restoredTokens();
+        event.errorType = "";
+        Generator.GenerationResult result = completion.result();
+        if (result != null) {
+            event.outputTokens = result.completionTokens();
+            event.prefillTime = result.promptNanos();
+            event.decodeTime = result.predictedNanos();
+            event.finishReason = result.finishReason();
+        }
+        if (completion.cancelled()) event.finishReason = "cancelled";
+        if (completion.reply() != null) event.reasoningTokens = reasoningTokens(completion.reply());
+    }
+
+    /** Reasoning tokens ride the parsed parts as verbatim ids, so counting them is free. */
+    private static int reasoningTokens(Message reply) {
+        int total = 0;
+        for (Part part : reply.content()) {
+            if (part instanceof Part.Reasoning reasoning && reasoning.verbatim() != null) {
+                total += reasoning.verbatim().length();
+            }
+        }
+        return total;
+    }
+
+    private Completion complete0(Prepared prepared, ReplySink out) {
         ReplyLanes lanes =
                 new ReplyLanes(
                         prepared.encoded().template(), loaded.tokenizer(), prepared.parserSeed());
