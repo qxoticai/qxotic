@@ -400,9 +400,18 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
 
     @Override
     public ReplyParser parser() {
+        // Gemma spells reasoning as a channel, not <think>: <|channel>thought\n...<channel|>.
+        // Structurally identical to a think span, so the span grammar handles it once it is told
+        // the marker names - without which the channel NAME leaked into content as a literal
+        // "thought" in front of every reply.
         ReplyParser spans =
                 ReplyParser.spans(
-                        tokenizer, "<|tool_call>", "<tool_call|>", Gemma4ToolSyntax::parseBlock);
+                        tokenizer,
+                        "<|tool_call>",
+                        "<tool_call|>",
+                        Gemma4ToolSyntax::parseBlock,
+                        "<|channel>",
+                        "<channel|>");
         // this GGUF mistypes <eos> (id 1) as NORMAL: the span grammar would route a sampled
         // trailing stop into content as literal "<eos>" text (which then re-encodes into the
         // next prompt via the echo) - filter it like the control token it really is
