@@ -1,0 +1,106 @@
+package com.qxotic.jinfer.server;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.List;
+import java.util.Map;
+import org.junit.jupiter.api.Test;
+
+/**
+ * Validation runs on the handler thread, BEFORE a request is queued, so everything it rejects costs
+ * no model time and never reaches the worker. That makes it the server's cheapest and most
+ * load-bearing defence, and it needs no model to test - which matters, because the battery that
+ * covers the rest of this module is opt-in and does not run in a normal build.
+ *
+ * <p>Every rejection must be an {@link IllegalArgumentException}: the request handler maps exactly
+ * that (and {@code UnsupportedOperationException}) to 400, and anything else to a 500 that reports
+ * a server defect. A validator throwing the wrong type would answer a malformed request with
+ * "Internal server error".
+ */
+class ValidationTest {
+
+    private static Map<String, Object> user(String content) {
+        return Map.of("messages", List.of(Map.of("role", "user", "content", content)));
+    }
+
+    private static String rejects(Map<String, Object> request) {
+        IllegalArgumentException e =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> Validation.validateChatRequest(request),
+                        "expected a 400-mapped rejection");
+        assertTrue(e.getMessage() != null && !e.getMessage().isBlank(), "rejection needs a reason");
+        return e.getMessage();
+    }
+
+    @Test
+    void aWellFormedRequestPasses() {
+        Validation.validateChatRequest(user("hello"));
+    }
+
+    @Test
+    void emptyOrSubstanceLessConversationsAreRejected() {
+        rejects(Map.of("messages", List.of()));
+        // whitespace is not substance: an all-blank conversation would prefill and generate from
+        // nothing, burning a slot to produce noise
+        rejects(user("   "));
+        rejects(user(""));
+    }
+
+    @Test
+    void unknownRolesAreRejectedAndNamed() {
+        String message =
+                rejects(Map.of("messages", List.of(Map.of("role", "wizard", "content", "hi"))));
+        assertTrue(
+                message.contains("wizard"), "the message must name the offending role: " + message);
+    }
+
+    @Test
+    void aToolCallCountsAsSubstanceEvenWithEmptyContent() {
+        // an assistant turn replaying a tool call carries no text, and must not read as empty
+        Validation.validateChatRequest(
+                Map.of(
+                        "messages",
+                        List.of(
+                                Map.of("role", "user", "content", "hi"),
+                                Map.of(
+                                        "role",
+                                        "assistant",
+                                        "content",
+                                        "",
+                                        "tool_calls",
+                                        List.of(Map.of("id", "c1"))))));
+    }
+
+    @Test
+    void unsupportedResponseFormatsAreRejected() {
+        Map<String, Object> request =
+                Map.of(
+                        "messages",
+                        List.of(Map.of("role", "user", "content", "hi")),
+                        "response_format",
+                        Map.of("type", "json_schema"));
+        assertTrue(rejects(request).contains("json_schema"));
+    }
+
+    @Test
+    void everyRejectionIsTheTypeTheHandlerMapsTo400() {
+        // the contract in one place: if this list grows a case that throws something else, the
+        // server answers a bad request with "Internal server error" instead of an explanation
+        List<Map<String, Object>> bad =
+                List.of(
+                        Map.of("messages", List.of()),
+                        user("   "),
+                        Map.of("messages", List.of(Map.of("role", "wizard", "content", "hi"))));
+        for (Map<String, Object> request : bad) {
+            Throwable thrown =
+                    assertThrows(Throwable.class, () -> Validation.validateChatRequest(request));
+            assertEquals(
+                    IllegalArgumentException.class,
+                    thrown.getClass(),
+                    "validation must throw the 400-mapped type, not " + thrown.getClass());
+        }
+    }
+}
