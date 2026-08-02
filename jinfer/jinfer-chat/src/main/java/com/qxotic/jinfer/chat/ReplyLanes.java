@@ -19,7 +19,27 @@ public final class ReplyLanes {
     private boolean reasoning;
 
     public ReplyLanes(Optional<ChatTemplate> template, Tokenizer tokenizer, int[] parserSeed) {
-        this.parser = template.map(ChatTemplate::parser).orElse(null);
+        this(template, tokenizer, parserSeed, true);
+    }
+
+    /**
+     * {@code claimToolCalls} false uses the plain span grammar instead of the family's parser, so
+     * call syntax the model emits on its own stays visible TEXT.
+     *
+     * <p>That is the right reading when the caller offered no tools: a claimed call the client
+     * never asked for is not a call, it is an answer the client cannot see. Models do emit it -
+     * LFM2.5 answers a bare prompt with its own final_output call - and claiming it turns a plain
+     * reply into a tool-call response with no text at all.
+     */
+    public ReplyLanes(
+            Optional<ChatTemplate> template,
+            Tokenizer tokenizer,
+            int[] parserSeed,
+            boolean claimToolCalls) {
+        this.parser =
+                claimToolCalls
+                        ? template.map(ChatTemplate::parser).orElse(null)
+                        : template.<ReplyParser>map(t -> ReplyParser.spans(tokenizer)).orElse(null);
         this.pending = parser == null ? new PendingUtf8() : null;
         this.rawText = parser == null ? new StringBuilder() : null;
         this.tokenizer = tokenizer;

@@ -253,7 +253,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                         grammar(p, j),
                         p.toolChoice() == ToolChoice.REQUIRED,
                         cached,
-                        p.stopSequences());
+                        p.stopSequences(),
+                        null); // langchain4j has no chat_template_kwargs equivalent
         return framed(
                 () ->
                         engine.prepare(

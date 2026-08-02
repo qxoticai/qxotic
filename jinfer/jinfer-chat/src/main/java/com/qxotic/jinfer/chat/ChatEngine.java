@@ -305,7 +305,8 @@ public final class ChatEngine {
             Grammar.Spec grammar,
             boolean forceToolCall,
             boolean cachedView,
-            List<String> stops) {
+            List<String> stops,
+            java.util.Map<String, Object> templateKwargs) {
 
         // ranges, not taste: this is a positional record with adjacent same-typed knobs, so a
         // transposed temperature/topP would otherwise sample differently and silently
@@ -319,6 +320,9 @@ public final class ChatEngine {
             messages = List.copyOf(messages);
             tools = tools == null ? List.of() : List.copyOf(tools);
             stops = stops == null ? List.of() : List.copyOf(stops);
+            // extra variables for the Jinja whole-render (chat_template_kwargs); the native codec
+            // never sees them, which is why a request carrying any must not take the native path
+            templateKwargs = templateKwargs == null ? null : java.util.Map.copyOf(templateKwargs);
         }
     }
 
@@ -331,7 +335,8 @@ public final class ChatEngine {
             int promptTokens,
             int[] parserSeed,
             List<String> stops,
-            boolean cachedView) {}
+            boolean cachedView,
+            boolean claimToolCalls) {}
 
     /**
      * Lowers a request to a prompt, a sampler and a parser seed - the policy both integrations were
@@ -366,7 +371,7 @@ public final class ChatEngine {
         Encoded encoded =
                 request.cachedView()
                         ? encodeNative(conversation)
-                        : encode(conversation, messageMaps, toolMaps);
+                        : encode(conversation, messageMaps, toolMaps, request.templateKwargs());
         Sampler sampler =
                 RequestPolicy.sampler(
                         loaded,
@@ -404,7 +409,8 @@ public final class ChatEngine {
                 encoded.prompt().stream().mapToInt(Batch::count).sum(),
                 parserSeed,
                 request.stops(),
-                request.cachedView());
+                request.cachedView(),
+                !request.tools().isEmpty() || request.forceToolCall());
     }
 
     /**
@@ -417,7 +423,8 @@ public final class ChatEngine {
     public Encoded encode(
             Conversation conversation,
             Supplier<List<Object>> messageMaps,
-            Supplier<List<Object>> toolMaps) {
+            Supplier<List<Object>> toolMaps,
+            java.util.Map<String, Object> templateKwargs) {
         Optional<ChatTemplate> template = loaded.template();
         UnsupportedConversation punted = null;
         if (template.isPresent()) {
@@ -440,7 +447,7 @@ public final class ChatEngine {
                         tools == null || tools.isEmpty() ? null : tools,
                         true,
                         conversation.thinking(),
-                        null);
+                        templateKwargs);
         return new Encoded(List.of(Batch.prefill(ids.toArray())), template);
     }
 
@@ -565,7 +572,10 @@ public final class ChatEngine {
     private Completion complete0(Prepared prepared, ReplySink out) {
         ReplyLanes lanes =
                 new ReplyLanes(
-                        prepared.encoded().template(), loaded.tokenizer(), prepared.parserSeed());
+                        prepared.encoded().template(),
+                        loaded.tokenizer(),
+                        prepared.parserSeed(),
+                        prepared.claimToolCalls());
         // over an empty stop list the holdback is a transparent pass-through, so there is no
         // "no stops" special case to carry
         TextStops.Holdback watch = new TextStops.Holdback(prepared.stops(), out::content);
@@ -660,11 +670,12 @@ public final class ChatEngine {
             state = reused;
             restored = pooled.prefixPositions();
             remaining = CachedSession.tail(prompt, restored);
-        } else if ((cached || RuntimeFlags.PROMPT_CACHE) && prompts != null) {
-            // A declared view always resumes. Beyond that the block tree serves EVERY prompt when
-            // jinfer.promptCache is on (the default): a second turn of any conversation reuses the
-            // first, not just one that was declared ahead of time. Models without a state codec
-            // have no tree and fall through - caching is an optimisation, never a requirement.
+        } else if (cached) {
+            // Declared views only. Resuming EVERY prompt was tried and reverted: this method
+            // generates the tail through Generator directly and never commits blocks back, so
+            // only define() ever populates the tree - an always-on resume finds nothing to reuse.
+            // Making it real means adopting the commit flow the server's Generation still owns
+            // (resume, ingest through CachedSession, adopt the decode), not flipping this branch.
             tier = Tier.BLOCKS;
             state = obtainState(model, total);
             CachedSession<S> resumed =

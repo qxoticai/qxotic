@@ -211,7 +211,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                         grammar(options.getOutputSchema()),
                         false, // Spring AI has no forced-tool-call knob
                         cached,
-                        options.getStopSequences());
+                        options.getStopSequences(),
+                        null); // Spring AI has no chat_template_kwargs equivalent
         return engine.prepare(
                 lowered,
                 () -> JinferMappings.toMessageMaps(instructions),
