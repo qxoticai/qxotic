@@ -92,12 +92,26 @@ final class JinferSpeechModelTest {
     }
 
     @Test
-    void closingTheAdapterClosesItsState() {
+    void everyRequestGetsItsOwnStateAndClosesIt() {
+        // the contract is that a state cannot be shared, so the adapter does not share one
         ToyModel model = new ToyModel();
-        var speech = JinferSpeechModel.builder().model(model).build();
+        try (var speech = JinferSpeechModel.builder().model(model).build()) {
+            assertEquals(0, model.minted.get(), "no state until a request arrives");
+            speech.synthesize("one");
+            speech.synthesize("two");
+            assertEquals(2, model.minted.get(), "one state per request");
+            assertTrue(
+                    model.all.stream().allMatch(s -> s.closed),
+                    "each request must free the state it minted");
+        }
+    }
+
+    @Test
+    void closeIsIdempotentAndRejectsLaterRequests() {
+        var speech = JinferSpeechModel.builder().model(new ToyModel()).build();
         speech.close();
-        assertTrue(model.state.closed, "the state the adapter minted is the adapter's to close");
-        speech.close(); // idempotent
+        speech.close();
+        assertThrows(IllegalStateException.class, () -> speech.synthesize("hello"));
     }
 
     @Test
@@ -201,22 +215,58 @@ final class JinferSpeechModelTest {
     }
 
     @Test
-    void aFailingStateAllocationPropagatesRatherThanHalfBuilding() {
-        // the arena-leak half of this (modelPath + a newState that throws) is not reachable
-        // through the public API with a real port, so it is guarded by the constructor's
-        // catch-close, not by this test
-        assertThrows(
-                IllegalStateException.class,
-                () ->
-                        JinferSpeechModel.builder()
-                                .model(
-                                        new ToyModel() {
-                                            @Override
-                                            public ToyState newState(Arena arena, boolean adopt) {
-                                                throw new IllegalStateException("no scratch");
-                                            }
-                                        })
-                                .build());
+    void aFailingStateAllocationSurfacesOnTheRequest() {
+        // states are minted per request now, so an allocation failure is a request failure - the
+        // model still builds, and the failure does not leave the lifecycle lock held
+        try (var speech =
+                JinferSpeechModel.builder()
+                        .model(
+                                new ToyModel() {
+                                    @Override
+                                    public ToyState newState(Arena arena, boolean adopt) {
+                                        throw new IllegalStateException("no scratch");
+                                    }
+                                })
+                        .build()) {
+            assertThrows(IllegalStateException.class, () -> speech.synthesize("hello"));
+            speech.close(); // would deadlock if the read lock leaked on the failure path
+        }
+    }
+
+    @Test
+    void concurrentRequestsRunInParallelRatherThanSerializing() throws Exception {
+        // the point of a per-call state: two callers must overlap. If the adapter serialized on
+        // one state, the first request would hold the lock while parked in its sink and the
+        // second would never arrive - this times out instead of passing.
+        int callers = 4;
+        CountDownLatch allInside = new CountDownLatch(callers);
+        CountDownLatch release = new CountDownLatch(1);
+        ToyModel model =
+                new ToyModel() {
+                    @Override
+                    public void speak(
+                            ToyState state,
+                            String text,
+                            SpeechOptions options,
+                            Predicate<Media.Audio> sink) {
+                        allInside.countDown();
+                        try {
+                            release.await(10, TimeUnit.SECONDS);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                        sink.test(new Media.Audio(new float[ToyModel.SAMPLES], 24000, 1));
+                    }
+                };
+
+        try (var speech = JinferSpeechModel.builder().model(model).build()) {
+            for (int i = 0; i < callers; i++) new Thread(() -> speech.synthesize("hi")).start();
+            assertTrue(
+                    allInside.await(10, TimeUnit.SECONDS),
+                    "requests did not overlap - the adapter serialized them");
+            release.countDown();
+        }
+        assertEquals(callers, model.minted.get(), "one state per concurrent request");
     }
 
     @Test
@@ -234,7 +284,11 @@ final class JinferSpeechModelTest {
 
         static final int SAMPLES = 8;
 
-        ToyState state;
+        ToyState state; // the most recent one
+        final java.util.concurrent.atomic.AtomicInteger minted =
+                new java.util.concurrent.atomic.AtomicInteger();
+        final java.util.List<ToyState> all =
+                java.util.Collections.synchronizedList(new java.util.ArrayList<>());
 
         @Override
         public Config config() {
@@ -248,7 +302,10 @@ final class JinferSpeechModelTest {
 
         @Override
         public ToyState newState(Arena arena, boolean adopt) {
-            return state = new ToyState();
+            minted.incrementAndGet();
+            ToyState s = new ToyState();
+            all.add(s);
+            return state = s;
         }
 
         @Override

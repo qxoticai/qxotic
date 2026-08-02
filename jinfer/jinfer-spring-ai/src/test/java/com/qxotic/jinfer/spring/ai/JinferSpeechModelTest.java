@@ -176,12 +176,18 @@ final class JinferSpeechModelTest {
     // ── lifetime ──────────────────────────────────────────────────────────
 
     @Test
-    void closingTheAdapterClosesItsState() {
+    void everyRequestGetsItsOwnStateAndClosesIt() {
+        // a state cannot be shared, so the adapter does not share one - it mints per request
         ToyModel model = new ToyModel();
-        var speech = JinferSpeechModel.builder().model(model).build();
-        speech.close();
-        assertTrue(model.state.closed, "the state the adapter minted is the adapter's to close");
-        speech.close(); // idempotent
+        try (var speech = JinferSpeechModel.builder().model(model).build()) {
+            assertEquals(0, model.minted.get(), "no state until a request arrives");
+            speech.call(new TextToSpeechPrompt("one"));
+            speech.stream(new TextToSpeechPrompt("two")).collectList().block();
+            assertEquals(2, model.minted.get(), "one state per request, streaming included");
+            assertTrue(
+                    model.all.stream().allMatch(s -> s.closed),
+                    "each request must free the state it minted");
+        }
     }
 
     // ── lifetime, the part that is a SIGSEGV when wrong ───────────────────
@@ -319,7 +325,11 @@ final class JinferSpeechModelTest {
         static final int SAMPLES = 8;
         static final int CLIPS = 3;
 
-        ToyState state;
+        ToyState state; // the most recent one
+        final java.util.concurrent.atomic.AtomicInteger minted =
+                new java.util.concurrent.atomic.AtomicInteger();
+        final java.util.List<ToyState> all =
+                java.util.Collections.synchronizedList(new java.util.ArrayList<>());
         SpeechOptions lastOptions;
         int clipsProduced;
 
@@ -335,7 +345,10 @@ final class JinferSpeechModelTest {
 
         @Override
         public ToyState newState(Arena arena, boolean adopt) {
-            return state = new ToyState();
+            minted.incrementAndGet();
+            ToyState s = new ToyState();
+            all.add(s);
+            return state = s;
         }
 
         @Override

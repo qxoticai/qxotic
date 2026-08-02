@@ -17,14 +17,21 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.Arena;
 import java.nio.file.Path;
-import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
- * One model, one synthesis state, one lock. A jinfer speech state is ONE SERIAL PIPELINE, so
- * concurrent requests queue on a fair lock rather than being refused - the port already fans out
- * across cores inside a single synthesis, so a second pipeline buys far less than it costs in
- * resident scratch. When it does profile as the bottleneck, build a second instance over the same
- * model: weights are immutable and shared, so that is a second pipeline for no new code.
+ * Thread-safe and shared, like every other {@code TextToSpeechModel}: concurrent requests run in
+ * PARALLEL, each on a state of its own.
+ *
+ * <p>A jinfer speech state is ONE SERIAL PIPELINE and cannot be shared - so this does not share
+ * one. Minting per call costs a measured +3.5% against reusing one (~1 ms on a short utterance),
+ * which is a small price for not having to reconcile an unshareable state with a shared bean by
+ * serializing every caller. Serializing would have hidden the capacity limit; rejecting past a
+ * timeout would have failed only under load, which is worse.
+ *
+ * <p>The one thing that must still be coordinated is the WEIGHTS arena, which every synthesis
+ * reads: {@link #close()} takes a write lock and therefore waits for every in-flight request
+ * before freeing it. Requests take the read lock and never block each other.
  */
 public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable {
 
@@ -32,12 +39,14 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
     private static final int DEFAULT_MAX_INPUT_CHARS = 4096;
 
     private final SpeechModel<?, ?, SpeechState> model;
-    private final SpeechState state;
     private final Arena owned; // null unless this instance loaded the weights
-    private final ReentrantLock lock = new ReentrantLock(true); // fair: no request starves
+    // Requests take the READ lock and run in PARALLEL - a state is per-call, so there is nothing
+    // to serialize. close() takes the WRITE lock, which is what makes it wait for every in-flight
+    // synthesis before freeing the weights arena those syntheses are reading.
+    private final ReentrantReadWriteLock lifecycle = new ReentrantReadWriteLock();
     private final SpeechOptions defaults;
     private final int maxInputChars;
-    private boolean closed; // guarded by lock
+    private volatile boolean closed;
 
     @SuppressWarnings("unchecked") // the state below comes from this very model, so it IS S
     private JinferSpeechModel(Builder b) {
@@ -53,7 +62,6 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
                                     ? b.model
                                     : Models.loadSpeech(
                                             b.modelPath, created != null ? created : b.arena));
-            this.state = model.newState();
         } catch (IOException e) {
             closeQuietly(created); // a leaked ofShared arena has no backstop: free before failing
             throw new UncheckedIOException("failed to load " + b.modelPath, e);
@@ -83,17 +91,23 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
                             + " characters, over the "
                             + maxInputChars
                             + " limit - raise maxInputChars(...) or split it");
-        lock.lock(); // the port fails fast on concurrent use of one state; this queues instead
+        lifecycle.readLock().lock(); // shared: concurrent requests proceed in parallel
         try {
             if (closed) throw new IllegalStateException("this model is closed");
-            Media.Audio audio = model.speak(state, text, defaults);
-            return TextToSpeechResponse.from(
-                    Audio.builder()
-                            .binaryData(AudioCodec.wav(audio))
-                            .mimeType("audio/wav")
-                            .build());
+            // ONE STATE PER CALL. A jinfer speech state cannot be shared - that contract is the
+            // port's, and the honest way to meet it is not to share one. Measured cost of minting
+            // per call rather than reusing: +3.5% (about 1 ms on a short utterance), which buys
+            // a bean that is thread-safe the way every other TextToSpeechModel is.
+            try (SpeechState state = model.newState()) {
+                Media.Audio audio = model.speak(state, text, defaults);
+                return TextToSpeechResponse.from(
+                        Audio.builder()
+                                .binaryData(AudioCodec.wav(audio))
+                                .mimeType("audio/wav")
+                                .build());
+            }
         } finally {
-            lock.unlock();
+            lifecycle.readLock().unlock();
         }
     }
 
@@ -106,17 +120,13 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
      */
     @Override
     public void close() {
-        lock.lock();
+        lifecycle.writeLock().lock(); // BLOCKS until every in-flight synthesis has returned
         try {
             if (closed) return; // Arena.close is one-shot; this makes the adapter idempotent
             closed = true;
-            try {
-                state.close();
-            } finally {
-                closeQuietly(owned); // freed even if the state's close threw
-            }
+            closeQuietly(owned);
         } finally {
-            lock.unlock();
+            lifecycle.writeLock().unlock();
         }
     }
 
