@@ -23,9 +23,26 @@ public abstract class FloatTensor {
     static final int QK_K = 256;
     static final int QK_MXFP4 = 32;
 
-    static final int VECTOR_BIT_SIZE =
-            Integer.getInteger(
-                    "jinfer.VectorBitSize", VectorShape.preferredShape().vectorBitSize());
+    static final int VECTOR_BIT_SIZE = vectorBitSize();
+
+    /**
+     * Vector width, or 0 when there is no Vector API to use. Computed in a method, not as a default
+     * argument to {@code Integer.getInteger}: Java evaluates that argument EAGERLY, so the old form
+     * called {@code VectorShape.preferredShape()} even when the property said 0 - which made {@code
+     * -Djinfer.VectorBitSize=0} unable to do the one thing it exists for, and made the whole engine
+     * unloadable without {@code --add-modules jdk.incubator.vector}. The scalar fallbacks were
+     * there all along; nothing could reach them.
+     */
+    private static int vectorBitSize() {
+        Integer override = Integer.getInteger("jinfer.VectorBitSize");
+        if (override != null) return override;
+        try {
+            return VectorShape.preferredShape().vectorBitSize();
+        } catch (Throwable noVectorApi) { // module absent from the graph: run scalar
+            return 0;
+        }
+    }
+
     static final boolean USE_VECTOR_API = VECTOR_BIT_SIZE != 0;
 
     // ---- The Vector gemm kernels and their JVM/CPU-aware register-tile selection now live in
