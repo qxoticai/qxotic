@@ -708,8 +708,8 @@ public final class Grammar {
 
         /**
          * True when the grammar is fully matched with NO continuation - nothing left to constrain.
-         * A prefix grammar reaching this state has done its job; {@link Sampler#withGrammar} then
-         * releases the mask (a dead state - no match, not accepting - is not exhausted).
+         * A prefix grammar reaching this state has done its job; {@link Sampler#withPrefixGrammar}
+         * then releases the mask (a dead state - no match, not accepting - is not exhausted).
          */
         public boolean exhausted() {
             return spec.cfg != null && accepting && ready.isEmpty();

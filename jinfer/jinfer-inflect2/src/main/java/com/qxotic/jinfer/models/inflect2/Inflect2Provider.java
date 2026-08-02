@@ -13,8 +13,8 @@ import java.nio.channels.FileChannel;
  *
  * <p>Defaults only, which is the whole point of dispatch: the front end comes from the ladder (a
  * lexicon beside the GGUF, then the classpath, then espeak-ng) and the family's own knobs -
- * variation, seed, word overrides - are on {@link InflectTTS}, for a caller that has chosen to
- * name it.
+ * variation, seed, word overrides - are on {@link InflectTTS}, for a caller that has chosen to name
+ * it.
  */
 public final class Inflect2Provider implements ModelProvider {
 

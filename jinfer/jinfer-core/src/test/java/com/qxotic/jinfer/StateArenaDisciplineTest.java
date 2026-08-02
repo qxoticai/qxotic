@@ -29,7 +29,8 @@ final class StateArenaDisciplineTest {
 
     private static final Pattern STATE_CLASS =
             Pattern.compile("\\bclass\\s+(\\w*State)\\b[^{]*\\{");
-    private static final Pattern CREATES_ARENA = Pattern.compile("Arena\\s*\\.\\s*(of\\w+|global)\\s*\\(");
+    private static final Pattern CREATES_ARENA =
+            Pattern.compile("Arena\\s*\\.\\s*(of\\w+|global)\\s*\\(");
 
     @Test
     void noStateCreatesItsOwnArena() throws IOException {

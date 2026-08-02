@@ -29,13 +29,13 @@ import reactor.core.scheduler.Schedulers;
  *
  * <p>A jinfer speech state is ONE SERIAL PIPELINE and cannot be shared - so this does not share
  * one. Minting per call costs a measured +3.5% against reusing one, which is a small price for a
- * bean that behaves like every other {@code TextToSpeechModel} under load. Serializing on one
- * state would have hidden the capacity limit; rejecting past a timeout would have failed only
- * under load, which is worse.
+ * bean that behaves like every other {@code TextToSpeechModel} under load. Serializing on one state
+ * would have hidden the capacity limit; rejecting past a timeout would have failed only under load,
+ * which is worse.
  *
  * <p>The one thing that must still be coordinated is the WEIGHTS arena, which every synthesis
- * reads: {@link #close()} takes a write lock and therefore waits for every in-flight request
- * before freeing it. Requests take the read lock and never block each other.
+ * reads: {@link #close()} takes a write lock and therefore waits for every in-flight request before
+ * freeing it. Requests take the read lock and never block each other.
  */
 public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable {
 
@@ -101,8 +101,8 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
 
     /**
      * One element per clip, so a caller plays or writes before the whole text is done. Cancelling
-     * the subscription cancels the synthesis - the sink's false return is the port's cancel
-     * signal, so no further clip is computed.
+     * the subscription cancels the synthesis - the sink's false return is the port's cancel signal,
+     * so no further clip is computed.
      *
      * <p>The pipeline is held for the whole emission: a state is one serial pipeline, and a second
      * request must wait rather than interleave into the same scratch.
@@ -114,32 +114,33 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
         // The state is scoped to the SUBSCRIPTION, not to this method: a Flux may be subscribed
         // late, more than once, or never, and each subscription is its own synthesis.
         return Flux.<TextToSpeechResponse>create(
-                emitter -> {
-                    lifecycle.readLock().lock();
-                    try {
-                        checkOpen();
-                        try (SpeechState state = model.newState()) {
-                            model.speak(
-                                    state,
-                                    text,
-                                    options,
-                                    clip -> {
-                                        if (emitter.isCancelled()) return false;
-                                        emitter.next(
-                                                new TextToSpeechResponse(
-                                                        List.of(
-                                                                new Speech(
-                                                                        AudioCodec.pcm16(clip)))));
-                                        return true;
-                                    });
-                        }
-                        emitter.complete();
-                    } catch (RuntimeException e) {
-                        emitter.error(e);
-                    } finally {
-                        lifecycle.readLock().unlock();
-                    }
-                })
+                        emitter -> {
+                            lifecycle.readLock().lock();
+                            try {
+                                checkOpen();
+                                try (SpeechState state = model.newState()) {
+                                    model.speak(
+                                            state,
+                                            text,
+                                            options,
+                                            clip -> {
+                                                if (emitter.isCancelled()) return false;
+                                                emitter.next(
+                                                        new TextToSpeechResponse(
+                                                                List.of(
+                                                                        new Speech(
+                                                                                AudioCodec.pcm16(
+                                                                                        clip)))));
+                                                return true;
+                                            });
+                                }
+                                emitter.complete();
+                            } catch (RuntimeException e) {
+                                emitter.error(e);
+                            } finally {
+                                lifecycle.readLock().unlock();
+                            }
+                        })
                 // The synthesis is BLOCKING and holds the pipeline for its whole emission, so it
                 // must not run on the subscriber's thread - in WebFlux that is an event-loop
                 // thread, and parking one there stalls every other request on that loop. The chat
@@ -184,11 +185,11 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
     }
 
     /**
-     * Idempotent, BLOCKING close: returns only after the in-flight synthesis (if any) has
-     * finished, so its returning is the caller's quiescence certificate - the only thing standing
-     * between a shutdown and a kernel reading freed memory. Frees the synthesis state, and the
-     * weights arena IFF this instance created it: a model or an arena you passed in stays yours,
-     * so close yours after this one, never before. Requests after this fail loudly.
+     * Idempotent, BLOCKING close: returns only after the in-flight synthesis (if any) has finished,
+     * so its returning is the caller's quiescence certificate - the only thing standing between a
+     * shutdown and a kernel reading freed memory. Frees the synthesis state, and the weights arena
+     * IFF this instance created it: a model or an arena you passed in stays yours, so close yours
+     * after this one, never before. Requests after this fail loudly.
      */
     @Override
     public void close() {
@@ -230,7 +231,9 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
             return this;
         }
 
-        /** Where the weights map, with {@link #modelPath} only; default an arena closed with this. */
+        /**
+         * Where the weights map, with {@link #modelPath} only; default an arena closed with this.
+         */
         public Builder arena(Arena arena) {
             this.arena = arena;
             return this;
@@ -249,7 +252,8 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
          * before any synthesis begins.
          */
         public Builder maxInputChars(int maxInputChars) {
-            if (maxInputChars < 1) throw new IllegalArgumentException("maxInputChars " + maxInputChars);
+            if (maxInputChars < 1)
+                throw new IllegalArgumentException("maxInputChars " + maxInputChars);
             this.maxInputChars = maxInputChars;
             return this;
         }

@@ -167,7 +167,7 @@ public final class Gemma4
      * Logits for ALL retained rows in one head pass: rmsnorm each row into {@code s.xb}, then ONE
      * vocab GEMM - the classifier weight (the heaviest stream in decode) is read once instead of
      * once per row. {@code dst} holds {@code outputCount x vocab}, row-major; softcapped in place.
-     * The speculative verify walk is the consumer (its per-row {@link #logits(State, int)} calls
+     * The speculative verify walk is the consumer (its per-row {@code logits(state, row)} calls
      * re-streamed ~the whole head weight per draft row).
      */
     public void logitsAll(State s, FloatTensor dst) {
@@ -1137,7 +1137,8 @@ public final class Gemma4
 
     /**
      * MTP load: the text model plus the {@code gemma4-assistant} draft sidecar, which enables
-     * self-speculative decoding ({@link #depth()} becomes present).
+     * self-speculative decoding: the sidecar is attached and {@code mtpDecoder} can mint a
+     * per-generation draft decoder over it.
      */
     public static Gemma4 loadModel(
             Path textGguf, int maxContextLength, Path mtpSidecar, Arena arena) throws IOException {

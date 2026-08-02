@@ -9,10 +9,10 @@ import com.qxotic.jinfer.Media;
 import com.qxotic.jinfer.SpeechModel;
 import com.qxotic.jinfer.SpeechOptions;
 import com.qxotic.jinfer.SpeechState;
+import com.qxotic.jinfer.testkit.ModelFixture;
 import dev.langchain4j.model.audio.TextToSpeechRequest;
 import java.lang.foreign.Arena;
 import java.nio.file.Path;
-import com.qxotic.jinfer.testkit.ModelFixture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -86,7 +86,8 @@ final class JinferSpeechModelTest {
                 JinferSpeechModel.builder().model(new ToyModel()).maxInputChars(4).build()) {
             IllegalArgumentException e =
                     assertThrows(
-                            IllegalArgumentException.class, () -> speech.synthesize("far too long"));
+                            IllegalArgumentException.class,
+                            () -> speech.synthesize("far too long"));
             assertTrue(e.getMessage().contains("over the 4"), e.getMessage());
         }
     }
@@ -159,10 +160,12 @@ final class JinferSpeechModelTest {
         assertTrue(inSynthesis.await(5, TimeUnit.SECONDS), "synthesis never started");
 
         AtomicBoolean closed = new AtomicBoolean();
-        Thread closer = new Thread(() -> {
-            speech.close();
-            closed.set(true);
-        });
+        Thread closer =
+                new Thread(
+                        () -> {
+                            speech.close();
+                            closed.set(true);
+                        });
         closer.start();
         Thread.sleep(100);
         assertTrue(!closed.get(), "close returned while a synthesis was still running");

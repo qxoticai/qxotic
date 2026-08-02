@@ -4,10 +4,10 @@
 //   inflect --model z://default.gguf --play --speed 1.1
 package com.qxotic.jinfer.models.inflect2;
 
-import java.io.IOException;
 import com.qxotic.jinfer.Media;
 import com.qxotic.jinfer.SpeechOptions;
 import com.qxotic.jinfer.media.AudioCodec;
+import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -103,8 +103,10 @@ public final class InflectCli {
         boolean[] first = {true};
         try (OutputStream pipe = player.getOutputStream()) {
             // A short lead-in keeps the player from starving before the first chunk lands.
-            pipe.write(AudioCodec.pcm16(new Media.Audio(new float[tts.sampleRate() / 32],
-                    tts.sampleRate(), 1)));
+            pipe.write(
+                    AudioCodec.pcm16(
+                            new Media.Audio(
+                                    new float[tts.sampleRate() / 32], tts.sampleRate(), 1)));
             // Headerless PCM, so the pieces concatenate; the player was told the format on its
             // command line. A pipe that closes (the user quit the player) cancels the synthesis
             // instead of filling a dead buffer.

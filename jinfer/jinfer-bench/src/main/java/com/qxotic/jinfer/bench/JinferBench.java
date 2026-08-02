@@ -38,16 +38,16 @@ import java.util.concurrent.ForkJoinPool;
  *
  * <ul>
  *   <li><b>Threads.</b> {@code -t} defaults to PHYSICAL cores, the same quantity llama-bench
- *       defaults to, and pins the decode pool and the common pool (which otherwise sizes to
- *       LOGICAL cpus - 2x on an SMT box). It CANNOT pin the native gemm backend: that pool is
- *       sized from an environment variable and Java cannot setenv itself, so run
- *       {@code JAM_NUM_THREADS=<t>} or the bench warns and the pp number is not comparable.
- *       Measured on a 16P/32L box: pp512 1836 t/s unpinned against 1669 pinned.
+ *       defaults to, and pins the decode pool and the common pool (which otherwise sizes to LOGICAL
+ *       cpus - 2x on an SMT box). It CANNOT pin the native gemm backend: that pool is sized from an
+ *       environment variable and Java cannot setenv itself, so run {@code JAM_NUM_THREADS=<t>} or
+ *       the bench warns and the pp number is not comparable. Measured on a 16P/32L box: pp512 1836
+ *       t/s unpinned against 1669 pinned.
  *   <li><b>Flash attention.</b> llama-bench defaults to {@code -fa auto}; force it on or off on
  *       both sides if you care which path you are measuring.
- *   <li><b>Warmup.</b> llama-bench runs one warmup pass; a JVM needs more, so this warms
- *       adaptively to a stable window. That is not a thumb on the scale - it is the same steady
- *       state llama-bench reaches on its first pass.
+ *   <li><b>Warmup.</b> llama-bench runs one warmup pass; a JVM needs more, so this warms adaptively
+ *       to a stable window. That is not a thumb on the scale - it is the same steady state
+ *       llama-bench reaches on its first pass.
  * </ul>
  */
 public final class JinferBench {
@@ -113,10 +113,12 @@ public final class JinferBench {
         if (!jamAgrees) {
             System.err.printf(
                     "WARNING: JAM_NUM_THREADS=%s, so the native gemm backend is NOT at %d threads"
-                        + " and pp is not comparable to llama-bench -t %d.%n         Re-run as:"
-                        + " JAM_NUM_THREADS=%d jinfer-bench ...%n",
+                            + " and pp is not comparable to llama-bench -t %d.%n         Re-run as:"
+                            + " JAM_NUM_THREADS=%d jinfer-bench ...%n",
                     jamThreads == null ? "<unset, jam auto-picks physical cores>" : jamThreads,
-                    threads, threads, threads);
+                    threads,
+                    threads,
+                    threads);
         }
 
         List<Row> rows = new ArrayList<>();
@@ -140,10 +142,11 @@ public final class JinferBench {
         int logical = Runtime.getRuntime().availableProcessors();
         try {
             boolean smt =
-                    !"0".equals(
-                            java.nio.file.Files.readString(
-                                            Path.of("/sys/devices/system/cpu/smt/active"))
-                                    .trim());
+                    !"0"
+                            .equals(
+                                    java.nio.file.Files.readString(
+                                                    Path.of("/sys/devices/system/cpu/smt/active"))
+                                            .trim());
             return smt ? Math.max(1, logical / 2) : logical;
         } catch (Exception notLinux) {
             String arch = System.getProperty("os.arch", "");

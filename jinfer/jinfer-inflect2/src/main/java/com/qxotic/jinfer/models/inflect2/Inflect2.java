@@ -14,13 +14,13 @@ package com.qxotic.jinfer.models.inflect2;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.Activations;
+import com.qxotic.jinfer.Config;
 import com.qxotic.jinfer.Convolutions;
 import com.qxotic.jinfer.F32FloatTensor;
 import com.qxotic.jinfer.FloatTensor;
 import com.qxotic.jinfer.Media;
 import com.qxotic.jinfer.Norms;
 import com.qxotic.jinfer.Parallel;
-import com.qxotic.jinfer.Config;
 import com.qxotic.jinfer.kernels.GGMLTensorEntry;
 import com.qxotic.jinfer.kernels.ModelLoader;
 import java.io.ByteArrayInputStream;
@@ -189,8 +189,10 @@ public final class Inflect2 {
         }
     }
 
-    /** As {@link #load(Path, Arena)} but reusing an already-parsed {@code gguf} - the arch-dispatch
-     *  entry, where the header has been read to decide which port to call. */
+    /**
+     * As {@link #load(Path, Arena)} but reusing an already-parsed {@code gguf} - the arch-dispatch
+     * entry, where the header has been read to decide which port to call.
+     */
     public static Inflect2 load(FileChannel channel, GGUF gguf, Arena arena) throws IOException {
         return load(gguf, ModelLoader.loadTensors(channel, gguf, 0, arena));
     }
@@ -211,8 +213,7 @@ public final class Inflect2 {
             byte[] header = archive.readAt(entry.offset(), Math.min(entry.size(), 1 << 16));
             GGUF gguf = GGUF.read(Channels.newChannel(new ByteArrayInputStream(header)));
             return load(
-                    gguf,
-                    ModelLoader.loadTensors(archive.channel(), gguf, entry.offset(), arena));
+                    gguf, ModelLoader.loadTensors(archive.channel(), gguf, entry.offset(), arena));
         }
     }
 
@@ -1043,7 +1044,7 @@ public final class Inflect2 {
      * Reusable scratch for one synthesis at a time — the forward pass allocates nothing once a
      * state has been warmed up.
      *
-     * <p>Buffers are handed out in stack order and returned by closing a {@link Scope}; each grows
+     * <p>Buffers are handed out in stack order and returned by closing a {@code Scope}; each grows
      * to the largest size this state has ever been asked for, so only the first call (or a longer
      * text than before) allocates.
      *

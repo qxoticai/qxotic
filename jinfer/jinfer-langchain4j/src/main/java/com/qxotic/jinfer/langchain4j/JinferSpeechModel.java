@@ -30,8 +30,8 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  * timeout would have failed only under load, which is worse.
  *
  * <p>The one thing that must still be coordinated is the WEIGHTS arena, which every synthesis
- * reads: {@link #close()} takes a write lock and therefore waits for every in-flight request
- * before freeing it. Requests take the read lock and never block each other.
+ * reads: {@link #close()} takes a write lock and therefore waits for every in-flight request before
+ * freeing it. Requests take the read lock and never block each other.
  */
 public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable {
 
@@ -112,11 +112,11 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
     }
 
     /**
-     * Idempotent, BLOCKING close: returns only after the in-flight synthesis (if any) has
-     * finished, so its returning is the caller's quiescence certificate - the only thing standing
-     * between a shutdown and a kernel reading freed memory. Frees the synthesis state, and the
-     * weights arena IFF this instance created it: a model or an arena you passed in stays yours,
-     * so close yours after this one, never before. Requests after this fail loudly.
+     * Idempotent, BLOCKING close: returns only after the in-flight synthesis (if any) has finished,
+     * so its returning is the caller's quiescence certificate - the only thing standing between a
+     * shutdown and a kernel reading freed memory. Frees the synthesis state, and the weights arena
+     * IFF this instance created it: a model or an arena you passed in stays yours, so close yours
+     * after this one, never before. Requests after this fail loudly.
      */
     @Override
     public void close() {
@@ -158,7 +158,9 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
             return this;
         }
 
-        /** Where the weights map, with {@link #modelPath} only; default an arena closed with this. */
+        /**
+         * Where the weights map, with {@link #modelPath} only; default an arena closed with this.
+         */
         public Builder arena(Arena arena) {
             this.arena = arena;
             return this;
@@ -177,7 +179,8 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
          * before any synthesis begins.
          */
         public Builder maxInputChars(int maxInputChars) {
-            if (maxInputChars < 1) throw new IllegalArgumentException("maxInputChars " + maxInputChars);
+            if (maxInputChars < 1)
+                throw new IllegalArgumentException("maxInputChars " + maxInputChars);
             this.maxInputChars = maxInputChars;
             return this;
         }

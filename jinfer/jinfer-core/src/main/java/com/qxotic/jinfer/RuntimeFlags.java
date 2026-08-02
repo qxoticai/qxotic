@@ -27,8 +27,8 @@ import java.nio.file.Path;
  *
  * <p>All of those are passed to the IMAGE BUILD (see the jinfer.* pom properties beside
  * jinfer.PreloadGGUF), never to the binary, where they are silently ignored. A flag that must be
- * settable on the binary belongs here, or its class belongs in the builder's
- * {@code --initialize-at-run-time} list — the two ways to keep a run-time flag actually run-time.
+ * settable on the binary belongs here, or its class belongs in the builder's {@code
+ * --initialize-at-run-time} list — the two ways to keep a run-time flag actually run-time.
  */
 public final class RuntimeFlags {
 

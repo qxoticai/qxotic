@@ -36,8 +36,9 @@ final class LoadedModelTokenizerTest {
         byte[] other = base.withTokenizer(StubTokenizer.encodingEvery(2)).seed();
 
         assertFalse(Arrays.equals(original, same), "overriding the tokenizer re-roots the seed");
-        assertFalse(Arrays.equals(same, other), "tokenizers that encode differently must not"
-                + " share a prompt-cache key");
+        assertFalse(
+                Arrays.equals(same, other),
+                "tokenizers that encode differently must not" + " share a prompt-cache key");
         assertArrayEquals(
                 same,
                 base.withTokenizer(StubTokenizer.encodingEvery(1)).seed(),
@@ -89,7 +90,8 @@ final class LoadedModelTokenizerTest {
         }
 
         @Override
-        public RuntimeState newState(int contextCapacity, int batchCapacity, java.lang.foreign.Arena arena) {
+        public RuntimeState newState(
+                int contextCapacity, int batchCapacity, java.lang.foreign.Arena arena) {
             throw new UnsupportedOperationException();
         }
 

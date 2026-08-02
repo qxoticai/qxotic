@@ -19,7 +19,7 @@ import java.util.Set;
  *
  * <p>These are data, not behaviour, so they are a record rather than an interface on the model. A
  * caller that wants different stop tokens simply builds another record; a caller that only needs
- * logits passes {@link #model()} and never sees the rest. {@link Generator} takes the model
+ * logits passes {@link #model()} and never sees the rest. {@code Generator} takes the model
  * explicitly for exactly that reason.
  *
  * <p>Produced by each model class ({@code loaded()}); the architecture-dispatching loaders (the
@@ -51,24 +51,31 @@ public record LoadedModel<S extends RuntimeState>(
 
     /**
      * The same model with a different tokenizer - the supported way to override the one the
-     * container carries, for a GGUF whose vocabulary metadata is wrong or a caller who has a
-     * better one.
+     * container carries, for a GGUF whose vocabulary metadata is wrong or a caller who has a better
+     * one.
      *
      * <p>{@link #seed} is RE-ROOTED, not copied. Prompt-cache artifacts are keyed by the seed and
      * hold token ids, so one built with the container's tokenizer must not mount under a
-     * replacement that encodes differently - and must still mount under one that encodes the
-     * same. Only behaviour can say which, so the seed folds in a probe: the vocabulary size and
-     * the ids of a fixed sentence.
+     * replacement that encodes differently - and must still mount under one that encodes the same.
+     * Only behaviour can say which, so the seed folds in a probe: the vocabulary size and the ids
+     * of a fixed sentence.
      */
     public LoadedModel<S> withTokenizer(Tokenizer tokenizer) {
         if (tokenizer == null) throw new IllegalArgumentException("null tokenizer");
         return new LoadedModel<>(
-                model, tokenizer, chatTemplateSource, stopTokens, reseed(seed, tokenizer), template);
+                model,
+                tokenizer,
+                chatTemplateSource,
+                stopTokens,
+                reseed(seed, tokenizer),
+                template);
     }
 
-    /** Letters, digits, whitespace and non-Latin script: enough to separate any two real vocabularies. */
-    private static final String SEED_PROBE =
-            "The quick brown fox jumps over 0123456789 éß中文";
+    /**
+     * Letters, digits, whitespace and non-Latin script: enough to separate any two real
+     * vocabularies.
+     */
+    private static final String SEED_PROBE = "The quick brown fox jumps over 0123456789 éß中文";
 
     private static byte[] reseed(byte[] seed, Tokenizer tokenizer) {
         StringBuilder probe = new StringBuilder().append(tokenizer.vocabulary().size());

@@ -27,7 +27,7 @@ import java.util.List;
  * Batch#prepare} keeps each embeddings batch isolated, so a bidirectional image block (one
  * attention group) commits as exactly one cache block. Note the fingerprints hash the ENCODED rows:
  * re-fingerprinting an echoed conversation needs either the retained stream ({@link
- * #fingerprints()}, the dual view) or a re-encode — servers keep the stream.
+ * #fingerprints(List)}, the dual view) or a re-encode — servers keep the stream.
  *
  * <p>{@code start} opens a brand-new conversation (ingest incrementally); {@code resume(model,
  * cache, state, prompt)} serves a prompt against the cache (longest cached prefix restored, the
@@ -76,7 +76,7 @@ public final class CachedSession<S extends RuntimeState> {
     }
 
     /**
-     * As {@link #resume(Model, PromptCache, Object, List)} but restoring at most {@code
+     * As {@link #resume(Model, PromptCache, RuntimeState, List)} but restoring at most {@code
      * maxPositions} - e.g. the prompt length minus its final block, so a whole-prompt hit still
      * re-ingests that block and leaves fresh logits at the cursor.
      */

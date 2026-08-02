@@ -41,11 +41,7 @@ class EspeakPhonemizerTest {
     void everyMarkSurvivesOnceInSourceOrder() throws IOException {
         int[] tokens = espeak().phonemize("Yes, of course; that is right. Is it?");
         assertEquals(
-                List.of(
-                        Symbols.idOf(','),
-                        Symbols.idOf(';'),
-                        Symbols.idOf('.'),
-                        Symbols.idOf('?')),
+                List.of(Symbols.idOf(','), Symbols.idOf(';'), Symbols.idOf('.'), Symbols.idOf('?')),
                 marks(tokens));
     }
 

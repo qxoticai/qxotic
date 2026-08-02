@@ -3,11 +3,15 @@
  *
  * <h2>The contract</h2>
  *
- * Java has no {@code free}, and the FFM arenas jinfer allocates from are not garbage: a
- * mis-scoped arena is a leak, a double free, or a SIGSEGV. So there is exactly one rule, and every
- * API in jinfer is a spelling of it:
+ * Java has no {@code free}, and the FFM arenas jinfer allocates from are not garbage: a mis-scoped
+ * arena is a leak, a double free, or a SIGSEGV. So there is exactly one rule, and every API in
+ * jinfer is a spelling of it:
  *
- * <blockquote><b>Whoever creates an arena frees it.</b></blockquote>
+ * <blockquote>
+ *
+ * <b>Whoever creates an arena frees it.</b>
+ *
+ * </blockquote>
  *
  * <h2>The three flavours, in every family</h2>
  *
@@ -26,8 +30,8 @@
  *       only when nothing in that arena outlives the state.
  * </ul>
  *
- * A non-closeable arena ({@code ofAuto}, {@code global}) may be adopted: owning it just means
- * there is nothing to free eagerly, and close stays a valid no-op on the memory.
+ * A non-closeable arena ({@code ofAuto}, {@code global}) may be adopted: owning it just means there
+ * is nothing to free eagerly, and close stays a valid no-op on the memory.
  *
  * <h2>Which arena to create</h2>
  *
@@ -38,9 +42,8 @@
  *       handshake. Wrong for anything another thread touches: it fails loudly there.
  *   <li>{@code ofAuto} - READ_ONLY mapped weights, whose pages the kernel reclaims regardless, and
  *       bounded process-lifetime scratch with no owner to free it. NEVER for anonymous memory that
- *       scales with work: the heap stays small while native memory grows, so the GC that would
- *       free it never runs. That is not theoretical - it OOM-killed the integration battery at
- *       51 GB.
+ *       scales with work: the heap stays small while native memory grows, so the GC that would free
+ *       it never runs. That is not theoretical - it OOM-killed the integration battery at 51 GB.
  *   <li>{@code global} - a one-model process: the CLI, the server.
  * </ul>
  *
@@ -49,19 +52,19 @@
  * created by library code the caller never wrote, so "why was this not freed" would depend on
  * invisible policy. It would also buy nothing: an owned {@code ofShared} state already degrades to
  * GC-eventually if you drop it unclosed, which is the whole of what a global {@code auto} would
- * give you, minus the determinism you get by closing. If you truly want an owned auto state, say
- * so where it happens - {@code newState(..., Arena.ofAuto(), true)}.
+ * give you, minus the determinism you get by closing. If you truly want an owned auto state, say so
+ * where it happens - {@code newState(..., Arena.ofAuto(), true)}.
  *
  * <h2>The three laws the compiler cannot enforce</h2>
  *
  * <ol>
  *   <li>An arena must outlive every read from it. Kernels read raw addresses via {@code
- *       FloatTensor.GLOBAL_SEGMENT}, so the JDK's close handshake cannot save you: a live read
- *       from a closed arena is a CRASH, not an exception.
+ *       FloatTensor.GLOBAL_SEGMENT}, so the JDK's close handshake cannot save you: a live read from
+ *       a closed arena is a CRASH, not an exception.
  *   <li>A weights arena must outlive every model sharing those weights.
  *   <li>Free on every path out, including the failing ones. A constructor that maps weights and
- *       then throws must close what it created before it rethrows - a leaked {@code ofShared}
- *       arena has no backstop.
+ *       then throws must close what it created before it rethrows - a leaked {@code ofShared} arena
+ *       has no backstop.
  * </ol>
  *
  * <h2>What the code does enforce</h2>

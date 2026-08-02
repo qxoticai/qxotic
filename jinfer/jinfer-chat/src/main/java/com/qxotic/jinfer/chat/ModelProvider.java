@@ -25,8 +25,8 @@ public interface ModelProvider {
      * overrides the loads its architecture actually has, and a speech-only or embedding-only port
      * keeps the rest of these defaults.
      */
-    default LoadedModel<?> load(
-            FileChannel fileChannel, GGUF gguf, int contextLength, Arena arena) throws IOException {
+    default LoadedModel<?> load(FileChannel fileChannel, GGUF gguf, int contextLength, Arena arena)
+            throws IOException {
         throw new UnsupportedOperationException(
                 "'"
                         + gguf.getString("general.architecture")
@@ -34,9 +34,9 @@ public interface ModelProvider {
     }
 
     /**
-     * As {@link #load(FileChannel, GGUF, int)} plus the architecture's media sidecar (llama.cpp's
-     * mmproj convention: vision/audio encoders in a separate GGUF). Ports without media support
-     * keep this default.
+     * As {@link #load(FileChannel, GGUF, int, Arena)} plus the architecture's media sidecar
+     * (llama.cpp's mmproj convention: vision/audio encoders in a separate GGUF). Ports without
+     * media support keep this default.
      */
     default LoadedModel<?> load(
             FileChannel fileChannel, GGUF gguf, int contextLength, Path mediaProjector, Arena arena)

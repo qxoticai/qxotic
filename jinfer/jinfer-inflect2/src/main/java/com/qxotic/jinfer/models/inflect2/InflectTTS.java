@@ -113,8 +113,7 @@ public final class InflectTTS
     }
 
     private static InflectTTS wrap(Inflect2 model, Path gguf, Path lexicon) throws IOException {
-        return new InflectTTS(
-                model, frontend(gguf, lexicon), Map.of(), DEFAULT_VARIATION, 0);
+        return new InflectTTS(model, frontend(gguf, lexicon), Map.of(), DEFAULT_VARIATION, 0);
     }
 
     /**
@@ -127,9 +126,9 @@ public final class InflectTTS
      * An image built without it falls back to espeak-ng, which is a working image.
      *
      * <p>The two are alternatives, not layers. A lexicon is a hash lookup and knows only what it
-     * was built with, leaving the rest unspoken (it says so on stderr — {@link
-     * #wordOverrides(Map)} is the fix for a handful of terms). espeak has a letter-to-sound model
-     * and pronounces anything, at ~50x realtime against the lexicon's ~54x.
+     * was built with, leaving the rest unspoken (it says so on stderr — {@link #wordOverrides(Map)}
+     * is the fix for a handful of terms). espeak has a letter-to-sound model and pronounces
+     * anything, at ~50x realtime against the lexicon's ~54x.
      */
     private static Phonemizer frontend(Path gguf, Path lexicon) throws IOException {
         if (lexicon != null) return Phonemizer.lexicon(lexicon);
@@ -149,7 +148,7 @@ public final class InflectTTS
         }
         throw new IOException(
                 "no phonemizer: pass a lexicon to InflectTTS.load(gguf, arena, lexicon), put"
-                        + " lexicon.bin beside the model or on the classpath, or install espeak-ng");
+                    + " lexicon.bin beside the model or on the classpath, or install espeak-ng");
     }
 
     // ── tuning: a re-wrap over the SAME weights, so no reload and no arena ─

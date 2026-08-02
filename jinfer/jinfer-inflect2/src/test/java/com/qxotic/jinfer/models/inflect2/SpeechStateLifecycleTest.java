@@ -54,8 +54,7 @@ final class SpeechStateLifecycleTest {
         try (Arena arena = Arena.ofShared()) {
             Inflect2.State state = tts.newState(arena); // BORROWED
             state.close();
-            assertTrue(
-                    arena.scope().isAlive(), "borrow: close must not free an arena it was lent");
+            assertTrue(arena.scope().isAlive(), "borrow: close must not free an arena it was lent");
         }
     }
 
@@ -85,8 +84,7 @@ final class SpeechStateLifecycleTest {
         Inflect2.State state = tts.newState();
         state.close();
         assertThrows(
-                IllegalStateException.class,
-                () -> tts.speak(state, "hello", SpeechOptions.NONE));
+                IllegalStateException.class, () -> tts.speak(state, "hello", SpeechOptions.NONE));
     }
 
     @Test

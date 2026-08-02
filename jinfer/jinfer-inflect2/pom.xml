@@ -79,10 +79,10 @@
             <executions>
               <execution>
                 <id>embed-lexicon</id>
-                <phase>process-classes</phase>
                 <goals>
                   <goal>copy-resources</goal>
                 </goals>
+                <phase>process-classes</phase>
                 <configuration>
                   <outputDirectory>${project.build.outputDirectory}</outputDirectory>
                   <resources>

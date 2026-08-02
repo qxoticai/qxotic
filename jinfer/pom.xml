@@ -217,6 +217,26 @@
         </plugin>
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-javadoc-plugin</artifactId>
+          <configuration>
+            <!-- doclint checks CORRECTNESS, not presence: broken @link, bad references and
+                 malformed HTML fail the build; a missing @param on a self-evident argument does
+                 not. A doc that says "@param n the n" is noise, and a policy that demands one
+                 produces a hundred of them. Preview + incubator flags mirror the compiler's, or
+                 javadoc cannot parse the sources it is documenting. -->
+            <doclint>all,-missing</doclint>
+            <additionalOptions>
+              <additionalOption>--enable-preview</additionalOption>
+              <additionalOption>--add-modules</additionalOption>
+              <additionalOption>jdk.incubator.vector,jdk.httpserver</additionalOption>
+            </additionalOptions>
+            <source>${maven.compiler.release}</source>
+            <quiet>true</quiet>
+          </configuration>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-surefire-plugin</artifactId>
           <configuration>
             <!-- Every src/test class is JUnit; discovery scans all classes (non-@Test helpers are

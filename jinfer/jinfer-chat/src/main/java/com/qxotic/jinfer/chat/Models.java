@@ -46,8 +46,8 @@ public final class Models {
     }
 
     /**
-     * As {@link #load(Path, int)} but reusing an already-parsed {@code gguf} (the header is not
-     * re-read) - used by AOT preload. {@code fileChannel} supplies the tensor data to mmap.
+     * As {@link #load(Path, int, Arena)} but reusing an already-parsed {@code gguf} (the header is
+     * not re-read) - used by AOT preload. {@code fileChannel} supplies the tensor data to mmap.
      */
     public static LoadedModel<?> load(FileChannel fileChannel, GGUF gguf, int ctx, Arena arena)
             throws IOException {
@@ -81,9 +81,9 @@ public final class Models {
      * as {@link #load}. Non-speech architectures fail with a clear {@link
      * UnsupportedOperationException}.
      *
-     * <p>Defaults only. Anything a port lets you tune - a lexicon, a language, a family's own
-     * knobs - lives on that port's own loader, typed; this is the entry for a caller that must not
-     * name the port.
+     * <p>Defaults only. Anything a port lets you tune - a lexicon, a language, a family's own knobs
+     * - lives on that port's own loader, typed; this is the entry for a caller that must not name
+     * the port.
      */
     public static com.qxotic.jinfer.SpeechModel<?, ?, ?> loadSpeech(Path path, Arena arena)
             throws IOException {

@@ -18,7 +18,6 @@ class JinferChatModelTest {
         assertEquals("exactly one of modelPath(...) or model(...) is required", e.getMessage());
     }
 
-
     @Test
     void defaultOptionsAndKnobsAreMutuallyExclusive() {
         // the path need not exist: the conflict rejects BEFORE the GGUF is loaded

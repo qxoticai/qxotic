@@ -6,11 +6,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.foreign.Arena;
 import java.util.ConcurrentModificationException;
-import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -18,10 +16,9 @@ import org.junit.jupiter.api.Test;
  *
  * <p>The contract is a property of the STATE, not of a method: while any entry point holds a state,
  * every other entry point must refuse it too. So this parks a thread inside each entry point in
- * turn and then attacks the state from another thread through every entry point, asserting a
- * {@link ConcurrentModificationException} each time. A gap here is not a race that shows up in a
- * stress test - it is two threads writing the same scratch buffers, which produces wrong numbers
- * silently.
+ * turn and then attacks the state from another thread through every entry point, asserting a {@link
+ * ConcurrentModificationException} each time. A gap here is not a race that shows up in a stress
+ * test - it is two threads writing the same scratch buffers, which produces wrong numbers silently.
  *
  * <p>The speech side is pinned the same way by {@code SpeechStateLifecycleTest} in jinfer-inflect2,
  * where the state type lives.
@@ -53,7 +50,8 @@ final class StateExclusivityTest {
             void invoke(ProbeModel m, ProbeState s) {
                 m.embed(
                         s,
-                        new Batch.Input.Sequences(new Batch.Input.Tokens(new int[] {1, 2}), new int[] {2}),
+                        new Batch.Input.Sequences(
+                                new Batch.Input.Tokens(new int[] {1, 2}), new int[] {2}),
                         tensor -> {});
             }
         };
@@ -74,8 +72,7 @@ final class StateExclusivityTest {
                     Thread holder = new Thread(() -> held.invoke(model, state));
                     holder.start();
                     assertTrue(
-                            inside.await(10, TimeUnit.SECONDS),
-                            held + " never entered the kernel");
+                            inside.await(10, TimeUnit.SECONDS), held + " never entered the kernel");
 
                     AtomicReference<Throwable> refused = new AtomicReference<>();
                     Thread other =

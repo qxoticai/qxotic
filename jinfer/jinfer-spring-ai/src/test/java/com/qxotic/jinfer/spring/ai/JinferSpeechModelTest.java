@@ -75,8 +75,7 @@ final class JinferSpeechModelTest {
             assertEquals(44 + 2 * ToyModel.SAMPLES * ToyModel.CLIPS, wav.length);
             assertEquals("RIFF", new String(wav, 0, 4, java.nio.charset.StandardCharsets.US_ASCII));
 
-            byte[] viaPrompt =
-                    speech.call(new TextToSpeechPrompt("hello")).getResult().getOutput();
+            byte[] viaPrompt = speech.call(new TextToSpeechPrompt("hello")).getResult().getOutput();
             assertEquals(wav.length, viaPrompt.length);
         }
     }
@@ -107,8 +106,10 @@ final class JinferSpeechModelTest {
     @Test
     void knobsThisInstanceDoesNotHaveAreRefusedRatherThanIgnored() {
         try (var speech = JinferSpeechModel.builder().model(new ToyModel()).build()) {
-            assertTrue(rejected(speech, TextToSpeechOptions.builder().voice("nova")).contains("nova"));
-            assertTrue(rejected(speech, TextToSpeechOptions.builder().format("mp3")).contains("mp3"));
+            assertTrue(
+                    rejected(speech, TextToSpeechOptions.builder().voice("nova")).contains("nova"));
+            assertTrue(
+                    rejected(speech, TextToSpeechOptions.builder().format("mp3")).contains("mp3"));
             assertTrue(
                     rejected(speech, TextToSpeechOptions.builder().model("tts-1-hd"))
                             .contains("tts-1-hd"));
@@ -125,8 +126,7 @@ final class JinferSpeechModelTest {
     @Test
     void anOversizedRequestIsRejectedBeforeAnySynthesis() {
         ToyModel model = new ToyModel();
-        try (var speech =
-                JinferSpeechModel.builder().model(model).maxInputChars(4).build()) {
+        try (var speech = JinferSpeechModel.builder().model(model).maxInputChars(4).build()) {
             IllegalArgumentException e =
                     assertThrows(
                             IllegalArgumentException.class,

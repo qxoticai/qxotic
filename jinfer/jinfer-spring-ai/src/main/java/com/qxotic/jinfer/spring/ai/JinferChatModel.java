@@ -2,8 +2,8 @@ package com.qxotic.jinfer.spring.ai;
 
 import com.qxotic.jinfer.chat.CachedPrompt;
 import com.qxotic.jinfer.chat.ChatEngine;
-import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.JsonCodec;
+import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.Grammar;
@@ -508,7 +508,9 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             return this;
         }
 
-        /** Reported as the response's model name; defaults to the model class. {@link #model} only. */
+        /**
+         * Reported as the response's model name; defaults to the model class. {@link #model} only.
+         */
         public Builder modelName(String modelName) {
             this.modelName = modelName;
             return this;
