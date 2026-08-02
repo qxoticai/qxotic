@@ -69,6 +69,24 @@ class EventSchemaTest {
         assertEquals(Set.of("vectorBits", "decodeThreads"), declared(type));
     }
 
+    @Test
+    void speculationAndDecodeAreFrozen() {
+        EventType speculation = EventType.getEventType(SpeculationEvent.class);
+        assertEquals("jinfer.Speculation", speculation.getName());
+        assertEquals(Set.of("draftedTokens", "acceptedTokens", "forwards"), declared(speculation));
+
+        EventType decode = EventType.getEventType(DecodeEvent.class);
+        assertEquals("jinfer.Decode", decode.getName());
+        assertEquals(
+                Set.of(),
+                declared(decode),
+                "Decode carries no fields: duration and thread ARE the payload, and a logprob"
+                        + " here would cost a softmax per token and perturb what it measures");
+        assertTrue(
+                !decode.isEnabled(),
+                "the only event whose frequency scales with output length must default to off");
+    }
+
     /**
      * Oracle's guidelines: headline-style capitalization, no trailing punctuation, and never the
      * word "Event" - labels are what JMC renders as column headers.
@@ -76,7 +94,12 @@ class EventSchemaTest {
     @Test
     void everyLabelFollowsTheJdkConvention() {
         List<Class<? extends jdk.jfr.Event>> events =
-                List.of(InferenceEvent.class, ModelLoadEvent.class, RuntimeEvent.class);
+                List.of(
+                        InferenceEvent.class,
+                        ModelLoadEvent.class,
+                        RuntimeEvent.class,
+                        SpeculationEvent.class,
+                        DecodeEvent.class);
         for (Class<? extends jdk.jfr.Event> event : events) {
             EventType type = EventType.getEventType(event);
             check(type.getLabel(), type.getName());

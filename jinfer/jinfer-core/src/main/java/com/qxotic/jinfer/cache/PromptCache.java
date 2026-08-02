@@ -427,6 +427,18 @@ public final class PromptCache<S extends RuntimeState> {
         freshBlocks.clear();
     }
 
+    /** A cache health reading: sizes now, counters cumulative since construction. */
+    public record Sample(
+            int blocks, long bytes, long budgetBytes, long hits, long misses, long evictions) {}
+
+    /**
+     * The same numbers {@link #stats()} formats, typed - for telemetry that has to subtract two
+     * readings rather than print one.
+     */
+    public Sample sample() {
+        return new Sample(blocks.size(), store.usedBytes(), budgetBytes, hits, misses, evictions);
+    }
+
     public String stats() {
         return "blocks="
                 + blocks.size()

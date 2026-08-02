@@ -3,6 +3,7 @@ package com.qxotic.jinfer.models.gemma4;
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.F32FloatTensor;
 import com.qxotic.jinfer.FloatTensor;
+import com.qxotic.jinfer.telemetry.SpeculationEvent;
 import java.lang.foreign.Arena;
 import java.util.ArrayList;
 import java.util.List;
@@ -68,8 +69,19 @@ public final class Gemma4Speculative {
             if (decoder == null)
                 throw new IllegalStateException(
                         "MTP sidecar not loaded - use loadModel(gguf, ctx, mtpSidecar)");
-            return generate(
-                    model, s, depth, maxTokens, stops, recorder, decoder, dim, vocab, scratch);
+            Result result =
+                    generate(
+                            model, s, depth, maxTokens, stops, recorder, decoder, dim, vocab,
+                            scratch);
+            // one emission point for three return sites inside the loop
+            SpeculationEvent event = new SpeculationEvent();
+            if (event.isEnabled()) {
+                event.draftedTokens = result.drafted();
+                event.acceptedTokens = result.accepted();
+                event.forwards = result.forwards();
+                event.commit();
+            }
+            return result;
         }
     }
 

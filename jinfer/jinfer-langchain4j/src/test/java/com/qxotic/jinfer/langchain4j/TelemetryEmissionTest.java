@@ -111,6 +111,71 @@ class TelemetryEmissionTest {
         assertTrue(event.getLong("prefillTime") > 0);
     }
 
+    /**
+     * The per-token event is off by default and must stay that way: it is the only event whose
+     * frequency scales with output length.
+     */
+    @Test
+    void decodeIsOffByDefaultAndCountsTokensWhenOn() throws Exception {
+        Path gguf = ModelFixture.LLAMA32_1B_Q8.require();
+        Path off = Files.createTempFile("jinfer-decode-off", ".jfr");
+        Path on = Files.createTempFile("jinfer-decode-on", ".jfr");
+        try (var model = JinferChatModel.builder().modelPath(gguf).maxOutputTokens(12).build()) {
+            model.chat(PROMPT); // warm up before anything is compared
+
+            try (Recording recording = new Recording()) {
+                recording.enable("jinfer.Inference"); // Decode NOT enabled
+                recording.start();
+                model.chat(PROMPT);
+                recording.stop();
+                recording.dump(off);
+            }
+            assertEquals(0, eventsOf(off, "jinfer.Decode").size(), "Decode must default to off");
+
+            int outputTokens;
+            try (Recording recording = new Recording()) {
+                recording.enable("jinfer.Inference");
+                recording.enable("jinfer.Decode");
+                recording.start();
+                model.chat(PROMPT);
+                recording.stop();
+                recording.dump(on);
+            }
+            outputTokens = eventsOf(on, "jinfer.Inference").get(0).getInt("outputTokens");
+            int decodes = eventsOf(on, "jinfer.Decode").size();
+            assertTrue(decodes > 0, "enabling Decode must produce events");
+            assertTrue(
+                    Math.abs(decodes - outputTokens) <= 1,
+                    "one event per decoded token (+/- the stop token): "
+                            + decodes
+                            + " vs "
+                            + outputTokens);
+        }
+    }
+
+    /** The cache gauge is sampled, so it must appear without any call driving it. */
+    @Test
+    void promptCacheIsSampledWhileAnEngineIsAlive() throws Exception {
+        Path gguf = ModelFixture.LLAMA32_1B_Q8.require();
+        Path jfr = Files.createTempFile("jinfer-gauge", ".jfr");
+        try (var model = JinferChatModel.builder().modelPath(gguf).maxOutputTokens(8).build()) {
+            try (Recording recording = new Recording()) {
+                recording.enable("jinfer.PromptCache").withPeriod(java.time.Duration.ofMillis(200));
+                recording.start();
+                model.chat(PROMPT);
+                Thread.sleep(700); // let the sampler tick
+                recording.stop();
+                recording.dump(jfr);
+            }
+        }
+        List<RecordedEvent> samples = eventsOf(jfr, "jinfer.PromptCache");
+        assertTrue(!samples.isEmpty(), "a live engine's cache must be sampled");
+        RecordedEvent sample = samples.get(0);
+        assertTrue(sample.getString("model").endsWith(".gguf"));
+        assertTrue(sample.getLong("budgetBytes") > 0, "the budget is a real bound");
+        assertTrue(sample.getLong("evictions") >= 0, "deltas are never negative");
+    }
+
     private static List<RecordedEvent> eventsOf(Path jfr, String name) throws Exception {
         try (RecordingFile file = new RecordingFile(jfr)) {
             List<RecordedEvent> found = new java.util.ArrayList<>();

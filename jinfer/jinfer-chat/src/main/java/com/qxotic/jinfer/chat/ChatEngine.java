@@ -70,6 +70,9 @@ public final class ChatEngine {
     // arena - then close() quiesces and frees this engine's own memory, and nothing else
     private final java.lang.foreign.Arena weights;
     private final Runnable leakWatch; // -Djinfer.leakDetection: reports a GC'd unclosed engine
+    // held STRONGLY here on purpose: the telemetry registry keeps only a weak reference, so this
+    // field is what keeps the gauge alive exactly as long as the engine it samples
+    private final Telemetry.CacheGauge cacheGauge;
 
     /** A finished generation's state with the batch stream of everything ingested into it. */
     private record LiveSession(RuntimeState state, List<Batch> stream, int positions) {}
@@ -162,6 +165,12 @@ public final class ChatEngine {
             freeOwnedWeights();
             throw e;
         }
+        // registered after the cache exists, and after every throwing step: publishing `this`
+        // to a registry from a constructor that may still fail would hand out a half-built engine
+        this.cacheGauge =
+                new Telemetry.CacheGauge(
+                        modelName, () -> prompts == null ? null : prompts.sample());
+        Telemetry.register(cacheGauge);
         // armed last: a ctor throw already cleaned up above and must not read as a leak
         this.leakWatch =
                 LeakWatch.arm(

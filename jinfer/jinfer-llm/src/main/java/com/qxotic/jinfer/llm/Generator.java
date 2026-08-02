@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.llm;
 
 import com.qxotic.jinfer.*;
+import com.qxotic.jinfer.telemetry.DecodeEvent;
 import com.qxotic.toknroll.IntSequence;
 import java.util.List;
 import java.util.Set;
@@ -230,25 +231,38 @@ public final class Generator {
             model.ingest(state, batch); // the port chunks internally + runs the decode pool
         }
         IntSequence.Builder generated = IntSequence.newBuilder();
+        // Resolved ONCE, not per token: this is the hot loop, and allocating a per-token event
+        // only to find it disabled would let telemetry perturb the thing it measures. A recording
+        // started mid-generation is picked up by the next generation, which is soon enough.
+        boolean traceTokens = new DecodeEvent().isEnabled();
         while (generated.size() < maxNewTokens) {
-            FloatTensor logits =
-                    model.logits(state); // last retained row; ports run this on the decode pool
-            if (prefillDoneNanos[0] == 0)
-                prefillDoneNanos[0] = System.nanoTime(); // time-to-first-token boundary
-            int nextToken = sampler.sampleToken(logits);
-            if (nextToken < 0 || nextToken >= vocab) {
-                throw new IllegalArgumentException(
-                        "sampler returned token id "
-                                + nextToken
-                                + " out of range [0, "
-                                + vocab
-                                + ")");
+            DecodeEvent decode = traceTokens ? new DecodeEvent() : null;
+            if (decode != null) decode.begin();
+            try {
+                FloatTensor logits =
+                        model.logits(state); // last retained row; ports run this on the decode pool
+                if (prefillDoneNanos[0] == 0)
+                    prefillDoneNanos[0] = System.nanoTime(); // time-to-first-token boundary
+                int nextToken = sampler.sampleToken(logits);
+                if (nextToken < 0 || nextToken >= vocab) {
+                    throw new IllegalArgumentException(
+                            "sampler returned token id "
+                                    + nextToken
+                                    + " out of range [0, "
+                                    + vocab
+                                    + ")");
+                }
+                generated.add(nextToken);
+                boolean keepGoing = onTokenGenerated == null || onTokenGenerated.onToken(nextToken);
+                if (stopTokens.contains(nextToken) || !keepGoing) break;
+                if (generated.size() >= maxNewTokens || state.position() >= contextLength) break;
+                model.ingest(state, Batch.step(nextToken));
+            } finally {
+                if (decode != null) {
+                    decode.end();
+                    decode.commit();
+                }
             }
-            generated.add(nextToken);
-            boolean keepGoing = onTokenGenerated == null || onTokenGenerated.onToken(nextToken);
-            if (stopTokens.contains(nextToken) || !keepGoing) break;
-            if (generated.size() >= maxNewTokens || state.position() >= contextLength) break;
-            model.ingest(state, Batch.step(nextToken));
         }
         return generated.build();
     }
