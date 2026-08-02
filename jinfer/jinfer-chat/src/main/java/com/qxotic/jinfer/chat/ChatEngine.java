@@ -3,6 +3,7 @@ package com.qxotic.jinfer.chat;
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.LanguageModel;
 import com.qxotic.jinfer.LeakWatch;
+import com.qxotic.jinfer.RuntimeFlags;
 import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.jinfer.cache.CacheStore;
 import com.qxotic.jinfer.cache.CachedSession;
@@ -625,7 +626,11 @@ public final class ChatEngine {
             state = reused;
             restored = pooled.prefixPositions();
             remaining = CachedSession.tail(prompt, restored);
-        } else if (cached) {
+        } else if ((cached || RuntimeFlags.PROMPT_CACHE) && prompts != null) {
+            // A declared view always resumes. Beyond that the block tree serves EVERY prompt when
+            // jinfer.promptCache is on (the default): a second turn of any conversation reuses the
+            // first, not just one that was declared ahead of time. Models without a state codec
+            // have no tree and fall through - caching is an optimisation, never a requirement.
             state = obtainState(model, total);
             CachedSession<S> resumed =
                     CachedSession.resume(model, tree(), state, prompt, total - 1);
