@@ -104,6 +104,10 @@ class TelemetryEmissionTest {
         assertEquals(1, events.size(), "one embedAll call, one event");
         RecordedEvent event = events.get(0);
         assertEquals("embeddings", event.getString("operation"));
+        assertTrue(
+                event.getString("model").endsWith(".gguf"),
+                "identity now comes from LoadedEmbedder, not the adapter: "
+                        + event.getString("model"));
         assertEquals("", event.getString("errorType"));
         assertTrue(event.getInt("inputTokens") > 0, "the batch had tokens");
         assertEquals(0, event.getInt("outputTokens"), "an encode generates nothing");

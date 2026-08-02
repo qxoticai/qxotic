@@ -64,7 +64,7 @@ public final class Models {
      */
     public static LoadedEmbedder<?> loadEmbedder(Path path, int ctx, Arena arena)
             throws IOException {
-        return open(path, (fc, gguf) -> provider(gguf).loadEmbedder(fc, gguf, ctx, arena));
+        return open(path, (fc, gguf) -> provider(gguf).loadEmbedder(fc, gguf, ctx, path, arena));
     }
 
     /**
@@ -76,7 +76,7 @@ public final class Models {
      */
     public static LoadedReranker<?> loadReranker(Path path, int ctx, Arena arena)
             throws IOException {
-        return open(path, (fc, gguf) -> provider(gguf).loadReranker(fc, gguf, ctx, arena));
+        return open(path, (fc, gguf) -> provider(gguf).loadReranker(fc, gguf, ctx, path, arena));
     }
 
     /**

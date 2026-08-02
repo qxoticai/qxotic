@@ -106,7 +106,7 @@ class LoadedRerankerTest {
     }
 
     private static LoadedReranker<FakeState> loaded(FakeReranker reranker) {
-        return new LoadedReranker<>(new FakeModel(), reranker);
+        return new LoadedReranker<>(new FakeModel(), reranker, "fake.gguf");
     }
 
     private static List<Double> scoreAll(

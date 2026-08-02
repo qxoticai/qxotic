@@ -2,6 +2,7 @@ package com.qxotic.jinfer.chat;
 
 import com.qxotic.jinfer.EmbeddingModel;
 import com.qxotic.jinfer.RuntimeState;
+import com.qxotic.jinfer.telemetry.InferenceEvent;
 import com.qxotic.toknroll.Tokenizer;
 
 /**
@@ -12,10 +13,15 @@ import com.qxotic.toknroll.Tokenizer;
  * so callers never probe with a forward pass).
  */
 public record LoadedEmbedder<S extends RuntimeState>(
-        EmbeddingModel<?, ?, S> model, Tokenizer tokenizer, int[] sequenceSuffix, int dimension) {
+        EmbeddingModel<?, ?, S> model,
+        Tokenizer tokenizer,
+        int[] sequenceSuffix,
+        int dimension,
+        String name) {
 
     public LoadedEmbedder {
         if (model == null) throw new IllegalArgumentException("null model");
+        if (name == null) throw new IllegalArgumentException("null name");
         if (tokenizer == null) throw new IllegalArgumentException("null tokenizer");
         if (sequenceSuffix == null) throw new IllegalArgumentException("null sequenceSuffix");
         if (dimension <= 0) throw new IllegalArgumentException("dimension " + dimension);
@@ -55,6 +61,30 @@ public record LoadedEmbedder<S extends RuntimeState>(
             seqs[i] = seq;
             total += seq.length;
         }
+        InferenceEvent event =
+                InferenceEvent.started(name, InferenceEvent.EMBEDDINGS, InferenceEvent.TEXT);
+        long startNanos = System.nanoTime();
+        try {
+            int tokens = embedPacked(state, contextLength, seqs, total, sink);
+            event.inputTokens = tokens;
+            return tokens;
+        } catch (RuntimeException | Error failure) {
+            event.errorType = failure.getClass().getSimpleName();
+            throw failure;
+        } finally {
+            // an encode runs no decode loop: outputTokens and decodeTime are a true zero here
+            event.prefillTime = System.nanoTime() - startNanos;
+            event.end();
+            event.commit();
+        }
+    }
+
+    private int embedPacked(
+            RuntimeState state,
+            int contextLength,
+            int[][] seqs,
+            int total,
+            java.util.function.Consumer<com.qxotic.jinfer.FloatTensor> sink) {
         @SuppressWarnings("unchecked") // states of this embedder's model ARE S, by construction
         S s = (S) state;
         // greedy packing: each group fills the context, one forward pass per group

@@ -3,6 +3,7 @@ package com.qxotic.jinfer.chat;
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.Model;
 import com.qxotic.jinfer.RuntimeState;
+import com.qxotic.jinfer.telemetry.InferenceEvent;
 import java.util.List;
 import java.util.function.DoubleConsumer;
 
@@ -11,11 +12,13 @@ import java.util.function.DoubleConsumer;
  * LoadedEmbedder}, carrying exactly what a provider integration needs: the backbone and the
  * family's {@link Reranker} recipe (its judge frame and verdict read).
  */
-public record LoadedReranker<S extends RuntimeState>(Model<?, ?, S> model, Reranker<S> reranker) {
+public record LoadedReranker<S extends RuntimeState>(
+        Model<?, ?, S> model, Reranker<S> reranker, String name) {
 
     public LoadedReranker {
         if (model == null) throw new IllegalArgumentException("null model");
         if (reranker == null) throw new IllegalArgumentException("null reranker");
+        if (name == null) throw new IllegalArgumentException("null name");
     }
 
     /**
@@ -37,8 +40,32 @@ public record LoadedReranker<S extends RuntimeState>(Model<?, ?, S> model, Reran
             List<String> documents,
             DoubleConsumer sink) {
         if (documents.isEmpty()) {
-            return 0;
+            return 0; // no prefill, no work, and nothing worth an event
         }
+        InferenceEvent event =
+                InferenceEvent.started(name, InferenceEvent.RERANK, InferenceEvent.TEXT);
+        long startNanos = System.nanoTime();
+        try {
+            int tokens = scorePacked(state, instruction, query, documents, sink);
+            event.inputTokens = tokens;
+            return tokens;
+        } catch (RuntimeException | Error failure) {
+            event.errorType = failure.getClass().getSimpleName();
+            throw failure;
+        } finally {
+            // scoring is all prefill: a cross-encoder emits no tokens
+            event.prefillTime = System.nanoTime() - startNanos;
+            event.end();
+            event.commit();
+        }
+    }
+
+    private int scorePacked(
+            RuntimeState state,
+            String instruction,
+            String query,
+            List<String> documents,
+            DoubleConsumer sink) {
         @SuppressWarnings("unchecked") // states of this reranker's model ARE S, by construction
         S s = (S) state;
         Batch head = reranker.head(instruction, query);

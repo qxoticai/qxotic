@@ -45,11 +45,13 @@ public interface ModelProvider {
     }
 
     /**
-     * Loads an EMBEDDING model from an already-parsed GGUF ({@link Models#loadEmbedder}). Ports
-     * whose architectures are generative-only keep this default.
+     * Loads an EMBEDDING model from an already-parsed GGUF ({@link Models#loadEmbedder}); {@code
+     * path} names the loaded file, which is the identity its telemetry reports. Ports whose
+     * architectures are generative-only keep this default.
      */
     default LoadedEmbedder<?> loadEmbedder(
-            FileChannel fileChannel, GGUF gguf, int contextLength, Arena arena) throws IOException {
+            FileChannel fileChannel, GGUF gguf, int contextLength, Path path, Arena arena)
+            throws IOException {
         throw new UnsupportedOperationException(
                 "'"
                         + gguf.getString("general.architecture")
@@ -76,7 +78,8 @@ public interface ModelProvider {
      * default.
      */
     default LoadedReranker<?> loadReranker(
-            FileChannel fileChannel, GGUF gguf, int contextLength, Arena arena) throws IOException {
+            FileChannel fileChannel, GGUF gguf, int contextLength, Path path, Arena arena)
+            throws IOException {
         throw new UnsupportedOperationException(
                 "'" + gguf.getString("general.architecture") + "' is not a reranker architecture");
     }

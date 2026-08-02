@@ -6,7 +6,6 @@ import com.qxotic.jinfer.RuntimeFlags;
 import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.jinfer.chat.LoadedEmbedder;
 import com.qxotic.jinfer.chat.Models;
-import com.qxotic.jinfer.telemetry.InferenceEvent;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
@@ -102,22 +101,11 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
         List<Embedding> out = new ArrayList<>(segments.size());
         int dim = loaded.dimension();
         int total;
-        InferenceEvent event =
-                InferenceEvent.started(modelName, InferenceEvent.EMBEDDINGS, InferenceEvent.TEXT);
-        long startNanos = System.nanoTime();
         lock.lock();
         try {
             total = loaded.embedAll(state, contextLength, texts, v -> out.add(toEmbedding(v, dim)));
-            event.inputTokens = total;
-        } catch (RuntimeException | Error failure) {
-            event.errorType = failure.getClass().getSimpleName();
-            throw failure;
         } finally {
             lock.unlock();
-            event.end();
-            // an encode has no decode loop, so outputTokens and decodeTime are a true zero here
-            event.prefillTime = System.nanoTime() - startNanos;
-            event.commit();
         }
         return Response.from(out, new TokenUsage(total));
     }

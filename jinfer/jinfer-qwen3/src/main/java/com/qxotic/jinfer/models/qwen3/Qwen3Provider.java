@@ -9,6 +9,7 @@ import com.qxotic.jinfer.llm.SpecialTokens;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
+import java.nio.file.Path;
 
 /**
  * {@link ModelProvider} service for {@code general.architecture} "qwen3" - the RETRIEVAL family:
@@ -38,7 +39,8 @@ public final class Qwen3Provider implements ModelProvider {
 
     @Override
     public LoadedEmbedder<?> loadEmbedder(
-            FileChannel fileChannel, GGUF gguf, int contextLength, Arena arena) throws IOException {
+            FileChannel fileChannel, GGUF gguf, int contextLength, Path path, Arena arena)
+            throws IOException {
         Qwen3 m = Qwen3.loadModel(fileChannel, gguf, contextLength, arena);
         // last-token pooling wants a trailing EOS on every sequence (the llama.cpp convention)
         int eos =
@@ -48,13 +50,18 @@ public final class Qwen3Provider implements ModelProvider {
                                         new IllegalStateException(
                                                 "qwen3 vocab has no <|endoftext|>"));
         return new LoadedEmbedder<>(
-                m, m.tokenizer(), new int[] {eos}, m.config().embeddingLength());
+                m,
+                m.tokenizer(),
+                new int[] {eos},
+                m.config().embeddingLength(),
+                path.getFileName().toString());
     }
 
     @Override
     public LoadedReranker<?> loadReranker(
-            FileChannel fileChannel, GGUF gguf, int contextLength, Arena arena) throws IOException {
+            FileChannel fileChannel, GGUF gguf, int contextLength, Path path, Arena arena)
+            throws IOException {
         Qwen3 m = Qwen3.loadModel(fileChannel, gguf, contextLength, arena);
-        return new LoadedReranker<>(m, new Qwen3Reranker(m));
+        return new LoadedReranker<>(m, new Qwen3Reranker(m), path.getFileName().toString());
     }
 }
