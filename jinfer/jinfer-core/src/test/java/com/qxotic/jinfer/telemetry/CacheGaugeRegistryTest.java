@@ -8,33 +8,44 @@ import java.time.Duration;
 import org.junit.jupiter.api.Test;
 
 /**
- * The registry samples live caches forever, so holding them strongly would pin every engine a
- * process ever built - the exact shape of a slow leak in a long-running server. It holds weak
- * references instead, which only works if the registrant keeps the gauge in a field. Both halves of
- * that contract are pinned here.
+ * Registration is deterministic - register on construction, unregister on close - and the weak
+ * reference behind it is only a backstop for an owner that is never closed.
+ *
+ * <p>That backstop is not optional politeness. {@code LeakWatch} reports unclosed engines from a
+ * {@link java.lang.ref.Cleaner}, so a registry holding owners strongly would pin them forever, the
+ * Cleaner would never fire, and adding telemetry would have silently switched off jinfer's own leak
+ * detection.
  */
 class CacheGaugeRegistryTest {
 
+    private static Telemetry.CacheGauge gauge(String model) {
+        return new Telemetry.CacheGauge(model, () -> new PromptCache.Sample(1, 2, 3, 4, 5, 6));
+    }
+
     @Test
-    void aGaugeIsSampledWhileItsOwnerLivesAndDroppedAfterwards() {
+    void unregisterStopsSamplingImmediately() {
         int before = Telemetry.liveGauges();
+        Telemetry.CacheGauge gauge = gauge("closed-properly");
 
-        Telemetry.CacheGauge held =
-                new Telemetry.CacheGauge("held", () -> new PromptCache.Sample(1, 2, 3, 4, 5, 6));
-        Telemetry.register(held);
-        assertEquals(before + 1, Telemetry.liveGauges(), "a held gauge must stay registered");
+        Telemetry.register(gauge);
+        assertEquals(before + 1, Telemetry.liveGauges());
 
-        // exactly what a caller must NOT do - registered and immediately unreachable
-        Telemetry.register(
-                new Telemetry.CacheGauge(
-                        "dropped", () -> new PromptCache.Sample(0, 0, 0, 0, 0, 0)));
+        Telemetry.unregister(gauge);
+        assertEquals(
+                before, Telemetry.liveGauges(), "close must deregister without waiting for GC");
+
+        Telemetry.unregister(gauge); // idempotent, like every close here
+        assertEquals(before, Telemetry.liveGauges());
+    }
+
+    @Test
+    void anOwnerThatIsNeverClosedStaysCollectable() {
+        int before = Telemetry.liveGauges();
+        Telemetry.register(gauge("never-closed"));
 
         assertTrue(
-                await(() -> Telemetry.liveGauges() == before + 1),
-                "an unreferenced gauge must be collected, not accumulate in the registry");
-
-        // the held one is still there only because this frame still references it
-        assertEquals("held", held.model());
+                await(() -> Telemetry.liveGauges() == before),
+                "an unreferenced gauge must not pin its owner - that would stop LeakWatch firing");
     }
 
     /** GC is not synchronous; poll rather than assert once. */

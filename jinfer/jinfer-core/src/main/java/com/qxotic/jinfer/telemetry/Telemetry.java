@@ -49,10 +49,15 @@ public final class Telemetry {
      * A registered prompt cache, sampled once a second. Deltas live here because a gauge needs the
      * previous reading to subtract from.
      *
-     * <p>OWNERSHIP: the registry holds this WEAKLY, so whoever registers must keep it in a field
-     * for as long as it should be sampled. Registering a lambda or a temporary would let the next
-     * GC silently stop the gauge - and holding it strongly here would keep a dead engine's whole
-     * cache alive forever, which is the failure this indirection exists to prevent.
+     * <p>LIFECYCLE, and it is the codebase's usual one - deterministic, with a GC backstop: {@link
+     * #register} on construction, {@link #unregister} from {@code close()}. That is the contract,
+     * and it is what a correct caller relies on.
+     *
+     * <p>The registry additionally holds this only WEAKLY, for one reason: an owner that is never
+     * closed must stay collectable. Holding it strongly would pin that owner forever, and since
+     * {@code LeakWatch} reports unclosed engines from a {@link java.lang.ref.Cleaner}, pinning them
+     * would stop the leak detector firing - telemetry that silently disables jinfer's own leak
+     * reporting. The weak reference is a backstop against that, never the mechanism.
      */
     public static final class CacheGauge {
         private final String model;
@@ -90,10 +95,19 @@ public final class Telemetry {
 
     private static final List<WeakReference<CacheGauge>> GAUGES = new CopyOnWriteArrayList<>();
 
-    /** Registers a cache for sampling. Keep {@code gauge} in a field - see {@link CacheGauge}. */
+    /** Registers a cache for sampling; pair it with {@link #unregister} in the owner's close. */
     public static void register(CacheGauge gauge) {
         install();
         GAUGES.add(new WeakReference<>(gauge));
+    }
+
+    /** Stops sampling {@code gauge}. Idempotent, like every close in this codebase. */
+    public static void unregister(CacheGauge gauge) {
+        GAUGES.removeIf(
+                reference -> {
+                    CacheGauge registered = reference.get();
+                    return registered == null || registered == gauge;
+                });
     }
 
     /** Visible for tests: how many gauges are still reachable, pruning the dead. */

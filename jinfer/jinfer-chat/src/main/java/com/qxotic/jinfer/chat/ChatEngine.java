@@ -221,6 +221,7 @@ public final class ChatEngine {
             if (closed) return; // idempotent: the JDK arena close below is one-shot
             closed = true;
             leakWatch.run(); // disarm: this engine was closed properly
+            Telemetry.unregister(cacheGauge); // stop sampling a cache that is about to be freed
             for (LiveSession s : sessions) ((com.qxotic.jinfer.BaseState) s.state()).close();
             sessions.clear();
             promptStore.close();
