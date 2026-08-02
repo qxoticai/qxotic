@@ -49,6 +49,20 @@ public interface EmbeddingModel<C extends Config, W, S extends RuntimeState>
      * valid only until the next sink call - copy it out before returning.
      */
     default void embed(S state, Batch.Input.Sequences seqs, Consumer<FloatTensor> sink) {
+        // Claimed across the WHOLE operation, not per chunk: reset() below mutates the cursor, and
+        // releasing between chunks would let two concurrent embeds interleave their chunks into
+        // one KV context - corrupting both, with no CME to say so. Reentrant, so the per-chunk
+        // ingest/embedding claims nest inside this one.
+        BaseState base = (BaseState) state;
+        base.enter();
+        try {
+            embed0(state, seqs, sink);
+        } finally {
+            base.exit();
+        }
+    }
+
+    private void embed0(S state, Batch.Input.Sequences seqs, Consumer<FloatTensor> sink) {
         int[] len = seqs.seqLen();
         int[] ids = seqs.tokens().ids();
         int n = ids.length;
