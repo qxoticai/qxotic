@@ -50,8 +50,10 @@ final class Generation {
     // The shared runtime: template stack, sampling policy, block tree and session pool. This
     // class predates all of it and had its own of each; what remains here is the OpenAI wire.
     private final ChatEngine engine;
+    private final Metrics metrics;
 
-    Generation(LoadedModel<?> chatModel, LLMOptions options) {
+    Generation(LoadedModel<?> chatModel, LLMOptions options, Metrics metrics) {
+        this.metrics = metrics;
         this.servedModel = options.modelPath().getFileName().toString();
         this.model = chatModel;
         this.options = options;
@@ -79,7 +81,7 @@ final class Generation {
     }
 
     private Reply recorded(Reply reply) {
-        Metrics.record(reply);
+        metrics.record(reply);
         return reply;
     }
 
@@ -163,7 +165,7 @@ final class Generation {
             usage.cachedTokens = done.restoredTokens();
             usage.completionTokens = done.result().completionTokens();
         }
-        Metrics.recordPromptCache(done.tier() == ChatEngine.Tier.SESSION, done.restoredTokens());
+        metrics.recordPromptCache(done.tier() == ChatEngine.Tier.SESSION, done.restoredTokens());
         return router.reply(
                 done.result(), done.reply(), billed, done.restoredTokens(), prepared.stops());
     }

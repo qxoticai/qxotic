@@ -103,6 +103,98 @@ class ServerTelemetryTest {
                 "queueTime crosses threads via Telemetry; 0 means it never reached the event");
     }
 
+    /**
+     * {@link Server#start} promises each call an independent instance. The counters were static, so
+     * two servers in one JVM reported each other's traffic - scrape one, see both.
+     */
+    @Test
+    void twoServersInOneJvmDoNotShareCounters() throws Exception {
+        Path gguf = ModelFixture.LLAMA32_1B_Q8.require();
+        try (Arena arena = Arena.ofShared()) {
+            LoadedModel<?> model = Models.load(gguf, 2048, arena);
+            HttpServer busy = Server.start(model, options(gguf));
+            HttpServer idle = Server.start(model, options(gguf));
+            try {
+                HttpClient client =
+                        HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
+                assertEquals(200, chat(client, busy, gguf).statusCode());
+
+                assertTrue(
+                        requestsTotal(client, busy) >= 1,
+                        "the server that served it must count it");
+                assertEquals(
+                        0,
+                        requestsTotal(client, idle),
+                        "the other server must not see another instance's traffic");
+            } finally {
+                busy.stop(0);
+                idle.stop(0);
+            }
+        }
+    }
+
+    private static long requestsTotal(HttpClient client, HttpServer server) throws Exception {
+        String body =
+                client.send(
+                                HttpRequest.newBuilder(
+                                                URI.create(
+                                                        "http://127.0.0.1:"
+                                                                + server.getAddress().getPort()
+                                                                + "/metrics"))
+                                        .build(),
+                                HttpResponse.BodyHandlers.ofString())
+                        .body();
+        for (String line : body.split("\n")) {
+            if (line.startsWith("jinfer_requests_total ")) {
+                return Long.parseLong(line.substring("jinfer_requests_total ".length()).trim());
+            }
+        }
+        throw new AssertionError("no jinfer_requests_total in:\n" + body);
+    }
+
+    private static HttpResponse<String> chat(HttpClient client, HttpServer server, Path gguf)
+            throws Exception {
+        return client.send(
+                HttpRequest.newBuilder(
+                                URI.create(
+                                        "http://127.0.0.1:"
+                                                + server.getAddress().getPort()
+                                                + "/v1/chat/completions"))
+                        .header("Content-Type", "application/json")
+                        .POST(
+                                HttpRequest.BodyPublishers.ofString(
+                                        "{\"model\":\""
+                                                + gguf.getFileName()
+                                                + "\",\"messages\":[{\"role\":\"user\","
+                                                + "\"content\":\"Hi\"}],\"max_tokens\":4}"))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
+    private static LLMOptions options(Path gguf) {
+        return new LLMOptions(
+                gguf,
+                null,
+                null,
+                false,
+                true,
+                "127.0.0.1",
+                0,
+                1f,
+                0.95f,
+                42L,
+                2048,
+                true,
+                false,
+                true,
+                false,
+                false,
+                false,
+                false,
+                null,
+                false);
+    }
+
     private static List<RecordedEvent> events(Path jfr) throws Exception {
         try (RecordingFile file = new RecordingFile(jfr)) {
             List<RecordedEvent> found = new java.util.ArrayList<>();

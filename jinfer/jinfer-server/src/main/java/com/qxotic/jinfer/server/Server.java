@@ -30,12 +30,13 @@ import java.util.function.Function;
 public final class Server {
 
     private final Worker worker = new Worker();
+    private final Metrics metrics = new Metrics();
     private final Generation generation;
 
     private final String servedModel;
 
     private Server(LoadedModel<?> model, LLMOptions options) {
-        this.generation = new Generation(model, options);
+        this.generation = new Generation(model, options, metrics);
         this.servedModel = options.modelPath().getFileName().toString();
     }
 
@@ -576,7 +577,7 @@ public final class Server {
             return;
         }
         if (Http.requireMethod(exchange, "GET")) return;
-        Http.sendText(exchange, 200, Metrics.CONTENT_TYPE, Metrics.exposition(worker));
+        Http.sendText(exchange, 200, Metrics.CONTENT_TYPE, metrics.exposition(worker));
     }
 
     private static void setTimingHeader(HttpExchange exchange, Reply result) {
