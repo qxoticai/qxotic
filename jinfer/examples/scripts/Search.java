@@ -10,6 +10,7 @@
 //   jbang Search.java "how do I make coffee?"
 import com.qxotic.jinfer.langchain4j.JinferEmbeddingModel;
 import dev.langchain4j.data.segment.TextSegment;
+import dev.langchain4j.store.embedding.CosineSimilarity;
 import java.util.*;
 
 public class Search {
@@ -25,11 +26,12 @@ public class Search {
         var query = args.length > 0 ? args[0] : "how do I make coffee?";
         try (var embed = JinferEmbeddingModel.builder().modelPath(Models.embed(args, 1)).build()) {
             var docs = embed.embedAll(DOCS.stream().map(TextSegment::from).toList()).content();
-            var q = embed.embed(query).content().vector();
+            var q = embed.embed(query).content();
 
             record Hit(double score, String text) {}
             var hits = new ArrayList<Hit>();
-            for (int i = 0; i < DOCS.size(); i++) hits.add(new Hit(cosine(q, docs.get(i).vector()), DOCS.get(i)));
+            for (int i = 0; i < DOCS.size(); i++)
+                hits.add(new Hit(CosineSimilarity.between(q, docs.get(i)), DOCS.get(i)));
             hits.sort(Comparator.comparingDouble(Hit::score).reversed());
 
             System.out.println("query: " + query + "\n");
@@ -37,9 +39,4 @@ public class Search {
         }
     }
 
-    static double cosine(float[] a, float[] b) {
-        double dot = 0, na = 0, nb = 0;
-        for (int i = 0; i < a.length; i++) { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i]; }
-        return dot / (Math.sqrt(na) * Math.sqrt(nb));
-    }
 }

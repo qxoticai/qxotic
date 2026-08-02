@@ -77,6 +77,19 @@ public interface ReplyParser {
             Tokenizer tokenizer,
             String callStart,
             String callEnd,
+            Function<String, List<Part.ToolCall>> payload) {
+        return spans(tokenizer, callStart, callEnd, payload, Thinking.OPEN, Thinking.CLOSE);
+    }
+
+    /**
+     * As {@link #spans(Tokenizer, String, String, Function)}, with the reasoning span's markers
+     * named by the family - for models that spell reasoning as a channel rather than {@code
+     * <think>} (Gemma 4's {@code <|channel>thought}).
+     */
+    static ReplyParser spans(
+            Tokenizer tokenizer,
+            String callStart,
+            String callEnd,
             Function<String, List<Part.ToolCall>> payload,
             String thinkOpen,
             String thinkClose) {
@@ -85,20 +98,6 @@ public interface ReplyParser {
                 new SpanToolCallDetector(tokenizer, callStart, callEnd, payload),
                 thinkOpen,
                 thinkClose);
-    }
-
-    /**
-     * As {@link #spans(Tokenizer, String, String, Function)}, with the reasoning span's markers
-     * named by the family - for models that spell reasoning as a channel rather than {@code
-     * <think>}.
-     */
-    static ReplyParser spans(
-            Tokenizer tokenizer,
-            String callStart,
-            String callEnd,
-            Function<String, List<Part.ToolCall>> payload) {
-        return new SpansReplyParser(
-                tokenizer, new SpanToolCallDetector(tokenizer, callStart, callEnd, payload));
     }
 
     /**

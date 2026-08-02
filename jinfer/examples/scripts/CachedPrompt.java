@@ -17,6 +17,7 @@ import com.qxotic.jinfer.langchain4j.JinferChatModel;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
+import java.util.ArrayList;
 import java.util.List;
 
 public class CachedPrompt {
@@ -34,10 +35,11 @@ public class CachedPrompt {
 
             for (int i = 0; i < 2; i++) { plain(base); cached.chat(QUESTIONS.get(0)); } // JIT warmup
 
+            var answers = new ArrayList<String>();
             long uncached = time(() -> plain(base));
-            long withCache = time(() -> QUESTIONS.forEach(cached::chat));
+            long withCache = time(() -> QUESTIONS.forEach(q -> answers.add(cached.chat(q))));
 
-            System.out.println("answer (identical either way): " + cached.chat(QUESTIONS.get(0)));
+            System.out.println("answer (identical either way): " + answers.get(0));
             System.out.printf("%n%d questions over a %d-char system prompt:%n", QUESTIONS.size(), SYSTEM.length());
             System.out.printf("  prefix sent every time : %5d ms%n", uncached);
             System.out.printf("  prefix restored (cached): %5d ms   -> %.1fx%n",

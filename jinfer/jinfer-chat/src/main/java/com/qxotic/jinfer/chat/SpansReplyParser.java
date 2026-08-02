@@ -37,11 +37,9 @@ final class SpansReplyParser implements ReplyParser {
     }
 
     /**
-     * As above, with the reasoning span's markers named by the family. Gemma 4 spells the same
-     * structure {@code <|channel>thought\n...<channel|>} - an open marker, reasoning text, a close
-     * marker - so it reuses this grammar instead of needing a parser of its own. The channel NAME
-     * falls inside the span and is therefore reasoning, which is what the template's own {@code
-     * strip_thinking} treats it as.
+     * As above, with the reasoning span's markers named by the family - for families that spell an
+     * open/text/close reasoning span with something other than {@code <think>}. Whatever sits
+     * between the markers is reasoning, the channel name of a named-channel spelling included.
      */
     SpansReplyParser(Tokenizer tokenizer, ToolCallDetector toolCalls, String open, String close) {
         this.tokenizer = tokenizer;

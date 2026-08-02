@@ -8,7 +8,6 @@
 
 // Text to speech, fully local: a 4 MB VITS model, no cloud, no ffmpeg.
 //   jbang Speak.java "Local inference, in Java."            -> hello.wav
-//   jbang Speak.java "..." | aplay -q -f S16_LE -r 24000 -c 1   (with --play)
 import com.qxotic.jinfer.langchain4j.JinferSpeechModel;
 import java.nio.file.*;
 

@@ -255,10 +255,16 @@ public final class Gemma4
     }
 
     public java.util.Optional<com.qxotic.jinfer.chat.TurnTemplate> turnTemplate() {
-        if (turnTemplate == null)
+        if (turnTemplate == null) {
+            // "{%- if not enable_thinking -%}{{- '<|channel>thought\n<channel|>' -}}" in the
+            // add_generation_prompt tail: 12B and 26B carry that branch, E2B does not.
+            boolean scaffoldsNonThinking =
+                    chatTemplateSource != null
+                            && chatTemplateSource.contains("not enable_thinking");
             turnTemplate =
                     new Gemma4TurnTemplate(
-                            tokenizer(), this, config().embeddingLength(), chatTemplateSource);
+                            tokenizer(), this, config().embeddingLength(), scaffoldsNonThinking);
+        }
         return java.util.Optional.of(turnTemplate);
     }
 

@@ -10,7 +10,6 @@
 //   jbang Chat.java "Explain HTTP/3 in two sentences."
 import com.qxotic.jinfer.langchain4j.JinferChatModel;
 import dev.langchain4j.model.chat.response.*;
-import java.nio.file.Path;
 import java.util.concurrent.CountDownLatch;
 
 public class Chat {

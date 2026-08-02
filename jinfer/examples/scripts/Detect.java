@@ -22,8 +22,8 @@
 //     jbang Detect.java photo.jpg "a llama" ~/models/.../gemma-4-E2B-it-Q8_0.gguf ~/models/.../mmproj-F32.gguf
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.Media;
+import com.qxotic.jinfer.chat.JsonCodec;
 import com.qxotic.jinfer.chat.Message;
-import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.media.ImageCodec;
 import com.qxotic.jinfer.models.gemma4.Gemma4;
 
@@ -34,8 +34,7 @@ import java.lang.foreign.Arena;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.Map;
 
 public class Detect {
 
@@ -61,19 +60,21 @@ public class Detect {
         var state = model.newState(4096, 512);
         for (Batch b : Batch.prepare(batches, 512)) model.ingest(state, b);
 
-        var reply = new StringBuilder();
+        var stops = model.stopTokens();
+        var ids = new ArrayList<Integer>();
         int tok = model.logits(state).argmax();
-        for (int n = 0; n < 512 && !model.stopTokens().contains(tok); n++) {
-            reply.append(model.tokenizer().decode(new int[] {tok}));
+        for (int n = 0; n < 512 && !stops.contains(tok); n++) {
+            ids.add(tok);
             model.ingest(state, Batch.step(tok));
             tok = model.logits(state).argmax();
         }
+        String reply = model.tokenizer().decode(ids.stream().mapToInt(Integer::intValue).toArray());
         System.out.println(reply);
-        draw(image, img, reply.toString(), Path.of("detected.png"));
+        draw(image, reply, Path.of("detected.png"));
     }
 
     /** Rescale Gemma's 0-1024 boxes onto the real pixels and stroke them with their labels. */
-    private static void draw(Path source, Media.Image img, String json, Path out) throws Exception {
+    private static void draw(Path source, String json, Path out) throws Exception {
         BufferedImage canvas = ImageIO.read(source.toFile());
         Graphics2D g = canvas.createGraphics();
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
@@ -81,20 +82,18 @@ public class Detect {
         g.setFont(g.getFont().deriveFont(Font.BOLD, Math.max(14f, canvas.getWidth() / 45f)));
 
         Color[] palette = {Color.RED, Color.CYAN, Color.YELLOW, Color.GREEN, Color.MAGENTA, Color.ORANGE};
-        // Field ORDER is not guaranteed - the model emits box_2d first as often as label - so match
-        // each object, then pull the two fields out of it independently.
-        Matcher object = Pattern.compile("\\{[^{}]*\\}").matcher(json);
-        Pattern label = Pattern.compile("\"label\"\\s*:\\s*\"([^\"]*)\"");
-        Pattern box = Pattern.compile(
-                "\"box_2d\"\\s*:\\s*\\[\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,\\s*(\\d+)\\s*\\]");
+        // A real parser, so field order does not matter - the model emits box_2d before label as
+        // often as after. Models like to wrap the array in prose or a ```json fence; take the
+        // outermost [ ... ] and let the parser do the rest.
+        int from = json.indexOf('['), to = json.lastIndexOf(']');
+        if (from < 0 || to < from) throw new IllegalStateException("no JSON array in reply:\n" + json);
         int found = 0;
-        while (object.find()) {
-            Matcher b = box.matcher(object.group());
-            if (!b.find()) continue;
-            Matcher l = label.matcher(object.group());
-            String name = l.find() ? l.group(1) : "?";
-            int ymin = scale(b.group(1), canvas.getHeight()), xmin = scale(b.group(2), canvas.getWidth());
-            int ymax = scale(b.group(3), canvas.getHeight()), xmax = scale(b.group(4), canvas.getWidth());
+        for (Object element : (List<?>) JsonCodec.parse(json.substring(from, to + 1))) {
+            if (!(element instanceof Map<?, ?> object)) continue;
+            if (!(object.get("box_2d") instanceof List<?> box) || box.size() != 4) continue;
+            String name = object.get("label") instanceof String s ? s : "?";
+            int ymin = scale(box.get(0), canvas.getHeight()), xmin = scale(box.get(1), canvas.getWidth());
+            int ymax = scale(box.get(2), canvas.getHeight()), xmax = scale(box.get(3), canvas.getWidth());
             g.setColor(palette[found++ % palette.length]);
             g.drawRect(xmin, ymin, xmax - xmin, ymax - ymin);
             g.drawString(name, xmin + 4, Math.max(ymin + g.getFont().getSize(), 16));
@@ -105,7 +104,7 @@ public class Detect {
                 found, canvas.getWidth(), canvas.getHeight(), out.toAbsolutePath());
     }
 
-    private static int scale(String normalized, int pixels) {
-        return Math.round(Integer.parseInt(normalized) / 1024f * pixels);
+    private static int scale(Object normalized, int pixels) {
+        return Math.round(((Number) normalized).floatValue() / 1024f * pixels);
     }
 }
