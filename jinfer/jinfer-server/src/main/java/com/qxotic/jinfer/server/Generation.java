@@ -5,7 +5,6 @@ import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.cache.StateCodec;
 import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.ChatTemplate;
-import com.qxotic.jinfer.chat.JinjaChatTemplate;
 import com.qxotic.jinfer.chat.JsonCodec;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.Message;
@@ -24,7 +23,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.function.Consumer;
 
 /**
@@ -47,8 +45,8 @@ final class Generation {
     private final LLMOptions options;
     private final String servedModel;
     private final ChatTemplate template; // memoized model framing, null when the model has none
-    private final JinjaChatTemplate jinjaTemplate; // whole-render fallback, compiled once
-    private final Set<Integer> stopTokens; // memoized model stops
+    // raw-prompt mode encodes text special-token-aware; nothing renders a template for it
+    private final com.qxotic.toknroll.Specials specials;
     // The shared runtime: template stack, sampling policy, block tree and session pool. This
     // class predates all of it and had its own of each; what remains here is the OpenAI wire.
     private final ChatEngine engine;
@@ -58,8 +56,7 @@ final class Generation {
         this.model = chatModel;
         this.options = options;
         this.template = chatModel.template().orElse(null);
-        this.jinjaTemplate = new JinjaChatTemplate(model.tokenizer(), model.chatTemplateSource());
-        this.stopTokens = model.stopTokens();
+        this.specials = SpecialTokens.encoder(model.tokenizer());
         // borrowed weights: the server loaded the model and keeps its arena
         this.engine = new ChatEngine(chatModel, servedModel, null, RuntimeFlags.SESSIONS);
     }
@@ -112,27 +109,30 @@ final class Generation {
                         false,
                         textStops(request.get("stop")),
                         kwargs);
-        Reply reply =
-                run(
+        ChatEngine.Prepared prepared =
+                engine.prepare(
                         lowered,
                         () -> messages,
-                        () -> tools ? Values.asArray(request.get("tools"), "tools") : null,
+                        () -> tools ? Values.asArray(request.get("tools"), "tools") : null);
+        Reply reply =
+                complete(
+                        prepared,
                         request,
-                        sinks);
+                        sinks,
+                        consumedPromptTokens(model.tokenizer(), prepared.encoded().prompt()));
         // Bare-call recovery (llama.cpp #21242): LFM2.5 sometimes emits pythonic calls WITHOUT its
         // markers, so the structural parser finds nothing; the string scan is a no-op otherwise.
         return tools ? ToolUse.parse(model, reply, request) : reply;
     }
 
-    /** Generate through the engine and shape the reply the OpenAI schema expects. */
-    private Reply run(
-            ChatEngine.Request lowered,
-            java.util.function.Supplier<List<Object>> messageMaps,
-            java.util.function.Supplier<List<Object>> toolMaps,
-            Map<String, Object> request,
-            Sinks sinks) {
-        ChatEngine.Prepared prepared = engine.prepare(lowered, messageMaps, toolMaps);
-        // stops belong to the engine now: it holds back a could-still-be-a-stop suffix and ends the
+    /**
+     * Drive one prepared request through the engine and shape the reply the OpenAI schema wants.
+     * Both entry points land here: chat once the template stack has lowered it, completions once a
+     * raw prompt has lowered itself.
+     */
+    private Reply complete(
+            ChatEngine.Prepared prepared, Map<String, Object> request, Sinks sinks, int billed) {
+        // stops belong to the engine: it holds back a could-still-be-a-stop suffix and ends the
         // pass, so the router only accumulates and projects inline reasoning
         FragmentRouter router =
                 new FragmentRouter(
@@ -157,7 +157,6 @@ final class Generation {
                             }
                         });
         router.flush();
-        int billed = consumedPromptTokens(model.tokenizer(), prepared.encoded().prompt());
         OpenAiSchema.Usage usage = sinks.usage();
         if (usage != null) {
             usage.promptTokens = billed;
@@ -166,23 +165,17 @@ final class Generation {
         }
         Metrics.recordPromptCache(done.tier() == ChatEngine.Tier.SESSION, done.restoredTokens());
         return router.reply(
-                done.result(), done.reply(), billed, done.restoredTokens(), lowered.stops());
+                done.result(), done.reply(), billed, done.restoredTokens(), prepared.stops());
     }
 
     /** Forced requests stay native only when the template's forced-call recipe covers them. */
     private boolean nativeForcedOk(Map<String, Object> request) {
         String forced = ToolUse.forced(request);
         if (forced == null) return true;
-        if (template.callSeed().length == 0) return false;
+        // null template = no native codec, so no call seed to force with. The old caller
+        // short-circuited on `template != null &&` before reaching here; this method must own it.
+        if (template == null || template.callSeed().length == 0) return false;
         return forced.isEmpty() || ToolUse.names(request).contains(forced);
-    }
-
-    /** The pin's tool list: the single named function, or everything offered for "required". */
-    private List<Tool> pinTools(Map<String, Object> request) {
-        List<Tool> offered = buildTools(request);
-        String forced = ToolUse.forced(request);
-        if (forced == null || forced.isEmpty()) return offered;
-        return offered.stream().filter(t -> t.name().equals(forced)).toList();
     }
 
     /**
@@ -269,18 +262,6 @@ final class Generation {
     }
 
     /**
-     * chat_template_kwargs the templated path can represent: only enable_thinking (mapped to the
-     * generation prompt). Anything else must reach the Jinja render, so the request falls back.
-     */
-    private static boolean onlyKnownKwargs(Map<String, Object> request) {
-        if (!(request.get("chat_template_kwargs") instanceof Map<?, ?> kwargs)) return true;
-        for (Object key : kwargs.keySet()) {
-            if (!"enable_thinking".equals(key)) return false;
-        }
-        return true;
-    }
-
-    /**
      * The codec chat path: lower the conversation to the model's own framing and, when the prompt
      * cache is available, resume the longest cached prefix into the state (skipping that prefill)
      * and ingest only the delta, caching it for the next turn. Assistant history is re-tokenized
@@ -294,7 +275,7 @@ final class Generation {
     private Reply completion0(Map<String, Object> request, String prompt, Sinks sinks) {
         Tokenizer tokenizer = model.tokenizer();
         IntSequence promptTokens =
-                options.rawPrompt() ? jinjaTemplate.encodeRaw(prompt) : tokenizer.encode(prompt);
+                options.rawPrompt() ? specials.encode(tokenizer, prompt) : tokenizer.encode(prompt);
         return generate(request, promptTokens, sinks);
     }
 
@@ -332,42 +313,8 @@ final class Generation {
                         textStops(request.get("stop")),
                         false,
                         false); // a completion offers no tools, so call syntax stays text
-        FragmentRouter router =
-                new FragmentRouter(
-                        List.of(), sinks.onText(), sinks.onReasoning(), inlineReasoning(request));
-        ChatEngine.Completion done =
-                engine.complete(
-                        prepared,
-                        new ChatEngine.ReplySink() {
-                            @Override
-                            public void content(String delta) {
-                                router.fragment(delta, false);
-                            }
-
-                            @Override
-                            public void thinking(String delta) {
-                                router.fragment(delta, true);
-                            }
-
-                            @Override
-                            public boolean cancelled() {
-                                return false;
-                            }
-                        });
-        router.flush();
-        int billed = consumedPromptTokens(model.tokenizer(), promptTokens);
-        OpenAiSchema.Usage usage = sinks.usage();
-        if (usage != null) {
-            usage.promptTokens = billed;
-            usage.cachedTokens = done.restoredTokens();
-            usage.completionTokens = done.result().completionTokens();
-        }
-        return router.reply(
-                done.result(),
-                done.reply(),
-                billed,
-                done.restoredTokens(),
-                textStops(request.get("stop")));
+        return complete(
+                prepared, request, sinks, consumedPromptTokens(model.tokenizer(), promptTokens));
     }
 
     /** The server's per-request override of the half-budget reasoning default. */

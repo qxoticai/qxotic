@@ -240,12 +240,19 @@ public final class Server {
                 () -> {
                     try {
                         job.run(request, id);
-                    } catch (RuntimeException e) {
+                    } catch (IllegalArgumentException | UnsupportedOperationException e) {
+                        // the request is genuinely at fault: a bad parameter, or input this model
+                        // cannot frame (media on a text-only model, a shape with no codec)
                         Http.sendErrorQuietly(exchange, 400, Http.errorMessage(e));
                     } catch (IOException e) {
                         System.err.println("client connection lost: " + e);
                     } catch (Throwable t) {
-                        Http.sendErrorQuietly(exchange, 500, t.toString());
+                        // Anything else is OURS. Catching RuntimeException as 400 here reported
+                        // server defects as client errors - an NPE came back as a 400 quoting the
+                        // null field - so they neither showed up as failures nor were actionable.
+                        System.err.println("request " + id + " failed:");
+                        t.printStackTrace();
+                        Http.sendErrorQuietly(exchange, 500, "Internal server error");
                     }
                 });
     }
