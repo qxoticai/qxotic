@@ -61,15 +61,32 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
     // already-closed thought channel, so the model goes straight to the answer. Omit it and the
     // model helpfully writes the header itself, whose channel NAME is plain text and lands in the
     // reply as a literal "thought" in front of every answer.
+    //
+    // Not every Gemma 4 checkpoint has this rule: E2B's chat_template ends its generation prompt
+    // at <|turn>model\n unconditionally, so `thinking` is a no-op there. Its vocabulary still
+    // carries the channel specials (the template splits on them to strip thought from history),
+    // which is why the scaffold is gated on the TEMPLATE, not on token presence - given the
+    // scaffold off-contract, E2B answers in reasoning prose instead of skipping the thought.
     private final List<Batch> generationPromptNoThink;
     private final List<Batch> closeTurn; // <turn|>\n, constant
     private final TokenRuns proto; // compiled spelling table, forked per turn
 
     public Gemma4TurnTemplate(Tokenizer tokenizer) {
-        this(tokenizer, null, 0);
+        this(tokenizer, null, 0, null);
     }
 
     public Gemma4TurnTemplate(Tokenizer tokenizer, MultiModal media, int modelDim) {
+        this(tokenizer, media, modelDim, null);
+    }
+
+    /**
+     * {@code chatTemplateSource} is the checkpoint's own chat_template, read for ONE decision: does
+     * this checkpoint scaffold the non-thinking generation prompt (see {@link
+     * #generationPromptNoThink})? Absent, {@code thinking} is a no-op - the safe reading, since the
+     * scaffold harms checkpoints whose template does not declare it.
+     */
+    public Gemma4TurnTemplate(
+            Tokenizer tokenizer, MultiModal media, int modelDim, String chatTemplateSource) {
         this.tokenizer = tokenizer;
         this.media = media;
         this.modelDim = modelDim;
@@ -84,7 +101,11 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
         List<Integer> noThink = new ArrayList<>(gen);
         Integer channelOpen = tokenizer.vocabulary().findId("<|channel>").orElse(-1);
         Integer channelClose = tokenizer.vocabulary().findId("<channel|>").orElse(-1);
-        if (channelOpen >= 0 && channelClose >= 0) { // vocabularies without channels: unchanged
+        // the template's own branch condition: "{%- if not enable_thinking ... '<|channel>thought
+        // \n<channel|>' -%}" in the add_generation_prompt tail. E2B's template has no such branch.
+        boolean scaffoldsNoThink =
+                chatTemplateSource != null && chatTemplateSource.contains("not enable_thinking");
+        if (scaffoldsNoThink && channelOpen >= 0 && channelClose >= 0) {
             noThink.add(channelOpen);
             noThink.addAll(tokenizer.encode("thought\n").toList());
             noThink.add(channelClose);

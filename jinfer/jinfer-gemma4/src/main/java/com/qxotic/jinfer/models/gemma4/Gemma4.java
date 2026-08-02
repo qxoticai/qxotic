@@ -256,7 +256,9 @@ public final class Gemma4
 
     public java.util.Optional<com.qxotic.jinfer.chat.TurnTemplate> turnTemplate() {
         if (turnTemplate == null)
-            turnTemplate = new Gemma4TurnTemplate(tokenizer(), this, config().embeddingLength());
+            turnTemplate =
+                    new Gemma4TurnTemplate(
+                            tokenizer(), this, config().embeddingLength(), chatTemplateSource);
         return java.util.Optional.of(turnTemplate);
     }
 
