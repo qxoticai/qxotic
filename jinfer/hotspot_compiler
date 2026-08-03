@@ -10,6 +10,14 @@
 # Use with:  -XX:CompileCommandFile=<path>/hotspot_compiler
 # Format:    one "inline <class-with-slashes>.<method>" per line; '#' starts a comment.
 #
+# Stock C2 alternative (no per-method list): -XX:InlineSmallCode=1000000 alone recovers the same
+# prefill (741 vs 756 t/s, LFM 8B Q4_K_M pp512; no-flags baseline 516). Root cause: the vector-
+# returning helpers hit compile thresholds before their callers (leaf methods run 64x more), their
+# standalone nmethods are bloated by boxing, and C2 then refuses to inline them ("already compiled
+# into a big method" / "callee uses too much stack") - raising the size heuristics
+# (FreqInlineSize/MaxInlineSize) does nothing because this check fires first. Decode needs no
+# flags at all: Dispatch routes the C2-hostile k-quant dots to jam (FloatTensor.FAST_VECTOR_JIT).
+#
 # NOTE: F32FloatTensor.siluMultiplyInPlace is already inline-by-construction in source (siluVec/tanhVec are
 # hand-inlined into its loop), so it is intentionally NOT listed here.
 
