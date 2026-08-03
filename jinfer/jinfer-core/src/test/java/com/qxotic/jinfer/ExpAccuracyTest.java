@@ -35,7 +35,7 @@ final class ExpAccuracyTest {
         long n = 0;
         for (int bits = hiBits; bits <= loBits; bits += 61) { // prime stride: ~18M points
             float x = Float.intBitsToFloat(bits);
-            int u = ulpDiff(Expf.expNeg(x), (float) Math.exp(x));
+            int u = ulpDiff(FastMath.expNeg(x), (float) Math.exp(x));
             if (u > worst) {
                 worst = u;
                 worstX = x;
@@ -55,14 +55,14 @@ final class ExpAccuracyTest {
 
     @Test
     void boundariesAreExact() {
-        assertEquals(1f, Expf.expNeg(0f), "exp(0) must be exactly 1");
-        assertEquals(1f, Expf.expNeg(-0f));
-        assertEquals(0f, Expf.expNeg(Float.NEGATIVE_INFINITY), "masked scores");
+        assertEquals(1f, FastMath.expNeg(0f), "exp(0) must be exactly 1");
+        assertEquals(1f, FastMath.expNeg(-0f));
+        assertEquals(0f, FastMath.expNeg(Float.NEGATIVE_INFINITY), "masked scores");
         assertEquals(
                 0f,
-                Expf.expNeg(Math.nextDown(DOMAIN_LO)),
+                FastMath.expNeg(Math.nextDown(DOMAIN_LO)),
                 "below the underflow cutoff the pass returns exactly 0 (true value <= 1.2e-38)");
-        assertTrue(Expf.expNeg(DOMAIN_LO) > 0f, "the cutoff itself still evaluates");
+        assertTrue(FastMath.expNeg(DOMAIN_LO) > 0f, "the cutoff itself still evaluates");
     }
 
     @Test
@@ -77,7 +77,7 @@ final class ExpAccuracyTest {
                 row[i] = max - (trial % 3 == 0 ? rnd.nextFloat() * 100f : rnd.nextFloat() * 8f);
             }
             for (int i = 0; i < row.length; i++) {
-                expected[i] = Expf.expNeg(row[i] - max);
+                expected[i] = FastMath.expNeg(row[i] - max);
             }
             double sum = FlashAttention.expRowInPlace(row, 0, row.length, max);
             double expectedSum = 0;

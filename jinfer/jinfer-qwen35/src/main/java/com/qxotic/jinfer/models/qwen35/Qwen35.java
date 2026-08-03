@@ -345,7 +345,7 @@ public final class Qwen35
                 kvMul);
 
         int total = seqLen * queryDim;
-        // NOT Expf.sigmoidMulInPlace (would be +4% prefill): cached-vs-cold reply identity is a
+        // NOT FastMath.sigmoidMulInPlace (would be +4% prefill): cached-vs-cold reply identity is a
         // knife-edge that any gate-value change flips, and the floor is BELOW this model - jam
         // gemm rows are not bitwise M-invariant (measured: ~96% of row elements differ between
         // ANY two batch shapes; the K-split reduction order depends on the shape), so the

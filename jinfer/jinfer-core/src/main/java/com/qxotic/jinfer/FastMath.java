@@ -24,9 +24,9 @@ import jdk.incubator.vector.VectorOperators;
  * {@code @AlwaysInline} - the native-image Vector API expansion phase leaves them boxed at scalar
  * speed (measured, same trap as {@code pvTile}).
  */
-public final class Expf {
+public final class FastMath {
 
-    private Expf() {}
+    private FastMath() {}
 
     static final float EXP_LOG2E = 1.4426950408889634f;
     static final float EXP_MAGIC = 12582912.0f; // 1.5*2^23: fma with it rounds to nearest

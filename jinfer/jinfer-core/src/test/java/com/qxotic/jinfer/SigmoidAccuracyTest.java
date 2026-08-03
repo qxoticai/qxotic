@@ -7,11 +7,11 @@ import java.lang.foreign.Arena;
 import org.junit.jupiter.api.Test;
 
 /**
- * {@link Expf#sigmoid} is an approximation and this is its contract: within 4 ulp of the {@code
+ * {@link FastMath#sigmoid} is an approximation and this is its contract: within 4 ulp of the {@code
  * Math.exp}-based reference over the full input range (dense strided sweep of every float region,
  * both signs - the gate logits it serves are unbounded). Saturation must be exact past |x| > 87.3
  * (a hard 1 or 0, matching where the reference rounds to the same). The fused vector path ({@link
- * Expf#sigmoidMulInPlace}) is pinned bit-identical to the scalar mirror.
+ * FastMath#sigmoidMulInPlace}) is pinned bit-identical to the scalar mirror.
  */
 final class SigmoidAccuracyTest {
 
@@ -36,7 +36,7 @@ final class SigmoidAccuracyTest {
         for (int bits = 0; bits <= hi; bits += 61) {
             for (int sign = 0; sign <= 1; sign++) {
                 float x = Float.intBitsToFloat(sign == 0 ? bits : bits | 0x80000000);
-                float got = Expf.sigmoid(x);
+                float got = FastMath.sigmoid(x);
                 float r = ref(x);
                 if (Math.abs(r) < Float.MIN_NORMAL && Math.abs(got) < Float.MIN_NORMAL) {
                     continue; // both subnormal-or-zero: absolute error <= 1.2e-38
@@ -55,7 +55,7 @@ final class SigmoidAccuracyTest {
                         + " ulp at x="
                         + worstX
                         + " (got "
-                        + Expf.sigmoid(worstX)
+                        + FastMath.sigmoid(worstX)
                         + ", ref "
                         + ref(worstX)
                         + ")");
@@ -63,12 +63,12 @@ final class SigmoidAccuracyTest {
 
     @Test
     void saturationAndCenterAreExact() {
-        assertEquals(0.5f, Expf.sigmoid(0f), "sigmoid(0) must be exactly 0.5");
-        assertEquals(0.5f, Expf.sigmoid(-0f));
-        assertEquals(1f, Expf.sigmoid(88f), "positive saturation");
-        assertEquals(0f, Expf.sigmoid(-88f), "negative saturation");
-        assertEquals(1f, Expf.sigmoid(Float.POSITIVE_INFINITY));
-        assertEquals(0f, Expf.sigmoid(Float.NEGATIVE_INFINITY));
+        assertEquals(0.5f, FastMath.sigmoid(0f), "sigmoid(0) must be exactly 0.5");
+        assertEquals(0.5f, FastMath.sigmoid(-0f));
+        assertEquals(1f, FastMath.sigmoid(88f), "positive saturation");
+        assertEquals(0f, FastMath.sigmoid(-88f), "negative saturation");
+        assertEquals(1f, FastMath.sigmoid(Float.POSITIVE_INFINITY));
+        assertEquals(0f, FastMath.sigmoid(Float.NEGATIVE_INFINITY));
     }
 
     @Test
@@ -85,9 +85,9 @@ final class SigmoidAccuracyTest {
                     initial[i] = rnd.nextFloat() * 4f - 2f;
                     out.setFloat(i, initial[i]);
                 }
-                Expf.sigmoidMulInPlace(out, 0, gate, 0, n);
+                FastMath.sigmoidMulInPlace(out, 0, gate, 0, n);
                 for (int i = 0; i < n; i++) {
-                    float expected = initial[i] * Expf.sigmoid(gate[i]);
+                    float expected = initial[i] * FastMath.sigmoid(gate[i]);
                     assertEquals(
                             Float.floatToIntBits(expected),
                             Float.floatToIntBits(out.getFloat(i)),

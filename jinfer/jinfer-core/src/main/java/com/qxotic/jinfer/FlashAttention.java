@@ -96,7 +96,7 @@ public final class FlashAttention {
     }
 
     // ---- the fused softmax pass: vectorized exp over a score row ----------------------------
-    // The polynomial, its constants, its scalar mirror and its ACCURACY CONTRACT live in Expf
+    // The polynomial, its constants, its scalar mirror and its ACCURACY CONTRACT live in FastMath
     // (gated by ExpAccuracyTest); the vector body is fused inline below because a helper - even
     // @AlwaysInline - stays boxed under the native-image Vector API expansion (measured 9ns vs
     // 0.19ns per element).
@@ -139,18 +139,18 @@ public final class FlashAttention {
                 // measured 9ns/element vs 0.19ns fused (the same budget trap as pvTile's split)
                 FloatVector mv = FloatVector.broadcast(sp, max);
                 FloatVector acc = FloatVector.zero(sp);
-                FloatVector vLog2e = FloatVector.broadcast(sp, Expf.EXP_LOG2E);
-                FloatVector vMagic = FloatVector.broadcast(sp, Expf.EXP_MAGIC);
-                FloatVector vHi = FloatVector.broadcast(sp, Expf.EXP_NLN2_HI);
-                FloatVector vLo = FloatVector.broadcast(sp, Expf.EXP_NLN2_LO);
-                FloatVector vC6 = FloatVector.broadcast(sp, Expf.EXP_C6);
-                FloatVector vC5 = FloatVector.broadcast(sp, Expf.EXP_C5);
-                FloatVector vC4 = FloatVector.broadcast(sp, Expf.EXP_C4);
-                FloatVector vC3 = FloatVector.broadcast(sp, Expf.EXP_C3);
-                FloatVector vC2 = FloatVector.broadcast(sp, Expf.EXP_C2);
+                FloatVector vLog2e = FloatVector.broadcast(sp, FastMath.EXP_LOG2E);
+                FloatVector vMagic = FloatVector.broadcast(sp, FastMath.EXP_MAGIC);
+                FloatVector vHi = FloatVector.broadcast(sp, FastMath.EXP_NLN2_HI);
+                FloatVector vLo = FloatVector.broadcast(sp, FastMath.EXP_NLN2_LO);
+                FloatVector vC6 = FloatVector.broadcast(sp, FastMath.EXP_C6);
+                FloatVector vC5 = FloatVector.broadcast(sp, FastMath.EXP_C5);
+                FloatVector vC4 = FloatVector.broadcast(sp, FastMath.EXP_C4);
+                FloatVector vC3 = FloatVector.broadcast(sp, FastMath.EXP_C3);
+                FloatVector vC2 = FloatVector.broadcast(sp, FastMath.EXP_C2);
                 FloatVector vOne = FloatVector.broadcast(sp, 1f);
                 FloatVector vZero = FloatVector.zero(sp);
-                FloatVector vUnder = FloatVector.broadcast(sp, Expf.EXP_UNDERFLOW);
+                FloatVector vUnder = FloatVector.broadcast(sp, FastMath.EXP_UNDERFLOW);
                 for (; j < bound; j += len) {
                     FloatVector x = FloatVector.fromArray(sp, S, base + j).sub(mv);
                     FloatVector xc = x.max(vUnder);
@@ -178,7 +178,7 @@ public final class FlashAttention {
             }
         }
         for (; j < n; j++) {
-            float p = Expf.expNeg(S[base + j] - max);
+            float p = FastMath.expNeg(S[base + j] - max);
             S[base + j] = p;
             sum += p;
         }
@@ -910,7 +910,7 @@ public final class FlashAttention {
                             double rowL = L[i];
                             float newMax = Math.max(rowM, blockMax);
                             if (newMax > rowM) {
-                                float rst = Expf.expNeg(rowM - newMax);
+                                float rst = FastMath.expNeg(rowM - newMax);
                                 normalize(out, (qStart + i) * queryDim + hHead, headSize, rst);
                                 rowL *= rst;
                                 rowM = newMax;
@@ -1253,7 +1253,7 @@ public final class FlashAttention {
                             double rowL = L[i];
                             float newMax = Math.max(rowM, blockMax);
                             if (newMax > rowM) {
-                                float rst = Expf.expNeg(rowM - newMax);
+                                float rst = FastMath.expNeg(rowM - newMax);
                                 normalize(out, (qStart + i) * queryStride + hHead, headSize, rst);
                                 rowL *= rst;
                                 rowM = newMax;

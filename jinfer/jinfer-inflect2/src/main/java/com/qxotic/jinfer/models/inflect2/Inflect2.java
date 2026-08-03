@@ -787,9 +787,9 @@ public final class Inflect2 {
         F32FloatTensor waveform = state.take(time);
         convRows(state, x, waveform, decoder.post(), 1, time);
         // one tanh per audio sample: scalar Math.tanh costs ~15ns each in the native image;
-        // the fused Expf pass is ~0.4ns (contract in TanhAccuracyTest - abs error ~6e-8,
+        // the fused FastMath pass is ~0.4ns (contract in TanhAccuracyTest - abs error ~6e-8,
         // below 24-bit audio's LSB)
-        com.qxotic.jinfer.Expf.tanhInPlace(waveform, 0, time);
+        com.qxotic.jinfer.FastMath.tanhInPlace(waveform, 0, time);
         return waveform;
     }
 

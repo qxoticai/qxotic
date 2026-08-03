@@ -164,10 +164,11 @@ public final class F32FloatTensor extends SegmentFloatTensor {
     }
 
     /**
-     * Fused vectorized softmax: SIMD max, one {@code Expf}-polynomial exp+sum pass, SIMD divide.
-     * This is the sampler's per-token vocab softmax (~128k elements) and the MoE router softmax;
-     * the base implementation's scalar {@code Math.exp} costs ~9ns per element in a native image
-     * (~1.2ms per sampled token on a 128k vocab). Accuracy contract: Expf's, see ExpAccuracyTest.
+     * Fused vectorized softmax: SIMD max, one {@code FastMath}-polynomial exp+sum pass, SIMD
+     * divide. This is the sampler's per-token vocab softmax (~128k elements) and the MoE router
+     * softmax; the base implementation's scalar {@code Math.exp} costs ~9ns per element in a native
+     * image (~1.2ms per sampled token on a 128k vocab). Accuracy contract: FastMath's, see
+     * ExpAccuracyTest.
      */
     @Override
     public FloatTensor softmaxInPlace(long thisOffset, int size) {
@@ -189,7 +190,7 @@ public final class F32FloatTensor extends SegmentFloatTensor {
             max = acc.reduceLanes(VectorOperators.MAX);
         }
         for (; i < size; i++) max = Math.max(max, getFloat(thisOffset + i));
-        double sum = Expf.expSumInPlace(this, thisOffset, size, max);
+        double sum = FastMath.expSumInPlace(this, thisOffset, size, max);
         return divideInPlace(thisOffset, size, (float) sum);
     }
 
