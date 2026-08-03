@@ -169,7 +169,10 @@ final class Dispatch implements MatMul {
      * unpack chains; measured Q4_K_M decode collapse). Measured non-members: Q4_0's single-nibble
      * unpack is fine on C2 (llama-1B tg 114 vs Graal's 118), and MXFP4 loses ~20% on C2 but jam
      * routing loses more (gpt-oss-20b tg 22.8 Java dot vs 18.0 jam - MoE decode issues ~24k tiny
-     * expert gemvs per pass and each jam call pays the FFM boundary).
+     * expert gemvs per pass and each jam call pays the FFM boundary). NVFP4 is structurally exempt:
+     * its dot dequantizes with scalar code then runs a dense F32 vector dot, so there is no
+     * byte-vector unpack for C2 to fall back on (kernel probe: 1.8x hot-cache gap, from the scalar
+     * decode loop's codegen).
      */
     private static boolean bytePackedDot(GGMLType t) {
         return switch (t) {
