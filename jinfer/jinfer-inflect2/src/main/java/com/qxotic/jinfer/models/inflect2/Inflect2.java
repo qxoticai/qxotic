@@ -443,13 +443,17 @@ public final class Inflect2 {
         return new State(arena, adopt ? arena : null);
     }
 
-    /** A state that owns its scratch: an internal {@code ofShared} freed by {@code close()}. */
+    /** A state that owns its scratch: an internal shared arena freed by {@code close()}. */
     public State newState() {
-        Arena arena = Arena.ofShared();
+        Arena arena = com.qxotic.jinfer.Arenas.newShared(); // ofAuto in a native image
         try {
             return newState(arena, true);
         } catch (RuntimeException | Error e) {
-            arena.close();
+            try {
+                arena.close();
+            } catch (UnsupportedOperationException ignored) {
+                // ofAuto (native image) frees at GC
+            }
             throw e;
         }
     }
