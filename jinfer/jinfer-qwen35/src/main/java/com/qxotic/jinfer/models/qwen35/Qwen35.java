@@ -209,12 +209,14 @@ public final class Qwen35
                                     fDim,
                                     eps));
 
+            // ONE path for every seqLen, decode included: the n==1 cores computed the same
+            // position through different kernels (matmul vs gemm, flashDecode vs the tiled
+            // prefill), so cached-vs-cold byte identity was a knife-edge that any value change
+            // flipped (Qwen35CacheRun). The batched cores are shape-invariant per row.
             if (config.isFullAttention[l]) {
-                if (seqLen == 1) attentionForward(state, l, startPos);
-                else attentionForwardBatch(state, l, startPos, seqLen);
+                attentionForwardBatch(state, l, startPos, seqLen);
             } else {
-                if (seqLen == 1) ssmForward(state, l);
-                else ssmForwardBatch(state, l, seqLen);
+                ssmForwardBatch(state, l, seqLen);
             }
 
             // sublayer residual, then post-attention norm acts as the pre-FFN norm
@@ -233,11 +235,9 @@ public final class Qwen35
                                     eps));
 
             if (config.isMoE()) {
-                if (seqLen == 1) moeForward(state, l);
-                else moeForwardBatch(state, l, seqLen);
+                moeForwardBatch(state, l, seqLen);
             } else {
-                if (seqLen == 1) ffnForward(state, l);
-                else ffnForwardBatch(state, l, seqLen);
+                ffnForwardBatch(state, l, seqLen);
             }
             state.x.addInPlace(0, state.xb, 0, seqLen * dim);
             if (Trace.ENABLED) Trace.sum("l_out-" + l, state.x, seqLen * dim);
@@ -345,10 +345,12 @@ public final class Qwen35
                 kvMul);
 
         int total = seqLen * queryDim;
-        // NOT Expf.sigmoidMulInPlace (measured +4% prefill): the n==1 seam computes this row's
-        // projections through matmul while chunks go through gemm, so reply identity across
-        // chunk shapes is a knife-edge that any gate-value change flips (Qwen35CacheRun caught
-        // it). Upgrade together with the seam fix, not before.
+        // NOT Expf.sigmoidMulInPlace (would be +4% prefill): cached-vs-cold reply identity is a
+        // knife-edge that any gate-value change flips, and the floor is BELOW this model - jam
+        // gemm rows are not bitwise M-invariant (measured: ~96% of row elements differ between
+        // ANY two batch shapes; the K-split reduction order depends on the shape), so the
+        // one-short re-ingest can never bit-match the in-chunk computation. Upgrade when jam
+        // grows a shape-invariant reduction mode, not before.
         for (int i = 0; i < total; i++)
             state.attnOut.setFloat(i, state.attnOut.getFloat(i) * sigmoid(gateArr[i]));
         w.attnOutput[layer].gemm(state.attnOut, queryDim, state.xb, dim, seqLen, dim, queryDim);
@@ -531,269 +533,6 @@ public final class Qwen35
     }
 
     /**
-     * Full softmax attention with QK-norm, fused query/output gate (attn_q -> [q | gate]), GQA and
-     * RoPE; output gated by sigmoid(gate).
-     */
-    private void attentionForward(State state, int layer, int position) {
-        Configuration config = configuration;
-        Weights w = weights;
-        int dim = config.embeddingLength;
-        int headSize = config.headSize;
-        int heads = config.numberOfHeads;
-        int kvHeads = config.numberOfKeyValueHeads;
-        int kvDim = config.kvDim();
-        int queryDim = config.queryDim();
-        int kvMul = heads / kvHeads;
-        float eps = config.rmsNormEps;
-
-        // attn_q -> 2*queryDim, interleaved per head as [q(headSize) | gate(headSize)]
-        w.attnQ[layer].matmul(state.xb, state.q, 2 * queryDim, dim);
-        float[] gateArr = state.attnGateArr;
-        for (int h = 0; h < heads; h++) {
-            int base = h * 2 * headSize;
-            for (int d = 0; d < headSize; d++) {
-                gateArr[h * headSize + d] = state.q.getFloat(base + headSize + d);
-                state.q.setFloat(h * headSize + d, state.q.getFloat(base + d));
-            }
-        }
-        for (int h = 0; h < heads; h++) {
-            rmsnorm(
-                    state.q,
-                    h * headSize,
-                    state.q,
-                    h * headSize,
-                    w.attnQNorm[layer],
-                    headSize,
-                    eps);
-        }
-        w.attnK[layer].matmul(state.xb, state.k, kvDim, dim);
-        w.attnV[layer].matmul(state.xb, state.v, kvDim, dim);
-        for (int h = 0; h < kvHeads; h++) {
-            rmsnorm(
-                    state.k,
-                    h * headSize,
-                    state.k,
-                    h * headSize,
-                    w.attnKNorm[layer],
-                    headSize,
-                    eps);
-        }
-        if (w.ropeHalf > 0) {
-            for (int h = 0; h < heads; h++)
-                RoPE.applyInterleaved(
-                        state.q, h * headSize, position, w.ropeCr, w.ropeCi, w.ropeHalf);
-            for (int h = 0; h < kvHeads; h++)
-                RoPE.applyInterleaved(
-                        state.k, h * headSize, position, w.ropeCr, w.ropeCi, w.ropeHalf);
-        }
-        state.k.copyTo(0, state.keyCache[layer], position * kvDim, kvDim);
-        state.v.copyTo(0, state.valueCache[layer], position * kvDim, kvDim);
-
-        FloatTensor keyCache = state.keyCache[layer], valueCache = state.valueCache[layer];
-        float attScale = 1.0f / (float) Math.sqrt(headSize);
-        FlashAttention.flashDecode(
-                (F32FloatTensor) state.q,
-                (F32FloatTensor) state.xb2,
-                keyCache,
-                valueCache,
-                null,
-                null,
-                heads,
-                position,
-                0,
-                headSize,
-                kvDim,
-                kvMul,
-                attScale,
-                0,
-                null,
-                state.decodeScratch);
-
-        for (int i = 0; i < queryDim; i++) {
-            state.xb2.setFloat(i, state.xb2.getFloat(i) * sigmoid(gateArr[i]));
-        }
-        w.attnOutput[layer].matmul(state.xb2, state.xb, dim, queryDim);
-    }
-
-    /**
-     * Gated delta-net (linear-attention) layer: depthwise causal conv -> SiLU -> per-group L2-norm
-     * of Q/K -> tile to value heads -> delta-net recurrence over a [headVDim,headVDim] state ->
-     * SiLU(z)-gated RMSNorm -> output projection. (Production single-token reference recurrence.)
-     */
-    private void ssmForward(State state, int layer) {
-        Configuration config = configuration;
-        Weights w = weights;
-        int dim = config.embeddingLength;
-        int dInner = config.ssmInnerSize;
-        int nGroup = config.ssmGroupCount;
-        int dtRank = config.ssmTimeStepRank;
-        int dState = config.ssmStateSize;
-        int convKernel = config.ssmConvKernel;
-        int headVDim = config.headVDim();
-        int convChannels = config.convChannels();
-        int kOff = dState * nGroup;
-        int vOff = 2 * dState * nGroup;
-        float eps = config.rmsNormEps;
-
-        // 1. QKV projection (feeds the conv) and 2. z gate projection
-        w.attnQkv[layer].matmul(state.xb, state.ssmQkv, convChannels, dim);
-        float[] z = state.ssmZ;
-        w.attnGate[layer].matmul(state.xb, state.ssmTmp, dInner, dim);
-        for (int i = 0; i < dInner; i++) z[i] = state.ssmTmp.getFloat(i);
-
-        // 3. causal depthwise 1D conv over the cached history + current step
-        FloatTensor convState = state.ssmConvState[layer];
-        F32FloatTensor convWeight = w.ssmConv1d[layer];
-        FloatTensor qkv = state.ssmQkv;
-        float[] convOut = state.ssmConvOut;
-        Parallel.parallelFor(
-                0,
-                convChannels,
-                c -> {
-                    float sum = 0;
-                    int wOff = c * convKernel;
-                    for (int k = 0; k < convKernel - 1; k++) {
-                        sum +=
-                                convWeight.getFloat(wOff + k)
-                                        * convState.getFloat(k * convChannels + c);
-                    }
-                    sum += convWeight.getFloat(wOff + (convKernel - 1)) * qkv.getFloat(c);
-                    convOut[c] = silu(sum);
-                });
-        // update conv ring (per channel: shift left, append current qkv as newest)
-        Parallel.parallelFor(
-                0,
-                convChannels,
-                c -> {
-                    for (int k = 0; k < convKernel - 2; k++) {
-                        convState.setFloat(
-                                k * convChannels + c,
-                                convState.getFloat((k + 1) * convChannels + c));
-                    }
-                    convState.setFloat((convKernel - 2) * convChannels + c, qkv.getFloat(c));
-                });
-
-        // 4. split + per-group L2-norm of Q,K (Q folds in 1/sqrt(headVDim)); 5. tile nGroup ->
-        // dtRank
-        float scale = (float) (1.0 / Math.sqrt(headVDim));
-        float[] qGroup = state.ssmQGroup, kGroup = state.ssmKGroup;
-        Parallel.parallelFor(
-                0,
-                nGroup,
-                h -> {
-                    float qNormSq = 0, kNormSq = 0;
-                    int hOff = h * headVDim;
-                    for (int d = 0; d < headVDim; d++) {
-                        float qv = convOut[hOff + d];
-                        float kv = convOut[kOff + hOff + d];
-                        qNormSq += qv * qv;
-                        kNormSq += kv * kv;
-                    }
-                    float qInv = (float) (1.0 / Math.sqrt(qNormSq + eps)) * scale;
-                    float kInv = (float) (1.0 / Math.sqrt(kNormSq + eps));
-                    for (int d = 0; d < headVDim; d++) {
-                        qGroup[hOff + d] = convOut[hOff + d] * qInv;
-                        kGroup[hOff + d] = convOut[kOff + hOff + d] * kInv;
-                    }
-                });
-        float[] qArr = state.ssmQ, kArr = state.ssmK, vArr = state.ssmV;
-        Parallel.parallelFor(
-                0,
-                dtRank,
-                h -> {
-                    int dstOff = h * headVDim,
-                            srcOff = (h % nGroup) * headVDim,
-                            vSrc = vOff + h * headVDim;
-                    for (int d = 0; d < headVDim; d++) {
-                        qArr[dstOff + d] = qGroup[srcOff + d];
-                        kArr[dstOff + d] = kGroup[srcOff + d];
-                        vArr[dstOff + d] = convOut[vSrc + d];
-                    }
-                });
-
-        // 6. gate = softplus(alpha@x + dt_bias) * A ; beta = sigmoid(beta@x)
-        w.ssmAlpha[layer].matmul(state.xb, state.ssmTmp, dtRank, dim);
-        float[] gate = state.ssmGate;
-        for (int h = 0; h < dtRank; h++) {
-            gate[h] =
-                    softplus(state.ssmTmp.getFloat(h) + w.ssmDtBias[layer].getFloat(h))
-                            * w.ssmA[layer].getFloat(h);
-        }
-        w.ssmBeta[layer].matmul(state.xb, state.ssmTmp, dtRank, dim);
-        float[] beta = state.ssmBeta;
-        for (int h = 0; h < dtRank; h++) {
-            beta[h] = sigmoid(state.ssmTmp.getFloat(h));
-        }
-
-        // 7. delta-net recurrence per head; state element (i,j,h) at h*HV^2 + j*HV + i
-        float[] output = state.ssmOutput;
-        float[] S = state.ssmState[layer];
-        float[] sk = state.ssmSk, d = state.ssmD;
-        Parallel.parallelFor(
-                0,
-                dtRank,
-                h -> {
-                    float expGate = (float) Math.exp(gate[h]);
-                    float betaH = beta[h];
-                    int stateBase = h * headVDim * headVDim;
-                    int headOff = h * headVDim;
-                    for (int idx = stateBase; idx < stateBase + headVDim * headVDim; idx++)
-                        S[idx] *= expGate;
-                    for (int j = 0; j < headVDim; j++) {
-                        float sum = 0;
-                        int row = stateBase + j * headVDim;
-                        for (int i = 0; i < headVDim; i++) sum += S[row + i] * kArr[headOff + i];
-                        sk[headOff + j] = sum;
-                    }
-                    for (int i = 0; i < headVDim; i++)
-                        d[headOff + i] = (vArr[headOff + i] - sk[headOff + i]) * betaH;
-                    for (int j = 0; j < headVDim; j++) {
-                        float dj = d[headOff + j];
-                        int row = stateBase + j * headVDim;
-                        for (int i = 0; i < headVDim; i++) S[row + i] += dj * kArr[headOff + i];
-                    }
-                    for (int j = 0; j < headVDim; j++) {
-                        float sum = 0;
-                        int row = stateBase + j * headVDim;
-                        for (int i = 0; i < headVDim; i++) sum += S[row + i] * qArr[headOff + i];
-                        output[headOff + j] = sum;
-                    }
-                });
-
-        // 8. SiLU(z)-gated RMSNorm per head, 9. output projection
-        Parallel.parallelFor(
-                0,
-                dtRank,
-                h -> {
-                    int headOff = h * headVDim;
-                    float ss = 0;
-                    for (int dd = 0; dd < headVDim; dd++) {
-                        float val = output[headOff + dd];
-                        ss += val * val;
-                    }
-                    float invRms = (float) (1.0 / Math.sqrt(ss / headVDim + eps));
-                    for (int dd = 0; dd < headVDim; dd++) {
-                        float normed =
-                                output[headOff + dd] * invRms * w.ssmNorm[layer].getFloat(dd);
-                        state.ssmTmp.setFloat(headOff + dd, normed * silu(z[headOff + dd]));
-                    }
-                });
-        w.ssmOut[layer].matmul(state.ssmTmp, state.xb, dim, dInner);
-    }
-
-    /** Dense SwiGLU FFN, inlined here (each port owns its dense FFN). */
-    private void ffnForward(State state, int layer) {
-        Configuration config = configuration;
-        Weights w = weights;
-        int dim = config.embeddingLength;
-        int hiddenDim = config.hiddenDim;
-        w.ffnGate[layer].matmul(state.xb, state.ffnGate, hiddenDim, dim);
-        w.ffnUp[layer].matmul(state.xb, state.ffnUp, hiddenDim, dim);
-        Activations.siluMultiply(state.ffnGate, 0, state.ffnUp, 0, hiddenDim);
-        w.ffnDown[layer].matmul(state.ffnGate, state.xb, dim, hiddenDim);
-    }
-
-    /**
      * Insertion-sort top-k of the softmaxed router probs into {@code topE}/{@code topP}, descending
      * and stable so ties keep the lower expert index. Unfilled slots are left as {@code -1}/-INF.
      */
@@ -821,73 +560,6 @@ public final class Qwen35
                 topE[insertPos] = e;
             }
         }
-    }
-
-    /** Top-k expert MoE (softmax over all experts, top-k, renormalize) + optional shared expert. */
-    private void moeForward(State state, int layer) {
-        Configuration config = configuration;
-        Weights w = weights;
-        int dim = config.embeddingLength;
-        int expertFFN = config.expertFeedForwardLength;
-        int numExperts = config.expertCount;
-        int topK = Math.min(config.expertUsedCount, numExperts);
-
-        FloatTensor routerLogits = state.moeRouterLogits;
-        w.moeRouter[layer].matmul(state.xb, routerLogits, numExperts, dim);
-        routerLogits.softmaxInPlace(0, numExperts);
-
-        int[] topExperts = state.moeTopExperts;
-        float[] topWeights = state.moeTopWeights;
-        selectTopK(routerLogits, 0, numExperts, topK, topExperts, topWeights);
-        float topKSum = 0f;
-        for (int i = 0; i < topK; i++) topKSum += topWeights[i];
-        float invTopK = topKSum == 0f ? 0f : 1f / topKSum;
-
-        FloatTensor moeOutput = state.moeOutput;
-        moeOutput.fillInPlace(0, dim, 0f);
-        int gateUpStride = expertFFN * dim;
-        int downStride = dim * expertFFN;
-        for (int k = 0; k < topK; k++) {
-            int expertIdx = topExperts[k];
-            if (expertIdx < 0) continue;
-            float weight = topWeights[k] * invTopK;
-            if (weight <= 0f) continue;
-            int gateUpOffset = expertIdx * gateUpStride;
-            int downOffset = expertIdx * downStride;
-            // gemm(seqLen=1, thisOffset) is the public form of the package-private
-            // matmul-with-offset.
-            w.moeExpertGate[layer].gemm(
-                    state.xb, dim, state.moeGateResult, expertFFN, 1, expertFFN, dim, gateUpOffset);
-            w.moeExpertUp[layer].gemm(
-                    state.xb, dim, state.moeUpResult, expertFFN, 1, expertFFN, dim, gateUpOffset);
-            Activations.siluMultiply(state.moeGateResult, 0, state.moeUpResult, 0, expertFFN);
-            w.moeExpertDown[layer].gemm(
-                    state.moeGateResult,
-                    expertFFN,
-                    state.moeExpertOut,
-                    dim,
-                    1,
-                    dim,
-                    expertFFN,
-                    downOffset);
-            moeOutput.saxpyInPlace(0, state.moeExpertOut, 0, dim, weight);
-        }
-
-        if (config.expertSharedFeedForwardLength > 0 && w.moeSharedGate[layer] != null) {
-            int sharedFFN = config.expertSharedFeedForwardLength;
-            w.moeSharedGate[layer].matmul(state.xb, state.moeSharedGate, sharedFFN, dim);
-            w.moeSharedUp[layer].matmul(state.xb, state.moeSharedUp, sharedFFN, dim);
-            Activations.siluMultiply(state.moeSharedGate, 0, state.moeSharedUp, 0, sharedFFN);
-            w.moeSharedDown[layer].matmul(state.moeSharedGate, state.moeSharedOut, dim, sharedFFN);
-            float sharedScale = 1.0f;
-            if (w.moeSharedInputGate[layer] != null) {
-                w.moeSharedInputGate[layer].matmul(state.xb, state.moeSharedInputGate, 1, dim);
-                sharedScale = sigmoid(state.moeSharedInputGate.getFloat(0));
-            }
-            moeOutput.saxpyInPlace(0, state.moeSharedOut, 0, dim, sharedScale);
-        }
-
-        moeOutput.copyTo(0, state.xb, 0, dim);
     }
 
     /**
