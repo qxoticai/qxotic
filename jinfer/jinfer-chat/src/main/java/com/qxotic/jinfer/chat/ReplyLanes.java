@@ -1,6 +1,8 @@
 package com.qxotic.jinfer.chat;
 
 import com.qxotic.toknroll.Tokenizer;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -13,18 +15,18 @@ import java.util.Optional;
 public final class ReplyLanes {
 
     private final ReplyParser parser; // null: raw text, single lane
-    private final PendingUtf8 pending;
+    private final boolean claimToolCalls;
+    private final PendingUtf8 pending = new PendingUtf8();
     private final StringBuilder rawText;
     private final Tokenizer tokenizer;
     private boolean reasoning;
 
-    public ReplyLanes(Optional<ChatTemplate> template, Tokenizer tokenizer, int[] parserSeed) {
-        this(template, tokenizer, parserSeed, true);
-    }
-
     /**
-     * {@code claimToolCalls} false uses the plain span grammar instead of the family's parser, so
-     * call syntax the model emits on its own stays visible TEXT.
+     * {@code claimToolCalls} false leaves call syntax the model emits on its own as visible TEXT:
+     * the FAMILY's parser still structures the reply (its channels and reasoning markers are the
+     * family's, not the generic span grammar's - swapping parsers would leak a Harmony analysis
+     * channel straight into content), but call-span payloads stream as text and {@link #finish}
+     * downgrades parsed calls to text parts.
      *
      * <p>That is the right reading when the caller offered no tools: a claimed call the client
      * never asked for is not a call, it is an answer the client cannot see. Models do emit it -
@@ -36,11 +38,8 @@ public final class ReplyLanes {
             Tokenizer tokenizer,
             int[] parserSeed,
             boolean claimToolCalls) {
-        this.parser =
-                claimToolCalls
-                        ? template.map(ChatTemplate::parser).orElse(null)
-                        : template.<ReplyParser>map(t -> ReplyParser.spans(tokenizer)).orElse(null);
-        this.pending = parser == null ? new PendingUtf8() : null;
+        this.parser = template.map(ChatTemplate::parser).orElse(null);
+        this.claimToolCalls = claimToolCalls;
         this.rawText = parser == null ? new StringBuilder() : null;
         this.tokenizer = tokenizer;
         if (parser != null) {
@@ -50,13 +49,21 @@ public final class ReplyLanes {
 
     /** The text this token adds ("" while pending); {@link #reasoning()} tells its lane. */
     public String feed(int token) {
-        if (parser != null) {
-            String fragment = parser.feed(token);
-            reasoning = parser.reasoning();
+        if (parser == null) {
+            String fragment = pending.add(tokenizer.decodeBytes(new int[] {token}), token).text();
+            rawText.append(fragment);
             return fragment;
         }
-        String fragment = pending.add(tokenizer.decodeBytes(new int[] {token}), token).text();
-        rawText.append(fragment);
+        boolean inCall = !claimToolCalls && "tool-call".equals(parser.pendingChannel());
+        String fragment = parser.feed(token);
+        reasoning = parser.reasoning();
+        if (fragment.isEmpty() && inCall && "tool-call".equals(parser.pendingChannel())) {
+            // an unclaimed call-span PAYLOAD token (in-span before AND after the feed, so the
+            // markers themselves stay silent): surface the raw text the parser withheld. It joins
+            // the surrounding span's lane, and it matches finish()'s downgraded call byte-exactly
+            // (a claimed call's verbatim is the payload ids, markers excluded).
+            return pending.add(tokenizer.decodeBytes(new int[] {token}), token).text();
+        }
         return fragment;
     }
 
@@ -67,6 +74,32 @@ public final class ReplyLanes {
 
     /** The finished structured reply, from the same parse that streamed. */
     public Message finish() {
-        return parser != null ? parser.finish() : new Message(Role.ASSISTANT, rawText.toString());
+        if (parser == null) return new Message(Role.ASSISTANT, rawText.toString());
+        Message reply = parser.finish();
+        return claimToolCalls ? reply : declaimed(reply);
+    }
+
+    /** The reply with every parsed call downgraded to the text the model actually emitted. */
+    private Message declaimed(Message reply) {
+        return new Message(reply.role(), declaimed(reply.content()));
+    }
+
+    private List<Part> declaimed(List<Part> parts) {
+        List<Part> out = new ArrayList<>(parts.size());
+        for (Part part : parts) {
+            switch (part) {
+                case Part.ToolCall call -> out.add(new Part.Text(callText(call), call.verbatim()));
+                case Part.Reasoning r ->
+                        out.add(new Part.Reasoning(declaimed(r.content()), r.verbatim()));
+                default -> out.add(part);
+            }
+        }
+        return out;
+    }
+
+    private String callText(Part.ToolCall call) {
+        if (call.verbatim() != null) return tokenizer.decode(call.verbatim());
+        // a multi-call span cannot attribute verbatim ids per call; render the parsed shape
+        return call.name() + "(" + JsonCodec.stringify(call.arguments()) + ")";
     }
 }

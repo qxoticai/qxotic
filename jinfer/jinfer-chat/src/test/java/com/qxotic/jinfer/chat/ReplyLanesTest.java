@@ -56,18 +56,10 @@ final class ReplyLanesTest {
         Message reply = lanes.finish();
         // what the caller SAW must agree with what the message says, either way
         assertEquals(
-                text(reply),
+                reply.text(),
                 shown.toString(),
                 "streamed fragments and the finished message must agree");
         return reply;
-    }
-
-    private static String text(Message message) {
-        StringBuilder sb = new StringBuilder();
-        for (Part part : message.content()) {
-            if (part instanceof Part.Text t) sb.append(t.text());
-        }
-        return sb.toString();
     }
 
     private static List<Part.ToolCall> calls(Message message) {
@@ -81,7 +73,7 @@ final class ReplyLanesTest {
     void offeredTools_callSyntaxBecomesAToolCall() {
         Message reply = feed(true, HELLO, CALL_OPEN, PAYLOAD, CALL_CLOSE);
         assertEquals(1, calls(reply).size(), "the span must be claimed when tools were offered");
-        assertEquals("Hello", text(reply), "a claimed call contributes no visible text");
+        assertEquals("Hello", reply.text(), "a claimed call contributes no visible text");
     }
 
     @Test
@@ -91,8 +83,8 @@ final class ReplyLanesTest {
                 calls(reply).isEmpty(),
                 "a caller who offered no tools must never receive a tool call");
         assertTrue(
-                text(reply).contains("[f(x=1)]"),
-                "the payload must remain readable text, not vanish: " + text(reply));
+                reply.text().contains("[f(x=1)]"),
+                "the payload must remain readable text, not vanish: " + reply.text());
     }
 
     /** Reasoning is a lane, not a mode: it routes the same whether or not calls are claimed. */
