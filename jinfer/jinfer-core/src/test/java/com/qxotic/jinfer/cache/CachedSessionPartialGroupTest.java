@@ -1,11 +1,9 @@
 package com.qxotic.jinfer.cache;
 
-import com.qxotic.jinfer.BaseState;
 import com.qxotic.jinfer.Batch;
-import com.qxotic.jinfer.Config;
-import com.qxotic.jinfer.Model;
-import java.lang.foreign.MemorySegment;
-import java.util.ArrayList;
+import com.qxotic.jinfer.cache.PromptCacheTest.FakeCodec;
+import com.qxotic.jinfer.cache.PromptCacheTest.FakeModel;
+import com.qxotic.jinfer.cache.PromptCacheTest.FakeState;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -14,78 +12,19 @@ import org.junit.jupiter.api.Test;
  * committed generation-prompt block is a byte-exact prefix of the echoed assistant turn, so a
  * follow-up request resumes MID-group. {@link CachedSession#ingestGroups} must ingest only the
  * un-restored tail of that group; re-ingesting the whole group duplicated its restored head in the
- * context (the server bug this pins).
+ * context (the server bug this pins). Fakes are the package fixture ({@link PromptCacheTest}),
+ * whose state records every ingested token id.
  */
 public final class CachedSessionPartialGroupTest {
 
     static int failures;
 
-    /** Records every token id the model actually ingests, in order. */
-    static final class FakeState extends BaseState {
-        final List<Integer> ingested = new ArrayList<>();
-
-        FakeState() {
-            super(java.lang.foreign.Arena.ofAuto());
-        }
-
-        @Override
-        public int contextCapacity() {
-            return 1 << 20;
-        }
-
-        @Override
-        public int batchCapacity() {
-            return 512;
-        }
-
-        @Override
-        public void reset() {
-            resumeAt(0);
-        }
-    }
-
-    static final class FakeModel implements Model<Config, Object, FakeState> {
-        @Override
-        public Config config() {
-            return null;
-        }
-
-        @Override
-        public Object weights() {
-            return null;
-        }
-
-        @Override
-        public FakeState newState(
-                int contextCapacity, int batchCapacity, java.lang.foreign.Arena arena) {
-            return new FakeState();
-        }
-
-        @Override
-        public void forward(FakeState s, Batch batch) {
-            for (int id : ((Batch.Input.Tokens) batch.input()).ids()) s.ingested.add(id);
-            s.position += batch.count();
-        }
-    }
-
-    static final class FakeCodec implements StateCodec<FakeState> {
-        @Override
-        public long blockBytes(int positions) {
-            return positions * 8L;
-        }
-
-        @Override
-        public void save(FakeState s, int from, int to, MemorySegment dst) {}
-
-        @Override
-        public void restore(FakeState s, int from, int to, MemorySegment src) {}
-    }
-
     @Test
     void run() {
-        FakeModel model = new FakeModel();
+        FakeModel model = new FakeModel(new FakeCodec(false));
         BlockTree<FakeState> cache =
-                new BlockTree<>(new FakeCodec(), CacheStore.inMemory(), 1 << 20, new byte[] {1});
+                new BlockTree<>(
+                        new FakeCodec(false), CacheStore.inMemory(), 1 << 20, new byte[] {1});
 
         // Request 1: [start 10,11] [user 20,21,22] [genPrompt 30,31] — three turn-aligned groups.
         List<List<Batch>> first =

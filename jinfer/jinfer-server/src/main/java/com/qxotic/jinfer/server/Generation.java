@@ -52,18 +52,10 @@ final class Generation {
         this.template = chatModel.template().orElse(null);
         this.specials = SpecialTokens.encoder(model.tokenizer());
         java.nio.file.Path catalog = options.promptCache();
-        if (catalog != null && chatModel.model().stateCodec().isEmpty()) {
-            // the guard the instruct path applies too: no codec, no blocks to mount or save
-            System.err.println(
-                    "--cache ignored: "
-                            + chatModel.model().getClass().getSimpleName()
-                            + " has no state codec");
-            catalog = null;
-        }
         boolean mounted = catalog != null && java.nio.file.Files.exists(catalog);
-        this.saveCatalog = catalog != null && !options.promptCacheReadOnly();
         // borrowed weights: the server loaded the model and keeps its arena. The engine's cache
-        // opens-or-creates the catalog itself; read-only problems degrade, read-write fail loudly.
+        // owns the whole catalog policy - a codec-less model warns and ignores the file,
+        // read-only problems degrade, read-write fail loudly.
         this.engine =
                 new ChatEngine(
                         chatModel,
@@ -71,7 +63,9 @@ final class Generation {
                         catalog,
                         options.promptCacheReadOnly(),
                         RuntimeFlags.SESSIONS);
-        if (catalog != null) {
+        boolean usable = catalog != null && engine.blockCaching();
+        this.saveCatalog = usable && !options.promptCacheReadOnly();
+        if (usable) {
             System.out.printf(
                     "prompt cache: %s%s%s%n",
                     catalog,

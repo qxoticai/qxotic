@@ -4,61 +4,32 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.testkit.ModelFixture;
+import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
-import dev.langchain4j.model.chat.response.ChatResponse;
+import dev.langchain4j.model.chat.request.ChatRequest;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
- * Coarse block caching against Qwen3.5 (gated-delta-net hybrid: the S-matrix residue is ~2.1MB per
- * linear layer, so cached prompts commit as ONE block per prompt - {@code coarseBlocks}). Asserts
- * reply-text identity under greedy decode; the BYTE-level gate (restored state vs live state via
- * Harness.statesEqual) lives in Qwen35CacheRun on the model module. Model-gated: assume-skips when
- * the file is absent.
+ * {@link AbstractCoarseCacheIT} on Qwen3.5 (gated-delta-net hybrid: the S-matrix residue is ~2.1MB
+ * per linear layer), plus the Qwen-only artifact round trip and the long chunked-prefix seam.
+ * Model-gated: assume-skips when the file is absent.
  */
 @Tag("integration")
-class Qwen35CoarseCacheIT {
+class Qwen35CoarseCacheIT extends AbstractCoarseCacheIT {
 
     static final Path MODEL = ModelFixture.QWEN35_2B_Q8.path();
 
-    static final List<ChatMessage> PREFIX =
-            List.of(SystemMessage.from("You are a terse assistant. Answer in one short sentence."));
-
-    @Test
-    void cachedPromptWorksByteIdenticallyAndCoarsely() {
-        Assumptions.assumeTrue(Files.exists(MODEL), "model not found: " + MODEL);
-        JinferChatModel base =
-                JinferChatModel.builder()
-                        .modelPath(MODEL)
-                        .contextLength(4096)
-                        .maxOutputTokens(48)
-                        .build();
-        try {
-            base.chat(UserMessage.from("warmup")); // JIT-warm the kernels before the baseline
-            String question = "What is the capital of France?";
-            ChatResponse plain = base.chat(PREFIX.get(0), UserMessage.from(question));
-
-            JinferChatModel view = base.withCachedPrompt(PREFIX, List.of());
-            ChatResponse cached = view.chat(UserMessage.from(question));
-
-            // the restored S/conv/KV state answers exactly like a fresh prefill (greedy text)
-            assertEquals(plain.aiMessage().text(), cached.aiMessage().text());
-
-            String stats = base.engine.promptStats();
-            assertTrue(stats.contains("hits=") && !stats.contains("hits=0 "), stats);
-
-            // coarse: exactly ONE block per defined prompt (one residue, not one per turn),
-            // and a served turn must never add another
-            assertTrue(stats.startsWith("blocks=1 "), stats);
-        } finally {
-            base.close();
-        }
+    @Override
+    Path modelPath() {
+        return MODEL;
     }
 
     /** The artifact round trip: export the defined prompt, remount it, still byte-identical. */
@@ -125,8 +96,7 @@ class Qwen35CoarseCacheIT {
                 List.of(
                         SystemMessage.from(manual.toString()),
                         UserMessage.from("What do I do for case class 7? One sentence."),
-                        dev.langchain4j.data.message.AiMessage.from(
-                                "Consult knowledge article 1007 before answering."),
+                        AiMessage.from("Consult knowledge article 1007 before answering."),
                         UserMessage.from("And for case class 42? One sentence."));
         JinferChatModel base =
                 JinferChatModel.builder()
@@ -139,7 +109,7 @@ class Qwen35CoarseCacheIT {
             String question = "Which article covers case class 13? One sentence.";
             String plain =
                     base.chat(
-                                    dev.langchain4j.model.chat.request.ChatRequest.builder()
+                                    ChatRequest.builder()
                                             .messages(append(prefix, UserMessage.from(question)))
                                             .build())
                             .aiMessage()
@@ -155,7 +125,7 @@ class Qwen35CoarseCacheIT {
     }
 
     private static List<ChatMessage> append(List<ChatMessage> prefix, ChatMessage last) {
-        java.util.List<ChatMessage> all = new java.util.ArrayList<>(prefix);
+        List<ChatMessage> all = new ArrayList<>(prefix);
         all.add(last);
         return all;
     }

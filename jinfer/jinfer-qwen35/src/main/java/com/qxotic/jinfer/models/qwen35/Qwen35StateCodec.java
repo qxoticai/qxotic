@@ -14,11 +14,11 @@ import java.lang.foreign.MemorySegment;
  * state; everything else in the state is per-batch scratch - which is why {@code State.reset}
  * zeroes exactly the recurrent buffers (this residue) and the cursor, and nothing else.
  *
- * <p>Coarse consequences worth knowing: matching is ALL-OR-NOTHING (a request whose stream diverges
- * anywhere inside the defined span - or is shorter than it - restores nothing and re-prefills
- * silently; only the misses counter tells), and a single-batch define commits the whole prompt as
- * one block that a one-short-capped serve can never match - a ~66MB dead block. Real defines
- * (withCachedPrompt) are multi-batch and skip the trailing scaffold.
+ * <p>Coarse consequences worth knowing: matching is ALL-OR-NOTHING - a request whose stream
+ * diverges anywhere inside the defined span, or is shorter than it, restores nothing and
+ * re-prefills silently; only the misses counter tells. The defined block is always PREFIX-ONLY
+ * (define drops the trailing batch, or the trailing position of a single-batch prompt), so a
+ * one-short serve can match it.
  */
 public final class Qwen35StateCodec extends AbstractStateCodec<Qwen35.State> {
 
@@ -61,12 +61,11 @@ public final class Qwen35StateCodec extends AbstractStateCodec<Qwen35.State> {
     @Override
     protected void residue(Qwen35.State state, int to, MemorySegment blob, boolean out) {
         long off = 0;
+        int conv = convFloats(config);
         for (int l = 0; l < config.numberOfLayers; l++) {
             if (config.isFullAttention[l]) continue;
             off += KvTransfer.transfer(state.ssmState[l], blob, off, out);
-            off +=
-                    KvTransfer.transfer(
-                            state.ssmConvState[l], 0, blob, off, convFloats(config), out);
+            off += KvTransfer.transfer(state.ssmConvState[l], 0, blob, off, conv, out);
         }
     }
 }

@@ -168,6 +168,13 @@ public record Batch(Input input, Outputs outputs) {
         return ids;
     }
 
+    /** Total positions a batch list ingests - {@link #count} summed, any modality. */
+    public static int positions(java.util.List<Batch> batches) {
+        int total = 0;
+        for (Batch b : batches) total += b.count();
+        return total;
+    }
+
     /** Rows this batch ingests, regardless of modality. */
     public int count() {
         return switch (input) {

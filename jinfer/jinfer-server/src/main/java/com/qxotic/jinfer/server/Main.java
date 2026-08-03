@@ -13,9 +13,7 @@ package com.qxotic.jinfer.server;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.*;
-import com.qxotic.jinfer.cache.BlockTree;
-import com.qxotic.jinfer.cache.CacheStore;
-import com.qxotic.jinfer.cache.FrozenBlocks;
+import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.JinjaChatTemplate;
@@ -147,6 +145,17 @@ public class Main {
             Set<Integer> stopTokens,
             Sampler sampler,
             LLMOptions options) {
+        return generateCli(model, state, promptTokens, stopTokens, sampler, options, null);
+    }
+
+    private static <S extends RuntimeState> CliReply generateCli(
+            LoadedModel<S> model,
+            S state,
+            IntSequence promptTokens,
+            Set<Integer> stopTokens,
+            Sampler sampler,
+            LLMOptions options,
+            java.util.function.IntConsumer afterIngest) {
         Tokenizer tokenizer = model.tokenizer();
         if (options.echo()) {
             promptTokens.forEachInt(
@@ -187,7 +196,9 @@ public class Main {
                 Generator.generate(
                         model.model(),
                         state,
-                        promptTokens,
+                        promptTokens.isEmpty()
+                                ? List.of()
+                                : List.of(Batch.prefill(promptTokens.toArray())),
                         sampler,
                         budget,
                         0 /* CLI: no deadline */,
@@ -197,7 +208,8 @@ public class Main {
                             String fragment = parser.feed(token);
                             if (!fragment.isEmpty()) collect.accept(fragment, parser.reasoning());
                             return true;
-                        });
+                        },
+                        afterIngest);
         Message message = parser.finish();
         int generated = result.tokens().length() + (result.stopToken() >= 0 ? 1 : 0);
         String timingPrefix = options.colors() ? ANSI_CYAN : "";
@@ -504,91 +516,64 @@ public class Main {
                     new JinjaChatTemplate(model.tokenizer(), model.chatTemplateSource())
                             .render(messages, null, true, options.think(), null);
         }
-        S state = Generator.stateFor(model.model(), promptTokens.length());
-
-        // --cache / --cache-ro: the prompt cache as a file. Matching prefixes restore from
-        // the artifact (the media/text blocks are self-contained; the compile convention keeps
-        // the last token its own block so a full hit needs exactly one tail token). In
-        // read-write mode an unseen prompt's new blocks are appended - an accumulating
-        // catalog, shared prefixes stored once. Read-only mode never writes.
-        if (options.promptCache() != null
-                && model.model().stateCodec().isPresent()
-                && promptTokens.length() >= 2) {
-            int[] ids = promptTokens.toArray();
-            FrozenBlocks base =
-                    Files.exists(options.promptCache())
-                            ? FrozenBlocks.open(options.promptCache(), model.seed())
-                            : null;
-            // COARSE codecs (NemotronH, Qwen3.5) carry a ~50-66MB residue PER BLOCK; the
-            // accumulating rw path below commits one block per 512-token chunk, which would
-            // append hundreds of MB per prompt. Serve read-only instead; build coarse
-            // artifacts through define()/withCachedPrompt (one residue per prompt).
-            boolean coarse =
-                    model.model()
-                            .stateCodec()
-                            .map(com.qxotic.jinfer.cache.StateCodec::coarseBlocks)
-                            .orElse(false);
-            boolean readOnly = options.promptCacheReadOnly() || coarse;
-            if (coarse && !options.promptCacheReadOnly()) {
-                System.err.println(
-                        "--cache: coarse codec - serving read-only, appending skipped (a chunked"
-                                + " append would cost one multi-MB residue per 512 tokens)");
-            }
-            if (readOnly) {
-                if (base == null) {
-                    System.err.println(
-                            "read-only cache missing (" + options.promptCache() + "): prefilling");
-                } else {
-                    long t0 = System.nanoTime();
-                    var session =
-                            base.serve(
-                                    model.model(),
-                                    model.codec(),
-                                    model.seed(),
-                                    state,
-                                    ids,
-                                    ids.length - 1);
-                    System.err.printf(
-                            "cache: %d/%d positions restored in %.1f ms%n",
-                            session.position(), ids.length, (System.nanoTime() - t0) / 1e6);
-                    promptTokens = promptTokens.subSequence(session.position(), ids.length);
+        // --cache / --cache-ro: the prompt cache as a file, through the one facade - which owns
+        // the whole policy (codec-less models warn and serve without it, coarse codecs restore
+        // read-only, a missing read-only file degrades). Read-write pins the prompt via define()
+        // (fine codecs: chunk blocks + a split-last single; coarse: one residue block) and
+        // appends the new blocks BEFORE generating - the artifact is the point of --cache, and a
+        // generation failure must not lose it. serve() then restores the longest cached prefix
+        // (one short, by the law) and generates on top.
+        if (options.promptCache() != null && promptTokens.length() >= 2) {
+            List<Batch> prompt = List.of(Batch.prefill(promptTokens.toArray()));
+            int total = promptTokens.length();
+            try (PromptCache<S> cache =
+                    PromptCache.of(
+                            model.model(),
+                            model.seed(),
+                            new PromptCache.Options(
+                                    0,
+                                    Long.MAX_VALUE,
+                                    options.promptCache(),
+                                    options.promptCacheReadOnly()))) {
+                if (!options.promptCacheReadOnly() && cache.blockCaching()) {
+                    int before = cache.sample().blocks();
+                    cache.define(prompt);
+                    cache.save();
+                    int added = cache.sample().blocks() - before;
+                    if (added > 0) {
+                        System.err.printf(
+                                "cache: %d blocks added, catalog appended (%s)%n",
+                                added, options.promptCache());
+                    }
                 }
-            } else {
                 long t0 = System.nanoTime();
-                var cache =
-                        new BlockTree<>(
-                                model.codec(),
-                                CacheStore.inMemory(),
-                                Long.MAX_VALUE,
-                                model.seed(),
-                                base);
-                var session =
-                        com.qxotic.jinfer.cache.CachedSession.resume(
-                                model.model(),
-                                cache,
-                                state,
-                                java.util.List.of(Batch.prefill(ids)),
-                                ids.length - 1);
-                int restored = session.position();
-                if (restored == ids.length - 1) {
-                    System.err.printf(
-                            "cache: %d/%d positions restored in %.1f ms%n",
-                            restored, ids.length, (System.nanoTime() - t0) / 1e6);
-                    promptTokens = IntSequence.of(promptTokens.getLast());
-                } else {
-                    // unseen (or partially shared) prompt: ingest the rest through the session
-                    // and append only the new blocks to the catalog
-                    session.ingestSplitLast(ids, restored);
-                    cache.appendTo(options.promptCache());
-                    System.err.printf(
-                            "cache: %d/%d restored, %d added, catalog appended (%s)%n",
-                            restored, ids.length, ids.length - restored, options.promptCache());
-                    // the session's final 1-token ingest left fresh logits: decode directly
-                    promptTokens = IntSequence.empty();
+                CliReply reply =
+                        cache.serve(
+                                prompt,
+                                (state, serving) -> {
+                                    System.err.printf(
+                                            "cache: %d/%d positions restored, prompt ready in"
+                                                    + " %.1f ms%n",
+                                            serving.restored(),
+                                            total,
+                                            (System.nanoTime() - t0) / 1e6);
+                                    return generateCli(
+                                            model,
+                                            state,
+                                            IntSequence.empty(),
+                                            stops,
+                                            sampler,
+                                            options,
+                                            serving::tail);
+                                });
+                if (!options.stream()) {
+                    System.out.println(reply.text());
                 }
             }
+            return;
         }
 
+        S state = Generator.stateFor(model.model(), promptTokens.length());
         CliReply reply = generateCli(model, state, promptTokens, stops, sampler, options);
         if (!options.stream()) {
             System.out.println(reply.text());

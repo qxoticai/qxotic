@@ -127,7 +127,7 @@ public final class ChatEngine {
      */
     public ChatEngine(
             LoadedModel<?> loaded, String modelName, Path cachedPrompts, int cachedSessions) {
-        this(new Owned(loaded, null), modelName, cachedPrompts, true, cachedSessions);
+        this(loaded, modelName, cachedPrompts, true, cachedSessions);
     }
 
     /**
@@ -467,7 +467,7 @@ public final class ChatEngine {
                 sampler,
                 request.maxTokens(),
                 request.timeoutNanos(),
-                positions(encoded.prompt()),
+                Batch.positions(encoded.prompt()),
                 parserSeed,
                 request.stops(),
                 !request.tools().isEmpty());
@@ -673,10 +673,8 @@ public final class ChatEngine {
     }
 
     /**
-     * One generation pass under the engine lock, cheapest source first: a pooled live session the
-     * prompt strictly extends, else the block tree's longest cached prefix, else a fresh prefill -
-     * see {@link PromptCache.Tier}. Every prompt on a codec model is served (and committed) through
-     * the tree; {@code -Djinfer.promptCache=false} turns all of that off at construction.
+     * One generation pass under the engine lock: {@link PromptCache#serve} picks the cheapest
+     * source ({@link PromptCache.Tier}) and {@link #run} wires the pass.
      */
     public Outcome generate(
             List<Batch> prompt,
@@ -730,12 +728,6 @@ public final class ChatEngine {
                                         serving::tail),
                                 serving.restored(),
                                 serving.tier()));
-    }
-
-    private static int positions(List<Batch> prompt) {
-        int total = 0;
-        for (Batch b : prompt) total += b.count();
-        return total;
     }
 
     // ---- cached prompts: define / export / save on the one PromptCache ----

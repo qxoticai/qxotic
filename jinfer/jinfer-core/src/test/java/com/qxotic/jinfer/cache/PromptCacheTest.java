@@ -31,11 +31,15 @@ import org.junit.jupiter.api.Test;
  */
 public final class PromptCacheTest {
 
-    // ---- the fake family: verifiable, no model weights --------------------------------------
+    // ---- the fake family: verifiable, no model weights. The package fixture - other cache
+    // tests (e.g. CachedSessionPartialGroupTest) reuse it rather than growing their own. ------
 
     static final int CONTEXT = 64;
 
     static final class FakeState extends BaseState {
+        /** Every token id the model actually ingested, in order. */
+        final List<Integer> ingested = new ArrayList<>();
+
         FakeState() {
             super(java.lang.foreign.Arena.ofAuto());
         }
@@ -98,6 +102,9 @@ public final class PromptCacheTest {
 
         @Override
         public void forward(FakeState s, Batch batch) {
+            if (batch.input() instanceof Batch.Input.Tokens t) {
+                for (int id : t.ids()) s.ingested.add(id);
+            }
             s.position += batch.count();
         }
 
@@ -133,8 +140,20 @@ public final class PromptCacheTest {
 
     static final byte[] SEED = {42};
 
+    static FakeModel fine() {
+        return new FakeModel(new FakeCodec(false));
+    }
+
+    static FakeModel coarse() {
+        return new FakeModel(new FakeCodec(true));
+    }
+
     static PromptCache<FakeState> cache(FakeModel model, int hot, long budget) {
-        return PromptCache.of(model, SEED, PromptCache.Options.inMemory(hot, budget));
+        return PromptCache.of(model, SEED, new PromptCache.Options(hot, budget, null, false));
+    }
+
+    static PromptCache<FakeState> onCatalog(FakeModel model, Path catalog, boolean readOnly) {
+        return PromptCache.of(model, SEED, new PromptCache.Options(0, 1 << 20, catalog, readOnly));
     }
 
     static List<Batch> prompt(int... ids) {
@@ -169,7 +188,7 @@ public final class PromptCacheTest {
 
     @Test
     void aStrictExtensionContinuesTheHotConversation() {
-        try (var cache = cache(new FakeModel(new FakeCodec(false)), 2, 1 << 20)) {
+        try (var cache = cache(fine(), 2, 1 << 20)) {
             Served turn1 = generate(cache, turns(new int[] {1, 2, 3}), 7, 8);
             assertEquals(PromptCache.Tier.FRESH, turn1.tier());
 
@@ -183,7 +202,7 @@ public final class PromptCacheTest {
     @Test
     void anIdenticalPromptIsNeverAHotMatch() {
         // identical = not a STRICT extension: the logits would be stale
-        try (var cache = cache(new FakeModel(new FakeCodec(false)), 2, 1 << 20)) {
+        try (var cache = cache(fine(), 2, 1 << 20)) {
             generate(cache, turns(new int[] {1, 2, 3}), 7);
             Served again = generate(cache, turns(new int[] {1, 2, 3}), 7);
             assertNotEquals(PromptCache.Tier.SESSION, again.tier());
@@ -192,7 +211,7 @@ public final class PromptCacheTest {
 
     @Test
     void theLongestHotStreamWins() {
-        try (var cache = cache(new FakeModel(new FakeCodec(false)), 2, 1 << 20)) {
+        try (var cache = cache(fine(), 2, 1 << 20)) {
             generate(cache, turns(new int[] {1, 2})); // short conversation, no reply
             generate(cache, turns(new int[] {1, 2}, new int[] {3, 4})); // longer one
             Served hit = generate(cache, turns(new int[] {1, 2}, new int[] {3, 4}, new int[] {5}));
@@ -203,7 +222,7 @@ public final class PromptCacheTest {
 
     @Test
     void hotIsBoundedLruAndTheColdestFallsOut() {
-        try (var cache = cache(new FakeModel(new FakeCodec(false)), 1, 0)) { // hot-only, cap 1
+        try (var cache = cache(fine(), 1, 0)) { // hot-only, cap 1
             generate(cache, turns(new int[] {1, 2}), 7); // conversation A
             generate(cache, turns(new int[] {5, 6}), 8); // conversation B evicts A (cap 1)
             Served a2 = generate(cache, turns(new int[] {1, 2}, new int[] {7, 3}));
@@ -216,7 +235,7 @@ public final class PromptCacheTest {
 
     @Test
     void theStatelessDefaultAllocatesItsContextOnce() {
-        try (var cache = cache(new FakeModel(new FakeCodec(false)), 0, 0)) {
+        try (var cache = cache(fine(), 0, 0)) {
             for (int i = 0; i < 5; i++) generate(cache, turns(new int[] {1, 2, 10 + i}), 7);
             PromptCache.Sample s = cache.sample();
             assertEquals(1, s.statesAllocated(), "five requests, ONE context: " + s);
@@ -227,7 +246,7 @@ public final class PromptCacheTest {
 
     @Test
     void atCapacityTheColdestAllocationIsRecycledNotDropped() {
-        try (var cache = cache(new FakeModel(new FakeCodec(false)), 1, 0)) {
+        try (var cache = cache(fine(), 1, 0)) {
             generate(cache, turns(new int[] {1, 2}), 7);
             generate(cache, turns(new int[] {5, 6}), 8); // unrelated: recycles A's state
             assertEquals(1, cache.sample().statesAllocated(), "a full hot layer never allocates");
@@ -238,7 +257,7 @@ public final class PromptCacheTest {
 
     @Test
     void anEchoedConversationResumesFromBlocksAfterTheHotStateIsGone() {
-        try (var cache = cache(new FakeModel(new FakeCodec(false)), 1, 1 << 20)) {
+        try (var cache = cache(fine(), 1, 1 << 20)) {
             generate(cache, turns(new int[] {1, 2, 3}), 7, 8); // A: committed as it went
             generate(cache, turns(new int[] {21, 22}), 9); // B recycles A's live state
             // A's turn-2 echo: hot is gone, blocks serve prompt+reply token-exact
@@ -252,7 +271,7 @@ public final class PromptCacheTest {
     void aTruncatedEchoResumesAtItsExactCut() {
         // THE TAIL CONTRACT: the reply commits per position, so an echo cut mid-reply (a stop
         // string, an edited tail) resumes at its own divergence, not at a chunk boundary
-        try (var cache = cache(new FakeModel(new FakeCodec(false)), 0, 1 << 20)) {
+        try (var cache = cache(fine(), 0, 1 << 20)) {
             generate(cache, turns(new int[] {1, 2, 3}), 7, 8, 9);
             Served cut = generate(cache, turns(new int[] {1, 2, 3}, new int[] {7, 99}));
             assertEquals(PromptCache.Tier.BLOCKS, cut.tier());
@@ -262,7 +281,7 @@ public final class PromptCacheTest {
 
     @Test
     void theOneShortLawLeavesTheFinalTokenToRecompute() {
-        try (var cache = cache(new FakeModel(new FakeCodec(false)), 0, 1 << 20)) {
+        try (var cache = cache(fine(), 0, 1 << 20)) {
             generate(cache, turns(new int[] {1, 2, 3}), 7, 8);
             // the identical stream again: everything is cached, yet one token must re-ingest
             Served again = generate(cache, turns(new int[] {1, 2, 3}, new int[] {7, 8}));
@@ -273,7 +292,7 @@ public final class PromptCacheTest {
     @Test
     void defineThenServeIsAFullHit() {
         // the CLI / withCachedPrompt shape: a defined single-batch prompt serves one-short
-        try (var cache = cache(new FakeModel(new FakeCodec(false)), 0, 1 << 20)) {
+        try (var cache = cache(fine(), 0, 1 << 20)) {
             cache.define(prompt(1, 2, 3, 4, 5));
             Served hit = generate(cache, prompt(1, 2, 3, 4, 5), 7);
             assertEquals(PromptCache.Tier.BLOCKS, hit.tier());
@@ -283,7 +302,7 @@ public final class PromptCacheTest {
 
     @Test
     void defineThatTheBudgetRefusesThrowsInsteadOfCachingNothing() {
-        try (var cache = cache(new FakeModel(new FakeCodec(false)), 0, 8)) { // one position fits
+        try (var cache = cache(fine(), 0, 8)) { // one position fits
             assertThrows(IllegalStateException.class, () -> cache.define(prompt(1, 2, 3, 4, 5)));
         }
     }
@@ -292,7 +311,7 @@ public final class PromptCacheTest {
     void aBudgetRefusalDuringServingKeepsTheConversationHot() {
         // budget admits the prompt chunk, refuses the reply singles: the tree DETACHES but the
         // session pools and tier-1 keeps working off the live KV
-        try (var cache = cache(new FakeModel(new FakeCodec(false)), 1, 24)) { // 3 positions
+        try (var cache = cache(fine(), 1, 24)) { // 3 positions
             generate(cache, turns(new int[] {1, 2, 3}), 7, 8);
             assertTrue(cache.sample().refusals() > 0, "the refusal is counted, not silent");
             Served turn2 = generate(cache, turns(new int[] {1, 2, 3}, new int[] {7, 8, 4}));
@@ -303,7 +322,7 @@ public final class PromptCacheTest {
     @Test
     void aPassThatBypassesTailIsDiscardedNotPooled() {
         // stream and state disagreeing would match a future prompt against DIFFERENT content
-        try (var cache = cache(new FakeModel(new FakeCodec(false)), 2, 1 << 20)) {
+        try (var cache = cache(fine(), 2, 1 << 20)) {
             cache.serve(
                     turns(new int[] {1, 2, 3}),
                     (state, serving) -> {
@@ -316,7 +335,7 @@ public final class PromptCacheTest {
 
     @Test
     void aThrowingPassDiscardsTheSessionButKeepsItsBlocks() {
-        try (var cache = cache(new FakeModel(new FakeCodec(false)), 2, 1 << 20)) {
+        try (var cache = cache(fine(), 2, 1 << 20)) {
             assertThrows(
                     IllegalStateException.class,
                     () ->
@@ -337,7 +356,7 @@ public final class PromptCacheTest {
 
     @Test
     void coarseServingRestoresDefinedPrefixesAndCommitsNothing() {
-        try (var cache = cache(new FakeModel(new FakeCodec(true)), 0, 1 << 20)) {
+        try (var cache = cache(coarse(), 0, 1 << 20)) {
             cache.define(turns(new int[] {1, 2, 3, 4}, new int[] {5})); // one block: [1,2,3,4]
             assertTrue(cache.treeStats().startsWith("blocks=1 "), cache.treeStats());
 
@@ -347,6 +366,19 @@ public final class PromptCacheTest {
             assertTrue(
                     cache.treeStats().startsWith("blocks=1 "),
                     "a served turn must not write a ~90MB residue: " + cache.treeStats());
+        }
+    }
+
+    @Test
+    void aSingleBatchCoarseDefineStillServesOneShort() {
+        // the CLI --cache shape: one token batch. Committed whole it would be a dead block
+        // (a one-short serve can never match it); define must commit the prefix-only block
+        try (var cache = cache(coarse(), 0, 1 << 20)) {
+            cache.define(prompt(1, 2, 3, 4, 5));
+            assertTrue(cache.treeStats().startsWith("blocks=1 "), cache.treeStats());
+            Served hit = generate(cache, prompt(1, 2, 3, 4, 5), 7);
+            assertEquals(PromptCache.Tier.BLOCKS, hit.tier());
+            assertEquals(4, hit.restored(), "all but the trailing position restores");
         }
     }
 
@@ -366,7 +398,7 @@ public final class PromptCacheTest {
 
     @Test
     void blocksDisabledBehavesHotOnly() {
-        try (var cache = cache(new FakeModel(new FakeCodec(false)), 1, 0)) {
+        try (var cache = cache(fine(), 1, 0)) {
             assertFalse(cache.blockCaching(), "budget 0 = jinfer.promptCache=false");
             generate(cache, turns(new int[] {1, 2, 3}), 7);
             generate(cache, turns(new int[] {21}), 8); // recycles the live state
@@ -380,23 +412,21 @@ public final class PromptCacheTest {
     @Test
     void theCatalogSurvivesARestart() throws Exception {
         Path catalog = Files.createTempDirectory("jinfer-pc").resolve("catalog.jkvf");
-        FakeModel model = new FakeModel(new FakeCodec(false));
-        var options = new PromptCache.Options(0, 1 << 20, catalog, false);
-
-        try (var first = PromptCache.of(model, SEED, options)) {
+        FakeModel model = fine();
+        try (var first = onCatalog(model, catalog, false)) {
             generate(first, turns(new int[] {1, 2, 3}), 7, 8);
             first.save();
         }
         assertTrue(Files.size(catalog) > 0, "save wrote the catalog");
 
-        try (var second = PromptCache.of(model, SEED, options)) {
+        try (var second = onCatalog(model, catalog, false)) {
             Served echo = generate(second, turns(new int[] {1, 2, 3}, new int[] {7, 8, 4}));
             assertEquals(PromptCache.Tier.BLOCKS, echo.tier(), "yesterday's blocks serve today");
             assertEquals(5, echo.restored());
             generate(second, turns(new int[] {50, 51}), 9);
             second.save(); // append-only accumulation across boots
         }
-        try (var third = PromptCache.of(model, SEED, options)) {
+        try (var third = onCatalog(model, catalog, false)) {
             assertEquals(
                     PromptCache.Tier.BLOCKS,
                     generate(third, turns(new int[] {50, 51}, new int[] {9, 1})).tier(),
@@ -407,16 +437,14 @@ public final class PromptCacheTest {
     @Test
     void aReadOnlyCatalogServesButNeverGrows() throws Exception {
         Path catalog = Files.createTempDirectory("jinfer-pc").resolve("ro.jkvf");
-        FakeModel model = new FakeModel(new FakeCodec(false));
-        try (var writer =
-                PromptCache.of(model, SEED, new PromptCache.Options(0, 1 << 20, catalog, false))) {
+        FakeModel model = fine();
+        try (var writer = onCatalog(model, catalog, false)) {
             writer.define(prompt(1, 2, 3, 4));
             writer.save();
         }
         long size = Files.size(catalog);
 
-        try (var ro =
-                PromptCache.of(model, SEED, new PromptCache.Options(0, 1 << 20, catalog, true))) {
+        try (var ro = onCatalog(model, catalog, true)) {
             Served hit = generate(ro, turns(new int[] {1, 2, 3, 4}, new int[] {9}), 7);
             assertEquals(PromptCache.Tier.BLOCKS, hit.tier(), "the artifact serves");
             ro.save(); // must be a no-op
@@ -426,7 +454,7 @@ public final class PromptCacheTest {
 
     @Test
     void aMissingReadOnlyCatalogDegradesToServingWithoutIt() {
-        FakeModel model = new FakeModel(new FakeCodec(false));
+        FakeModel model = fine();
         Path missing = Path.of("/nonexistent/jinfer/catalog.jkvf");
         try (var cache =
                 PromptCache.of(model, SEED, new PromptCache.Options(1, 1 << 20, missing, true))) {
@@ -441,15 +469,13 @@ public final class PromptCacheTest {
     void exportRefusesItsOwnCatalogButWritesAFreshArtifact() throws Exception {
         Path dir = Files.createTempDirectory("jinfer-pc");
         Path catalog = dir.resolve("own.jkvf");
-        FakeModel model = new FakeModel(new FakeCodec(false));
-        try (var cache =
-                PromptCache.of(model, SEED, new PromptCache.Options(0, 1 << 20, catalog, false))) {
+        FakeModel model = fine();
+        try (var cache = onCatalog(model, catalog, false)) {
             cache.define(prompt(1, 2, 3));
             assertThrows(IllegalStateException.class, () -> cache.export(catalog));
             Path fresh = dir.resolve("export.jkvf");
             cache.export(fresh);
-            try (var mounted =
-                    PromptCache.of(model, SEED, new PromptCache.Options(0, 1 << 20, fresh, true))) {
+            try (var mounted = onCatalog(model, fresh, true)) {
                 assertEquals(
                         PromptCache.Tier.BLOCKS,
                         generate(mounted, turns(new int[] {1, 2, 3}, new int[] {9})).tier());
@@ -463,9 +489,8 @@ public final class PromptCacheTest {
     void budgetZeroWithCatalogServesTheMountButRefusesGrowth() throws Exception {
         // the jinfer.promptCache=false + --cache combination: mounted blocks serve, RAM refuses
         Path catalog = Files.createTempDirectory("jinfer-pc").resolve("b0.jkvf");
-        FakeModel model = new FakeModel(new FakeCodec(false));
-        try (var writer =
-                PromptCache.of(model, SEED, new PromptCache.Options(0, 1 << 20, catalog, false))) {
+        FakeModel model = fine();
+        try (var writer = onCatalog(model, catalog, false)) {
             writer.define(prompt(1, 2, 3, 4));
             writer.save();
         }
@@ -485,7 +510,7 @@ public final class PromptCacheTest {
     void coarseRestoreEndingInsideABatchSlicesTheTail() {
         // the defined coarse block ends mid-batch of the request: the read-only session must
         // slice the group head it restored and ingest only the tail - still committing nothing
-        try (var cache = cache(new FakeModel(new FakeCodec(true)), 0, 1 << 20)) {
+        try (var cache = cache(coarse(), 0, 1 << 20)) {
             cache.define(turns(new int[] {1, 2, 3, 4}, new int[] {5})); // one block: [1,2,3,4]
             Served hit = generate(cache, prompt(1, 2, 3, 4, 9), 7); // ONE batch, seam at 4
             assertEquals(PromptCache.Tier.BLOCKS, hit.tier());
@@ -496,7 +521,7 @@ public final class PromptCacheTest {
 
     @Test
     void defineDedupsAndDefineAfterServeStillFullHits() {
-        try (var cache = cache(new FakeModel(new FakeCodec(false)), 0, 1 << 20)) {
+        try (var cache = cache(fine(), 0, 1 << 20)) {
             // traffic first: the prompt commits at chunk boundaries, no split-last single
             generate(cache, prompt(1, 2, 3, 4, 5), 7);
             // define AFTER the serve: the capped resume must still commit the final single -
@@ -517,7 +542,7 @@ public final class PromptCacheTest {
 
     @Test
     void aHotHitWithAThrowingPassIsDiscardedButItsBlocksSurvive() {
-        try (var cache = cache(new FakeModel(new FakeCodec(false)), 2, 1 << 20)) {
+        try (var cache = cache(fine(), 2, 1 << 20)) {
             generate(cache, turns(new int[] {1, 2, 3}), 7, 8);
             assertThrows(
                     IllegalStateException.class,
@@ -546,12 +571,14 @@ public final class PromptCacheTest {
                 IllegalArgumentException.class,
                 () ->
                         PromptCache.of(
-                                new FakeModel(null), null, PromptCache.Options.inMemory(0, 0)));
+                                new FakeModel(null),
+                                null,
+                                new PromptCache.Options(0, 0, null, false)));
     }
 
     @Test
     void theGuardsFailLoudly() {
-        var cache = cache(new FakeModel(new FakeCodec(false)), 1, 1 << 20);
+        var cache = cache(fine(), 1, 1 << 20);
         // empty prompts are a caller bug, not a model crash
         assertThrows(IllegalArgumentException.class, () -> generate(cache, List.of()));
         assertThrows(
@@ -580,7 +607,7 @@ public final class PromptCacheTest {
 
     @Test
     void closeReachesEveryHotStateAndTheSpare() {
-        FakeModel model = new FakeModel(new FakeCodec(false));
+        FakeModel model = fine();
         var warm = cache(model, 1, 1 << 20);
         FakeState pooled = warm.serve(turns(new int[] {1, 2}), (state, serving) -> state);
         warm.close();

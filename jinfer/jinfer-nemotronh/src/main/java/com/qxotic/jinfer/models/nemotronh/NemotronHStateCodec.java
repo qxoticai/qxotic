@@ -52,12 +52,11 @@ public final class NemotronHStateCodec extends AbstractStateCodec<NemotronH.Stat
     @Override
     protected void residue(NemotronH.State state, int to, MemorySegment blob, boolean out) {
         long off = 0;
+        int conv = convFloats(config);
         for (int l = 0; l < config.numberOfLayers(); l++) {
             if (config.layerTypes()[l] != NemotronH.LayerType.SSM) continue;
             off += KvTransfer.transfer(state.ssmState[l], blob, off, out);
-            off +=
-                    KvTransfer.transfer(
-                            state.ssmConvState[l], 0, blob, off, convFloats(config), out);
+            off += KvTransfer.transfer(state.ssmConvState[l], 0, blob, off, conv, out);
         }
     }
 }

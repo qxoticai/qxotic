@@ -15,7 +15,7 @@ import java.util.List;
  * alongside the KV. In its full mode a cache commit lands at every ingestion boundary, keeping the
  * committed chain contiguous - the cache's WRITE HANDLE. Two reduced modes exist for the facade:
  * HOT-ONLY (no tree: the stream still tracks every position, nothing commits or restores) and
- * READ-ONLY (coarse serving: restores, never writes). It is otherwise the write handle — it holds
+ * READ-ONLY (coarse serving: restores, never writes). It is otherwise the write handle - it holds
  * the tip of the committed chain and extends it by exactly each ingested span. Ingestion chunks at
  * the state's batch capacity; each chunk is one block (large blocks), each decode {@link #step} is
  * one block (single-token blocks).
@@ -86,19 +86,6 @@ public final class CachedSession<S extends RuntimeState> {
         return new CachedSession<>(model, state, null, false, null, new long[256], 0);
     }
 
-    /**
-     * As {@link #resume(Model, BlockTree, Object, long[], int)} but READ-ONLY: the longest cached
-     * prefix restores, and no ingestion ever writes back - the coarse-codec serving mode (a residue
-     * per served block would grow the store by ~MBs per request).
-     */
-    static <S extends RuntimeState> CachedSession<S> resumeReadOnly(
-            Model<?, ?, S> model, BlockTree<S> cache, S state, long[] expected, int maxPositions) {
-        BlockTree<S>.Block tip =
-                cache.resume(expected, Math.min(expected.length, maxPositions), state);
-        long[] fp = Arrays.copyOf(expected, Math.max(256, expected.length));
-        return new CachedSession<>(model, state, cache, false, tip, fp, tip.to);
-    }
-
     /** A fresh session on a fresh state for a brand-new conversation (nothing to resume). */
     public static <S extends RuntimeState> CachedSession<S> start(
             Model<?, ?, S> model, BlockTree<S> cache, S state) {
@@ -141,15 +128,30 @@ public final class CachedSession<S extends RuntimeState> {
 
     /**
      * Like {@link #resume(Model, BlockTree, Object, long[])} but restoring at most {@code
-     * maxPositions} — e.g. the prompt length minus its final block, so a whole-prompt hit still
+     * maxPositions} - e.g. the prompt length minus its final block, so a whole-prompt hit still
      * re-ingests that block and leaves fresh logits at the cursor.
      */
     static <S extends RuntimeState> CachedSession<S> resume(
             Model<?, ?, S> model, BlockTree<S> cache, S state, long[] expected, int maxPositions) {
+        return resume(model, cache, state, expected, maxPositions, true);
+    }
+
+    /**
+     * As above with the write side switchable: {@code commits=false} is READ-ONLY serving - the
+     * longest cached prefix restores, and no ingestion ever writes back. The coarse-codec mode (a
+     * residue per served block would grow the store by ~MBs per request).
+     */
+    static <S extends RuntimeState> CachedSession<S> resume(
+            Model<?, ?, S> model,
+            BlockTree<S> cache,
+            S state,
+            long[] expected,
+            int maxPositions,
+            boolean commits) {
         BlockTree<S>.Block tip =
                 cache.resume(expected, Math.min(expected.length, maxPositions), state);
         long[] fp = Arrays.copyOf(expected, Math.max(256, expected.length));
-        return new CachedSession<>(model, state, cache, true, tip, fp, tip.to);
+        return new CachedSession<>(model, state, cache, commits, tip, fp, tip.to);
     }
 
     /** Token ids widened to the fingerprint stream they are (media rows fingerprint by hash). */
@@ -165,7 +167,7 @@ public final class CachedSession<S extends RuntimeState> {
      * {@link #resume} against a prompt before ingesting it.
      */
     static long[] fingerprints(List<Batch> batches) {
-        int total = batches.stream().mapToInt(Batch::count).sum();
+        int total = Batch.positions(batches);
         long[] fp = new long[total];
         int at = 0;
         for (Batch b : batches) {
@@ -191,20 +193,30 @@ public final class CachedSession<S extends RuntimeState> {
      * fingerprint as themselves, embeddings by rows content hash (one block per media group).
      */
     public void ingest(List<Batch> batches) {
+        ingest(batches, null);
+    }
+
+    /**
+     * As {@link #ingest(List)} with the request's precomputed fingerprint stream, indexed by
+     * absolute stream position - so a serve that already ran {@link #fingerprints(List)} does not
+     * re-hash media rows (MBs per image). Either way the appended stream is byte-for-byte what
+     * {@code fingerprints} defines: the ONE fingerprint law.
+     */
+    void ingest(List<Batch> batches, long[] expected) {
         for (Batch b : Batch.prepare(batches, state.batchCapacity())) {
             int off = len;
-            long[] f = fingerprints(List.of(b)); // the ONE fingerprint law (see fingerprints)
+            long[] f = expected != null ? null : fingerprints(List.of(b));
             model.ingest(state, b);
-            for (long v : f) append(v);
+            int n = b.count();
+            for (int i = 0; i < n; i++) append(expected != null ? expected[off + i] : f[i]);
             commitSpan(off, len - off);
         }
     }
 
     /**
      * Ingests {@code ids[from..)} with the final token committed as its own block - the
-     * PROMPT-COMPILER CONVENTION shared by {@link FrozenBlocks#compile} and the accumulating CLI
-     * cache: a later resume capped at N-1 lands exactly one token short, and the single-token
-     * re-ingest materializes fresh logits.
+     * PROMPT-COMPILER CONVENTION of {@link FrozenBlocks#compile}: a later resume capped at N-1
+     * lands exactly one token short, and the single-token re-ingest materializes fresh logits.
      */
     public void ingestSplitLast(int[] ids, int from) {
         if (from >= ids.length) return;
@@ -224,17 +236,20 @@ public final class CachedSession<S extends RuntimeState> {
      * restored head in the context and poison the cache.
      */
     public void ingestGroups(List<List<Batch>> groups) {
+        ingestGroups(groups, null);
+    }
+
+    /** As {@link #ingestGroups(List)} with the precomputed fingerprint stream (see ingest). */
+    void ingestGroups(List<List<Batch>> groups, long[] expected) {
         int restored = state.position();
         int pos = 0;
         for (List<Batch> group : groups) {
-            int glen = 0;
-            for (Batch b : group) glen += b.count();
-            int end = pos + glen;
+            int end = pos + Batch.positions(group);
             if (end <= restored) { // fully restored: skip
                 pos = end;
                 continue;
             }
-            ingest(pos >= restored ? group : tail(group, restored - pos));
+            ingest(pos >= restored ? group : tail(group, restored - pos), expected);
             pos = end;
         }
     }
@@ -244,7 +259,7 @@ public final class CachedSession<S extends RuntimeState> {
      * the seam is sliced. A seam strictly inside a media batch cannot happen when {@code skip} came
      * from a block-aligned resume (media groups commit and restore whole) - it throws loudly.
      */
-    public static List<Batch> tail(List<Batch> group, int skip) {
+    private static List<Batch> tail(List<Batch> group, int skip) {
         List<Batch> out = new java.util.ArrayList<>();
         for (Batch b : group) {
             int n = b.count();
@@ -363,12 +378,12 @@ public final class CachedSession<S extends RuntimeState> {
     }
 
     /**
-     * True when this session's WHOLE stream is a strict prefix of {@code req[0..reqLen)} — the
-     * append-only reuse test (the facade's hot layer): the live state can continue with the
-     * remainder, nothing to rewind, and at least one position is left to ingest.
+     * True when this session's WHOLE stream is a strict prefix of {@code req} - the append-only
+     * reuse test (the facade's hot layer): the live state can continue with the remainder, nothing
+     * to rewind, and at least one position is left to ingest.
      */
-    boolean streamIsStrictPrefixOf(long[] req, int reqLen) {
-        return len < reqLen && Arrays.equals(fp, 0, len, req, 0, len);
+    boolean streamIsStrictPrefixOf(long[] req) {
+        return len < req.length && Arrays.equals(fp, 0, len, req, 0, len);
     }
 
     public int position() {

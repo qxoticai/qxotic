@@ -80,6 +80,30 @@ public final class FrozenBlocks {
     }
 
     /**
+     * Writes an EMPTY artifact for {@code modelSeed} - the birth of an accumulating catalog, so
+     * every later write-back is an {@link #append} against a mounted base, never a rewrite.
+     */
+    public static void createEmpty(Path file, byte[] modelSeed) throws IOException {
+        try (FileChannel ch =
+                        FileChannel.open(
+                                file,
+                                StandardOpenOption.CREATE,
+                                StandardOpenOption.TRUNCATE_EXISTING,
+                                StandardOpenOption.READ,
+                                StandardOpenOption.WRITE);
+                Arena arena = Arena.ofConfined()) {
+            MemorySegment map = ch.map(FileChannel.MapMode.READ_WRITE, 0, HEADER_BYTES, arena);
+            map.asByteBuffer()
+                    .order(ByteOrder.LITTLE_ENDIAN)
+                    .putInt(MAGIC)
+                    .putInt(FORMAT_VERSION)
+                    .put(seed32(modelSeed))
+                    .putInt(0)
+                    .putLong(HEADER_BYTES);
+        }
+    }
+
+    /**
      * Maps {@code file} lazily and validates it belongs to the model identified by {@code
      * modelSeed} - throws a descriptive error when it does not. The mapping is automatic-arena: it
      * stays alive while this object (or any blob sliced from it, e.g. frozen grafts inside a
