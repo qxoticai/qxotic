@@ -786,8 +786,10 @@ public final class Inflect2 {
         // A single output channel, so channel-major already IS the waveform.
         F32FloatTensor waveform = state.take(time);
         convRows(state, x, waveform, decoder.post(), 1, time);
-        for (int i = 0; i < time; i++)
-            waveform.setFloat(i, (float) Math.tanh(waveform.getFloat(i)));
+        // one tanh per audio sample: scalar Math.tanh costs ~15ns each in the native image;
+        // the fused Expf pass is ~0.4ns (contract in TanhAccuracyTest - abs error ~6e-8,
+        // below 24-bit audio's LSB)
+        com.qxotic.jinfer.Expf.tanhInPlace(waveform, 0, time);
         return waveform;
     }
 

@@ -3,6 +3,7 @@ package com.qxotic.jinfer;
 import com.oracle.svm.shared.AlwaysInline;
 import java.nio.ByteOrder;
 import jdk.incubator.vector.FloatVector;
+import jdk.incubator.vector.IntVector;
 import jdk.incubator.vector.ShortVector;
 import jdk.incubator.vector.VectorOperators;
 
@@ -92,6 +93,96 @@ public final class FlashAttention {
                 dst.setFloat((long) j * headSize + d, src.getFloat(so + d));
             }
         }
+    }
+
+    // ---- the fused softmax pass: vectorized exp over a score row ----------------------------
+    // The polynomial, its constants, its scalar mirror and its ACCURACY CONTRACT live in Expf
+    // (gated by ExpAccuracyTest); the vector body is fused inline below because a helper - even
+    // @AlwaysInline - stays boxed under the native-image Vector API expansion (measured 9ns vs
+    // 0.19ns per element).
+
+    /** Max over {@code S[base, base+n)} - the block row max feeding the online rescale. */
+    static float rowMax(float[] S, int base, int n) {
+        int j = 0;
+        float max = Float.NEGATIVE_INFINITY;
+        if (FloatTensor.USE_VECTOR_API) {
+            var sp = FloatTensor.F_SPECIES;
+            int bound = sp.loopBound(n);
+            if (bound > 0) {
+                FloatVector acc = FloatVector.broadcast(sp, Float.NEGATIVE_INFINITY);
+                for (; j < bound; j += sp.length()) {
+                    acc = acc.max(FloatVector.fromArray(sp, S, base + j));
+                }
+                max = acc.reduceLanes(VectorOperators.MAX);
+            }
+        }
+        for (; j < n; j++) max = Math.max(max, S[base + j]);
+        return max;
+    }
+
+    /**
+     * The exp leg of the online softmax, fused: {@code S[j] = e^(S[j]-max)} in place over the live
+     * columns, returning their sum. One vectorized pass replaces the scalar per-score {@code
+     * Math.exp} that used to dominate long-context prefill (measured 2.7ns per score; this is
+     * ~0.3ns).
+     */
+    static double expRowInPlace(float[] S, int base, int n, float max) {
+        int j = 0;
+        double sum = 0;
+        if (FloatTensor.USE_VECTOR_API) {
+            var sp = FloatTensor.F_SPECIES;
+            int len = sp.length();
+            int bound = sp.loopBound(n);
+            if (bound > 0) {
+                // the exp body is fused INLINE: as a helper (even @AlwaysInline) the native-image
+                // Vector API expansion phase leaves it boxed and the pass runs at scalar speed -
+                // measured 9ns/element vs 0.19ns fused (the same budget trap as pvTile's split)
+                FloatVector mv = FloatVector.broadcast(sp, max);
+                FloatVector acc = FloatVector.zero(sp);
+                FloatVector vLog2e = FloatVector.broadcast(sp, Expf.EXP_LOG2E);
+                FloatVector vMagic = FloatVector.broadcast(sp, Expf.EXP_MAGIC);
+                FloatVector vHi = FloatVector.broadcast(sp, Expf.EXP_NLN2_HI);
+                FloatVector vLo = FloatVector.broadcast(sp, Expf.EXP_NLN2_LO);
+                FloatVector vC6 = FloatVector.broadcast(sp, Expf.EXP_C6);
+                FloatVector vC5 = FloatVector.broadcast(sp, Expf.EXP_C5);
+                FloatVector vC4 = FloatVector.broadcast(sp, Expf.EXP_C4);
+                FloatVector vC3 = FloatVector.broadcast(sp, Expf.EXP_C3);
+                FloatVector vC2 = FloatVector.broadcast(sp, Expf.EXP_C2);
+                FloatVector vOne = FloatVector.broadcast(sp, 1f);
+                FloatVector vZero = FloatVector.zero(sp);
+                FloatVector vUnder = FloatVector.broadcast(sp, Expf.EXP_UNDERFLOW);
+                for (; j < bound; j += len) {
+                    FloatVector x = FloatVector.fromArray(sp, S, base + j).sub(mv);
+                    FloatVector xc = x.max(vUnder);
+                    FloatVector t = xc.fma(vLog2e, vMagic);
+                    FloatVector nn = t.sub(vMagic);
+                    FloatVector r = nn.fma(vHi, xc);
+                    r = nn.fma(vLo, r);
+                    IntVector e =
+                            ((IntVector) nn.convert(VectorOperators.F2I, 0))
+                                    .add(127)
+                                    .lanewise(VectorOperators.LSHL, 23);
+                    FloatVector p = vC6.fma(r, vC5);
+                    p = p.fma(r, vC4);
+                    p = p.fma(r, vC3);
+                    p = p.fma(r, vC2);
+                    p = p.fma(r, vOne);
+                    p = p.fma(r, vOne);
+                    p =
+                            p.mul(e.reinterpretAsFloats())
+                                    .blend(vZero, x.compare(VectorOperators.LT, vUnder));
+                    p.intoArray(S, base + j);
+                    acc = acc.add(p);
+                }
+                sum = acc.reduceLanes(VectorOperators.ADD);
+            }
+        }
+        for (; j < n; j++) {
+            float p = Expf.expNeg(S[base + j] - max);
+            S[base + j] = p;
+            sum += p;
+        }
+        return sum;
     }
 
     /** out[outOffset, +headSize] *= scale (rescale the running output on a new row max). */
@@ -332,6 +423,174 @@ public final class FlashAttention {
      * for query row {@code t} in [0,QT) and key {@code k} in [0,nKeys). Key offsets come from
      * {@code kvOff}.
      */
+    /**
+     * Fully-unrolled QK^T for the ubiquitous headSize=64 on 512-bit lanes. The generic path's
+     * dimension loop runs only FOUR iterations per key, so compare/branch/addressing bookkeeping
+     * rivals its 16 FMAs (perf: the two hottest instructions in the prefill lambda were a cmp and a
+     * mov, not FMAs). Here the query vectors are hoisted across the key loop and the key body is
+     * branch-free. F32 keys only: the F16 conversion chain would blow the AOT Vector API expansion
+     * budget (the pvTileF16 lesson), and the split prefill decodes its F16 cache to F32 scratch
+     * before QK anyway. Accumulation order matches the generic path exactly - scores are
+     * bit-identical.
+     */
+    @AlwaysInline(
+            "hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compiler)")
+    private static void qkTile64F32(
+            F32FloatTensor q,
+            int qb0,
+            int qStride,
+            F32FloatTensor key,
+            int[] kvOff,
+            int runStart,
+            int nKeys,
+            float scale,
+            float[] S,
+            int sRow0,
+            int BcRows) {
+        int qb1 = qb0 + qStride, qb2 = qb0 + 2 * qStride, qb3 = qb0 + 3 * qStride;
+        FloatVector q00 = loadF32(q, qb0),
+                q01 = loadF32(q, qb0 + 16),
+                q02 = loadF32(q, qb0 + 32),
+                q03 = loadF32(q, qb0 + 48);
+        FloatVector q10 = loadF32(q, qb1),
+                q11 = loadF32(q, qb1 + 16),
+                q12 = loadF32(q, qb1 + 32),
+                q13 = loadF32(q, qb1 + 48);
+        FloatVector q20 = loadF32(q, qb2),
+                q21 = loadF32(q, qb2 + 16),
+                q22 = loadF32(q, qb2 + 32),
+                q23 = loadF32(q, qb2 + 48);
+        FloatVector q30 = loadF32(q, qb3),
+                q31 = loadF32(q, qb3 + 16),
+                q32 = loadF32(q, qb3 + 32),
+                q33 = loadF32(q, qb3 + 48);
+        for (int k = 0; k < nKeys; k++) {
+            int ko = kvOff[runStart + k];
+            FloatVector k0 = loadF32(key, ko),
+                    k1 = loadF32(key, ko + 16),
+                    k2 = loadF32(key, ko + 32),
+                    k3 = loadF32(key, ko + 48);
+            FloatVector a0 = q00.mul(k0);
+            a0 = q01.fma(k1, a0);
+            a0 = q02.fma(k2, a0);
+            a0 = q03.fma(k3, a0);
+            FloatVector a1 = q10.mul(k0);
+            a1 = q11.fma(k1, a1);
+            a1 = q12.fma(k2, a1);
+            a1 = q13.fma(k3, a1);
+            FloatVector a2 = q20.mul(k0);
+            a2 = q21.fma(k1, a2);
+            a2 = q22.fma(k2, a2);
+            a2 = q23.fma(k3, a2);
+            FloatVector a3 = q30.mul(k0);
+            a3 = q31.fma(k1, a3);
+            a3 = q32.fma(k2, a3);
+            a3 = q33.fma(k3, a3);
+            int col = runStart + k;
+            S[sRow0 + col] = a0.reduceLanes(VectorOperators.ADD) * scale;
+            S[sRow0 + BcRows + col] = a1.reduceLanes(VectorOperators.ADD) * scale;
+            S[sRow0 + 2 * BcRows + col] = a2.reduceLanes(VectorOperators.ADD) * scale;
+            S[sRow0 + 3 * BcRows + col] = a3.reduceLanes(VectorOperators.ADD) * scale;
+        }
+    }
+
+    /**
+     * As {@link #qkTile64F32} for any {@code headSize % 64 == 0} (128, 256): the dimension loop
+     * runs in 64-float super-chunks with a fully-unrolled body, cutting the per-iteration
+     * bookkeeping 4x versus the generic 16-float chunks. Query vectors are NOT hoisted here (4 rows
+     * x headSize/16 would exceed the register file past 64) - the loads stay L1-hot. Accumulation
+     * order matches the generic path exactly - scores are bit-identical.
+     */
+    /**
+     * ONE query row of the tile's exact math (single accumulator, ascending chunks, reduce, scalar
+     * tail) - the partial row-group fallback ({@code qr < QT}). It must be BIT-IDENTICAL to a tile
+     * row: rows land in full or partial groups depending on the chunk shape, and a fallback that
+     * rounds differently (q.dot's multi-accumulator order) leaks the chunk shape into the scores -
+     * caught by Qwen35CacheRun's cached-vs-uncached reply gate when the F16 caches moved to
+     * decode-first.
+     */
+    @AlwaysInline(
+            "hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compiler)")
+    private static void qkRowF32(
+            F32FloatTensor q,
+            int qOffset,
+            F32FloatTensor key,
+            int[] kvOff,
+            int runStart,
+            int nKeys,
+            int headSize,
+            float scale,
+            float[] S,
+            int sRowBase) {
+        var sp = FloatTensor.F_SPECIES;
+        int len = sp.length();
+        int bound = sp.loopBound(headSize);
+        for (int k = 0; k < nKeys; k++) {
+            int ko = kvOff[runStart + k];
+            FloatVector a = FloatVector.zero(sp);
+            for (int d = 0; d < bound; d += len) {
+                a = loadF32(q, qOffset + d).fma(loadF32(key, ko + d), a);
+            }
+            float s = a.reduceLanes(VectorOperators.ADD);
+            for (int d = bound; d < headSize; d++) {
+                s += q.getFloat(qOffset + d) * key.getFloat(ko + d);
+            }
+            S[sRowBase + runStart + k] = s * scale;
+        }
+    }
+
+    @AlwaysInline(
+            "hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compiler)")
+    private static void qkTileWideF32(
+            F32FloatTensor q,
+            int qb0,
+            int qStride,
+            F32FloatTensor key,
+            int[] kvOff,
+            int runStart,
+            int nKeys,
+            int headSize,
+            float scale,
+            float[] S,
+            int sRow0,
+            int BcRows) {
+        int qb1 = qb0 + qStride, qb2 = qb0 + 2 * qStride, qb3 = qb0 + 3 * qStride;
+        for (int k = 0; k < nKeys; k++) {
+            int ko = kvOff[runStart + k];
+            FloatVector a0 = FloatVector.zero(FloatTensor.F_SPECIES),
+                    a1 = FloatVector.zero(FloatTensor.F_SPECIES),
+                    a2 = FloatVector.zero(FloatTensor.F_SPECIES),
+                    a3 = FloatVector.zero(FloatTensor.F_SPECIES);
+            for (int d = 0; d < headSize; d += 64) {
+                FloatVector k0 = loadF32(key, ko + d),
+                        k1 = loadF32(key, ko + d + 16),
+                        k2 = loadF32(key, ko + d + 32),
+                        k3 = loadF32(key, ko + d + 48);
+                a0 = loadF32(q, qb0 + d).fma(k0, a0);
+                a0 = loadF32(q, qb0 + d + 16).fma(k1, a0);
+                a0 = loadF32(q, qb0 + d + 32).fma(k2, a0);
+                a0 = loadF32(q, qb0 + d + 48).fma(k3, a0);
+                a1 = loadF32(q, qb1 + d).fma(k0, a1);
+                a1 = loadF32(q, qb1 + d + 16).fma(k1, a1);
+                a1 = loadF32(q, qb1 + d + 32).fma(k2, a1);
+                a1 = loadF32(q, qb1 + d + 48).fma(k3, a1);
+                a2 = loadF32(q, qb2 + d).fma(k0, a2);
+                a2 = loadF32(q, qb2 + d + 16).fma(k1, a2);
+                a2 = loadF32(q, qb2 + d + 32).fma(k2, a2);
+                a2 = loadF32(q, qb2 + d + 48).fma(k3, a2);
+                a3 = loadF32(q, qb3 + d).fma(k0, a3);
+                a3 = loadF32(q, qb3 + d + 16).fma(k1, a3);
+                a3 = loadF32(q, qb3 + d + 32).fma(k2, a3);
+                a3 = loadF32(q, qb3 + d + 48).fma(k3, a3);
+            }
+            int col = runStart + k;
+            S[sRow0 + col] = a0.reduceLanes(VectorOperators.ADD) * scale;
+            S[sRow0 + BcRows + col] = a1.reduceLanes(VectorOperators.ADD) * scale;
+            S[sRow0 + 2 * BcRows + col] = a2.reduceLanes(VectorOperators.ADD) * scale;
+            S[sRow0 + 3 * BcRows + col] = a3.reduceLanes(VectorOperators.ADD) * scale;
+        }
+    }
+
     @AlwaysInline(
             "hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compiler)")
     static void qkTile(
@@ -349,6 +608,19 @@ public final class FlashAttention {
             int BcRows) {
         var sp = FloatTensor.F_SPECIES;
         int len = sp.length();
+        if (len == 16 && key instanceof F32FloatTensor k32) {
+            if (headSize == 64) {
+                qkTile64F32(
+                        q, qBase, qStride, k32, kvOff, runStart, nKeys, scale, S, sRow0, BcRows);
+                return;
+            }
+            if ((headSize & 63) == 0) {
+                qkTileWideF32(
+                        q, qBase, qStride, k32, kvOff, runStart, nKeys, headSize, scale, S, sRow0,
+                        BcRows);
+                return;
+            }
+        }
         int bound = sp.loopBound(headSize);
         int qb0 = qBase,
                 qb1 = qBase + qStride,
@@ -561,6 +833,22 @@ public final class FlashAttention {
                         for (int j = 0; j < BcRows; j++) {
                             kvOff[j] = (kvStart + j) * kvDim + kvHeadOffset;
                         }
+                        // an F16 cache decodes to F32 scratch ONCE per block, exactly like the
+                        // split prefill: 16x fewer conversions than the direct-F16 tiles (once
+                        // per block instead of once per QT-group), and the F32 tiles unlock the
+                        // unrolled qkTile64/Wide specializations. Bit-identical either way - the
+                        // decoder is the same converter the direct tiles use.
+                        FloatTensor blockK = cK;
+                        FloatTensor blockV = cV;
+                        if (cK instanceof F16FloatTensor k16) {
+                            F32FloatTensor kd = buf.kDec(Bc * headSize);
+                            F32FloatTensor vd = buf.vDec(Bc * headSize);
+                            decodeF16Run(k16, kvOff, BcRows, headSize, kd);
+                            decodeF16Run((F16FloatTensor) cV, kvOff, BcRows, headSize, vd);
+                            for (int j = 0; j < BcRows; j++) kvOff[j] = j * headSize;
+                            blockK = kd;
+                            blockV = vd;
+                        }
 
                         for (int i0 = 0; i0 < BrRows; i0 += QT) {
                             int qr = Math.min(QT, BrRows - i0);
@@ -570,7 +858,7 @@ public final class FlashAttention {
                                         q,
                                         qBase,
                                         queryDim,
-                                        cK,
+                                        blockK,
                                         kvOff,
                                         0,
                                         BcRows,
@@ -582,9 +870,24 @@ public final class FlashAttention {
                             } else {
                                 for (int t = 0; t < qr; t++) {
                                     int qOffset = (qStart + i0 + t) * queryDim + hHead;
+                                    if (vec && blockK instanceof F32FloatTensor bk32) {
+                                        // tile-order math: chunk shape must not leak into scores
+                                        qkRowF32(
+                                                q,
+                                                qOffset,
+                                                bk32,
+                                                kvOff,
+                                                0,
+                                                BcRows,
+                                                headSize,
+                                                scale,
+                                                S,
+                                                (i0 + t) * BcRows);
+                                        continue;
+                                    }
                                     for (int j = 0; j < BcRows; j++) {
                                         S[(i0 + t) * BcRows + j] =
-                                                q.dot(qOffset, cK, kvOff[j], headSize) * scale;
+                                                q.dot(qOffset, blockK, kvOff[j], headSize) * scale;
                                     }
                                 }
                             }
@@ -593,43 +896,27 @@ public final class FlashAttention {
                         for (int i = 0; i < BrRows; i++) {
                             int globalQ = qStart + i + startPos;
                             int rowBase = i * BcRows;
-                            for (int j = 0; j < BcRows; j++) {
-                                if (kvStart + j > globalQ) S[rowBase + j] = Float.NEGATIVE_INFINITY;
-                            }
-                        }
-
-                        for (int i = 0; i < BrRows; i++) {
-                            int rowBase = i * BcRows;
-                            float blockMax = Float.NEGATIVE_INFINITY;
-                            for (int j = 0; j < BcRows; j++) {
-                                float sv = S[rowBase + j];
-                                if (sv > blockMax) blockMax = sv;
-                            }
-                            if (blockMax == Float.NEGATIVE_INFINITY) {
-                                for (int j = 0; j < BcRows; j++) S[rowBase + j] = 0f;
+                            // causal masking is a SUFFIX of the row (columns past globalQ):
+                            // zeroing it directly replaces the -inf pass, and every live score
+                            // stays finite - which is what lets the exp pass vectorize
+                            int live = Math.min(BcRows, globalQ - kvStart + 1);
+                            if (live <= 0) {
+                                java.util.Arrays.fill(S, rowBase, rowBase + BcRows, 0f);
                                 continue;
                             }
+                            java.util.Arrays.fill(S, rowBase + live, rowBase + BcRows, 0f);
+                            float blockMax = rowMax(S, rowBase, live);
                             float rowM = M[i];
                             double rowL = L[i];
                             float newMax = Math.max(rowM, blockMax);
                             if (newMax > rowM) {
-                                float rst = (float) Math.exp(rowM - newMax);
+                                float rst = Expf.expNeg(rowM - newMax);
                                 normalize(out, (qStart + i) * queryDim + hHead, headSize, rst);
                                 rowL *= rst;
                                 rowM = newMax;
                             }
-                            double sum = 0;
-                            for (int j = 0; j < BcRows; j++) {
-                                float sv = S[rowBase + j];
-                                float p =
-                                        sv == Float.NEGATIVE_INFINITY
-                                                ? 0f
-                                                : (float) Math.exp(sv - rowM);
-                                S[rowBase + j] = p;
-                                sum += p;
-                            }
                             M[i] = rowM;
-                            L[i] = rowL + sum;
+                            L[i] = rowL + expRowInPlace(S, rowBase, live, rowM);
                         }
 
                         for (int i0 = 0; i0 < BrRows; i0 += QT) {
@@ -640,7 +927,7 @@ public final class FlashAttention {
                                         out,
                                         oBase,
                                         queryDim,
-                                        cV,
+                                        blockV,
                                         kvOff,
                                         0,
                                         BcRows,
@@ -655,7 +942,7 @@ public final class FlashAttention {
                                     for (int j = 0; j < BcRows; j++) {
                                         float p = S[rowBase + j];
                                         if (p != 0f)
-                                            accumulate(out, oOffset, cV, kvOff[j], headSize, p);
+                                            accumulate(out, oOffset, blockV, kvOff[j], headSize, p);
                                     }
                                 }
                             }
@@ -927,6 +1214,12 @@ public final class FlashAttention {
                             } else {
                                 for (int t = 0; t < qr; t++) {
                                     int qOffset = (qStart + i0 + t) * queryStride + hHead;
+                                    // deliberately NOT qkRowF32: this path's models (lfm2,
+                                    // gptoss, llama chunked) hold their behavior gates against
+                                    // the historical dot fallback - swapping it flipped LFM2.5's
+                                    // borderline multi-turn tool loop. The causal path DOES use
+                                    // qkRowF32 (its byte gate demands tile-consistent rows);
+                                    // aligning this one belongs to the chunk-shape golden item.
                                     for (int j = 0; j < BcRows; j++) {
                                         S[(i0 + t) * BcRows + j] =
                                                 q.dot(
@@ -944,45 +1237,29 @@ public final class FlashAttention {
                             int globalQ = qStart + i + startPos;
                             int qAttStart = window > 0 ? Math.max(0, globalQ - window + 1) : 0;
                             int rowBase = i * BcRows;
-                            for (int j = 0; j < BcRows; j++) {
-                                int kvPos = kvStart + j;
-                                if ((!bidir && kvPos > globalQ) || kvPos < qAttStart)
-                                    S[rowBase + j] = Float.NEGATIVE_INFINITY;
-                            }
-                        }
-
-                        for (int i = 0; i < BrRows; i++) {
-                            int rowBase = i * BcRows;
-                            float blockMax = Float.NEGATIVE_INFINITY;
-                            for (int j = 0; j < BcRows; j++) {
-                                float s = S[rowBase + j];
-                                if (s > blockMax) blockMax = s;
-                            }
-                            if (blockMax == Float.NEGATIVE_INFINITY) {
-                                for (int j = 0; j < BcRows; j++) S[rowBase + j] = 0f;
+                            // masking is a PREFIX (window) plus a SUFFIX (causal) of the row:
+                            // zeroing them directly keeps every live score finite, which is what
+                            // lets the exp pass vectorize (see expRowInPlace)
+                            int lo = Math.min(BcRows, Math.max(0, qAttStart - kvStart));
+                            int hi = bidir ? BcRows : Math.min(BcRows, globalQ - kvStart + 1);
+                            if (hi <= lo) {
+                                java.util.Arrays.fill(S, rowBase, rowBase + BcRows, 0f);
                                 continue;
                             }
+                            java.util.Arrays.fill(S, rowBase, rowBase + lo, 0f);
+                            java.util.Arrays.fill(S, rowBase + hi, rowBase + BcRows, 0f);
+                            float blockMax = rowMax(S, rowBase + lo, hi - lo);
                             float rowM = M[i];
                             double rowL = L[i];
                             float newMax = Math.max(rowM, blockMax);
                             if (newMax > rowM) {
-                                float rst = (float) Math.exp(rowM - newMax);
+                                float rst = Expf.expNeg(rowM - newMax);
                                 normalize(out, (qStart + i) * queryStride + hHead, headSize, rst);
                                 rowL *= rst;
                                 rowM = newMax;
                             }
-                            double sum = 0;
-                            for (int j = 0; j < BcRows; j++) {
-                                float s = S[rowBase + j];
-                                float p =
-                                        s == Float.NEGATIVE_INFINITY
-                                                ? 0f
-                                                : (float) Math.exp(s - rowM);
-                                S[rowBase + j] = p;
-                                sum += p;
-                            }
                             M[i] = rowM;
-                            L[i] = rowL + sum;
+                            L[i] = rowL + expRowInPlace(S, rowBase + lo, hi - lo, rowM);
                         }
 
                         for (int i0 = 0; i0 < BrRows; i0 += QT) {

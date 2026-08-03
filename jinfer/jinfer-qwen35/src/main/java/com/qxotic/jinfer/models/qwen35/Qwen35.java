@@ -345,6 +345,10 @@ public final class Qwen35
                 kvMul);
 
         int total = seqLen * queryDim;
+        // NOT Expf.sigmoidMulInPlace (measured +4% prefill): the n==1 seam computes this row's
+        // projections through matmul while chunks go through gemm, so reply identity across
+        // chunk shapes is a knife-edge that any gate-value change flips (Qwen35CacheRun caught
+        // it). Upgrade together with the seam fix, not before.
         for (int i = 0; i < total; i++)
             state.attnOut.setFloat(i, state.attnOut.getFloat(i) * sigmoid(gateArr[i]));
         w.attnOutput[layer].gemm(state.attnOut, queryDim, state.xb, dim, seqLen, dim, queryDim);

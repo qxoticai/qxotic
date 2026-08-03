@@ -163,6 +163,36 @@ public final class F32FloatTensor extends SegmentFloatTensor {
         return super.leakyReluInPlace(thisOffset, size, slope);
     }
 
+    /**
+     * Fused vectorized softmax: SIMD max, one {@code Expf}-polynomial exp+sum pass, SIMD divide.
+     * This is the sampler's per-token vocab softmax (~128k elements) and the MoE router softmax;
+     * the base implementation's scalar {@code Math.exp} costs ~9ns per element in a native image
+     * (~1.2ms per sampled token on a 128k vocab). Accuracy contract: Expf's, see ExpAccuracyTest.
+     */
+    @Override
+    public FloatTensor softmaxInPlace(long thisOffset, int size) {
+        if (!USE_VECTOR_API) return super.softmaxInPlace(thisOffset, size);
+        int upperBound = F_SPECIES.loopBound(size);
+        int i = 0;
+        float max = Float.NEGATIVE_INFINITY;
+        if (upperBound > 0) {
+            FloatVector acc = FloatVector.broadcast(F_SPECIES, Float.NEGATIVE_INFINITY);
+            for (; i < upperBound; i += F_SPECIES.length()) {
+                acc =
+                        acc.max(
+                                FloatVector.fromMemorySegment(
+                                        F_SPECIES,
+                                        vseg,
+                                        vbase + (long) (thisOffset + i) * Float.BYTES,
+                                        ByteOrder.LITTLE_ENDIAN));
+            }
+            max = acc.reduceLanes(VectorOperators.MAX);
+        }
+        for (; i < size; i++) max = Math.max(max, getFloat(thisOffset + i));
+        double sum = Expf.expSumInPlace(this, thisOffset, size, max);
+        return divideInPlace(thisOffset, size, (float) sum);
+    }
+
     @Override
     public FloatTensor divideInPlace(long thisOffset, int size, float value) {
         if (USE_VECTOR_API) {
