@@ -7,10 +7,9 @@
 // gate.
 //
 // This port batches prompt prefill: dense FFN via ffnForwardBatch, MoE via moeForwardBatch (CSR
-// gather-by-expert GEMMs), token-exact vs the single-token reference forward (behind
-// -Djinfer.singleTokenPrefill). Only the gated delta-net recurrence + conv ring stay sequential
-// over
-// the chunk's rows, carried forward in the State exactly as in a streaming decode. This
+// gather-by-expert GEMMs), validated token-exact against the single-token reference forward.
+// Only the gated delta-net recurrence + conv ring stay sequential over the chunk's rows,
+// carried forward in the State exactly as in a streaming decode. This
 // keeps the port to public jinfer kernels only (matmul / flashDecode / gemm-with-offset /
 // Activations.siluMultiply / RoPE.precomputeFreqsCis) and the shared scalar helpers
 // (Activations.sigmoid/silu/softplus) + RoPE.applyInterleaved. Text-only -> implements only

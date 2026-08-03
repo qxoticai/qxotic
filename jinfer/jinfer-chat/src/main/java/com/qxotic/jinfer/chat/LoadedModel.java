@@ -90,8 +90,9 @@ public record LoadedModel<S extends RuntimeState>(
     }
 
     /**
-     * The state codec, required: throws when this model does not support block caching (large
-     * recurrent state). Use {@code model().stateCodec()} for the capability query.
+     * The state codec, required: throws when this model declares none (every shipped chat family
+     * has one - fine, or coarse for the large-recurrence hybrids). Use {@code model().stateCodec()}
+     * for the capability query.
      */
     public StateCodec<S> codec() {
         return model.stateCodec()

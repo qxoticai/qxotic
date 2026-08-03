@@ -519,7 +519,22 @@ public class Main {
                     Files.exists(options.promptCache())
                             ? FrozenBlocks.open(options.promptCache(), model.seed())
                             : null;
-            if (options.promptCacheReadOnly()) {
+            // COARSE codecs (NemotronH, Qwen3.5) carry a ~50-66MB residue PER BLOCK; the
+            // accumulating rw path below commits one block per 512-token chunk, which would
+            // append hundreds of MB per prompt. Serve read-only instead; build coarse
+            // artifacts through define()/withCachedPrompt (one residue per prompt).
+            boolean coarse =
+                    model.model()
+                            .stateCodec()
+                            .map(com.qxotic.jinfer.cache.StateCodec::coarseBlocks)
+                            .orElse(false);
+            boolean readOnly = options.promptCacheReadOnly() || coarse;
+            if (coarse && !options.promptCacheReadOnly()) {
+                System.err.println(
+                        "--cache: coarse codec - serving read-only, appending skipped (a chunked"
+                                + " append would cost one multi-MB residue per 512 tokens)");
+            }
+            if (readOnly) {
                 if (base == null) {
                     System.err.println(
                             "read-only cache missing (" + options.promptCache() + "): prefilling");

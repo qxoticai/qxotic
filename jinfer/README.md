@@ -72,7 +72,7 @@ Auto-detected from GGUF metadata; each architecture is a single-file `Model`.
 | Model | Architecture | Variants | Key features |
 |---|---|---|---|
 | **Gemma 4** | Google Gemma 4 | E2B, E4B, A4B (MoE) | Per-layer embeddings, sliding-window attention, logit soft-capping |
-| **Qwen 3.5** | Qwen 3.5 | Dense, MoE | GQA with QK normalization |
+| **Qwen 3.5** | Qwen 3.5 | Dense, MoE | Hybrid gated-delta-net + periodic full attention |
 | **Nemotron 3** | NVIDIA Nemotron | Hybrid Mamba2 + Attention + MoE | Hybrid SSM-transformer |
 | **Llama 3** | Meta Llama 3.x | Dense | Standard Llama transformer, llama3 RoPE scaling |
 | **Ministral 3** | Mistral Ministral | Dense | YaRN RoPE, attention-temperature scaling, sliding window |

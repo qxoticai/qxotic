@@ -7,11 +7,18 @@ import java.lang.foreign.MemorySegment;
 /**
  * Qwen3.5 resume-state codec: the full-attention layers store per-position K/V rows (full context,
  * linear position indexing - no ring); the gated-delta-net layers contribute their conv history
- * plus the S matrices as the block RESIDUE - {@code headVDim^2 x dtRank} F32 per linear layer
- * (~2.1MB each, ~66MB total at 35B-A3B dims: 30 linear layers of 128^2 x 32), so this model
- * overrides {@link #coarseBlocks()}: cached prompts commit as ONE block per prompt, one residue per
- * prompt rather than one per turn. MoE routing is per-token and carries no cross-token state;
- * everything else in the state is per-batch scratch (exactly what {@code State.reset} clears).
+ * plus the S matrices ({@code headVDim^2 x dtRank} F32, ~2.1MB per linear layer) as the block
+ * RESIDUE - ~66MB total residue at 35B-A3B dims (30 linear layers of 128^2 x 32 plus conv), so this
+ * model overrides {@link #coarseBlocks()}: cached prompts commit as ONE block per prompt, one
+ * residue per prompt rather than one per turn. MoE routing is per-token and carries no cross-token
+ * state; everything else in the state is per-batch scratch - which is why {@code State.reset}
+ * zeroes exactly the recurrent buffers (this residue) and the cursor, and nothing else.
+ *
+ * <p>Coarse consequences worth knowing: matching is ALL-OR-NOTHING (a request whose stream diverges
+ * anywhere inside the defined span - or is shorter than it - restores nothing and re-prefills
+ * silently; only the misses counter tells), and a single-batch define commits the whole prompt as
+ * one block that a one-short-capped serve can never match - a ~66MB dead block. Real defines
+ * (withCachedPrompt) are multi-batch and skip the trailing scaffold.
  */
 public final class Qwen35StateCodec extends AbstractStateCodec<Qwen35.State> {
 

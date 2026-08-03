@@ -13,10 +13,11 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
- * The recycling gate: a {@code reset()} state must generate byte-identically to a fresh one. LFM2.5
- * is the sharp case - its rolling short-conv state carries values across positions, so a reset that
- * failed to zero it would leak the previous conversation into the next (stale KV rows beyond the
- * cursor are attention-masked and cannot leak). Hot-vs-hot per the numerics convention.
+ * The recycling gate: a {@code reset()} state must generate byte-identically to a fresh one.
+ * Qwen3.5 is a sharp case - the gated-delta-net S matrices and the conv history carry values across
+ * positions, so a reset that failed to zero either would leak the previous conversation into the
+ * next (stale KV rows beyond the cursor are attention-masked and cannot leak). Hot-vs-hot per the
+ * numerics convention.
  */
 @Tag("integration")
 class Qwen35ResetIdentityTest {

@@ -14,7 +14,7 @@ import java.util.function.IntUnaryOperator;
  * predicate, the per-layer {@code kvDim}, key/value accessors, and a per-layer RING WIDTH (0 for
  * full-attention layers with linear position indexing; W for sliding-window layers whose rows live
  * at ring slots {@code pos & (W-1)}). A concrete codec supplies that wiring plus, for models with
- * genuinely recurrent state, the small fixed {@link #residue} trailer. Save and restore share one
+ * genuinely recurrent state, the fixed-size {@link #residue} trailer. Save and restore share one
  * walk (a direction flag), so the two blob layouts can't drift apart.
  */
 public abstract class AbstractStateCodec<S extends RuntimeState> implements StateCodec<S> {
@@ -89,8 +89,8 @@ public abstract class AbstractStateCodec<S extends RuntimeState> implements Stat
     }
 
     /**
-     * Serialize ({@code out=true}) or restore the model's small recurrent residue as of position
-     * {@code to}. Default no-op - models whose state is entirely rows never reach it.
+     * Serialize ({@code out=true}) or restore the model's fixed-size recurrent residue as of
+     * position {@code to}. Default no-op - models whose state is entirely rows never reach it.
      */
     protected void residue(S s, int to, MemorySegment blob, boolean out) {}
 }
