@@ -167,12 +167,15 @@ public final class Qwen35
         return java.util.Optional.of(turnTemplate);
     }
 
+    private Qwen35StateCodec stateCodec; // memoized: config-driven, model-lifetime
+
     @Override
     public java.util.Optional<com.qxotic.jinfer.cache.StateCodec<Qwen35.State>> stateCodec() {
-        // The gated-delta-net S matrices are a LARGE true recurrence (MBs per SSM layer) - neither
-        // per-position rows nor a small residue, so this family offers no block caching; live
-        // sessions (the PromptCache hot layer) still give append-only reuse.
-        return java.util.Optional.empty();
+        // The gated-delta-net S matrices are a LARGE true recurrence (~2.1MB per linear layer),
+        // so blocks are COARSE: define() commits one residue per prompt; serving restores defined
+        // prefixes and never writes. Live sessions (the hot layer) still give append-only reuse.
+        if (stateCodec == null) stateCodec = new Qwen35StateCodec(configuration);
+        return java.util.Optional.of(stateCodec);
     }
 
     /** The turn-delimiter / eos ids that terminate generation (convenience for callers/tests). */
