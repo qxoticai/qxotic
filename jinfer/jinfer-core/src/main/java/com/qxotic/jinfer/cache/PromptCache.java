@@ -303,6 +303,16 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
         long[] fingerprints = CachedSession.fingerprints(prompt);
         int total = fingerprints.length;
         if (total == 0) return;
+        // the same guard serve() applies, BEFORE any state is sized or block committed: an
+        // over-long define would append junk blocks no serve could ever match
+        if (total > model.config().contextLength()) {
+            throw new IllegalArgumentException(
+                    "Prompt exceeds context length ("
+                            + total
+                            + " tokens, "
+                            + model.config().contextLength()
+                            + " available)");
+        }
         // a coarse define commits everything-but-the-last-batch as ONE chunk, so its state must
         // hold the whole prompt per batch; fine codecs use the standard one-generation sizing
         S state =

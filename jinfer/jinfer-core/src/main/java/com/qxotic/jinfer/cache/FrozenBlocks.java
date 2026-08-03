@@ -100,6 +100,7 @@ public final class FrozenBlocks {
                     .put(seed32(modelSeed))
                     .putInt(0)
                     .putLong(HEADER_BYTES);
+            map.force(); // durable before anyone appends - a half-born header bricks later boots
         }
     }
 
@@ -112,6 +113,11 @@ public final class FrozenBlocks {
     public static FrozenBlocks open(Path file, byte[] modelSeed) throws IOException {
         MemorySegment map;
         try (FileChannel ch = FileChannel.open(file, StandardOpenOption.READ)) {
+            if (ch.size() < HEADER_BYTES) {
+                // e.g. a crash between file birth and header write-back
+                throw new IllegalStateException(
+                        file + " is not a frozen prompt cache (truncated header)");
+            }
             map = ch.map(FileChannel.MapMode.READ_ONLY, 0, ch.size(), Arena.ofAuto());
         }
         ByteBuffer h = map.asSlice(0, HEADER_BYTES).asByteBuffer().order(ByteOrder.LITTLE_ENDIAN);

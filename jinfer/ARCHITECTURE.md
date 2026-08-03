@@ -53,9 +53,9 @@ layers - restored at true ring slots since RoPE is position-baked). Storage prov
   (`CachedSession` commits at every ingestion boundary via the O(span) `Cursor`).
 - **Pure optimization**: any miss, eviction, or verification failure degrades to recompute.
 
-Serving artifacts: `SealedPrompt` (ONE compiled prompt: mmap, memcmp fingerprint verify, instant
-restore - the prompt-compiler path for native images) and frozen `PromptCache` files
-(`freeze()`/`open()`: read-only, lazily mapped, several prompts with shared-prefix dedup).
+Serving artifacts: `FrozenBlocks` files (JKVF: any number of prompts as one content-addressed
+block tree, shared prefixes stored once; `freeze()`/`open()`/`createEmpty()`, lazily mapped,
+appendable under a file lock - the accumulating `--cache` catalog and the prompt-compiler path).
 Measured on CPU: resume is near-constant in history length (~20-50 ms) vs linear prefill -
 84-404x on multi-thousand-token histories.
 

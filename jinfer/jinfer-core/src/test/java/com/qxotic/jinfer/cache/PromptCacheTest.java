@@ -585,6 +585,10 @@ public final class PromptCacheTest {
                 IllegalArgumentException.class,
                 () -> generate(cache, prompt(new int[CONTEXT + 1])),
                 "past the context, before any ingest");
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> cache.define(prompt(new int[CONTEXT + 1])),
+                "an over-long define would append junk blocks no serve could match");
         // a stashed Serving handle is dead once the pass returns
         PromptCache.Serving[] stashed = new PromptCache.Serving[1];
         cache.serve(

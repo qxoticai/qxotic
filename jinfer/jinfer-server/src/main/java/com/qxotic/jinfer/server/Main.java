@@ -158,10 +158,7 @@ public class Main {
             java.util.function.IntConsumer afterIngest) {
         Tokenizer tokenizer = model.tokenizer();
         if (options.echo()) {
-            promptTokens.forEachInt(
-                    token ->
-                            System.err.print(
-                                    replaceControlCharacters(tokenizer.decode(new int[] {token}))));
+            echoPrompt(tokenizer, promptTokens);
         }
         IntConsumer printer = streamingPrinter(tokenizer, options);
         IntConsumer onToken =
@@ -225,6 +222,14 @@ public class Main {
                 generated,
                 timingSuffix);
         return new CliReply(result, text.toString(), message);
+    }
+
+    /** {@code --echo}: the prompt tokens to stderr, control characters escaped. */
+    private static void echoPrompt(Tokenizer tokenizer, IntSequence promptTokens) {
+        promptTokens.forEachInt(
+                token ->
+                        System.err.print(
+                                replaceControlCharacters(tokenizer.decode(new int[] {token}))));
     }
 
     /** Escape control characters (except newline) so token echo cannot distort the terminal. */
@@ -526,6 +531,10 @@ public class Main {
         if (options.promptCache() != null && promptTokens.length() >= 2) {
             List<Batch> prompt = List.of(Batch.prefill(promptTokens.toArray()));
             int total = promptTokens.length();
+            if (options.echo()) {
+                // the whole prompt: serve() ingests it internally, so generateCli sees none of it
+                echoPrompt(model.tokenizer(), promptTokens);
+            }
             try (PromptCache<S> cache =
                     PromptCache.of(
                             model.model(),
