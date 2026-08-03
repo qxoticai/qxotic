@@ -1,443 +1,334 @@
 package com.qxotic.jinfer.cache;
 
+import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.LanguageModel;
+import com.qxotic.jinfer.RuntimeFlags;
 import com.qxotic.jinfer.RuntimeState;
-import java.lang.foreign.MemorySegment;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 
 /**
- * Model-agnostic, storage-agnostic prompt cache: a prefix tree of variable-length KV blocks,
- * content-addressed by a CHAINED SHA-256 key over per-position fingerprints (token id for text,
- * content-hash for media). The chained digest names the whole token prefix — same conversation
- * prefix, same key, across sessions and restarts — and, being cryptographic, is trusted as identity
- * (matching recomputes the digest from the request's fingerprints; no fingerprint storage, no
- * collision handling: git/IPFS regime).
+ * jinfer's KV cache - the one front door to every way caching happens. Two layers, one law:
  *
- * <p>Every block is SELF-CONTAINED ({@link StateCodec}): restoring a matched chain in position
- * order leaves the state live at the chain's end, so EVERY block boundary is a resume point —
- * blocks match completely or not at all, and the longest matching chain is the resume. The cache is
- * a pure optimization — every miss degrades to recompute, never to a wrong answer.
+ * <ul>
+ *   <li>HOT - the last N conversations stay live as ready-to-continue states; a prompt that
+ *       strictly extends one continues in place (ANY model, codec or not).
+ *   <li>BLOCKS - everything computed is kept as content-keyed KV blocks (RAM, budget-bounded,
+ *       optionally backed by a catalog file that survives restarts). Interior content commits at
+ *       turn boundaries; the decode tail commits per position, so a truncated or edited echo
+ *       resumes token-exact.
+ * </ul>
  *
- * <p>{@link #resume} matches and restores once per request; {@link CachedSession} is the write
- * handle, committing each subsequently ingested span in O(span) — one digest of the span against
- * the tip key, no re-walk — which is what makes single-token commits during decode natural. Large
- * blocks and single-token blocks are the same mechanism at different spans.
+ * <p>THE LAW, stated once: a resume always stops one position short, so the final token re-ingests
+ * and the logits are always fresh - and a cached answer is byte-identical to a cold one.
  *
- * <p>The model contributes only a {@link StateCodec}; storage only a {@link CacheStore}. This class
- * is pure policy: keys, the prefix tree, matching, budget/LRU-leaf eviction. Single-threaded by
- * design (the generation worker), like the store.
+ * <p>{@link #of} reads the model's capabilities itself: no {@link StateCodec} = hot-only; a
+ * coarse-residue codec = blocks written by {@link #define} alone (a served turn would cost a ~90MB
+ * residue per block); otherwise the full picture. Callers make zero routing decisions.
+ *
+ * <p>Single-threaded by design: every method (including {@link #sample}) belongs to the one
+ * generation thread, like the tree it fronts. The low-level layer ({@link CachedSession}, {@link
+ * BlockTree}, {@link FrozenBlocks}) stays public for the testkit, benches and speculative decoding;
+ * production callers should not need it.
  */
-public final class PromptCache<S extends RuntimeState> {
+public final class PromptCache<S extends RuntimeState> implements AutoCloseable {
 
-    /** 256-bit chained content address. */
-    public record BlockKey(long a, long b, long c, long d) {}
+    /**
+     * @param hotSessions live conversations retained; 0 = stateless between requests (the one
+     *     allocation is still recycled as a wiped spare)
+     * @param blockBudgetBytes RAM bound for the block layer; 0 = blocks disabled (hot-only) - an
+     *     explicit {@code catalog} still mounts, read-only in spirit if the budget refuses growth
+     * @param catalog the block layer's file, opened if present and CREATED OTHERWISE (so {@link
+     *     #save} is always an append - never a rewrite of a mounted mapping); null = RAM only
+     * @param readOnly the catalog is served, never written: {@link #save} is a no-op, and a missing
+     *     or incompatible file degrades to serving without it instead of failing the boot
+     */
+    public record Options(int hotSessions, long blockBudgetBytes, Path catalog, boolean readOnly) {
 
-    private static final BlockKey ROOT = new BlockKey(0, 0, 0, 0);
-
-    final class Block {
-        final BlockKey key;
-        final Block parent; // sentinel for depth-0 blocks
-        final int from, to;
-        final MemorySegment mem; // null only on the sentinel
-        final List<Block> children = new ArrayList<>(2);
-        long lastUsed;
-        boolean live = true;
-        boolean frozen; // grafted from a FrozenBlocks artifact: never evicted, never freed
-        int frozenCrc; // artifact-carried CRC32C, verified lazily on first restore
-        boolean frozenVerified;
-
-        Block(BlockKey key, Block parent, int from, int to, MemorySegment mem) {
-            this.key = key;
-            this.parent = parent;
-            this.from = from;
-            this.to = to;
-            this.mem = mem;
+        /** In-memory defaults: {@code hot} live sessions, the standard budget, no catalog. */
+        public static Options inMemory(int hot, long budgetBytes) {
+            return new Options(hot, budgetBytes, null, false);
         }
     }
 
-    private final StateCodec<S> codec;
-    private final CacheStore store;
-    private final long budgetBytes;
-    private final byte[] modelSeed;
-    private final Map<BlockKey, Block> blocks = new HashMap<>();
-    private final Set<Block> leaves = new HashSet<>();
-    private final List<Block> freshBlocks = new ArrayList<>(); // committed here, not yet on disk
-    private FrozenBlocks base; // the grafted artifact, target of appendTo; null when standalone
-    private final Block sentinel;
-    private final Block DETACHED;
-    private final MessageDigest sha;
-    private ByteBuffer scratch = ByteBuffer.allocate(4096).order(ByteOrder.LITTLE_ENDIAN);
-    private long clock;
-    private long hits, misses, evictions, discards, refusals;
+    private final LanguageModel<?, ?, S> model;
+    private final BlockTree<S> tree; // null = hot-only (no codec, or blocks disabled)
+    private final boolean coarse; // blocks written by define() alone; serving restores read-only
+    private final CacheStore store; // owned; freed at close
+    private final Path catalog; // the effective mounted/created file (null = none / degraded)
+    private final boolean readOnly;
 
-    /**
-     * A writable cache layered over a read-only {@link FrozenBlocks} base: the artifact's blocks
-     * graft into this cache's key space (resume matches through them, commits dedup against them)
-     * but never count against the budget and are never evicted or freed. The artifact must have
-     * been built with the SAME model seed - chained keys only line up when the roots agree. A null
-     * {@code base} is a plain standalone cache.
-     */
-    public PromptCache(
-            StateCodec<S> codec,
+    // ---- the HOT layer: THE POOL IS THE ALLOCATOR ------------------------------------------
+    // A full context is the dominant per-pipeline allocation. At capacity the least-recent
+    // session's state is recycled (reset() - every family has decided what a fresh sequence
+    // must clear); with hotSessions=0 one WIPED bare allocation is retained as the spare, so
+    // the stateless default still allocates its context once and keeps none of the content.
+    private final int hotCapacity;
+    private final ArrayDeque<CachedSession<S>> hot = new ArrayDeque<>();
+    private S spare;
+    private long hotHits;
+    private long statesAllocated; // steady state: max(1, hotSessions)
+
+    private PromptCache(
+            LanguageModel<?, ?, S> model,
+            BlockTree<S> tree,
+            boolean coarse,
             CacheStore store,
-            long budgetBytes,
-            byte[] modelSeed,
-            FrozenBlocks base) {
-        this(codec, store, budgetBytes, modelSeed);
-        if (base == null) return;
-        this.base = base;
-        for (FrozenBlocks.Entry e : base.entries()) { // BFS: parents precede children
-            Block parent =
-                    e.parentKey().equals(sentinel.key) ? sentinel : blocks.get(e.parentKey());
-            if (parent == null) {
-                throw new IllegalStateException(
-                        base
-                                + " is not rooted in this cache's model seed (unknown parent for "
-                                + "block ["
-                                + e.from()
-                                + ","
-                                + e.to()
-                                + "))");
-            }
-            Block b = new Block(e.key(), parent, e.from(), e.to(), e.mem());
-            b.frozen = true;
-            b.frozenCrc = e.crc();
-            blocks.put(e.key(), b);
-            parent.children.add(b);
-            // deliberately NOT a leaf: eviction never sees frozen blocks
-        }
-    }
-
-    /**
-     * {@code modelSeed} folds the model's identity (and implicitly the codec's blob layout) into
-     * the ROOT of the key chain, so two models — even sharing a tokenizer, where fingerprint
-     * streams collide — can never match each other's blocks. One cache instance per model is the
-     * deployment shape; see {@link #modelSeed}.
-     */
-    public PromptCache(StateCodec<S> codec, CacheStore store, long budgetBytes, byte[] modelSeed) {
-        this.codec = codec;
+            Path catalog,
+            Options options) {
+        this.model = model;
+        this.tree = tree;
+        this.coarse = coarse;
         this.store = store;
-        this.budgetBytes = budgetBytes;
-        this.modelSeed = modelSeed.clone();
-        try {
-            this.sha = MessageDigest.getInstance("SHA-256");
-        } catch (NoSuchAlgorithmException e) {
-            throw new AssertionError(e);
-        }
-        BlockKey root = ROOT;
-        if (modelSeed.length > 0) {
-            sha.reset();
-            sha.update(modelSeed);
-            long[] d = Sha256.digestLongs(sha);
-            root = new BlockKey(d[0], d[1], d[2], d[3]);
-        }
-        this.sentinel = new Block(root, null, 0, 0, null);
-        this.DETACHED = new Block(root, null, 0, 0, null);
-        this.DETACHED.live = false;
+        this.catalog = catalog;
+        this.readOnly = options.readOnly();
+        this.hotCapacity = Math.max(0, options.hotSessions());
     }
 
     /**
-     * A fast, stable model identity for {@link #PromptCache(StateCodec, CacheStore, long, byte[])}
-     * and for naming persisted artifacts: file length + SHA-256 of the first and last MiB of the
-     * GGUF (full-content hashing of multi-GB weights is not worth it — length + head/tail covers
-     * metadata, tensor table and data edges).
+     * Builds the cache the {@code model} can support - the only constructor. {@code seed} is the
+     * model's cache identity (see {@link #modelSeed}); block keys and catalog files are rooted in
+     * it, so two models can never match each other's blocks.
      */
-    public static byte[] modelSeed(java.nio.file.Path gguf) {
-        try (var ch =
-                java.nio.channels.FileChannel.open(gguf, java.nio.file.StandardOpenOption.READ)) {
-            return modelSeed(ch);
-        } catch (java.io.IOException e) {
-            throw new IllegalStateException("modelSeed(" + gguf + ")", e);
+    public static <S extends RuntimeState> PromptCache<S> of(
+            LanguageModel<?, ?, S> model, byte[] seed, Options o) {
+        StateCodec<S> codec = model.stateCodec().orElse(null);
+        boolean wantBlocks = codec != null && (o.blockBudgetBytes() > 0 || o.catalog() != null);
+        if (!wantBlocks) {
+            return new PromptCache<>(model, null, false, CacheStore.inMemory(), null, o);
         }
-    }
-
-    /** As {@link #modelSeed(java.nio.file.Path)} on an already-open channel (positional reads). */
-    public static byte[] modelSeed(java.nio.channels.FileChannel ch) {
+        CacheStore store = CacheStore.inMemory();
         try {
-            MessageDigest d = MessageDigest.getInstance("SHA-256");
-            long size = ch.size();
-            ByteBuffer len = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN).putLong(0, size);
-            d.update(len);
-            ByteBuffer buf = ByteBuffer.allocate((int) Math.min(1 << 20, size));
-            ch.read(buf, 0);
-            buf.flip();
-            d.update(buf);
-            if (size > (1 << 20)) {
-                buf.clear();
-                ch.read(buf, size - buf.capacity());
-                buf.flip();
-                d.update(buf);
-            }
-            return d.digest();
-        } catch (java.io.IOException | NoSuchAlgorithmException e) {
-            throw new IllegalStateException("modelSeed(channel)", e);
+            FrozenBlocks base = openCatalog(codec, store, seed, o);
+            Path effective =
+                    base != null || (o.catalog() != null && !o.readOnly()) ? o.catalog() : null;
+            BlockTree<S> tree = new BlockTree<>(codec, store, o.blockBudgetBytes(), seed, base);
+            return new PromptCache<>(model, tree, codec.coarseBlocks(), store, effective, o);
+        } catch (RuntimeException | Error e) {
+            store.close();
+            throw e;
         }
     }
 
     /**
-     * Matches the longest cached complete-block prefix of {@code fingerprints[0..len)}, restores it
-     * into {@code state}, and returns the matched tip — the session's resume point; the caller
-     * re-ingests everything past {@code tip.to}. Returns the sentinel (position 0) on a cold start.
+     * Opens the catalog, creating an EMPTY artifact first when a read-write file is missing - the
+     * cache knows its file from birth, so {@link #save} is always an append against a mounted base.
+     * Read-write problems fail the boot loudly (silently recreating would destroy the old catalog).
+     * A MISSING read-only file degrades to serving without it; an EXISTING but incompatible file
+     * fails loudly in BOTH modes - the caller pointed at a real artifact, and silently ignoring it
+     * is worse than refusing to boot.
      */
-    Block resume(long[] fingerprints, int len, S state) {
-        Block tip = sentinel;
-        while (true) {
-            Block next = null;
-            for (Block b : tip.children) { // few children; longest matching span wins
-                if (b.to <= len
-                        && (next == null || b.to > next.to)
-                        && digest(tip.key, fingerprints, b.from, b.to - b.from).equals(b.key)) {
-                    next = b;
+    private static <S extends RuntimeState> FrozenBlocks openCatalog(
+            StateCodec<S> codec, CacheStore store, byte[] seed, Options o) {
+        if (o.catalog() == null) return null;
+        try {
+            if (!Files.exists(o.catalog())) {
+                if (o.readOnly()) {
+                    System.err.println(
+                            "jinfer: read-only cache missing ("
+                                    + o.catalog()
+                                    + "): serving without it");
+                    return null;
                 }
+                new BlockTree<>(codec, store, 0, seed).freeze(o.catalog());
             }
-            if (next == null) break;
-            touch(next);
-            tip = next;
+            return FrozenBlocks.open(o.catalog(), seed);
+        } catch (IOException e) {
+            throw new UncheckedIOException("failed to open cache " + o.catalog(), e);
         }
-        if (tip != sentinel) {
-            for (Block b = tip; b != sentinel; b = b.parent) chainScratch.add(b);
-            for (int i = chainScratch.size() - 1; i >= 0; i--) {
-                Block b = chainScratch.get(i);
-                boolean valid =
-                        !b.frozen
-                                || b.frozenVerified
-                                || (b.frozenVerified = FrozenBlocks.crc32c(b.mem) == b.frozenCrc);
-                if (!valid) { // failed verification = a miss, never restored
-                    discard(b); // the block and everything chained on it
-                    chainScratch.clear();
-                    return resume(
-                            fingerprints, len, state); // the tree changed: re-match from scratch
-                }
-                codec.restore(state, b.from, b.to, b.mem);
-            }
-            chainScratch.clear();
-            hits++;
-            state.resumeAt(tip.to);
+    }
+
+    /** Which source served a prompt; the difference worth tuning {@code jinfer.sessions} on. */
+    public enum Tier {
+        /** A hot conversation the prompt strictly extends: zero restore, only the delta. */
+        SESSION,
+        /** The block layer's longest cached prefix, restored into a state. */
+        BLOCKS,
+        /** Nothing matched: a recycled-or-fresh state prefilled the whole prompt. */
+        FRESH
+    }
+
+    /** What a pass may do and know - nothing else escapes the cache. */
+    public interface Serving {
+        /**
+         * Wire as the generator's {@code afterIngest}: records each decode token the moment the
+         * state's frontier includes it (with blocks on, as its own per-position block - the tail
+         * contract). A no-op lane when blocks are off, but ALWAYS keeps the hot stream in lockstep,
+         * so wiring it is not optional.
+         */
+        void tail(int token);
+
+        /** Positions served from cache instead of prefill. */
+        int restored();
+
+        Tier tier();
+    }
+
+    /**
+     * The generation body: receives the prepared state (prompt already ingested) and the pass
+     * context. Runs on the cache's single thread.
+     */
+    public interface Pass<S extends RuntimeState, R> {
+        R run(S state, Serving serving) throws RuntimeException;
+    }
+
+    /**
+     * THE serving protocol - every model kind, one path, cheapest source first: a hot session the
+     * prompt strictly extends ({@link Tier#SESSION}), else the longest block prefix restored into a
+     * recycled-or-fresh state ({@link Tier#BLOCKS}), else full prefill ({@link Tier#FRESH}). The
+     * prompt is ingested (one block per batch, skip-restored) BEFORE the pass runs; the pass only
+     * generates. On success the finished state returns to the hot layer; if the pass throws, the
+     * session is discarded - a possibly-torn state must never serve again.
+     */
+    public <R> R serve(List<Batch> prompt, Pass<S, R> pass) {
+        long[] fingerprints = CachedSession.fingerprints(prompt);
+        CachedSession<S> session = hotAcquire(fingerprints);
+        boolean tier1 = session != null;
+        if (tier1) {
+            hotHits++;
         } else {
-            misses++;
+            session = attach(fingerprints);
         }
-        return tip;
+        int restored = session.position();
+        Tier tier = tier1 ? Tier.SESSION : restored > 0 ? Tier.BLOCKS : Tier.FRESH;
+        // one group per batch: the codec's turn boundaries ARE the block boundaries, so a
+        // follow-up diverging after turn k still reuses turns 0..k-1
+        List<List<Batch>> groups = new ArrayList<>(prompt.size());
+        for (Batch b : prompt) groups.add(List.of(b));
+        CachedSession<S> bound = session;
+        Serving serving =
+                new Serving() {
+                    @Override
+                    public void tail(int token) {
+                        bound.adopt(token);
+                    }
+
+                    @Override
+                    public int restored() {
+                        return restored;
+                    }
+
+                    @Override
+                    public Tier tier() {
+                        return tier;
+                    }
+                };
+        R result;
+        try {
+            session.ingestGroups(groups);
+            result = pass.run(session.state(), serving);
+        } catch (RuntimeException | Error e) {
+            closeState(session); // torn: never serves again; its committed blocks survive
+            throw e;
+        }
+        release(session);
+        return result;
+    }
+
+    /** A state for a miss, recycled where possible, attached to the right block mode. */
+    private CachedSession<S> attach(long[] fingerprints) {
+        int cap = fingerprints.length - 1; // THE LAW: resume stops one short
+        S state = recycled(fingerprints.length);
+        if (state == null) state = freshState();
+        try {
+            if (tree == null) return CachedSession.hot(model, state);
+            return coarse
+                    ? CachedSession.resumeReadOnly(model, tree, state, fingerprints, cap)
+                    : CachedSession.resume(model, tree, state, fingerprints, cap);
+        } catch (RuntimeException | Error e) {
+            if (state instanceof com.qxotic.jinfer.BaseState base) base.close();
+            throw e;
+        }
     }
 
     /**
-     * Commits the span {@code spanFp[off..off+len)} just ingested as one block chained on {@code
-     * tip}, returning the new tip. Dedups against an existing identical block; detaches (returns a
-     * dead tip whose commits no-op) when the budget refuses the block.
+     * Pins a prefix into the block layer: interior batches as turn blocks, the FINAL position as
+     * its own single (so a later serve of exactly this prompt - capped one short by the law -
+     * restores everything but that last token); a coarse codec commits ONE block over everything
+     * but the trailing batch (request-shaped scaffold: a block containing it would never match, yet
+     * would still pay the residue). Dedups against what is already cached. Throws when the budget
+     * refused it - a define exists only to cache, and returning quietly would let every later serve
+     * re-prefill with no diagnostic.
      */
-    Block commit(Block tip, long[] spanFp, int off, int len, S state) {
-        if (!tip.live || len == 0) return tip;
-        if (state.position() != tip.to + len) {
-            throw new IllegalStateException(
-                    "commit of "
-                            + len
-                            + " at chain position "
-                            + tip.to
-                            + " but state is at "
-                            + state.position());
-        }
-        BlockKey key = digest(tip.key, spanFp, off, len);
-        Block existing = blocks.get(key);
-        if (existing != null) { // dedup: same prefix, same span
-            touch(existing);
-            return existing;
-        }
-        int to = tip.to + len;
-        long bytes = codec.blockBytes(len);
-        if (!ensureBudget(bytes, tip)) { // budget refused: detach softly
-            refusals++;
-            return DETACHED;
-        }
-        MemorySegment mem = store.allocate(bytes);
-        codec.save(state, tip.to, to, mem);
-        Block block = new Block(key, tip, tip.to, to, mem);
-        blocks.put(key, block);
-        freshBlocks.add(block); // creation order is parents-first: a tip precedes its children
-        leaves.remove(tip);
-        leaves.add(block);
-        tip.children.add(block);
-        touch(block);
-        return block;
-    }
-
-    /**
-     * Removes a block and its whole subtree from the tree and frees their blobs — used when a
-     * stored blob fails verification: the cache degrades to a miss, never to a wrong answer.
-     */
-    private void discard(Block b) {
-        for (Block child : List.copyOf(b.children)) discard(child);
-        b.children.clear();
-        unlink(b);
-        discards++;
-    }
-
-    /** Detach one block from the tree and free its blob; leaf-promotes a live parent. */
-    private void unlink(Block b) {
-        b.live = false;
-        blocks.remove(b.key);
-        leaves.remove(b);
-        freshBlocks.remove(b); // its blob is about to be freed; never write it
-        b.parent.children.remove(b);
-        if (b.parent != sentinel
-                && b.parent.live
-                && b.parent.children.isEmpty()
-                && !b.parent.frozen) {
-            leaves.add(b.parent); // dead parents stay out: their blob is freed
-        }
-        if (!b.frozen) store.free(b.mem); // frozen blobs are mmap slices, not store allocations
-    }
-
-    private final List<Block> chainScratch = new ArrayList<>();
-
-    private void touch(Block b) {
-        b.lastUsed = ++clock;
-    }
-
-    /**
-     * Evicts LRU leaves until {@code needed} fits the budget. Leaf-only eviction keeps every
-     * remaining chain contiguous. {@code keep} (the committing session's tip) is never evicted: a
-     * chain's only leaf is its tip, so without the guard a commit under pressure would evict its
-     * own chain, then link the new block under the freed corpse (double-free on the next eviction
-     * pass). When only {@code keep} remains, the commit detaches instead.
-     */
-    private boolean ensureBudget(long needed, Block keep) {
-        if (needed > budgetBytes) return false;
-        while (store.usedBytes() + needed > budgetBytes) {
-            Block lru = null;
-            for (Block b : leaves) {
-                if (b != keep && (lru == null || b.lastUsed < lru.lastUsed)) lru = b;
+    public void define(List<Batch> prompt) {
+        BlockTree<S> t = requireTree();
+        int total = positions(prompt);
+        if (total == 0) return;
+        S state =
+                coarse
+                        ? model.newState(model.config().contextLength(), Math.max(total, 16))
+                        : model.newState(
+                                model.config().contextLength(),
+                                Math.min(Math.max(total, 16), RuntimeFlags.BATCH_CAPACITY));
+        statesAllocated++;
+        try {
+            CachedSession<S> s = CachedSession.resume(model, t, state, prompt);
+            s.ingestGroups(defineGroups(prompt));
+            if (s.detached()) {
+                throw new IllegalStateException(
+                        "cached prompt not fully retained: the cache budget refused it"
+                                + " (-Djinfer.promptCacheMB, currently "
+                                + (t.sample().budgetBytes() >> 20)
+                                + " MB)");
             }
-            if (lru == null) return false;
-            unlink(lru);
-            evictions++;
+        } finally {
+            if (state instanceof com.qxotic.jinfer.BaseState base) base.close();
         }
-        return true;
     }
 
-    private BlockKey digest(BlockKey parent, long[] fp, int off, int len) {
-        int bytes = 32 + len * Long.BYTES;
-        if (scratch.capacity() < bytes)
-            scratch = ByteBuffer.allocate(bytes).order(ByteOrder.LITTLE_ENDIAN);
-        scratch.clear();
-        scratch.putLong(parent.a()).putLong(parent.b()).putLong(parent.c()).putLong(parent.d());
-        for (int i = 0; i < len; i++) scratch.putLong(fp[off + i]);
-        sha.reset();
-        sha.update(scratch.array(), 0, bytes);
-        long[] d = Sha256.digestLongs(sha);
-        return new BlockKey(d[0], d[1], d[2], d[3]);
+    private List<List<Batch>> defineGroups(List<Batch> prompt) {
+        int n = prompt.size();
+        if (coarse) return List.of(prompt.subList(0, Math.max(1, n - 1)));
+        List<List<Batch>> groups = new ArrayList<>(n + 1);
+        for (int i = 0; i < n - 1; i++) groups.add(List.of(prompt.get(i)));
+        Batch last = prompt.get(n - 1);
+        if (last.input() instanceof Batch.Input.Tokens t && t.ids().length > 1) {
+            int[] ids = t.ids();
+            groups.add(List.of(Batch.prefill(java.util.Arrays.copyOf(ids, ids.length - 1))));
+            groups.add(List.of(Batch.prefill(new int[] {ids[ids.length - 1]})));
+        } else {
+            groups.add(List.of(last));
+        }
+        return groups;
     }
 
-    /**
-     * Serializes every block reachable from the root into {@code out} - a read-only, shareable
-     * {@link FrozenBlocks} artifact holding any number of prompts, shared prefixes stored once. A
-     * cache layered over a frozen base re-freezes base and growth into one merged artifact.
-     */
-    public void freeze(java.nio.file.Path out) throws java.io.IOException {
-        if (base != null
-                && java.nio.file.Files.exists(out)
-                && java.nio.file.Files.isSameFile(base.file(), out)) {
-            // frozen blocks' mem are slices of that very file's mapping: TRUNCATE_EXISTING would
-            // pull the bytes out from under the copy loop (SIGBUS / corrupt artifact)
-            throw new IllegalStateException(
-                    "freeze(" + out + ") would rewrite the mounted artifact; use appendTo");
-        }
-        List<Block> order = new ArrayList<>(blocks.size());
-        java.util.ArrayDeque<Block> queue = new java.util.ArrayDeque<>();
-        queue.add(sentinel);
-        while (!queue.isEmpty()) { // BFS: parents before children
-            Block b = queue.poll();
-            if (b != sentinel) order.add(b);
-            queue.addAll(b.children);
-        }
-        long[] offsets = new long[order.size()];
-        long off = FrozenBlocks.HEADER_BYTES;
-        for (int i = 0; i < order.size(); i++) {
-            offsets[i] = off;
-            off = FrozenBlocks.align(off + order.get(i).mem.byteSize());
-        }
-        long indexOffset = off;
-        long total = indexOffset + (long) order.size() * FrozenBlocks.INDEX_ENTRY_BYTES;
-        try (java.nio.channels.FileChannel ch =
-                        java.nio.channels.FileChannel.open(
-                                out,
-                                java.nio.file.StandardOpenOption.CREATE,
-                                java.nio.file.StandardOpenOption.TRUNCATE_EXISTING,
-                                java.nio.file.StandardOpenOption.READ,
-                                java.nio.file.StandardOpenOption.WRITE);
-                java.lang.foreign.Arena arena = java.lang.foreign.Arena.ofConfined()) {
-            MemorySegment map =
-                    ch.map(java.nio.channels.FileChannel.MapMode.READ_WRITE, 0, total, arena);
-            ByteBuffer h =
-                    map.asSlice(0, FrozenBlocks.HEADER_BYTES)
-                            .asByteBuffer()
-                            .order(ByteOrder.LITTLE_ENDIAN);
-            h.putInt(FrozenBlocks.MAGIC)
-                    .putInt(FrozenBlocks.FORMAT_VERSION)
-                    .put(FrozenBlocks.seed32(modelSeed))
-                    .putInt(order.size())
-                    .putLong(indexOffset);
-            ByteBuffer idx =
-                    map.asSlice(indexOffset, total - indexOffset)
-                            .asByteBuffer()
-                            .order(ByteOrder.LITTLE_ENDIAN);
-            for (int i = 0; i < order.size(); i++) {
-                Block b = order.get(i);
-                MemorySegment.copy(b.mem, 0, map, offsets[i], b.mem.byteSize());
-                FrozenBlocks.putEntry(
-                        idx,
-                        b.key,
-                        b.parent.key,
-                        b.from,
-                        b.to,
-                        offsets[i],
-                        b.mem.byteSize(),
-                        FrozenBlocks.crc32c(map.asSlice(offsets[i], b.mem.byteSize())));
-            }
-            map.force();
+    /** Appends the block layer's fresh blocks to the catalog; a no-op without one / read-only. */
+    public void save() {
+        if (tree == null || catalog == null || readOnly) return;
+        try {
+            tree.appendTo(catalog);
+        } catch (IOException e) {
+            throw new UncheckedIOException("failed to save cache to " + catalog, e);
         }
     }
 
     /**
-     * Appends this cache's blocks committed since the last append to {@code out} - see {@link
-     * FrozenBlocks#append} for the on-disk protocol and its cost. Creates the file (plain {@link
-     * #freeze}) when it does not exist; otherwise the cache must be layered over the artifact at
-     * {@code out}, so keys line up and grafted blocks are already on disk. Partial state (an
-     * uncommitted span, the live session tail) never touches disk - blocks only exist complete.
+     * A NEW artifact from the whole block layer (mounted base + growth); refuses its own catalog -
+     * {@link #save} is the write-back for that.
      */
-    public void appendTo(java.nio.file.Path out) throws java.io.IOException {
-        if (!java.nio.file.Files.exists(out)) {
-            freeze(out);
-            return;
+    public void export(Path out) {
+        try {
+            requireTree().freeze(out);
+        } catch (IOException e) {
+            throw new UncheckedIOException("failed to export cache to " + out, e);
         }
-        if (base == null || !java.nio.file.Files.isSameFile(base.file(), out)) {
-            throw new IllegalStateException(
-                    "appendTo(" + out + ") needs this cache layered over that artifact");
-        }
-        List<FrozenBlocks.Entry> fresh = new ArrayList<>(freshBlocks.size());
-        for (Block b : freshBlocks) {
-            fresh.add(
-                    new FrozenBlocks.Entry(
-                            b.key,
-                            b.parent.key,
-                            b.from,
-                            b.to,
-                            -1,
-                            b.mem,
-                            FrozenBlocks.crc32c(b.mem)));
-        }
-        base.append(fresh);
-        freshBlocks.clear();
     }
 
-    /** A cache health reading: sizes now, counters cumulative since construction. */
+    /** Whether the block layer exists (codec present and not disabled). */
+    public boolean blockCaching() {
+        return tree != null;
+    }
+
+    /** The whole cache in one reading - hot and blocks; block fields are zero when hot-only. */
     public record Sample(
+            int hotSessions,
+            long hotHits,
+            long statesAllocated,
             int blocks,
             long bytes,
             long budgetBytes,
@@ -446,29 +337,142 @@ public final class PromptCache<S extends RuntimeState> {
             long evictions,
             long refusals) {}
 
-    /**
-     * The same numbers {@link #stats()} formats, typed - for telemetry that has to subtract two
-     * readings rather than print one.
-     */
     public Sample sample() {
+        BlockTree.Sample t = tree == null ? null : tree.sample();
         return new Sample(
-                blocks.size(), store.usedBytes(), budgetBytes, hits, misses, evictions, refusals);
+                hot.size(),
+                hotHits,
+                statesAllocated,
+                t == null ? 0 : t.blocks(),
+                t == null ? 0 : t.bytes(),
+                t == null ? 0 : t.budgetBytes(),
+                t == null ? 0 : t.hits(),
+                t == null ? 0 : t.misses(),
+                t == null ? 0 : t.evictions(),
+                t == null ? 0 : t.refusals());
     }
 
-    public String stats() {
-        return "blocks="
-                + blocks.size()
-                + " bytes="
-                + store.usedBytes()
-                + " hits="
-                + hits
-                + " misses="
-                + misses
-                + " evictions="
-                + evictions
-                + " discards="
-                + discards
-                + " refusals="
-                + refusals;
+    /** Test seam: the block layer's stats line (see {@link BlockTree#stats}). */
+    public String treeStats() {
+        return requireTree().stats();
+    }
+
+    /** Frees every hot state, the spare, and the block blobs - deterministic, not GC-eventual. */
+    @Override
+    public void close() {
+        while (!hot.isEmpty()) closeState(hot.removeFirst());
+        if (spare instanceof com.qxotic.jinfer.BaseState base) base.close();
+        spare = null;
+        store.close();
+    }
+
+    // ---- hot-layer internals ----------------------------------------------------------------
+
+    /**
+     * The hot session with the LONGEST stream strictly prefixing the prompt, removed while in use;
+     * null = no hot match.
+     */
+    private CachedSession<S> hotAcquire(long[] fingerprints) {
+        CachedSession<S> best = null;
+        for (CachedSession<S> s : hot) {
+            if (s.streamIsStrictPrefixOf(fingerprints, fingerprints.length)
+                    && fingerprints.length <= s.state().contextCapacity()
+                    && (best == null || s.length() > best.length())) {
+                best = s;
+            }
+        }
+        if (best != null) hot.remove(best);
+        return best;
+    }
+
+    /**
+     * Returns a finished session to the hot layer as most-recent; past capacity the least-recent is
+     * dropped. With hotSessions=0 the state is WIPED here, the moment the reply is done, and
+     * retained as the bare spare: nothing of the conversation lingers between requests.
+     */
+    private void release(CachedSession<S> session) {
+        if (session.length() != session.state().position()) {
+            // stream and state disagree: pooling it would match a future prompt against DIFFERENT
+            // content - silent poisoning. A caller bug (tail() not wired); free it, keep serving.
+            System.err.println(
+                    "jinfer: discarding desynced session (stream "
+                            + session.length()
+                            + " != state "
+                            + session.state().position()
+                            + ")");
+            closeState(session);
+            return;
+        }
+        if (hotCapacity == 0) {
+            S state = session.state();
+            if (spare == null) {
+                if (state.position() != 0) state.reset();
+                spare = state;
+            } else {
+                closeState(session);
+            }
+            return;
+        }
+        hot.addLast(session);
+        while (hot.size() > hotCapacity) closeState(hot.removeFirst());
+    }
+
+    /**
+     * A recycled allocation for a miss: the LRU hot state once at capacity (only a hot layer with
+     * room left allocates), or the retained spare. Null = allocate.
+     */
+    private S recycled(int len) {
+        if (hotCapacity > 0 && hot.size() >= hotCapacity) {
+            CachedSession<S> oldest = hot.peekFirst();
+            if (oldest != null && oldest.state().contextCapacity() >= len) {
+                hot.removeFirst();
+                S state = oldest.state();
+                if (state.position() != 0) state.reset();
+                return state;
+            }
+        }
+        if (spare != null && spare.contextCapacity() >= len) {
+            S state = spare;
+            spare = null;
+            return state;
+        }
+        return null;
+    }
+
+    /** Full batch capacity, not prompt-sized: this allocation serves every later request too. */
+    private S freshState() {
+        statesAllocated++;
+        return model.newState(model.config().contextLength(), RuntimeFlags.BATCH_CAPACITY);
+    }
+
+    private void closeState(CachedSession<?> session) {
+        if (session.state() instanceof com.qxotic.jinfer.BaseState base) base.close();
+    }
+
+    private static int positions(List<Batch> prompt) {
+        int total = 0;
+        for (Batch b : prompt) total += b.count();
+        return total;
+    }
+
+    private BlockTree<S> requireTree() {
+        if (tree == null) {
+            throw new IllegalStateException(
+                    model.stateCodec().isPresent()
+                            ? "block caching is disabled (budget 0 / -Djinfer.promptCache=false)"
+                            : model.getClass().getSimpleName()
+                                    + " does not support block caching (no state codec)");
+        }
+        return tree;
+    }
+
+    /** A fast, stable model identity for the block key chain - see {@link BlockTree#modelSeed}. */
+    public static byte[] modelSeed(Path gguf) {
+        return BlockTree.modelSeed(gguf);
+    }
+
+    /** As {@link #modelSeed(Path)} over an open channel. */
+    public static byte[] modelSeed(java.nio.channels.FileChannel ch) {
+        return BlockTree.modelSeed(ch);
     }
 }

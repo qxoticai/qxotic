@@ -28,14 +28,14 @@ public final class FrozenBlocksTest {
         BlockResumeTest.FakeCodec codec = new BlockResumeTest.FakeCodec();
 
         // compile time: two prompts sharing a 10-position prefix, frozen into one artifact
-        PromptCache<BlockResumeTest.FakeState> build =
-                new PromptCache<>(codec, CacheStore.inMemory(), 1 << 20, seed);
+        BlockTree<BlockResumeTest.FakeState> build =
+                new BlockTree<>(codec, CacheStore.inMemory(), 1 << 20, seed);
         long[] a = fp(16, 100); // prompt A: [shared 10][A tail 6]
         long[] b = fp(16, 100); // prompt B: [shared 10][B tail 6]
         for (int i = 10; i < 16; i++) b[i] = 900 + i;
         for (long[] prompt : new long[][] {a, b}) {
             BlockResumeTest.FakeState s = new BlockResumeTest.FakeState();
-            PromptCache<BlockResumeTest.FakeState>.Block tip = build.resume(new long[0], 0, s);
+            BlockTree<BlockResumeTest.FakeState>.Block tip = build.resume(new long[0], 0, s);
             s.ingestTo(10);
             tip = build.commit(tip, prompt, 0, 10, s); // shared prefix block (dedups on B)
             s.ingestTo(16);
@@ -52,8 +52,8 @@ public final class FrozenBlocksTest {
         assertEquals(3, frozen.blockCount());
 
         // a TINY writable cache over the frozen base (budget fits ~2 own blocks)
-        PromptCache<BlockResumeTest.FakeState> live =
-                new PromptCache<>(codec, CacheStore.inMemory(), 200, seed, frozen);
+        BlockTree<BlockResumeTest.FakeState> live =
+                new BlockTree<>(codec, CacheStore.inMemory(), 200, seed, frozen);
 
         // both frozen prompts resume fully, content-exact
         for (long[] prompt : new long[][] {a, b}) {
@@ -68,7 +68,7 @@ public final class FrozenBlocksTest {
         // grow past the frozen chain, evict under pressure, frozen blocks stay servable
         for (int round = 0; round < 6; round++) {
             BlockResumeTest.FakeState s = new BlockResumeTest.FakeState();
-            PromptCache<BlockResumeTest.FakeState>.Block tip = live.resume(a, 16, s);
+            BlockTree<BlockResumeTest.FakeState>.Block tip = live.resume(a, 16, s);
             assertEquals(16, s.position, "frozen prefix hit on round " + round);
             s.ingestTo(30);
             long[] grown = java.util.Arrays.copyOf(a, 30);
@@ -92,8 +92,8 @@ public final class FrozenBlocksTest {
                     java.nio.ByteBuffer.wrap(new byte[] {(byte) 0xAA}),
                     FrozenBlocks.HEADER_BYTES + 3);
         }
-        PromptCache<BlockResumeTest.FakeState> corrupted =
-                new PromptCache<>(
+        BlockTree<BlockResumeTest.FakeState> corrupted =
+                new BlockTree<>(
                         codec,
                         CacheStore.inMemory(),
                         1 << 20,
@@ -106,7 +106,7 @@ public final class FrozenBlocksTest {
         // commit dedup against a frozen block: re-ingesting prompt A stores nothing new
         String before = live.stats().replaceAll(" hits=.*", "");
         BlockResumeTest.FakeState again = new BlockResumeTest.FakeState();
-        PromptCache<BlockResumeTest.FakeState>.Block tip = live.resume(new long[0], 0, again);
+        BlockTree<BlockResumeTest.FakeState>.Block tip = live.resume(new long[0], 0, again);
         again.ingestTo(10);
         tip = live.commit(tip, a, 0, 10, again);
         assertEquals(
@@ -126,10 +126,10 @@ public final class FrozenBlocksTest {
         Path file = Files.createTempFile("append", ".jkv");
         Files.delete(file);
         file.toFile().deleteOnExit();
-        PromptCache<BlockResumeTest.FakeState> first =
-                new PromptCache<>(codec, CacheStore.inMemory(), 1 << 20, seed);
+        BlockTree<BlockResumeTest.FakeState> first =
+                new BlockTree<>(codec, CacheStore.inMemory(), 1 << 20, seed);
         BlockResumeTest.FakeState s = new BlockResumeTest.FakeState();
-        PromptCache<BlockResumeTest.FakeState>.Block tip = first.resume(new long[0], 0, s);
+        BlockTree<BlockResumeTest.FakeState>.Block tip = first.resume(new long[0], 0, s);
         s.ingestTo(12);
         first.commit(tip, a, 0, 12, s);
         first.appendTo(file);
@@ -142,11 +142,11 @@ public final class FrozenBlocksTest {
         // append prompt B (shares the first 12 as prefix, adds an 8-position tail)
         long[] b = java.util.Arrays.copyOf(a, 20);
         for (int i = 12; i < 20; i++) b[i] = 700 + i;
-        PromptCache<BlockResumeTest.FakeState> grow =
-                new PromptCache<>(
+        BlockTree<BlockResumeTest.FakeState> grow =
+                new BlockTree<>(
                         codec, CacheStore.inMemory(), 1 << 20, seed, FrozenBlocks.open(file, seed));
         BlockResumeTest.FakeState g = new BlockResumeTest.FakeState();
-        PromptCache<BlockResumeTest.FakeState>.Block gt = grow.resume(b, 20, g);
+        BlockTree<BlockResumeTest.FakeState>.Block gt = grow.resume(b, 20, g);
         assertEquals(12, g.position, "append pass reuses the frozen prefix");
         g.ingestTo(20);
         grow.commit(gt, b, 12, 8, g);
@@ -170,8 +170,8 @@ public final class FrozenBlocksTest {
         FrozenBlocks reopened = FrozenBlocks.open(file, seed);
         assertEquals(2, reopened.blockCount());
         for (long[] prompt : new long[][] {a, b}) {
-            PromptCache<BlockResumeTest.FakeState> serve =
-                    new PromptCache<>(codec, CacheStore.inMemory(), 0, seed, reopened);
+            BlockTree<BlockResumeTest.FakeState> serve =
+                    new BlockTree<>(codec, CacheStore.inMemory(), 0, seed, reopened);
             BlockResumeTest.FakeState r = new BlockResumeTest.FakeState();
             serve.resume(prompt, prompt.length, r);
             assertEquals(prompt.length, r.position, "chain of " + prompt.length + " serves");
@@ -183,11 +183,11 @@ public final class FrozenBlocksTest {
         // a server's repeated restarts drive (a stale indexOffset/count bug surfaces exactly here)
         long[] c = java.util.Arrays.copyOf(a, 15);
         for (int i = 12; i < 15; i++) c[i] = 900 + i;
-        PromptCache<BlockResumeTest.FakeState> third =
-                new PromptCache<>(
+        BlockTree<BlockResumeTest.FakeState> third =
+                new BlockTree<>(
                         codec, CacheStore.inMemory(), 1 << 20, seed, FrozenBlocks.open(file, seed));
         BlockResumeTest.FakeState t = new BlockResumeTest.FakeState();
-        PromptCache<BlockResumeTest.FakeState>.Block tt = third.resume(c, 15, t);
+        BlockTree<BlockResumeTest.FakeState>.Block tt = third.resume(c, 15, t);
         assertEquals(12, t.position, "third boot reuses the shared prefix");
         t.ingestTo(15);
         third.commit(tt, c, 12, 3, t);
@@ -196,23 +196,23 @@ public final class FrozenBlocksTest {
 
         // SINGLE-WRITER LAW: a mount whose view went stale (another writer appended since) must
         // refuse loudly instead of overwriting the other writer's blocks
-        PromptCache<BlockResumeTest.FakeState> stale =
-                new PromptCache<>(
+        BlockTree<BlockResumeTest.FakeState> stale =
+                new BlockTree<>(
                         codec, CacheStore.inMemory(), 1 << 20, seed, FrozenBlocks.open(file, seed));
         BlockResumeTest.FakeState st = new BlockResumeTest.FakeState();
         long[] d = java.util.Arrays.copyOf(a, 13);
         d[12] = 4242;
-        PromptCache<BlockResumeTest.FakeState>.Block sTip = stale.resume(d, 13, st);
+        BlockTree<BlockResumeTest.FakeState>.Block sTip = stale.resume(d, 13, st);
         st.ingestTo(13);
         stale.commit(sTip, d, 12, 1, st);
         // another writer grows the file after `stale` mounted
-        PromptCache<BlockResumeTest.FakeState> rival =
-                new PromptCache<>(
+        BlockTree<BlockResumeTest.FakeState> rival =
+                new BlockTree<>(
                         codec, CacheStore.inMemory(), 1 << 20, seed, FrozenBlocks.open(file, seed));
         BlockResumeTest.FakeState rv = new BlockResumeTest.FakeState();
         long[] e = java.util.Arrays.copyOf(a, 13);
         e[12] = 5353;
-        PromptCache<BlockResumeTest.FakeState>.Block rTip = rival.resume(e, 13, rv);
+        BlockTree<BlockResumeTest.FakeState>.Block rTip = rival.resume(e, 13, rv);
         rv.ingestTo(13);
         rival.commit(rTip, e, 12, 1, rv);
         rival.appendTo(file);
@@ -243,8 +243,8 @@ public final class FrozenBlocksTest {
         }
         FrozenBlocks recovered = FrozenBlocks.open(torn, seed);
         assertEquals(1, recovered.blockCount(), "torn append: the old catalog is intact");
-        PromptCache<BlockResumeTest.FakeState> serve =
-                new PromptCache<>(codec, CacheStore.inMemory(), 0, seed, recovered);
+        BlockTree<BlockResumeTest.FakeState> serve =
+                new BlockTree<>(codec, CacheStore.inMemory(), 0, seed, recovered);
         BlockResumeTest.FakeState r = new BlockResumeTest.FakeState();
         serve.resume(a, 12, r);
         assertEquals(12, r.position, "torn append: old prompt still serves");

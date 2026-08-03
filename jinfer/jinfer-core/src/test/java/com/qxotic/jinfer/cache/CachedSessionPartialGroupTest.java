@@ -84,8 +84,8 @@ public final class CachedSessionPartialGroupTest {
     @Test
     void run() {
         FakeModel model = new FakeModel();
-        PromptCache<FakeState> cache =
-                new PromptCache<>(new FakeCodec(), CacheStore.inMemory(), 1 << 20, new byte[] {1});
+        BlockTree<FakeState> cache =
+                new BlockTree<>(new FakeCodec(), CacheStore.inMemory(), 1 << 20, new byte[] {1});
 
         // Request 1: [start 10,11] [user 20,21,22] [genPrompt 30,31] — three turn-aligned groups.
         List<List<Batch>> first =

@@ -91,16 +91,19 @@ public final class Server {
      */
     private Map<String, Object> promptCacheProps() {
         var sample = generation.cacheSample();
-        if (sample == null) return Map.of("enabled", false);
-        return Map.of(
-                "enabled", true,
-                "blocks", sample.blocks(),
-                "bytes", sample.bytes(),
-                "budget_bytes", sample.budgetBytes(),
-                "hits", sample.hits(),
-                "misses", sample.misses(),
-                "evictions", sample.evictions(),
-                "refusals", sample.refusals());
+        Map<String, Object> props = new java.util.LinkedHashMap<>();
+        props.put("enabled", generation.blockCaching());
+        props.put("hot_sessions", sample.hotSessions());
+        props.put("hot_hits", sample.hotHits());
+        props.put("allocations", sample.statesAllocated());
+        props.put("blocks", sample.blocks());
+        props.put("bytes", sample.bytes());
+        props.put("budget_bytes", sample.budgetBytes());
+        props.put("hits", sample.hits());
+        props.put("misses", sample.misses());
+        props.put("evictions", sample.evictions());
+        props.put("refusals", sample.refusals());
+        return props;
     }
 
     private Running serve(LoadedModel<?> model, LLMOptions options) throws IOException {

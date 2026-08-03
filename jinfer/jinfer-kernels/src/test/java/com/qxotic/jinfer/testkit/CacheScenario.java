@@ -10,9 +10,9 @@ package com.qxotic.jinfer.testkit;
 
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.RuntimeState;
+import com.qxotic.jinfer.cache.BlockTree;
 import com.qxotic.jinfer.cache.CacheStore;
 import com.qxotic.jinfer.cache.CachedSession;
-import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.Message;
 import java.util.List;
 
@@ -52,14 +52,14 @@ public final class CacheScenario<S extends RuntimeState> {
 
     private final Harness<S> h;
     private final Config cfg;
-    private final PromptCache<S> cache;
+    private final BlockTree<S> cache;
     private final long budget;
 
     public CacheScenario(Harness<S> h, Config cfg) {
         this.h = h;
         this.cfg = cfg;
         this.budget = Long.getLong("jinfer.promptCacheMB", 8192L) << 20;
-        this.cache = new PromptCache<>(h.codec, CacheStore.inMemory(), budget, h.seed);
+        this.cache = new BlockTree<>(h.codec, CacheStore.inMemory(), budget, h.seed);
     }
 
     public void run(String runName) {
@@ -89,8 +89,8 @@ public final class CacheScenario<S extends RuntimeState> {
             // otherwise compare session-b's live state against session-a's compute of the shared
             // block - equal text, different benign FP-reduction bytes. Self-committed history
             // keeps the restored-vs-live byte gate exact.
-            PromptCache<S> longCache =
-                    new PromptCache<>(h.codec, CacheStore.inMemory(), budget, h.seed);
+            BlockTree<S> longCache =
+                    new BlockTree<>(h.codec, CacheStore.inMemory(), budget, h.seed);
             CachedSession<S> b = CachedSession.start(h.model.model(), longCache, h.newState());
             b.ingest(h.template.conversationStart());
             b.ingest(h.template.encodeTurn(Message.user(cfg.longCase().story())));
@@ -161,7 +161,7 @@ public final class CacheScenario<S extends RuntimeState> {
      * decode is deterministic, informational for MoE).
      */
     private Bench validate(
-            PromptCache<S> cache, String name, int[] history, S liveState, Message probe) {
+            BlockTree<S> cache, String name, int[] history, S liveState, Message probe) {
         long t0 = System.nanoTime();
         CachedSession<S> cached =
                 CachedSession.resume(
@@ -188,7 +188,7 @@ public final class CacheScenario<S extends RuntimeState> {
         Harness.Reply cachedReply = h.decode(cached, cfg.maxTokens());
         double decodeSec = (System.nanoTime() - t1) / 1e9;
 
-        PromptCache<S> scratch = new PromptCache<>(h.codec, CacheStore.inMemory(), budget, h.seed);
+        BlockTree<S> scratch = new BlockTree<>(h.codec, CacheStore.inMemory(), budget, h.seed);
         CachedSession<S> plain = CachedSession.start(h.model.model(), scratch, h.newState());
         long t2 = System.nanoTime();
         plain.ingest(List.of(Batch.prefill(history)));

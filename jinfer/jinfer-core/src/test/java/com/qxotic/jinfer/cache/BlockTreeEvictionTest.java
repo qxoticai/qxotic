@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
  * shared prefixes, detached tips, and resumes - must never double-free or corrupt the tree (repro
  * harness for the 12B multimodal eviction crash).
  */
-public final class PromptCacheEvictionTest {
+public final class BlockTreeEvictionTest {
 
     static final class FakeState implements RuntimeState {
         int position;
@@ -56,13 +56,12 @@ public final class PromptCacheEvictionTest {
     @Test
     void run() {
         // budget fits ~6 single-token blocks: every conversation evicts its own history
-        PromptCache<FakeState> cache =
-                new PromptCache<>(
-                        new FakeCodec(), CacheStore.inMemory(), 32 * 1024, new byte[] {1});
+        BlockTree<FakeState> cache =
+                new BlockTree<>(new FakeCodec(), CacheStore.inMemory(), 32 * 1024, new byte[] {1});
 
         for (int round = 0; round < 5; round++) {
             FakeState s = new FakeState();
-            PromptCache<FakeState>.Block tip = cache.resume(new long[0], 0, s);
+            BlockTree<FakeState>.Block tip = cache.resume(new long[0], 0, s);
             long[] fp = new long[64];
             for (int i = 0; i < 64; i++) {
                 fp[i] = round * 1000L + i;

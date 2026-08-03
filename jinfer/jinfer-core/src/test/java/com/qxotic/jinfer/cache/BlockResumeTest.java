@@ -86,15 +86,15 @@ public final class BlockResumeTest {
 
     @Test
     void everyBlockBoundaryIsAResumePoint() {
-        PromptCache<FakeState> cache =
-                new PromptCache<>(new FakeCodec(), CacheStore.inMemory(), 1 << 20, new byte[] {7});
+        BlockTree<FakeState> cache =
+                new BlockTree<>(new FakeCodec(), CacheStore.inMemory(), 1 << 20, new byte[] {7});
 
         // build a chain of three blocks: [0,10) [10,17) [17,22)
         int[] bounds = {10, 17, 22};
         long[] fp = new long[22];
         for (int i = 0; i < fp.length; i++) fp[i] = 100 + i;
         FakeState w = new FakeState();
-        PromptCache<FakeState>.Block tip = cache.resume(new long[0], 0, w);
+        BlockTree<FakeState>.Block tip = cache.resume(new long[0], 0, w);
         int prev = 0;
         for (int b : bounds) {
             w.ingestTo(b);

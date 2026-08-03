@@ -8,6 +8,7 @@ package com.qxotic.jinfer.models.gemma4;
 
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.Media;
+import com.qxotic.jinfer.cache.BlockTree;
 import com.qxotic.jinfer.cache.CacheStore;
 import com.qxotic.jinfer.cache.CachedSession;
 import com.qxotic.jinfer.cache.PromptCache;
@@ -113,8 +114,7 @@ public final class Gemma4MultimodalCacheRun {
         Message turn = new Message(Role.USER, List.of(media, new Part.Text(question)));
 
         // -- session A: encode (timed) + ingest (timed) + cached greedy reply --
-        PromptCache<Gemma4.State> cache =
-                new PromptCache<>(codec, CacheStore.inMemory(), budget, seed);
+        BlockTree<Gemma4.State> cache = new BlockTree<>(codec, CacheStore.inMemory(), budget, seed);
         CachedSession<Gemma4.State> a =
                 CachedSession.start(model, cache, model.newState(4096, 512));
         long t0 = System.nanoTime();
@@ -173,8 +173,8 @@ public final class Gemma4MultimodalCacheRun {
         // -- re-encode determinism (informational): same media, fresh encode -> same fingerprints?
         // --
         List<Batch> again = concat(template.conversationStart(), template.encodeTurn(turn));
-        PromptCache<Gemma4.State> scratch =
-                new PromptCache<>(codec, CacheStore.inMemory(), budget, seed);
+        BlockTree<Gemma4.State> scratch =
+                new BlockTree<>(codec, CacheStore.inMemory(), budget, seed);
         // observable form: a fresh state resuming the RE-ENCODED batches against the first
         // cache restores everything iff the re-encode produced the same content stream
         CachedSession<Gemma4.State> e =

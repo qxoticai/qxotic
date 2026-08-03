@@ -18,6 +18,7 @@
 package com.qxotic.jinfer.models.gemma4;
 
 import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.cache.BlockTree;
 import com.qxotic.jinfer.cache.CacheStore;
 import com.qxotic.jinfer.cache.CachedSession;
 import com.qxotic.jinfer.cache.PromptCache;
@@ -109,8 +110,8 @@ public final class Gemma4MtpIdentityTest {
 
         // CachedSession integration: speculative decode on a session's state, then adopt(committed)
         {
-            PromptCache<Gemma4.State> cache =
-                    new PromptCache<>(
+            BlockTree<Gemma4.State> cache =
+                    new BlockTree<>(
                             m.stateCodec().orElseThrow(),
                             CacheStore.inMemory(),
                             1L << 30,

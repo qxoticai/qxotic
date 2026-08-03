@@ -41,9 +41,9 @@ final class Generation {
     // class predates all of it and had its own of each; what remains here is the OpenAI wire.
     private final ChatEngine engine;
     private final Metrics metrics;
-    // --cache write-back target (null = none / read-only): the tree's fresh blocks append here
-    // at close, so the catalog a server accumulates survives its restarts
-    private final java.nio.file.Path cacheWriteBack;
+    // whether close() appends the catalog (a read-write --cache): the blocks a server
+    // accumulates survive its restarts
+    private final boolean saveCatalog;
 
     Generation(LoadedModel<?> chatModel, LLMOptions options, Metrics metrics) {
         this.metrics = metrics;
@@ -51,45 +51,31 @@ final class Generation {
         this.options = options;
         this.template = chatModel.template().orElse(null);
         this.specials = SpecialTokens.encoder(model.tokenizer());
-        java.nio.file.Path mount = null;
-        java.nio.file.Path writeBack = null;
-        if (options.promptCache() != null) {
-            if (chatModel.model().stateCodec().isEmpty()) {
-                // the guard the instruct path applies too: no codec, no blocks to mount or save
-                System.err.println(
-                        "--cache ignored: "
-                                + chatModel.model().getClass().getSimpleName()
-                                + " has no state codec");
-            } else {
-                boolean exists = java.nio.file.Files.exists(options.promptCache());
-                if (exists) {
-                    mount = options.promptCache();
-                } else if (options.promptCacheReadOnly()) {
-                    System.err.println(
-                            "read-only cache missing ("
-                                    + options.promptCache()
-                                    + "): serving without it");
-                }
-                // an explicit mount overrides jinfer.promptCache=false, but a NEW catalog under
-                // that flag would have no tree to freeze - there is nothing to accumulate
-                if (!options.promptCacheReadOnly() && (exists || RuntimeFlags.PROMPT_CACHE)) {
-                    writeBack = options.promptCache();
-                }
-            }
+        java.nio.file.Path catalog = options.promptCache();
+        if (catalog != null && chatModel.model().stateCodec().isEmpty()) {
+            // the guard the instruct path applies too: no codec, no blocks to mount or save
+            System.err.println(
+                    "--cache ignored: "
+                            + chatModel.model().getClass().getSimpleName()
+                            + " has no state codec");
+            catalog = null;
         }
-        this.cacheWriteBack = writeBack;
-        // borrowed weights: the server loaded the model and keeps its arena
+        boolean mounted = catalog != null && java.nio.file.Files.exists(catalog);
+        this.saveCatalog = catalog != null && !options.promptCacheReadOnly();
+        // borrowed weights: the server loaded the model and keeps its arena. The engine's cache
+        // opens-or-creates the catalog itself; read-only problems degrade, read-write fail loudly.
         this.engine =
                 new ChatEngine(
                         chatModel,
                         options.modelPath().getFileName().toString(),
-                        mount,
+                        catalog,
+                        options.promptCacheReadOnly(),
                         RuntimeFlags.SESSIONS);
-        if (mount != null || writeBack != null) {
+        if (catalog != null) {
             System.out.printf(
                     "prompt cache: %s%s%s%n",
-                    options.promptCache(),
-                    mount != null ? " (mounted)" : " (new)",
+                    catalog,
+                    mounted ? " (mounted)" : " (new)",
                     options.promptCacheReadOnly() ? " read-only" : ", saved at shutdown");
         }
     }
@@ -97,6 +83,10 @@ final class Generation {
     /** The block tree's health reading for {@code /props}; null = no tree behind this model. */
     com.qxotic.jinfer.cache.PromptCache.Sample cacheSample() {
         return engine.cacheSample();
+    }
+
+    boolean blockCaching() {
+        return engine.blockCaching();
     }
 
     private final java.util.concurrent.atomic.AtomicBoolean closed =
@@ -109,13 +99,14 @@ final class Generation {
      */
     void close() {
         if (!closed.compareAndSet(false, true)) return;
-        if (cacheWriteBack != null) {
+        if (saveCatalog) {
             // best-effort: a failed write-back must never block the engine's shutdown
             try {
-                engine.appendPrompts(cacheWriteBack);
-                System.out.println("prompt cache saved: " + cacheWriteBack);
+                engine.savePrompts();
+                System.out.println("prompt cache saved: " + options.promptCache());
             } catch (RuntimeException e) {
-                System.err.println("failed to save prompt cache " + cacheWriteBack + ": " + e);
+                System.err.println(
+                        "failed to save prompt cache " + options.promptCache() + ": " + e);
             }
         }
         engine.close();
@@ -219,7 +210,9 @@ final class Generation {
             usage.cachedTokens = done.restoredTokens();
             usage.completionTokens = done.result().completionTokens();
         }
-        metrics.recordPromptCache(done.tier() == ChatEngine.Tier.SESSION, done.restoredTokens());
+        metrics.recordPromptCache(
+                done.tier() == com.qxotic.jinfer.cache.PromptCache.Tier.SESSION,
+                done.restoredTokens());
         return router.reply(
                 done.result(), done.reply(), billed, done.restoredTokens(), prepared.stops());
     }

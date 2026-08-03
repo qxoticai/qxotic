@@ -34,22 +34,10 @@ public final class Generator {
      * The generated-token stream: sees EVERY sampled token in order, the trailing stop token
      * included, before the loop acts on it. Return false to abort the pass (the aborting token is
      * recorded but not ingested; finishReason "abort").
-     *
-     * <p>WRAPPERS MUST BE ANONYMOUS CLASSES, not lambdas: a lambda implements only {@link #onToken}
-     * and silently replaces {@link #onIngested} with the no-op default, starving step-time hooks
-     * downstream. Forward both methods.
      */
     @FunctionalInterface
     public interface TokenSink {
         boolean onToken(int token);
-
-        /**
-         * Fired right after {@code token} is INGESTED - the state's frontier includes it. The
-         * step-time hook for per-position accounting (a cache commit must save at the frontier:
-         * ring rows alias and residues move, so it cannot be reconstructed later). Never fired for
-         * the final sampled token, which the loop does not ingest.
-         */
-        default void onIngested(int token) {}
     }
 
     /**
@@ -106,6 +94,27 @@ public final class Generator {
             long timeoutNanos,
             Set<Integer> stopTokens,
             TokenSink sink) {
+        return generate(
+                model, state, prompt, sampler, maxTokens, timeoutNanos, stopTokens, sink, null);
+    }
+
+    /**
+     * As above with a step-time hook: {@code afterIngest} fires right after each decode token is
+     * INGESTED - the state's frontier includes it, which is what per-position cache accounting
+     * needs (a commit must save at the frontier: ring rows alias and residues move). Never fired
+     * for the final sampled token, which the loop does not ingest. An explicit parameter rather
+     * than a sink default method, so no wrapper can silently drop it.
+     */
+    public static <S extends RuntimeState> GenerationResult generate(
+            LanguageModel<?, ?, S> model,
+            S state,
+            List<Batch> prompt,
+            Sampler sampler,
+            int maxTokens,
+            long timeoutNanos,
+            Set<Integer> stopTokens,
+            TokenSink sink,
+            java.util.function.IntConsumer afterIngest) {
         int contextLength = model.config().contextLength();
         int promptCount = prompt.stream().mapToInt(Batch::count).sum();
         int promptPositions = state.position() + promptCount;
@@ -128,6 +137,7 @@ public final class Generator {
                     sampler,
                     stopTokens,
                     sink,
+                    afterIngest,
                     actualMaxTokens,
                     deadlineNanos);
         } finally {
@@ -146,6 +156,7 @@ public final class Generator {
             Sampler sampler,
             Set<Integer> stopTokens,
             TokenSink sink,
+            java.util.function.IntConsumer afterIngest,
             int actualMaxTokens,
             long deadlineNanos) {
         BaseState base = (BaseState) state;
@@ -158,6 +169,7 @@ public final class Generator {
                     sampler,
                     stopTokens,
                     sink,
+                    afterIngest,
                     actualMaxTokens,
                     deadlineNanos);
         } finally {
@@ -172,6 +184,7 @@ public final class Generator {
             Sampler sampler,
             Set<Integer> stopTokens,
             TokenSink sink,
+            java.util.function.IntConsumer afterIngest,
             int actualMaxTokens,
             long deadlineNanos) {
         boolean hasDeadline = deadlineNanos != Long.MAX_VALUE;
@@ -180,25 +193,15 @@ public final class Generator {
         boolean[] aborted = {false};
         boolean[] deadlineHit = {false};
         IntSequence responseTokens;
-        // an anonymous class, NOT a lambda: the deadline wrapper must forward onIngested too - a
-        // lambda would silently replace it with the interface default and starve step-time hooks
         TokenSink guarded =
-                new TokenSink() {
-                    @Override
-                    public boolean onToken(int token) {
-                        boolean keepGoing = sink == null || sink.onToken(token);
-                        if (!keepGoing) aborted[0] = true;
-                        if (System.nanoTime() >= deadlineNanos) {
-                            deadlineHit[0] = true;
-                            return false;
-                        }
-                        return keepGoing;
+                token -> {
+                    boolean keepGoing = sink == null || sink.onToken(token);
+                    if (!keepGoing) aborted[0] = true;
+                    if (System.nanoTime() >= deadlineNanos) {
+                        deadlineHit[0] = true;
+                        return false;
                     }
-
-                    @Override
-                    public void onIngested(int token) {
-                        if (sink != null) sink.onIngested(token);
-                    }
+                    return keepGoing;
                 };
         synchronized (model) { // generations on a shared model are strictly serialized
             responseTokens =
@@ -210,6 +213,7 @@ public final class Generator {
                             actualMaxTokens,
                             sampler,
                             guarded,
+                            afterIngest,
                             prefillDoneNanos);
         }
         long endNanos = System.nanoTime();
@@ -248,6 +252,7 @@ public final class Generator {
             int maxNewTokens,
             Sampler sampler,
             TokenSink onTokenGenerated,
+            java.util.function.IntConsumer afterIngest,
             long[] prefillDoneNanos) {
         int vocab = model.config().vocabularySize();
         int contextLength = model.config().contextLength();
@@ -281,7 +286,7 @@ public final class Generator {
                 if (stopTokens.contains(nextToken) || !keepGoing) break;
                 if (generated.size() >= maxNewTokens || state.position() >= contextLength) break;
                 model.ingest(state, Batch.step(nextToken));
-                if (onTokenGenerated != null) onTokenGenerated.onIngested(nextToken);
+                if (afterIngest != null) afterIngest.accept(nextToken);
             } finally {
                 if (decode != null) {
                     decode.end();

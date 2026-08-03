@@ -13,9 +13,9 @@ package com.qxotic.jinfer.server;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.*;
+import com.qxotic.jinfer.cache.BlockTree;
 import com.qxotic.jinfer.cache.CacheStore;
 import com.qxotic.jinfer.cache.FrozenBlocks;
-import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.JinjaChatTemplate;
@@ -541,7 +541,7 @@ public class Main {
             } else {
                 long t0 = System.nanoTime();
                 var cache =
-                        new PromptCache<>(
+                        new BlockTree<>(
                                 model.codec(),
                                 CacheStore.inMemory(),
                                 Long.MAX_VALUE,

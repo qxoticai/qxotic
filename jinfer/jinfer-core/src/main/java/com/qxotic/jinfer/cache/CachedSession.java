@@ -38,29 +38,62 @@ public final class CachedSession<S extends RuntimeState> {
 
     private final Model<?, ?, S> model;
     private final S state;
-    private final PromptCache<S> cache;
-    private PromptCache<S>.Block tip;
+    private final BlockTree<S> cache; // null: HOT-ONLY (stream tracked, nothing committed)
+    private final boolean commits; // false: read-only serving (coarse codecs restore, never write)
+    private BlockTree<S>.Block tip;
     private long[] fp;
     private int len;
 
     private CachedSession(
             Model<?, ?, S> model,
             S state,
-            PromptCache<S> cache,
-            PromptCache<S>.Block tip,
+            BlockTree<S> cache,
+            boolean commits,
+            BlockTree<S>.Block tip,
             long[] fp,
             int len) {
         this.model = model;
         this.state = state;
         this.cache = cache;
+        this.commits = commits && cache != null;
         this.tip = tip;
         this.fp = fp;
         this.len = len;
     }
 
+    /**
+     * One commit site for every write path; a hot-only or read-only session records only the
+     * fingerprint stream - the state itself is the cache.
+     */
+    private void commitSpan(int off, int len) {
+        if (commits) tip = cache.commit(tip, fp, off, len, state);
+    }
+
+    /**
+     * A session over NO tree: the fingerprint stream still tracks every ingested position (hot
+     * matching needs it), but nothing is committed and nothing can be restored.
+     */
+    static <S extends RuntimeState> CachedSession<S> hot(Model<?, ?, S> model, S state) {
+        return new CachedSession<>(
+                model, state, null, false, null, new long[256], state.position());
+    }
+
+    /**
+     * As {@link #resume(Model, BlockTree, Object, long[], int)} but READ-ONLY: the longest cached
+     * prefix restores, and no ingestion ever writes back - the coarse-codec serving mode (a residue
+     * per served block would grow the store by ~MBs per request).
+     */
+    static <S extends RuntimeState> CachedSession<S> resumeReadOnly(
+            Model<?, ?, S> model, BlockTree<S> cache, S state, long[] expected, int maxPositions) {
+        BlockTree<S>.Block tip =
+                cache.resume(expected, Math.min(expected.length, maxPositions), state);
+        long[] fp = Arrays.copyOf(expected, Math.max(256, expected.length));
+        return new CachedSession<>(model, state, cache, false, tip, fp, tip.to);
+    }
+
     /** A fresh session on a fresh state for a brand-new conversation (nothing to resume). */
     public static <S extends RuntimeState> CachedSession<S> start(
-            Model<?, ?, S> model, PromptCache<S> cache, S state) {
+            Model<?, ?, S> model, BlockTree<S> cache, S state) {
         return resume(model, cache, state, new long[0], 0);
     }
 
@@ -70,19 +103,19 @@ public final class CachedSession<S extends RuntimeState> {
      * media rows by content digest) is this package's internal law.
      */
     public static <S extends RuntimeState> CachedSession<S> resume(
-            Model<?, ?, S> model, PromptCache<S> cache, S state, List<Batch> prompt) {
+            Model<?, ?, S> model, BlockTree<S> cache, S state, List<Batch> prompt) {
         long[] fp = fingerprints(prompt);
         return resume(model, cache, state, fp, fp.length);
     }
 
     /**
-     * As {@link #resume(Model, PromptCache, RuntimeState, List)} but restoring at most {@code
+     * As {@link #resume(Model, BlockTree, RuntimeState, List)} but restoring at most {@code
      * maxPositions} - e.g. the prompt length minus its final block, so a whole-prompt hit still
      * re-ingests that block and leaves fresh logits at the cursor.
      */
     public static <S extends RuntimeState> CachedSession<S> resume(
             Model<?, ?, S> model,
-            PromptCache<S> cache,
+            BlockTree<S> cache,
             S state,
             List<Batch> prompt,
             int maxPositions) {
@@ -94,25 +127,21 @@ public final class CachedSession<S extends RuntimeState> {
      * (empty for a brand-new conversation).
      */
     static <S extends RuntimeState> CachedSession<S> resume(
-            Model<?, ?, S> model, PromptCache<S> cache, S state, long[] expected) {
+            Model<?, ?, S> model, BlockTree<S> cache, S state, long[] expected) {
         return resume(model, cache, state, expected, expected.length);
     }
 
     /**
-     * Like {@link #resume(Model, PromptCache, Object, long[])} but restoring at most {@code
+     * Like {@link #resume(Model, BlockTree, Object, long[])} but restoring at most {@code
      * maxPositions} — e.g. the prompt length minus its final block, so a whole-prompt hit still
      * re-ingests that block and leaves fresh logits at the cursor.
      */
     static <S extends RuntimeState> CachedSession<S> resume(
-            Model<?, ?, S> model,
-            PromptCache<S> cache,
-            S state,
-            long[] expected,
-            int maxPositions) {
-        PromptCache<S>.Block tip =
+            Model<?, ?, S> model, BlockTree<S> cache, S state, long[] expected, int maxPositions) {
+        BlockTree<S>.Block tip =
                 cache.resume(expected, Math.min(expected.length, maxPositions), state);
         long[] fp = Arrays.copyOf(expected, Math.max(256, expected.length));
-        return new CachedSession<>(model, state, cache, tip, fp, tip.to);
+        return new CachedSession<>(model, state, cache, true, tip, fp, tip.to);
     }
 
     /** Token ids widened to the fingerprint stream they are (media rows fingerprint by hash). */
@@ -159,7 +188,7 @@ public final class CachedSession<S extends RuntimeState> {
             long[] f = fingerprints(List.of(b)); // the ONE fingerprint law (see fingerprints)
             model.ingest(state, b);
             for (long v : f) append(v);
-            tip = cache.commit(tip, fp, off, len - off, state);
+            commitSpan(off, len - off);
         }
     }
 
@@ -265,7 +294,7 @@ public final class CachedSession<S extends RuntimeState> {
     public void step(int token) {
         model.ingest(state, Batch.step(token));
         append(token);
-        tip = cache.commit(tip, fp, len - 1, 1, state);
+        commitSpan(len - 1, 1);
     }
 
     /**
@@ -287,7 +316,7 @@ public final class CachedSession<S extends RuntimeState> {
      */
     public void adopt(int token) {
         append(token);
-        tip = cache.commit(tip, fp, len - 1, 1, state);
+        commitSpan(len - 1, 1);
     }
 
     /**
@@ -305,7 +334,7 @@ public final class CachedSession<S extends RuntimeState> {
         if (ingested.length == 0) return;
         int off = len;
         for (int id : ingested) append(id);
-        tip = cache.commit(tip, fp, off, len - off, state);
+        commitSpan(off, len - off);
     }
 
     /**
@@ -314,7 +343,7 @@ public final class CachedSession<S extends RuntimeState> {
      * for this session's lifetime - the cue for a definer to fail loudly rather than pretend.
      */
     public boolean detached() {
-        return !tip.live;
+        return commits && !tip.live;
     }
 
     /**

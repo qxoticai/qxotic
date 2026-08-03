@@ -5,12 +5,7 @@ import com.qxotic.jinfer.LanguageModel;
 import com.qxotic.jinfer.LeakWatch;
 import com.qxotic.jinfer.RuntimeFlags;
 import com.qxotic.jinfer.RuntimeState;
-import com.qxotic.jinfer.cache.CacheStore;
-import com.qxotic.jinfer.cache.CachedSession;
-import com.qxotic.jinfer.cache.FrozenBlocks;
 import com.qxotic.jinfer.cache.PromptCache;
-import com.qxotic.jinfer.cache.SessionPool;
-import com.qxotic.jinfer.cache.StateCodec;
 import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.Grammar;
 import com.qxotic.jinfer.llm.Sampler;
@@ -45,15 +40,9 @@ public final class ChatEngine {
     private final String modelName;
     private final JinjaChatTemplate jinja;
     private final ReentrantLock lock = new ReentrantLock(true);
-    private final CacheStore promptStore; // owned: closed (freed) with the engine
-    private final FrozenBlocks mounted; // the read-only mounted artifact (null = none)
-    private final PromptCache<?> prompts; // the cached-prompt block tree (null = unsupported)
-    // cachedSessions(n): the last n live conversation states, reused append-only when a new
-    // prompt's batch stream strictly extends one (all access under the generation lock)
-    private final SessionPool<?> pool;
-    // codec-less models cannot pool sessions, but the allocation is still recycled: the one bare
-    // context, wiped after each pass (all access under the generation lock)
-    private RuntimeState bare;
+    // THE cache: hot sessions + block tree + optional catalog, one front door (all access
+    // under the generation lock - the facade is single-threaded by design, like the tree)
+    private final PromptCache<?> cache;
     // the streaming driver: at most ONE lazy platform thread, reused while streams keep coming,
     // gone after an idle minute. One is enough - generations serialize on the engine lock anyway,
     // and a fresh thread per request would just park extras on that lock
@@ -66,8 +55,6 @@ public final class ChatEngine {
                     new java.util.concurrent.LinkedBlockingQueue<>(),
                     r -> new Thread(r, "jinfer-stream"));
     private final AtomicReference<Thread> streamThread = new AtomicReference<>();
-    private int sessionHits;
-    private int statesAllocated; // contexts this engine has had to allocate (steady state: 1)
     private volatile boolean closed;
     // owned: freed at close(), never shared. null when the CALLER loaded the model and keeps the
     // arena - then close() quiesces and frees this engine's own memory, and nothing else
@@ -122,6 +109,7 @@ public final class ChatEngine {
                 load(modelPath, mediaProjector, contextLength),
                 modelPath.getFileName().toString(),
                 cachedPrompts,
+                true,
                 cachedSessions);
     }
 
@@ -136,50 +124,65 @@ public final class ChatEngine {
      */
     public ChatEngine(
             LoadedModel<?> loaded, String modelName, Path cachedPrompts, int cachedSessions) {
-        this(new Owned(loaded, null), modelName, cachedPrompts, cachedSessions);
+        this(new Owned(loaded, null), modelName, cachedPrompts, true, cachedSessions);
     }
 
-    private ChatEngine(Owned owned, String modelName, Path cachedPrompts, int cachedSessions) {
+    /**
+     * As above with a READ-WRITE catalog: the block layer lives on {@code catalog} (opened if
+     * present, created otherwise) and {@link #savePrompts} appends what this engine computed - the
+     * server's accumulating cache file. {@code readOnly} mounts serve-only.
+     */
+    public ChatEngine(
+            LoadedModel<?> loaded,
+            String modelName,
+            Path catalog,
+            boolean catalogReadOnly,
+            int cachedSessions) {
+        this(new Owned(loaded, null), modelName, catalog, catalogReadOnly, cachedSessions);
+    }
+
+    private ChatEngine(
+            Owned owned,
+            String modelName,
+            Path catalog,
+            boolean catalogReadOnly,
+            int cachedSessions) {
         if (owned.loaded() == null) throw new IllegalArgumentException("null model");
         if (modelName == null) throw new IllegalArgumentException("null modelName");
-        this.pool = new SessionPool<>(cachedSessions);
         this.weights = owned.weights();
         this.loaded = owned.loaded();
         this.modelName = modelName;
         try {
-            this.promptStore = CacheStore.inMemory();
-            // built only when the model can support it AND jinfer.promptCache allows it - the
-            // engine owns the cache now, so it owns the off-switch too. An explicitly mounted
-            // artifact overrides the flag: the caller pointed at frozen blocks on purpose. A
-            // codec-less model must still load and chat - the codec throw belongs to the first
-            // CACHED-feature use, not to plain construction.
-            this.mounted =
-                    cachedPrompts == null ? null : FrozenBlocks.open(cachedPrompts, loaded.seed());
-            if (mounted != null) {
-                this.prompts = tree(loaded, promptStore, mounted);
-            } else if (RuntimeFlags.PROMPT_CACHE && loaded.model().stateCodec().isPresent()) {
-                this.prompts = tree(loaded, promptStore, null);
-            } else {
-                this.prompts = null;
-            }
+            // PromptCache.of reads the model's capabilities itself (codec-less = hot-only,
+            // coarse = define-only writes); the flag is the block layer's off-switch, and an
+            // explicit catalog still mounts - the caller pointed at an artifact on purpose
+            this.cache =
+                    PromptCache.of(
+                            loaded.model(),
+                            loaded.seed(),
+                            new PromptCache.Options(
+                                    cachedSessions,
+                                    RuntimeFlags.PROMPT_CACHE
+                                            ? RuntimeFlags.PROMPT_CACHE_BUDGET_BYTES
+                                            : 0,
+                                    catalog,
+                                    catalogReadOnly));
             // inside the try: a malformed chat template in the GGUF throws at compile, and an
             // OWNED weights arena must not outlive a constructor that never returns
             this.jinja = new JinjaChatTemplate(loaded.tokenizer(), loaded.chatTemplateSource());
-        } catch (IOException e) {
-            freeOwnedWeights();
-            throw new UncheckedIOException("failed to prepare " + modelName, e);
         } catch (RuntimeException | Error e) {
             freeOwnedWeights();
             throw e;
         }
         // the first reading exists from construction, so /props and the gauge never report a
-        // null "no data yet" state distinct from an empty cache (single-threaded here: the tree
-        // was just built and nothing else can touch it)
-        if (prompts != null) this.cacheSnapshot = prompts.sample();
+        // null "no data yet" state distinct from an empty cache (single-threaded here: nothing
+        // else can touch the just-built cache)
+        this.cacheSnapshot = cache.sample();
         // registered after the cache exists, and after every throwing step: publishing `this`
-        // to a registry from a constructor that may still fail would hand out a half-built engine
+        // to a registry from a constructor that may still fail would hand out a half-built engine.
+        // Only block-caching engines register: a hot-only engine has no tree to sample.
         this.cacheGauge = new Telemetry.CacheGauge(modelName, () -> cacheSnapshot);
-        Telemetry.register(cacheGauge);
+        if (cache.blockCaching()) Telemetry.register(cacheGauge);
         // armed last: a ctor throw already cleaned up above and must not read as a leak
         this.leakWatch =
                 LeakWatch.arm(
@@ -197,20 +200,6 @@ public final class ChatEngine {
         } catch (UnsupportedOperationException ignored) {
             // a non-closeable arena manages itself; nothing to free eagerly
         }
-    }
-
-    private static <S extends RuntimeState> PromptCache<S> tree(
-            LoadedModel<S> loaded, CacheStore store, FrozenBlocks base) {
-        // Bounded, because this tree no longer holds only declared prompts: since it resumes
-        // EVERY prompt under jinfer.promptCache, an unbounded budget would grow without limit
-        // across arbitrary conversations. jinfer.promptCacheMB caps it, LRU-leaf eviction trims it.
-        //
-        // Consequence worth knowing: a prompt defined via withCachedPrompt is now cached
-        // best-effort, not pinned - an idle one can be evicted and re-prefilled on next use.
-        // Permanent residency is what freezePrompts + a mounted artifact is for; frozen blocks
-        // never count against this budget and are never evicted.
-        return new PromptCache<>(
-                loaded.codec(), store, RuntimeFlags.PROMPT_CACHE_BUDGET_BYTES, loaded.seed(), base);
     }
 
     public LoadedModel<?> loaded() {
@@ -247,10 +236,7 @@ public final class ChatEngine {
             closed = true;
             leakWatch.run(); // disarm: this engine was closed properly
             Telemetry.unregister(cacheGauge); // stop sampling a cache that is about to be freed
-            pool.close();
-            if (bare instanceof com.qxotic.jinfer.BaseState base) base.close();
-            bare = null;
-            promptStore.close();
+            cache.close(); // every hot state, the spare, and the block blobs - NOW
         } finally {
             lock.unlock();
         }
@@ -537,22 +523,13 @@ public final class ChatEngine {
                 .anyMatch(p -> p instanceof Part.Blob);
     }
 
-    /** Which source served a generation's prompt - see {@link Outcome#tier}. */
-    public enum Tier {
-        /** A pooled live session the prompt strictly extends: zero restore, only the delta. */
-        SESSION,
-        /** The block tree: the longest cached prefix restored into a fresh state. */
-        BLOCKS,
-        /** Nothing reusable: a fresh state prefilled the whole prompt. */
-        FRESH
-    }
-
     /**
      * {@code tier} says WHICH source served the prompt, which {@code restoredTokens} alone cannot:
      * a session hit and a block restore can reuse the same count at very different cost (one
      * restores nothing at all). It is the difference worth tuning jinfer.sessions on.
      */
-    public record Outcome(Generator.GenerationResult result, int restoredTokens, Tier tier) {}
+    public record Outcome(
+            Generator.GenerationResult result, int restoredTokens, PromptCache.Tier tier) {}
 
     /**
      * Where a running generation's deltas go. A blocking caller passes {@link #NONE} and reads the
@@ -588,7 +565,7 @@ public final class ChatEngine {
             boolean stopped,
             boolean cancelled,
             int restoredTokens,
-            Tier tier) {}
+            PromptCache.Tier tier) {}
 
     /**
      * Runs a prepared request and parses the reply - the loop both integrations wrote twice each
@@ -692,8 +669,8 @@ public final class ChatEngine {
     /**
      * One generation pass under the engine lock, cheapest source first: a pooled live session the
      * prompt strictly extends, else the block tree's longest cached prefix, else a fresh prefill -
-     * see {@link Tier}. Every prompt on a codec model is served (and committed) through the tree;
-     * {@code -Djinfer.promptCache=false} turns all of that off at construction.
+     * see {@link PromptCache.Tier}. Every prompt on a codec model is served (and committed) through
+     * the tree; {@code -Djinfer.promptCache=false} turns all of that off at construction.
      */
     public Outcome generate(
             List<Batch> prompt,
@@ -704,9 +681,9 @@ public final class ChatEngine {
         lock.lock();
         try {
             checkOpen();
-            Outcome outcome = run(loaded.model(), prompt, sampler, maxTokens, timeoutNanos, sink);
+            Outcome outcome = run(prompt, sampler, maxTokens, timeoutNanos, sink);
             // sampled here, on the owning thread, while the lock still excludes other generations
-            if (prompts != null) cacheSnapshot = prompts.sample();
+            cacheSnapshot = cache.sample();
             return outcome;
         } finally {
             lock.unlock();
@@ -714,19 +691,22 @@ public final class ChatEngine {
     }
 
     /**
-     * One generation pass, routed by what the model supports: codec-less models prefill on the
-     * recycled bare context (no tiers); coarse-residue codecs restore the longest defined prefix
-     * and commit nothing; fine codecs go through the pool (tier 1 append-only, else a tier-2 block
-     * restore, else fresh) and commit prompt chunks plus the per-token reply tail as they go. On
-     * success the pooled path's state (prompt + reply KV) returns for the next turn.
+     * One generation pass, every model kind, one path: the cache serves the prompt from the hottest
+     * thing that matches (a live session it strictly extends, else the longest block prefix, else
+     * fresh compute on a recycled state) and the pass only generates - each decode token joins the
+     * cache step-time through the {@code tail} hook, so the reply stays per-position resumable and
+     * the hot stream stays in lockstep. Which layers exist (hot-only, define-only coarse, full) was
+     * decided once, at construction, by what the model supports.
      */
+    @SuppressWarnings("unchecked")
     private <S extends RuntimeState> Outcome run(
-            LanguageModel<?, ?, S> model,
             List<Batch> prompt,
             Sampler sampler,
             int maxTokens,
             long timeoutNanos,
             Generator.TokenSink sink) {
+        LanguageModel<?, ?, S> model = (LanguageModel<?, ?, S>) loaded.model();
+        PromptCache<S> c = (PromptCache<S>) cache;
         int total = positions(prompt);
         // fail FAST, before any chunk of an oversized prompt is ingested - the ports all guard
         // their own capacity, but the engine must not depend on that, and must not burn a partial
@@ -739,149 +719,28 @@ public final class ChatEngine {
                             + model.config().contextLength()
                             + " available)");
         }
-        if (prompts == null) {
-            // no state codec: no tiers, every prompt prefills - but the allocation is recycled
-            S state = bareState(model);
-            Generator.GenerationResult result =
-                    generate(model, state, prompt, sampler, maxTokens, timeoutNanos, sink);
-            // wiped BEFORE parking, so nothing of the conversation lingers between requests;
-            // on a throw generate() already closed the state and bare stays empty
-            state.reset();
-            bare = state;
-            return new Outcome(result, 0, Tier.FRESH);
-        }
-        if (loaded.model().stateCodec().map(StateCodec::coarseBlocks).orElse(false)) {
-            // A coarse residue costs MBs PER BLOCK (NemotronH: ~90MB at 30B dims), so the tree is
-            // written by define() alone - committing a residue per served turn would grow the
-            // store by a block's full weight on every request. Serving RESTORES the longest
-            // defined prefix (capped one short so the final token re-ingests and leaves fresh
-            // logits) and commits nothing; sessions are not pooled either, since pooled sessions
-            // commit as they go.
-            S state = bareState(model);
-            int restored;
-            List<Batch> rest;
-            try {
-                restored = CachedSession.resume(model, tree(), state, prompt, total - 1).position();
-                rest = CachedSession.tail(prompt, restored);
-            } catch (RuntimeException | Error e) {
-                ((com.qxotic.jinfer.BaseState) state).close();
-                throw e;
-            }
-            Generator.GenerationResult result =
-                    generate(model, state, rest, sampler, maxTokens, timeoutNanos, sink);
-            state.reset();
-            bare = state;
-            return new Outcome(result, restored, restored > 0 ? Tier.BLOCKS : Tier.FRESH);
-        }
-        // ONE group per batch, so the codec's turn boundaries ARE the block boundaries: a
-        // follow-up that diverges after turn k still reuses turns 0..k-1. A single giant block
-        // would be unusable the moment the conversation grows by a token.
-        List<List<Batch>> groups = new ArrayList<>(prompt.size());
-        for (Batch b : prompt) groups.add(List.of(b));
-        @SuppressWarnings("unchecked")
-        SessionPool<S> sessionPool = (SessionPool<S>) pool;
-        return sessionPool.withSession(
-                model,
-                tree(),
-                () -> obtainState(model),
-                groups,
-                (session, tier1) -> {
-                    int restored = session.position();
-                    if (tier1) sessionHits++;
-                    // commits what was not restored, block per group
-                    session.ingestGroups(groups);
-                    @SuppressWarnings("unchecked")
-                    S state = (S) session.state();
-                    // the decode joins the session STEP-TIME, each ingested token its own block:
-                    // the next turn's echo continues append-only, and a TRUNCATED echo (stop-cut,
-                    // edited tail) still resumes token-exact - the tail keeps every position
-                    // resumable, only interior content is block-coarse
-                    Generator.TokenSink adopting =
-                            new Generator.TokenSink() {
-                                @Override
-                                public boolean onToken(int token) {
-                                    return sink.onToken(token);
-                                }
-
-                                @Override
-                                public void onIngested(int token) {
-                                    session.adopt(token);
-                                    sink.onIngested(token); // the engine augments, never starves
-                                }
-                            };
-                    Generator.GenerationResult result =
-                            generate(
-                                    model,
-                                    state,
-                                    List.of(),
-                                    sampler,
-                                    maxTokens,
-                                    timeoutNanos,
-                                    adopting);
-                    return new Outcome(
-                            result,
-                            restored,
-                            tier1 ? Tier.SESSION : restored > 0 ? Tier.BLOCKS : Tier.FRESH);
-                });
-    }
-
-    /** One generation pass; a torn state is freed here rather than left to the Cleaner. */
-    private <S extends RuntimeState> Generator.GenerationResult generate(
-            LanguageModel<?, ?, S> model,
-            S state,
-            List<Batch> prompt,
-            Sampler sampler,
-            int maxTokens,
-            long timeoutNanos,
-            Generator.TokenSink sink) {
-        try {
-            return Generator.generate(
-                    model,
-                    state,
-                    Batch.prepare(prompt, state.batchCapacity()),
-                    sampler,
-                    maxTokens,
-                    timeoutNanos,
-                    loaded.stopTokens(),
-                    sink);
-        } catch (RuntimeException | Error e) {
-            // a server hammered by failing requests would otherwise stack full-context states.
-            // On the pooled path SessionPool.withSession closes the torn state too - close is
-            // idempotent, and this catch is the bare path's only protection
-            ((com.qxotic.jinfer.BaseState) state).close();
-            throw e;
-        }
+        return c.serve(
+                prompt,
+                (state, serving) ->
+                        new Outcome(
+                                Generator.generate(
+                                        model,
+                                        state,
+                                        List.of(),
+                                        sampler,
+                                        maxTokens,
+                                        timeoutNanos,
+                                        loaded.stopTokens(),
+                                        sink,
+                                        serving::tail),
+                                serving.restored(),
+                                serving.tier()));
     }
 
     private static int positions(List<Batch> prompt) {
         int total = 0;
         for (Batch b : prompt) total += b.count();
         return total;
-    }
-
-    /**
-     * A fresh context for a pass nothing recycled could serve. Allocated at FULL batch capacity,
-     * not prompt-sized: it serves every later request too, and one born from a 20-token prompt
-     * would chunk a 2000-token prefill into ~125 forwards.
-     *
-     * <p>{@link SessionPool} owns these once handed over - it recycles the least-recent allocation
-     * at capacity (and keeps one wiped spare when pooling is off), so a steady pipeline holds at
-     * most max(1, jinfer.sessions) contexts and allocates no more.
-     */
-    private <S extends RuntimeState> S obtainState(LanguageModel<?, ?, S> model) {
-        statesAllocated++;
-        return model.newState(model.config().contextLength(), RuntimeFlags.BATCH_CAPACITY);
-    }
-
-    /** The codec-less path's one recycled context - the pool's spare, without the pool. */
-    @SuppressWarnings("unchecked")
-    private <S extends RuntimeState> S bareState(LanguageModel<?, ?, S> model) {
-        if (bare != null) {
-            S state = (S) bare;
-            bare = null;
-            return state;
-        }
-        return obtainState(model);
     }
 
     // ---- cached prompts: the block tree behind withCachedPrompt / save / load ----
@@ -914,108 +773,67 @@ public final class ChatEngine {
         lock.lock();
         try {
             checkOpen();
-            defineOn(loaded.model(), tree(), prompt);
-            cacheSnapshot = prompts.sample(); // a define changes blocks/bytes like a pass does
+            cache.define(prompt);
+            cacheSnapshot = cache.sample(); // a define changes blocks/bytes like a pass does
         } finally {
             lock.unlock();
         }
     }
 
-    private <S extends RuntimeState> void defineOn(
-            LanguageModel<?, ?, S> model, PromptCache<S> cache, List<Batch> prompt) {
-        // coarse-residue codecs (NemotronH: MBs per block) commit ONE block over everything but
-        // the trailing scaffold batch: one chunk (batch capacity = prompt length), one residue
-        // per prompt. The scaffold is request-shaped (it re-encodes after the user's turn), so
-        // a block containing it would never match - yet would still pay the residue.
-        boolean coarse = model.stateCodec().map(StateCodec::coarseBlocks).orElse(false);
-        S state =
-                coarse
-                        ? model.newState(
-                                model.config().contextLength(), Math.max(positions(prompt), 16))
-                        : Generator.stateFor(model, positions(prompt));
-        try {
-            CachedSession<S> s = CachedSession.resume(model, cache, state, prompt);
-            s.ingestGroups(
-                    coarse
-                            ? List.of(prompt.subList(0, Math.max(1, prompt.size() - 1)))
-                            : prompt.stream().map(List::of).toList());
-            // a define exists ONLY to cache: a tip the budget detached means nothing was kept,
-            // and returning quietly would let every later serve re-prefill with no diagnostic
-            if (s.detached()) {
-                throw new IllegalStateException(
-                        "cached prompt not fully retained: the cache budget refused it"
-                                + " (-Djinfer.promptCacheMB, currently "
-                                + (RuntimeFlags.PROMPT_CACHE_BUDGET_BYTES >> 20)
-                                + " MB)");
-            }
-        } finally {
-            ((com.qxotic.jinfer.BaseState) state).close(); // define-time scratch: free now
-        }
-    }
-
     /**
-     * Freezes the whole tree (mounted base + everything defined) into one artifact - a REWRITE.
-     * Never point it at the file this engine mounted (truncating a live mapping mid-copy); {@link
-     * PromptCache#freeze} rejects that, and {@link #appendPrompts} is the write-back for the
-     * mounted catalog itself.
+     * A NEW artifact from the whole block layer (mounted base + everything computed) at {@code out}
+     * - refuses this engine's own catalog ({@link #savePrompts} is that write-back).
      */
     public void freezePrompts(Path out) {
         lock.lock();
         try {
             checkOpen();
-            tree().freeze(out);
-        } catch (IOException e) {
-            throw new UncheckedIOException("failed to save cached prompts to " + out, e);
+            cache.export(out);
         } finally {
             lock.unlock();
         }
     }
 
     /**
-     * The accumulating-catalog write-back: appends every block committed since mount to {@code
-     * out}, creating the artifact when it does not exist. Unlike {@link #freezePrompts} this is
-     * APPEND-ONLY and safe against the very file this engine has mounted - a server can reopen its
-     * own catalog on the next boot and keep growing it.
-     *
-     * <p>ONE-SHOT per run when this engine CREATED the artifact rather than mounting it: the fresh
-     * file is not retro-mounted as the append base, so a second call in the same run throws.
-     * Callers wanting periodic write-back must boot from an existing (possibly empty) artifact.
+     * The accumulating write-back: appends every block computed since boot to this engine's own
+     * catalog (append-only, safe against the mounted mapping). A no-op without a read-write
+     * catalog.
      */
-    public void appendPrompts(Path out) {
+    public void savePrompts() {
         lock.lock();
         try {
             checkOpen();
-            tree().appendTo(out);
-        } catch (IOException e) {
-            throw new UncheckedIOException("failed to append cached prompts to " + out, e);
+            cache.save();
         } finally {
             lock.unlock();
         }
     }
 
-    /** Test seam: the tree's stats line ("blocks=.. hits=.." - see PromptCache.stats). */
+    /** Test seam: the block layer's stats line (see {@link PromptCache#treeStats}). */
     public String promptStats() {
-        lock.lock(); // the tree is lock-confined; even a stats read honors that
+        lock.lock();
         try {
-            return tree().stats();
+            return cache.treeStats();
         } finally {
             lock.unlock();
         }
     }
 
     /**
-     * Test seam: pool occupancy, prefix-hit count, and how many contexts this engine ever had to
-     * allocate - the pool is the allocator, so a steady pipeline stays at {@code allocations=1}.
+     * Test seam: hot-layer occupancy, prefix-hit count, and how many contexts this engine ever
+     * allocated - the cache is the allocator, so a steady pipeline stays at {@code
+     * allocations=max(1, jinfer.sessions)}.
      */
     public String sessionStats() {
         lock.lock();
         try {
+            PromptCache.Sample s = cache.sample();
             return "sessions="
-                    + pool.size()
+                    + s.hotSessions()
                     + " hits="
-                    + sessionHits
+                    + s.hotHits()
                     + " allocations="
-                    + statesAllocated;
+                    + s.statesAllocated();
         } finally {
             lock.unlock();
         }
@@ -1031,15 +849,8 @@ public final class ChatEngine {
         return cacheSnapshot;
     }
 
-    @SuppressWarnings("unchecked")
-    private <S extends RuntimeState> PromptCache<S> tree() {
-        if (prompts == null) {
-            throw new IllegalStateException(
-                    loaded.model().stateCodec().isPresent()
-                            ? "block caching is disabled (-Djinfer.promptCache=false)"
-                            : loaded.model().getClass().getSimpleName()
-                                    + " does not support block caching (no state codec)");
-        }
-        return (PromptCache<S>) prompts;
+    /** Whether the block layer exists for this model (codec present, blocks not disabled). */
+    public boolean blockCaching() {
+        return cache.blockCaching();
     }
 }

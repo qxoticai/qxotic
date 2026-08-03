@@ -8,9 +8,9 @@
 package com.qxotic.jinfer.bench;
 
 import com.qxotic.jinfer.*;
+import com.qxotic.jinfer.cache.BlockTree;
 import com.qxotic.jinfer.cache.CacheStore;
 import com.qxotic.jinfer.cache.CachedSession;
-import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.cache.StateCodec;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.Message;
@@ -110,8 +110,7 @@ public final class TtftBench {
         LoadedModel<S> model = bench.model();
         TurnTemplate tpl = bench.tpl();
         StateCodec<S> codec = model.codec();
-        PromptCache<S> cache =
-                new PromptCache<>(codec, CacheStore.inMemory(), 8L << 30, model.seed());
+        BlockTree<S> cache = new BlockTree<>(codec, CacheStore.inMemory(), 8L << 30, model.seed());
 
         // history: [start][user: story][genPrompt] -> reply -> closeTurn, all committed
         CachedSession<S> a =
@@ -205,8 +204,8 @@ public final class TtftBench {
         TurnTemplate tpl = bench.tpl();
         StateCodec<S> codec = model.codec();
         List<Batch> prefix = concat(tpl.conversationStart(), tpl.encodeTurn(Message.user(story())));
-        PromptCache<S> build =
-                new PromptCache<>(codec, CacheStore.inMemory(), Long.MAX_VALUE, model.seed());
+        BlockTree<S> build =
+                new BlockTree<>(codec, CacheStore.inMemory(), Long.MAX_VALUE, model.seed());
         CachedSession<S> s =
                 CachedSession.start(model.model(), build, model.model().newState(4096, 512));
         s.ingest(prefix);

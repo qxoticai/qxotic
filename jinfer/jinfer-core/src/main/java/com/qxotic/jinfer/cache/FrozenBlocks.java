@@ -14,9 +14,9 @@ import java.util.List;
 
 /**
  * A read-only prompt-cache artifact: any number of prompts as one content-addressed block tree,
- * shared prefixes stored once, produced by {@link PromptCache#freeze} at compile time and mapped
+ * shared prefixes stored once, produced by {@link BlockTree#freeze} at compile time and mapped
  * lazily at serve time (header and index pages only; KV bytes are untouched until a chain
- * restores). Grafted under a live {@link PromptCache} as its immutable base, its blocks join the
+ * restores). Grafted under a live {@link BlockTree} as its immutable base, its blocks join the
  * cache's key space: resume matches through them, commits dedup against them, eviction never
  * touches them - the "several prompts, read only" tier between the sealed single prompt and the
  * writable RAM cache.
@@ -55,8 +55,8 @@ public final class FrozenBlocks {
      * {@link #append} places them.
      */
     record Entry(
-            PromptCache.BlockKey key,
-            PromptCache.BlockKey parentKey,
+            BlockTree.BlockKey key,
+            BlockTree.BlockKey parentKey,
             int from,
             int to,
             long offset,
@@ -125,8 +125,8 @@ public final class FrozenBlocks {
                         .order(ByteOrder.LITTLE_ENDIAN);
         List<Entry> entries = new ArrayList<>(count);
         for (int i = 0; i < count; i++) {
-            PromptCache.BlockKey key = getKey(idx);
-            PromptCache.BlockKey parentKey = getKey(idx);
+            BlockTree.BlockKey key = getKey(idx);
+            BlockTree.BlockKey parentKey = getKey(idx);
             int from = idx.getInt(), to = idx.getInt();
             long offset = idx.getLong(), len = idx.getLong();
             int crc = idx.getInt();
@@ -155,8 +155,8 @@ public final class FrozenBlocks {
             S state,
             List<com.qxotic.jinfer.Batch> prompt)
             throws IOException {
-        PromptCache<S> build =
-                new PromptCache<>(
+        BlockTree<S> build =
+                new BlockTree<>(
                         codec,
                         com.qxotic.jinfer.cache.CacheStore.inMemory(),
                         Long.MAX_VALUE,
@@ -187,8 +187,8 @@ public final class FrozenBlocks {
             S state,
             long[] fp,
             int maxPositions) {
-        PromptCache<S> cache =
-                new PromptCache<>(
+        BlockTree<S> cache =
+                new BlockTree<>(
                         codec, com.qxotic.jinfer.cache.CacheStore.inMemory(), 0, modelSeed, this);
         return CachedSession.resume(model, cache, state, fp, maxPositions);
     }
@@ -219,8 +219,8 @@ public final class FrozenBlocks {
     /** The one index-entry field order, shared by every writer ({@code open} is its reader). */
     static void putEntry(
             ByteBuffer idx,
-            PromptCache.BlockKey key,
-            PromptCache.BlockKey parentKey,
+            BlockTree.BlockKey key,
+            BlockTree.BlockKey parentKey,
             int from,
             int to,
             long offset,
@@ -347,12 +347,12 @@ public final class FrozenBlocks {
         return java.util.Arrays.copyOf(seed, 32);
     }
 
-    static void putKey(ByteBuffer buf, PromptCache.BlockKey k) {
+    static void putKey(ByteBuffer buf, BlockTree.BlockKey k) {
         buf.putLong(k.a()).putLong(k.b()).putLong(k.c()).putLong(k.d());
     }
 
-    static PromptCache.BlockKey getKey(ByteBuffer buf) {
-        return new PromptCache.BlockKey(buf.getLong(), buf.getLong(), buf.getLong(), buf.getLong());
+    static BlockTree.BlockKey getKey(ByteBuffer buf) {
+        return new BlockTree.BlockKey(buf.getLong(), buf.getLong(), buf.getLong(), buf.getLong());
     }
 
     static long align(long offset) {
