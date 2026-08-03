@@ -20,8 +20,8 @@ import java.util.List;
  *       strictly extends one continues in place (ANY model, codec or not).
  *   <li>BLOCKS - everything computed is kept as content-keyed KV blocks (RAM, budget-bounded,
  *       optionally backed by a catalog file that survives restarts). Interior content commits at
- *       turn boundaries; the decode tail commits per position, so a truncated or edited echo
- *       resumes token-exact.
+ *       batch boundaries (turns, when the codec encodes one batch per turn); the decode tail
+ *       commits per position, so a truncated or edited echo resumes token-exact.
  * </ul>
  *
  * <p>THE LAW, stated once: a resume always stops one position short, so the final token re-ingests
@@ -45,10 +45,19 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
      *     explicit {@code catalog} still mounts, read-only in spirit if the budget refuses growth
      * @param catalog the block layer's file, opened if present and CREATED OTHERWISE (so {@link
      *     #save} is always an append - never a rewrite of a mounted mapping); null = RAM only
-     * @param readOnly the catalog is served, never written: {@link #save} is a no-op, and a missing
-     *     or incompatible file degrades to serving without it instead of failing the boot
+     * @param readOnly the catalog is served, never written: {@link #save} is a no-op, and a MISSING
+     *     file degrades to serving without it instead of failing the boot (an existing but
+     *     incompatible file fails loudly in both modes - see {@code openCatalog})
      */
     public record Options(int hotSessions, long blockBudgetBytes, Path catalog, boolean readOnly) {
+
+        // ranges, not taste: int widens silently into the long slot, so transposed
+        // (budget, hotSessions) literals would compile and build a pathological cache
+        public Options {
+            if (hotSessions < 0) throw new IllegalArgumentException("hotSessions " + hotSessions);
+            if (blockBudgetBytes < 0)
+                throw new IllegalArgumentException("blockBudgetBytes " + blockBudgetBytes);
+        }
 
         /** In-memory defaults: {@code hot} live sessions, the standard budget, no catalog. */
         public static Options inMemory(int hot, long budgetBytes) {
@@ -71,6 +80,7 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
     private final int hotCapacity;
     private final ArrayDeque<CachedSession<S>> hot = new ArrayDeque<>();
     private S spare;
+    private boolean closed;
     private long hotHits;
     private long statesAllocated; // steady state: max(1, hotSessions)
 
@@ -97,7 +107,17 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
      */
     public static <S extends RuntimeState> PromptCache<S> of(
             LanguageModel<?, ?, S> model, byte[] seed, Options o) {
+        if (seed == null) throw new IllegalArgumentException("null seed");
         StateCodec<S> codec = model.stateCodec().orElse(null);
+        if (codec == null && o.catalog() != null) {
+            // never silently ignore a file the caller pointed at
+            System.err.println(
+                    "jinfer: catalog "
+                            + o.catalog()
+                            + " ignored: "
+                            + model.getClass().getSimpleName()
+                            + " has no state codec");
+        }
         boolean wantBlocks = codec != null && (o.blockBudgetBytes() > 0 || o.catalog() != null);
         if (!wantBlocks) {
             return new PromptCache<>(model, null, false, CacheStore.inMemory(), null, o);
@@ -174,7 +194,7 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
      * context. Runs on the cache's single thread.
      */
     public interface Pass<S extends RuntimeState, R> {
-        R run(S state, Serving serving) throws RuntimeException;
+        R run(S state, Serving serving);
     }
 
     /**
@@ -186,7 +206,19 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
      * session is discarded - a possibly-torn state must never serve again.
      */
     public <R> R serve(List<Batch> prompt, Pass<S, R> pass) {
+        checkOpen();
         long[] fingerprints = CachedSession.fingerprints(prompt);
+        if (fingerprints.length == 0) {
+            throw new IllegalArgumentException("empty prompt: nothing to serve");
+        }
+        if (fingerprints.length > model.config().contextLength()) {
+            throw new IllegalArgumentException(
+                    "Prompt exceeds context length ("
+                            + fingerprints.length
+                            + " tokens, "
+                            + model.config().contextLength()
+                            + " available)");
+        }
         CachedSession<S> session = hotAcquire(fingerprints);
         boolean tier1 = session != null;
         if (tier1) {
@@ -201,10 +233,18 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
         List<List<Batch>> groups = new ArrayList<>(prompt.size());
         for (Batch b : prompt) groups.add(List.of(b));
         CachedSession<S> bound = session;
+        boolean[] live = {true};
         Serving serving =
                 new Serving() {
                     @Override
                     public void tail(int token) {
+                        // a stashed handle used after the pass returned would poison the hot
+                        // stream (silently, in hot-only mode) - fail loudly instead
+                        if (!live[0]) {
+                            throw new IllegalStateException(
+                                    "the serving is over: tail() is valid only until the pass"
+                                            + " returns");
+                        }
                         bound.adopt(token);
                     }
 
@@ -223,9 +263,11 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
             session.ingestGroups(groups);
             result = pass.run(session.state(), serving);
         } catch (RuntimeException | Error e) {
+            live[0] = false;
             closeState(session); // torn: never serves again; its committed blocks survive
             throw e;
         }
+        live[0] = false;
         release(session);
         return result;
     }
@@ -249,13 +291,16 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
     /**
      * Pins a prefix into the block layer: interior batches as turn blocks, the FINAL position as
      * its own single (so a later serve of exactly this prompt - capped one short by the law -
-     * restores everything but that last token); a coarse codec commits ONE block over everything
-     * but the trailing batch (request-shaped scaffold: a block containing it would never match, yet
-     * would still pay the residue). Dedups against what is already cached. Throws when the budget
-     * refused it - a define exists only to cache, and returning quietly would let every later serve
-     * re-prefill with no diagnostic.
+     * restores everything but that last token; a single-token or media-final batch commits whole
+     * instead, and cannot full-hit by construction); a coarse codec commits ONE block over
+     * everything but the trailing batch (request-shaped scaffold: a block containing it would never
+     * match, yet would still pay the residue - a single-batch coarse prompt commits whole, a
+     * prefix-only block). Dedups against what is already cached. Throws when the budget refused it
+     * - a define exists only to cache, and returning quietly would let every later serve re-prefill
+     * with no diagnostic.
      */
     public void define(List<Batch> prompt) {
+        checkOpen();
         BlockTree<S> t = requireTree();
         int total = positions(prompt);
         if (total == 0) return;
@@ -265,9 +310,11 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
                         : model.newState(
                                 model.config().contextLength(),
                                 Math.min(Math.max(total, 16), RuntimeFlags.BATCH_CAPACITY));
-        statesAllocated++;
         try {
-            CachedSession<S> s = CachedSession.resume(model, t, state, prompt);
+            // capped ONE SHORT like every resume: an uncapped resume would dedup into a chunk
+            // boundary earlier traffic committed and silently skip the split-last single that
+            // makes define-then-serve a full hit
+            CachedSession<S> s = CachedSession.resume(model, t, state, prompt, total - 1);
             s.ingestGroups(defineGroups(prompt));
             if (s.detached()) {
                 throw new IllegalStateException(
@@ -299,6 +346,7 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
 
     /** Appends the block layer's fresh blocks to the catalog; a no-op without one / read-only. */
     public void save() {
+        checkOpen();
         if (tree == null || catalog == null || readOnly) return;
         try {
             tree.appendTo(catalog);
@@ -312,6 +360,7 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
      * {@link #save} is the write-back for that.
      */
     public void export(Path out) {
+        checkOpen();
         try {
             requireTree().freeze(out);
         } catch (IOException e) {
@@ -338,6 +387,7 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
             long refusals) {}
 
     public Sample sample() {
+        checkOpen();
         BlockTree.Sample t = tree == null ? null : tree.sample();
         return new Sample(
                 hot.size(),
@@ -354,12 +404,15 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
 
     /** Test seam: the block layer's stats line (see {@link BlockTree#stats}). */
     public String treeStats() {
+        checkOpen();
         return requireTree().stats();
     }
 
     /** Frees every hot state, the spare, and the block blobs - deterministic, not GC-eventual. */
     @Override
     public void close() {
+        if (closed) return;
+        closed = true;
         while (!hot.isEmpty()) closeState(hot.removeFirst());
         if (spare instanceof com.qxotic.jinfer.BaseState base) base.close();
         spare = null;
@@ -453,6 +506,10 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
         int total = 0;
         for (Batch b : prompt) total += b.count();
         return total;
+    }
+
+    private void checkOpen() {
+        if (closed) throw new IllegalStateException("the cache is closed");
     }
 
     private BlockTree<S> requireTree() {

@@ -37,7 +37,7 @@ final class Generation {
     private final ChatTemplate template; // memoized model framing, null when the model has none
     // raw-prompt mode encodes text special-token-aware; nothing renders a template for it
     private final com.qxotic.toknroll.Specials specials;
-    // The shared runtime: template stack, sampling policy, block tree and session pool. This
+    // The shared runtime: template stack, sampling policy, and the one PromptCache. This
     // class predates all of it and had its own of each; what remains here is the OpenAI wire.
     private final ChatEngine engine;
     private final Metrics metrics;

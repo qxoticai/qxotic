@@ -124,7 +124,8 @@ public final class TtftBench {
                 concat(tpl.encodeTurn(Message.user(QUESTION)), tpl.generationPrompt(true));
         int[] historyIds = history;
 
-        // tier 1: live pooled sessions, pre-resumed OUTSIDE the timing (a SessionPool holds them
+        // tier 1: live pooled sessions, pre-resumed OUTSIDE the timing (the PromptCache hot layer
+        // holds them
         // resident between requests) - the timed leg is pure append-only delta ingest + first
         // token.
         List<CachedSession<S>> live = new ArrayList<>();

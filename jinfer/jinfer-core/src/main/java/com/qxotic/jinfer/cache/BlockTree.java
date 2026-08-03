@@ -14,12 +14,12 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Model-agnostic, storage-agnostic prompt cache: a prefix tree of variable-length KV blocks,
- * content-addressed by a CHAINED SHA-256 key over per-position fingerprints (token id for text,
- * content-hash for media). The chained digest names the whole token prefix — same conversation
- * prefix, same key, across sessions and restarts — and, being cryptographic, is trusted as identity
- * (matching recomputes the digest from the request's fingerprints; no fingerprint storage, no
- * collision handling: git/IPFS regime).
+ * The block layer's physics - the low-level tree under {@link PromptCache}: a prefix tree of
+ * variable-length KV blocks, content-addressed by a CHAINED SHA-256 key over per-position
+ * fingerprints (token id for text, content-hash for media). The chained digest names the whole
+ * token prefix — same conversation prefix, same key, across sessions and restarts — and, being
+ * cryptographic, is trusted as identity (matching recomputes the digest from the request's
+ * fingerprints; no fingerprint storage, no collision handling: git/IPFS regime).
  *
  * <p>Every block is SELF-CONTAINED ({@link StateCodec}): restoring a matched chain in position
  * order leaves the state live at the chain's end, so EVERY block boundary is a resume point —
@@ -413,7 +413,12 @@ public final class BlockTree<S extends RuntimeState> {
      */
     public void appendTo(java.nio.file.Path out) throws java.io.IOException {
         if (!java.nio.file.Files.exists(out)) {
+            // recovery path (the catalog was deleted mid-run): the whole tree re-freezes - and
+            // the parsed base view must follow, or the NEXT append would compare offsets against
+            // the old file's layout and refuse with a misleading "another writer" error
             freeze(out);
+            freshBlocks.clear();
+            base = FrozenBlocks.open(out, modelSeed);
             return;
         }
         if (base == null || !java.nio.file.Files.isSameFile(base.file(), out)) {

@@ -27,9 +27,9 @@ import java.util.function.Supplier;
  * The framework-neutral provider runtime shared by the langchain4j and Spring AI integrations: one
  * loaded model, the two-tier template stack (native codec first, hardened Jinja whole-render
  * fallback), the single-stream generation lock (a jinfer model runs one generation at a time;
- * concurrent calls queue), the cached-prompt block tree behind withCachedPrompt/save/load, and the
- * live-session pool behind cachedSessions(n). Integrations adapt only what is genuinely theirs:
- * message/tool mapping into {@link Conversation}s and framework exception types.
+ * concurrent calls queue), and the one {@link PromptCache} - hot sessions, block tree and catalog
+ * behind withCachedPrompt / cachedSessions(n) / save / load. Integrations adapt only what is
+ * genuinely theirs: message/tool mapping into {@link Conversation}s and framework exception types.
  *
  * <p>Everything here speaks jinfer types - no framework classes, no fingerprint/cache internals
  * (the cache package's content addressing stays its own law).
@@ -121,6 +121,9 @@ public final class ChatEngine {
      * <p>The caller owns the weights arena. {@link #close()} frees this engine's states and blobs
      * and is still the quiescence certificate, but it does NOT free weights it did not allocate -
      * close your arena after this engine, never before.
+     *
+     * <p>{@code cachedPrompts} mounts READ-ONLY (serve-only; missing = degrade, incompatible = fail
+     * loudly); use the catalog constructor for a read-write accumulating file.
      */
     public ChatEngine(
             LoadedModel<?> loaded, String modelName, Path cachedPrompts, int cachedSessions) {
@@ -152,11 +155,12 @@ public final class ChatEngine {
         this.weights = owned.weights();
         this.loaded = owned.loaded();
         this.modelName = modelName;
+        PromptCache<?> built = null;
         try {
             // PromptCache.of reads the model's capabilities itself (codec-less = hot-only,
             // coarse = define-only writes); the flag is the block layer's off-switch, and an
             // explicit catalog still mounts - the caller pointed at an artifact on purpose
-            this.cache =
+            built =
                     PromptCache.of(
                             loaded.model(),
                             loaded.seed(),
@@ -167,10 +171,12 @@ public final class ChatEngine {
                                             : 0,
                                     catalog,
                                     catalogReadOnly));
+            this.cache = built;
             // inside the try: a malformed chat template in the GGUF throws at compile, and an
             // OWNED weights arena must not outlive a constructor that never returns
             this.jinja = new JinjaChatTemplate(loaded.tokenizer(), loaded.chatTemplateSource());
         } catch (RuntimeException | Error e) {
+            if (built != null) built.close(); // a failed ctor must not read as a store leak
             freeOwnedWeights();
             throw e;
         }
@@ -707,18 +713,7 @@ public final class ChatEngine {
             Generator.TokenSink sink) {
         LanguageModel<?, ?, S> model = (LanguageModel<?, ?, S>) loaded.model();
         PromptCache<S> c = (PromptCache<S>) cache;
-        int total = positions(prompt);
-        // fail FAST, before any chunk of an oversized prompt is ingested - the ports all guard
-        // their own capacity, but the engine must not depend on that, and must not burn a partial
-        // prefill (committing its blocks) only to fail mid-prompt
-        if (total > model.config().contextLength()) {
-            throw new IllegalArgumentException(
-                    "Prompt exceeds context length ("
-                            + total
-                            + " tokens, "
-                            + model.config().contextLength()
-                            + " available)");
-        }
+        // the facade validates the prompt (non-empty, fits the context) before any ingest
         return c.serve(
                 prompt,
                 (state, serving) ->
@@ -743,7 +738,7 @@ public final class ChatEngine {
         return total;
     }
 
-    // ---- cached prompts: the block tree behind withCachedPrompt / save / load ----
+    // ---- cached prompts: define / export / save on the one PromptCache ----
 
     /**
      * Encode via the native codec only - cached prompts are a prefix-stability bet the Jinja
@@ -797,7 +792,8 @@ public final class ChatEngine {
     /**
      * The accumulating write-back: appends every block computed since boot to this engine's own
      * catalog (append-only, safe against the mounted mapping). A no-op without a read-write
-     * catalog.
+     * catalog. Holds the generation lock across the file IO - generations queue behind it, which is
+     * why the server saves at shutdown.
      */
     public void savePrompts() {
         lock.lock();

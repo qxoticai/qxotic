@@ -171,7 +171,7 @@ public final class Qwen35
     public java.util.Optional<com.qxotic.jinfer.cache.StateCodec<Qwen35.State>> stateCodec() {
         // The gated-delta-net S matrices are a LARGE true recurrence (MBs per SSM layer) - neither
         // per-position rows nor a small residue, so this family offers no block caching; live
-        // sessions (SessionPool) still give append-only reuse.
+        // sessions (the PromptCache hot layer) still give append-only reuse.
         return java.util.Optional.empty();
     }
 

@@ -47,8 +47,9 @@ import reactor.core.publisher.FluxSink;
  * fairly on it. For a second pipeline, build a second model: the weight PAGES are shared by the OS
  * page cache, so the added cost is one context plus one load. Footprint: an instance holds its
  * weights, ONE full-context state reused for every request (extended on a prefix hit when {@code
- * cachedSessions} is set, reset otherwise - never re-allocated per request), plus one KV block set
- * per defined cached prompt (explicit and deliberately paid for).
+ * cachedSessions} is set, reset otherwise - never re-allocated per request), plus the block layer's
+ * KV (every served conversation, best-effort, bounded by {@code jinfer.promptCacheMB}; defined
+ * prompts are pinned intent within it).
  *
  * <p>Three caching tiers, near-homonyms with distinct jobs: {@code withCachedPrompt} defines a LIVE
  * shared prefix (prefilled once, restored per request - the system-prompt/tools/few-shot case);
@@ -530,7 +531,11 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             return this;
         }
 
-        /** Mounts a cached-prompt artifact ({@link #saveCachedPrompts}); model-seed-checked. */
+        /**
+         * Mounts a cached-prompt artifact read-only; model-seed-checked. An incompatible file fails
+         * the build loudly; a MISSING file degrades to serving without it (stderr warning) - check
+         * the path if TTFT looks cold.
+         */
         public Builder loadCachedPrompts(Path cachedPrompts) {
             this.cachedPrompts = cachedPrompts;
             return this;

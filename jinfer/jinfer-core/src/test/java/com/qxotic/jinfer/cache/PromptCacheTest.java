@@ -457,6 +457,125 @@ public final class PromptCacheTest {
         }
     }
 
+    // ---- review-pinned edges ----------------------------------------------------------------
+
+    @Test
+    void budgetZeroWithCatalogServesTheMountButRefusesGrowth() throws Exception {
+        // the jinfer.promptCache=false + --cache combination: mounted blocks serve, RAM refuses
+        Path catalog = Files.createTempDirectory("jinfer-pc").resolve("b0.jkvf");
+        FakeModel model = new FakeModel(new FakeCodec(false));
+        try (var writer =
+                PromptCache.of(model, SEED, new PromptCache.Options(0, 1 << 20, catalog, false))) {
+            writer.define(prompt(1, 2, 3, 4));
+            writer.save();
+        }
+        long size = Files.size(catalog);
+        try (var frozen =
+                PromptCache.of(model, SEED, new PromptCache.Options(0, 0, catalog, false))) {
+            Served hit = generate(frozen, turns(new int[] {1, 2, 3, 4}, new int[] {9}), 7);
+            assertEquals(PromptCache.Tier.BLOCKS, hit.tier(), "the mount serves");
+            assertTrue(frozen.sample().refusals() > 0, "growth is refused, and counted");
+            assertThrows(IllegalStateException.class, () -> frozen.define(prompt(8, 9)));
+            frozen.save();
+        }
+        assertEquals(size, Files.size(catalog), "nothing new ever reaches the file");
+    }
+
+    @Test
+    void coarseRestoreEndingInsideABatchSlicesTheTail() {
+        // the defined coarse block ends mid-batch of the request: the read-only session must
+        // slice the group head it restored and ingest only the tail - still committing nothing
+        try (var cache = cache(new FakeModel(new FakeCodec(true)), 0, 1 << 20)) {
+            cache.define(turns(new int[] {1, 2, 3, 4}, new int[] {5})); // one block: [1,2,3,4]
+            Served hit = generate(cache, prompt(1, 2, 3, 4, 9), 7); // ONE batch, seam at 4
+            assertEquals(PromptCache.Tier.BLOCKS, hit.tier());
+            assertEquals(4, hit.restored(), "restored to the block edge inside the batch");
+            assertTrue(cache.treeStats().startsWith("blocks=1 "), cache.treeStats());
+        }
+    }
+
+    @Test
+    void defineDedupsAndDefineAfterServeStillFullHits() {
+        try (var cache = cache(new FakeModel(new FakeCodec(false)), 0, 1 << 20)) {
+            // traffic first: the prompt commits at chunk boundaries, no split-last single
+            generate(cache, prompt(1, 2, 3, 4, 5), 7);
+            // define AFTER the serve: the capped resume must still commit the final single -
+            // an uncapped resume would dedup into the chunk and silently break the promise
+            cache.define(prompt(1, 2, 3, 4, 5));
+            Served hit = generate(cache, prompt(1, 2, 3, 4, 5), 8);
+            assertEquals(PromptCache.Tier.BLOCKS, hit.tier());
+            assertEquals(4, hit.restored(), "define-after-serve still yields the full hit");
+
+            // define twice: pure dedup - no new blocks, no bytes, no budget-refusal misread
+            int blocksBefore = cache.sample().blocks();
+            long bytesBefore = cache.sample().bytes();
+            cache.define(prompt(1, 2, 3, 4, 5));
+            assertEquals(blocksBefore, cache.sample().blocks(), "a re-define adds no blocks");
+            assertEquals(bytesBefore, cache.sample().bytes(), "and no bytes");
+        }
+    }
+
+    @Test
+    void aHotHitWithAThrowingPassIsDiscardedButItsBlocksSurvive() {
+        try (var cache = cache(new FakeModel(new FakeCodec(false)), 2, 1 << 20)) {
+            generate(cache, turns(new int[] {1, 2, 3}), 7, 8);
+            assertThrows(
+                    IllegalStateException.class,
+                    () ->
+                            cache.serve(
+                                    turns(new int[] {1, 2, 3}, new int[] {7, 8, 4}),
+                                    (state, serving) -> {
+                                        throw new IllegalStateException("torn mid-hit");
+                                    }));
+            assertEquals(0, cache.sample().hotSessions(), "the acquired session is gone");
+            Served echo = generate(cache, turns(new int[] {1, 2, 3}, new int[] {7, 8, 5}));
+            assertEquals(PromptCache.Tier.BLOCKS, echo.tier(), "its committed blocks survive");
+            assertEquals(5, echo.restored());
+        }
+    }
+
+    @Test
+    void optionsRejectNonsenseInsteadOfBuildingAPathologicalCache() {
+        // int widens silently into the long slot: a transposed (budget, hot) pair must not
+        // become a million-session hot layer with a 4-byte budget
+        assertThrows(
+                IllegalArgumentException.class, () -> new PromptCache.Options(-1, 1, null, false));
+        assertThrows(
+                IllegalArgumentException.class, () -> new PromptCache.Options(1, -1, null, false));
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        PromptCache.of(
+                                new FakeModel(null), null, PromptCache.Options.inMemory(0, 0)));
+    }
+
+    @Test
+    void theGuardsFailLoudly() {
+        var cache = cache(new FakeModel(new FakeCodec(false)), 1, 1 << 20);
+        // empty prompts are a caller bug, not a model crash
+        assertThrows(IllegalArgumentException.class, () -> generate(cache, List.of()));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> generate(cache, prompt(new int[CONTEXT + 1])),
+                "past the context, before any ingest");
+        // a stashed Serving handle is dead once the pass returns
+        PromptCache.Serving[] stashed = new PromptCache.Serving[1];
+        cache.serve(
+                turns(new int[] {1, 2}),
+                (state, serving) -> {
+                    stashed[0] = serving;
+                    return null;
+                });
+        assertThrows(IllegalStateException.class, () -> stashed[0].tail(9));
+        // and a closed cache refuses everything
+        cache.close();
+        cache.close(); // idempotent
+        assertThrows(IllegalStateException.class, () -> generate(cache, prompt(1)));
+        assertThrows(IllegalStateException.class, cache::sample);
+        assertThrows(IllegalStateException.class, () -> cache.define(prompt(1, 2)));
+        assertThrows(IllegalStateException.class, cache::save);
+    }
+
     // ---- lifecycle --------------------------------------------------------------------------
 
     @Test
