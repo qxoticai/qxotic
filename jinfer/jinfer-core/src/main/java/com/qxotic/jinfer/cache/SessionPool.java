@@ -167,7 +167,13 @@ public final class SessionPool<S extends RuntimeState> {
         if (!tier1) {
             S state = recycled(fingerprints.length);
             if (state == null) state = freshState.get();
-            session = CachedSession.resume(model, cache, state, fingerprints, resumeLimit);
+            try {
+                session = CachedSession.resume(model, cache, state, fingerprints, resumeLimit);
+            } catch (RuntimeException | Error e) {
+                // a mid-restore throw would otherwise leak a full-context state to the Cleaner
+                if (state instanceof com.qxotic.jinfer.BaseState base) base.close();
+                throw e;
+            }
         }
         R result;
         try {

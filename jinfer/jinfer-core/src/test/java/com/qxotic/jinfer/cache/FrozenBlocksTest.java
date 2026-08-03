@@ -179,6 +179,54 @@ public final class FrozenBlocksTest {
                 assertEquals(BlockResumeTest.FakeState.rowAt(px), r.rows[px]);
         }
 
+        // THIRD boot: mount the twice-grown catalog, append again - the accumulating loop that
+        // a server's repeated restarts drive (a stale indexOffset/count bug surfaces exactly here)
+        long[] c = java.util.Arrays.copyOf(a, 15);
+        for (int i = 12; i < 15; i++) c[i] = 900 + i;
+        PromptCache<BlockResumeTest.FakeState> third =
+                new PromptCache<>(
+                        codec, CacheStore.inMemory(), 1 << 20, seed, FrozenBlocks.open(file, seed));
+        BlockResumeTest.FakeState t = new BlockResumeTest.FakeState();
+        PromptCache<BlockResumeTest.FakeState>.Block tt = third.resume(c, 15, t);
+        assertEquals(12, t.position, "third boot reuses the shared prefix");
+        t.ingestTo(15);
+        third.commit(tt, c, 12, 3, t);
+        third.appendTo(file);
+        assertEquals(3, FrozenBlocks.open(file, seed).blockCount(), "three boots, three blocks");
+
+        // SINGLE-WRITER LAW: a mount whose view went stale (another writer appended since) must
+        // refuse loudly instead of overwriting the other writer's blocks
+        PromptCache<BlockResumeTest.FakeState> stale =
+                new PromptCache<>(
+                        codec, CacheStore.inMemory(), 1 << 20, seed, FrozenBlocks.open(file, seed));
+        BlockResumeTest.FakeState st = new BlockResumeTest.FakeState();
+        long[] d = java.util.Arrays.copyOf(a, 13);
+        d[12] = 4242;
+        PromptCache<BlockResumeTest.FakeState>.Block sTip = stale.resume(d, 13, st);
+        st.ingestTo(13);
+        stale.commit(sTip, d, 12, 1, st);
+        // another writer grows the file after `stale` mounted
+        PromptCache<BlockResumeTest.FakeState> rival =
+                new PromptCache<>(
+                        codec, CacheStore.inMemory(), 1 << 20, seed, FrozenBlocks.open(file, seed));
+        BlockResumeTest.FakeState rv = new BlockResumeTest.FakeState();
+        long[] e = java.util.Arrays.copyOf(a, 13);
+        e[12] = 5353;
+        PromptCache<BlockResumeTest.FakeState>.Block rTip = rival.resume(e, 13, rv);
+        rv.ingestTo(13);
+        rival.commit(rTip, e, 12, 1, rv);
+        rival.appendTo(file);
+        var refused =
+                org.junit.jupiter.api.Assertions.assertThrows(
+                        java.io.IOException.class, () -> stale.appendTo(file));
+        assertTrue(
+                refused.getMessage().contains("another writer"),
+                "stale append must refuse, not overwrite: " + refused.getMessage());
+        assertEquals(
+                4,
+                FrozenBlocks.open(file, seed).blockCount(),
+                "the rival's append survives untouched");
+
         // crash simulation: old header + torn tail (append written, header flip lost)
         Path torn = Files.createTempFile("append-torn", ".jkv");
         torn.toFile().deleteOnExit();

@@ -233,6 +233,14 @@ public final class ChatEngine {
                     "cannot close the model from its streaming callback; cancel the stream and"
                             + " close after it ends");
         }
+        // the BLOCKING path's twin of the guard above: a ReplySink callback runs on the caller's
+        // own thread while it holds this reentrant lock - close() would proceed mid-decode and
+        // free state memory under the suspended loop
+        if (lock.isHeldByCurrentThread()) {
+            throw new IllegalStateException(
+                    "cannot close the model from inside its own generation; return from the"
+                            + " callback and close after the call ends");
+        }
         lock.lock();
         try {
             if (closed) return; // idempotent: the JDK arena close below is one-shot
@@ -368,7 +376,6 @@ public final class ChatEngine {
             int promptTokens,
             int[] parserSeed,
             List<String> stops,
-            boolean cachedView,
             boolean claimToolCalls) {
 
         /**
@@ -391,7 +398,6 @@ public final class ChatEngine {
                     promptTokens.length,
                     new int[0],
                     stops,
-                    false,
                     false);
         }
     }
@@ -472,7 +478,6 @@ public final class ChatEngine {
                 positions(encoded.prompt()),
                 parserSeed,
                 request.stops(),
-                request.cachedView(),
                 !request.tools().isEmpty());
     }
 
@@ -709,11 +714,11 @@ public final class ChatEngine {
     }
 
     /**
-     * One generation pass, cheapest source first: a pooled live session when the prompt strictly
-     * extends one (zero restore, only the delta prefills), else the prompt tree for cached views
-     * (block restore, resume capped one short so the final block re-ingests and leaves fresh
-     * logits), else a fresh state. On success the finished state (prompt + reply KV) returns to the
-     * pool for the conversation's next turn.
+     * One generation pass, routed by what the model supports: codec-less models prefill on the
+     * recycled bare context (no tiers); coarse-residue codecs restore the longest defined prefix
+     * and commit nothing; fine codecs go through the pool (tier 1 append-only, else a tier-2 block
+     * restore, else fresh) and commit prompt chunks plus the per-token reply tail as they go. On
+     * success the pooled path's state (prompt + reply KV) returns for the next turn.
      */
     private <S extends RuntimeState> Outcome run(
             LanguageModel<?, ?, S> model,
@@ -723,6 +728,17 @@ public final class ChatEngine {
             long timeoutNanos,
             Generator.TokenSink sink) {
         int total = positions(prompt);
+        // fail FAST, before any chunk of an oversized prompt is ingested - the ports all guard
+        // their own capacity, but the engine must not depend on that, and must not burn a partial
+        // prefill (committing its blocks) only to fail mid-prompt
+        if (total > model.config().contextLength()) {
+            throw new IllegalArgumentException(
+                    "Prompt exceeds context length ("
+                            + total
+                            + " tokens, "
+                            + model.config().contextLength()
+                            + " available)");
+        }
         if (prompts == null) {
             // no state codec: no tiers, every prompt prefills - but the allocation is recycled
             S state = bareState(model);
@@ -746,7 +762,7 @@ public final class ChatEngine {
             List<Batch> rest;
             try {
                 restored = CachedSession.resume(model, tree(), state, prompt, total - 1).position();
-                rest = remainder(prompt, restored);
+                rest = CachedSession.tail(prompt, restored);
             } catch (RuntimeException | Error e) {
                 ((com.qxotic.jinfer.BaseState) state).close();
                 throw e;
@@ -790,6 +806,7 @@ public final class ChatEngine {
                                 @Override
                                 public void onIngested(int token) {
                                     session.adopt(token);
+                                    sink.onIngested(token); // the engine augments, never starves
                                 }
                             };
                     Generator.GenerationResult result =
@@ -801,7 +818,10 @@ public final class ChatEngine {
                                     maxTokens,
                                     timeoutNanos,
                                     adopting);
-                    return new Outcome(result, restored, tier1 ? Tier.SESSION : Tier.BLOCKS);
+                    return new Outcome(
+                            result,
+                            restored,
+                            tier1 ? Tier.SESSION : restored > 0 ? Tier.BLOCKS : Tier.FRESH);
                 });
     }
 
@@ -837,30 +857,6 @@ public final class ChatEngine {
         int total = 0;
         for (Batch b : prompt) total += b.count();
         return total;
-    }
-
-    /** The prompt past its first {@code skip} positions - what a restored state still ingests. */
-    private static List<Batch> remainder(List<Batch> prompt, int skip) {
-        if (skip == 0) return prompt;
-        List<Batch> rest = new ArrayList<>();
-        int at = 0;
-        for (Batch b : prompt) {
-            int end = at + b.count();
-            if (end > skip) {
-                if (at >= skip) {
-                    rest.add(b);
-                } else {
-                    // a restore boundary inside a batch can only land in a token span - block
-                    // boundaries are group (batch-list) boundaries, and media commits whole
-                    int[] ids = ((Batch.Input.Tokens) b.input()).ids();
-                    rest.add(
-                            Batch.prefill(
-                                    java.util.Arrays.copyOfRange(ids, skip - at, ids.length)));
-                }
-            }
-            at = end;
-        }
-        return rest;
     }
 
     /**
@@ -943,12 +939,26 @@ public final class ChatEngine {
                     coarse
                             ? List.of(prompt.subList(0, Math.max(1, prompt.size() - 1)))
                             : prompt.stream().map(List::of).toList());
+            // a define exists ONLY to cache: a tip the budget detached means nothing was kept,
+            // and returning quietly would let every later serve re-prefill with no diagnostic
+            if (s.detached()) {
+                throw new IllegalStateException(
+                        "cached prompt not fully retained: the cache budget refused it"
+                                + " (-Djinfer.promptCacheMB, currently "
+                                + (RuntimeFlags.PROMPT_CACHE_BUDGET_BYTES >> 20)
+                                + " MB)");
+            }
         } finally {
             ((com.qxotic.jinfer.BaseState) state).close(); // define-time scratch: free now
         }
     }
 
-    /** Freezes the whole tree (mounted base + everything defined) into one artifact. */
+    /**
+     * Freezes the whole tree (mounted base + everything defined) into one artifact - a REWRITE.
+     * Never point it at the file this engine mounted (truncating a live mapping mid-copy); {@link
+     * PromptCache#freeze} rejects that, and {@link #appendPrompts} is the write-back for the
+     * mounted catalog itself.
+     */
     public void freezePrompts(Path out) {
         lock.lock();
         try {
@@ -962,10 +972,14 @@ public final class ChatEngine {
     }
 
     /**
-     * The accumulating-catalog write-back: appends every block committed since mount (or since
-     * construction) to {@code out}, creating the artifact when it does not exist. Unlike {@link
-     * #freezePrompts} this is APPEND-ONLY and safe against the very file this engine has mounted -
-     * a server can reopen its own catalog on the next boot and keep growing it.
+     * The accumulating-catalog write-back: appends every block committed since mount to {@code
+     * out}, creating the artifact when it does not exist. Unlike {@link #freezePrompts} this is
+     * APPEND-ONLY and safe against the very file this engine has mounted - a server can reopen its
+     * own catalog on the next boot and keep growing it.
+     *
+     * <p>ONE-SHOT per run when this engine CREATED the artifact rather than mounting it: the fresh
+     * file is not retro-mounted as the append base, so a second call in the same run throws.
+     * Callers wanting periodic write-back must boot from an existing (possibly empty) artifact.
      */
     public void appendPrompts(Path out) {
         lock.lock();
@@ -981,7 +995,12 @@ public final class ChatEngine {
 
     /** Test seam: the tree's stats line ("blocks=.. hits=.." - see PromptCache.stats). */
     public String promptStats() {
-        return tree().stats();
+        lock.lock(); // the tree is lock-confined; even a stats read honors that
+        try {
+            return tree().stats();
+        } finally {
+            lock.unlock();
+        }
     }
 
     /**

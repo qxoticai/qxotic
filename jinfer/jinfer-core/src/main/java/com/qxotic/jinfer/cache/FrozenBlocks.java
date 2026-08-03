@@ -247,6 +247,33 @@ public final class FrozenBlocks {
         if (fresh.isEmpty()) return;
         try (FileChannel ch =
                 FileChannel.open(file, StandardOpenOption.READ, StandardOpenOption.WRITE)) {
+            // single-writer law, enforced: offsets below come from THIS instance's parsed view,
+            // so a writer that mounted before another writer appended would overwrite its blocks
+            // and orphan them - silent last-writer-wins. The advisory lock serializes writers;
+            // the header re-read turns a stale view into a loud refusal instead of data loss.
+            try (java.nio.channels.FileLock ignored = ch.lock()) {
+                ByteBuffer head = ByteBuffer.allocate(12).order(ByteOrder.LITTLE_ENDIAN);
+                ch.read(head, COUNT_OFFSET);
+                head.flip();
+                int diskCount = head.getInt();
+                long diskIndexOffset = head.getLong();
+                if (diskCount != entries.size() || diskIndexOffset != indexOffset) {
+                    throw new IOException(
+                            "catalog "
+                                    + file
+                                    + " changed since it was mounted ("
+                                    + diskCount
+                                    + " blocks on disk, "
+                                    + entries.size()
+                                    + " mounted): another writer appended; refusing to overwrite");
+                }
+                appendLocked(ch, fresh);
+            }
+        }
+    }
+
+    private void appendLocked(FileChannel ch, List<Entry> fresh) throws IOException {
+        {
             long off = align(indexOffset + (long) entries.size() * INDEX_ENTRY_BYTES);
             long[] offsets = new long[fresh.size()];
             for (int i = 0; i < fresh.size(); i++) {

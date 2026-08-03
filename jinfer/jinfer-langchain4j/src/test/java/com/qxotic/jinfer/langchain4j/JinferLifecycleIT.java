@@ -139,9 +139,10 @@ class JinferLifecycleIT {
 
     @Test
     void theStatelessDefaultKeepsNoConversationBetweenRequests() {
-        // "nothing persists" has to mean the KV too: the pooled allocation is wiped when its
-        // reply ends, so an unrelated request cannot see the previous conversation - and an
-        // identical request must re-prefill rather than extend anything
+        // the POOL keeps nothing: the allocation is wiped when its reply ends, so an unrelated
+        // request cannot see the previous conversation, and an identical request is never an
+        // append-only EXTENSION of live state. (It may still restore KV from the block tree -
+        // that is the separate jinfer.promptCache tier, byte-identical by law.)
         Assumptions.assumeTrue(Files.exists(SMALL), "model not found: " + SMALL);
         try (JinferChatModel model = load()) {
             String first = model.chat(UserMessage.from("name a colour")).aiMessage().text();

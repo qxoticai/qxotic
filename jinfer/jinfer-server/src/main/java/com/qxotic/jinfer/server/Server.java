@@ -99,7 +99,8 @@ public final class Server {
                 "budget_bytes", sample.budgetBytes(),
                 "hits", sample.hits(),
                 "misses", sample.misses(),
-                "evictions", sample.evictions());
+                "evictions", sample.evictions(),
+                "refusals", sample.refusals());
     }
 
     private Running serve(LoadedModel<?> model, LLMOptions options) throws IOException {

@@ -39,7 +39,7 @@ import java.util.List;
  * <p>Three caching tiers, near-homonyms with distinct jobs: {@code withCachedPrompt} defines a LIVE
  * shared prefix (prefilled once, restored per request - the system-prompt/tools/few-shot case);
  * {@code Builder.cachedSessions} keeps finished CONVERSATION states warm for append-only multi-turn
- * reuse (ephemeral, nothing persists); {@code saveCachedPrompts}/{@code Builder.loadCachedPrompts}
+ * reuse (in-RAM, gone at close); {@code saveCachedPrompts}/{@code Builder.loadCachedPrompts}
  * persist the defined prompts as an immutable ARTIFACT that mounts zero-prefill in later processes.
  * None changes output - byte-identity to a cold run is the law.
  *
@@ -112,9 +112,14 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
      * A model view whose conversations all start with {@code prefix} (+ welded {@code tools}) -
      * prefilled ONCE into the engine's block tree, restored (not recomputed) on every chat.
      * Composable: calling this on a view branches on its prefix. Immutable, shares the base engine;
-     * the base model itself never touches the tree.
+     * a view's prefix is pinned intent, where the base model's traffic is cached best-effort.
      *
-     * <p>Typical shape - the base stays cold and stateless; only views touch the tree:
+     * <p>(The tree serves the BASE model too: under the default {@code jinfer.promptCache=true},
+     * every conversation on a codec model is resumed from and committed to it, bounded by {@code
+     * jinfer.promptCacheMB} with LRU eviction. {@code -Djinfer.promptCache=false} turns that
+     * retention off; defined views still work through an explicitly mounted artifact.)
+     *
+     * <p>Typical shape:
      *
      * <pre>{@code
      * var base = JinferChatModel.builder().modelPath(gguf).build();

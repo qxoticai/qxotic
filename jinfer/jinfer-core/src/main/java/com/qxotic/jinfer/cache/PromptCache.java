@@ -76,7 +76,7 @@ public final class PromptCache<S extends RuntimeState> {
     private final MessageDigest sha;
     private ByteBuffer scratch = ByteBuffer.allocate(4096).order(ByteOrder.LITTLE_ENDIAN);
     private long clock;
-    private long hits, misses, evictions, discards;
+    private long hits, misses, evictions, discards, refusals;
 
     /**
      * A writable cache layered over a read-only {@link FrozenBlocks} base: the artifact's blocks
@@ -252,6 +252,7 @@ public final class PromptCache<S extends RuntimeState> {
         int to = tip.to + len;
         long bytes = codec.blockBytes(len);
         if (!ensureBudget(bytes, tip)) { // budget refused: detach softly
+            refusals++;
             return DETACHED;
         }
         MemorySegment mem = store.allocate(bytes);
@@ -339,6 +340,14 @@ public final class PromptCache<S extends RuntimeState> {
      * cache layered over a frozen base re-freezes base and growth into one merged artifact.
      */
     public void freeze(java.nio.file.Path out) throws java.io.IOException {
+        if (base != null
+                && java.nio.file.Files.exists(out)
+                && java.nio.file.Files.isSameFile(base.file(), out)) {
+            // frozen blocks' mem are slices of that very file's mapping: TRUNCATE_EXISTING would
+            // pull the bytes out from under the copy loop (SIGBUS / corrupt artifact)
+            throw new IllegalStateException(
+                    "freeze(" + out + ") would rewrite the mounted artifact; use appendTo");
+        }
         List<Block> order = new ArrayList<>(blocks.size());
         java.util.ArrayDeque<Block> queue = new java.util.ArrayDeque<>();
         queue.add(sentinel);
@@ -429,14 +438,21 @@ public final class PromptCache<S extends RuntimeState> {
 
     /** A cache health reading: sizes now, counters cumulative since construction. */
     public record Sample(
-            int blocks, long bytes, long budgetBytes, long hits, long misses, long evictions) {}
+            int blocks,
+            long bytes,
+            long budgetBytes,
+            long hits,
+            long misses,
+            long evictions,
+            long refusals) {}
 
     /**
      * The same numbers {@link #stats()} formats, typed - for telemetry that has to subtract two
      * readings rather than print one.
      */
     public Sample sample() {
-        return new Sample(blocks.size(), store.usedBytes(), budgetBytes, hits, misses, evictions);
+        return new Sample(
+                blocks.size(), store.usedBytes(), budgetBytes, hits, misses, evictions, refusals);
     }
 
     public String stats() {
@@ -451,6 +467,8 @@ public final class PromptCache<S extends RuntimeState> {
                 + " evictions="
                 + evictions
                 + " discards="
-                + discards;
+                + discards
+                + " refusals="
+                + refusals;
     }
 }

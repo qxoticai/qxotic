@@ -309,6 +309,15 @@ public final class CachedSession<S extends RuntimeState> {
     }
 
     /**
+     * True when the budget refused a commit and DETACHED this session's tip: the state and stream
+     * stay valid (tier-1 reuse unaffected) but nothing further reaches the shared tree. Permanent
+     * for this session's lifetime - the cue for a definer to fail loudly rather than pretend.
+     */
+    public boolean detached() {
+        return !tip.live;
+    }
+
+    /**
      * Fingerprint stream length. Equals {@link #position()} while every ingestion goes through the
      * session.
      */

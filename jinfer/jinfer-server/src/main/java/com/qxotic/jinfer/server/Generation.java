@@ -99,8 +99,16 @@ final class Generation {
         return engine.cacheSample();
     }
 
-    /** Frees the engine's states and blocks; the weights arena stays the server's. */
+    private final java.util.concurrent.atomic.AtomicBoolean closed =
+            new java.util.concurrent.atomic.AtomicBoolean();
+
+    /**
+     * Frees the engine's states and blocks; the weights arena stays the server's. Idempotent: the
+     * shutdown hook re-runs close after an embedder's explicit one, and the second run must not
+     * re-append the catalog or log a false "failed to save".
+     */
     void close() {
+        if (!closed.compareAndSet(false, true)) return;
         if (cacheWriteBack != null) {
             // best-effort: a failed write-back must never block the engine's shutdown
             try {

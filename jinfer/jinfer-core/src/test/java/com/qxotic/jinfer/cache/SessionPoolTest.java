@@ -181,6 +181,7 @@ public final class SessionPoolTest {
      */
     @Test
     void recyclesAllocationsInsteadOfDropping() {
+        failures = 0;
         FakeModel model = new FakeModel();
         PromptCache<FakeState> cache =
                 new PromptCache<>(new FakeCodec(), CacheStore.inMemory(), 1 << 20, new byte[] {1});
@@ -230,6 +231,71 @@ public final class SessionPoolTest {
                 warm.withSession(model, cache, fresh, second, (session, tier1) -> session.state());
         check(recycled == pooled, "at capacity the LRU allocation is recycled, not dropped");
         check(allocations[0] == 1, "a full pool never allocates");
+
+        if (failures > 0) throw new AssertionError("failure(s) - see output above");
+    }
+
+    /**
+     * A budget refusal DETACHES the tip (the tree keeps nothing further) but the SESSION stays
+     * healthy: adopt keeps stream and state in lockstep on a dead tip, release POOLS it, and tier-1
+     * append-only reuse keeps working off the live KV. If adopt ever stopped appending once
+     * detached, every budget-pressured conversation would silently lose tier-1.
+     */
+    @Test
+    void aDetachedSessionStillPoolsAndServesTierOne() {
+        failures = 0;
+        FakeModel model = new FakeModel();
+        // budget = exactly the 3-token prompt block (3 * 8); the reply single is then refused:
+        // eviction cannot free room because the prompt block is the committing chain itself
+        PromptCache<FakeState> cache =
+                new PromptCache<>(new FakeCodec(), CacheStore.inMemory(), 24, new byte[] {1});
+        SessionPool<FakeState> pool = new SessionPool<>(1);
+
+        CachedSession<FakeState> a =
+                CachedSession.resume(model, cache, model.newState(0, 0), new long[0]);
+        a.ingest(List.of(Batch.prefill(new int[] {1, 2, 3})));
+        check(!a.detached(), "the prompt block fits the budget");
+        a.state().position += 1;
+        a.adopt(7);
+        check(a.detached(), "the reply single is refused: the tip detaches");
+        a.state().position += 1;
+        a.adopt(8);
+        check(a.length() == 5 && a.position() == 5, "adopt keeps lockstep on a dead tip");
+        pool.release(a);
+        check(pool.size() == 1, "a detached session still pools");
+        check(
+                pool.acquire(new long[] {1, 2, 3, 7, 8, 9}, 6) == a,
+                "tier-1 reuse survives the detach (live KV, not blocks)");
+        if (failures > 0) throw new AssertionError("failure(s) - see output above");
+    }
+
+    /**
+     * {@code close()} closes every pooled state AND the spare deterministically ({@code
+     * BaseState.close} frees an adopted arena now; these fakes borrow, so the observable is the
+     * closed flag - if the pool ever stopped closing them, nothing would flip it).
+     */
+    @Test
+    void closeClosesPooledStatesAndTheSpare() {
+        failures = 0;
+        FakeModel model = new FakeModel();
+        PromptCache<FakeState> cache =
+                new PromptCache<>(new FakeCodec(), CacheStore.inMemory(), 1 << 20, new byte[] {1});
+
+        FakeState pooled = new FakeState();
+        SessionPool<FakeState> warm = new SessionPool<>(1);
+        CachedSession<FakeState> s = CachedSession.resume(model, cache, pooled, new long[0]);
+        s.ingest(List.of(Batch.prefill(new int[] {1})));
+        warm.release(s);
+        warm.close();
+        check(pooled.isClosed(), "close reaches the pooled state");
+
+        FakeState spare = new FakeState();
+        SessionPool<FakeState> stateless = new SessionPool<>(0);
+        CachedSession<FakeState> t = CachedSession.resume(model, cache, spare, new long[0]);
+        t.ingest(List.of(Batch.prefill(new int[] {2})));
+        stateless.release(t); // parked as the wiped spare
+        stateless.close();
+        check(spare.isClosed(), "close reaches the spare");
 
         if (failures > 0) throw new AssertionError("failure(s) - see output above");
     }

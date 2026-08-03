@@ -34,6 +34,10 @@ public final class Generator {
      * The generated-token stream: sees EVERY sampled token in order, the trailing stop token
      * included, before the loop acts on it. Return false to abort the pass (the aborting token is
      * recorded but not ingested; finishReason "abort").
+     *
+     * <p>WRAPPERS MUST BE ANONYMOUS CLASSES, not lambdas: a lambda implements only {@link #onToken}
+     * and silently replaces {@link #onIngested} with the no-op default, starving step-time hooks
+     * downstream. Forward both methods.
      */
     @FunctionalInterface
     public interface TokenSink {
