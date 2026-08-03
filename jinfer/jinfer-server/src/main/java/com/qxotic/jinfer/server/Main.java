@@ -269,11 +269,11 @@ public class Main {
                 "  --raw-prompt                  bypass chat template and tokenize --prompt"
                         + " directly");
         out.println(
-                "  --cache <file>                instruct: persistent prompt cache - serves"
-                        + " matching prefixes, appends new prompts");
+                "  --cache <file>                persistent prompt cache (instruct + server) -"
+                        + " serves matching prefixes, appends new prompts");
         out.println(
-                "  --cache-ro <file>             instruct: like --cache but read-only - serves"
-                        + " matching prefixes, never writes");
+                "  --cache-ro <file>             like --cache but read-only - serves matching"
+                        + " prefixes, never writes");
         out.println();
         out.println("Interactive commands:");
         out.println("  /quit, /exit                  exit the chat");

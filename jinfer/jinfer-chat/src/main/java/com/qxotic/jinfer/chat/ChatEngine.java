@@ -951,6 +951,24 @@ public final class ChatEngine {
         }
     }
 
+    /**
+     * The accumulating-catalog write-back: appends every block committed since mount (or since
+     * construction) to {@code out}, creating the artifact when it does not exist. Unlike {@link
+     * #freezePrompts} this is APPEND-ONLY and safe against the very file this engine has mounted -
+     * a server can reopen its own catalog on the next boot and keep growing it.
+     */
+    public void appendPrompts(Path out) {
+        lock.lock();
+        try {
+            checkOpen();
+            tree().appendTo(out);
+        } catch (IOException e) {
+            throw new UncheckedIOException("failed to append cached prompts to " + out, e);
+        } finally {
+            lock.unlock();
+        }
+    }
+
     /** Test seam: the tree's stats line ("blocks=.. hits=.." - see PromptCache.stats). */
     public String promptStats() {
         return tree().stats();

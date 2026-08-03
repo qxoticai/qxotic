@@ -41,6 +41,9 @@ final class Generation {
     // class predates all of it and had its own of each; what remains here is the OpenAI wire.
     private final ChatEngine engine;
     private final Metrics metrics;
+    // --cache write-back target (null = none / read-only): the tree's fresh blocks append here
+    // at close, so the catalog a server accumulates survives its restarts
+    private final java.nio.file.Path cacheWriteBack;
 
     Generation(LoadedModel<?> chatModel, LLMOptions options, Metrics metrics) {
         this.metrics = metrics;
@@ -48,13 +51,47 @@ final class Generation {
         this.options = options;
         this.template = chatModel.template().orElse(null);
         this.specials = SpecialTokens.encoder(model.tokenizer());
+        java.nio.file.Path mount = null;
+        java.nio.file.Path writeBack = null;
+        if (options.promptCache() != null) {
+            if (chatModel.model().stateCodec().isEmpty()) {
+                // the guard the instruct path applies too: no codec, no blocks to mount or save
+                System.err.println(
+                        "--cache ignored: "
+                                + chatModel.model().getClass().getSimpleName()
+                                + " has no state codec");
+            } else {
+                boolean exists = java.nio.file.Files.exists(options.promptCache());
+                if (exists) {
+                    mount = options.promptCache();
+                } else if (options.promptCacheReadOnly()) {
+                    System.err.println(
+                            "read-only cache missing ("
+                                    + options.promptCache()
+                                    + "): serving without it");
+                }
+                // an explicit mount overrides jinfer.promptCache=false, but a NEW catalog under
+                // that flag would have no tree to freeze - there is nothing to accumulate
+                if (!options.promptCacheReadOnly() && (exists || RuntimeFlags.PROMPT_CACHE)) {
+                    writeBack = options.promptCache();
+                }
+            }
+        }
+        this.cacheWriteBack = writeBack;
         // borrowed weights: the server loaded the model and keeps its arena
         this.engine =
                 new ChatEngine(
                         chatModel,
                         options.modelPath().getFileName().toString(),
-                        null,
+                        mount,
                         RuntimeFlags.SESSIONS);
+        if (mount != null || writeBack != null) {
+            System.out.printf(
+                    "prompt cache: %s%s%s%n",
+                    options.promptCache(),
+                    mount != null ? " (mounted)" : " (new)",
+                    options.promptCacheReadOnly() ? " read-only" : ", saved at shutdown");
+        }
     }
 
     /** The block tree's health reading for {@code /props}; null = no tree behind this model. */
@@ -64,6 +101,15 @@ final class Generation {
 
     /** Frees the engine's states and blocks; the weights arena stays the server's. */
     void close() {
+        if (cacheWriteBack != null) {
+            // best-effort: a failed write-back must never block the engine's shutdown
+            try {
+                engine.appendPrompts(cacheWriteBack);
+                System.out.println("prompt cache saved: " + cacheWriteBack);
+            } catch (RuntimeException e) {
+                System.err.println("failed to save prompt cache " + cacheWriteBack + ": " + e);
+            }
+        }
         engine.close();
     }
 

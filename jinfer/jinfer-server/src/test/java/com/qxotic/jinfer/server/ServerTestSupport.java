@@ -17,6 +17,11 @@ final class ServerTestSupport {
 
     /** The all-defaults server config the tests run against: think off, ephemeral port, seed 42. */
     static LLMOptions options(Path gguf) {
+        return options(gguf, null, false);
+    }
+
+    /** As {@link #options(Path)} with a {@code --cache} / {@code --cache-ro} file. */
+    static LLMOptions options(Path gguf, Path promptCache, boolean readOnly) {
         return new LLMOptions(
                 gguf,
                 null,
@@ -36,8 +41,8 @@ final class ServerTestSupport {
                 false,
                 false,
                 false,
-                null,
-                false);
+                promptCache,
+                readOnly);
     }
 
     static String baseUrl(Server.Running server) {
