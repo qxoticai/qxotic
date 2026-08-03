@@ -24,5 +24,12 @@ inline com/qxotic/jinfer/FlashAttention.loadF32
 inline com/qxotic/jinfer/FlashAttention.loadF16
 inline com/qxotic/jinfer/FlashAttention.accumulate
 inline com/qxotic/jinfer/FlashAttention.qkTile
+inline com/qxotic/jinfer/FlashAttention.qkTile64F32
+inline com/qxotic/jinfer/FlashAttention.qkTileWideF32
+inline com/qxotic/jinfer/FlashAttention.qkRowF32
 inline com/qxotic/jinfer/FlashAttention.pvTile
+# the bodies pvTile dispatches to (per element type): inlining the dispatcher alone still leaves
+# a vector-crossing boundary
+inline com/qxotic/jinfer/FlashAttention.pvTileF16
+inline com/qxotic/jinfer/FlashAttention.pvTileF32
 inline com/qxotic/jinfer/FlashAttention.normalize

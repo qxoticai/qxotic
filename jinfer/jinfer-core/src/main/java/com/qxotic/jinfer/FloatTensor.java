@@ -105,6 +105,32 @@ public abstract class FloatTensor {
     static final boolean JIT_VECTOR_MATH =
             !System.getProperty("java.vm.version", "").contains("jvmci");
 
+    // Whether the active compiler intrinsifies the Vector API well enough to trust it on hot
+    // paths. Graal (JIT or native image) does; C2 runs the byte-unpack-heavy k-quant kernels
+    // largely through the un-intrinsified fallback (AbstractSpecies.dummyVector and
+    // Objects.checkIndex dominate the profile; every byte lanewise op costs 3-13x what Graal
+    // emits), so routing policies must not equate "vectors present" with "vectors fast" there.
+    // The active compiler must be read from the UseJVMCICompiler VM option - java.vm.version
+    // says "jvmci" on GraalVM even when it runs C2 via -XX:-UseJVMCICompiler.
+    static final boolean FAST_VECTOR_JIT = USE_VECTOR_API && jitIntrinsifiesVectors();
+
+    private static boolean jitIntrinsifiesVectors() {
+        if (System.getProperty("org.graalvm.nativeimage.imagecode") != null) {
+            // Native image (this also covers build-time class initialization, where the
+            // property is set to "buildtime"): Graal AOT-compiles the Vector API well.
+            return true;
+        }
+        try {
+            return Boolean.parseBoolean(
+                    java.lang.management.ManagementFactory.getPlatformMXBean(
+                                    com.sun.management.HotSpotDiagnosticMXBean.class)
+                            .getVMOption("UseJVMCICompiler")
+                            .getValue());
+        } catch (Throwable t) {
+            return false; // no JVMCI at all: stock C2
+        }
+    }
+
     // Shared GEMM tiling knobs (used by all quantized tensor types).
 
     // All-of-memory segment: vector loads/stores against it use absolute addresses with a

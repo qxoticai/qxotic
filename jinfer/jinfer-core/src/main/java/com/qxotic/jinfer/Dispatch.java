@@ -13,8 +13,8 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <ul>
  *   <li><b>prefill</b> (n&gt;1, compute-bound): jam → Vector tile → scalar.
- *   <li><b>decode</b> (n==1, bandwidth-bound): Vector matvec (when vectors) → jam (when none) →
- *       scalar.
+ *   <li><b>decode</b> (n==1, bandwidth-bound): Vector matvec (when the JIT compiles it well; C2
+ *       runs the k-quant dots un-intrinsified, so those go to jam there) → jam → scalar.
  * </ul>
  *
  * All the capability gates (F32 operands, dtype, alignment, vector width) live here, so the
@@ -142,11 +142,13 @@ final class Dispatch implements MatMul {
         MatMul chosen;
         if (n == 1) {
             // decode matvec: the scalar floor's dot() vectorizes per row in parallel - measured
-            // identical to
-            // the old specialized Vector gemv on this memory-bound kernel. jam only when there's no
-            // Vector API.
+            // identical to the old specialized Vector gemv on this memory-bound kernel. Exception:
+            // C2 runs the byte-unpack-heavy k-quant dots through the Vector API's un-intrinsified
+            // fallback (Q4_K_M decode 11 t/s vs jam's 31), so those go to jam there; the dense
+            // dots stay Java even on C2 (Q8_0 measured 42 via dot vs 29 via jam).
+            boolean slowDot = !FloatTensor.FAST_VECTOR_JIT && bytePackedDot(t);
             chosen =
-                    FloatTensor.USE_VECTOR_API
+                    FloatTensor.USE_VECTOR_API && !slowDot
                             ? scalar
                             : (jam != null && f32io && jamSupports(t, k) ? jam : scalar);
         } else {
@@ -160,6 +162,18 @@ final class Dispatch implements MatMul {
                             : vector != null && f32io && gemmApplies(t, k, wOff) ? vector : scalar;
         }
         chosen.mm(w, wOff, wStride, a, aOff, aStride, c, cOff, cStride, m, n, k);
+    }
+
+    /**
+     * dtypes whose vector dot C2 executes largely un-intrinsified (the k-quants' byte shift/or/sub
+     * unpack chains; measured Q4_K_M decode collapse). The other packed types are unmeasured on C2
+     * and keep the status-quo Java dot.
+     */
+    private static boolean bytePackedDot(GGMLType t) {
+        return switch (t) {
+            case Q4_K, Q5_K, Q6_K -> true;
+            default -> false;
+        };
     }
 
     /**
