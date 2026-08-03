@@ -38,6 +38,14 @@ public final class Generator {
     @FunctionalInterface
     public interface TokenSink {
         boolean onToken(int token);
+
+        /**
+         * Fired right after {@code token} is INGESTED - the state's frontier includes it. The
+         * step-time hook for per-position accounting (a cache commit must save at the frontier:
+         * ring rows alias and residues move, so it cannot be reconstructed later). Never fired for
+         * the final sampled token, which the loop does not ingest.
+         */
+        default void onIngested(int token) {}
     }
 
     /**
@@ -168,6 +176,26 @@ public final class Generator {
         boolean[] aborted = {false};
         boolean[] deadlineHit = {false};
         IntSequence responseTokens;
+        // an anonymous class, NOT a lambda: the deadline wrapper must forward onIngested too - a
+        // lambda would silently replace it with the interface default and starve step-time hooks
+        TokenSink guarded =
+                new TokenSink() {
+                    @Override
+                    public boolean onToken(int token) {
+                        boolean keepGoing = sink == null || sink.onToken(token);
+                        if (!keepGoing) aborted[0] = true;
+                        if (System.nanoTime() >= deadlineNanos) {
+                            deadlineHit[0] = true;
+                            return false;
+                        }
+                        return keepGoing;
+                    }
+
+                    @Override
+                    public void onIngested(int token) {
+                        if (sink != null) sink.onIngested(token);
+                    }
+                };
         synchronized (model) { // generations on a shared model are strictly serialized
             responseTokens =
                     decodeLoop(
@@ -177,15 +205,7 @@ public final class Generator {
                             stopTokens,
                             actualMaxTokens,
                             sampler,
-                            token -> {
-                                boolean keepGoing = sink == null || sink.onToken(token);
-                                if (!keepGoing) aborted[0] = true;
-                                if (System.nanoTime() >= deadlineNanos) {
-                                    deadlineHit[0] = true;
-                                    return false;
-                                }
-                                return keepGoing;
-                            },
+                            guarded,
                             prefillDoneNanos);
         }
         long endNanos = System.nanoTime();
@@ -257,6 +277,7 @@ public final class Generator {
                 if (stopTokens.contains(nextToken) || !keepGoing) break;
                 if (generated.size() >= maxNewTokens || state.position() >= contextLength) break;
                 model.ingest(state, Batch.step(nextToken));
+                if (onTokenGenerated != null) onTokenGenerated.onIngested(nextToken);
             } finally {
                 if (decode != null) {
                     decode.end();

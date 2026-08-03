@@ -776,6 +776,22 @@ public final class ChatEngine {
                     session.ingestGroups(groups);
                     @SuppressWarnings("unchecked")
                     S state = (S) session.state();
+                    // the decode joins the session STEP-TIME, each ingested token its own block:
+                    // the next turn's echo continues append-only, and a TRUNCATED echo (stop-cut,
+                    // edited tail) still resumes token-exact - the tail keeps every position
+                    // resumable, only interior content is block-coarse
+                    Generator.TokenSink adopting =
+                            new Generator.TokenSink() {
+                                @Override
+                                public boolean onToken(int token) {
+                                    return sink.onToken(token);
+                                }
+
+                                @Override
+                                public void onIngested(int token) {
+                                    session.adopt(token);
+                                }
+                            };
                     Generator.GenerationResult result =
                             generate(
                                     model,
@@ -784,13 +800,7 @@ public final class ChatEngine {
                                     sampler,
                                     maxTokens,
                                     timeoutNanos,
-                                    sink);
-                    // bring the decode back into the session: the reply extends the stream and
-                    // commits as a block, so the next turn's echo continues append-only
-                    int ingested = state.position() - total;
-                    if (ingested > 0) {
-                        session.adopt(result.tokens().subSequence(0, ingested).toArray());
-                    }
+                                    adopting);
                     return new Outcome(result, restored, tier1 ? Tier.SESSION : Tier.BLOCKS);
                 });
     }

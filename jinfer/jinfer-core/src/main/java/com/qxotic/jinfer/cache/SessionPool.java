@@ -68,6 +68,20 @@ public final class SessionPool<S extends RuntimeState> {
      * what "the default keeps the model stateless" has to mean.
      */
     void release(CachedSession<S> session) {
+        if (session.length() != session.state().position()) {
+            // a session whose stream and state disagree must NEVER pool: its stream would match a
+            // future prompt while the state holds different content - silent poisoning. This is a
+            // caller bug (every ingestion and adoption must go through the session); free the
+            // state and keep serving.
+            System.err.println(
+                    "jinfer: discarding desynced session (stream "
+                            + session.length()
+                            + " != state "
+                            + session.state().position()
+                            + ")");
+            close(session);
+            return;
+        }
         if (capacity == 0) {
             S state = session.state();
             if (spare == null) {

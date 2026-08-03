@@ -85,13 +85,28 @@ public final class SessionPoolTest {
                 new PromptCache<>(new FakeCodec(), CacheStore.inMemory(), 1 << 20, new byte[] {1});
         SessionPool<FakeState> pool = new SessionPool<>(2);
 
-        // Conversation A: [1,2,3] ingested, then a decode-loop reply [7,8] adopted.
+        // Conversation A: [1,2,3] ingested, then a decode-loop reply [7,8] adopted STEP-TIME
+        // (the generator ingests each token on the state, then fires the after-ingest hook).
         CachedSession<FakeState> a =
                 CachedSession.resume(model, cache, model.newState(0, 0), new long[0]);
         a.ingest(List.of(Batch.prefill(new int[] {1, 2, 3})));
-        a.state().position += 2; // generator steps the state directly
-        a.adopt(new int[] {7, 8});
+        a.state().position += 1;
+        a.adopt(7);
+        a.state().position += 1;
+        a.adopt(8);
         check(a.length() == 5 && a.position() == 5, "adopt keeps stream and state in lockstep");
+
+        // THE APPEND-ONLY CONVERSATION CONTRACT: the adopted tail keeps EVERY position resumable
+        // (single-token blocks, like step()), so an echo that truncates the reply mid-way - a
+        // stop-cut or edited tail - resumes token-exact at its own divergence, not at the last
+        // chunk boundary. [1,2,3,7,99] shares 4 positions with A's stream; a one-block reply
+        // would resume only the 3-position prompt chunk.
+        CachedSession<FakeState> truncated =
+                CachedSession.resume(
+                        model, cache, model.newState(0, 0), new long[] {1, 2, 3, 7, 99}, 4);
+        check(
+                truncated.position() == 4,
+                "a mid-reply echo resumes at its own cut (got " + truncated.position() + ")");
         pool.release(a);
 
         // Append-only follow-up: A's whole stream [1,2,3,7,8] prefixes the request -> tier 1.
@@ -127,6 +142,16 @@ public final class SessionPoolTest {
         check(
                 pool.acquire(tooLong, tooLong.length) == null,
                 "request past contextCapacity is not pooled onto the state");
+
+        // A desynced session (state stepped without adoption - a caller bug) must never pool:
+        // its stream would match a future prompt while the state holds different content.
+        CachedSession<FakeState> desynced =
+                CachedSession.resume(model, cache, model.newState(0, 0), new long[0]);
+        desynced.ingest(List.of(Batch.prefill(new int[] {6})));
+        desynced.state().position += 3; // decode tokens never adopted
+        int pooled = pool.size();
+        pool.release(desynced);
+        check(pool.size() == pooled, "a desynced session is discarded, not pooled");
 
         // LRU eviction: capacity 2; releasing C evicts the least-recent (B).
         CachedSession<FakeState> c =

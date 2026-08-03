@@ -269,11 +269,36 @@ public final class CachedSession<S extends RuntimeState> {
     }
 
     /**
-     * Adopts decode-loop tokens that were ingested directly on the state (the generator steps the
-     * state itself, not the session): appends their fingerprints and commits them as ONE block -
-     * the right granularity, since a block's fixed residue would otherwise be duplicated per decode
-     * token. The caller passes exactly the ingested tokens ({@code state.position() - length()} of
-     * them - a trailing stop or budget-final token is sampled but never ingested); {@code commit}'s
+     * Records ONE decode token the generator just ingested (the state's frontier includes it):
+     * appends its fingerprint and commits it as its own single-token block - {@link #step} minus
+     * the ingestion. Call it step-time, from the decode loop's after-ingest hook; a commit must
+     * save at the frontier (ring rows alias, residues move), which is why there is no per-token
+     * back-fill overload.
+     *
+     * <p>This granularity is the APPEND-ONLY CONVERSATION CONTRACT: interior content resumes at
+     * block boundaries, but the stream's tail - the reply the next request will echo - keeps EVERY
+     * position resumable, so an echo that truncates at a stop string or edits the trailing text
+     * resumes token-exact instead of re-prefilling from the last chunk boundary.
+     *
+     * <p>Cost: one residue per decode token. Free where the residue is ~0 (dense KV, ring rows);
+     * lfm2's ~340KB conv residue makes long replies heavy - if that ever matters, the upgrade path
+     * is compacting a reply's singles into one block once the next turn extends past them, not
+     * coarsening the tail.
+     */
+    public void adopt(int token) {
+        append(token);
+        tip = cache.commit(tip, fp, len - 1, 1, state);
+    }
+
+    /**
+     * Bulk adoption of decode-loop tokens ingested directly on the state, committed as ONE block
+     * saved at the frontier (sound exactly like a prompt chunk: rows and residue are read at the
+     * position the state is actually at) - the speculative-decode shape, where several accepted
+     * tokens land on the state before control returns. For the serving path's reply tail, prefer
+     * per-token {@link #adopt(int)}: one bulk block resumes only at its end.
+     *
+     * <p>The caller passes exactly the ingested tokens ({@code state.position() - length()} of them
+     * - a trailing stop or budget-final token is sampled but never ingested); {@code commit}'s
      * position check enforces the accounting.
      */
     public void adopt(int[] ingested) {
