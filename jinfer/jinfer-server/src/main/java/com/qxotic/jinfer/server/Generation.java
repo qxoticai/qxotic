@@ -57,9 +57,9 @@ final class Generation {
                         RuntimeFlags.SESSIONS);
     }
 
-    /** Whether prompts are served through the engine's block tree - the truth {@code /props}. */
-    boolean promptCaching() {
-        return engine.promptCaching();
+    /** The block tree's health reading for {@code /props}; null = no tree behind this model. */
+    com.qxotic.jinfer.cache.PromptCache.Sample cacheSample() {
+        return engine.cacheSample();
     }
 
     /** Frees the engine's states and blocks; the weights arena stays the server's. */

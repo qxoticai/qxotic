@@ -172,6 +172,10 @@ public final class ChatEngine {
             freeOwnedWeights();
             throw e;
         }
+        // the first reading exists from construction, so /props and the gauge never report a
+        // null "no data yet" state distinct from an empty cache (single-threaded here: the tree
+        // was just built and nothing else can touch it)
+        if (prompts != null) this.cacheSnapshot = prompts.sample();
         // registered after the cache exists, and after every throwing step: publishing `this`
         // to a registry from a constructor that may still fail would hand out a half-built engine
         this.cacheGauge = new Telemetry.CacheGauge(modelName, () -> cacheSnapshot);
@@ -905,6 +909,7 @@ public final class ChatEngine {
         try {
             checkOpen();
             defineOn(loaded.model(), tree(), prompt);
+            cacheSnapshot = prompts.sample(); // a define changes blocks/bytes like a pass does
         } finally {
             lock.unlock();
         }
@@ -969,9 +974,14 @@ public final class ChatEngine {
         }
     }
 
-    /** Whether prompts are served through the block tree (codec present, jinfer.promptCache on). */
-    public boolean promptCaching() {
-        return prompts != null;
+    /**
+     * The block tree's latest health reading, or null when there is no tree (codec-less model, or
+     * {@code -Djinfer.promptCache=false}). Safe from any thread: the tree itself is confined to the
+     * generation lock, so this returns the snapshot published after each pass - what the JFR gauge
+     * samples and what a server's /props reports.
+     */
+    public PromptCache.Sample cacheSample() {
+        return cacheSnapshot;
     }
 
     @SuppressWarnings("unchecked")

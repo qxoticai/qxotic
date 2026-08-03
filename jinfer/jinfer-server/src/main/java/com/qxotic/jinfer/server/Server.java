@@ -84,6 +84,24 @@ public final class Server {
         return new Server(model, options).serve(model, options);
     }
 
+    /**
+     * The block tree's health for {@code /props}, in the block-cache vocabulary (the June-era
+     * {@code warm_tokens}/{@code dense_hits} keys described machinery the 2026-07 redesign
+     * deleted): sizes now, counters cumulative since the engine was built.
+     */
+    private Map<String, Object> promptCacheProps() {
+        var sample = generation.cacheSample();
+        if (sample == null) return Map.of("enabled", false);
+        return Map.of(
+                "enabled", true,
+                "blocks", sample.blocks(),
+                "bytes", sample.bytes(),
+                "budget_bytes", sample.budgetBytes(),
+                "hits", sample.hits(),
+                "misses", sample.misses(),
+                "evictions", sample.evictions());
+    }
+
     private Running serve(LoadedModel<?> model, LLMOptions options) throws IOException {
         HttpServer server =
                 HttpServer.create(new InetSocketAddress(options.host(), options.port()), 0);
@@ -140,7 +158,7 @@ public final class Server {
                                 "n_ctx", model.model().config().contextLength(),
                                 "n_batch", RuntimeFlags.MAX_PROMPT_SEQUENCE_LENGTH,
                                 "n_vocab", model.model().config().vocabularySize(),
-                                "prompt_cache", Map.of("enabled", generation.promptCaching())));
+                                "prompt_cache", promptCacheProps()));
         Function<Map<String, Object>, Object> tokenize =
                 request ->
                         Map.of(

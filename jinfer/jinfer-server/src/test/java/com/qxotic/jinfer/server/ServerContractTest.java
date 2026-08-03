@@ -128,6 +128,27 @@ class ServerContractTest {
         }
     }
 
+    /**
+     * /props reports the block tree's real health, not a hardcoded flag: a served request commits
+     * blocks and counts a lookup, and an operator polling /props must see that. (The June-era
+     * warm_tokens/dense_hits keys died with the machinery they described; these are the block-cache
+     * vocabulary.)
+     */
+    @Test
+    void propsReportTheCacheTreesHealth() throws Exception {
+        post("/v1/chat/completions", chatBody("warm the tree"));
+        Map<String, Object> cache =
+                (Map<String, Object>) json(get("/props").body()).get("prompt_cache");
+        assertEquals(Boolean.TRUE, cache.get("enabled"), String.valueOf(cache));
+        assertTrue(
+                ((Number) cache.get("blocks")).longValue() > 0, "a served pass commits: " + cache);
+        assertTrue(((Number) cache.get("budget_bytes")).longValue() > 0, String.valueOf(cache));
+        long lookups =
+                ((Number) cache.get("hits")).longValue()
+                        + ((Number) cache.get("misses")).longValue();
+        assertTrue(lookups > 0, "a served pass consults the tree: " + cache);
+    }
+
     @Test
     void tokenizeAndDetokenizeRoundTrip() throws Exception {
         Map<String, Object> tokens =
