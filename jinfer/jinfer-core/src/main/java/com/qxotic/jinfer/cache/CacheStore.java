@@ -12,10 +12,22 @@ import java.util.IdentityHashMap;
  * (allocated → filled once → freed; only the generation worker): nothing reads a blob after free. A
  * Cleaner backstop covers an abandoned (dropped, unclosed) store: its remaining blobs degrade to
  * GC-eventually instead of leaking - shared arenas have no Cleaner of their own.
+ *
+ * <p>NATIVE IMAGE: GraalVM's SharedArenaSupport is mutually exclusive with VectorAPISupport, and
+ * the kernels are non-negotiable - in the image every blob uses an automatic arena instead, so
+ * frees degrade to GC-eventual there (the budget accounting stays exact either way).
  */
 public final class CacheStore implements AutoCloseable {
 
     private static final java.lang.ref.Cleaner CLEANER = java.lang.ref.Cleaner.create();
+
+    private static void closeArena(Arena arena) {
+        try {
+            arena.close();
+        } catch (UnsupportedOperationException ignored) {
+            // an automatic arena (native image) frees at GC; accounting already dropped it
+        }
+    }
 
     private final IdentityHashMap<MemorySegment, Arena> blobs = new IdentityHashMap<>();
     private final java.lang.ref.Cleaner.Cleanable backstop = CLEANER.register(this, sweepOf(blobs));
@@ -32,7 +44,7 @@ public final class CacheStore implements AutoCloseable {
     private static Runnable sweepOf(IdentityHashMap<MemorySegment, Arena> blobs) {
         return () -> {
             synchronized (blobs) {
-                blobs.values().forEach(Arena::close);
+                blobs.values().forEach(CacheStore::closeArena);
                 blobs.clear();
             }
         };
@@ -40,12 +52,12 @@ public final class CacheStore implements AutoCloseable {
 
     /** Allocates a zero-filled writable blob of {@code bytes}. */
     public MemorySegment allocate(long bytes) {
-        Arena arena = Arena.ofShared();
+        Arena arena = com.qxotic.jinfer.Arenas.newShared();
         MemorySegment blob;
         try {
             blob = arena.allocate(bytes, 64);
         } catch (RuntimeException | Error e) {
-            arena.close(); // blobs are GB-scale: a failed allocation must not leak
+            closeArena(arena); // blobs are GB-scale: a failed allocation must not leak
             throw e;
         }
         synchronized (blobs) {
@@ -63,7 +75,7 @@ public final class CacheStore implements AutoCloseable {
             if (arena != null) used -= blob.byteSize();
         }
         if (arena == null) throw new IllegalArgumentException("blob not allocated by this store");
-        arena.close();
+        closeArena(arena);
     }
 
     /** Total live bytes (for budget enforcement). May be read from handler threads. */

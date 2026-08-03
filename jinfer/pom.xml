@@ -310,16 +310,23 @@
               <buildArg>-H:+UnlockExperimentalVMOptions</buildArg>
               <buildArg>-H:+VectorAPISupport</buildArg>
               <buildArg>-H:+ForeignAPISupport</buildArg>
+              <!-- SharedArenaSupport is mutually exclusive with VectorAPISupport on every current
+                   builder (verified through Oracle GraalVM 25.2.4+7.1: the check fires once the
+                   vector module is actually in the image), so the image runs with Arenas' ofAuto
+                   degrade (GC-eventual frees). When GraalVM lifts the restriction, re-enable real
+                   shared arenas with two args here: -H:+SharedArenaSupport and
+                   -Djinfer.sharedArenas=true (the Arenas hook already honors it). -->
               <buildArg>--enable-preview</buildArg>
               <buildArg>--add-modules</buildArg>
               <buildArg>${jinfer.image.addModules}</buildArg>
               <buildArg>--enable-native-access=ALL-UNNAMED</buildArg>
               <buildArg>-J--enable-native-access=ALL-UNNAMED</buildArg>
               <buildArg>--initialize-at-build-time=com.qxotic.</buildArg>
-              <!-- LeakWatch for two reasons: its Cleaner cannot live in the image heap (the daemon
-                   thread does not survive the build), and -Djinfer.leakDetection is a RUN-time flag
-                   that build-time initialization would freeze to the builder's value. -->
-              <buildArg>--initialize-at-run-time=com.qxotic.jinfer.RuntimeFlags,com.qxotic.jinfer.server.ServerFlags,com.qxotic.jinfer.Parallel,com.qxotic.jinfer.MatMul,com.qxotic.jinfer.Dispatch,com.qxotic.jinfer.JamMatMul,com.qxotic.jinfer.LeakWatch,com.qxotic.jinfer.models.gemma4.VisionPreprocess,com.qxotic.jam.NativeJAM,com.qxotic.jam.NativeLoader</buildArg>
+              <!-- LeakWatch, BaseState and CacheStore for the same reason: their Cleaners cannot
+                   live in the image heap (the daemon thread does not survive the build); LeakWatch
+                   additionally because -Djinfer.leakDetection is a RUN-time flag that build-time
+                   initialization would freeze to the builder's value. -->
+              <buildArg>--initialize-at-run-time=com.qxotic.jinfer.RuntimeFlags,com.qxotic.jinfer.server.ServerFlags,com.qxotic.jinfer.Parallel,com.qxotic.jinfer.MatMul,com.qxotic.jinfer.Dispatch,com.qxotic.jinfer.JamMatMul,com.qxotic.jinfer.LeakWatch,com.qxotic.jinfer.LeakWatch$Holder,com.qxotic.jinfer.BaseState,com.qxotic.jinfer.cache.CacheStore,com.qxotic.jinfer.models.gemma4.VisionPreprocess,com.qxotic.jam.NativeJAM,com.qxotic.jam.NativeLoader</buildArg>
               <buildArg>-H:IncludeResources=com/qxotic/jam/native/.*</buildArg>
               <buildArg>-Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0</buildArg>
               <buildArg>-Djinfer.PreloadGGUF=${jinfer.PreloadGGUF}</buildArg>
