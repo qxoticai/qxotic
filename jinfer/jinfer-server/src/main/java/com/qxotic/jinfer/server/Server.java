@@ -25,7 +25,8 @@ import java.util.function.Function;
  * requests, and translates between the wire (JSON, SSE event sequences) and the inference service.
  * The plumbing it builds on lives in {@link Http} (responses/CORS/errors), {@link Sse} (streaming),
  * {@link Worker} (the generation queue), and {@link Metrics}; all inference goes through {@link
- * Generation}. Everything but {@code start} is package-private.
+ * Generation}. Everything but {@code start} and the {@link Running} handle it returns is
+ * package-private.
  */
 public final class Server {
 
@@ -41,21 +42,52 @@ public final class Server {
     }
 
     /**
-     * Starts the server for an already-loaded {@code model} and returns the running instance (it
-     * serves on its own executor; this call does not block). Host/port come from {@code options};
-     * port 0 binds an ephemeral port, readable from {@link HttpServer#getAddress()}. This is the
-     * only public API of the module - load a model (jinfer-core), then hand it here to serve it.
-     * Each call serves an independent instance (own worker queue, own generation state); the SSE
-     * write-stall watchdog and {@link Metrics} counters are deliberately process-wide.
+     * A running server. {@link #close} stops the listener and then frees the engine's states and
+     * cache blobs - an embedder that started a server can actually shut it down; stopping the raw
+     * {@link HttpServer} alone would leak the engine until process exit.
      */
-    public static HttpServer start(LoadedModel<?> model, LLMOptions options) throws IOException {
+    public static final class Running implements AutoCloseable {
+        private final HttpServer http;
+        private final Generation generation;
+
+        private Running(HttpServer http, Generation generation) {
+            this.http = http;
+            this.generation = generation;
+        }
+
+        /** The bound address; port 0 in the options binds an ephemeral port readable here. */
+        public InetSocketAddress address() {
+            return http.getAddress();
+        }
+
+        /** Listener first (no new requests), then the engine; idempotent via the engine's close. */
+        @Override
+        public void close() {
+            http.stop(1);
+            // the fixed handler pool is non-daemon and stop() does not touch it - without this an
+            // embedder's JVM never exits
+            if (http.getExecutor() instanceof java.util.concurrent.ExecutorService pool) {
+                pool.shutdownNow();
+            }
+            generation.close();
+        }
+    }
+
+    /**
+     * Starts the server for an already-loaded {@code model} and returns the running instance (it
+     * serves on its own executor; this call does not block). This is the only public API of the
+     * module - load a model (jinfer-core), then hand it here to serve it. Each call serves an
+     * independent instance: own worker queue, own generation state, own {@link Metrics}; only the
+     * SSE write-stall watchdog is process-wide.
+     */
+    public static Running start(LoadedModel<?> model, LLMOptions options) throws IOException {
         return new Server(model, options).serve(model, options);
     }
 
-    private HttpServer serve(LoadedModel<?> model, LLMOptions options) throws IOException {
+    private Running serve(LoadedModel<?> model, LLMOptions options) throws IOException {
         HttpServer server =
                 HttpServer.create(new InetSocketAddress(options.host(), options.port()), 0);
-        String servedId = options.modelPath().getFileName().toString();
+        String servedId = servedModel;
         Map<String, Object> modelCard =
                 Map.of("id", servedId, "object", "model", "created", 0, "owned_by", "jinfer");
         server.createContext(
@@ -108,7 +140,7 @@ public final class Server {
                                 "n_ctx", model.model().config().contextLength(),
                                 "n_batch", RuntimeFlags.MAX_PROMPT_SEQUENCE_LENGTH,
                                 "n_vocab", model.model().config().vocabularySize(),
-                                "prompt_cache", Map.of("enabled", false)));
+                                "prompt_cache", Map.of("enabled", generation.promptCaching())));
         Function<Map<String, Object>, Object> tokenize =
                 request ->
                         Map.of(
@@ -144,19 +176,13 @@ public final class Server {
         // so a fixed pool also caps the threads slow-loris connections can pin
         server.setExecutor(Executors.newFixedThreadPool(ServerFlags.SERVER_THREADS));
         server.start();
-        Runtime.getRuntime()
-                .addShutdownHook(
-                        new Thread(
-                                () -> {
-                                    server.stop(1);
-                                    // the engine owns states and cache blobs now; free them after
-                                    // the listener stops rather than leaving it to process exit
-                                    generation.close();
-                                }));
+        Running running = new Running(server, generation);
+        // the CLI path never closes the handle; ^C must still free the engine deterministically
+        Runtime.getRuntime().addShutdownHook(new Thread(running::close));
         System.out.printf(
                 "OpenAI-compatible server listening on http://%s:%d%n",
                 options.host(), server.getAddress().getPort());
-        return server;
+        return running;
     }
 
     /**

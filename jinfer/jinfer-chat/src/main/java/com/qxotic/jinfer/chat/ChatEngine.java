@@ -51,7 +51,9 @@ public final class ChatEngine {
     // cachedSessions(n): the last n live conversation states, reused append-only when a new
     // prompt's batch stream strictly extends one (all access under the generation lock)
     private final SessionPool<?> pool;
-    private final int sessionCapacity;
+    // codec-less models cannot pool sessions, but the allocation is still recycled: the one bare
+    // context, wiped after each pass (all access under the generation lock)
+    private RuntimeState bare;
     // the streaming driver: at most ONE lazy platform thread, reused while streams keep coming,
     // gone after an idle minute. One is enough - generations serialize on the engine lock anyway,
     // and a fresh thread per request would just park extras on that lock
@@ -79,8 +81,6 @@ public final class ChatEngine {
     // snapshot instead. Stale while idle, which is exactly right for a gauge - an idle cache is
     // not changing.
     private volatile PromptCache.Sample cacheSnapshot;
-
-    /** A finished generation's state with the batch stream of everything ingested into it. */
 
     /** A loaded model with the arena this engine owns - {@code weights} null = the caller's. */
     private record Owned(LoadedModel<?> loaded, java.lang.foreign.Arena weights) {}
@@ -142,21 +142,22 @@ public final class ChatEngine {
     private ChatEngine(Owned owned, String modelName, Path cachedPrompts, int cachedSessions) {
         if (owned.loaded() == null) throw new IllegalArgumentException("null model");
         if (modelName == null) throw new IllegalArgumentException("null modelName");
-        this.sessionCapacity = Math.max(0, cachedSessions);
-        this.pool = new SessionPool<>(this.sessionCapacity);
+        this.pool = new SessionPool<>(cachedSessions);
         this.weights = owned.weights();
         this.loaded = owned.loaded();
         this.modelName = modelName;
         try {
             this.promptStore = CacheStore.inMemory();
-            // built only when the model can support it (or a mount demands it): a codec-less
-            // model must still load and chat - the codec throw belongs to the first
-            // CACHED-feature use, not to plain construction
+            // built only when the model can support it AND jinfer.promptCache allows it - the
+            // engine owns the cache now, so it owns the off-switch too. An explicitly mounted
+            // artifact overrides the flag: the caller pointed at frozen blocks on purpose. A
+            // codec-less model must still load and chat - the codec throw belongs to the first
+            // CACHED-feature use, not to plain construction.
             this.mounted =
                     cachedPrompts == null ? null : FrozenBlocks.open(cachedPrompts, loaded.seed());
             if (mounted != null) {
                 this.prompts = tree(loaded, promptStore, mounted);
-            } else if (loaded.model().stateCodec().isPresent()) {
+            } else if (RuntimeFlags.PROMPT_CACHE && loaded.model().stateCodec().isPresent()) {
                 this.prompts = tree(loaded, promptStore, null);
             } else {
                 this.prompts = null;
@@ -235,6 +236,8 @@ public final class ChatEngine {
             leakWatch.run(); // disarm: this engine was closed properly
             Telemetry.unregister(cacheGauge); // stop sampling a cache that is about to be freed
             pool.close();
+            if (bare instanceof com.qxotic.jinfer.BaseState base) base.close();
+            bare = null;
             promptStore.close();
         } finally {
             lock.unlock();
@@ -287,22 +290,29 @@ public final class ChatEngine {
      *     floor and a forced call's override, so a request cannot ask for a think span it cannot
      *     afford
      * @param maxTokens completion budget, -1 = bounded only by the context
+     * @param reasoningMaxTokens think-span cap override: null = the default policy (half of {@code
+     *     maxTokens}), -1 = uncapped, else the cap
      * @param grammar constrains decoding (JSON schema, raw GBNF, ...); null = free
-     * @param forceToolCall seed the family's call marker so the reply IS a tool call
+     * @param forcedTool seed the family's call marker so the reply IS a tool call: null = no
+     *     forcing, "" = any offered tool, a name = that tool alone (its name is prefix-pinned while
+     *     every offered tool stays framed in the prompt)
      * @param cachedView this request runs on a cached-prompt view: native codec only, since the
      *     Jinja whole-render makes no prefix-stability promise
+     * @param templateKwargs extra variables for the Jinja whole-render (chat_template_kwargs);
+     *     {@link #encode} skips the native codec when any key it does not understand is present
      */
     public record Request(
             List<Message> messages,
             List<Tool> tools,
             boolean thinking,
             int maxTokens,
+            Integer reasoningMaxTokens,
             long timeoutNanos,
             float temperature,
             float topP,
             long seed,
             Grammar.Spec grammar,
-            boolean forceToolCall,
+            String forcedTool,
             boolean cachedView,
             List<String> stops,
             java.util.Map<String, Object> templateKwargs) {
@@ -315,14 +325,34 @@ public final class ChatEngine {
             if (temperature < 0) throw new IllegalArgumentException("temperature " + temperature);
             if (topP <= 0 || topP > 1) throw new IllegalArgumentException("topP " + topP);
             if (maxTokens < -1) throw new IllegalArgumentException("maxTokens " + maxTokens);
+            if (reasoningMaxTokens != null && reasoningMaxTokens < -1)
+                throw new IllegalArgumentException("reasoningMaxTokens " + reasoningMaxTokens);
             if (timeoutNanos < 0) throw new IllegalArgumentException("timeout " + timeoutNanos);
             messages = List.copyOf(messages);
             tools = tools == null ? List.of() : List.copyOf(tools);
             stops = stops == null ? List.of() : List.copyOf(stops);
-            // extra variables for the Jinja whole-render (chat_template_kwargs); the native codec
-            // never sees them, which is why a request carrying any must not take the native path
+            if (forcedTool != null) {
+                if (tools.isEmpty())
+                    throw new IllegalArgumentException("forcing a tool call needs offered tools");
+                if (!forcedTool.isEmpty() && namedTool(tools, forcedTool) == null)
+                    throw new IllegalArgumentException(
+                            "forced tool \"" + forcedTool + "\" is not among the offered tools");
+            }
             templateKwargs = templateKwargs == null ? null : java.util.Map.copyOf(templateKwargs);
+            // a view is native-only and the native codec never sees kwargs - the two are
+            // contradictory, so reject the request rather than silently drop the kwargs
+            if (cachedView && templateKwargs != null)
+                throw new IllegalArgumentException(
+                        "templateKwargs need the Jinja whole-render, which a cached view (native"
+                                + " codec only) cannot use");
         }
+    }
+
+    private static Tool namedTool(List<Tool> tools, String name) {
+        for (Tool tool : tools) {
+            if (tool.name().equals(name)) return tool;
+        }
+        return null;
     }
 
     /** A request lowered to everything a generation pass needs; see {@link #prepare}. */
@@ -335,7 +365,32 @@ public final class ChatEngine {
             int[] parserSeed,
             List<String> stops,
             boolean cachedView,
-            boolean claimToolCalls) {}
+            boolean claimToolCalls) {
+
+        /**
+         * A pre-encoded prompt (raw completions: the caller already tokenized) lowered directly -
+         * the one place the no-template sentinels are spelled: no reply parser and no seed (nothing
+         * scaffolded the prompt), no view, and call syntax stays visible text because a raw prompt
+         * offers no tools.
+         */
+        public static Prepared raw(
+                int[] promptTokens,
+                Sampler sampler,
+                int maxTokens,
+                long timeoutNanos,
+                List<String> stops) {
+            return new Prepared(
+                    new Encoded(List.of(Batch.prefill(promptTokens)), Optional.empty()),
+                    sampler,
+                    maxTokens,
+                    timeoutNanos,
+                    promptTokens.length,
+                    new int[0],
+                    stops,
+                    false,
+                    false);
+        }
+    }
 
     /**
      * Lowers a request to a prompt, a sampler and a parser seed - the policy both integrations were
@@ -362,7 +417,7 @@ public final class ChatEngine {
             Request request, Supplier<List<Object>> messageMaps, Supplier<List<Object>> toolMaps) {
         boolean think =
                 request.thinking()
-                        && !request.forceToolCall()
+                        && request.forcedTool() == null
                         && (request.maxTokens() < 0
                                 || request.maxTokens() >= RequestPolicy.THINK_FLOOR);
         Conversation conversation =
@@ -379,14 +434,19 @@ public final class ChatEngine {
                         request.seed(),
                         think,
                         request.maxTokens(),
-                        null);
+                        request.reasoningMaxTokens());
         if (request.grammar() != null) {
             sampler = RequestPolicy.constrained(loaded, sampler, request.grammar().cursor(), think);
         }
         int[] parserSeed = encoded.template().map(t -> t.replySeed(think)).orElse(new int[0]);
-        if (request.forceToolCall()) {
+        if (request.forcedTool() != null) {
+            // a named choice pins that tool alone; the prompt still frames every offered tool
+            List<Tool> pinned =
+                    request.forcedTool().isEmpty()
+                            ? conversation.tools()
+                            : List.of(namedTool(conversation.tools(), request.forcedTool()));
             RequestPolicy.ForcedCall forced =
-                    RequestPolicy.forceCall(loaded, conversation.tools(), sampler)
+                    RequestPolicy.forceCall(loaded, pinned, sampler)
                             .orElseThrow(
                                     () ->
                                             new UnsupportedOperationException(
@@ -405,11 +465,11 @@ public final class ChatEngine {
                 sampler,
                 request.maxTokens(),
                 request.timeoutNanos(),
-                encoded.prompt().stream().mapToInt(Batch::count).sum(),
+                positions(encoded.prompt()),
                 parserSeed,
                 request.stops(),
                 request.cachedView(),
-                !request.tools().isEmpty() || request.forceToolCall());
+                !request.tools().isEmpty());
     }
 
     /**
@@ -426,7 +486,10 @@ public final class ChatEngine {
             java.util.Map<String, Object> templateKwargs) {
         Optional<ChatTemplate> template = loaded.template();
         UnsupportedConversation punted = null;
-        if (template.isPresent()) {
+        // kwargs the codec has no equivalent for force the whole-render - taking the native path
+        // would silently drop them. enable_thinking is the one key lowered separately (it is
+        // Conversation.thinking by the time encoding happens), so it alone does not punt.
+        if (template.isPresent() && !unknownKwargs(templateKwargs)) {
             try {
                 return new Encoded(template.get().encode(conversation), template);
             } catch (UnsupportedConversation punt) {
@@ -450,16 +513,21 @@ public final class ChatEngine {
         return new Encoded(List.of(Batch.prefill(ids.toArray())), template);
     }
 
+    /** Any key the native path has no equivalent for; template-encoding must punt on these. */
+    private static boolean unknownKwargs(java.util.Map<String, Object> templateKwargs) {
+        if (templateKwargs == null) return false;
+        for (String key : templateKwargs.keySet()) {
+            if (!"enable_thinking".equals(key)) return true;
+        }
+        return false;
+    }
+
     private static boolean hasMedia(Conversation conversation) {
         return conversation.messages().stream()
                 .flatMap(m -> m.content().stream())
                 .anyMatch(p -> p instanceof Part.Blob);
     }
 
-    /**
-     * The generation result plus the request's cache accounting: positions served from retained KV
-     * instead of prefill (block-tree restore or a pooled live session).
-     */
     /** Which source served a generation's prompt - see {@link Outcome#tier}. */
     public enum Tier {
         /** A pooled live session the prompt strictly extends: zero restore, only the delta. */
@@ -543,8 +611,7 @@ public final class ChatEngine {
         // outputType stays TEXT until Prepared carries the grammar; JSON lands with that accessor
         event.inputTokens = prepared.promptTokens();
         event.cachedTokens = completion.restoredTokens();
-        if (completion.tier() != null)
-            event.cacheTier = completion.tier().name().toLowerCase(java.util.Locale.ROOT);
+        event.cacheTier = completion.tier().name().toLowerCase(java.util.Locale.ROOT);
         event.queueTime = Telemetry.takeQueueWait(); // 0 unless something queued this thread
         Generator.GenerationResult result = completion.result();
         if (result != null) {
@@ -597,8 +664,7 @@ public final class ChatEngine {
                         prepared.sampler(),
                         prepared.maxTokens(),
                         prepared.timeoutNanos(),
-                        sink,
-                        prepared.cachedView());
+                        sink);
         if (out.cancelled()) {
             // a cancelled pass ends silently: no reply, no completion callback upstream
             return new Completion(
@@ -615,18 +681,17 @@ public final class ChatEngine {
     }
 
     /**
-     * One generation pass under the engine lock. {@code cached} routes through the prompt tree
-     * (resume the longest defined prefix, prefill only the rest) - the uncached path never touches
-     * the tree, keeping the base model fully stateless. Either way a pooled live session whose
-     * stream strictly prefixes the prompt continues append-only first.
+     * One generation pass under the engine lock, cheapest source first: a pooled live session the
+     * prompt strictly extends, else the block tree's longest cached prefix, else a fresh prefill -
+     * see {@link Tier}. Every prompt on a codec model is served (and committed) through the tree;
+     * {@code -Djinfer.promptCache=false} turns all of that off at construction.
      */
     public Outcome generate(
             List<Batch> prompt,
             Sampler sampler,
             int maxTokens,
             long timeoutNanos,
-            Generator.TokenSink sink,
-            boolean cached) {
+            Generator.TokenSink sink) {
         lock.lock();
         try {
             checkOpen();
@@ -655,12 +720,38 @@ public final class ChatEngine {
             Generator.TokenSink sink) {
         int total = positions(prompt);
         if (prompts == null) {
-            // no state codec: no tree, no pooling, every prompt prefills from scratch
-            S fresh = obtainState(model, total);
-            return new Outcome(
-                    generate(model, fresh, prompt, sampler, maxTokens, timeoutNanos, sink),
-                    0,
-                    Tier.FRESH);
+            // no state codec: no tiers, every prompt prefills - but the allocation is recycled
+            S state = bareState(model);
+            Generator.GenerationResult result =
+                    generate(model, state, prompt, sampler, maxTokens, timeoutNanos, sink);
+            // wiped BEFORE parking, so nothing of the conversation lingers between requests;
+            // on a throw generate() already closed the state and bare stays empty
+            state.reset();
+            bare = state;
+            return new Outcome(result, 0, Tier.FRESH);
+        }
+        if (loaded.model().stateCodec().map(StateCodec::coarseBlocks).orElse(false)) {
+            // A coarse residue costs MBs PER BLOCK (NemotronH: ~90MB at 30B dims), so the tree is
+            // written by define() alone - committing a residue per served turn would grow the
+            // store by a block's full weight on every request. Serving RESTORES the longest
+            // defined prefix (capped one short so the final token re-ingests and leaves fresh
+            // logits) and commits nothing; sessions are not pooled either, since pooled sessions
+            // commit as they go.
+            S state = bareState(model);
+            int restored;
+            List<Batch> rest;
+            try {
+                restored = CachedSession.resume(model, tree(), state, prompt, total - 1).position();
+                rest = remainder(prompt, restored);
+            } catch (RuntimeException | Error e) {
+                ((com.qxotic.jinfer.BaseState) state).close();
+                throw e;
+            }
+            Generator.GenerationResult result =
+                    generate(model, state, rest, sampler, maxTokens, timeoutNanos, sink);
+            state.reset();
+            bare = state;
+            return new Outcome(result, restored, restored > 0 ? Tier.BLOCKS : Tier.FRESH);
         }
         // ONE group per batch, so the codec's turn boundaries ARE the block boundaries: a
         // follow-up that diverges after turn k still reuses turns 0..k-1. A single giant block
@@ -672,7 +763,7 @@ public final class ChatEngine {
         return sessionPool.withSession(
                 model,
                 tree(),
-                () -> obtainState(model, total),
+                () -> obtainState(model),
                 groups,
                 (session, tier1) -> {
                     int restored = session.position();
@@ -694,7 +785,7 @@ public final class ChatEngine {
                     // commits as a block, so the next turn's echo continues append-only
                     int ingested = state.position() - total;
                     if (ingested > 0) {
-                        session.adopt(result.tokens().subSequence(0, ingested).toList());
+                        session.adopt(result.tokens().subSequence(0, ingested).toArray());
                     }
                     return new Outcome(result, restored, tier1 ? Tier.SESSION : Tier.BLOCKS);
                 });
@@ -720,7 +811,9 @@ public final class ChatEngine {
                     loaded.stopTokens(),
                     sink);
         } catch (RuntimeException | Error e) {
-            // a server hammered by failing requests would otherwise stack full-context states
+            // a server hammered by failing requests would otherwise stack full-context states.
+            // On the pooled path SessionPool.withSession closes the torn state too - close is
+            // idempotent, and this catch is the bare path's only protection
             ((com.qxotic.jinfer.BaseState) state).close();
             throw e;
         }
@@ -732,26 +825,57 @@ public final class ChatEngine {
         return total;
     }
 
-    /**
-     * A fresh context for a pass the pool could not serve. Allocated at FULL batch capacity, not
-     * prompt-sized: it serves every later request through the pool too, and one born from a
-     * 20-token prompt would chunk a 2000-token prefill into ~125 forwards.
-     *
-     * <p>{@link SessionPool} owns these once handed over - it frees an evicted session's state
-     * deterministically, so a steady pipeline holds N contexts and allocates no more.
-     */
-    private <S extends RuntimeState> S obtainState(LanguageModel<?, ?, S> model, int total) {
-        statesAllocated++;
-        return model.newState(
-                model.config().contextLength(), com.qxotic.jinfer.RuntimeFlags.BATCH_CAPACITY);
+    /** The prompt past its first {@code skip} positions - what a restored state still ingests. */
+    private static List<Batch> remainder(List<Batch> prompt, int skip) {
+        if (skip == 0) return prompt;
+        List<Batch> rest = new ArrayList<>();
+        int at = 0;
+        for (Batch b : prompt) {
+            int end = at + b.count();
+            if (end > skip) {
+                if (at >= skip) {
+                    rest.add(b);
+                } else {
+                    // a restore boundary inside a batch can only land in a token span - block
+                    // boundaries are group (batch-list) boundaries, and media commits whole
+                    int[] ids = ((Batch.Input.Tokens) b.input()).ids();
+                    rest.add(
+                            Batch.prefill(
+                                    java.util.Arrays.copyOfRange(ids, skip - at, ids.length)));
+                }
+            }
+            at = end;
+        }
+        return rest;
     }
 
     /**
-     * Defines (prefills) a cached prompt: dedups against the tree, commits one block per encoded
-     * batch (turn boundaries) - or ONE block for the whole prompt when the model's codec has a
-     * coarse residue ({@link StateCodec#coarseBlocks()}) - then discards the working state: the
-     * blocks hold the KV.
+     * A fresh context for a pass nothing recycled could serve. Allocated at FULL batch capacity,
+     * not prompt-sized: it serves every later request too, and one born from a 20-token prompt
+     * would chunk a 2000-token prefill into ~125 forwards.
+     *
+     * <p>{@link SessionPool} owns these once handed over - it recycles the least-recent allocation
+     * at capacity (and keeps one wiped spare when pooling is off), so a steady pipeline holds at
+     * most max(1, jinfer.sessions) contexts and allocates no more.
      */
+    private <S extends RuntimeState> S obtainState(LanguageModel<?, ?, S> model) {
+        statesAllocated++;
+        return model.newState(model.config().contextLength(), RuntimeFlags.BATCH_CAPACITY);
+    }
+
+    /** The codec-less path's one recycled context - the pool's spare, without the pool. */
+    @SuppressWarnings("unchecked")
+    private <S extends RuntimeState> S bareState(LanguageModel<?, ?, S> model) {
+        if (bare != null) {
+            S state = (S) bare;
+            bare = null;
+            return state;
+        }
+        return obtainState(model);
+    }
+
+    // ---- cached prompts: the block tree behind withCachedPrompt / save / load ----
+
     /**
      * Encode via the native codec only - cached prompts are a prefix-stability bet the Jinja
      * whole-render cannot honor. Throws {@link UnsupportedOperationException} when the model has no
@@ -769,6 +893,12 @@ public final class ChatEngine {
         return new Encoded(template.encode(conversation), Optional.of(template));
     }
 
+    /**
+     * Defines (prefills) a cached prompt: dedups against the tree, commits one block per encoded
+     * batch (turn boundaries) - or ONE block for the whole prompt when the model's codec has a
+     * coarse residue ({@link StateCodec#coarseBlocks()}) - then discards the working state: the
+     * blocks hold the KV.
+     */
     public void define(Conversation prefix) {
         List<Batch> prompt = encodeNative(prefix).prompt();
         lock.lock();
@@ -839,12 +969,19 @@ public final class ChatEngine {
         }
     }
 
+    /** Whether prompts are served through the block tree (codec present, jinfer.promptCache on). */
+    public boolean promptCaching() {
+        return prompts != null;
+    }
+
     @SuppressWarnings("unchecked")
     private <S extends RuntimeState> PromptCache<S> tree() {
         if (prompts == null) {
             throw new IllegalStateException(
-                    loaded.model().getClass().getSimpleName()
-                            + " does not support block caching (no state codec)");
+                    loaded.model().stateCodec().isPresent()
+                            ? "block caching is disabled (-Djinfer.promptCache=false)"
+                            : loaded.model().getClass().getSimpleName()
+                                    + " does not support block caching (no state codec)");
         }
         return (PromptCache<S>) prompts;
     }

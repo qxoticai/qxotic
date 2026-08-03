@@ -90,7 +90,7 @@ public final class SessionPoolTest {
                 CachedSession.resume(model, cache, model.newState(0, 0), new long[0]);
         a.ingest(List.of(Batch.prefill(new int[] {1, 2, 3})));
         a.state().position += 2; // generator steps the state directly
-        a.adopt(List.of(7, 8));
+        a.adopt(new int[] {7, 8});
         check(a.length() == 5 && a.position() == 5, "adopt keeps stream and state in lockstep");
         pool.release(a);
 
@@ -146,6 +146,67 @@ public final class SessionPoolTest {
             throw new AssertionError("failure(s) - see output above");
         }
         System.out.println("SessionPoolTest: all passed");
+    }
+
+    /**
+     * THE POOL IS THE ALLOCATOR. The migration onto SessionPool briefly dropped the old engine's
+     * recycling, so a default-configured (capacity 0) pipeline allocated and freed a full context
+     * on every request. Pin both recycle paths: the capacity-0 wiped spare, and the LRU recycle
+     * once the pool is at capacity.
+     */
+    @Test
+    void recyclesAllocationsInsteadOfDropping() {
+        FakeModel model = new FakeModel();
+        PromptCache<FakeState> cache =
+                new PromptCache<>(new FakeCodec(), CacheStore.inMemory(), 1 << 20, new byte[] {1});
+        int[] allocations = {0};
+        java.util.function.Supplier<FakeState> fresh =
+                () -> {
+                    allocations[0]++;
+                    return model.newState(0, 0);
+                };
+
+        // pooling disabled: the one bare allocation is wiped at release and reused next pass
+        SessionPool<FakeState> stateless = new SessionPool<>(0);
+        List<List<Batch>> first = List.of(List.of(Batch.prefill(new int[] {1, 2, 3})));
+        List<List<Batch>> second = List.of(List.of(Batch.prefill(new int[] {9, 8})));
+        FakeState firstState =
+                stateless.withSession(
+                        model,
+                        cache,
+                        fresh,
+                        first,
+                        (session, tier1) -> {
+                            session.ingestGroups(first);
+                            return session.state();
+                        });
+        check(firstState.position() == 0, "the spare is wiped the moment the pass ends");
+        FakeState secondState =
+                stateless.withSession(
+                        model, cache, fresh, second, (session, tier1) -> session.state());
+        check(secondState == firstState, "capacity 0 reuses the spare allocation");
+        check(allocations[0] == 1, "the stateless default allocates its context ONCE");
+
+        // at capacity: an unmatched prompt recycles the least-recent session's state
+        allocations[0] = 0;
+        SessionPool<FakeState> warm = new SessionPool<>(1);
+        FakeState pooled =
+                warm.withSession(
+                        model,
+                        cache,
+                        fresh,
+                        first,
+                        (session, tier1) -> {
+                            session.ingestGroups(first);
+                            return session.state();
+                        });
+        check(warm.size() == 1, "the finished session is pooled");
+        FakeState recycled =
+                warm.withSession(model, cache, fresh, second, (session, tier1) -> session.state());
+        check(recycled == pooled, "at capacity the LRU allocation is recycled, not dropped");
+        check(allocations[0] == 1, "a full pool never allocates");
+
+        if (failures > 0) throw new AssertionError("failure(s) - see output above");
     }
 
     static void check(boolean ok, String what) {

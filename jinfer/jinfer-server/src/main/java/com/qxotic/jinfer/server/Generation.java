@@ -1,15 +1,12 @@
 package com.qxotic.jinfer.server;
 
 import com.qxotic.jinfer.*;
-import com.qxotic.jinfer.cache.PromptCache;
-import com.qxotic.jinfer.cache.StateCodec;
 import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.JsonCodec;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
-import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.RequestPolicy;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.Tool;
@@ -26,24 +23,17 @@ import java.util.Map;
 import java.util.function.Consumer;
 
 /**
- * The inference service: turns a parsed request into a {@link Reply}, with streaming sinks for the
- * live channels. Owns the model and drives generation through the tokens-only {@link Generator}:
- * sampler / grammar / think wiring, stop conditions, tool-call seeding/parsing. The reply token
- * stream is structured by the model's {@link ReplyParser} (text channels + structure); transport -
- * endpoint handlers and SSE streaming - lives in {@link Server}.
- *
- * <p>Plain chat on a model with a {@link ChatTemplate} is lowered through the hand-written codec
- * (injection-inert, oracle-validated framing); when the model also has a {@link StateCodec} and
- * caching is enabled, the conversation is served through a per-model {@link PromptCache}, so a
- * follow-up request that echoes the prior turns resumes their KV instead of re-prefilling. Requests
- * with tools the template cannot frame, and models without a template, take the whole-render
- * fallback.
+ * The OpenAI wire lowered onto the shared runtime: parses request maps into {@link
+ * ChatEngine.Request}s (chat) or raw token prompts (completions), drives them through {@link
+ * ChatEngine#complete}, and shapes the outcome into the {@link Reply} the schema wants - including
+ * the llama.cpp-compatible knobs (reasoning_format, chat_template_kwargs, bare-call recovery).
+ * Generation semantics - templating, caching tiers, sampling policy, stop holdback, reply parsing -
+ * all live in the engine; transport (endpoint handlers, SSE) lives in {@link Server}.
  */
 final class Generation {
 
     private final LoadedModel<?> model;
     private final LLMOptions options;
-    private final String servedModel;
     private final ChatTemplate template; // memoized model framing, null when the model has none
     // raw-prompt mode encodes text special-token-aware; nothing renders a template for it
     private final com.qxotic.toknroll.Specials specials;
@@ -54,13 +44,22 @@ final class Generation {
 
     Generation(LoadedModel<?> chatModel, LLMOptions options, Metrics metrics) {
         this.metrics = metrics;
-        this.servedModel = options.modelPath().getFileName().toString();
         this.model = chatModel;
         this.options = options;
         this.template = chatModel.template().orElse(null);
         this.specials = SpecialTokens.encoder(model.tokenizer());
         // borrowed weights: the server loaded the model and keeps its arena
-        this.engine = new ChatEngine(chatModel, servedModel, null, RuntimeFlags.SESSIONS);
+        this.engine =
+                new ChatEngine(
+                        chatModel,
+                        options.modelPath().getFileName().toString(),
+                        null,
+                        RuntimeFlags.SESSIONS);
+    }
+
+    /** Whether prompts are served through the engine's block tree - the truth {@code /props}. */
+    boolean promptCaching() {
+        return engine.promptCaching();
     }
 
     /** Frees the engine's states and blocks; the weights arena stays the server's. */
@@ -70,7 +69,6 @@ final class Generation {
 
     // ---- chat / completion -------------------------------------------------
 
-    @SuppressWarnings("unchecked")
     /**
      * Every served request records here, whichever path produced it. Deliberately at the ENTRY and
      * not down in the generation pass: a path that bypasses that pass stops incrementing /metrics
@@ -85,6 +83,7 @@ final class Generation {
         return reply;
     }
 
+    @SuppressWarnings("unchecked")
     private Reply chat0(Map<String, Object> request, List<Object> messages, Sinks sinks) {
         boolean tools = ToolUse.offered(request);
         List<Message> turns = toConversation(messages);
@@ -102,12 +101,13 @@ final class Generation {
                         tools ? buildTools(request) : List.of(),
                         requestThink(request),
                         maxTokens(request),
+                        reasoningMax(request),
                         ServerFlags.SERVER_REQUEST_TIMEOUT_NANOS,
                         Values.floatValue(request.get("temperature"), options.temperature()),
                         Values.floatValue(request.get("top_p"), options.topp()),
                         Values.longValue(request.get("seed"), options.seed()),
                         grammarSpec(request),
-                        ToolUse.forced(request) != null && nativeForcedOk(request),
+                        nativeForcedOk() ? ToolUse.forced(request) : null,
                         false,
                         textStops(request.get("stop")),
                         kwargs);
@@ -121,7 +121,7 @@ final class Generation {
                         prepared,
                         request,
                         sinks,
-                        consumedPromptTokens(model.tokenizer(), prepared.encoded().prompt()));
+                        consumedPromptTokens(model.tokenizer(), prepared));
         // Bare-call recovery (llama.cpp #21242): LFM2.5 sometimes emits pythonic calls WITHOUT its
         // markers, so the structural parser finds nothing; the string scan is a no-op otherwise.
         return tools ? ToolUse.parse(model, reply, request) : reply;
@@ -170,14 +170,14 @@ final class Generation {
                 done.result(), done.reply(), billed, done.restoredTokens(), prepared.stops());
     }
 
-    /** Forced requests stay native only when the template's forced-call recipe covers them. */
-    private boolean nativeForcedOk(Map<String, Object> request) {
-        String forced = ToolUse.forced(request);
-        if (forced == null) return true;
-        // null template = no native codec, so no call seed to force with. The old caller
-        // short-circuited on `template != null &&` before reaching here; this method must own it.
-        if (template == null || template.callSeed().length == 0) return false;
-        return forced.isEmpty() || ToolUse.names(request).contains(forced);
+    /**
+     * Whether this model can force a call at all (a native codec that declares a call seed). When
+     * it cannot, the request degrades to an unforced generation rather than failing - forcing is
+     * best-effort on the wire. A forced name the request never offered is the engine's law now: the
+     * {@link ChatEngine.Request} constructor rejects it, and the 400 mapping answers.
+     */
+    private boolean nativeForcedOk() {
+        return template != null && template.callSeed().length != 0;
     }
 
     /**
@@ -263,13 +263,6 @@ final class Generation {
         return out;
     }
 
-    /**
-     * The codec chat path: lower the conversation to the model's own framing and, when the prompt
-     * cache is available, resume the longest cached prefix into the state (skipping that prefill)
-     * and ingest only the delta, caching it for the next turn. Assistant history is re-tokenized
-     * from text - best-effort, but the framing is byte-exact with the model's Jinja template
-     * (validated by the per-model oracle), so a stable client echo reuses the whole prefix.
-     */
     Reply completion(Map<String, Object> request, String prompt, Sinks sinks) {
         return recorded(completion0(request, prompt, sinks));
     }
@@ -281,7 +274,6 @@ final class Generation {
         return generate(request, promptTokens, sinks);
     }
 
-    /** One pass through the tokens-only {@link Generator}: a fresh state prefills the prompt. */
     /**
      * A raw prompt is a conversation that is already encoded, so it skips the template stack and
      * lowers straight to a {@link ChatEngine.Prepared} - the same generation pass, sampling policy,
@@ -303,18 +295,13 @@ final class Generation {
         if (grammar != null) {
             sampler = RequestPolicy.constrained(model, sampler, grammar.cursor(), think);
         }
-        List<Batch> prompt = List.of(Batch.prefill(promptTokens.toArray()));
         ChatEngine.Prepared prepared =
-                new ChatEngine.Prepared(
-                        new ChatEngine.Encoded(prompt, java.util.Optional.empty()),
+                ChatEngine.Prepared.raw(
+                        promptTokens.toArray(),
                         sampler,
                         maxTokens,
                         ServerFlags.SERVER_REQUEST_TIMEOUT_NANOS,
-                        promptTokens.length(),
-                        new int[0], // no template, so no reply-grammar tail to pre-feed
-                        textStops(request.get("stop")),
-                        false,
-                        false); // a completion offers no tools, so call syntax stays text
+                        textStops(request.get("stop")));
         return complete(
                 prepared, request, sinks, consumedPromptTokens(model.tokenizer(), promptTokens));
     }
@@ -426,10 +413,9 @@ final class Generation {
     // ---- sampler / grammar / stop / think wiring ---------------------------
 
     /**
-     * Builds a grammar cursor from request params: {@code grammar} (GBNF string) or {@code
-     * response_format: {type: "json_object"}}. Returns null when no constraint.
+     * The request's output grammar - {@code grammar} (GBNF string) or {@code response_format:
+     * {type: "json_object"}} - or null when unconstrained; the engine turns it into a cursor.
      */
-    /** The request's output grammar, if any; the engine turns it into a cursor. */
     private Grammar.Spec grammarSpec(Map<String, Object> request) {
         if (!RuntimeFlags.GRAMMAR) return null;
         Tokenizer tokenizer = model.tokenizer();
@@ -461,9 +447,19 @@ final class Generation {
         return maxTokens;
     }
 
-    /** Prompt size as billed: a leading BOS is template overhead, not user input. */
-    private static int consumedPromptTokens(Tokenizer tokenizer, List<Batch> prompt) {
-        return consumedPromptTokens(tokenizer, IntSequence.wrap(Batch.tokenIds(prompt)));
+    /**
+     * Same rule for an encoded prompt, without flattening it: the count is already on {@link
+     * ChatEngine.Prepared}, and BOS can only be the very first token of the first text batch.
+     */
+    private static int consumedPromptTokens(Tokenizer tokenizer, ChatEngine.Prepared prepared) {
+        List<Batch> prompt = prepared.encoded().prompt();
+        if (!prompt.isEmpty()
+                && prompt.get(0).input() instanceof Batch.Input.Tokens first
+                && first.ids().length > 0) {
+            int bos = SpecialTokens.findFirst(tokenizer, "<bos>", "<|startoftext|>").orElse(1);
+            if (first.ids()[0] == bos) return prepared.promptTokens() - 1;
+        }
+        return prepared.promptTokens();
     }
 
     /**

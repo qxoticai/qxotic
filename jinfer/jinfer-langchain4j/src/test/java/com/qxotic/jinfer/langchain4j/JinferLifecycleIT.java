@@ -131,7 +131,9 @@ class JinferLifecycleIT {
             String stats = model.engine.sessionStats();
             assertTrue(stats.contains("allocations=1"), "one context for five requests: " + stats);
             assertTrue(stats.contains("hits=0"), "the default matches nothing: " + stats);
-            assertTrue(stats.contains("sessions=1"), "the allocation stays pooled: " + stats);
+            // the allocation survives as the pool's wiped spare, not as a live session: the
+            // stateless default keeps the memory and none of the conversation
+            assertTrue(stats.contains("sessions=0"), "the default pools no conversation: " + stats);
         }
     }
 

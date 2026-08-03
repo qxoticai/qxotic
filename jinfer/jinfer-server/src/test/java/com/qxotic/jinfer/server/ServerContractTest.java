@@ -7,11 +7,8 @@ import com.qxotic.jinfer.chat.JsonCodec;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.testkit.ModelFixture;
-import com.sun.net.httpserver.HttpServer;
 import java.lang.foreign.Arena;
-import java.net.URI;
 import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -34,7 +31,7 @@ import org.junit.jupiter.api.TestInstance;
 class ServerContractTest {
 
     private static Arena arena;
-    private static HttpServer server;
+    private static Server.Running server;
     private static HttpClient client;
     private static String base;
     private static String modelId;
@@ -45,61 +42,27 @@ class ServerContractTest {
         modelId = gguf.getFileName().toString();
         arena = Arena.ofShared();
         LoadedModel<?> model = Models.load(gguf, 2048, arena);
-        server =
-                Server.start(
-                        model,
-                        new LLMOptions(
-                                gguf,
-                                null,
-                                null,
-                                false,
-                                true,
-                                "127.0.0.1",
-                                0,
-                                1f,
-                                0.95f,
-                                42L,
-                                2048,
-                                true,
-                                false,
-                                true,
-                                false,
-                                false,
-                                false,
-                                false,
-                                null,
-                                false));
-        base = "http://127.0.0.1:" + server.getAddress().getPort();
+        server = Server.start(model, ServerTestSupport.options(gguf));
+        base = ServerTestSupport.baseUrl(server);
         client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
     }
 
     @AfterAll
     void stop() {
-        if (server != null) server.stop(0);
+        if (server != null) server.close();
         if (arena != null) arena.close();
     }
 
     private HttpResponse<String> post(String path, String body) throws Exception {
-        return client.send(
-                HttpRequest.newBuilder(URI.create(base + path))
-                        .header("Content-Type", "application/json")
-                        .POST(HttpRequest.BodyPublishers.ofString(body))
-                        .build(),
-                HttpResponse.BodyHandlers.ofString());
+        return ServerTestSupport.post(client, base + path, body);
     }
 
     private HttpResponse<String> get(String path) throws Exception {
-        return client.send(
-                HttpRequest.newBuilder(URI.create(base + path)).build(),
-                HttpResponse.BodyHandlers.ofString());
+        return ServerTestSupport.get(client, base + path);
     }
 
     private String chatBody(String content) {
-        return "{\"model\":\""
-                + modelId
-                + "\",\"messages\":[{\"role\":\"user\",\"content\":\""
-                + content
-                + "\"}],\"max_tokens\":4}";
+        return ServerTestSupport.chatBody(modelId, content, 4);
     }
 
     @Test
@@ -182,17 +145,9 @@ class ServerContractTest {
         post("/v1/chat/completions", chatBody("one more"));
         String after = get("/metrics").body();
         assertTrue(
-                counter(after, "jinfer_requests_total") > counter(before, "jinfer_requests_total"),
+                ServerTestSupport.counter(after, "jinfer_requests_total")
+                        > ServerTestSupport.counter(before, "jinfer_requests_total"),
                 "a served request must move the counter");
-    }
-
-    private static long counter(String exposition, String name) {
-        for (String line : exposition.split("\n")) {
-            if (line.startsWith(name + " ")) {
-                return (long) Double.parseDouble(line.substring(name.length() + 1).trim());
-            }
-        }
-        throw new AssertionError("no " + name + " in:\n" + exposition);
     }
 
     @SuppressWarnings("unchecked")

@@ -79,10 +79,7 @@ class CacheGaugeThreadingTest {
                 recording.dump(jfr);
             }
         }
-        long samples =
-                jdk.jfr.consumer.RecordingFile.readAllEvents(jfr).stream()
-                        .filter(e -> e.getEventType().getName().equals("jinfer.PromptCache"))
-                        .count();
+        long samples = TelemetryEmissionTest.eventsOf(jfr, "jinfer.PromptCache").size();
         assertTrue(samples > 0, "the gauge must sample while an engine is alive");
     }
 }

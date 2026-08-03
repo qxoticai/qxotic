@@ -169,13 +169,11 @@ class CachedPromptIT {
                         + cacheRead
                         + " prompt="
                         + cached.getMetadata().getUsage().getPromptTokens());
-        // the tree is written at define time, never per request
+        // cache writes are never billed to a request, whichever path served it
         assertNull(cached.getMetadata().getUsage().getCacheWriteInputTokens());
-
-        ChatResponse plain = base.call(new Prompt(new UserMessage("Hello?")));
-        assertNull(
-                plain.getMetadata().getUsage().getCacheReadInputTokens(),
-                "the base model never touches the tree");
+        // NOTE the base model is no longer asserted cold: the block tree serves EVERY prompt now
+        // (best-effort, budget-bounded), so a plain request may legitimately report reuse of
+        // whatever prefix it shares with earlier traffic
     }
 
     @Test

@@ -6,11 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.testkit.ModelFixture;
-import com.sun.net.httpserver.HttpServer;
 import java.lang.foreign.Arena;
-import java.net.URI;
 import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -22,70 +19,30 @@ import jdk.jfr.consumer.RecordingFile;
 import org.junit.jupiter.api.Test;
 
 /**
- * The server runs {@link com.qxotic.jinfer.llm.Generator} directly rather than through {@code
- * ChatEngine}, so it has its OWN generation seam - and a served request emits nothing unless that
- * seam reports it. This pins that, and pins {@code queueTime}, which crosses from the worker thread
+ * A served request must emit exactly ONE {@code jinfer.Inference} event - the engine emits it, the
+ * server must not add its own on top (the double-emission the migration to ChatEngine introduced
+ * and this test caught) - and it must carry {@code queueTime}, which crosses from the worker thread
  * that dequeued the job to the event that describes it.
  */
 class ServerTelemetryTest {
 
     @Test
-    void aServedRequestEmitsAnInferenceEventCarryingItsQueueWait() throws Exception {
+    void aServedRequestEmitsOneInferenceEventCarryingItsQueueWait() throws Exception {
         Path gguf = ModelFixture.LLAMA32_1B_Q8.require();
         Path jfr = Files.createTempFile("jinfer-server", ".jfr");
         try (Arena arena = Arena.ofShared()) {
             LoadedModel<?> model = Models.load(gguf, 2048, arena);
-            LLMOptions options =
-                    new LLMOptions(
-                            gguf,
-                            null,
-                            null,
-                            false,
-                            true,
-                            "127.0.0.1",
-                            0,
-                            1f,
-                            0.95f,
-                            42L,
-                            2048,
-                            true,
-                            false,
-                            true,
-                            false,
-                            false,
-                            false,
-                            false,
-                            null,
-                            false);
-            HttpServer server = Server.start(model, options);
-            try {
-                String base = "http://127.0.0.1:" + server.getAddress().getPort();
+            try (Server.Running server = Server.start(model, ServerTestSupport.options(gguf))) {
                 HttpClient client =
                         HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
                 try (Recording recording = new Recording()) {
                     recording.enable("jinfer.Inference");
                     recording.start();
-                    HttpResponse<String> response =
-                            client.send(
-                                    HttpRequest.newBuilder(
-                                                    URI.create(base + "/v1/chat/completions"))
-                                            .header("Content-Type", "application/json")
-                                            .POST(
-                                                    HttpRequest.BodyPublishers.ofString(
-                                                            "{\"model\":\""
-                                                                    + gguf.getFileName()
-                                                                    + "\",\"messages\":"
-                                                                    + "[{\"role\":\"user\","
-                                                                    + "\"content\":\"Hi\"}],"
-                                                                    + "\"max_tokens\":8}"))
-                                            .build(),
-                                    HttpResponse.BodyHandlers.ofString());
+                    HttpResponse<String> response = chat(client, server, gguf);
                     assertEquals(200, response.statusCode(), response.body());
                     recording.stop();
                     recording.dump(jfr);
                 }
-            } finally {
-                server.stop(0);
             }
         }
 
@@ -112,9 +69,8 @@ class ServerTelemetryTest {
         Path gguf = ModelFixture.LLAMA32_1B_Q8.require();
         try (Arena arena = Arena.ofShared()) {
             LoadedModel<?> model = Models.load(gguf, 2048, arena);
-            HttpServer busy = Server.start(model, options(gguf));
-            HttpServer idle = Server.start(model, options(gguf));
-            try {
+            try (Server.Running busy = Server.start(model, ServerTestSupport.options(gguf));
+                    Server.Running idle = Server.start(model, ServerTestSupport.options(gguf))) {
                 HttpClient client =
                         HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
                 assertEquals(200, chat(client, busy, gguf).statusCode());
@@ -126,73 +82,23 @@ class ServerTelemetryTest {
                         0,
                         requestsTotal(client, idle),
                         "the other server must not see another instance's traffic");
-            } finally {
-                busy.stop(0);
-                idle.stop(0);
             }
         }
     }
 
-    private static long requestsTotal(HttpClient client, HttpServer server) throws Exception {
+    private static long requestsTotal(HttpClient client, Server.Running server) throws Exception {
         String body =
-                client.send(
-                                HttpRequest.newBuilder(
-                                                URI.create(
-                                                        "http://127.0.0.1:"
-                                                                + server.getAddress().getPort()
-                                                                + "/metrics"))
-                                        .build(),
-                                HttpResponse.BodyHandlers.ofString())
+                ServerTestSupport.get(client, ServerTestSupport.baseUrl(server) + "/metrics")
                         .body();
-        for (String line : body.split("\n")) {
-            if (line.startsWith("jinfer_requests_total ")) {
-                return Long.parseLong(line.substring("jinfer_requests_total ".length()).trim());
-            }
-        }
-        throw new AssertionError("no jinfer_requests_total in:\n" + body);
+        return ServerTestSupport.counter(body, "jinfer_requests_total");
     }
 
-    private static HttpResponse<String> chat(HttpClient client, HttpServer server, Path gguf)
+    private static HttpResponse<String> chat(HttpClient client, Server.Running server, Path gguf)
             throws Exception {
-        return client.send(
-                HttpRequest.newBuilder(
-                                URI.create(
-                                        "http://127.0.0.1:"
-                                                + server.getAddress().getPort()
-                                                + "/v1/chat/completions"))
-                        .header("Content-Type", "application/json")
-                        .POST(
-                                HttpRequest.BodyPublishers.ofString(
-                                        "{\"model\":\""
-                                                + gguf.getFileName()
-                                                + "\",\"messages\":[{\"role\":\"user\","
-                                                + "\"content\":\"Hi\"}],\"max_tokens\":4}"))
-                        .build(),
-                HttpResponse.BodyHandlers.ofString());
-    }
-
-    private static LLMOptions options(Path gguf) {
-        return new LLMOptions(
-                gguf,
-                null,
-                null,
-                false,
-                true,
-                "127.0.0.1",
-                0,
-                1f,
-                0.95f,
-                42L,
-                2048,
-                true,
-                false,
-                true,
-                false,
-                false,
-                false,
-                false,
-                null,
-                false);
+        return ServerTestSupport.post(
+                client,
+                ServerTestSupport.baseUrl(server) + "/v1/chat/completions",
+                ServerTestSupport.chatBody(gguf.getFileName().toString(), "Hi", 8));
     }
 
     private static List<RecordedEvent> events(Path jfr) throws Exception {

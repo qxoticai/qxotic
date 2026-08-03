@@ -246,12 +246,13 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                         cached ? prefix.tools() : Mappings.toTools(requestTools),
                         thinking,
                         p.maxOutputTokens() == null ? -1 : p.maxOutputTokens(),
+                        null, // langchain4j has no reasoning-budget knob
                         timeoutNanos,
                         p.temperature() == null ? 0.0f : p.temperature().floatValue(),
                         p.topP() == null ? 0.95f : p.topP().floatValue(),
                         j != null && j.seed() != null ? j.seed() : seed,
                         grammar(p, j),
-                        p.toolChoice() == ToolChoice.REQUIRED,
+                        p.toolChoice() == ToolChoice.REQUIRED ? "" : null,
                         cached,
                         p.stopSequences(),
                         null); // langchain4j has no chat_template_kwargs equivalent

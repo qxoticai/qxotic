@@ -121,7 +121,7 @@ public final class Gemma4MtpIdentityTest {
             session.ingest(List.of(Batch.prefill(ids)));
             Gemma4Speculative.Result r =
                     Gemma4Speculative.generate(m, session.state(), 40, stops, 2);
-            session.adopt(r.committed());
+            session.adopt(r.committed().stream().mapToInt(Integer::intValue).toArray());
             check(
                     session.length() == session.position(),
                     "adopt: fingerprint stream in lockstep with KV (" + session.length() + ")");

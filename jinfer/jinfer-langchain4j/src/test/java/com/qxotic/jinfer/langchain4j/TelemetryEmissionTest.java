@@ -180,7 +180,8 @@ class TelemetryEmissionTest {
         assertTrue(sample.getLong("evictions") >= 0, "deltas are never negative");
     }
 
-    private static List<RecordedEvent> eventsOf(Path jfr, String name) throws Exception {
+    /** Every event of {@code name} in the recording - the package's one JFR extraction. */
+    static List<RecordedEvent> eventsOf(Path jfr, String name) throws Exception {
         try (RecordingFile file = new RecordingFile(jfr)) {
             List<RecordedEvent> found = new java.util.ArrayList<>();
             while (file.hasMoreEvents()) {

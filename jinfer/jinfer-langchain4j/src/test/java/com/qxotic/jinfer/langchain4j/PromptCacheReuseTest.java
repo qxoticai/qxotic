@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.*;
 import com.qxotic.jinfer.testkit.ModelFixture;
 import java.nio.file.Path;
 import jdk.jfr.Recording;
-import jdk.jfr.consumer.RecordingFile;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -29,19 +28,8 @@ class PromptCacheReuseTest {
                 r.dump(jfr);
             }
         }
-        var events =
-                RecordingFile.readAllEvents(jfr).stream()
-                        .filter(e -> e.getEventType().getName().equals("jinfer.Inference"))
-                        .toList();
+        var events = TelemetryEmissionTest.eventsOf(jfr, "jinfer.Inference");
         assertEquals(2, events.size());
-        for (var e : events)
-            System.out.println(
-                    "  cachedTokens="
-                            + e.getInt("cachedTokens")
-                            + " tier="
-                            + e.getString("cacheTier")
-                            + " input="
-                            + e.getInt("inputTokens"));
         assertTrue(
                 events.get(1).getInt("cachedTokens") > 0,
                 "the second identical prompt must reuse the first");

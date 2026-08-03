@@ -202,6 +202,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                                 : callbacks == null ? List.of() : JinferMappings.toTools(callbacks),
                         options.getThinking() != Boolean.FALSE,
                         options.getMaxTokens() == null ? -1 : options.getMaxTokens(),
+                        null, // Spring AI has no reasoning-budget knob
                         options.getTimeout() == null ? 0 : options.getTimeout().toNanos(),
                         options.getTemperature() == null
                                 ? 0.0f
@@ -209,7 +210,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                         options.getTopP() == null ? 0.95f : options.getTopP().floatValue(),
                         options.getSeed() == null ? 42 : options.getSeed(),
                         grammar(options.getOutputSchema()),
-                        false, // Spring AI has no forced-tool-call knob
+                        null, // Spring AI has no forced-tool-call knob
                         cached,
                         options.getStopSequences(),
                         null); // Spring AI has no chat_template_kwargs equivalent

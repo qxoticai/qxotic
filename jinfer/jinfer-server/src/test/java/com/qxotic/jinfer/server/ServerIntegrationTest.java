@@ -7,7 +7,6 @@ import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
 import com.qxotic.jinfer.testkit.ModelFixture;
-import com.sun.net.httpserver.HttpServer;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -19,7 +18,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Assumptions;
@@ -39,7 +37,6 @@ public final class ServerIntegrationTest {
     private static int failures = 0;
     private static HttpClient client;
     private static String base;
-    private static Path warmFile;
     private static String modelId;
 
     /** Pure tool-call parser checks: no model, runs in every build. */
@@ -92,45 +89,9 @@ public final class ServerIntegrationTest {
         modelId = model.getFileName().toString();
         Assumptions.assumeTrue(Files.exists(model), "model not found: " + model);
         LoadedModel<?> llama = Models.load(model, 2048, java.lang.foreign.Arena.ofAuto());
-        StringBuilder manual = new StringBuilder("Agent operating manual.");
-        for (int i = 1; i <= 50; i++) {
-            manual.append(" Directive ")
-                    .append(i)
-                    .append(": when handling case ")
-                    .append(i)
-                    .append(", consult registry entry ")
-                    .append(i)
-                    .append(" and apply policy ")
-                    .append(i)
-                    .append(" before responding;");
-        }
-        warmFile = Files.createTempFile("jinfer-warm", ".txt");
-        warmFile.toFile().deleteOnExit();
-        Files.writeString(warmFile, manual.toString());
-        LLMOptions options =
-                new LLMOptions(
-                        model,
-                        null,
-                        null,
-                        false,
-                        true,
-                        "127.0.0.1",
-                        0,
-                        1f,
-                        0.95f,
-                        42L,
-                        2048,
-                        true,
-                        false,
-                        true,
-                        false,
-                        false,
-                        false,
-                        false,
-                        null,
-                        false);
-        HttpServer server = Server.start(llama, options);
-        base = "http://127.0.0.1:" + server.getAddress().getPort();
+        LLMOptions options = ServerTestSupport.options(model);
+        Server.Running server = Server.start(llama, options);
+        base = ServerTestSupport.baseUrl(server);
         client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
 
         // ceiling mode runs ONLY the token-ceiling check, under a small -Djinfer.serverMaxTokens
@@ -158,9 +119,7 @@ public final class ServerIntegrationTest {
                 generationDeadline(llama);
             }
         } finally {
-            // the HTTP executor pool is non-daemon: stop it or the test JVM hangs
-            server.stop(0);
-            if (server.getExecutor() instanceof ExecutorService pool) pool.shutdownNow();
+            server.close(); // stops the listener, its non-daemon pool, and the engine
         }
         System.out.println("ServerIntegrationTest: failures=" + failures);
         assertClean();
@@ -591,113 +550,6 @@ public final class ServerIntegrationTest {
     private static long cachedTokens(HttpResponse<String> response) {
         Object cached = path(json(response), "usage", "prompt_tokens_details").get("cached_tokens");
         return ((Number) cached).longValue();
-    }
-
-    /**
-     * A strict PREFIX of already-cached content: the end-of-prompt boundary can fall inside a
-     * cached block, and the end-of-generation commit dedups through existing blocks. The repeat
-     * request must then resume token-exact at its own L-1.
-     */
-    private static void promptCacheStrictPrefix() throws Exception {
-        String body =
-                "{\"prompt\":\""
-                        + "The quick brown fox jumps over the lazy dog. ".repeat(40)
-                        + "\",\"max_tokens\":4,\"temperature\":0}";
-        HttpResponse<String> first =
-                post("/v1/completions", body); // prefix of the 80-rep stream above
-        HttpResponse<String> second = post("/v1/completions", body);
-        long promptTokens = ((Number) path(json(second), "usage").get("prompt_tokens")).longValue();
-        check(
-                cachedTokens(second) == promptTokens,
-                "strict-prefix re-request resumed token-exact (cached "
-                        + cachedTokens(second)
-                        + " of "
-                        + promptTokens
-                        + ")");
-        String firstText = (String) path(json(first), "choices", 0).get("text");
-        String secondText = (String) path(json(second), "choices", 0).get("text");
-        check(firstText.equals(secondText), "strict-prefix outputs identical");
-    }
-
-    /**
-     * Requests sharing only a SYSTEM PROMPT prefix. A populates the tree; the short stream lies
-     * entirely inside cached block coverage, so B and C resume token-exact at the nearest block
-     * boundary below the divergence on their FIRST visit (blocks are self-contained).
-     */
-    private static void promptCacheBranchPoint() throws Exception {
-        String system =
-                "You are the dedicated test oracle for the jinfer integration battery, a most"
-                    + " particular and verbose persona that always answers with at most one short"
-                    + " sentence and no preamble.";
-        String template =
-                "{\"messages\":[{\"role\":\"system\",\"content\":\""
-                        + system
-                        + "\"},{\"role\":\"user\",\"content\":\"%s\"}],\"temperature\":0,\"max_tokens\":24,"
-                        + "\"chat_template_kwargs\":{\"enable_thinking\":false}}";
-        long cachedA =
-                cachedTokens(
-                        post("/v1/chat/completions", template.formatted("What color is the sea?")));
-        long cachedB =
-                cachedTokens(
-                        post("/v1/chat/completions", template.formatted("What color is grass?")));
-        long cachedC =
-                cachedTokens(
-                        post("/v1/chat/completions", template.formatted("What color is the sun?")));
-        check(
-                cachedB >= 20,
-                "second variant resumed at the shared prefix via dense rows (cached "
-                        + cachedB
-                        + ")");
-        check(
-                cachedC >= cachedB,
-                "third variant resumed at least as deep (cached " + cachedC + ")");
-    }
-
-    /**
-     * Cross-request prompt-cache density: the first chat request ingests the shared prompt, and
-     * later requests using it as the system prompt resume token-exact at ANY divergence inside it -
-     * full match, truncation, and a mid-prompt word edit. (Historically framed as --warm-prompt,
-     * which was never implemented; the cache earns the same resumes per request.)
-     */
-    private static void sharedPromptResumesDense() throws Exception {
-        String warm = Files.readString(warmFile);
-        HttpResponse<String> full =
-                post(
-                        "/v1/chat/completions",
-                        chatBody(warm, "Summarize directive 7 in five words."));
-        long ptFull = promptTokens(full), cachedFull = cachedTokens(full);
-        check(
-                cachedFull >= ptFull - 40,
-                "full warmed prompt resumed (cached " + cachedFull + " of " + ptFull + ")");
-        String cut = warm.substring(0, (int) (warm.length() * 0.6));
-        cut = cut.substring(0, cut.lastIndexOf(' '));
-        HttpResponse<String> truncated =
-                post("/v1/chat/completions", chatBody(cut, "Summarize directive 7 in five words."));
-        long ptCut = promptTokens(truncated), cachedCut = cachedTokens(truncated);
-        check(
-                cachedCut >= ptCut - 40 && cachedCut < ptCut,
-                "truncated warmed prompt resumed token-exact mid-warm (cached "
-                        + cachedCut
-                        + " of "
-                        + ptCut
-                        + ")");
-        HttpResponse<String> edited =
-                post(
-                        "/v1/chat/completions",
-                        chatBody(
-                                warm.replace("Directive 25:", "Directive xxv:"),
-                                "Summarize directive 7 in five words."));
-        long ptMid = promptTokens(edited), cachedMid = cachedTokens(edited);
-        check(
-                cachedMid > ptMid / 4 && cachedMid < ptMid - 100,
-                "mid-edited warmed prompt resumed at the edit (cached "
-                        + cachedMid
-                        + " of "
-                        + ptMid
-                        + ")");
-        Map<String, Object> stats = path(json(get("/props")), "prompt_cache");
-        check(((Number) stats.get("warm_tokens")).longValue() > 0, "warm_tokens reported");
-        check(((Number) stats.get("dense_hits")).longValue() >= 2, "dense hits recorded");
     }
 
     /**

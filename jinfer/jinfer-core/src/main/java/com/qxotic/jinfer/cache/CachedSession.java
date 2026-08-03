@@ -276,8 +276,8 @@ public final class CachedSession<S extends RuntimeState> {
      * them - a trailing stop or budget-final token is sampled but never ingested); {@code commit}'s
      * position check enforces the accounting.
      */
-    public void adopt(List<Integer> ingested) {
-        if (ingested.isEmpty()) return;
+    public void adopt(int[] ingested) {
+        if (ingested.length == 0) return;
         int off = len;
         for (int id : ingested) append(id);
         tip = cache.commit(tip, fp, off, len - off, state);

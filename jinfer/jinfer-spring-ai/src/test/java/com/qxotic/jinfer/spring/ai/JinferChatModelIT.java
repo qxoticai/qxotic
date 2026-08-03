@@ -399,8 +399,8 @@ class JinferChatModelIT {
         // Ollama-style timing key-values
         assertNotNull(r.getMetadata().get("prompt-eval-duration"));
         assertNotNull(r.getMetadata().get("eval-duration"));
-        // no cache involved on the base model: null, not zero
-        assertNull(usage.getCacheReadInputTokens());
+        // the block tree serves every prompt now, so a shared preamble cached by earlier tests may
+        // legitimately report as read; writes are never billed to a request
         assertNull(usage.getCacheWriteInputTokens());
         // no quota exists in-process, but the slot must not be null
         assertInstanceOf(EmptyRateLimit.class, r.getMetadata().getRateLimit());
