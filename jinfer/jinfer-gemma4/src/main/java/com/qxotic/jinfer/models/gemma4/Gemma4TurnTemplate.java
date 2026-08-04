@@ -186,11 +186,10 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
                 // plain text (not special tokens). Per-frame token cost = image budget (~256 at
                 // budget 280) - use a low jinfer.gemma4.imageTokenBudget for video so many frames
                 // fit the context.
-                Media.Image[] frames = vid.frames();
-                for (int i = 0; i < frames.length; i++) {
-                    int sec = (int) (i / Math.max(vid.fps(), 1f));
+                for (Media.Video.Frame frame : vid.frames()) {
+                    int sec = (int) frame.timestamp(); // TRUE position (uniform sampling)
                     runs.text(String.format("%n%02d:%02d%n", sec / 60, sec % 60));
-                    encodeMedia(new Part.Blob(frames[i]), runs);
+                    encodeMedia(new Part.Blob(frame.image()), runs);
                 }
             }
             default ->

@@ -4,7 +4,6 @@ import com.qxotic.jinfer.Media;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Stream;
@@ -19,29 +18,30 @@ public final class VideoCodec {
 
     private VideoCodec() {}
 
-    /** Default frames captured per second of video (Gemma-style low-fps sampling). */
-    public static final int DEFAULT_FPS = 1;
-
-    /** Default frame cap: each frame is ~256 image tokens, so 16 frames is already ~4k tokens. */
-    public static final int DEFAULT_MAX_FRAMES = 16;
-
     /**
-     * Sample a video into a {@link Media.Video} at {@link #DEFAULT_FPS}, capped at {@link
-     * #DEFAULT_MAX_FRAMES}.
+     * Default frame count, matching the reference processor: N frames sampled UNIFORMLY across the
+     * whole duration (never "the first N seconds"), each carrying its true timestamp.
      */
+    public static final int DEFAULT_NUM_FRAMES = 32;
+
+    /** Sample {@link #DEFAULT_NUM_FRAMES} frames uniformly across the video. */
     public static Media.Video load(Path path) throws IOException {
-        return load(path, DEFAULT_FPS, DEFAULT_MAX_FRAMES);
+        return load(path, DEFAULT_NUM_FRAMES);
     }
 
     /**
-     * Sample {@code fps} frames per second, at most {@code maxFrames}, into a {@link Media.Video}
-     * (audio null). The frames carry the video timeline: frame i is at {@code i / fps} seconds.
+     * Sample {@code numFrames} frames uniformly across the WHOLE video into a {@link Media.Video}
+     * (audio dropped). Mirrors the reference sampler ({@code indices = arange(0, total,
+     * total/num)}): a one-hour video yields frames ~113s apart, timestamped at their true positions
+     * - the interleaved MM:SS stamps are what keep sparse sampling temporally grounded. A video
+     * shorter than {@code numFrames} frames yields what it has.
      */
-    public static Media.Video load(Path path, int fps, int maxFrames) throws IOException {
-        if (fps <= 0 || maxFrames <= 0)
-            throw new IllegalArgumentException("fps and maxFrames must be positive");
+    public static Media.Video load(Path path, int numFrames) throws IOException {
+        if (numFrames <= 0) throw new IllegalArgumentException("numFrames must be positive");
+        double duration = probeDurationSeconds(path);
         Path dir = Files.createTempDirectory("jinfer-video");
         try {
+            // one pass at rate numFrames/duration = evenly spaced samples starting at ~t=0
             runFfmpeg(
                     "ffmpeg",
                     "-hide_banner",
@@ -50,9 +50,9 @@ public final class VideoCodec {
                     "-i",
                     path.toString(),
                     "-vf",
-                    "fps=" + fps,
+                    String.format(java.util.Locale.ROOT, "fps=%.8f", numFrames / duration),
                     "-frames:v",
-                    String.valueOf(maxFrames),
+                    String.valueOf(numFrames),
                     dir.resolve("f%04d.png").toString());
             List<Path> pngs;
             try (Stream<Path> s = Files.list(dir)) {
@@ -62,11 +62,47 @@ public final class VideoCodec {
                                 .toList();
             }
             if (pngs.isEmpty()) throw new IOException("ffmpeg extracted no frames from " + path);
-            List<Media.Image> frames = new ArrayList<>(pngs.size());
-            for (Path png : pngs) frames.add(ImageCodec.load(png));
-            return new Media.Video(frames.toArray(new Media.Image[0]), fps);
+            // true positions of the uniform samples: t_k = k * duration / n (reference-aligned)
+            int n = pngs.size();
+            Media.Video.Frame[] frames = new Media.Video.Frame[n];
+            for (int k = 0; k < n; k++) {
+                frames[k] =
+                        new Media.Video.Frame(
+                                ImageCodec.load(pngs.get(k)), (float) (k * duration / n));
+            }
+            return new Media.Video(frames);
         } finally {
             deleteRecursive(dir);
+        }
+    }
+
+    /** The container's duration via ffprobe (ships with ffmpeg) - needed to spread the samples. */
+    private static double probeDurationSeconds(Path path) throws IOException {
+        ProcessBuilder pb =
+                new ProcessBuilder(
+                        "ffprobe",
+                        "-v",
+                        "error",
+                        "-show_entries",
+                        "format=duration",
+                        "-of",
+                        "csv=p=0",
+                        path.toString());
+        pb.redirectErrorStream(true);
+        try {
+            Process p = pb.start();
+            String out = new String(p.getInputStream().readAllBytes()).strip();
+            if (!p.waitFor(30, java.util.concurrent.TimeUnit.SECONDS) || p.exitValue() != 0) {
+                throw new IOException("ffprobe failed for " + path + ": " + out);
+            }
+            double d = Double.parseDouble(out);
+            if (!(d > 0)) throw new IOException("ffprobe reported non-positive duration: " + out);
+            return d;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("interrupted probing " + path, e);
+        } catch (NumberFormatException e) {
+            throw new IOException("unparsable ffprobe duration for " + path, e);
         }
     }
 

@@ -65,9 +65,25 @@ public sealed interface Media permits Media.Image, Media.Audio, Media.Video {
     }
 
     /**
-     * Decoded frames at a constant {@code fps}. Variable frame rate and unbounded/streaming sources
-     * are out of scope — sample the frames you want before constructing this. (No audio track: no
-     * consumer reads one; add the component back when a model ingests synchronized audio.)
+     * Sampled frames, each carrying its TRUE position in the source. A sampled video is a sequence
+     * of (image, timestamp) pairs - never "frames at some rate": reference processors sample a
+     * fixed frame count UNIFORMLY across the whole duration (an hour of video = 32 frames ~113s
+     * apart), and the interleaved timestamps are what keep sparse sampling temporally grounded for
+     * the model. Constant-rate clips are the special case {@code timestamp = i / fps}. Any sampling
+     * policy - uniform, scene-cut, caller-curated - is representable; the pairing makes
+     * misalignment unconstructible. (No audio track: no consumer reads one; add it back when a
+     * model ingests synchronized audio.)
      */
-    record Video(Image[] frames, float fps) implements Media {}
+    record Video(Frame[] frames) implements Media {
+
+        /** One sampled frame at {@code timestamp} seconds from the source's start. */
+        public record Frame(Image image, float timestamp) {}
+
+        public Video {
+            for (int i = 1; i < frames.length; i++) {
+                if (frames[i].timestamp() < frames[i - 1].timestamp())
+                    throw new IllegalArgumentException("frame timestamps must ascend");
+            }
+        }
+    }
 }
