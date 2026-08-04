@@ -76,12 +76,12 @@ public sealed interface Media permits Media.Image, Media.Audio, Media.Video {
      */
     record Video(Frame[] frames) implements Media {
 
-        /** One sampled frame at {@code timestamp} seconds from the source's start. */
-        public record Frame(Image image, float timestamp) {}
+        /** One sampled frame at {@code timestamp} from the source's start. */
+        public record Frame(Image image, java.time.Duration timestamp) {}
 
         public Video {
             for (int i = 1; i < frames.length; i++) {
-                if (frames[i].timestamp() < frames[i - 1].timestamp())
+                if (frames[i].timestamp().compareTo(frames[i - 1].timestamp()) < 0)
                     throw new IllegalArgumentException("frame timestamps must ascend");
             }
         }

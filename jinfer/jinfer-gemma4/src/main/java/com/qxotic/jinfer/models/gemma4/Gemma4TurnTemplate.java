@@ -187,8 +187,8 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
                 // budget 280) - use a low jinfer.gemma4.imageTokenBudget for video so many frames
                 // fit the context.
                 for (Media.Video.Frame frame : vid.frames()) {
-                    int sec = (int) frame.timestamp(); // TRUE position (uniform sampling)
-                    runs.text(String.format("%n%02d:%02d%n", sec / 60, sec % 60));
+                    java.time.Duration t = frame.timestamp(); // TRUE position (any sampling)
+                    runs.text(String.format("%n%02d:%02d%n", t.toMinutes(), t.toSecondsPart()));
                     encodeMedia(new Part.Blob(frame.image()), runs);
                 }
             }

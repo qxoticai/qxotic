@@ -4,6 +4,7 @@ import com.qxotic.jinfer.Media;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -27,13 +28,13 @@ public final class VideoCodec {
      */
     public static final int DEFAULT_NUM_FRAMES = 32;
 
-    /** The container's duration in seconds (ffprobe - ships with ffmpeg). */
-    public static float duration(Path video) throws IOException {
+    /** The container's duration (ffprobe - ships with ffmpeg). */
+    public static Duration duration(Path video) throws IOException {
         String out = probe(video, "-show_entries", "format=duration");
         try {
-            float d = Float.parseFloat(out);
+            double d = Double.parseDouble(out);
             if (!(d > 0)) throw new IOException("ffprobe reported non-positive duration: " + out);
-            return d;
+            return Duration.ofNanos((long) (d * 1e9));
         } catch (NumberFormatException e) {
             throw new IOException("unparsable ffprobe duration for " + video + ": " + out);
         }
@@ -60,26 +61,27 @@ public final class VideoCodec {
     }
 
     /**
-     * Frames at explicit {@code timestamps} (seconds, ascending) - THE sampling primitive: any
-     * policy is a timestamp list (uniform, scene cuts, windowed chunks of a long source,
-     * caller-curated key moments). Each timestamp seeks input-side ({@code -ss} before {@code -i}:
-     * keyframe-fast, exact enough for frame sampling) and decodes one frame; the result carries the
-     * pairs as {@link Media.Video.Frame}.
+     * Frames at explicit {@code timestamps} (ascending) - THE sampling primitive: any policy is a
+     * timestamp list (uniform, scene cuts, windowed chunks of a long source, caller-curated key
+     * moments). Each timestamp seeks input-side ({@code -ss} before {@code -i}: keyframe-fast,
+     * exact enough for frame sampling) and decodes one frame; the result carries the pairs as
+     * {@link Media.Video.Frame}.
      */
-    public static Media.Video at(Path video, float... timestamps) throws IOException {
+    public static Media.Video at(Path video, Duration... timestamps) throws IOException {
         if (timestamps.length == 0) throw new IllegalArgumentException("no timestamps");
         Path dir = Files.createTempDirectory("jinfer-video");
         try {
             Media.Video.Frame[] frames = new Media.Video.Frame[timestamps.length];
             for (int k = 0; k < timestamps.length; k++) {
                 Path png = dir.resolve("f" + k + ".png");
+                double seconds = timestamps[k].toNanos() / 1e9;
                 runFfmpeg(
                         "ffmpeg",
                         "-hide_banner",
                         "-loglevel",
                         "error",
                         "-ss",
-                        String.format(java.util.Locale.ROOT, "%.3f", timestamps[k]),
+                        String.format(java.util.Locale.ROOT, "%.3f", seconds),
                         "-i",
                         video.toString(),
                         "-frames:v",
@@ -87,7 +89,7 @@ public final class VideoCodec {
                         png.toString());
                 if (!Files.exists(png)) {
                     throw new IOException(
-                            "ffmpeg extracted no frame at " + timestamps[k] + "s from " + video);
+                            "ffmpeg extracted no frame at " + timestamps[k] + " from " + video);
                 }
                 frames[k] = new Media.Video.Frame(ImageCodec.load(png), timestamps[k]);
             }
@@ -110,9 +112,9 @@ public final class VideoCodec {
      */
     public static Media.Video uniform(Path video, int n) throws IOException {
         if (n <= 0) throw new IllegalArgumentException("n must be positive");
-        float duration = duration(video);
-        float[] timestamps = new float[n];
-        for (int k = 0; k < n; k++) timestamps[k] = k * duration / n;
+        long nanos = duration(video).toNanos();
+        Duration[] timestamps = new Duration[n];
+        for (int k = 0; k < n; k++) timestamps[k] = Duration.ofNanos(k * (nanos / n));
         return at(video, timestamps);
     }
 
@@ -147,7 +149,8 @@ public final class VideoCodec {
             if (pngs.isEmpty()) throw new IOException("ffmpeg extracted no frames from " + video);
             Media.Video.Frame[] frames = new Media.Video.Frame[pngs.size()];
             for (int k = 0; k < pngs.size(); k++) {
-                frames[k] = new Media.Video.Frame(ImageCodec.load(pngs.get(k)), k / fps);
+                Duration t = Duration.ofNanos((long) (k / fps * 1e9));
+                frames[k] = new Media.Video.Frame(ImageCodec.load(pngs.get(k)), t);
             }
             return new Media.Video(frames);
         } finally {
