@@ -71,10 +71,13 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
     // The decode tail's granularity. Per-token singles keep EVERY reply position resumable, and
     // on a residue-free codec (dense rows, ring rows) they are free - a single stores just its
     // row, which any granularity stores anyway. A codec with a residue duplicates it into every
-    // block, so per-token singles multiply it by the reply length (measured: LFM2.5-8B's ~300KB
-    // conv residue turned ~6.5k generated tokens into 2.1GB). There the tail commits as ONE
+    // block, so per-token singles multiply it by the reply length. There the tail commits as ONE
     // block per reply instead: every checkpoint is a turn boundary, one residue per reply, and
     // an edited or stop-cut echo re-prefills at most one reply's tail.
+    // MEASURED (LFM2.5-8B server, same mixed chat/tool battery, ~300KB conv residue): per-token
+    // tail = 6.5k generated tokens -> 6,819 blocks / 2,107MB (~324KB/token, budget exhausted);
+    // per-reply tail = 8.8k generated tokens -> 95 blocks / 111MB (~12.5KB/token = the pure row
+    // rate - the duplication is fully gone). Hit pattern identical (22/8/2 vs 24/8/2).
     private final boolean tailPerToken;
     private final CacheStore store; // owned; freed at close
     private final Path writeBack; // save()'s append target; null = read-only or no catalog
