@@ -15,9 +15,9 @@ import java.util.stream.Stream;
  * because the JDK cannot demux mp4/webm. One primitive and two named policies: {@link #framesAt}
  * takes frames at explicit timestamps (any sampling policy is a timestamp list; {@link #frameAt} is
  * its correctly-shaped singular), {@link #uniform} takes n equal-segment representatives
- * (centered), {@link #span} takes n frames start-to-end inclusive (fencepost). Frames decode
- * through {@link ImageCodec} (inheriting its RGB/[0,1]/HWC contract) and carry their true
- * timestamps. No audio track.
+ * (centered), {@link #span} takes n frames end-to-end inclusive (fencepost) over the whole source
+ * or a {@code [from, to]} window. Frames decode through {@link ImageCodec} (inheriting its
+ * RGB/[0,1]/HWC contract) and carry their true timestamps. No audio track.
  *
  * <p>DELIBERATE SHAPE - this class is a SAMPLER, not a decoder, and its asymmetry with {@link
  * ImageCodec}/{@link AudioCodec} (whole payload in, media out) is intentional: "decode the whole
@@ -25,10 +25,10 @@ import java.util.stream.Stream;
  * smuggled into a signature (the original fps-based loader silently took the FIRST n seconds - the
  * exact trap). Equally deliberate exclusions: no {@code byte[]} overloads until a caller actually
  * holds bytes (ffmpeg needs a file; the wire that receives bytes owns that temp file today), no
- * {@code first}/{@code window}/{@code last} conveniences ({@link #framesAt} composes every policy a
- * caller can state as timestamps - and "the first n frames" at native rate is the first-N-seconds
- * trap in method form), and nothing model-shaped - token budgets, frame markers, timestamp
- * formatting are template concerns. The contract ends at truthfully timestamped frames.
+ * {@code first}/{@code last} conveniences ({@link #framesAt} composes every policy a caller can
+ * state as timestamps - and "the first n frames" at native rate is the first-N-seconds trap in
+ * method form), and nothing model-shaped - token budgets, frame markers, timestamp formatting are
+ * template concerns. The contract ends at truthfully timestamped frames.
  */
 public final class VideoCodec {
 
@@ -143,19 +143,38 @@ public final class VideoCodec {
     }
 
     /**
-     * {@code n} frames from start to end INCLUSIVE: the fencepost scheme {@code t_k = k * last /
-     * (n-1)} where {@code last = duration - 1/fps} is the true timestamp of the source's final
-     * frame (seeking past it yields nothing - the end of a video is a frame, not an instant).
-     * {@code n=2} is the first and last frames, {@code n=3} adds the middle. Needs {@code n >= 2}:
-     * "both ends" is the contract - one frame has no ends (use {@link #frameAt} or {@link
-     * #uniform}).
+     * {@code n} frames from start to end INCLUSIVE: {@link #span(Path, Duration, Duration, int)}
+     * over the whole source. {@code n=2} is the first and last frames, {@code n=3} adds the middle.
      */
     public static Media.Video span(Path video, int n) throws IOException {
+        return span(video, Duration.ZERO, totalDuration(video), n);
+    }
+
+    /**
+     * {@code n} frames across the window {@code [from, to]} INCLUSIVE: the fencepost scheme {@code
+     * t_k = from + k * (to - from) / (n-1)}. {@code to} is clamped to the source's final frame
+     * ({@code duration - 1/fps} - seeking past it yields nothing; the end of a video is a frame,
+     * not an instant), so {@code to = totalDuration} means "through the last frame". Needs {@code n
+     * >= 2}: "both ends" is the contract - one frame has no ends (use {@link #frameAt} or {@link
+     * #uniform}).
+     */
+    public static Media.Video span(Path video, Duration from, Duration to, int n)
+            throws IOException {
         if (n < 2) throw new IllegalArgumentException("span needs n >= 2 (both ends inclusive)");
         long frameNanos = (long) (1e9 / nativeFps(video));
-        long last = totalDuration(video).toNanos() - frameNanos;
+        long start = from.toNanos();
+        long end = Math.min(to.toNanos(), totalDuration(video).toNanos() - frameNanos);
+        if (start < 0 || start >= end) {
+            throw new IllegalArgumentException(
+                    "span window must satisfy 0 <= from < to (clamped)"
+                            + ": from="
+                            + from
+                            + " to="
+                            + to);
+        }
         Duration[] timestamps = new Duration[n];
-        for (int k = 0; k < n; k++) timestamps[k] = Duration.ofNanos(k * (last / (n - 1)));
+        for (int k = 0; k < n; k++)
+            timestamps[k] = Duration.ofNanos(start + k * ((end - start) / (n - 1)));
         return framesAt(video, timestamps);
     }
 
