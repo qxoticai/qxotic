@@ -6,6 +6,7 @@ import java.util.Locale;
 
 public record LLMOptions(
         Path modelPath,
+        Path mediaProjector,
         String prompt,
         String systemPrompt,
         boolean interactive,

@@ -254,6 +254,9 @@ public class Main {
         out.println();
         out.println("Options:");
         out.println("  --model, -m <path>            required, path to .gguf file");
+        out.println(
+                "  --mmproj <path>               media projector .gguf (vision/audio encoders) for"
+                        + " multimodal models");
         out.println("  --interactive, --chat, -i     run in chat mode");
         out.println("  --instruct                    run in instruct (once) mode, default mode");
         out.println("  --server                      run an OpenAI-compatible HTTP server");
@@ -315,6 +318,7 @@ public class Main {
         float temperature = 1f;
         float topp = 0.95f;
         Path modelPath = null;
+        Path mediaProjector = null;
         long seed = System.nanoTime();
         int maxTokens = DEFAULT_MAX_TOKENS;
         boolean interactive = false;
@@ -362,6 +366,7 @@ public class Main {
                         case "--temperature", "--temp" -> temperature = Float.parseFloat(nextArg);
                         case "--top-p" -> topp = Float.parseFloat(nextArg);
                         case "--model", "-m" -> modelPath = Path.of(nextArg);
+                        case "--mmproj" -> mediaProjector = Path.of(nextArg);
                         case "--host" -> host = nextArg;
                         case "--port" -> port = Integer.parseInt(nextArg);
                         case "--seed", "-s" -> seed = Long.parseLong(nextArg);
@@ -401,6 +406,7 @@ public class Main {
         boolean color = LLMOptions.supportsAnsiColors(colorMode);
         return new LLMOptions(
                 modelPath,
+                mediaProjector,
                 prompt,
                 systemPrompt,
                 interactive,
@@ -452,13 +458,22 @@ public class Main {
             System.exit(-1);
             return;
         }
-        LoadedModel<?> model = AOT.tryUsePreLoaded(options.modelPath(), options.maxTokens());
+        LoadedModel<?> model =
+                options.mediaProjector() != null
+                        ? null // a media sidecar is never AOT-preloaded: load the pair fresh
+                        : AOT.tryUsePreLoaded(options.modelPath(), options.maxTokens());
         if (model == null) {
             model =
-                    Models.load(
-                            options.modelPath(),
-                            options.maxTokens(),
-                            java.lang.foreign.Arena.global());
+                    options.mediaProjector() != null
+                            ? Models.load(
+                                    options.modelPath(),
+                                    options.mediaProjector(),
+                                    options.maxTokens(),
+                                    java.lang.foreign.Arena.global())
+                            : Models.load(
+                                    options.modelPath(),
+                                    options.maxTokens(),
+                                    java.lang.foreign.Arena.global());
         }
         if (options.server()) {
             Server.start(model, options);

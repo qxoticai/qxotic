@@ -24,6 +24,7 @@ final class ServerTestSupport {
     static LLMOptions options(Path gguf, Path promptCache, boolean readOnly) {
         return new LLMOptions(
                 gguf,
+                null, // mediaProjector
                 null,
                 null,
                 false,
