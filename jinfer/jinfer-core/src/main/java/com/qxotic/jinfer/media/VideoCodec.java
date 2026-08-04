@@ -12,11 +12,12 @@ import java.util.stream.Stream;
 
 /**
  * Samples a video into a {@link com.qxotic.jinfer.Media.Video} with ffmpeg - the only backend here,
- * because the JDK cannot demux mp4/webm. One primitive and two named policies: {@link #at} takes
- * frames at explicit timestamps (any sampling policy is a timestamp list), {@link #uniform} spreads
- * n frames across the whole duration (the reference processors' policy), {@link #first} takes the
- * opening n frames at native rate. Frames decode through {@link ImageCodec} (inheriting its
- * RGB/[0,1]/HWC contract) and carry their true timestamps. No audio track.
+ * because the JDK cannot demux mp4/webm. One primitive and two named policies: {@link #framesAt}
+ * takes frames at explicit timestamps (any sampling policy is a timestamp list; {@link #frameAt} is
+ * its correctly-shaped singular), {@link #uniform} spreads n frames across the whole duration (the
+ * reference processors' policy), {@link #first} takes the opening n frames at native rate. Frames
+ * decode through {@link ImageCodec} (inheriting its RGB/[0,1]/HWC contract) and carry their true
+ * timestamps. No audio track.
  *
  * <p>DELIBERATE SHAPE - this class is a SAMPLER, not a decoder, and its asymmetry with {@link
  * ImageCodec}/{@link AudioCodec} (whole payload in, media out) is intentional: "decode the whole
@@ -24,9 +25,9 @@ import java.util.stream.Stream;
  * smuggled into a signature (the original fps-based loader silently took the FIRST n seconds - the
  * exact trap). Equally deliberate exclusions: no {@code byte[]} overloads until a caller actually
  * holds bytes (ffmpeg needs a file; the wire that receives bytes owns that temp file today), no
- * {@code window}/{@code last} conveniences ({@link #at} composes every policy a caller can state as
- * timestamps), and nothing model-shaped - token budgets, frame markers, timestamp formatting are
- * template concerns. The contract ends at truthfully timestamped frames.
+ * {@code window}/{@code last} conveniences ({@link #framesAt} composes every policy a caller can
+ * state as timestamps), and nothing model-shaped - token budgets, frame markers, timestamp
+ * formatting are template concerns. The contract ends at truthfully timestamped frames.
  */
 public final class VideoCodec {
 
@@ -75,9 +76,9 @@ public final class VideoCodec {
      * timestamp list (uniform, scene cuts, windowed chunks of a long source, caller-curated key
      * moments). Each timestamp seeks input-side ({@code -ss} before {@code -i}: keyframe-fast,
      * exact enough for frame sampling) and decodes one frame; the result carries the pairs as
-     * {@link Media.Video.Frame}.
+     * {@link Media.Video.Frame}. The singular counterpart is {@link #frameAt}.
      */
-    public static Media.Video at(Path video, Duration... timestamps) throws IOException {
+    public static Media.Video framesAt(Path video, Duration... timestamps) throws IOException {
         if (timestamps.length == 0) throw new IllegalArgumentException("no timestamps");
         Path dir = Files.createTempDirectory("jinfer-video");
         try {
@@ -109,6 +110,14 @@ public final class VideoCodec {
         }
     }
 
+    /**
+     * The single frame at {@code timestamp} - the singular of {@link #framesAt}, returning the
+     * correctly shaped {@link Media.Video.Frame} (one frame is not a video).
+     */
+    public static Media.Video.Frame frameAt(Path video, Duration timestamp) throws IOException {
+        return framesAt(video, timestamp).frames().get(0);
+    }
+
     /** The reference policy: {@link #DEFAULT_NUM_FRAMES} frames uniform across the duration. */
     public static Media.Video uniform(Path video) throws IOException {
         return uniform(video, DEFAULT_NUM_FRAMES);
@@ -125,7 +134,7 @@ public final class VideoCodec {
         long nanos = duration(video).toNanos();
         Duration[] timestamps = new Duration[n];
         for (int k = 0; k < n; k++) timestamps[k] = Duration.ofNanos(k * (nanos / n));
-        return at(video, timestamps);
+        return framesAt(video, timestamps);
     }
 
     /**
