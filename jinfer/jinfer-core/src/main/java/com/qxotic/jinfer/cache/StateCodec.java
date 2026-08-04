@@ -15,9 +15,9 @@ import java.lang.foreign.MemorySegment;
  *
  * <p>Two contracts: {@code save} is only valid while {@code state.position() == to} (the residue
  * and the live window only exist at that instant - why blocks match completely or not at all), and
- * the residue must be SMALL (KBs, duplicated per block by design). A model whose mutable state is
- * neither per-position rows nor a small residue (large SSM recurrences) does not offer block
- * caching - live-session reuse still applies.
+ * the residue is duplicated per block by design - keep it small (KBs) for fine-grained blocking, or
+ * declare {@link #coarseBlocks()} when it is genuinely large (MB-scale recurrences: define-only
+ * blocks, tail-snapshot serving; see the flag's decision guide).
  *
  * <p>Lifecycle stays out of the codec: {@code restore} copies bytes into the state's tensors, and
  * the cache calls {@link RuntimeState#resumeAt} once after the whole chain is applied.
