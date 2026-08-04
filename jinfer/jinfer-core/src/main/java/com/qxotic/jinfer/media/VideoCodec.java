@@ -12,12 +12,12 @@ import java.util.stream.Stream;
 
 /**
  * Samples a video into a {@link com.qxotic.jinfer.Media.Video} with ffmpeg - the only backend here,
- * because the JDK cannot demux mp4/webm. One primitive and three named policies: {@link #framesAt}
+ * because the JDK cannot demux mp4/webm. One primitive and two named policies: {@link #framesAt}
  * takes frames at explicit timestamps (any sampling policy is a timestamp list; {@link #frameAt} is
  * its correctly-shaped singular), {@link #uniform} takes n equal-segment representatives
- * (centered), {@link #span} takes n frames start-to-end inclusive (fencepost), {@link #first} takes
- * the opening n frames at native rate. Frames decode through {@link ImageCodec} (inheriting its
- * RGB/[0,1]/HWC contract) and carry their true timestamps. No audio track.
+ * (centered), {@link #span} takes n frames start-to-end inclusive (fencepost). Frames decode
+ * through {@link ImageCodec} (inheriting its RGB/[0,1]/HWC contract) and carry their true
+ * timestamps. No audio track.
  *
  * <p>DELIBERATE SHAPE - this class is a SAMPLER, not a decoder, and its asymmetry with {@link
  * ImageCodec}/{@link AudioCodec} (whole payload in, media out) is intentional: "decode the whole
@@ -25,8 +25,9 @@ import java.util.stream.Stream;
  * smuggled into a signature (the original fps-based loader silently took the FIRST n seconds - the
  * exact trap). Equally deliberate exclusions: no {@code byte[]} overloads until a caller actually
  * holds bytes (ffmpeg needs a file; the wire that receives bytes owns that temp file today), no
- * {@code window}/{@code last} conveniences ({@link #framesAt} composes every policy a caller can
- * state as timestamps), and nothing model-shaped - token budgets, frame markers, timestamp
+ * {@code first}/{@code window}/{@code last} conveniences ({@link #framesAt} composes every policy a
+ * caller can state as timestamps - and "the first n frames" at native rate is the first-N-seconds
+ * trap in method form), and nothing model-shaped - token budgets, frame markers, timestamp
  * formatting are template concerns. The contract ends at truthfully timestamped frames.
  */
 public final class VideoCodec {
@@ -126,12 +127,11 @@ public final class VideoCodec {
     /**
      * {@code n} frames, each representing an equal 1/n segment of the source: the CENTERED scheme
      * {@code t_k = (k + 1/2) * duration / n}. {@code n=1} is the middle frame (the most
-     * representative single sample - "the first frame" is {@link #first}'s job), {@code n=3} is
-     * quarter points 1/6, 1/2, 5/6; the ends are covered to within {@code duration/2n}. Use {@link
-     * #span} when the literal first and last frames matter. (Deliberate deviation from the HF
-     * reference's start-aligned {@code arange(0, total, total/num)}: that scheme never sees the
-     * final {@code duration/n} of the source and its n=1 duplicates {@code first(1)}; the
-     * interleaved true timestamps ground either scheme for the model.)
+     * representative single sample), {@code n=3} is quarter points 1/6, 1/2, 5/6; the ends are
+     * covered to within {@code duration/2n}. Use {@link #span} when the literal first and last
+     * frames matter. (Deliberate deviation from the HF reference's start-aligned {@code arange(0,
+     * total, total/num)}: that scheme never sees the final {@code duration/n} of the source and its
+     * n=1 is the first frame; the interleaved true timestamps ground either scheme for the model.)
      */
     public static Media.Video uniform(Path video, int n) throws IOException {
         if (n <= 0) throw new IllegalArgumentException("n must be positive");
@@ -157,46 +157,6 @@ public final class VideoCodec {
         Duration[] timestamps = new Duration[n];
         for (int k = 0; k < n; k++) timestamps[k] = Duration.ofNanos(k * (last / (n - 1)));
         return framesAt(video, timestamps);
-    }
-
-    /**
-     * The source's FIRST {@code n} frames in decode order, stamped at their native times ({@code
-     * t_k = k / fps}). Dense temporal detail at the start, no coverage beyond it - the dual of
-     * {@link #uniform}; the opening-moments policy (previews, title cards, "how does this begin").
-     * A source with fewer frames yields what it has. Cheapest extraction: one pass, no seeks.
-     */
-    public static Media.Video first(Path video, int n) throws IOException {
-        if (n <= 0) throw new IllegalArgumentException("n must be positive");
-        float fps = nativeFps(video);
-        Path dir = Files.createTempDirectory("jinfer-video");
-        try {
-            runFfmpeg(
-                    "ffmpeg",
-                    "-hide_banner",
-                    "-loglevel",
-                    "error",
-                    "-i",
-                    video.toString(),
-                    "-frames:v",
-                    String.valueOf(n),
-                    dir.resolve("f%06d.png").toString());
-            List<Path> pngs;
-            try (Stream<Path> s = Files.list(dir)) {
-                pngs =
-                        s.filter(f -> f.getFileName().toString().endsWith(".png"))
-                                .sorted(Comparator.comparing(Path::getFileName))
-                                .toList();
-            }
-            if (pngs.isEmpty()) throw new IOException("ffmpeg extracted no frames from " + video);
-            List<Media.Video.Frame> frames = new ArrayList<>(pngs.size());
-            for (int k = 0; k < pngs.size(); k++) {
-                Duration t = Duration.ofNanos((long) (k / fps * 1e9));
-                frames.add(new Media.Video.Frame(ImageCodec.load(pngs.get(k)), t));
-            }
-            return new Media.Video(frames);
-        } finally {
-            deleteRecursive(dir);
-        }
     }
 
     /** The video stream's native frame rate (ffprobe r_frame_rate, a fraction like 30000/1001). */

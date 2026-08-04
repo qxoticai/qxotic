@@ -19,7 +19,8 @@
 // IMPORTANT: each frame is ~256 image tokens at the default budget, so many frames blow the context
 // fast. Use a LOW per-frame budget for video:
 //     jbang -Djinfer.gemma4.imageTokenBudget=140 GemmaVideo.java clip.mp4
-// Tune sampling with -Djinfer.video.fps (default 1) and -Djinfer.video.maxFrames (default 16).
+// Tune sampling with -Djinfer.video.frames (default 16 here; frames are spread uniformly across
+// the WHOLE duration, each stamped with its true timestamp).
 
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.Media;
@@ -47,13 +48,13 @@ public class GemmaVideo {
         Path textGguf = Path.of(args.length > 3 ? args[2] : MODELS + "gemma-4-E2B-it-Q8_0.gguf");
         Path mmproj   = Path.of(args.length > 3 ? args[3] : MODELS + "gemma-4-E2B-it-GGUF/mmproj-F32.gguf");
 
-        int fps       = Integer.getInteger("jinfer.video.fps", VideoCodec.DEFAULT_FPS);
-        int maxFrames = Integer.getInteger("jinfer.video.maxFrames", VideoCodec.DEFAULT_MAX_FRAMES);
+        int numFrames = Integer.getInteger("jinfer.video.frames", 16);
 
-        // 1. Sample the video -> Media.Video (frames + fps). ffmpeg does the demux/decode.
-        Media.Video vid = VideoCodec.load(video, fps, maxFrames);
-        System.err.printf("sampled %d frames @ %d fps (%dx%d)%n", vid.frames().length, fps,
-                vid.frames()[0].width(), vid.frames()[0].height());
+        // 1. Sample the video -> Media.Video (timestamped frames). ffmpeg does the demux/decode.
+        Media.Video vid = VideoCodec.uniform(video, numFrames);
+        Media.Image first = vid.frames().getFirst().image();
+        System.err.printf("sampled %d frames uniformly (%dx%d)%n",
+                vid.frames().size(), first.width(), first.height());
 
         Gemma4 model = Gemma4.loadModel(textGguf, mmproj, 8192, java.lang.foreign.Arena.ofAuto());   // frame tokens need headroom
         TurnTemplate template = model.turnTemplate().orElseThrow();
@@ -73,7 +74,7 @@ public class GemmaVideo {
         System.out.println("\n=== Gemma 4 describes the video ===");
         int tok = model.logits(state).argmax();
         for (int n = 0; n < 400 && !stops.contains(tok); n++) {
-            System.out.print(model.tokenizer().decode(tok));
+            System.out.print(model.tokenizer().decode(new int[] {tok}));
             System.out.flush();
             model.ingest(state, Batch.step(tok));
             tok = model.logits(state).argmax();

@@ -73,7 +73,7 @@ public class GemmaVision {
         System.out.println("\n=== Gemma 4 says ===");
         int tok = model.logits(state).argmax();
         for (int n = 0; n < 300 && !stops.contains(tok); n++) {
-            System.out.print(model.tokenizer().decode(tok));
+            System.out.print(model.tokenizer().decode(new int[] {tok}));
             System.out.flush();
             model.ingest(state, Batch.step(tok));
             tok = model.logits(state).argmax();
