@@ -17,6 +17,16 @@ import java.util.stream.Stream;
  * n frames across the whole duration (the reference processors' policy), {@link #first} takes the
  * opening n frames at native rate. Frames decode through {@link ImageCodec} (inheriting its
  * RGB/[0,1]/HWC contract) and carry their true timestamps. No audio track.
+ *
+ * <p>DELIBERATE SHAPE - this class is a SAMPLER, not a decoder, and its asymmetry with {@link
+ * ImageCodec}/{@link AudioCodec} (whole payload in, media out) is intentional: "decode the whole
+ * video" is not a meaningful operation at these scales, and any default rate would be a policy
+ * smuggled into a signature (the original fps-based loader silently took the FIRST n seconds - the
+ * exact trap). Equally deliberate exclusions: no {@code byte[]} overloads until a caller actually
+ * holds bytes (ffmpeg needs a file; the wire that receives bytes owns that temp file today), no
+ * {@code window}/{@code last} conveniences ({@link #at} composes every policy a caller can state as
+ * timestamps), and nothing model-shaped - token budgets, frame markers, timestamp formatting are
+ * template concerns. The contract ends at truthfully timestamped frames.
  */
 public final class VideoCodec {
 
