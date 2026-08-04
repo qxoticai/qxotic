@@ -316,7 +316,10 @@ final class Generation {
             throw new IllegalArgumentException("image_url base64 payload is malformed");
         }
         try {
-            return new Part.Blob(com.qxotic.jinfer.media.ImageCodec.decode(encoded));
+            byte[] key = java.security.MessageDigest.getInstance("SHA-256").digest(encoded);
+            return new Part.Blob(com.qxotic.jinfer.media.ImageCodec.decode(encoded), key);
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new AssertionError(e);
         } catch (java.io.IOException e) {
             throw new IllegalArgumentException("image could not be decoded: " + e.getMessage());
         }
