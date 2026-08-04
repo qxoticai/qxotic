@@ -71,7 +71,7 @@ public final class VideoCodec {
         if (timestamps.length == 0) throw new IllegalArgumentException("no timestamps");
         Path dir = Files.createTempDirectory("jinfer-video");
         try {
-            Media.Video.Frame[] frames = new Media.Video.Frame[timestamps.length];
+            List<Media.Video.Frame> frames = new ArrayList<>(timestamps.length);
             for (int k = 0; k < timestamps.length; k++) {
                 Path png = dir.resolve("f" + k + ".png");
                 double seconds = timestamps[k].toNanos() / 1e9;
@@ -91,7 +91,7 @@ public final class VideoCodec {
                     throw new IOException(
                             "ffmpeg extracted no frame at " + timestamps[k] + " from " + video);
                 }
-                frames[k] = new Media.Video.Frame(ImageCodec.load(png), timestamps[k]);
+                frames.add(new Media.Video.Frame(ImageCodec.load(png), timestamps[k]));
             }
             return new Media.Video(frames);
         } finally {
@@ -147,10 +147,10 @@ public final class VideoCodec {
                                 .toList();
             }
             if (pngs.isEmpty()) throw new IOException("ffmpeg extracted no frames from " + video);
-            Media.Video.Frame[] frames = new Media.Video.Frame[pngs.size()];
+            List<Media.Video.Frame> frames = new ArrayList<>(pngs.size());
             for (int k = 0; k < pngs.size(); k++) {
                 Duration t = Duration.ofNanos((long) (k / fps * 1e9));
-                frames[k] = new Media.Video.Frame(ImageCodec.load(pngs.get(k)), t);
+                frames.add(new Media.Video.Frame(ImageCodec.load(pngs.get(k)), t));
             }
             return new Media.Video(frames);
         } finally {

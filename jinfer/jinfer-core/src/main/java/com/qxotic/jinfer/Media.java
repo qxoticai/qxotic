@@ -74,14 +74,15 @@ public sealed interface Media permits Media.Image, Media.Audio, Media.Video {
      * misalignment unconstructible. (No audio track: no consumer reads one; add it back when a
      * model ingests synchronized audio.)
      */
-    record Video(Frame[] frames) implements Media {
+    record Video(java.util.List<Frame> frames) implements Media {
 
         /** One sampled frame at {@code timestamp} from the source's start. */
         public record Frame(Image image, java.time.Duration timestamp) {}
 
         public Video {
-            for (int i = 1; i < frames.length; i++) {
-                if (frames[i].timestamp().compareTo(frames[i - 1].timestamp()) < 0)
+            frames = java.util.List.copyOf(frames); // immutable: the ascending check holds forever
+            for (int i = 1; i < frames.size(); i++) {
+                if (frames.get(i).timestamp().compareTo(frames.get(i - 1).timestamp()) < 0)
                     throw new IllegalArgumentException("frame timestamps must ascend");
             }
         }
