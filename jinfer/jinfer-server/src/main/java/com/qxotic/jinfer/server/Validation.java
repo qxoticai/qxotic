@@ -11,6 +11,16 @@ import java.util.Map;
 final class Validation {
     private Validation() {}
 
+    /** An image-only message is substance too (its text may legitimately be empty). */
+    private static boolean hasImageItem(Object content) {
+        return content instanceof List<?> parts
+                && parts.stream()
+                        .anyMatch(
+                                p ->
+                                        p instanceof Map<?, ?> pm
+                                                && "image_url".equals(pm.get("type")));
+    }
+
     static void validateChatRequest(Map<String, Object> request) {
         List<Object> messages = Values.asArray(request.get("messages"), "messages");
         LLMOptions.require(!messages.isEmpty(), "messages must not be empty");
@@ -24,7 +34,8 @@ final class Validation {
                     role);
             substance |=
                     !Values.messageContent(m.get("content")).isBlank()
-                            || (m.get("tool_calls") instanceof List<?> calls && !calls.isEmpty());
+                            || (m.get("tool_calls") instanceof List<?> calls && !calls.isEmpty())
+                            || hasImageItem(m.get("content"));
         }
         LLMOptions.require(substance, "messages must contain at least one non-empty message");
         Object fmt = request.get("response_format");

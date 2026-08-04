@@ -232,16 +232,49 @@ final class Generation {
             String role = Values.stringValue(m.get("role"), "user");
             if (m.get("function_call") != null) return null; // legacy shape: whole-render
             Object raw2 = m.get("content");
-            if (raw2 instanceof List<?> parts) { // multimodal content array: only
-                for (Object part : parts) { // pure-text flattens faithfully
-                    if (!(part instanceof Map<?, ?> pm) || !"text".equals(pm.get("type")))
-                        return null;
+            List<Part> contentParts = null; // typed lowering when the array carries images
+            if (raw2 instanceof List<?> parts) {
+                boolean hasImage =
+                        parts.stream()
+                                .anyMatch(
+                                        part ->
+                                                part instanceof Map<?, ?> pm
+                                                        && "image_url".equals(pm.get("type")));
+                if (hasImage) {
+                    // images can never reach the whole-render fallback (media needs the native
+                    // template), so this path either builds typed parts or throws a 400 - it
+                    // must not return null
+                    contentParts = new ArrayList<>();
+                    for (Object part : parts) {
+                        Map<String, Object> pm = Values.asObject(part, "content part");
+                        switch (Values.stringValue(pm.get("type"), "")) {
+                            case "text" -> {
+                                String t = Values.stringValue(pm.get("text"), "");
+                                if (!t.isEmpty()) contentParts.add(new Part.Text(t));
+                            }
+                            case "image_url" -> contentParts.add(imagePart(pm.get("image_url")));
+                            default ->
+                                    LLMOptions.require(
+                                            false,
+                                            "unsupported content part type: %s",
+                                            pm.get("type"));
+                        }
+                    }
+                } else {
+                    for (Object part : parts) { // pure-text flattens faithfully
+                        if (!(part instanceof Map<?, ?> pm) || !"text".equals(pm.get("type")))
+                            return null;
+                    }
                 }
             }
             String content = Values.messageContent(raw2);
             List<Part> callParts = toolCallParts(m.get("tool_calls"));
             if (callParts == null) return null; // malformed tool_calls: whole-render
-            if (!callParts.isEmpty()) {
+            if (contentParts != null) {
+                List<Part> all = new ArrayList<>(contentParts);
+                all.addAll(callParts);
+                out.add(new Message(new Role(role), all));
+            } else if (!callParts.isEmpty()) {
                 List<Part> all = new ArrayList<>();
                 if (!content.isEmpty()) all.add(new Part.Text(content));
                 all.addAll(callParts);
@@ -251,6 +284,42 @@ final class Generation {
             }
         }
         return out;
+    }
+
+    /**
+     * One {@code image_url} content item to a typed media part. Vision is a capability the server
+     * OPTS INTO: without {@code --mmproj} every image request is refused with a clear 400 (the
+     * encoder is not loaded - silently dropping the image would answer a question the model never
+     * saw). Only {@code data:} URIs are accepted - fetching remote URLs from a server is an SSRF
+     * surface, and the OpenAI wire supports inline base64 everywhere.
+     */
+    private Part imagePart(Object imageUrl) {
+        LLMOptions.require(
+                options.mediaProjector() != null,
+                "image input is not enabled on this server (start it with --mmproj"
+                        + " <projector.gguf>)");
+        String url =
+                imageUrl instanceof Map<?, ?> mu
+                        ? Values.stringValue(mu.get("url"), "")
+                        : Values.stringValue(imageUrl, "");
+        LLMOptions.require(
+                url.startsWith("data:"),
+                "image_url must be a data: URI (the server does not fetch remote URLs)");
+        int comma = url.indexOf(',');
+        LLMOptions.require(
+                comma > 0 && url.substring(0, comma).endsWith(";base64"),
+                "image_url data: URI must be base64-encoded (data:<mime>;base64,<payload>)");
+        byte[] encoded;
+        try {
+            encoded = java.util.Base64.getDecoder().decode(url.substring(comma + 1));
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("image_url base64 payload is malformed");
+        }
+        try {
+            return new Part.Blob(com.qxotic.jinfer.media.ImageCodec.decode(encoded));
+        } catch (java.io.IOException e) {
+            throw new IllegalArgumentException("image could not be decoded: " + e.getMessage());
+        }
     }
 
     /**
