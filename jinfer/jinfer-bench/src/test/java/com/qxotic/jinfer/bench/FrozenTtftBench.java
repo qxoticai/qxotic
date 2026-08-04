@@ -10,7 +10,6 @@ import com.qxotic.jinfer.cache.BlockTree;
 import com.qxotic.jinfer.cache.CacheStore;
 import com.qxotic.jinfer.cache.CachedSession;
 import com.qxotic.jinfer.cache.FrozenBlocks;
-import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.testkit.ModelFixture;
 import com.qxotic.toknroll.IntSequence;
@@ -104,16 +103,20 @@ public final class FrozenTtftBench {
             coldMs = (System.nanoTime() - t0) / 1e6;
         }
 
-        // COMPILE: define owns the last-token-as-own-block convention; export freezes
+        // COMPILE low-level ON PURPOSE: the bench compares against the cold prefill at byte
+        // level, so the artifact must be chunked exactly like the cold ingest (uniform 512
+        // chunks), with the final token split as its own block so the N-1 serve below re-ingests
+        // exactly one token. The facade's define() covers production; this pins the byte shape.
         byte[] seed = m.seed();
         Path artifact = Files.createTempFile("frozen-" + name, ".jkv");
         artifact.toFile().deleteOnExit();
         long tFreeze = System.nanoTime();
-        try (PromptCache<S> pc =
-                PromptCache.of(m.model(), seed, new PromptCache.Options(0, BUDGET, null, false))) {
-            pc.define(List.of(Batch.prefill(prompt)));
-            pc.export(artifact);
-        }
+        BlockTree<S> build = new BlockTree<>(m.codec(), CacheStore.inMemory(), BUDGET, seed);
+        CachedSession<S> compile =
+                CachedSession.start(m.model(), build, m.model().newState(CTX, 512));
+        compile.ingest(List.of(Batch.prefill(java.util.Arrays.copyOf(prompt, prompt.length - 1))));
+        compile.ingest(List.of(Batch.prefill(new int[] {prompt[prompt.length - 1]})));
+        build.freeze(artifact);
         double freezeMs = (System.nanoTime() - tFreeze) / 1e6;
 
         // FROZEN: open + resume (to the deepest boundary below the tip) + tail + first argmax

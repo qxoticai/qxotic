@@ -30,15 +30,19 @@ public final class FrozenPromptScenario<S extends RuntimeState> {
         List<Batch> staticPrompt = staticPrompt();
         int positions = staticPrompt.stream().mapToInt(Batch::count).sum();
         long t0 = System.nanoTime();
-        try (var pc =
-                com.qxotic.jinfer.cache.PromptCache.of(
-                        h.model.model(),
-                        h.seed,
-                        new com.qxotic.jinfer.cache.PromptCache.Options(
-                                0, Long.MAX_VALUE, null, false))) {
-            pc.define(staticPrompt);
-            pc.export(artifact);
-        }
+        // build low-level ON PURPOSE: this scenario checks byte-level restore identity, so the
+        // artifact must be chunked exactly like the reference ingest below (uniform batch-capacity
+        // chunks). The facade's define() commits turn-aligned blocks - production semantics, but a
+        // different chunk shape, and KV bytes are chunk-shape-sensitive (the knife-edge law).
+        com.qxotic.jinfer.cache.BlockTree<S> build =
+                new com.qxotic.jinfer.cache.BlockTree<>(
+                        h.codec,
+                        com.qxotic.jinfer.cache.CacheStore.inMemory(),
+                        Long.MAX_VALUE,
+                        h.seed);
+        CachedSession<S> compile = CachedSession.start(h.model.model(), build, h.newState());
+        compile.ingest(staticPrompt);
+        build.freeze(artifact);
         double prefillMs = (System.nanoTime() - t0) / 1e6;
         System.out.printf(
                 "compiled: %d positions, %.1f MB (%s)%n",
