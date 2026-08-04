@@ -43,6 +43,11 @@ public final class Gemma4MultimodalCacheRun {
     static long budget;
     static byte[] seed;
 
+    /** A serve-only tree grafted over the artifact (budget 0: restores, never keeps writes). */
+    static BlockTree<Gemma4.State> graft(com.qxotic.jinfer.cache.FrozenBlocks fz) {
+        return new BlockTree<>(codec, CacheStore.inMemory(), 0, seed, fz);
+    }
+
     @Test
     @Tag("integration")
     void run() throws Exception {
@@ -252,7 +257,7 @@ public final class Gemma4MultimodalCacheRun {
             // 1. the first image's turn serves fully from disk, and greedy decode from the
             // restored KV matches the live session's reply (the encode was skipped entirely)
             CachedSession<Gemma4.State> fa =
-                    fz.serve(model, codec, seed, model.newState(4096, 512), batches);
+                    CachedSession.resume(model, graft(fz), model.newState(4096, 512), batches);
             check(
                     fa.position() == turnPositions,
                     name + ": frozen serve restores the media turn (" + fa.position() + ")");
@@ -263,14 +268,14 @@ public final class Gemma4MultimodalCacheRun {
 
             // 2. the SECOND image's conversation serves from the same artifact (catalog)
             CachedSession<Gemma4.State> fc =
-                    fz.serve(model, codec, seed, model.newState(4096, 512), otherBatches);
+                    CachedSession.resume(model, graft(fz), model.newState(4096, 512), otherBatches);
             check(
                     fc.position() >= bounds[1],
                     name + ": second image serves from the same catalog (" + fc.position() + ")");
 
             // 3. double win from disk: same media, different question resumes past media end
             CachedSession<Gemma4.State> fd =
-                    fz.serve(model, codec, seed, model.newState(4096, 512), sameMedia);
+                    CachedSession.resume(model, graft(fz), model.newState(4096, 512), sameMedia);
             check(
                     fd.position() >= bounds[1],
                     name
@@ -282,7 +287,7 @@ public final class Gemma4MultimodalCacheRun {
 
             // 4. divergent media against the artifact resumes only the text prefix
             CachedSession<Gemma4.State> fm =
-                    fz.serve(model, codec, seed, model.newState(4096, 512), mutated);
+                    CachedSession.resume(model, graft(fz), model.newState(4096, 512), mutated);
             check(
                     fm.position() == bounds[0],
                     name

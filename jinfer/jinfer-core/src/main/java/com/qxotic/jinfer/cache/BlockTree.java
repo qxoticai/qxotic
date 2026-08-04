@@ -72,7 +72,8 @@ public final class BlockTree<S extends RuntimeState> {
     private final List<Block> freshBlocks = new ArrayList<>(); // committed here, not yet on disk
     private FrozenBlocks base; // the grafted artifact, target of appendTo; null when standalone
     private final Block sentinel;
-    private final Block DETACHED;
+    private final Block detached;
+    private final List<Block> chainScratch = new ArrayList<>(); // resume()'s chain walk, reused
     private final MessageDigest sha;
     private ByteBuffer scratch = ByteBuffer.allocate(4096).order(ByteOrder.LITTLE_ENDIAN);
     private long clock;
@@ -140,8 +141,8 @@ public final class BlockTree<S extends RuntimeState> {
             root = new BlockKey(d[0], d[1], d[2], d[3]);
         }
         this.sentinel = new Block(root, null, 0, 0, null);
-        this.DETACHED = new Block(root, null, 0, 0, null);
-        this.DETACHED.live = false;
+        this.detached = new Block(root, null, 0, 0, null);
+        this.detached.live = false;
     }
 
     /**
@@ -253,7 +254,7 @@ public final class BlockTree<S extends RuntimeState> {
         long bytes = codec.blockBytes(len);
         if (!ensureBudget(bytes, tip)) { // budget refused: detach softly
             refusals++;
-            return DETACHED;
+            return detached;
         }
         MemorySegment mem = store.allocate(bytes);
         codec.save(state, tip.to, to, mem);
@@ -293,8 +294,6 @@ public final class BlockTree<S extends RuntimeState> {
         }
         if (!b.frozen) store.free(b.mem); // frozen blobs are mmap slices, not store allocations
     }
-
-    private final List<Block> chainScratch = new ArrayList<>();
 
     private void touch(Block b) {
         b.lastUsed = ++clock;
@@ -449,31 +448,41 @@ public final class BlockTree<S extends RuntimeState> {
             long hits,
             long misses,
             long evictions,
-            long refusals) {}
+            long discards,
+            long refusals) {
 
-    /**
-     * The same numbers {@link #stats()} formats, typed - for telemetry that has to subtract two
-     * readings rather than print one.
-     */
+        /** The hot-only reading: no block layer, every field zero. */
+        public static final Sample ZERO = new Sample(0, 0, 0, 0, 0, 0, 0, 0);
+    }
+
+    /** The one source of the cache's numbers; {@link #stats} is its formatting. */
     public Sample sample() {
         return new Sample(
-                blocks.size(), store.usedBytes(), budgetBytes, hits, misses, evictions, refusals);
+                blocks.size(),
+                store.usedBytes(),
+                budgetBytes,
+                hits,
+                misses,
+                evictions,
+                discards,
+                refusals);
     }
 
     public String stats() {
+        Sample s = sample();
         return "blocks="
-                + blocks.size()
+                + s.blocks()
                 + " bytes="
-                + store.usedBytes()
+                + s.bytes()
                 + " hits="
-                + hits
+                + s.hits()
                 + " misses="
-                + misses
+                + s.misses()
                 + " evictions="
-                + evictions
+                + s.evictions()
                 + " discards="
-                + discards
+                + s.discards()
                 + " refusals="
-                + refusals;
+                + s.refusals();
     }
 }

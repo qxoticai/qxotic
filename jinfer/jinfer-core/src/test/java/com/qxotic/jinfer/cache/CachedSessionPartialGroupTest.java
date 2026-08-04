@@ -32,8 +32,7 @@ public final class CachedSessionPartialGroupTest {
                         List.of(Batch.prefill(new int[] {10, 11})),
                         List.of(Batch.prefill(new int[] {20, 21, 22})),
                         List.of(Batch.prefill(new int[] {30, 31})));
-        CachedSession<FakeState> s1 =
-                CachedSession.resume(model, cache, model.newState(0, 0), new long[0]);
+        CachedSession<FakeState> s1 = CachedSession.start(model, cache, model.newState(0, 0));
         s1.ingestGroups(first);
         check(s1.position() == 7, "request 1 ingested 7 positions");
 
@@ -48,7 +47,8 @@ public final class CachedSessionPartialGroupTest {
                         List.of(Batch.prefill(new int[] {50}))); // new user turn
         long[] expected = {10, 11, 20, 21, 22, 30, 31, 40, 41, 50};
         FakeState state2 = model.newState(0, 0);
-        CachedSession<FakeState> s2 = CachedSession.resume(model, cache, state2, expected);
+        CachedSession<FakeState> s2 =
+                CachedSession.resume(model, cache, state2, expected, expected.length, true);
         check(
                 s2.position() == 7,
                 "resume stops mid-group at the genPrompt block (got " + s2.position() + ")");
@@ -66,7 +66,8 @@ public final class CachedSessionPartialGroupTest {
         // And a request that resumes exactly ON a group boundary still skips whole groups.
         FakeState state3 = model.newState(0, 0);
         CachedSession<FakeState> s3 =
-                CachedSession.resume(model, cache, state3, new long[] {10, 11, 20, 21, 22});
+                CachedSession.resume(
+                        model, cache, state3, new long[] {10, 11, 20, 21, 22}, 5, true);
         check(s3.position() == 5, "boundary resume restores both whole groups");
         s3.ingestGroups(
                 List.of(

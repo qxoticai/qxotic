@@ -30,8 +30,15 @@ public final class FrozenPromptScenario<S extends RuntimeState> {
         List<Batch> staticPrompt = staticPrompt();
         int positions = staticPrompt.stream().mapToInt(Batch::count).sum();
         long t0 = System.nanoTime();
-        FrozenBlocks.compile(
-                artifact, h.model.model(), h.codec, h.seed, h.newState(), staticPrompt);
+        try (var pc =
+                com.qxotic.jinfer.cache.PromptCache.of(
+                        h.model.model(),
+                        h.seed,
+                        new com.qxotic.jinfer.cache.PromptCache.Options(
+                                0, Long.MAX_VALUE, null, false))) {
+            pc.define(staticPrompt);
+            pc.export(artifact);
+        }
         double prefillMs = (System.nanoTime() - t0) / 1e6;
         System.out.printf(
                 "compiled: %d positions, %.1f MB (%s)%n",
@@ -51,7 +58,8 @@ public final class FrozenPromptScenario<S extends RuntimeState> {
         long t1 = System.nanoTime();
         FrozenBlocks frozen = FrozenBlocks.open(artifact, h.seed);
         S hot = h.newState();
-        CachedSession<S> hs = frozen.serve(h.model.model(), h.codec, h.seed, hot, staticPrompt);
+        CachedSession<S> hs =
+                CachedSession.resume(h.model.model(), graftOn(frozen), hot, staticPrompt);
         double restoreMs = (System.nanoTime() - t1) / 1e6;
         h.check(
                 hs.position() == positions,
@@ -67,7 +75,7 @@ public final class FrozenPromptScenario<S extends RuntimeState> {
         // ---- mismatch: a diverged prompt restores nothing, plain prefill still serves ----
         List<Batch> other = divergedAtPosition3(staticPrompt);
         S cold = h.newState();
-        CachedSession<S> cs = frozen.serve(h.model.model(), h.codec, h.seed, cold, other);
+        CachedSession<S> cs = CachedSession.resume(h.model.model(), graftOn(frozen), cold, other);
         h.check(cs.position() == 0, "diverged prompt is discarded (restore 0)");
         h.ingest(cold, staticPrompt);
         h.check(
@@ -95,6 +103,12 @@ public final class FrozenPromptScenario<S extends RuntimeState> {
                 "frozen open+restore", restoreMs, prefillMs / restoreMs);
         Files.deleteIfExists(artifact);
         h.finish(runName);
+    }
+
+    /** A serve-only tree grafted over the artifact (budget 0: restores, never keeps writes). */
+    private com.qxotic.jinfer.cache.BlockTree<S> graftOn(FrozenBlocks frozen) {
+        return new com.qxotic.jinfer.cache.BlockTree<>(
+                h.codec, com.qxotic.jinfer.cache.CacheStore.inMemory(), 0, h.seed, frozen);
     }
 
     /**

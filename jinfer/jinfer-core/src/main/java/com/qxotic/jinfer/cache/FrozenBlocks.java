@@ -13,13 +13,13 @@ import java.util.HexFormat;
 import java.util.List;
 
 /**
- * A read-only prompt-cache artifact: any number of prompts as one content-addressed block tree,
- * shared prefixes stored once, produced by {@link BlockTree#freeze} at compile time and mapped
- * lazily at serve time (header and index pages only; KV bytes are untouched until a chain
- * restores). Grafted under a live {@link BlockTree} as its immutable base, its blocks join the
- * cache's key space: resume matches through them, commits dedup against them, eviction never
- * touches them - the "several prompts, read only" tier between the sealed single prompt and the
- * writable RAM cache.
+ * The prompt-cache artifact FORMAT (JKVF) - this class knows files, not models: any number of
+ * prompts as one content-addressed block tree, shared prefixes stored once, produced by {@link
+ * BlockTree#freeze} / {@link BlockTree#appendTo} and mapped lazily by {@link #open} (header and
+ * index pages only; KV bytes are untouched until a chain restores). Serving happens a layer up:
+ * grafted under a live {@link BlockTree} as its immutable base, the artifact's blocks join the
+ * cache's key space - resume matches through them, commits dedup against them, eviction never
+ * touches them. {@link PromptCache} mounts one as its catalog.
  *
  * <p>Layout (little-endian): {@code JKVF, formatVersion, modelSeed[32], blockCount, indexOffset |
  * KV blobs (64-aligned) | index: per block {key[4], parentKey[4], from, to, byteOffset, byteLen}}
@@ -27,16 +27,10 @@ import java.util.List;
  * covers the codec's blob layout: a layout change ships as a format bump, so a stale file fails
  * with a clear error instead of restoring garbage.
  *
- * <p>The cross-process lifecycle, end to end:
- *
- * <ol>
- *   <li>Offline: {@code compile(model, codec, seed, prompt, out)} prefills the prompt once and
- *       writes the artifact.
- *   <li>Serve start: {@code open(path, modelSeed)} maps it read-only - the SAME model seed as
- *       compile time, or open throws (an artifact can never serve wrong bytes).
- *   <li>Per request: {@code serve(...)} restores the frozen prefix into a fresh state; the caller
- *       ingests only the request's tail.
- * </ol>
+ * <p>The cross-process lifecycle, end to end: compile once ({@link PromptCache#define} + {@link
+ * PromptCache#export}, or any {@code freeze}), {@code open(path, modelSeed)} at serve start - the
+ * SAME model seed, or open throws (an artifact can never serve wrong bytes) - then every request
+ * resumes through the mounting tree and ingests only its tail.
  *
  * <p>One open instance is immutable and safely shared across engines/pipelines.
  */
@@ -170,82 +164,6 @@ public final class FrozenBlocks {
         return entries;
     }
 
-    /**
-     * Compiles a prompt into a frozen artifact: ingests {@code prompt} through a throwaway cache on
-     * {@code state} and freezes the resulting chain to {@code out}, returning the fingerprint
-     * stream. Owns the PROMPT-COMPILER CONVENTION: the final token of a token-final prompt is
-     * committed as its own block, so a serve-time resume with {@code maxPositions = fp.length - 1}
-     * lands exactly one token short and a single-token ingest materializes fresh logits.
-     */
-    public static <S extends com.qxotic.jinfer.RuntimeState> void compile(
-            Path out,
-            com.qxotic.jinfer.Model<?, ?, S> model,
-            StateCodec<S> codec,
-            byte[] modelSeed,
-            S state,
-            List<com.qxotic.jinfer.Batch> prompt)
-            throws IOException {
-        BlockTree<S> build =
-                new BlockTree<>(
-                        codec,
-                        com.qxotic.jinfer.cache.CacheStore.inMemory(),
-                        Long.MAX_VALUE,
-                        modelSeed);
-        CachedSession<S> session = CachedSession.resume(model, build, state, new long[0]);
-        // trailing token batch: the last token commits as its own block (see ingestSplitLast)
-        int lastIdx = prompt.size() - 1;
-        if (!prompt.isEmpty()
-                && prompt.get(lastIdx).input() instanceof com.qxotic.jinfer.Batch.Input.Tokens t
-                && t.ids().length > 1) {
-            session.ingest(prompt.subList(0, lastIdx));
-            session.ingestSplitLast(t.ids(), 0);
-        } else {
-            session.ingest(prompt);
-        }
-        build.freeze(out);
-    }
-
-    /**
-     * Serves from this artifact: a fresh serve-only cache (no writable budget) layered over it,
-     * resuming the longest frozen chain matching {@code fp[0..maxPositions)}. The returned
-     * session's {@code position()} is the restore depth; the caller re-ingests the rest.
-     */
-    <S extends com.qxotic.jinfer.RuntimeState> CachedSession<S> serve(
-            com.qxotic.jinfer.Model<?, ?, S> model,
-            StateCodec<S> codec,
-            byte[] modelSeed,
-            S state,
-            long[] fp,
-            int maxPositions) {
-        BlockTree<S> cache =
-                new BlockTree<>(
-                        codec, com.qxotic.jinfer.cache.CacheStore.inMemory(), 0, modelSeed, this);
-        return CachedSession.resume(model, cache, state, fp, maxPositions);
-    }
-
-    /** As {@link #serve} for an encoded prompt (media included), restoring the whole stream. */
-    public <S extends com.qxotic.jinfer.RuntimeState> CachedSession<S> serve(
-            com.qxotic.jinfer.Model<?, ?, S> model,
-            StateCodec<S> codec,
-            byte[] modelSeed,
-            S state,
-            List<com.qxotic.jinfer.Batch> prompt) {
-        long[] fp = CachedSession.fingerprints(prompt);
-        return serve(model, codec, modelSeed, state, fp, fp.length);
-    }
-
-    /** As {@link #serve} for a plain token-id prompt. */
-    public <S extends com.qxotic.jinfer.RuntimeState> CachedSession<S> serve(
-            com.qxotic.jinfer.Model<?, ?, S> model,
-            StateCodec<S> codec,
-            byte[] modelSeed,
-            S state,
-            int[] tokens,
-            int maxPositions) {
-        return serve(
-                model, codec, modelSeed, state, CachedSession.fingerprints(tokens), maxPositions);
-    }
-
     /** The one index-entry field order, shared by every writer ({@code open} is its reader). */
     static void putEntry(
             ByteBuffer idx,
@@ -303,63 +221,61 @@ public final class FrozenBlocks {
     }
 
     private void appendLocked(FileChannel ch, List<Entry> fresh) throws IOException {
-        {
-            long off = align(indexOffset + (long) entries.size() * INDEX_ENTRY_BYTES);
-            long[] offsets = new long[fresh.size()];
-            for (int i = 0; i < fresh.size(); i++) {
-                offsets[i] = off;
-                ch.write(fresh.get(i).mem().asByteBuffer(), off);
-                off = align(off + fresh.get(i).mem().byteSize());
-            }
-            long newIndexOffset = off;
-            ByteBuffer idx =
-                    ByteBuffer.allocate((entries.size() + fresh.size()) * INDEX_ENTRY_BYTES)
-                            .order(ByteOrder.LITTLE_ENDIAN);
-            for (Entry e : entries) {
-                putEntry(
-                        idx,
-                        e.key(),
-                        e.parentKey(),
-                        e.from(),
-                        e.to(),
-                        e.offset(),
-                        e.mem().byteSize(),
-                        e.crc());
-            }
-            for (int i = 0; i < fresh.size(); i++) {
-                Entry e = fresh.get(i);
-                putEntry(
-                        idx,
-                        e.key(),
-                        e.parentKey(),
-                        e.from(),
-                        e.to(),
-                        offsets[i],
-                        e.mem().byteSize(),
-                        e.crc());
-            }
-            idx.flip();
-            ch.write(idx, newIndexOffset);
-            ch.force(true); // everything durable BEFORE the header flips
-            ByteBuffer flip = ByteBuffer.allocate(12).order(ByteOrder.LITTLE_ENDIAN);
-            flip.putInt(entries.size() + fresh.size()).putLong(newIndexOffset).flip();
-            ch.write(flip, COUNT_OFFSET);
-            ch.force(false); // in-place 12-byte publish: no size change to flush
-            // keep the parsed view coherent so a later append re-serializes the right index
-            for (int i = 0; i < fresh.size(); i++) {
-                Entry e = fresh.get(i);
-                entries.add(
-                        new Entry(
-                                e.key(),
-                                e.parentKey(),
-                                e.from(),
-                                e.to(),
-                                offsets[i],
-                                e.mem(),
-                                e.crc()));
-            }
-            indexOffset = newIndexOffset;
+        long off = align(indexOffset + (long) entries.size() * INDEX_ENTRY_BYTES);
+        long[] offsets = new long[fresh.size()];
+        for (int i = 0; i < fresh.size(); i++) {
+            offsets[i] = off;
+            ch.write(fresh.get(i).mem().asByteBuffer(), off);
+            off = align(off + fresh.get(i).mem().byteSize());
         }
+        long newIndexOffset = off;
+        ByteBuffer idx =
+                ByteBuffer.allocate((entries.size() + fresh.size()) * INDEX_ENTRY_BYTES)
+                        .order(ByteOrder.LITTLE_ENDIAN);
+        for (Entry e : entries) {
+            putEntry(
+                    idx,
+                    e.key(),
+                    e.parentKey(),
+                    e.from(),
+                    e.to(),
+                    e.offset(),
+                    e.mem().byteSize(),
+                    e.crc());
+        }
+        for (int i = 0; i < fresh.size(); i++) {
+            Entry e = fresh.get(i);
+            putEntry(
+                    idx,
+                    e.key(),
+                    e.parentKey(),
+                    e.from(),
+                    e.to(),
+                    offsets[i],
+                    e.mem().byteSize(),
+                    e.crc());
+        }
+        idx.flip();
+        ch.write(idx, newIndexOffset);
+        ch.force(true); // everything durable BEFORE the header flips
+        ByteBuffer flip = ByteBuffer.allocate(12).order(ByteOrder.LITTLE_ENDIAN);
+        flip.putInt(entries.size() + fresh.size()).putLong(newIndexOffset).flip();
+        ch.write(flip, COUNT_OFFSET);
+        ch.force(false); // in-place 12-byte publish: no size change to flush
+        // keep the parsed view coherent so a later append re-serializes the right index
+        for (int i = 0; i < fresh.size(); i++) {
+            Entry e = fresh.get(i);
+            entries.add(
+                    new Entry(
+                            e.key(),
+                            e.parentKey(),
+                            e.from(),
+                            e.to(),
+                            offsets[i],
+                            e.mem(),
+                            e.crc()));
+        }
+        indexOffset = newIndexOffset;
     }
 
     /** CRC32C of a blob - the frozen-block integrity stamp (store CRCs cover only pool blobs). */

@@ -35,7 +35,7 @@ import java.util.List;
  * <p>{@code start} opens a brand-new conversation (ingest incrementally); {@code resume(model,
  * cache, state, prompt)} serves a prompt against the cache (longest cached prefix restored, the
  * caller ingests the tail) - {@code maxPositions} (pass {@code total - 1}) leaves the final block
- * re-ingested so the cursor holds fresh logits.
+ * re-ingested so the state holds fresh logits at its frontier.
  */
 public final class CachedSession<S extends RuntimeState> {
 
@@ -89,7 +89,7 @@ public final class CachedSession<S extends RuntimeState> {
     /** A fresh session on a fresh state for a brand-new conversation (nothing to resume). */
     public static <S extends RuntimeState> CachedSession<S> start(
             Model<?, ?, S> model, BlockTree<S> cache, S state) {
-        return resume(model, cache, state, new long[0], 0);
+        return resume(model, cache, state, new long[0], 0, true);
     }
 
     /**
@@ -100,13 +100,13 @@ public final class CachedSession<S extends RuntimeState> {
     public static <S extends RuntimeState> CachedSession<S> resume(
             Model<?, ?, S> model, BlockTree<S> cache, S state, List<Batch> prompt) {
         long[] fp = fingerprints(prompt);
-        return resume(model, cache, state, fp, fp.length);
+        return resume(model, cache, state, fp, fp.length, true);
     }
 
     /**
      * As {@link #resume(Model, BlockTree, RuntimeState, List)} but restoring at most {@code
      * maxPositions} - e.g. the prompt length minus its final block, so a whole-prompt hit still
-     * re-ingests that block and leaves fresh logits at the cursor.
+     * re-ingests that block and holds fresh logits at the frontier.
      */
     public static <S extends RuntimeState> CachedSession<S> resume(
             Model<?, ?, S> model,
@@ -114,32 +114,14 @@ public final class CachedSession<S extends RuntimeState> {
             S state,
             List<Batch> prompt,
             int maxPositions) {
-        return resume(model, cache, state, fingerprints(prompt), maxPositions);
+        return resume(model, cache, state, fingerprints(prompt), maxPositions, true);
     }
 
     /**
-     * A fresh session on a fresh state, resuming the longest cached prefix of {@code expected}
-     * (empty for a brand-new conversation).
-     */
-    static <S extends RuntimeState> CachedSession<S> resume(
-            Model<?, ?, S> model, BlockTree<S> cache, S state, long[] expected) {
-        return resume(model, cache, state, expected, expected.length);
-    }
-
-    /**
-     * Like {@link #resume(Model, BlockTree, Object, long[])} but restoring at most {@code
-     * maxPositions} - e.g. the prompt length minus its final block, so a whole-prompt hit still
-     * re-ingests that block and leaves fresh logits at the cursor.
-     */
-    static <S extends RuntimeState> CachedSession<S> resume(
-            Model<?, ?, S> model, BlockTree<S> cache, S state, long[] expected, int maxPositions) {
-        return resume(model, cache, state, expected, maxPositions, true);
-    }
-
-    /**
-     * As above with the write side switchable: {@code commits=false} is READ-ONLY serving - the
-     * longest cached prefix restores, and no ingestion ever writes back. The coarse-codec mode (a
-     * residue per served block would grow the store by ~MBs per request).
+     * The one attach point: resumes the longest cached prefix of {@code expected[0..maxPositions)}
+     * into the fresh state. {@code commits=false} is READ-ONLY serving - the longest cached prefix
+     * restores, and no ingestion ever writes back (the coarse-codec mode: a residue per served
+     * block would grow the store by ~MBs per request).
      */
     static <S extends RuntimeState> CachedSession<S> resume(
             Model<?, ?, S> model,
@@ -211,20 +193,6 @@ public final class CachedSession<S extends RuntimeState> {
             for (int i = 0; i < n; i++) append(expected != null ? expected[off + i] : f[i]);
             commitSpan(off, len - off);
         }
-    }
-
-    /**
-     * Ingests {@code ids[from..)} with the final token committed as its own block - the
-     * PROMPT-COMPILER CONVENTION of {@link FrozenBlocks#compile}: a later resume capped at N-1
-     * lands exactly one token short, and the single-token re-ingest materializes fresh logits.
-     */
-    public void ingestSplitLast(int[] ids, int from) {
-        if (from >= ids.length) return;
-        int n = ids.length;
-        if (n - from > 1) {
-            ingest(List.of(Batch.prefill(java.util.Arrays.copyOfRange(ids, from, n - 1))));
-        }
-        ingest(List.of(Batch.prefill(new int[] {ids[n - 1]})));
     }
 
     /**
@@ -408,18 +376,6 @@ public final class CachedSession<S extends RuntimeState> {
             ids[i] = (int) v;
         }
         return ids;
-    }
-
-    /**
-     * The position count of {@code prefix} when its whole content stream is a STRICT prefix of
-     * {@code whole}'s (at least one position of {@code whole} remains), else -1 - the append-only
-     * reuse test, batches-in so callers never touch the content addressing.
-     */
-    public static int strictPrefixPositions(List<Batch> prefix, List<Batch> whole) {
-        long[] a = fingerprints(prefix);
-        long[] b = fingerprints(whole);
-        if (a.length >= b.length || !Arrays.equals(a, 0, a.length, b, 0, a.length)) return -1;
-        return a.length;
     }
 
     private void append(long fingerprint) {

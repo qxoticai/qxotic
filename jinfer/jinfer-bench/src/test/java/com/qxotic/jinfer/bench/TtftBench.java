@@ -85,6 +85,12 @@ public final class TtftBench {
     }
 
     /** A loaded model paired with its per-turn template (the cache benches drive turns). */
+    /** A serve-only tree grafted over the artifact (budget 0: restores, never keeps writes). */
+    static <S extends RuntimeState> BlockTree<S> graft(
+            StateCodec<S> codec, byte[] seed, com.qxotic.jinfer.cache.FrozenBlocks frozen) {
+        return new BlockTree<>(codec, CacheStore.inMemory(), 0, seed, frozen);
+    }
+
     record Bench<S extends RuntimeState>(LoadedModel<S> model, TurnTemplate tpl) {}
 
     static Bench<?> load(String path) throws Exception {
@@ -244,7 +250,10 @@ public final class TtftBench {
         S state = model.model().newState(4096, 512);
         long t1 = System.nanoTime();
         List<Batch> prefix = concat(tpl.conversationStart(), tpl.encodeTurn(Message.user(story())));
-        int restored = frozen.serve(model.model(), codec, model.seed(), state, prefix).position();
+        int restored =
+                CachedSession.resume(
+                                model.model(), graft(codec, model.seed(), frozen), state, prefix)
+                        .position();
         if (restored == 0) throw new IllegalStateException("frozen restore missed");
         for (Batch b : Batch.prepare(followUp, 512)) model.model().ingest(state, b);
         int tok = model.model().logits(state).argmax();
@@ -258,7 +267,9 @@ public final class TtftBench {
             long t2 = System.nanoTime();
             com.qxotic.jinfer.cache.FrozenBlocks f2 =
                     com.qxotic.jinfer.cache.FrozenBlocks.open(file, model.seed());
-            int n2 = f2.serve(model.model(), codec, model.seed(), s2, prefix).position();
+            int n2 =
+                    CachedSession.resume(model.model(), graft(codec, model.seed(), f2), s2, prefix)
+                            .position();
             for (Batch b : Batch.prepare(followUp, 512)) model.model().ingest(s2, b);
             model.model().logits(s2).argmax();
             System.out.printf(

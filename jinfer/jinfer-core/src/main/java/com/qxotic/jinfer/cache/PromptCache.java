@@ -204,14 +204,7 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
         if (fingerprints.length == 0) {
             throw new IllegalArgumentException("empty prompt: nothing to serve");
         }
-        if (fingerprints.length > model.config().contextLength()) {
-            throw new IllegalArgumentException(
-                    "Prompt exceeds context length ("
-                            + fingerprints.length
-                            + " tokens, "
-                            + model.config().contextLength()
-                            + " available)");
-        }
+        checkFitsContext(fingerprints.length);
         CachedSession<S> hotHit = hotAcquire(fingerprints);
         if (hotHit != null) hotHits++;
         CachedSession<S> session = hotHit != null ? hotHit : attach(fingerprints);
@@ -305,14 +298,7 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
         if (total == 0) return;
         // the same guard serve() applies, BEFORE any state is sized or block committed: an
         // over-long define would append junk blocks no serve could ever match
-        if (total > model.config().contextLength()) {
-            throw new IllegalArgumentException(
-                    "Prompt exceeds context length ("
-                            + total
-                            + " tokens, "
-                            + model.config().contextLength()
-                            + " available)");
-        }
+        checkFitsContext(total);
         // a coarse define commits everything-but-the-last-batch as ONE chunk, so its state must
         // hold the whole prompt per batch; fine codecs use the standard one-generation sizing
         S state =
@@ -323,7 +309,8 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
             // capped ONE SHORT like every resume: an uncapped resume would dedup into a chunk
             // boundary earlier traffic committed and silently skip the split-last single that
             // makes define-then-serve a full hit
-            CachedSession<S> s = CachedSession.resume(model, t, state, fingerprints, total - 1);
+            CachedSession<S> s =
+                    CachedSession.resume(model, t, state, fingerprints, total - 1, true);
             s.ingestGroups(defineGroups(prompt), fingerprints);
             if (s.detached()) {
                 throw new IllegalStateException(
@@ -402,22 +389,24 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
             long hits,
             long misses,
             long evictions,
+            long discards,
             long refusals) {}
 
     public Sample sample() {
         checkOpen();
-        BlockTree.Sample t = tree == null ? null : tree.sample();
+        BlockTree.Sample t = tree == null ? BlockTree.Sample.ZERO : tree.sample();
         return new Sample(
                 hot.size(),
                 hotHits,
                 statesAllocated,
-                t == null ? 0 : t.blocks(),
-                t == null ? 0 : t.bytes(),
-                t == null ? 0 : t.budgetBytes(),
-                t == null ? 0 : t.hits(),
-                t == null ? 0 : t.misses(),
-                t == null ? 0 : t.evictions(),
-                t == null ? 0 : t.refusals());
+                t.blocks(),
+                t.bytes(),
+                t.budgetBytes(),
+                t.hits(),
+                t.misses(),
+                t.evictions(),
+                t.discards(),
+                t.refusals());
     }
 
     /** Test seam: the block layer's stats line (see {@link BlockTree#stats}). */
@@ -522,6 +511,17 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
 
     private void checkOpen() {
         if (closed) throw new IllegalStateException("the cache is closed");
+    }
+
+    private void checkFitsContext(int positions) {
+        if (positions > model.config().contextLength()) {
+            throw new IllegalArgumentException(
+                    "Prompt exceeds context length ("
+                            + positions
+                            + " tokens, "
+                            + model.config().contextLength()
+                            + " available)");
+        }
     }
 
     private BlockTree<S> requireTree() {

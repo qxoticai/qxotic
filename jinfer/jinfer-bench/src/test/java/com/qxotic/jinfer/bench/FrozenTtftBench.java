@@ -6,8 +6,11 @@ package com.qxotic.jinfer.bench;
 
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.RuntimeState;
+import com.qxotic.jinfer.cache.BlockTree;
+import com.qxotic.jinfer.cache.CacheStore;
 import com.qxotic.jinfer.cache.CachedSession;
 import com.qxotic.jinfer.cache.FrozenBlocks;
+import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.testkit.ModelFixture;
 import com.qxotic.toknroll.IntSequence;
@@ -101,18 +104,16 @@ public final class FrozenTtftBench {
             coldMs = (System.nanoTime() - t0) / 1e6;
         }
 
-        // COMPILE: FrozenBlocks.compile owns the last-token-as-own-block convention
+        // COMPILE: define owns the last-token-as-own-block convention; export freezes
         byte[] seed = m.seed();
         Path artifact = Files.createTempFile("frozen-" + name, ".jkv");
         artifact.toFile().deleteOnExit();
         long tFreeze = System.nanoTime();
-        FrozenBlocks.compile(
-                artifact,
-                m.model(),
-                m.codec(),
-                seed,
-                m.model().newState(CTX, 512),
-                List.of(Batch.prefill(prompt)));
+        try (PromptCache<S> pc =
+                PromptCache.of(m.model(), seed, new PromptCache.Options(0, BUDGET, null, false))) {
+            pc.define(List.of(Batch.prefill(prompt)));
+            pc.export(artifact);
+        }
         double freezeMs = (System.nanoTime() - tFreeze) / 1e6;
 
         // FROZEN: open + resume (to the deepest boundary below the tip) + tail + first argmax
@@ -121,8 +122,10 @@ public final class FrozenTtftBench {
         double openMs = (System.nanoTime() - t1) / 1e6;
         S state = m.model().newState(CTX, 512);
         long t2 = System.nanoTime();
+        BlockTree<S> graft = new BlockTree<>(m.codec(), CacheStore.inMemory(), 0, seed, frozen);
         CachedSession<S> w =
-                frozen.serve(m.model(), m.codec(), seed, state, prompt, prompt.length - 1);
+                CachedSession.resume(
+                        m.model(), graft, state, List.of(Batch.prefill(prompt)), prompt.length - 1);
         double resumeMs = (System.nanoTime() - t2) / 1e6;
         int restored = w.position();
         long t3 = System.nanoTime();
