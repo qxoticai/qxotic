@@ -111,7 +111,9 @@ final class Mappings {
                         parts.add(
                                 blob(
                                         "video",
-                                        () -> VideoCodec.uniform(localPath(v.video().url()))));
+                                        () ->
+                                                VideoCodec.ffmpeg()
+                                                        .uniform(localPath(v.video().url()))));
                 default ->
                         throw new UnsupportedFeatureException(
                                 c.getClass().getSimpleName() + " is not supported");

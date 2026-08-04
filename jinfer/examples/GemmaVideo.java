@@ -51,7 +51,7 @@ public class GemmaVideo {
         int numFrames = Integer.getInteger("jinfer.video.frames", 16);
 
         // 1. Sample the video -> Media.Video (timestamped frames). ffmpeg does the demux/decode.
-        Media.Video vid = VideoCodec.uniform(video, numFrames);
+        Media.Video vid = VideoCodec.ffmpeg().uniform(video, numFrames);
         Media.Image first = vid.frames().getFirst().image();
         System.err.printf("sampled %d frames uniformly (%dx%d)%n",
                 vid.frames().size(), first.width(), first.height());
