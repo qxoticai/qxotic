@@ -38,6 +38,29 @@ public interface StateCodec<S extends RuntimeState> {
      * block by design) asks drivers to commit cached prompts as ONE block per prompt - one residue
      * per prompt, prefix sharing limited to whole prompts - instead of one block per batch
      * boundary. Default false: small residue, fine-grained blocking.
+     *
+     * <p>HOW TO DECIDE FOR A NEW MODEL - the flag trades granularity against footprint, and the
+     * deciding number is {@code blockBytes(0)}, the residue duplicated into every block:
+     *
+     * <ul>
+     *   <li>{@code false} (fine): serving WRITES blocks - turn-aligned prompt blocks plus one reply
+     *       block per generation, each carrying a full residue copy. Echoes and forks resume at any
+     *       turn boundary. Cost per served turn: new rows (~10-35KB/token) + one residue. Sound
+     *       while a long conversation's residues stay a small slice of the block budget (2GB
+     *       default): LFM2.5's ~340KB conv residue costs ~8MB per 25-turn conversation - noise - so
+     *       it is fine-grained.
+     *   <li>{@code true} (coarse): serving never writes (a residue per served turn would consume
+     *       the budget in tens of requests: NemotronH ~50MB and Qwen3.5 ~66MB residues = ~1.5GB per
+     *       25-turn conversation). Blocks come from {@link PromptCache#define define()} alone;
+     *       served follow-ups reuse the tail via the facade's per-session residue snapshot instead
+     *       (rewind to the last prompt boundary - append-only, no fork points; forks re-prefill).
+     * </ul>
+     *
+     * <p>The shipped anchors sit 147x apart (340KB fine, 50MB coarse), so the middle ground is
+     * unmeasured territory: a residue in the low MBs is defensible either way - work the arithmetic
+     * above against expected conversation shapes and the budget, and prefer measuring (the block
+     * layer's {@code bytes} in {@code /props} over a representative session) to guessing. Both
+     * behaviors are correct; only footprint and resume granularity move.
      */
     default boolean coarseBlocks() {
         return false;
