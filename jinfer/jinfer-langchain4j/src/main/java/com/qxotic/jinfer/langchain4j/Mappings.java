@@ -108,7 +108,8 @@ final class Mappings {
                                                                 a.audio().base64Data(),
                                                                 a.audio().url()))));
                 case VideoContent v ->
-                        parts.add(blob("video", () -> VideoCodec.load(localPath(v.video().url()))));
+                        parts.add(
+                                blob("video", () -> VideoCodec.sample(localPath(v.video().url()))));
                 default ->
                         throw new UnsupportedFeatureException(
                                 c.getClass().getSimpleName() + " is not supported");
