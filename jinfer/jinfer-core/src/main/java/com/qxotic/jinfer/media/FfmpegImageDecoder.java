@@ -63,8 +63,9 @@ public final class FfmpegImageDecoder implements ImageDecoder {
 
     /**
      * Run ffmpeg with the given argv, optionally feeding {@code stdin}, returning stdout (the PPM).
+     * Package-shared: {@link FfmpegVideoCodec} streams multi-frame PPM through the same runner.
      */
-    private static byte[] runFfmpeg(String[] cmd, byte[] stdin) throws IOException {
+    static byte[] runFfmpeg(String[] cmd, byte[] stdin) throws IOException {
         ProcessBuilder pb = new ProcessBuilder(cmd).redirectError(ProcessBuilder.Redirect.INHERIT);
         Process p;
         try {
@@ -116,7 +117,15 @@ public final class FfmpegImageDecoder implements ImageDecoder {
      * loader.
      */
     static Media.Image parsePpm(byte[] ppm) throws IOException {
-        int[] pos = {0};
+        return parsePpm(ppm, new int[] {0});
+    }
+
+    /**
+     * Parse one PPM starting at {@code pos[0]}, advancing {@code pos} past its raster - the unit of
+     * a multi-frame {@code image2pipe} stream (each frame is a self-describing P6, so a video's
+     * frames carry their own dimensions; no probe, no per-frame process).
+     */
+    static Media.Image parsePpm(byte[] ppm, int[] pos) throws IOException {
         String magic = token(ppm, pos);
         if (!"P6".equals(magic)) {
             throw new IOException("expected a P6 PPM from ffmpeg, got '" + magic + "'");
@@ -137,6 +146,7 @@ public final class FfmpegImageDecoder implements ImageDecoder {
         for (int i = 0; i < need; i++) {
             v[i] = (ppm[base + i] & 0xff) / 255f;
         }
+        pos[0] = base + need;
         return new Media.Image(v, h, w, 3);
     }
 

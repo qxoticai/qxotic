@@ -2,19 +2,18 @@ package com.qxotic.jinfer.media;
 
 import com.qxotic.jinfer.Media;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
-import java.util.stream.Stream;
 
 /**
  * The {@link VideoCodec} primitives via ffmpeg/ffprobe on PATH: {@code totalDuration} and {@code
- * framePeriod} probe the container ({@code -of csv=p=0}), and each {@code framesAt} timestamp seeks
- * input-side ({@code -ss} before {@code -i}: keyframe-fast, exact enough for frame sampling) and
- * decodes one frame to a temp PNG read back through {@link ImageCodec}. Stateless; loud on failure.
+ * framePeriod} probe the container ({@code -of csv=p=0}), and {@code framesAt} extracts ALL frames
+ * in one ffmpeg process - one seeked input per timestamp ({@code -ss} before {@code -i}:
+ * keyframe-fast, exact enough for frame sampling), trimmed to a frame each and concatenated to a
+ * single multi-frame PPM stream on stdout (frames parse through {@link FfmpegImageDecoder}'s PPM
+ * reader, keeping the RGB/[0,1]/HWC contract). Stateless; loud on failure.
  */
 public final class FfmpegVideoCodec implements VideoCodec {
 
@@ -56,35 +55,64 @@ public final class FfmpegVideoCodec implements VideoCodec {
 
     @Override
     public Media.Video framesAt(Path video, Duration... timestamps) throws IOException {
-        if (timestamps.length == 0) throw new IllegalArgumentException("no timestamps");
-        Path dir = Files.createTempDirectory("jinfer-video");
-        try {
-            List<Media.Video.Frame> frames = new ArrayList<>(timestamps.length);
-            for (int k = 0; k < timestamps.length; k++) {
-                Path png = dir.resolve("f" + k + ".png");
-                double seconds = timestamps[k].toNanos() / 1e9;
-                runFfmpeg(
-                        "ffmpeg",
-                        "-hide_banner",
-                        "-loglevel",
-                        "error",
-                        "-ss",
-                        String.format(java.util.Locale.ROOT, "%.3f", seconds),
-                        "-i",
-                        video.toString(),
-                        "-frames:v",
-                        "1",
-                        png.toString());
-                if (!Files.exists(png)) {
-                    throw new IOException(
-                            "ffmpeg extracted no frame at " + timestamps[k] + " from " + video);
-                }
-                frames.add(new Media.Video.Frame(ImageCodec.load(png), timestamps[k]));
-            }
-            return new Media.Video(frames);
-        } finally {
-            deleteRecursive(dir);
+        int n = timestamps.length;
+        if (n == 0) throw new IllegalArgumentException("no timestamps");
+        // ONE process for all frames: one seeked input per timestamp (input-side -ss stays
+        // keyframe-fast; the file is opened n times, never decoded end to end), each trimmed to
+        // its first frame and concatenated into a single multi-frame PPM stream on stdout -
+        // no temp files, no PNG codec, no per-frame process spawn (measured 121 ms/frame as
+        // spawn+seek+png; the pipe leaves only the seek+decode).
+        List<String> cmd = new ArrayList<>(List.of("ffmpeg", "-hide_banner", "-loglevel", "error"));
+        StringBuilder fc = new StringBuilder();
+        for (int k = 0; k < n; k++) {
+            double seconds = timestamps[k].toNanos() / 1e9;
+            cmd.add("-ss");
+            cmd.add(String.format(java.util.Locale.ROOT, "%.3f", seconds));
+            cmd.add("-i");
+            cmd.add(video.toString());
+            fc.append('[').append(k).append(":v]trim=end_frame=1[f").append(k).append("];");
         }
+        for (int k = 0; k < n; k++) fc.append("[f").append(k).append(']');
+        // setpts=N + passthrough fps: seeked segments all restart near PTS 0, and the muxer's
+        // default frame-rate sync DROPS colliding frames (measured 19 of 32 without this) -
+        // renumbering gives monotonic timestamps and passthrough keeps every frame.
+        fc.append("concat=n=").append(n).append(":v=1:a=0[c];[c]setpts=N[out]");
+        cmd.addAll(
+                List.of(
+                        "-filter_complex",
+                        fc.toString(),
+                        "-map",
+                        "[out]",
+                        "-fps_mode",
+                        "passthrough",
+                        "-f",
+                        "image2pipe",
+                        "-vcodec",
+                        "ppm",
+                        "-pix_fmt",
+                        "rgb24",
+                        "-"));
+        byte[] ppms = FfmpegImageDecoder.runFfmpeg(cmd.toArray(String[]::new), null);
+
+        // Frames pair with timestamps by ORDER, so a short stream must throw, never mis-pair:
+        // a timestamp past the final frame yields an empty segment and fewer than n frames.
+        List<Media.Video.Frame> frames = new ArrayList<>(n);
+        int[] pos = {0};
+        for (int k = 0; k < n; k++) {
+            if (pos[0] >= ppms.length) {
+                throw new IOException(
+                        "ffmpeg produced "
+                                + k
+                                + " of "
+                                + n
+                                + " frames from "
+                                + video
+                                + " (a timestamp seeks past the final frame?)");
+            }
+            frames.add(
+                    new Media.Video.Frame(FfmpegImageDecoder.parsePpm(ppms, pos), timestamps[k]));
+        }
+        return new Media.Video(frames);
     }
 
     /** One ffprobe field as text ({@code -of csv=p=0}); loud on failure. */
@@ -104,38 +132,6 @@ public final class FfmpegVideoCodec implements VideoCodec {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException("interrupted probing " + video, e);
-        }
-    }
-
-    private static void runFfmpeg(String... cmd) throws IOException {
-        Process p;
-        try {
-            p = new ProcessBuilder(cmd).redirectError(ProcessBuilder.Redirect.INHERIT).start();
-            p.getOutputStream().close();
-            p.getInputStream().readAllBytes();
-        } catch (IOException e) {
-            throw new IOException("failed to launch ffmpeg (is it on PATH?): " + e.getMessage(), e);
-        }
-        int code;
-        try {
-            code = p.waitFor();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IOException("interrupted waiting for ffmpeg", e);
-        }
-        if (code != 0) throw new IOException("ffmpeg exited " + code);
-    }
-
-    private static void deleteRecursive(Path dir) throws IOException {
-        try (Stream<Path> s = Files.walk(dir)) {
-            s.sorted(Comparator.reverseOrder())
-                    .forEach(
-                            p -> {
-                                try {
-                                    Files.deleteIfExists(p);
-                                } catch (IOException ignored) {
-                                }
-                            });
         }
     }
 }
