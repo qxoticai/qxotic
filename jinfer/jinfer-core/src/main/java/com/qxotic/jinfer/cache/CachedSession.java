@@ -46,6 +46,15 @@ public final class CachedSession<S extends RuntimeState> {
     private BlockTree<S>.Block tip;
     private long[] fp;
     private int len;
+    // TAIL SNAPSHOT (coarse codecs): the recurrent residue captured at the last prompt boundary.
+    // The attention rows [0, snapshotLen) stay valid in the state itself (linear append-only KV;
+    // decode only appends), so rewinding needs ONLY the residue restored and the position moved -
+    // which un-does the reply's recurrent influence and lets a thinking-stripped echo (never a
+    // strict extension of the generated stream) continue from the boundary instead of
+    // re-prefilling the whole conversation.
+    private java.lang.foreign.MemorySegment snapshot; // residue blob, null = no snapshot
+    private java.lang.foreign.Arena snapshotArena;
+    private int snapshotLen = -1;
 
     private CachedSession(
             Model<?, ?, S> model,
@@ -381,5 +390,63 @@ public final class CachedSession<S extends RuntimeState> {
     private void append(long fingerprint) {
         if (len == fp.length) fp = Arrays.copyOf(fp, fp.length * 2);
         fp[len++] = fingerprint;
+    }
+
+    // ---- tail snapshot (coarse codecs; see the field comment) --------------------------------
+
+    /**
+     * Captures the residue at the CURRENT frontier - call at the prompt boundary, before decode.
+     * Replaces any previous snapshot (one per session: the tail is the only sound rewind point; see
+     * {@code save}'s contract - the residue only exists at the position the state is at).
+     */
+    void snapshotTail(StateCodec<S> codec) {
+        dropSnapshot();
+        long bytes = codec.blockBytes(0); // an empty span = the residue trailer alone
+        java.lang.foreign.Arena arena = com.qxotic.jinfer.Arenas.newShared();
+        java.lang.foreign.MemorySegment blob = arena.allocate(Math.max(bytes, 1), 8);
+        codec.save(state, state.position(), state.position(), blob);
+        this.snapshotArena = arena;
+        this.snapshot = blob;
+        this.snapshotLen = state.position();
+    }
+
+    /** Bytes held by the tail snapshot (0 when none) - the facade's memory accounting. */
+    long snapshotBytes() {
+        return snapshot == null ? 0 : snapshot.byteSize();
+    }
+
+    /**
+     * True when the snapshot exists and its stream strictly prefixes {@code req} - the rewind
+     * eligibility test (at least one position left to ingest, so logits are fresh).
+     */
+    boolean snapshotIsStrictPrefixOf(long[] req) {
+        return snapshotLen > 0
+                && snapshotLen < req.length
+                && Arrays.equals(fp, 0, snapshotLen, req, 0, snapshotLen);
+    }
+
+    /**
+     * Rewinds the state to the snapshot boundary: residue restored, position moved, the stream
+     * truncated to the boundary (the reply's fingerprints drop with its recurrent influence). Rows
+     * past the boundary become dead; the caller re-ingests the request's tail over them.
+     */
+    void rewindToSnapshot(StateCodec<S> codec) {
+        codec.restore(state, snapshotLen, snapshotLen, snapshot);
+        state.resumeAt(snapshotLen);
+        len = snapshotLen;
+    }
+
+    /** Frees the snapshot blob; idempotent. Every path that ends the session must call this. */
+    void dropSnapshot() {
+        if (snapshotArena != null) {
+            try {
+                snapshotArena.close();
+            } catch (UnsupportedOperationException ignored) {
+                // automatic arena (native image): freed by GC; the reference drops below
+            }
+        }
+        snapshotArena = null;
+        snapshot = null;
+        snapshotLen = -1;
     }
 }

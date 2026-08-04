@@ -67,6 +67,7 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
 
     private final LanguageModel<?, ?, S> model;
     private final BlockTree<S> tree; // null = hot-only (no codec, or blocks disabled)
+    private final StateCodec<S> codec; // null = no codec (hot-only models)
     private final boolean coarse; // blocks written by define() alone; serving restores read-only
     // The decode tail's granularity. Per-token singles keep EVERY reply position resumable, and
     // on a residue-free codec (dense rows, ring rows) they are free - a single stores just its
@@ -104,6 +105,7 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
             Options options) {
         this.model = model;
         this.tree = tree;
+        this.codec = model.stateCodec().orElse(null);
         this.coarse = coarse;
         this.tailPerToken = tailPerToken;
         this.store = store;
@@ -231,6 +233,12 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
         }
         checkFitsContext(fingerprints.length);
         CachedSession<S> hotHit = hotAcquire(fingerprints);
+        // COARSE REWIND: a thinking model whose template strips reasoning from echoed history
+        // never strictly extends the generated stream, so the tail is unreachable by the plain
+        // hot match - but the session's TAIL SNAPSHOT (residue at the last prompt boundary) can
+        // rewind the state to exactly where the echo diverges, and only the stripped reply +
+        // new turn re-ingest. Fine codecs never need this: their block layer serves the echo.
+        if (hotHit == null && coarse) hotHit = snapshotAcquire(fingerprints);
         if (hotHit != null) hotHits++;
         CachedSession<S> session = hotHit != null ? hotHit : attach(fingerprints);
         int restored = session.position();
@@ -242,10 +250,19 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
         Live serving = new Live(session, restored, tier);
         R result;
         try {
+            if (coarse && groups.size() > 1) {
+                // the snapshot must sit BEFORE the final batch - the generation prompt, by the
+                // chat-template convention that it is the prompt's last batch. The echoed next
+                // turn shares everything before that seam and nothing after it (the echo renders
+                // the reply's turn with history framing, the generation prompt with live framing:
+                // <think>\n vs the truncated pair), so a later snapshot can never match.
+                session.ingestGroups(groups.subList(0, groups.size() - 1), fingerprints);
+                session.snapshotTail(codec);
+            }
             session.ingestGroups(groups, fingerprints);
             result = pass.run(session.state(), serving);
         } catch (RuntimeException | Error e) {
-            closeState(session.state()); // torn: never serves again; its committed blocks survive
+            closeSession(session); // torn: never serves again; its committed blocks survive
             throw e;
         } finally {
             serving.live = false;
@@ -422,6 +439,7 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
             int hotSessions,
             long hotHits,
             long statesAllocated,
+            long snapshotBytes,
             int blocks,
             long bytes,
             long budgetBytes,
@@ -434,10 +452,13 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
     public Sample sample() {
         checkOpen();
         BlockTree.Sample t = tree == null ? BlockTree.Sample.ZERO : tree.sample();
+        long snapshotBytes = 0;
+        for (CachedSession<S> s : hot) snapshotBytes += s.snapshotBytes();
         return new Sample(
                 hot.size(),
                 hotHits,
                 statesAllocated,
+                snapshotBytes,
                 t.blocks(),
                 t.bytes(),
                 t.budgetBytes(),
@@ -459,7 +480,7 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
     public void close() {
         if (closed) return;
         closed = true;
-        while (!hot.isEmpty()) closeState(hot.removeFirst().state());
+        while (!hot.isEmpty()) closeSession(hot.removeFirst());
         if (spare != null) closeState(spare);
         spare = null;
         store.close();
@@ -485,6 +506,26 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
     }
 
     /**
+     * The hot session whose TAIL SNAPSHOT stream (the last prompt boundary) strictly prefixes the
+     * prompt, rewound to that boundary and removed from the pool - the coarse-codec echo path.
+     * Longest snapshot wins; null = no match.
+     */
+    private CachedSession<S> snapshotAcquire(long[] fingerprints) {
+        CachedSession<S> best = null;
+        for (CachedSession<S> s : hot) {
+            if (s.snapshotIsStrictPrefixOf(fingerprints)
+                    && fingerprints.length <= s.state().contextCapacity()
+                    && (best == null || s.length() > best.length())) {
+                best = s;
+            }
+        }
+        if (best == null) return null;
+        hot.remove(best);
+        best.rewindToSnapshot(codec);
+        return best;
+    }
+
+    /**
      * Returns a finished session to the hot layer as most-recent; past capacity the least-recent is
      * dropped. With hotSessions=0 the state is WIPED here, the moment the reply is done, and
      * retained as the bare spare: nothing of the conversation lingers between requests.
@@ -499,10 +540,11 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
                             + " != state "
                             + session.state().position()
                             + ")");
-            closeState(session.state());
+            closeSession(session);
             return;
         }
         if (hotCapacity == 0) {
+            session.dropSnapshot();
             S state = session.state();
             if (spare == null) {
                 if (state.position() != 0) state.reset();
@@ -513,7 +555,7 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
             return;
         }
         hot.addLast(session);
-        while (hot.size() > hotCapacity) closeState(hot.removeFirst().state());
+        while (hot.size() > hotCapacity) closeSession(hot.removeFirst());
     }
 
     /**
@@ -525,6 +567,7 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
             CachedSession<S> oldest = hot.peekFirst();
             if (oldest != null && oldest.state().contextCapacity() >= len) {
                 hot.removeFirst();
+                oldest.dropSnapshot();
                 S state = oldest.state();
                 if (state.position() != 0) state.reset();
                 return state;
@@ -542,6 +585,11 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
     private S freshState() {
         statesAllocated++;
         return model.newState(model.config().contextLength(), RuntimeFlags.BATCH_CAPACITY);
+    }
+
+    private void closeSession(CachedSession<S> session) {
+        session.dropSnapshot();
+        closeState(session.state());
     }
 
     private static void closeState(RuntimeState state) {

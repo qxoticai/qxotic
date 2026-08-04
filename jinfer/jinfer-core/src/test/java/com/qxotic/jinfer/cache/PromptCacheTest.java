@@ -318,6 +318,60 @@ public final class PromptCacheTest {
         }
     }
 
+    // ---- COARSE TAIL SNAPSHOT: the rewind that saves thinking models from full re-prefill ----
+
+    // the chat shape: the prompt's FINAL batch is the generation prompt (template convention);
+    // 90 plays that role - the echoed next turn re-renders history differently past the seam
+    private static final int GEN = 90;
+
+    @Test
+    void aStrippedEchoRewindsToTheCoarseTailSnapshot() {
+        // the generated stream ends [.., GEN, 7, 8] (gen prompt + reply-with-thinking); the echo
+        // renders the reply's turn as [9] - never a strict extension, so before the snapshot
+        // this was a full re-prefill on every coarse turn
+        try (var cache = cache(coarse(), 2, 1 << 20)) {
+            generate(cache, turns(new int[] {1, 2, 3}, new int[] {GEN}), 7, 8);
+            Served turn2 = generate(cache, turns(new int[] {1, 2, 3, 9, 4}, new int[] {GEN}));
+            assertEquals(PromptCache.Tier.SESSION, turn2.tier(), "snapshot rewind = hot tier");
+            assertEquals(3, turn2.restored(), "rewound to the pre-gen-prompt seam");
+        }
+    }
+
+    @Test
+    void theSnapshotAdvancesToEachNewPromptBoundary() {
+        try (var cache = cache(coarse(), 2, 1 << 20)) {
+            generate(cache, turns(new int[] {1, 2, 3}, new int[] {GEN}), 7, 8);
+            generate(cache, turns(new int[] {1, 2, 3, 9, 4}, new int[] {GEN}), 8);
+            // turn 3 echoes turn 2's stripped stream: rewinds to turn 2's seam (5), not 3
+            Served turn3 = generate(cache, turns(new int[] {1, 2, 3, 9, 4, 6, 5}, new int[] {GEN}));
+            assertEquals(PromptCache.Tier.SESSION, turn3.tier());
+            assertEquals(5, turn3.restored(), "the snapshot follows the newest prompt boundary");
+        }
+    }
+
+    @Test
+    void aForkBeforeTheSnapshotStillRePrefills() {
+        // the snapshot is the TAIL rewind point only: recurrent state cannot rewind further
+        try (var cache = cache(coarse(), 2, 1 << 20)) {
+            generate(cache, turns(new int[] {1, 2, 3}, new int[] {GEN}), 7, 8);
+            Served fork = generate(cache, turns(new int[] {1, 99, 3}, new int[] {GEN}));
+            assertEquals(PromptCache.Tier.FRESH, fork.tier());
+            assertEquals(0, fork.restored());
+        }
+    }
+
+    @Test
+    void fineCodecsTakeNoSnapshot() {
+        try (var cache = cache(fine(), 2, 1 << 20)) {
+            generate(cache, turns(new int[] {1, 2, 3}, new int[] {GEN}), 7);
+            assertEquals(0, cache.sample().snapshotBytes(), "snapshots are the coarse-codec fix");
+        }
+        try (var cache = cache(coarse(), 2, 1 << 20)) {
+            generate(cache, turns(new int[] {1, 2, 3}, new int[] {GEN}), 7);
+            assertTrue(cache.sample().snapshotBytes() > 0, "a served coarse turn holds a snapshot");
+        }
+    }
+
     @Test
     void theOneShortLawLeavesTheFinalTokenToRecompute() {
         try (var cache = cache(fine(), 0, 1 << 20)) {

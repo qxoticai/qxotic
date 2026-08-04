@@ -96,6 +96,7 @@ public final class Server {
         props.put("hot_sessions", sample.hotSessions());
         props.put("hot_hits", sample.hotHits());
         props.put("allocations", sample.statesAllocated());
+        props.put("snapshot_bytes", sample.snapshotBytes());
         props.put("blocks", sample.blocks());
         props.put("bytes", sample.bytes());
         props.put("budget_bytes", sample.budgetBytes());

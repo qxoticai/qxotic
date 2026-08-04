@@ -20,7 +20,7 @@ class CacheGaugeRegistryTest {
 
     private static Telemetry.CacheGauge gauge(String model) {
         return new Telemetry.CacheGauge(
-                model, () -> new PromptCache.Sample(0, 0, 0, 1, 2, 3, 4, 5, 6, 0, 0));
+                model, () -> new PromptCache.Sample(0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 0, 0));
     }
 
     @Test
