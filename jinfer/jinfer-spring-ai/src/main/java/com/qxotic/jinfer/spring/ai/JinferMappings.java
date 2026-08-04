@@ -71,7 +71,7 @@ final class JinferMappings {
             switch (kind) {
                 case "image" -> parts.add(blob(kind, () -> ImageCodec.decode(bytes(media))));
                 case "audio" -> parts.add(blob(kind, () -> AudioCodec.decode(bytes(media))));
-                case "video" -> parts.add(blob(kind, () -> VideoCodec.sample(localPath(media))));
+                case "video" -> parts.add(blob(kind, () -> VideoCodec.uniform(localPath(media))));
                 default ->
                         throw new UnsupportedOperationException(
                                 "media type " + media.getMimeType() + " is not supported");
