@@ -114,7 +114,7 @@ public final class PromptCacheTest {
         }
     }
 
-    static final class FakeCodec implements StateCodec<FakeState> {
+    static class FakeCodec implements StateCodec<FakeState> {
         final boolean coarse;
 
         FakeCodec(boolean coarse) {
@@ -142,6 +142,17 @@ public final class PromptCacheTest {
 
     static FakeModel fine() {
         return new FakeModel(new FakeCodec(false));
+    }
+
+    /** A codec with a 100-byte residue trailer: the LFM2-class shape, scaled down. */
+    static FakeModel residual() {
+        return new FakeModel(
+                new FakeCodec(false) {
+                    @Override
+                    public long blockBytes(int positions) {
+                        return positions * 8L + 100;
+                    }
+                });
     }
 
     static FakeModel coarse() {
@@ -276,6 +287,34 @@ public final class PromptCacheTest {
             Served cut = generate(cache, turns(new int[] {1, 2, 3}, new int[] {7, 99}));
             assertEquals(PromptCache.Tier.BLOCKS, cut.tier());
             assertEquals(4, cut.restored(), "resumes exactly at the cut: [1,2,3,7|99]");
+        }
+    }
+
+    @Test
+    void aResidueCodecCommitsTheReplyAsOneBlock() {
+        // per-token singles would duplicate the residue per generated token (measured 300x the
+        // row bytes on LFM2.5); a residue codec's tail commits ONCE per reply instead
+        try (var cache = cache(residual(), 0, 1 << 20)) {
+            generate(cache, turns(new int[] {1, 2, 3}), 7, 8, 9);
+            assertEquals(
+                    2,
+                    cache.sample().blocks(),
+                    "one prompt chunk + ONE reply block, not one per token");
+            // the echoed conversation still resumes through the whole reply (a turn boundary)
+            Served turn2 = generate(cache, turns(new int[] {1, 2, 3}, new int[] {7, 8, 9, 4}));
+            assertEquals(PromptCache.Tier.BLOCKS, turn2.tier());
+            assertEquals(6, turn2.restored(), "prompt chunk + whole-reply block resume");
+        }
+    }
+
+    @Test
+    void aResidueCodecEchoCutMidReplyResumesAtTheTurnBoundary() {
+        // the accepted trade: no per-token singles means a mid-reply cut re-prefills the reply
+        // tail from the last turn boundary instead of resuming token-exact
+        try (var cache = cache(residual(), 0, 1 << 20)) {
+            generate(cache, turns(new int[] {1, 2, 3}), 7, 8, 9);
+            Served cut = generate(cache, turns(new int[] {1, 2, 3}, new int[] {7, 99}));
+            assertEquals(3, cut.restored(), "resumes at the prompt-chunk boundary, not the cut");
         }
     }
 

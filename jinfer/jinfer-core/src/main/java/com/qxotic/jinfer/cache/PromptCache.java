@@ -23,7 +23,10 @@ import java.util.List;
  *   <li>BLOCKS - everything computed is kept as content-keyed KV blocks (RAM, budget-bounded,
  *       optionally backed by a catalog file that survives restarts). Interior content commits at
  *       batch boundaries (turns, when the codec encodes one batch per turn); the decode tail
- *       commits per position, so a truncated or edited echo resumes token-exact.
+ *       commits per position on residue-free codecs (a truncated or edited echo resumes
+ *       token-exact, at no extra byte cost) and as one block per reply on residue-carrying codecs
+ *       (every checkpoint is a turn boundary - duplicating the residue per token measured 300x the
+ *       row bytes on LFM2.5).
  * </ul>
  *
  * <p>THE LAW, stated once: a resume always stops one position short, so the final token re-ingests
@@ -65,6 +68,14 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
     private final LanguageModel<?, ?, S> model;
     private final BlockTree<S> tree; // null = hot-only (no codec, or blocks disabled)
     private final boolean coarse; // blocks written by define() alone; serving restores read-only
+    // The decode tail's granularity. Per-token singles keep EVERY reply position resumable, and
+    // on a residue-free codec (dense rows, ring rows) they are free - a single stores just its
+    // row, which any granularity stores anyway. A codec with a residue duplicates it into every
+    // block, so per-token singles multiply it by the reply length (measured: LFM2.5-8B's ~300KB
+    // conv residue turned ~6.5k generated tokens into 2.1GB). There the tail commits as ONE
+    // block per reply instead: every checkpoint is a turn boundary, one residue per reply, and
+    // an edited or stop-cut echo re-prefills at most one reply's tail.
+    private final boolean tailPerToken;
     private final CacheStore store; // owned; freed at close
     private final Path writeBack; // save()'s append target; null = read-only or no catalog
 
@@ -84,12 +95,14 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
             LanguageModel<?, ?, S> model,
             BlockTree<S> tree,
             boolean coarse,
+            boolean tailPerToken,
             CacheStore store,
             Path writeBack,
             Options options) {
         this.model = model;
         this.tree = tree;
         this.coarse = coarse;
+        this.tailPerToken = tailPerToken;
         this.store = store;
         this.writeBack = writeBack;
         this.hotCapacity = Math.max(0, options.hotSessions());
@@ -115,14 +128,21 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
         }
         boolean wantBlocks = codec != null && (o.blockBudgetBytes() > 0 || o.catalog() != null);
         if (!wantBlocks) {
-            return new PromptCache<>(model, null, false, CacheStore.inMemory(), null, o);
+            return new PromptCache<>(model, null, false, false, CacheStore.inMemory(), null, o);
         }
         CacheStore store = CacheStore.inMemory();
         try {
             FrozenBlocks base = openCatalog(seed, o);
             BlockTree<S> tree = new BlockTree<>(codec, store, o.blockBudgetBytes(), seed, base);
             Path writeBack = o.readOnly() ? null : o.catalog();
-            return new PromptCache<>(model, tree, codec.coarseBlocks(), store, writeBack, o);
+            return new PromptCache<>(
+                    model,
+                    tree,
+                    codec.coarseBlocks(),
+                    codec.blockBytes(0) == 0, // blockBytes(0) IS the residue: zero = singles free
+                    store,
+                    writeBack,
+                    o);
         } catch (RuntimeException | Error e) {
             store.close();
             throw e;
@@ -170,9 +190,11 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
     public interface Serving {
         /**
          * Wire as the generator's {@code afterIngest}: records each decode token the moment the
-         * state's frontier includes it (with blocks on, as its own per-position block - the tail
-         * contract). A no-op lane when blocks are off, but ALWAYS keeps the hot stream in lockstep,
-         * so wiring it is not optional.
+         * state's frontier includes it. With blocks on, a residue-free codec commits it as its own
+         * per-position block (token-exact echo resume, free - a single stores just its row); a
+         * residue-carrying codec buffers the reply and commits it as ONE block when the pass ends
+         * (one residue per reply, checkpoints at turn boundaries). A no-op lane when blocks are
+         * off, but ALWAYS keeps the hot stream in lockstep, so wiring it is not optional.
          */
         void tail(int token);
 
@@ -225,6 +247,7 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
         } finally {
             serving.live = false;
         }
+        serving.flushReply(); // per-reply tail: ONE block, saved at the frontier the state is at
         release(session);
         return result;
     }
@@ -234,6 +257,7 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
         private final CachedSession<S> session;
         private final int restored;
         private final Tier tier;
+        private final List<Integer> reply = new ArrayList<>(); // buffered per-reply tail tokens
         private boolean live = true;
 
         Live(CachedSession<S> session, int restored, Tier tier) {
@@ -250,7 +274,19 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
                 throw new IllegalStateException(
                         "the serving is over: tail() is valid only until the pass returns");
             }
-            session.adopt(token);
+            if (tailPerToken) {
+                session.adopt(token);
+            } else {
+                reply.add(token); // committed as one block when the pass ends
+            }
+        }
+
+        /** Commits a buffered reply as ONE block - the residue-codec tail granularity. */
+        void flushReply() {
+            if (reply.isEmpty()) return;
+            int[] tokens = new int[reply.size()];
+            for (int i = 0; i < tokens.length; i++) tokens[i] = reply.get(i);
+            session.adopt(tokens);
         }
 
         @Override
