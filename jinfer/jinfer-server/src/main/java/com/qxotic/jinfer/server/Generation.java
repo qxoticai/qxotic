@@ -234,16 +234,18 @@ final class Generation {
             Object raw2 = m.get("content");
             List<Part> contentParts = null; // typed lowering when the array carries images
             if (raw2 instanceof List<?> parts) {
-                boolean hasImage =
+                boolean hasTyped =
                         parts.stream()
                                 .anyMatch(
                                         part ->
                                                 part instanceof Map<?, ?> pm
-                                                        && "image_url".equals(pm.get("type")));
-                if (hasImage) {
-                    // images can never reach the whole-render fallback (media needs the native
-                    // template), so this path either builds typed parts or throws a 400 - it
-                    // must not return null
+                                                        && pm.get("type") != null
+                                                        && !"text".equals(pm.get("type")));
+                if (hasTyped) {
+                    // non-text parts can never reach the whole-render fallback (media needs the
+                    // native template; unknown types deserve their precise error, not the
+                    // generic empty-request 400), so this path either builds typed parts or
+                    // throws - it must not return null
                     contentParts = new ArrayList<>();
                     for (Object part : parts) {
                         Map<String, Object> pm = Values.asObject(part, "content part");
@@ -298,6 +300,10 @@ final class Generation {
                 options.mediaProjector() != null,
                 "image input is not enabled on this server (start it with --mmproj"
                         + " <projector.gguf>)");
+        LLMOptions.require(
+                model.model() instanceof com.qxotic.jinfer.MultiModal mm
+                        && mm.modalities().contains(com.qxotic.jinfer.Media.Image.class),
+                "the loaded projector provides no image encoder for this model");
         String url =
                 imageUrl instanceof Map<?, ?> mu
                         ? Values.stringValue(mu.get("url"), "")

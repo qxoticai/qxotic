@@ -11,14 +11,20 @@ import java.util.Map;
 final class Validation {
     private Validation() {}
 
-    /** An image-only message is substance too (its text may legitimately be empty). */
+    /**
+     * A message whose content array carries any TYPED non-text part is substance too (an image-only
+     * message has legitimately empty text) - and letting unknown types through here means the
+     * request fails later with the precise "unsupported content part type" error instead of a
+     * misleading "messages must not be empty".
+     */
     private static boolean hasImageItem(Object content) {
         return content instanceof List<?> parts
                 && parts.stream()
                         .anyMatch(
                                 p ->
                                         p instanceof Map<?, ?> pm
-                                                && "image_url".equals(pm.get("type")));
+                                                && pm.get("type") != null
+                                                && !"text".equals(pm.get("type")));
     }
 
     static void validateChatRequest(Map<String, Object> request) {

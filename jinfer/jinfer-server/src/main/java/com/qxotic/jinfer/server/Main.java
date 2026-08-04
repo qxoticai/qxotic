@@ -255,8 +255,8 @@ public class Main {
         out.println("Options:");
         out.println("  --model, -m <path>            required, path to .gguf file");
         out.println(
-                "  --mmproj <path>               media projector .gguf (vision/audio encoders) for"
-                        + " multimodal models");
+                "  --mmproj <path>               media projector .gguf (vision/audio encoders);"
+                        + " enables image_url content on /v1/chat/completions");
         out.println("  --interactive, --chat, -i     run in chat mode");
         out.println("  --instruct                    run in instruct (once) mode, default mode");
         out.println("  --server                      run an OpenAI-compatible HTTP server");
