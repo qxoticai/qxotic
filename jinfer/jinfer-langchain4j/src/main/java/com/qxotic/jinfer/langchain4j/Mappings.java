@@ -89,31 +89,18 @@ final class Mappings {
         for (Content c : u.contents()) {
             switch (c) {
                 case TextContent t -> parts.add(new Part.Text(t.text(), null));
-                case ImageContent i ->
-                        parts.add(
-                                blob(
-                                        "image",
-                                        () ->
-                                                ImageCodec.decode(
-                                                        bytes(
-                                                                i.image().base64Data(),
-                                                                i.image().url()))));
-                case AudioContent a ->
-                        parts.add(
-                                blob(
-                                        "audio",
-                                        () ->
-                                                AudioCodec.decode(
-                                                        bytes(
-                                                                a.audio().base64Data(),
-                                                                a.audio().url()))));
-                case VideoContent v ->
-                        parts.add(
-                                blob(
-                                        "video",
-                                        () ->
-                                                VideoCodec.ffmpeg()
-                                                        .uniform(localPath(v.video().url()))));
+                case ImageContent i -> {
+                    byte[] src = bytes(i.image().base64Data(), i.image().url());
+                    parts.add(blob("image", sha256(src), () -> ImageCodec.decode(src)));
+                }
+                case AudioContent a -> {
+                    byte[] src = bytes(a.audio().base64Data(), a.audio().url());
+                    parts.add(blob("audio", sha256(src), () -> AudioCodec.decode(src)));
+                }
+                case VideoContent v -> {
+                    Path src = localPath(v.video().url());
+                    parts.add(blob("video", sha256(src), () -> VideoCodec.ffmpeg().uniform(src)));
+                }
                 default ->
                         throw new UnsupportedFeatureException(
                                 c.getClass().getSimpleName() + " is not supported");
@@ -126,11 +113,40 @@ final class Mappings {
         Media decode() throws IOException;
     }
 
-    private static Part.Blob blob(String kind, MediaDecode decode) {
+    private static Part.Blob blob(String kind, byte[] contentKey, MediaDecode decode) {
         try {
-            return new Part.Blob(decode.decode());
+            return new Part.Blob(decode.decode(), contentKey);
         } catch (IOException e) {
             throw new UncheckedIOException("failed to decode " + kind, e);
+        }
+    }
+
+    /**
+     * The SOURCE digest that keys media caching deterministically (encoder rows drift an ulp while
+     * the JIT warms; the original bytes never do) - same law as the server wire. Video frames
+     * derive per-frame keys from this digest in the template.
+     */
+    private static byte[] sha256(byte[] source) {
+        try {
+            return java.security.MessageDigest.getInstance("SHA-256").digest(source);
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new AssertionError(e);
+        }
+    }
+
+    /**
+     * Streaming digest of a local file - videos should not be pulled onto the heap to be hashed.
+     */
+    private static byte[] sha256(Path file) {
+        try (var in = Files.newInputStream(file)) {
+            var md = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] buf = new byte[1 << 16];
+            for (int n; (n = in.read(buf)) > 0; ) md.update(buf, 0, n);
+            return md.digest();
+        } catch (IOException e) {
+            throw new UncheckedIOException("failed to read " + file, e);
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new AssertionError(e);
         }
     }
 

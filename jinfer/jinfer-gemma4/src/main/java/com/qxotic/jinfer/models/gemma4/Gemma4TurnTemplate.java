@@ -170,15 +170,23 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
                         .id(SpecialTokens.require(tokenizer, "<audio|>"));
             }
             case Media.Video vid -> {
-                // Video decomposes into frames: each frame is a timestamped image block,
-                // interleaved as the docs show ("00:00 <|image>...", "00:01 ..."). Timestamps are
-                // plain text (not special tokens). Frames encode at the VIDEO budget (default 70,
-                // the reference video processor's own; -Djinfer.gemma4.videoTokenBudget) - stills
-                // keep the independent image budget, so many frames fit the context.
+                // Video decomposes into frames, rendered token-exact with the reference
+                // processor's replace_video_token: segments "MM:SS <|image>[soft]<image|>" joined
+                // by SINGLE SPACES ("00:00 <|image>...<image|> 00:01 <|image>..." - no newlines);
+                // minutes/seconds are the floor of the frame's TRUE timestamp (any sampling).
+                // Frames encode at the VIDEO budget (default 70, the reference video processor's
+                // own; -Djinfer.gemma4.videoTokenBudget) - stills keep the independent image
+                // budget, so many frames fit the context.
+                boolean first = true;
                 for (Media.Video.Frame frame : vid.frames()) {
-                    java.time.Duration t = frame.timestamp(); // TRUE position (any sampling)
-                    runs.text(String.format("%n%02d:%02d%n", t.toMinutes(), t.toSecondsPart()));
+                    java.time.Duration t = frame.timestamp();
+                    runs.text(
+                            String.format(
+                                    first ? "%02d:%02d " : " %02d:%02d ",
+                                    t.toMinutes(),
+                                    t.toSecondsPart()));
                     imageBlock(encodeFrame(frame.image()), frameKey(blob.contentKey(), t), runs);
+                    first = false;
                 }
             }
             default ->

@@ -69,10 +69,18 @@ final class JinferMappings {
         for (org.springframework.ai.content.Media media : u.getMedia()) {
             String kind = media.getMimeType().getType();
             switch (kind) {
-                case "image" -> parts.add(blob(kind, () -> ImageCodec.decode(bytes(media))));
-                case "audio" -> parts.add(blob(kind, () -> AudioCodec.decode(bytes(media))));
-                case "video" ->
-                        parts.add(blob(kind, () -> VideoCodec.ffmpeg().uniform(localPath(media))));
+                case "image" -> {
+                    byte[] src = bytes(media);
+                    parts.add(blob(kind, sha256(src), () -> ImageCodec.decode(src)));
+                }
+                case "audio" -> {
+                    byte[] src = bytes(media);
+                    parts.add(blob(kind, sha256(src), () -> AudioCodec.decode(src)));
+                }
+                case "video" -> {
+                    java.nio.file.Path src = localPath(media);
+                    parts.add(blob(kind, sha256(src), () -> VideoCodec.ffmpeg().uniform(src)));
+                }
                 default ->
                         throw new UnsupportedOperationException(
                                 "media type " + media.getMimeType() + " is not supported");
@@ -85,11 +93,40 @@ final class JinferMappings {
         Media decode() throws IOException;
     }
 
-    private static Part.Blob blob(String kind, MediaDecode decode) {
+    private static Part.Blob blob(String kind, byte[] contentKey, MediaDecode decode) {
         try {
-            return new Part.Blob(decode.decode());
+            return new Part.Blob(decode.decode(), contentKey);
         } catch (IOException e) {
             throw new UncheckedIOException("failed to decode " + kind, e);
+        }
+    }
+
+    /**
+     * The SOURCE digest that keys media caching deterministically (encoder rows drift an ulp while
+     * the JIT warms; the original bytes never do) - same law as the server wire. Video frames
+     * derive per-frame keys from this digest in the template.
+     */
+    private static byte[] sha256(byte[] source) {
+        try {
+            return java.security.MessageDigest.getInstance("SHA-256").digest(source);
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new AssertionError(e);
+        }
+    }
+
+    /**
+     * Streaming digest of a local file - videos should not be pulled onto the heap to be hashed.
+     */
+    private static byte[] sha256(java.nio.file.Path file) {
+        try (var in = java.nio.file.Files.newInputStream(file)) {
+            var md = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] buf = new byte[1 << 16];
+            for (int n; (n = in.read(buf)) > 0; ) md.update(buf, 0, n);
+            return md.digest();
+        } catch (IOException e) {
+            throw new UncheckedIOException("failed to read " + file, e);
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new AssertionError(e);
         }
     }
 
