@@ -45,7 +45,41 @@ public final class Models {
      */
     public static LoadedModel<?> load(Path path, Path mediaProjector, int ctx, Arena arena)
             throws IOException {
-        return open(path, (fc, gguf) -> provider(gguf).load(fc, gguf, ctx, mediaProjector, arena));
+        return mediaSeeded(
+                open(path, (fc, gguf) -> provider(gguf).load(fc, gguf, ctx, mediaProjector, arena)),
+                mediaProjector);
+    }
+
+    /**
+     * Re-roots the cache seed with the ENCODER IDENTITY: the projector file, the image decoder
+     * implementation, and the model's preprocessing plan. Media blocks are content-keyed by their
+     * SOURCE bytes (see {@code Batch.embeddings}), so everything between those bytes and the stored
+     * KV must be part of the key space - a different projector (or decoder, or plan) producing
+     * different rows for the same bytes must never serve the old blocks.
+     */
+    static <S extends com.qxotic.jinfer.RuntimeState> LoadedModel<S> mediaSeeded(
+            LoadedModel<S> loaded, Path mediaProjector) {
+        try {
+            java.security.MessageDigest sha = java.security.MessageDigest.getInstance("SHA-256");
+            sha.update(loaded.seed());
+            sha.update(com.qxotic.jinfer.cache.PromptCache.modelSeed(mediaProjector));
+            sha.update(
+                    com.qxotic.jinfer.media.ImageCodec.decoder()
+                            .name()
+                            .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            if (loaded.model() instanceof com.qxotic.jinfer.MultiModal mm) {
+                sha.update(mm.encodePlanId().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            }
+            return new LoadedModel<>(
+                    loaded.model(),
+                    loaded.tokenizer(),
+                    loaded.chatTemplateSource(),
+                    loaded.stopTokens(),
+                    sha.digest(),
+                    loaded.template());
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new AssertionError(e);
+        }
     }
 
     /**

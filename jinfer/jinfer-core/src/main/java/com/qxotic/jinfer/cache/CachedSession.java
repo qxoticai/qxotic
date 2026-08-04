@@ -167,7 +167,13 @@ public final class CachedSession<S extends RuntimeState> {
                     for (int id : t.ids()) fp[at++] = id;
                 }
                 case Batch.Input.Embeddings e -> {
-                    long[] digest = rowsDigest(e);
+                    // SOURCE digest when the batch carries one (deterministic across a process's
+                    // whole life); the encoded-rows hash otherwise (exact but JIT-warmup drift
+                    // makes early passes differ - see Batch.embeddings' contentKey doc)
+                    long[] digest =
+                            e.contentKey() != null && e.contentKey().length == 32
+                                    ? Sha256.longs(e.contentKey())
+                                    : rowsDigest(e);
                     for (int i = 0; i < e.count(); i++) fp[at++] = digest[i & 3] + GOLDEN * i;
                 }
                 default ->

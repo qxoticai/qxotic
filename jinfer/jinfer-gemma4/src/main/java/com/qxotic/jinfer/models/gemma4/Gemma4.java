@@ -203,6 +203,15 @@ public final class Gemma4
     }
 
     @Override
+    public String encodePlanId() {
+        // bump the version token when preprocessing changes shape/content for the same input
+        return "gemma4-vision-v1 smartResize="
+                + VisionPreprocess.SMART_RESIZE
+                + " budget="
+                + VisionPreprocess.IMAGE_TOKEN_BUDGET;
+    }
+
+    @Override
     @SuppressWarnings("unchecked")
     public <R extends Media> Optional<Embedder<R>> embedder(Class<R> modality) {
         if (vision != null && modality == Media.Image.class)

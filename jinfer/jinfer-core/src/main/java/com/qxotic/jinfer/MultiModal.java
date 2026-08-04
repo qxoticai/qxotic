@@ -24,4 +24,15 @@ public interface MultiModal {
      * Embedder<Media.Audio>}.
      */
     <R extends Media> Optional<Embedder<R>> embedder(Class<R> modality);
+
+    /**
+     * A canonical string naming every parameter that changes the encoder's OUTPUT for the same
+     * input - preprocessing knobs (token budgets, resize modes) plus an explicit version token
+     * bumped whenever the plan's code changes. Folded into the model's cache seed when a media
+     * projector loads, so content-keyed media blocks (keyed by SOURCE bytes, not encoded rows - see
+     * {@code Batch.embeddings}) can never match across a plan change the bytes cannot see.
+     */
+    default String encodePlanId() {
+        return "";
+    }
 }

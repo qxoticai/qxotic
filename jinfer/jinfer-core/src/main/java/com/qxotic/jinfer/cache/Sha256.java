@@ -23,7 +23,12 @@ final class Sha256 {
 
     /** Finalizes {@code sha} and returns the 256-bit digest as 4 little-endian longs. */
     static long[] digestLongs(MessageDigest sha) {
-        ByteBuffer out = ByteBuffer.wrap(sha.digest()).order(ByteOrder.LITTLE_ENDIAN);
+        return longs(sha.digest());
+    }
+
+    /** A 32-byte digest as 4 little-endian longs. */
+    static long[] longs(byte[] digest) {
+        ByteBuffer out = ByteBuffer.wrap(digest).order(ByteOrder.LITTLE_ENDIAN);
         return new long[] {out.getLong(), out.getLong(), out.getLong(), out.getLong()};
     }
 }

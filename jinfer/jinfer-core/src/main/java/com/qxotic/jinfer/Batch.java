@@ -27,7 +27,13 @@ public record Batch(Input input, Outputs outputs) {
          * Encoder-projected rows. {@code bidirectional} = the modality's soft tokens attend to each
          * other non-causally within the chunk (gemma image: true; gemma audio: false / causal).
          */
-        record Embeddings(FloatTensor rows, int count, boolean bidirectional) implements Input {}
+        record Embeddings(FloatTensor rows, int count, boolean bidirectional, byte[] contentKey)
+                implements Input {
+            /** No content key: the cache fingerprints the rows themselves (the API default). */
+            public Embeddings(FloatTensor rows, int count, boolean bidirectional) {
+                this(rows, count, bidirectional, null);
+            }
+        }
 
         /**
          * Packed (ragged) multi-sequence text: {@code tokens.ids()} is this chunk's slice of the
@@ -77,6 +83,21 @@ public record Batch(Input input, Outputs outputs) {
      */
     public static Batch embeddings(FloatTensor rows, int count, boolean bidirectional) {
         return new Batch(new Input.Embeddings(rows, count, bidirectional), Outputs.LAST);
+    }
+
+    /**
+     * As {@link #embeddings(FloatTensor, int, boolean)} with a caller-supplied CONTENT KEY - a
+     * digest of the media's SOURCE (original encoded bytes and any per-request encode options) that
+     * the cache fingerprints INSTEAD of the rows. Row bits drift by an ulp while the JIT warms, so
+     * row-derived fingerprints make the same image miss across a server's early requests; a source
+     * digest is deterministic from the first request. The key space must be guarded by the model
+     * seed folding in the encoder identity (projector file, image decoder, preprocessing plan) -
+     * the seed re-rooting in {@code Models.load} owns that.
+     */
+    public static Batch embeddings(
+            FloatTensor rows, int count, boolean bidirectional, byte[] contentKey) {
+        return new Batch(
+                new Input.Embeddings(rows, count, bidirectional, contentKey), Outputs.LAST);
     }
 
     /**

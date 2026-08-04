@@ -102,7 +102,12 @@ public sealed interface Part {
      * A decoded media payload, positioned structurally (by its place in the part list, never by
      * markers parsed out of text).
      */
-    record Blob(Media media) implements Part {
+    record Blob(Media media, byte[] contentKey) implements Part {
+        /** No content key: media identity falls back to hashing the encoded rows. */
+        public Blob(Media media) {
+            this(media, null);
+        }
+
         public Blob {
             if (media == null) throw new IllegalArgumentException("null media");
         }

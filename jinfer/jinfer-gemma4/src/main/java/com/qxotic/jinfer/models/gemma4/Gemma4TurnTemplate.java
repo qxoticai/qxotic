@@ -141,7 +141,7 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
                 if (p instanceof Part.Text t) {
                     runs.text(t.text());
                 } else if (p instanceof Part.Blob blob) {
-                    encodeMedia(blob.media(), runs);
+                    encodeMedia(blob, runs);
                 }
             }
         }
@@ -153,12 +153,20 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
      * {@code <open>} [embeddings] {@code <close>}: wrapper ids around the encoded block —
      * bidirectional for images (one attention group), causal for audio (gemma4ua).
      */
-    private void encodeMedia(Media m, TokenRuns runs) {
+    private void encodeMedia(Part.Blob blob, TokenRuns runs) {
+        Media m = blob.media();
         switch (m) {
             case Media.Image img -> {
                 FloatTensor rows = encode(Media.Image.class, img);
+                // the blob's source digest keys the block deterministically (a video frame must
+                // NOT share it - same key + same in-batch positions would collide across frames)
                 runs.id(SpecialTokens.require(tokenizer, "<|image>"))
-                        .block(Batch.embeddings(rows, (int) (rows.size() / modelDim)))
+                        .block(
+                                Batch.embeddings(
+                                        rows,
+                                        (int) (rows.size() / modelDim),
+                                        true,
+                                        blob.contentKey()))
                         .id(SpecialTokens.require(tokenizer, "<image|>"));
             }
             case Media.Audio aud -> {
@@ -177,7 +185,7 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
                 for (int i = 0; i < frames.length; i++) {
                     int sec = (int) (i / Math.max(vid.fps(), 1f));
                     runs.text(String.format("%n%02d:%02d%n", sec / 60, sec % 60));
-                    encodeMedia(frames[i], runs);
+                    encodeMedia(new Part.Blob(frames[i]), runs);
                 }
             }
             default ->
