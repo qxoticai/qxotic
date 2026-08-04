@@ -23,15 +23,22 @@ final class VisionPreprocess {
      * preprocess downscale target that sets how many soft tokens an image becomes (280 -> ~256).
      * Unset -> -1, and each encoder keeps its own default (280, or the GGUF's image_max_pixels).
      */
-    static final int IMAGE_TOKEN_BUDGET = validatedBudget();
+    static final int IMAGE_TOKEN_BUDGET = validatedBudget("jinfer.gemma4.imageTokenBudget", -1);
 
-    private static int validatedBudget() {
-        String p = System.getProperty("jinfer.gemma4.imageTokenBudget");
-        if (p == null) return -1;
+    /**
+     * Gemma VIDEO frame budget: {@code -Djinfer.gemma4.videoTokenBudget=70|140|280|560|1120},
+     * default 70 - the reference video processor's OWN {@code max_soft_tokens} default (images
+     * default 280). Independent of the image knob: setting one never moves the other, so stills can
+     * stay sharp while many sampled frames fit the context.
+     */
+    static final int VIDEO_TOKEN_BUDGET = validatedBudget("jinfer.gemma4.videoTokenBudget", 70);
+
+    private static int validatedBudget(String property, int deflt) {
+        String p = System.getProperty(property);
+        if (p == null) return deflt;
         int b = Integer.parseInt(p.trim());
         if (b != 70 && b != 140 && b != 280 && b != 560 && b != 1120) {
-            throw new IllegalArgumentException(
-                    "jinfer.gemma4.imageTokenBudget must be 70|140|280|560|1120, got " + b);
+            throw new IllegalArgumentException(property + " must be 70|140|280|560|1120, got " + b);
         }
         return b;
     }

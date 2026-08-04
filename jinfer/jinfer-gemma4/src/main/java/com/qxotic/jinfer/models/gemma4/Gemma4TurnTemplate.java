@@ -156,19 +156,8 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
     private void encodeMedia(Part.Blob blob, TokenRuns runs) {
         Media m = blob.media();
         switch (m) {
-            case Media.Image img -> {
-                FloatTensor rows = encode(Media.Image.class, img);
-                // the blob's source digest keys the block deterministically (a video frame must
-                // NOT share it - same key + same in-batch positions would collide across frames)
-                runs.id(SpecialTokens.require(tokenizer, "<|image>"))
-                        .block(
-                                Batch.embeddings(
-                                        rows,
-                                        (int) (rows.size() / modelDim),
-                                        true,
-                                        blob.contentKey()))
-                        .id(SpecialTokens.require(tokenizer, "<image|>"));
-            }
+            case Media.Image img ->
+                    imageBlock(encode(Media.Image.class, img), blob.contentKey(), runs);
             case Media.Audio aud -> {
                 FloatTensor rows = encode(Media.Audio.class, aud);
                 runs.id(SpecialTokens.require(tokenizer, "<|audio>"))
@@ -183,19 +172,45 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
             case Media.Video vid -> {
                 // Video decomposes into frames: each frame is a timestamped image block,
                 // interleaved as the docs show ("00:00 <|image>...", "00:01 ..."). Timestamps are
-                // plain text (not special tokens). Per-frame token cost = image budget (~256 at
-                // budget 280) - use a low jinfer.gemma4.imageTokenBudget for video so many frames
-                // fit the context.
+                // plain text (not special tokens). Frames encode at the VIDEO budget (default 70,
+                // the reference video processor's own; -Djinfer.gemma4.videoTokenBudget) - stills
+                // keep the independent image budget, so many frames fit the context.
                 for (Media.Video.Frame frame : vid.frames()) {
                     java.time.Duration t = frame.timestamp(); // TRUE position (any sampling)
                     runs.text(String.format("%n%02d:%02d%n", t.toMinutes(), t.toSecondsPart()));
-                    encodeMedia(new Part.Blob(frame.image(), frameKey(blob.contentKey(), t)), runs);
+                    imageBlock(encodeFrame(frame.image()), frameKey(blob.contentKey(), t), runs);
                 }
             }
             default ->
                     throw new IllegalArgumentException(
                             "Gemma 4: unsupported media " + m.getClass().getSimpleName());
         }
+    }
+
+    /**
+     * {@code <|image>} [rows] {@code <image|>} - the shared image-block wrapper (stills and video
+     * frames). The source digest keys the block deterministically; a video frame carries its
+     * DERIVED key, never the raw video key (same key + same in-batch positions would collide across
+     * frames).
+     */
+    private void imageBlock(FloatTensor rows, byte[] key, TokenRuns runs) {
+        runs.id(SpecialTokens.require(tokenizer, "<|image>"))
+                .block(Batch.embeddings(rows, (int) (rows.size() / modelDim), true, key))
+                .id(SpecialTokens.require(tokenizer, "<image|>"));
+    }
+
+    /**
+     * One video frame through the vision tower at the VIDEO soft-token budget ({@link
+     * VisionPreprocess#VIDEO_TOKEN_BUDGET}, default 70 - the reference video processor's own
+     * default; stills keep the independent image budget). A tower without the {@link VisionBudget}
+     * seam falls back to its image budget.
+     */
+    private FloatTensor encodeFrame(Media.Image img) {
+        if (media != null
+                && media.embedder(Media.Image.class).orElse(null) instanceof VisionBudget tower) {
+            return tower.encode(img, VisionPreprocess.VIDEO_TOKEN_BUDGET);
+        }
+        return encode(Media.Image.class, img);
     }
 
     /**

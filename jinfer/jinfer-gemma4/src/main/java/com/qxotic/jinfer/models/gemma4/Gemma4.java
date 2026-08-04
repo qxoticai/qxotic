@@ -208,7 +208,9 @@ public final class Gemma4
         return "gemma4-vision-v1 smartResize="
                 + VisionPreprocess.SMART_RESIZE
                 + " budget="
-                + VisionPreprocess.IMAGE_TOKEN_BUDGET;
+                + VisionPreprocess.IMAGE_TOKEN_BUDGET
+                + " videoBudget="
+                + VisionPreprocess.VIDEO_TOKEN_BUDGET;
     }
 
     @Override

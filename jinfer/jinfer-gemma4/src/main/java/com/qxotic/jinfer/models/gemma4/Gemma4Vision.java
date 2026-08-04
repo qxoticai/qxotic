@@ -43,7 +43,7 @@ import java.util.function.Consumer;
 /**
  * Batched gemma4v vision tower → projected model-dim rows. Implements {@link Embedder} over images.
  */
-public final class Gemma4Vision implements Embedder<Media.Image> {
+public final class Gemma4Vision implements Embedder<Media.Image>, VisionBudget {
 
     // --- config (from clip.vision.* metadata) ---
     final int imageSize,
@@ -150,8 +150,13 @@ public final class Gemma4Vision implements Embedder<Media.Image> {
      * stateless - every mutable buffer is per-encode scratch - so many pipelines may share it.
      */
     public FloatTensor encode(Media.Image image) {
+        return encode(image, VisionPreprocess.budget(280));
+    }
+
+    /** The per-call budget entry: video frames ride this tower at the video budget. */
+    public FloatTensor encode(Media.Image image, int budgetTokens) {
         try (Arena scratch = Arena.ofShared()) {
-            FloatTensor rows = encode(image, scratch);
+            FloatTensor rows = encode(image, scratch, budgetTokens);
             FloatTensor out = FloatTensor.allocateF32(Arena.ofAuto(), (int) rows.size());
             rows.copyTo(0, out, 0, (int) rows.size());
             return out;
@@ -159,8 +164,12 @@ public final class Gemma4Vision implements Embedder<Media.Image> {
     }
 
     private FloatTensor encode(Media.Image image, Arena scratch) {
+        return encode(image, scratch, VisionPreprocess.budget(280));
+    }
+
+    private FloatTensor encode(Media.Image image, Arena scratch, int budgetTokens) {
         // 1. preprocess + patch-embed (+ 2D position) → patches: [nPatch, visionDim]
-        Patches p = patchify(image, scratch);
+        Patches p = patchify(image, scratch, budgetTokens);
         int n = p.count;
         FloatTensor cur = p.tokens; // [n, visionDim]
         FloatTensor tmp = FloatTensor.allocateF32(scratch, n * visionDim); // rmsAddResidual
@@ -411,11 +420,10 @@ public final class Gemma4Vision implements Embedder<Media.Image> {
         return Math.max(1, px / curMerge) * Math.max(1, py / curMerge);
     }
 
-    private Patches patchify(Media.Image image, Arena scratch) {
+    private Patches patchify(Media.Image image, Arena scratch, int budgetTokens) {
         int ps = patchSize, factor = ps * Math.max(1, merge), tw, th;
         if (VisionPreprocess.SMART_RESIZE) {
-            int maxPixels = VisionPreprocess.budget(280) * factor * factor,
-                    minPixels = factor * factor;
+            int maxPixels = budgetTokens * factor * factor, minPixels = factor * factor;
             int[] wh =
                     VisionPreprocess.smartResize(
                             image.width(), image.height(), factor, minPixels, maxPixels);

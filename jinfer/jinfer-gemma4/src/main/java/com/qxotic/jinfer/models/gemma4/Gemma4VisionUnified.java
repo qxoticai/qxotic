@@ -42,7 +42,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.Map;
 import java.util.function.Consumer;
 
-public final class Gemma4VisionUnified implements Embedder<Media.Image> {
+public final class Gemma4VisionUnified implements Embedder<Media.Image>, VisionBudget {
 
     static final float LN_EPS = 1e-5f; // PyTorch LayerNorm eps (hardcoded in gemma4uv.cpp)
 
@@ -109,8 +109,13 @@ public final class Gemma4VisionUnified implements Embedder<Media.Image> {
      * law covers its media encodes); the tower is stateless, so many pipelines may share it.
      */
     public FloatTensor encode(Media.Image image) {
+        return encode(image, VisionPreprocess.budget(280));
+    }
+
+    /** The per-call budget entry: video frames ride this tower at the video budget. */
+    public FloatTensor encode(Media.Image image, int budgetTokens) {
         try (Arena scratch = Arena.ofShared()) {
-            FloatTensor rows = encode(image, scratch);
+            FloatTensor rows = encode(image, scratch, budgetTokens);
             FloatTensor out = FloatTensor.allocateF32(Arena.ofAuto(), (int) rows.size());
             rows.copyTo(0, out, 0, (int) rows.size());
             return out;
@@ -118,9 +123,12 @@ public final class Gemma4VisionUnified implements Embedder<Media.Image> {
     }
 
     private FloatTensor encode(Media.Image image, Arena scratch) {
+        return encode(image, scratch, VisionPreprocess.budget(280));
+    }
+
+    private FloatTensor encode(Media.Image image, Arena scratch, int budgetTokens) {
         int ps = patchSize, factor = ps; // merge already baked into the conv patch
-        int maxPixels = VisionPreprocess.budget(280) * factor * factor,
-                minPixels = 40 * factor * factor;
+        int maxPixels = budgetTokens * factor * factor, minPixels = 40 * factor * factor;
         int[] wh =
                 VisionPreprocess.SMART_RESIZE
                         ? VisionPreprocess.smartResize(
