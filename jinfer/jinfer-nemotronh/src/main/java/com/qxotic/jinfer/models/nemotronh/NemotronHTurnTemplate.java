@@ -230,7 +230,15 @@ public final class NemotronHTurnTemplate implements TurnTemplate {
                 }
                 runs.id(toolResponse).text("\n");
                 for (Part p : m.content()) {
-                    if (p instanceof Part.ToolResult r) runs.text(r.text());
+                    // both wire shapes carry the result text: typed ToolResult (framework
+                    // adapters) and plain Text (the server lowers {role:"tool", content} to a
+                    // text part - rendering only ToolResult served the model an EMPTY
+                    // <tool_response>, and it re-called the tool forever)
+                    switch (p) {
+                        case Part.ToolResult r -> runs.text(r.text());
+                        case Part.Text t -> runs.text(t.text());
+                        default -> {}
+                    }
                 }
                 runs.text("\n").id(endToolResponse).text("\n");
                 boolean nextIsTool =
