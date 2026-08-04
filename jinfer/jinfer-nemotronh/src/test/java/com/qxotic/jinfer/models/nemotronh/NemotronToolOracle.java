@@ -103,6 +103,31 @@ public final class NemotronToolOracle {
                         assistantCall("get_weather", Map.of("city", "Paris")),
                         new Message(Role.TOOL, List.of(new Part.ToolResult("", "18C"))),
                         new Message(Role.TOOL, List.of(new Part.ToolResult("", "24C")))));
+        o.compareTools(
+                "parallel calls in one turn",
+                List.of(WEATHER),
+                List.of(
+                        Message.user("Weather in Paris and Rome?"),
+                        new Message(
+                                Role.ASSISTANT,
+                                List.of(
+                                        new Part.ToolCall(
+                                                "", "get_weather", Map.of("city", "Paris")),
+                                        new Part.ToolCall(
+                                                "", "get_weather", Map.of("city", "Rome"))))));
+        o.compareTools(
+                "assistant call after the last query keeps its reasoning",
+                List.of(WEATHER),
+                List.of(
+                        Message.user("Weather in Paris?"),
+                        new Message(
+                                Role.ASSISTANT,
+                                List.of(
+                                        new Part.Reasoning(
+                                                List.of(new Part.Text("I should check.")), null),
+                                        new Part.ToolCall(
+                                                "", "get_weather", Map.of("city", "Paris")))),
+                        new Message(Role.TOOL, List.of(new Part.ToolResult("", "18C")))));
 
         o.finish("NemotronToolOracle");
     }

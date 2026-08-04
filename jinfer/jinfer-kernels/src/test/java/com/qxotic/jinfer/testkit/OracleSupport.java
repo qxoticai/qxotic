@@ -43,10 +43,15 @@ final class OracleSupport {
         map.put("role", m.role().name());
         StringBuilder text = new StringBuilder();
         List<Object> toolCalls = new ArrayList<>();
+        StringBuilder reasoning = new StringBuilder();
+        boolean hasReasoning = false;
         for (Part p : m.content()) {
             if (p instanceof Part.Text t) text.append(t.text());
             else if (p instanceof Part.ToolResult r) text.append(r.text());
-            else if (p instanceof Part.ToolCall c) {
+            else if (p instanceof Part.Reasoning r) {
+                hasReasoning = true;
+                reasoning.append(r.text());
+            } else if (p instanceof Part.ToolCall c) {
                 Map<String, Object> fn = new LinkedHashMap<>();
                 fn.put("name", c.name());
                 fn.put("arguments", c.arguments());
@@ -57,6 +62,8 @@ final class OracleSupport {
             }
         }
         map.put("content", text.toString());
+        // the API's typed reasoning: templates read it as message.reasoning_content (string)
+        if (hasReasoning) map.put("reasoning_content", reasoning.toString());
         if (!toolCalls.isEmpty()) map.put("tool_calls", toolCalls);
         return map;
     }
