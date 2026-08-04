@@ -255,6 +255,8 @@ final class Generation {
                                 if (!t.isEmpty()) contentParts.add(new Part.Text(t));
                             }
                             case "image_url" -> contentParts.add(imagePart(pm.get("image_url")));
+                            case "input_audio" ->
+                                    contentParts.add(audioPart(pm.get("input_audio")));
                             default ->
                                     LLMOptions.require(
                                             false,
@@ -328,6 +330,38 @@ final class Generation {
             throw new AssertionError(e);
         } catch (java.io.IOException e) {
             throw new IllegalArgumentException("image could not be decoded: " + e.getMessage());
+        }
+    }
+
+    /**
+     * One {@code input_audio} content item ({@code {data: <base64>, format: wav|mp3}}) to a typed
+     * media part - the same opt-in gate and source-keying as images. The audio encoders ride the
+     * larger mmproj sidecars (gemma 12B+); a projector without them gets a clear 400.
+     */
+    private Part audioPart(Object inputAudio) {
+        LLMOptions.require(
+                options.mediaProjector() != null,
+                "audio input is not enabled on this server (start it with --mmproj"
+                        + " <projector.gguf>)");
+        LLMOptions.require(
+                model.model() instanceof com.qxotic.jinfer.MultiModal mm
+                        && mm.modalities().contains(com.qxotic.jinfer.Media.Audio.class),
+                "the loaded projector provides no audio encoder for this model");
+        Map<String, Object> audio = Values.asObject(inputAudio, "input_audio");
+        byte[] encoded;
+        try {
+            encoded =
+                    java.util.Base64.getDecoder().decode(Values.stringValue(audio.get("data"), ""));
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("input_audio data is not valid base64");
+        }
+        try {
+            byte[] key = java.security.MessageDigest.getInstance("SHA-256").digest(encoded);
+            return new Part.Blob(com.qxotic.jinfer.media.AudioCodec.decode(encoded), key);
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new AssertionError(e);
+        } catch (java.io.IOException e) {
+            throw new IllegalArgumentException("audio could not be decoded: " + e.getMessage());
         }
     }
 

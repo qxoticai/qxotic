@@ -172,7 +172,12 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
             case Media.Audio aud -> {
                 FloatTensor rows = encode(Media.Audio.class, aud);
                 runs.id(SpecialTokens.require(tokenizer, "<|audio>"))
-                        .block(Batch.embeddings(rows, (int) (rows.size() / modelDim), false))
+                        .block(
+                                Batch.embeddings(
+                                        rows,
+                                        (int) (rows.size() / modelDim),
+                                        false,
+                                        blob.contentKey()))
                         .id(SpecialTokens.require(tokenizer, "<audio|>"));
             }
             case Media.Video vid -> {
