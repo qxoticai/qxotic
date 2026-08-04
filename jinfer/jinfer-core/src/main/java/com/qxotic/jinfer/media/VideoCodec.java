@@ -86,10 +86,13 @@ public interface VideoCodec {
      * the CENTERED scheme {@code t_k = from + (k + 1/2) * (to - from) / n}. The ends are covered to
      * within {@code (to - from) / 2n} - use {@link #span} when the literal boundary frames matter.
      * {@code to} is clamped to the source's duration (unlike {@link #span}'s last-frame clamp: the
-     * centers are interior, so the duration itself is a valid right edge). (Deliberate deviation
-     * from the HF reference's start-aligned {@code arange(0, total, total/num)}: that scheme never
-     * sees the final {@code duration/n} of the source and its n=1 is the first frame; the
-     * interleaved true timestamps ground either scheme for the model.)
+     * centers are interior, so the duration itself is a valid right edge) - but each RESULTING
+     * timestamp still clamps to the final frame, because when segments get narrower than the frame
+     * period ({@code (to - from) / 2n < framePeriod}) the last centers land in the gap between the
+     * final frame and the duration, where no frame exists. (Deliberate deviation from the HF
+     * reference's start-aligned {@code arange(0, total, total/num)}: that scheme never sees the
+     * final {@code duration/n} of the source and its n=1 is the first frame; the interleaved true
+     * timestamps ground either scheme for the model.)
      */
     default Media.Video uniform(Path video, Duration from, Duration to, int n) throws IOException {
         if (n <= 0) throw new IllegalArgumentException("n must be positive");
@@ -103,9 +106,12 @@ public interface VideoCodec {
                             + to);
         }
         long window = end - start;
+        long lastFrame = totalDuration(video).toNanos() - framePeriod(video).toNanos();
         Duration[] timestamps = new Duration[n];
-        for (int k = 0; k < n; k++)
-            timestamps[k] = Duration.ofNanos(start + k * (window / n) + window / (2L * n));
+        for (int k = 0; k < n; k++) {
+            long t = start + k * (window / n) + window / (2L * n);
+            timestamps[k] = Duration.ofNanos(Math.min(t, lastFrame));
+        }
         return framesAt(video, timestamps);
     }
 

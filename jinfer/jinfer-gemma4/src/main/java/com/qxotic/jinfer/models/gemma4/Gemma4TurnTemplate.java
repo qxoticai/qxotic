@@ -189,12 +189,31 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
                 for (Media.Video.Frame frame : vid.frames()) {
                     java.time.Duration t = frame.timestamp(); // TRUE position (any sampling)
                     runs.text(String.format("%n%02d:%02d%n", t.toMinutes(), t.toSecondsPart()));
-                    encodeMedia(new Part.Blob(frame.image()), runs);
+                    encodeMedia(new Part.Blob(frame.image(), frameKey(blob.contentKey(), t)), runs);
                 }
             }
             default ->
                     throw new IllegalArgumentException(
                             "Gemma 4: unsupported media " + m.getClass().getSimpleName());
+        }
+    }
+
+    /**
+     * A sampled frame's cache key: SHA-256(video digest ‖ timestamp nanos), or null for a keyless
+     * video. The timestamp - not a frame index - is the coordinate: the same instant keys the same
+     * pixels under any sampling policy, while an index means different content whenever the policy
+     * or frame count changes. No frame shares the raw video key (same key + same in-batch positions
+     * would collide across frames).
+     */
+    private static byte[] frameKey(byte[] videoKey, java.time.Duration t) {
+        if (videoKey == null) return null;
+        try {
+            var md = java.security.MessageDigest.getInstance("SHA-256");
+            md.update(videoKey);
+            md.update(java.nio.ByteBuffer.allocate(Long.BYTES).putLong(t.toNanos()).array());
+            return md.digest();
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new AssertionError(e);
         }
     }
 

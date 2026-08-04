@@ -257,6 +257,7 @@ final class Generation {
                             case "image_url" -> contentParts.add(imagePart(pm.get("image_url")));
                             case "input_audio" ->
                                     contentParts.add(audioPart(pm.get("input_audio")));
+                            case "video_url" -> contentParts.add(videoPart(pm.get("video_url")));
                             default ->
                                     LLMOptions.require(
                                             false,
@@ -306,23 +307,7 @@ final class Generation {
                 model.model() instanceof com.qxotic.jinfer.MultiModal mm
                         && mm.modalities().contains(com.qxotic.jinfer.Media.Image.class),
                 "the loaded projector provides no image encoder for this model");
-        String url =
-                imageUrl instanceof Map<?, ?> mu
-                        ? Values.stringValue(mu.get("url"), "")
-                        : Values.stringValue(imageUrl, "");
-        LLMOptions.require(
-                url.startsWith("data:"),
-                "image_url must be a data: URI (the server does not fetch remote URLs)");
-        int comma = url.indexOf(',');
-        LLMOptions.require(
-                comma > 0 && url.substring(0, comma).endsWith(";base64"),
-                "image_url data: URI must be base64-encoded (data:<mime>;base64,<payload>)");
-        byte[] encoded;
-        try {
-            encoded = java.util.Base64.getDecoder().decode(url.substring(comma + 1));
-        } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("image_url base64 payload is malformed");
-        }
+        byte[] encoded = dataUriBytes(urlOf(imageUrl), "image_url");
         try {
             byte[] key = java.security.MessageDigest.getInstance("SHA-256").digest(encoded);
             return new Part.Blob(com.qxotic.jinfer.media.ImageCodec.decode(encoded), key);
@@ -362,6 +347,71 @@ final class Generation {
             throw new AssertionError(e);
         } catch (java.io.IOException e) {
             throw new IllegalArgumentException("audio could not be decoded: " + e.getMessage());
+        }
+    }
+
+    /**
+     * One {@code video_url} content item (vLLM's content-part convention) to a typed media part -
+     * the same opt-in gate and source-keying as images. The gate is the VISION encoder: video
+     * decomposes into timestamped image frames in the template, so a projector without vision gets
+     * a clear 400. The payload lands in a temp file because ffmpeg samples files; sampling is the
+     * reference processor's policy ({@code uniform}, {@link
+     * com.qxotic.jinfer.media.VideoCodec#DEFAULT_NUM_FRAMES} frames across the whole duration), and
+     * the template derives each frame's cache key from this blob's digest plus its timestamp.
+     */
+    private Part videoPart(Object videoUrl) {
+        LLMOptions.require(
+                options.mediaProjector() != null,
+                "video input is not enabled on this server (start it with --mmproj"
+                        + " <projector.gguf>)");
+        LLMOptions.require(
+                model.model() instanceof com.qxotic.jinfer.MultiModal mm
+                        && mm.modalities().contains(com.qxotic.jinfer.Media.Image.class),
+                "the loaded projector provides no vision encoder for this model (video decomposes"
+                        + " into image frames)");
+        byte[] encoded = dataUriBytes(urlOf(videoUrl), "video_url");
+        try {
+            byte[] key = java.security.MessageDigest.getInstance("SHA-256").digest(encoded);
+            java.nio.file.Path tmp = java.nio.file.Files.createTempFile("jinfer-video", ".bin");
+            try {
+                java.nio.file.Files.write(tmp, encoded);
+                return new Part.Blob(com.qxotic.jinfer.media.VideoCodec.ffmpeg().uniform(tmp), key);
+            } finally {
+                java.nio.file.Files.deleteIfExists(tmp);
+            }
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new AssertionError(e);
+        } catch (java.io.IOException e) {
+            throw new IllegalArgumentException("video could not be decoded: " + e.getMessage());
+        }
+    }
+
+    /** The url from either the OpenAI object form ({@code {url: ...}}) or a bare string. */
+    private static String urlOf(Object part) {
+        return part instanceof Map<?, ?> mu
+                ? Values.stringValue(mu.get("url"), "")
+                : Values.stringValue(part, "");
+    }
+
+    /**
+     * The base64 payload of a {@code data:} URI - the only URL form served media accepts (fetching
+     * remote URLs from a server is an SSRF surface, and the OpenAI wire supports inline base64
+     * everywhere).
+     */
+    private static byte[] dataUriBytes(String url, String what) {
+        LLMOptions.require(
+                url.startsWith("data:"),
+                "%s must be a data: URI (the server does not fetch remote URLs)",
+                what);
+        int comma = url.indexOf(',');
+        LLMOptions.require(
+                comma > 0 && url.substring(0, comma).endsWith(";base64"),
+                "%s data: URI must be base64-encoded (data:<mime>;base64,<payload>)",
+                what);
+        try {
+            return java.util.Base64.getDecoder().decode(url.substring(comma + 1));
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException(what + " base64 payload is malformed");
         }
     }
 
