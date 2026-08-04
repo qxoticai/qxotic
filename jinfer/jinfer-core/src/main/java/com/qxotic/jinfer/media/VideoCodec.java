@@ -12,12 +12,12 @@ import java.util.stream.Stream;
 
 /**
  * Samples a video into a {@link com.qxotic.jinfer.Media.Video} with ffmpeg - the only backend here,
- * because the JDK cannot demux mp4/webm. One primitive and two named policies: {@link #framesAt}
+ * because the JDK cannot demux mp4/webm. One primitive and three named policies: {@link #framesAt}
  * takes frames at explicit timestamps (any sampling policy is a timestamp list; {@link #frameAt} is
- * its correctly-shaped singular), {@link #uniform} spreads n frames across the whole duration (the
- * reference processors' policy), {@link #first} takes the opening n frames at native rate. Frames
- * decode through {@link ImageCodec} (inheriting its RGB/[0,1]/HWC contract) and carry their true
- * timestamps. No audio track.
+ * its correctly-shaped singular), {@link #uniform} takes n equal-segment representatives
+ * (centered), {@link #span} takes n frames start-to-end inclusive (fencepost), {@link #first} takes
+ * the opening n frames at native rate. Frames decode through {@link ImageCodec} (inheriting its
+ * RGB/[0,1]/HWC contract) and carry their true timestamps. No audio track.
  *
  * <p>DELIBERATE SHAPE - this class is a SAMPLER, not a decoder, and its asymmetry with {@link
  * ImageCodec}/{@link AudioCodec} (whole payload in, media out) is intentional: "decode the whole
@@ -39,8 +39,8 @@ public final class VideoCodec {
      */
     public static final int DEFAULT_NUM_FRAMES = 32;
 
-    /** The container's duration (ffprobe - ships with ffmpeg). */
-    public static Duration duration(Path video) throws IOException {
+    /** The container's total duration (ffprobe - ships with ffmpeg). */
+    public static Duration totalDuration(Path video) throws IOException {
         String out = probe(video, "-show_entries", "format=duration");
         try {
             double d = Double.parseDouble(out);
@@ -118,22 +118,44 @@ public final class VideoCodec {
         return framesAt(video, timestamp).frames().get(0);
     }
 
-    /** The reference policy: {@link #DEFAULT_NUM_FRAMES} frames uniform across the duration. */
+    /** {@link #DEFAULT_NUM_FRAMES} equal-segment representatives across the duration. */
     public static Media.Video uniform(Path video) throws IOException {
         return uniform(video, DEFAULT_NUM_FRAMES);
     }
 
     /**
-     * {@code n} frames at EQUALLY SPACED timestamps across the WHOLE source: {@code t_k = k *
-     * duration / n} - the reference processors' arithmetic. Whole-source coverage at sparse
-     * temporal detail (an hour = n glimpses ~{@code 3600/n}s apart, true positions, never "the
-     * first n seconds"); the dual of {@link #first}.
+     * {@code n} frames, each representing an equal 1/n segment of the source: the CENTERED scheme
+     * {@code t_k = (k + 1/2) * duration / n}. {@code n=1} is the middle frame (the most
+     * representative single sample - "the first frame" is {@link #first}'s job), {@code n=3} is
+     * quarter points 1/6, 1/2, 5/6; the ends are covered to within {@code duration/2n}. Use {@link
+     * #span} when the literal first and last frames matter. (Deliberate deviation from the HF
+     * reference's start-aligned {@code arange(0, total, total/num)}: that scheme never sees the
+     * final {@code duration/n} of the source and its n=1 duplicates {@code first(1)}; the
+     * interleaved true timestamps ground either scheme for the model.)
      */
     public static Media.Video uniform(Path video, int n) throws IOException {
         if (n <= 0) throw new IllegalArgumentException("n must be positive");
-        long nanos = duration(video).toNanos();
+        long nanos = totalDuration(video).toNanos();
         Duration[] timestamps = new Duration[n];
-        for (int k = 0; k < n; k++) timestamps[k] = Duration.ofNanos(k * (nanos / n));
+        for (int k = 0; k < n; k++)
+            timestamps[k] = Duration.ofNanos(k * (nanos / n) + nanos / (2L * n));
+        return framesAt(video, timestamps);
+    }
+
+    /**
+     * {@code n} frames from start to end INCLUSIVE: the fencepost scheme {@code t_k = k * last /
+     * (n-1)} where {@code last = duration - 1/fps} is the true timestamp of the source's final
+     * frame (seeking past it yields nothing - the end of a video is a frame, not an instant).
+     * {@code n=2} is the first and last frames, {@code n=3} adds the middle. Needs {@code n >= 2}:
+     * "both ends" is the contract - one frame has no ends (use {@link #frameAt} or {@link
+     * #uniform}).
+     */
+    public static Media.Video span(Path video, int n) throws IOException {
+        if (n < 2) throw new IllegalArgumentException("span needs n >= 2 (both ends inclusive)");
+        long frameNanos = (long) (1e9 / nativeFps(video));
+        long last = totalDuration(video).toNanos() - frameNanos;
+        Duration[] timestamps = new Duration[n];
+        for (int k = 0; k < n; k++) timestamps[k] = Duration.ofNanos(k * (last / (n - 1)));
         return framesAt(video, timestamps);
     }
 
