@@ -15,8 +15,8 @@ import java.util.stream.Stream;
  * because the JDK cannot demux mp4/webm. One primitive and two named policies: {@link #framesAt}
  * takes frames at explicit timestamps (any sampling policy is a timestamp list; {@link #frameAt} is
  * its correctly-shaped singular), {@link #uniform} takes n equal-segment representatives
- * (centered), {@link #span} takes n frames end-to-end inclusive (fencepost) over the whole source
- * or a {@code [from, to]} window. Frames decode through {@link ImageCodec} (inheriting its
+ * (centered), {@link #span} takes n frames end-to-end inclusive (fencepost) - both over the whole
+ * source or a {@code [from, to]} window. Frames decode through {@link ImageCodec} (inheriting its
  * RGB/[0,1]/HWC contract) and carry their true timestamps. No audio track.
  *
  * <p>DELIBERATE SHAPE - this class is a SAMPLER, not a decoder, and its asymmetry with {@link
@@ -125,20 +125,40 @@ public final class VideoCodec {
     }
 
     /**
-     * {@code n} frames, each representing an equal 1/n segment of the source: the CENTERED scheme
-     * {@code t_k = (k + 1/2) * duration / n}. {@code n=1} is the middle frame (the most
-     * representative single sample), {@code n=3} is quarter points 1/6, 1/2, 5/6; the ends are
-     * covered to within {@code duration/2n}. Use {@link #span} when the literal first and last
-     * frames matter. (Deliberate deviation from the HF reference's start-aligned {@code arange(0,
-     * total, total/num)}: that scheme never sees the final {@code duration/n} of the source and its
-     * n=1 is the first frame; the interleaved true timestamps ground either scheme for the model.)
+     * {@code n} equal-segment representatives across the whole source: {@link #uniform(Path,
+     * Duration, Duration, int)} over {@code [0, totalDuration]}. {@code n=1} is the middle frame
+     * (the most representative single sample), {@code n=3} is quarter points 1/6, 1/2, 5/6.
      */
     public static Media.Video uniform(Path video, int n) throws IOException {
+        return uniform(video, Duration.ZERO, totalDuration(video), n);
+    }
+
+    /**
+     * {@code n} frames, each representing an equal 1/n segment of the window {@code [from, to]}:
+     * the CENTERED scheme {@code t_k = from + (k + 1/2) * (to - from) / n}. The ends are covered to
+     * within {@code (to - from) / 2n} - use {@link #span} when the literal boundary frames matter.
+     * {@code to} is clamped to the source's duration (unlike {@link #span}'s last-frame clamp: the
+     * centers are interior, so the duration itself is a valid right edge). (Deliberate deviation
+     * from the HF reference's start-aligned {@code arange(0, total, total/num)}: that scheme never
+     * sees the final {@code duration/n} of the source and its n=1 is the first frame; the
+     * interleaved true timestamps ground either scheme for the model.)
+     */
+    public static Media.Video uniform(Path video, Duration from, Duration to, int n)
+            throws IOException {
         if (n <= 0) throw new IllegalArgumentException("n must be positive");
-        long nanos = totalDuration(video).toNanos();
+        long start = from.toNanos();
+        long end = Math.min(to.toNanos(), totalDuration(video).toNanos());
+        if (start < 0 || start >= end) {
+            throw new IllegalArgumentException(
+                    "uniform window must satisfy 0 <= from < to (clamped): from="
+                            + from
+                            + " to="
+                            + to);
+        }
+        long window = end - start;
         Duration[] timestamps = new Duration[n];
         for (int k = 0; k < n; k++)
-            timestamps[k] = Duration.ofNanos(k * (nanos / n) + nanos / (2L * n));
+            timestamps[k] = Duration.ofNanos(start + k * (window / n) + window / (2L * n));
         return framesAt(video, timestamps);
     }
 
