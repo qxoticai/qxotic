@@ -72,6 +72,40 @@ public record LoadedModel<S extends RuntimeState>(
     }
 
     /**
+     * The same model with a caller-supplied Jinja chat template replacing the container's - for a
+     * fine-tune whose GGUF carries the wrong template, or a wire format you wrote yourself. The
+     * native per-turn codec is DROPPED along with it: every port was written against the
+     * container's template, and framing a custom wire with one would encode conversations the model
+     * never saw. Chat then renders through the whole-render Jinja path with {@code source}; reply
+     * parsing degrades to plain text (no think/tool lanes) - implement {@link
+     * #withTemplate(ChatTemplate)} instead when the custom wire has markers worth parsing.
+     *
+     * <p>The cache {@link #seed} is NOT re-rooted (unlike {@link #withTokenizer}): a different
+     * template renders different token streams, so cached prefixes from the old wire miss cold -
+     * never corrupt.
+     */
+    public LoadedModel<S> withChatTemplateSource(String source) {
+        if (source == null || source.isBlank()) {
+            throw new IllegalArgumentException("blank chat template source");
+        }
+        return new LoadedModel<>(model, tokenizer, source, stopTokens, seed, Optional.empty());
+    }
+
+    /**
+     * The same model with a caller-implemented {@link ChatTemplate} - full control of the wire: the
+     * encoding AND the reply grammar ({@link ChatTemplate#parser}). It takes the native slot, so it
+     * is preferred over the Jinja fallback exactly like a shipped port; the container's Jinja
+     * template remains the fallback when the implementation punts with {@code
+     * UnsupportedConversation} or unknown template kwargs arrive. The cache seed is not re-rooted -
+     * see {@link #withChatTemplateSource} for why that is sound.
+     */
+    public LoadedModel<S> withTemplate(ChatTemplate template) {
+        if (template == null) throw new IllegalArgumentException("null template");
+        return new LoadedModel<>(
+                model, tokenizer, chatTemplateSource, stopTokens, seed, Optional.of(template));
+    }
+
+    /**
      * Letters, digits, whitespace and non-Latin script: enough to separate any two real
      * vocabularies.
      */
