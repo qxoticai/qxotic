@@ -27,23 +27,14 @@ final class OracleSupport {
 
     /** Loads the GGUF's tokenizer and compiles its own chat template (never the weights). */
     OracleSupport(Path gguf) throws Exception {
-        this(gguf, null);
-    }
-
-    /**
-     * Like {@link #OracleSupport(Path)} but compiling {@code templateSource} instead of the GGUF's
-     * embedded template - for pinning a port against an upstream template FIX the shipped GGUFs
-     * predate. Null keeps the GGUF's own template.
-     */
-    OracleSupport(Path gguf, String templateSource) throws Exception {
         GGUF g;
         try (FileChannel channel = FileChannel.open(gguf, StandardOpenOption.READ)) {
             g = ModelLoader.readGguf(channel, gguf.toString());
         }
         this.tokenizer = Tokenizers.fromGGUF(g);
-        String source = templateSource != null ? templateSource : Tokenizers.chatTemplateSource(g);
+        String source = Tokenizers.chatTemplateSource(g);
         this.jinja = source.isEmpty() ? null : JinjaRenderer.template(source);
-        if (jinja == null) throw new IllegalStateException("chat_template failed to compile");
+        if (jinja == null) throw new IllegalStateException("GGUF chat_template failed to compile");
     }
 
     /** A Message to the OpenAI-shaped map the Jinja template reads (text + tool_calls). */

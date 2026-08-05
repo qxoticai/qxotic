@@ -114,7 +114,8 @@ public final class RequestPolicy {
      * The recipe for forcing a call to one of {@code tools}, or empty when this model cannot force
      * (no native codec, or its template declares no call seed) - the caller's cue to reject.
      */
-    public static Optional<ForcedCall> forceCall(LoadedModel<?> m, List<Tool> tools, Sampler base) {
+    public static Optional<ForcedCall> forceCall(
+            LoadedModel<?> m, List<Tool> tools, Sampler base, int[] replySeed) {
         ChatTemplate template = m.template().orElse(null);
         if (template == null || template.callSeed().length == 0) return Optional.empty();
         int[] callSeed = template.callSeed();
@@ -128,7 +129,8 @@ public final class RequestPolicy {
                             m.stopTokens().iterator().next(),
                             template.callEpilogue());
         }
-        int[] replySeed = template.replySeed(false);
+        // the caller's seed is the encoded prompt's own tail; a forced render is thinking-off,
+        // so for every shipped template it is empty or the closed non-thinking scaffold
         int[] parserSeed = new int[replySeed.length + callSeed.length];
         System.arraycopy(replySeed, 0, parserSeed, 0, replySeed.length);
         System.arraycopy(callSeed, 0, parserSeed, replySeed.length, callSeed.length);

@@ -455,7 +455,7 @@ public final class ChatEngine {
                             ? conversation.tools()
                             : List.of(namedTool(conversation.tools(), request.forcedTool()));
             RequestPolicy.ForcedCall forced =
-                    RequestPolicy.forceCall(loaded, pinned, sampler)
+                    RequestPolicy.forceCall(loaded, pinned, sampler, parserSeed)
                             .orElseThrow(
                                     () ->
                                             new UnsupportedOperationException(

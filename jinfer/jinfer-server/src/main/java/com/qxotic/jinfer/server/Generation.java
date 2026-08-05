@@ -285,16 +285,11 @@ final class Generation {
                     reasoning = new Part.Reasoning(List.of(new Part.Text(rt)), null);
                 }
             }
-            if (contentParts != null) {
+            if (contentParts != null || !callParts.isEmpty() || reasoning != null) {
                 List<Part> all = new ArrayList<>();
                 if (reasoning != null) all.add(reasoning);
-                all.addAll(contentParts);
-                all.addAll(callParts);
-                out.add(new Message(new Role(role), all));
-            } else if (!callParts.isEmpty() || reasoning != null) {
-                List<Part> all = new ArrayList<>();
-                if (reasoning != null) all.add(reasoning);
-                if (!content.isEmpty()) all.add(new Part.Text(content));
+                if (contentParts != null) all.addAll(contentParts);
+                else if (!content.isEmpty()) all.add(new Part.Text(content));
                 all.addAll(callParts);
                 out.add(new Message(new Role(role), all));
             } else {

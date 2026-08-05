@@ -76,6 +76,10 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
     // the checkpoint declares channel-aware generation scaffolding (12B/26B); without it the
     // tool-response thought tail would be off-template (E2B)
     private final boolean scaffoldsNonThinking;
+    // <|channel>thought\n after a trailing tool response (thinking on) - constant, co-produced
+    // with its reply seed; empty when the checkpoint has no channel scaffolding
+    private final List<Batch> thoughtTail;
+    private final int[] thoughtSeed;
     private final List<Batch> closeTurn; // <turn|>\n, constant
     private final TokenRuns proto; // compiled spelling table, forked per turn
 
@@ -120,6 +124,16 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
         close.addAll(newline);
         this.closeTurn = List.of(Batch.prefill(close));
         this.scaffoldsNonThinking = scaffoldsNonThinking;
+        if (scaffoldsNonThinking) {
+            List<Integer> tail = new ArrayList<>();
+            tail.add(SpecialTokens.require(tokenizer, CHANNEL_OPEN));
+            tail.addAll(tokenizer.encode("thought\n").toList());
+            this.thoughtTail = List.of(Batch.prefill(tail));
+            this.thoughtSeed = tail.stream().mapToInt(Integer::intValue).toArray();
+        } else {
+            this.thoughtTail = List.of();
+            this.thoughtSeed = new int[0];
+        }
         this.proto = new TokenRuns(tokenizer);
     }
 
@@ -506,7 +520,9 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
             if (thought != null) {
                 // <|channel>thought\n{reasoning}\n<channel|> - before calls and content
                 runs.id(require(CHANNEL_OPEN))
-                        .text("thought\n" + thought + "\n")
+                        .text("thought\n")
+                        .text(thought)
+                        .text("\n")
                         .id(require(CHANNEL_CLOSE));
             }
             for (Part.ToolCall call : calls) {
@@ -567,22 +583,18 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
             out.addAll(runs.batches());
         }
         int[] seed = new int[0];
-        if ("call".equals(prev)) {
-            // awaiting tool results in the open turn - no scaffold, no seed
-        } else if ("response".equals(prev) && openTail) {
+        if (openTail) {
+            // trailing folded responses left the turn open. Thinking on: the model RESUMES
+            // thinking - the prompt opens the channel and the reply starts inside it, so the
+            // seed IS this tail. Thinking off (or no channel scaffolding): the model answers
+            // directly in the open turn - the reference emits nothing.
             if (conversation.thinking() && scaffoldsNonThinking) {
-                // the model RESUMES thinking after tool results: the prompt opens the channel
-                // and the reply starts inside it - the seed IS this tail, by construction
-                TokenRuns tail = proto.fresh();
-                tail.id(require(CHANNEL_OPEN)).text("thought\n");
-                List<Batch> tailBatches = tail.batches();
-                out.addAll(tailBatches);
-                seed = Batch.tokenIds(tailBatches);
+                out.addAll(thoughtTail);
+                seed = thoughtSeed;
             }
-            // thinking off: the model answers directly in the open turn (reference emits nothing)
-        } else {
+        } else if (!"call".equals(prev)) {
             // normal end - and the llama.cpp patch: a CLOSED final turn always reopens
-            // <|turn>model regardless of what prev reads
+            // <|turn>model regardless of what prev reads ("call" stays open at the await marker)
             out.addAll(generationPrompt(conversation.thinking()));
         }
         return new Prompt(out, seed);
@@ -655,7 +667,6 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
                             // upstream fix 35b4173: reasoning renders in turns after the last
                             // user message (thought channel), stripped before it
                             case Part.Reasoning r -> assistant;
-                            default -> false;
                         };
                 if (!ok)
                     throw new UnsupportedConversation(

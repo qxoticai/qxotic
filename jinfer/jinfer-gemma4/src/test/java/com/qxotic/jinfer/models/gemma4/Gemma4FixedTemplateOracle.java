@@ -7,6 +7,8 @@
 //   close unless (responses and no content and NO next non-tool turn)
 //   format_argument(none) -> 'null'
 // The wire-side validation fix (arguments must be a JSON object) is a server test concern.
+// The fixed template text itself is checked in for reference at
+// src/test/resources/gemma4-chat-template-fixed.jinja (jinfer-jinja cannot execute its macros).
 package com.qxotic.jinfer.models.gemma4;
 
 import com.qxotic.jinfer.chat.Message;
@@ -28,6 +30,22 @@ public final class Gemma4FixedTemplateOracle {
     static final Tool WEATHER = Gemma4ToolOracle.WEATHER;
     static final String SYS = Gemma4ToolOracle.SYS;
     static final String GEN = Gemma4ToolOracle.GEN;
+
+    /** The Paris round-trip every tool case shares: system+user+call+folded response. */
+    static final String PARIS_LOOP =
+            SYS
+                    + "<|turn>user\nWeather in Paris?<turn|>\n"
+                    + GEN
+                    + "<|tool_call>call:get_weather{city:<|\"|>Paris<|\"|>}<tool_call|>"
+                    + "<|tool_response>response:get_weather{value:<|\"|>18C, sunny<|\"|>}"
+                    + "<tool_response|>";
+
+    static List<Message> parisLoop(Part result) {
+        return List.of(
+                Message.user("Weather in Paris?"),
+                Gemma4ToolOracle.assistantCall("get_weather", Map.of("city", "Paris")),
+                new Message(Role.TOOL, List.of(result)));
+    }
 
     static Message reasoningAssistant(String reasoning, Part... rest) {
         List<Part> parts = new java.util.ArrayList<>();
@@ -83,22 +101,14 @@ public final class Gemma4FixedTemplateOracle {
 
         // turn-tag balance: a folded-responses turn with no answer CLOSES when a next turn
         // follows (previously it stayed open and swallowed the following user turn)
+        List<Message> loopThenUser =
+                new java.util.ArrayList<>(parisLoop(new Part.ToolResult("", "18C, sunny")));
+        loopThenUser.add(Message.user("And Berlin?"));
         o.compareToolsExpected(
                 "responses turn closes before a following user turn",
-                SYS
-                        + "<|turn>user\nWeather in Paris?<turn|>\n"
-                        + GEN
-                        + "<|tool_call>call:get_weather{city:<|\"|>Paris<|\"|>}<tool_call|>"
-                        + "<|tool_response>response:get_weather{value:<|\"|>18C, sunny<|\"|>}"
-                        + "<tool_response|><turn|>\n"
-                        + "<|turn>user\nAnd Berlin?<turn|>\n"
-                        + GEN,
+                PARIS_LOOP + "<turn|>\n<|turn>user\nAnd Berlin?<turn|>\n" + GEN,
                 List.of(WEATHER),
-                List.of(
-                        Message.user("Weather in Paris?"),
-                        Gemma4ToolOracle.assistantCall("get_weather", Map.of("city", "Paris")),
-                        new Message(Role.TOOL, List.of(new Part.ToolResult("", "18C, sunny"))),
-                        Message.user("And Berlin?")));
+                loopThenUser);
 
         // null handling: a null argument renders as JSON null, not Python None
         var nullArg = new LinkedHashMap<String, Object>();
@@ -178,13 +188,7 @@ public final class Gemma4FixedTemplateOracle {
         // the model turn instead of emitting a bare thought channel outside any turn
         o.compareToolsExpected(
                 "closed call+content turn reopens the model turn",
-                SYS
-                        + "<|turn>user\nWeather in Paris?<turn|>\n"
-                        + GEN
-                        + "<|tool_call>call:get_weather{city:<|\"|>Paris<|\"|>}<tool_call|>"
-                        + "<|tool_response>response:get_weather{value:<|\"|>18C, sunny<|\"|>}"
-                        + "<tool_response|>Checking now.<turn|>\n"
-                        + GEN,
+                PARIS_LOOP + "Checking now.<turn|>\n" + GEN,
                 List.of(WEATHER),
                 List.of(
                         Message.user("Weather in Paris?"),
@@ -200,17 +204,9 @@ public final class Gemma4FixedTemplateOracle {
         // fold identically - dropping it silently starved the model of every served tool result
         o.compareToolsExpected(
                 "Text-shaped tool turn folds as a response (server lowering)",
-                SYS
-                        + "<|turn>user\nWeather in Paris?<turn|>\n"
-                        + GEN
-                        + "<|tool_call>call:get_weather{city:<|\"|>Paris<|\"|>}<tool_call|>"
-                        + "<|tool_response>response:get_weather{value:<|\"|>18C, sunny<|\"|>}"
-                        + "<tool_response|><|channel>thought\n",
+                PARIS_LOOP + "<|channel>thought\n",
                 List.of(WEATHER),
-                List.of(
-                        Message.user("Weather in Paris?"),
-                        Gemma4ToolOracle.assistantCall("get_weather", Map.of("city", "Paris")),
-                        new Message(Role.TOOL, List.of(new Part.Text("18C, sunny")))));
+                parisLoop(new Part.Text("18C, sunny")));
 
         // parallel calls with id-less (server-shaped) results fold positionally, one response
         // block per result, in call order
