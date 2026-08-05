@@ -96,6 +96,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                                         ? b.temperature
                                         : toDouble(recommended.temperature()))
                         .topP(b.topP != null ? b.topP : toDouble(recommended.topP()))
+                        .topK(b.topK != null ? b.topK : recommended.topK())
                         .maxOutputTokens(b.maxOutputTokens)
                         .build();
         // caller-supplied defaults win field-by-field; unsupported ones reject HERE, eagerly - a
@@ -269,6 +270,10 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                         p.topP() == null
                                 ? engine.loaded().samplingDefaults().effectiveTopP()
                                 : p.topP().floatValue(),
+                        p.topK() == null
+                                ? engine.loaded().samplingDefaults().effectiveTopK()
+                                : p.topK(),
+                        engine.loaded().samplingDefaults().effectiveMinP(),
                         j != null && j.seed() != null ? j.seed() : seed,
                         grammar(p, j),
                         p.toolChoice() == ToolChoice.REQUIRED ? "" : null,
@@ -371,6 +376,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         private int contextLength;
         private Double temperature;
         private Double topP;
+        private Integer topK;
         private Integer maxOutputTokens;
         private ChatRequestParameters defaultParameters;
         private List<ChatModelListener> listeners = List.of();
@@ -472,6 +478,15 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
          */
         public Builder topP(Double topP) {
             this.topP = topP;
+            return this;
+        }
+
+        /**
+         * Top-k cutoff (0 disables); default: the model's recommended value (the GGUF's {@code
+         * general.sampling.top_k}, or the port's), else 40. Per-request values override.
+         */
+        public Builder topK(Integer topK) {
+            this.topK = topK;
             return this;
         }
 

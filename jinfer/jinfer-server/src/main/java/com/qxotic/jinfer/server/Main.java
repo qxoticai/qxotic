@@ -270,6 +270,12 @@ public class Main {
         out.println(
                 "  --top-p <float>               top-p (nucleus) mass in [0,1]; default: the"
                         + " model's recommended value, else 0.95");
+        out.println(
+                "  --top-k <int>                 top-k cutoff, 0 disables; default: the model's"
+                        + " recommended value, else 40");
+        out.println(
+                "  --min-p <float>               min-p cutoff relative to the top token, in"
+                        + " [0,1]; default: the model's recommended value, else 0.05");
         out.println("  --seed <long>                 random seed, default System.nanoTime()");
         out.println(
                 "  --max-tokens, -n <int>        number of steps to run for < 0 = limited by"
@@ -317,8 +323,10 @@ public class Main {
     static LLMOptions parseOptions(String[] args) {
         String prompt = null;
         String systemPrompt = null;
-        Float temperature = null; // unset = the model's GGUF-recommended value, else 0.8
-        Float topp = null; // unset = the model's GGUF-recommended value, else 0.95
+        Float temperature = null; // unset = the model's recommended value, else 0.8
+        Float topp = null; // unset = the model's recommended value, else 0.95
+        Integer topk = null; // unset = the model's recommended value, else 40
+        Float minp = null; // unset = the model's recommended value, else 0.05
         Path modelPath = null;
         Path mediaProjector = null;
         long seed = System.nanoTime();
@@ -367,6 +375,8 @@ public class Main {
                         case "--system-prompt", "-sp" -> systemPrompt = nextArg;
                         case "--temperature", "--temp" -> temperature = Float.parseFloat(nextArg);
                         case "--top-p" -> topp = Float.parseFloat(nextArg);
+                        case "--top-k" -> topk = Integer.parseInt(nextArg);
+                        case "--min-p" -> minp = Float.parseFloat(nextArg);
                         case "--model", "-m" -> modelPath = Path.of(nextArg);
                         case "--mmproj" -> mediaProjector = Path.of(nextArg);
                         case "--host" -> host = nextArg;
@@ -417,6 +427,8 @@ public class Main {
                 port,
                 temperature,
                 topp,
+                topk,
+                minp,
                 seed,
                 maxTokens,
                 stream,
@@ -486,7 +498,9 @@ public class Main {
                 Sampler.select(
                         model.model().config().vocabularySize(),
                         options.temperature(),
+                        options.topk(),
                         options.topp(),
+                        options.minp(),
                         options.seed());
         if (!options.think()) {
             sampler = Thinking.banMarkers(sampler, model.tokenizer());

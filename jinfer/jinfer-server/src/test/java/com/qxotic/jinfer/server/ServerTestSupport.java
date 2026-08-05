@@ -33,6 +33,8 @@ final class ServerTestSupport {
                 0,
                 1f,
                 0.95f,
+                40,
+                0.05f,
                 42L,
                 2048,
                 true,

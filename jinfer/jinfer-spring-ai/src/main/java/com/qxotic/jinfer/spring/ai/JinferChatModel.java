@@ -233,6 +233,10 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                         options.getTopP() == null
                                 ? engine.loaded().samplingDefaults().effectiveTopP()
                                 : options.getTopP().floatValue(),
+                        options.getTopK() == null
+                                ? engine.loaded().samplingDefaults().effectiveTopK()
+                                : options.getTopK(),
+                        engine.loaded().samplingDefaults().effectiveMinP(),
                         options.getSeed() == null ? 42 : options.getSeed(),
                         grammar(options.getOutputSchema()),
                         null, // Spring AI has no forced-tool-call knob

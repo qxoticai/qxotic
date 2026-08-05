@@ -33,13 +33,16 @@ public final class RequestPolicy {
             LoadedModel<?> m,
             float temperature,
             float topP,
+            int topK,
+            float minP,
             long seed,
             boolean think,
             int maxTokens,
             Integer reasoningOverride,
             int[] replySeed) {
         Sampler sampler =
-                Sampler.select(m.model().config().vocabularySize(), temperature, topP, seed);
+                Sampler.select(
+                        m.model().config().vocabularySize(), temperature, topK, topP, minP, seed);
         if (!think) {
             return Thinking.banMarkers(sampler, m.tokenizer());
         }

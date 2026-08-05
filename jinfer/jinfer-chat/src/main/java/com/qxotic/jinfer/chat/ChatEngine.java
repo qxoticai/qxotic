@@ -318,6 +318,8 @@ public final class ChatEngine {
             long timeoutNanos,
             float temperature,
             float topP,
+            int topK,
+            float minP,
             long seed,
             Grammar.Spec grammar,
             String forcedTool,
@@ -332,6 +334,8 @@ public final class ChatEngine {
                 throw new IllegalArgumentException("a request needs at least one message");
             if (temperature < 0) throw new IllegalArgumentException("temperature " + temperature);
             if (topP <= 0 || topP > 1) throw new IllegalArgumentException("topP " + topP);
+            if (topK < 0) throw new IllegalArgumentException("topK " + topK);
+            if (minP < 0 || minP > 1) throw new IllegalArgumentException("minP " + minP);
             if (maxTokens < -1) throw new IllegalArgumentException("maxTokens " + maxTokens);
             if (reasoningMaxTokens != null && reasoningMaxTokens < -1)
                 throw new IllegalArgumentException("reasoningMaxTokens " + reasoningMaxTokens);
@@ -438,6 +442,8 @@ public final class ChatEngine {
                         loaded,
                         request.temperature(),
                         request.topP(),
+                        request.topK(),
+                        request.minP(),
                         request.seed(),
                         think,
                         request.maxTokens(),

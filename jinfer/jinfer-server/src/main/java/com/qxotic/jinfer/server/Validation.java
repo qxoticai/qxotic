@@ -131,6 +131,13 @@ final class Validation {
                 Float.isFinite(topp) && 0 <= topp && topp <= 1,
                 "Invalid argument: top_p must be within [0, 1]");
         LLMOptions.require(
+                Values.intValue(request.get("top_k"), options.topk()) >= 0,
+                "Invalid argument: top_k must be non-negative (0 disables it)");
+        float minp = Values.floatValue(request.get("min_p"), options.minp());
+        LLMOptions.require(
+                Float.isFinite(minp) && 0 <= minp && minp <= 1,
+                "Invalid argument: min_p must be within [0, 1]");
+        LLMOptions.require(
                 0
                         <= Values.intValue(
                                 request.getOrDefault(

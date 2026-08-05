@@ -15,6 +15,8 @@ public record LLMOptions(
         int port,
         Float temperature,
         Float topp,
+        Integer topk,
+        Float minp,
         long seed,
         int maxTokens,
         boolean stream,
@@ -39,6 +41,12 @@ public record LLMOptions(
         require(
                 topp == null || (0 <= topp && topp <= 1),
                 "Invalid argument: --top-p must be within [0, 1]");
+        require(
+                topk == null || topk >= 0,
+                "Invalid argument: --top-k must be non-negative (0 disables it)");
+        require(
+                minp == null || (0 <= minp && minp <= 1),
+                "Invalid argument: --min-p must be within [0, 1]");
         require(0 <= port && port <= 65535, "Invalid argument: --port must be within [0, 65535]");
     }
 
@@ -61,6 +69,8 @@ public record LLMOptions(
                 port,
                 temperature != null ? temperature : defaults.effectiveTemperature(),
                 topp != null ? topp : defaults.effectiveTopP(),
+                topk != null ? topk : defaults.effectiveTopK(),
+                minp != null ? minp : defaults.effectiveMinP(),
                 seed,
                 maxTokens,
                 stream,

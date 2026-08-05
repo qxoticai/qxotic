@@ -171,19 +171,25 @@ public record LoadedModel<S extends RuntimeState>(
      * jinfer's sampler stack implements are carried; a container's {@code top_k}, penalties or
      * mirostat settings are ignored.
      */
-    public record SamplingDefaults(Float temperature, Float topP) {
+    public record SamplingDefaults(Float temperature, Float topP, Integer topK, Float minP) {
 
         // the engine baseline, OK-ish for any chat model (llama.cpp's defaults)
         private static final float DEFAULT_TEMPERATURE = 0.8f;
         private static final float DEFAULT_TOP_P = 0.95f;
+        private static final int DEFAULT_TOP_K = 40;
+        private static final float DEFAULT_MIN_P = 0.05f;
 
         /** No recommendations - every lookup falls through to the engine baseline. */
-        public static final SamplingDefaults NONE = new SamplingDefaults(null, null);
+        public static final SamplingDefaults NONE = new SamplingDefaults(null, null, null, null);
 
         static SamplingDefaults fromGGUF(GGUF gguf) {
             return new SamplingDefaults(
                     floatValue(gguf, "general.sampling.temp"),
-                    floatValue(gguf, "general.sampling.top_p"));
+                    floatValue(gguf, "general.sampling.top_p"),
+                    gguf.containsKey("general.sampling.top_k")
+                            ? gguf.getValue(Integer.class, "general.sampling.top_k")
+                            : null,
+                    floatValue(gguf, "general.sampling.min_p"));
         }
 
         private static Float floatValue(GGUF gguf, String key) {
@@ -197,7 +203,9 @@ public record LoadedModel<S extends RuntimeState>(
         SamplingDefaults withFallback(SamplingDefaults fallback) {
             return new SamplingDefaults(
                     temperature != null ? temperature : fallback.temperature,
-                    topP != null ? topP : fallback.topP);
+                    topP != null ? topP : fallback.topP,
+                    topK != null ? topK : fallback.topK,
+                    minP != null ? minP : fallback.minP);
         }
 
         /** The recommended temperature, or the engine baseline when no layer has one. */
@@ -208,6 +216,16 @@ public record LoadedModel<S extends RuntimeState>(
         /** The recommended top-p, or the engine baseline when no layer has one. */
         public float effectiveTopP() {
             return topP != null ? topP : DEFAULT_TOP_P;
+        }
+
+        /** The recommended top-k, or the engine baseline when no layer has one. */
+        public int effectiveTopK() {
+            return topK != null ? topK : DEFAULT_TOP_K;
+        }
+
+        /** The recommended min-p, or the engine baseline when no layer has one. */
+        public float effectiveMinP() {
+            return minP != null ? minP : DEFAULT_MIN_P;
         }
     }
 }

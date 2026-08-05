@@ -86,22 +86,32 @@ public final class Server {
         // where each value came from: the user's flag, the model (GGUF metadata or its port's
         // author recommendation), or jinfer's baseline - so a surprising default explains itself
         System.out.printf(
-                "sampling: temperature %s, top-p %s; request values override%n",
+                "sampling: temperature %s, top-k %s, top-p %s, min-p %s; request values"
+                        + " override%n",
                 describe(
                         resolved.temperature(),
                         options.temperature() != null,
                         model.samplingDefaults().temperature() != null),
                 describe(
+                        resolved.topk(),
+                        options.topk() != null,
+                        model.samplingDefaults().topK() != null),
+                describe(
                         resolved.topp(),
                         options.topp() != null,
-                        model.samplingDefaults().topP() != null));
+                        model.samplingDefaults().topP() != null),
+                describe(
+                        resolved.minp(),
+                        options.minp() != null,
+                        model.samplingDefaults().minP() != null));
         return running;
     }
 
-    private static String describe(float value, boolean userSet, boolean modelRecommended) {
+    private static String describe(Number value, boolean userSet, boolean modelRecommended) {
         String source =
                 userSet ? "set by you" : modelRecommended ? "model default" : "jinfer default";
-        return trim(value) + " (" + source + ")";
+        String shown = value instanceof Float f ? String.valueOf(trim(f)) : value.toString();
+        return shown + " (" + source + ")";
     }
 
     /** A float for humans and JSON: {@code 0.2}, not {@code 0.20000000298023224}. */
@@ -191,7 +201,9 @@ public final class Server {
                                 "sampling",
                                         Map.of(
                                                 "temperature", trim(options.temperature()),
-                                                "top_p", trim(options.topp())),
+                                                "top_p", trim(options.topp()),
+                                                "top_k", options.topk(),
+                                                "min_p", trim(options.minp())),
                                 "prompt_cache", promptCacheProps()));
         Function<Map<String, Object>, Object> tokenize =
                 request ->

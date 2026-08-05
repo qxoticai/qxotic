@@ -8,9 +8,11 @@ import java.util.random.RandomGeneratorFactory;
 
 /**
  * Token sampling over a logits tensor, with composable building blocks: {@link #ARGMAX}, {@link
- * CategoricalSampler}, {@link ToppSampler}, the {@link #withTemperature} softmax wrapper and the
- * {@link #banning} token filter. {@link #select} assembles the standard stack from (temperature,
- * top-p, seed); model-aware policy (think-token bans, grammars) is the caller's to layer on top.
+ * CategoricalSampler}, the filter wrappers and the {@link #withTemperature} softmax wrapper. {@link
+ * #select} assembles the standard stack in llama.cpp's chain order - top-k, top-p, min-p filter the
+ * logits, then temperature scales what survives and a categorical draw picks the token - so a given
+ * (temperature, top-k, top-p, min-p) samples the same token population as llama.cpp. Model-aware
+ * policy (think-token bans, grammars) is the caller's to layer on top.
  */
 @FunctionalInterface
 public interface Sampler {
@@ -19,21 +21,91 @@ public interface Sampler {
     Sampler ARGMAX = FloatTensor::argmax;
 
     /**
-     * The standard sampling stack: greedy at temperature 0, otherwise temperature-scaled softmax
-     * feeding categorical sampling (top-p nucleus sampling when 0 &lt; topp &lt; 1).
+     * The standard stack. Temperature 0 is greedy argmax outright - every filter keeps the
+     * highest-logit token, so filtering before argmax changes nothing. Disabled values follow
+     * llama.cpp: {@code topK <= 0} or {@code >= vocabularySize} means no top-k, {@code topP >= 1}
+     * no top-p, {@code minP <= 0} no min-p.
      */
-    static Sampler select(int vocabularySize, float temperature, float topp, long rngSeed) {
+    static Sampler select(
+            int vocabularySize, float temperature, int topK, float topP, float minP, long rngSeed) {
         if (temperature == 0.0f) {
             return ARGMAX;
         }
         RandomGenerator rng = RandomGeneratorFactory.getDefault().create(rngSeed);
-        Sampler innerSampler;
-        if (topp <= 0 || topp >= 1) {
-            innerSampler = new CategoricalSampler(rng);
-        } else {
-            innerSampler = new ToppSampler(vocabularySize, topp, rng);
+        Sampler stack = withTemperature(new CategoricalSampler(rng), temperature);
+        // built inside-out: the OUTERMOST wrapper runs first, so this is llama.cpp's
+        // top-k -> top-p -> min-p -> temperature order
+        if (minP > 0 && minP < 1) {
+            stack = withMinP(stack, minP);
         }
-        return withTemperature(innerSampler, temperature);
+        if (topP > 0 && topP < 1) {
+            stack = new NucleusFilter(vocabularySize, topP, stack);
+        }
+        if (topK > 0 && topK < vocabularySize) {
+            stack = withTopK(stack, topK);
+        }
+        return stack;
+    }
+
+    /**
+     * Keeps the {@code k} highest logits and masks the rest to -inf before delegating. Ties at the
+     * k-th value all survive (llama.cpp cuts ties arbitrarily by sort order; keeping them is the
+     * deterministic reading of the same contract).
+     */
+    static Sampler withTopK(Sampler inner, int k) {
+        float[] heap = new float[k]; // min-heap of the k largest logits seen so far
+        return logits -> {
+            int n = Math.toIntExact(logits.size());
+            java.util.Arrays.fill(heap, Float.NEGATIVE_INFINITY);
+            for (int i = 0; i < n; i++) {
+                float v = logits.getFloat(i);
+                if (v > heap[0]) {
+                    heap[0] = v;
+                    int prev = 0, next;
+                    while ((next = 2 * prev + 1) < k) {
+                        int r = next + 1;
+                        if (r < k && heap[r] < heap[next]) next = r;
+                        if (heap[next] < heap[prev]) {
+                            float t = heap[prev];
+                            heap[prev] = heap[next];
+                            heap[next] = t;
+                            prev = next;
+                        } else {
+                            break;
+                        }
+                    }
+                }
+            }
+            float threshold = heap[0];
+            for (int i = 0; i < n; i++) {
+                if (logits.getFloat(i) < threshold) {
+                    logits.setFloat(i, Float.NEGATIVE_INFINITY);
+                }
+            }
+            return inner.sampleToken(logits);
+        };
+    }
+
+    /**
+     * Masks tokens whose probability falls below {@code minP} times the top token's probability
+     * (computed on logits: {@code logit < maxLogit + ln(minP)}) before delegating.
+     */
+    static Sampler withMinP(Sampler inner, float minP) {
+        float logMinP = (float) Math.log(minP);
+        return logits -> {
+            int n = Math.toIntExact(logits.size());
+            float max = Float.NEGATIVE_INFINITY;
+            for (int i = 0; i < n; i++) {
+                max = Math.max(max, logits.getFloat(i));
+            }
+            float threshold = max + logMinP;
+            for (int i = 0; i < n; i++) {
+                if (logits.getFloat(i) < threshold) {
+                    logits.setFloat(i, Float.NEGATIVE_INFINITY);
+                }
+            }
+            return inner.sampleToken(logits);
+        };
     }
 
     /**
@@ -106,16 +178,20 @@ record CategoricalSampler(RandomGenerator rng) implements Sampler {
     }
 }
 
-final class ToppSampler implements Sampler {
+final class NucleusFilter implements Sampler {
 
-    final int[] indices;
-    final float topp;
-    final RandomGenerator rng;
+    private final int[] candidates;
+    private final float[] keptLogits;
+    private final int[] keptIds;
+    private final float topP;
+    private final Sampler inner;
 
-    public ToppSampler(int maxNumberOfElements, float topp, RandomGenerator rng) {
-        this.indices = new int[maxNumberOfElements];
-        this.topp = topp;
-        this.rng = rng;
+    NucleusFilter(int vocabularySize, float topP, Sampler inner) {
+        this.candidates = new int[vocabularySize];
+        this.keptLogits = new float[vocabularySize];
+        this.keptIds = new int[vocabularySize];
+        this.topP = topP;
+        this.inner = inner;
     }
 
     static void swap(int[] array, int from, int to) {
@@ -140,49 +216,53 @@ final class ToppSampler implements Sampler {
         }
     }
 
+    /**
+     * Masks everything outside the smallest set of tokens whose probabilities sum past {@code topP}
+     * (the last token crossing the line is kept, llama.cpp's cut), then delegates. Works on raw
+     * logits - probabilities are derived on the fly so the tensor still holds logits for the
+     * temperature stage downstream.
+     */
     @Override
     public int sampleToken(FloatTensor logits) {
-        Comparator<Integer> comparator =
-                Comparator.comparingDouble((Integer i) -> logits.getFloat(i)).reversed();
-
         int n = Math.toIntExact(logits.size());
+        float max = Float.NEGATIVE_INFINITY;
+        for (int i = 0; i < n; i++) {
+            max = Math.max(max, logits.getFloat(i));
+        }
+        double denom = 0;
+        for (int i = 0; i < n; i++) {
+            denom = denom + Math.exp(logits.getFloat(i) - max);
+        }
+        // tokens below this probability cannot be part of any nucleus of mass topP
+        double cutoff = (1.0 - topP) / (n - 1);
         int head = 0;
-        int tail = n - 1;
-        float cutoff = (1.0f - topp) / (n - 1);
-        for (int i = 0; i < indices.length; i++) {
-            if (logits.getFloat(i) >= cutoff) {
-                indices[head++] = i;
-            } else {
-                indices[tail--] = i;
+        for (int i = 0; i < n; i++) {
+            if (Math.exp(logits.getFloat(i) - max) / denom >= cutoff) {
+                candidates[head++] = i;
             }
         }
-
-        int n0 = head;
-        for (int i = n0 / 2 - 1; i >= 0; --i) {
-            siftDown(indices, i, n0, comparator);
+        Comparator<Integer> byLogitDesc =
+                Comparator.comparingDouble((Integer i) -> logits.getFloat(i)).reversed();
+        for (int i = head / 2 - 1; i >= 0; --i) {
+            siftDown(candidates, i, head, byLogitDesc);
         }
-
-        float cumulativeProb = 0.0f;
-        int lastIndex = 0;
-        for (int i = n0 - 1; i >= 0; i--) {
-            swap(indices, 0, i);
-            cumulativeProb += logits.getFloat(indices[i]);
-            if (cumulativeProb > topp) {
-                lastIndex = i;
-                break;
-            }
-            siftDown(indices, 0, i, comparator);
+        double cumulative = 0;
+        int kept = 0;
+        for (int remaining = head; remaining > 0 && cumulative < topP; remaining--) {
+            int id = candidates[0];
+            swap(candidates, 0, remaining - 1);
+            siftDown(candidates, 0, remaining - 1, byLogitDesc);
+            keptIds[kept] = id;
+            keptLogits[kept] = logits.getFloat(id);
+            kept++;
+            cumulative += Math.exp(logits.getFloat(id) - max) / denom;
         }
-
-        float r = rng.nextFloat(1f) * cumulativeProb;
-        float cdf = 0.0f;
-        for (int i = n0 - 1; i >= lastIndex; i--) {
-            cdf += logits.getFloat(indices[i]);
-            if (r < cdf) {
-                return indices[i];
-            }
+        for (int i = 0; i < n; i++) {
+            logits.setFloat(i, Float.NEGATIVE_INFINITY);
         }
-
-        return indices[lastIndex];
+        for (int i = 0; i < kept; i++) {
+            logits.setFloat(keptIds[i], keptLogits[i]);
+        }
+        return inner.sampleToken(logits);
     }
 }
