@@ -265,25 +265,28 @@ public final class Models {
         String artifact = artifactFor(arch);
         if (PROVIDERS.isEmpty()) {
             throw new IllegalArgumentException(
-                    "no model ports on the classpath. This GGUF is architecture '"
+                    "no model providers on the classpath. This GGUF needs architecture '"
                             + arch
-                            + "' - add "
-                            + (artifact != null ? artifact : "its port artifact")
-                            + " (or com.qxotic:jinfer-models-all for every port). If you shade"
-                            + " jinfer into one jar, merge META-INF/services (Maven Shade:"
-                            + " ServicesResourceTransformer) or ServiceLoader finds nothing");
+                            + "': add "
+                            + (artifact != null
+                                    ? artifact
+                                    : "the com.qxotic:jinfer-* artifact that supports it")
+                            + ", or com.qxotic:jinfer-models-all for everything. (Shading jinfer"
+                            + " into one jar? merge META-INF/services - Maven Shade's"
+                            + " ServicesResourceTransformer - or ServiceLoader finds nothing.)");
         }
         java.util.SortedSet<String> here = supportedArchitectures();
         throw new IllegalArgumentException(
-                "unsupported architecture '"
+                "architecture '"
                         + arch
-                        + "'"
+                        + "' is not on the classpath"
                         + (artifact != null
-                                ? " - add " + artifact + " to the classpath"
-                                : " - no port for it in THIS jinfer version (a newer jinfer or"
-                                        + " a com.qxotic:jinfer-* port artifact may support it)")
-                        + " (ports here support: "
-                        + (here.isEmpty() ? PROVIDERS.size() + " unenumerated port(s)" : here)
-                        + ")");
+                                ? " - add " + artifact
+                                : ", and no artifact of THIS jinfer version supports it (a newer"
+                                        + " jinfer may)")
+                        + ". Supported architectures here: "
+                        + (here.isEmpty()
+                                ? PROVIDERS.size() + " provider(s), none enumerated"
+                                : here));
     }
 }
