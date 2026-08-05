@@ -60,16 +60,8 @@ public final class Gemma4Vision implements Embedder<Media.Image>, VisionBudget {
     // --- weights ---
     final FloatTensor patchEmbd; // [visionDim, 3*patch*patch]  (conv as matmul)
     final FloatTensor posEmbd; // [visionDim, posSize, 2] flattened (x-table then y-table)
-    final FloatTensor mmProj; // [modelDim, visionDim]
-    final ClampInfo mmProjClamp;
+    final Clamped mmProj; // [modelDim, visionDim], with calibration clamps
     final Layer[] layers;
-
-    /**
-     * Per-tensor activation calibration ranges (from the *.input_min/max + *.output_min/max
-     * tensors): clamp the matmul INPUT to [inpMin,inpMax] and the OUTPUT to [outMin,outMax].
-     * Required for parity.
-     */
-    record ClampInfo(float inpMin, float inpMax, float outMin, float outMax) {}
 
     record Layer(
             F32FloatTensor ln1,
@@ -78,20 +70,13 @@ public final class Gemma4Vision implements Embedder<Media.Image>, VisionBudget {
             F32FloatTensor ffnPostNorm,
             F32FloatTensor qNorm,
             F32FloatTensor kNorm,
-            FloatTensor wq,
-            FloatTensor wk,
-            FloatTensor wv,
-            FloatTensor wo,
-            FloatTensor ffnGate,
-            FloatTensor ffnUp,
-            FloatTensor ffnDown,
-            ClampInfo wqClamp,
-            ClampInfo wkClamp,
-            ClampInfo wvClamp,
-            ClampInfo woClamp,
-            ClampInfo ffnGateClamp,
-            ClampInfo ffnUpClamp,
-            ClampInfo ffnDownClamp) {}
+            Clamped wq,
+            Clamped wk,
+            Clamped wv,
+            Clamped wo,
+            Clamped ffnGate,
+            Clamped ffnUp,
+            Clamped ffnDown) {}
 
     Gemma4Vision(
             int imageSize,
@@ -107,8 +92,7 @@ public final class Gemma4Vision implements Embedder<Media.Image>, VisionBudget {
             float ropeTheta,
             FloatTensor patchEmbd,
             FloatTensor posEmbd,
-            FloatTensor mmProj,
-            ClampInfo mmProjClamp,
+            Clamped mmProj,
             Layer[] layers) {
         this.imageSize = imageSize;
         this.patchSize = patchSize;
@@ -125,7 +109,6 @@ public final class Gemma4Vision implements Embedder<Media.Image>, VisionBudget {
         this.patchEmbd = patchEmbd;
         this.posEmbd = posEmbd;
         this.mmProj = mmProj;
-        this.mmProjClamp = mmProjClamp;
         this.layers = layers;
     }
 
@@ -173,7 +156,8 @@ public final class Gemma4Vision implements Embedder<Media.Image>, VisionBudget {
         int n = p.count;
         FloatTensor cur = p.tokens; // [n, visionDim]
         FloatTensor tmp = FloatTensor.allocateF32(scratch, n * visionDim); // rmsAddResidual
-        FloatTensor clampTmp = FloatTensor.allocateF32(scratch, n * ffnDim); // clampedGemm input
+        FloatTensor clampTmp =
+                FloatTensor.allocateF32(scratch, n * ffnDim); // Clamped.gemm input scratch
         FloatTensor xb = FloatTensor.allocateF32(scratch, n * visionDim);
         FloatTensor q = FloatTensor.allocateF32(scratch, n * visionDim),
                 k = FloatTensor.allocateF32(scratch, n * visionDim),
@@ -215,9 +199,9 @@ public final class Gemma4Vision implements Embedder<Media.Image>, VisionBudget {
             int py,
             int n,
             FloatTensor clampTmp) {
-        clampedGemm(x, q, n, visionDim, visionDim, l.wq(), l.wqClamp(), clampTmp);
-        clampedGemm(x, k, n, visionDim, visionDim, l.wk(), l.wkClamp(), clampTmp);
-        clampedGemm(x, v, n, visionDim, visionDim, l.wv(), l.wvClamp(), clampTmp);
+        l.wq().gemm(x, visionDim, q, visionDim, n, clampTmp);
+        l.wk().gemm(x, visionDim, k, visionDim, n, clampTmp);
+        l.wv().gemm(x, visionDim, v, visionDim, n, clampTmp);
         // per-head RMS norms (q,k with weight; v no weight) + 2D RoPE on q,k
         Parallel.forRows(
                 n,
@@ -244,38 +228,8 @@ public final class Gemma4Vision implements Embedder<Media.Image>, VisionBudget {
         FlashAttention.bidirectionalPrefill(
                 q, out, kF16, vF16, nHead, n, headDim, visionDim, visionDim, 1, 1.0f);
         // output projection in place: x <- Wo @ out  (reuse x as scratch is unsafe; write to q)
-        clampedGemm(out, q, n, visionDim, visionDim, l.wo(), l.woClamp(), clampTmp);
+        l.wo().gemm(out, visionDim, q, visionDim, n, clampTmp);
         q.copyTo(0, out, 0, n * visionDim);
-    }
-
-    /**
-     * Clamped matmul: clamp input to [inpMin,inpMax], gemm, clamp output to [outMin,outMax]
-     * (reference parity). {@code clampTmp} is the per-encode reused input-clamp buffer (sized
-     * n*ffnDim, the largest input) - it was an instance field before, which leaked per model AND
-     * corrupted concurrent encodes.
-     */
-    private void clampedGemm(
-            FloatTensor in,
-            FloatTensor out,
-            int n,
-            int inDim,
-            int outDim,
-            FloatTensor w,
-            ClampInfo c,
-            FloatTensor clampTmp) {
-        FloatTensor src = in;
-        if (c != null) {
-            int need = n * inDim;
-            src = clampTmp;
-            in.copyTo(0, src, 0, need); // vectorized copy ...
-            src.clampInPlace(
-                    0,
-                    need,
-                    c.inpMin(),
-                    c.inpMax()); // ... then SIMD clamp (was scalar getFloat/setFloat)
-        }
-        w.gemm(src, inDim, out, outDim, n, outDim, inDim);
-        if (c != null) out.clampInPlace(0, n * outDim, c.outMin(), c.outMax());
     }
 
     private void feedForward(
@@ -286,8 +240,8 @@ public final class Gemma4Vision implements Embedder<Media.Image>, VisionBudget {
             Layer l,
             int n,
             FloatTensor clampTmp) {
-        clampedGemm(x, g, n, visionDim, ffnDim, l.ffnGate(), l.ffnGateClamp(), clampTmp);
-        clampedGemm(x, u, n, visionDim, ffnDim, l.ffnUp(), l.ffnUpClamp(), clampTmp);
+        l.ffnGate().gemm(x, visionDim, g, ffnDim, n, clampTmp);
+        l.ffnUp().gemm(x, visionDim, u, ffnDim, n, clampTmp);
         Parallel.forRows(
                 n,
                 t -> { // gelu_quick(gate)*up
@@ -298,7 +252,7 @@ public final class Gemma4Vision implements Embedder<Media.Image>, VisionBudget {
                         g.setFloat(base + d, gq * u.getFloat(base + d));
                     }
                 });
-        clampedGemm(g, out, n, ffnDim, visionDim, l.ffnDown(), l.ffnDownClamp(), clampTmp);
+        l.ffnDown().gemm(g, ffnDim, out, visionDim, n, clampTmp);
     }
 
     private FloatTensor projectPooled(
@@ -334,7 +288,7 @@ public final class Gemma4Vision implements Embedder<Media.Image>, VisionBudget {
         // vs project→RMSNorm which let outliers to ~7.4 and drowned small-object features.
         Parallel.forRows(nTok, t -> rmsNoWeight(pooled, t * visionDim, visionDim));
         FloatTensor projected = FloatTensor.allocateF32(scratch, nTok * modelDim);
-        clampedGemm(pooled, projected, nTok, visionDim, modelDim, mmProj, mmProjClamp, clampTmp);
+        mmProj.gemm(pooled, visionDim, projected, modelDim, nTok, clampTmp);
         return projected;
     }
 
@@ -520,8 +474,8 @@ public final class Gemma4Vision implements Embedder<Media.Image>, VisionBudget {
                                 + " sidecar's metadata and tensors disagree");
             }
             int posSize = (int) (posEmbd.size() / (visionDim * 2L));
-            FloatTensor mmProj = ModelLoader.loadQuantized(t.get("mm.input_projection.weight"));
-            ClampInfo mmProjClamp = readClampInfo(t, "mm.input_projection");
+            Clamped mmProj = Clamped.load(t, "mm.input_projection", (long) visionDim * modelDim);
+
             Layer[] layers = new Layer[nLayer];
             for (int i = 0; i < nLayer; i++) {
                 String p = "v.blk." + i + ".";
@@ -533,52 +487,17 @@ public final class Gemma4Vision implements Embedder<Media.Image>, VisionBudget {
                                 ModelLoader.f32OrNull(t, p + "ffn_post_norm.weight"),
                                 ModelLoader.f32OrNull(t, p + "attn_q_norm.weight"),
                                 ModelLoader.f32OrNull(t, p + "attn_k_norm.weight"),
-                                ModelLoader.loadQuantized(t.get(p + "attn_q.weight")),
-                                ModelLoader.loadQuantized(t.get(p + "attn_k.weight")),
-                                ModelLoader.loadQuantized(t.get(p + "attn_v.weight")),
-                                ModelLoader.loadQuantized(t.get(p + "attn_out.weight")),
-                                ModelLoader.loadQuantized(t.get(p + "ffn_gate.weight")),
-                                ModelLoader.loadQuantized(t.get(p + "ffn_up.weight")),
-                                ModelLoader.loadQuantized(t.get(p + "ffn_down.weight")),
-                                readClampInfo(t, p + "attn_q"),
-                                readClampInfo(t, p + "attn_k"),
-                                readClampInfo(t, p + "attn_v"),
-                                readClampInfo(t, p + "attn_out"),
-                                readClampInfo(t, p + "ffn_gate"),
-                                readClampInfo(t, p + "ffn_up"),
-                                readClampInfo(t, p + "ffn_down"));
+                                Clamped.load(t, p + "attn_q", (long) visionDim * visionDim),
+                                Clamped.load(t, p + "attn_k", (long) visionDim * visionDim),
+                                Clamped.load(t, p + "attn_v", (long) visionDim * visionDim),
+                                Clamped.load(t, p + "attn_out", (long) visionDim * visionDim),
+                                Clamped.load(t, p + "ffn_gate", (long) visionDim * ffnDim),
+                                Clamped.load(t, p + "ffn_up", (long) visionDim * ffnDim),
+                                Clamped.load(t, p + "ffn_down", (long) visionDim * ffnDim));
             }
             return new Gemma4Vision(
-                    procSize,
-                    patchSize,
-                    visionDim,
-                    nHead,
-                    nLayer,
-                    ffnDim,
-                    modelDim,
-                    merge,
-                    posSize,
-                    eps,
-                    100.0f,
-                    patchEmbd,
-                    posEmbd,
-                    mmProj,
-                    mmProjClamp,
-                    layers);
+                    procSize, patchSize, visionDim, nHead, nLayer, ffnDim, modelDim, merge, posSize,
+                    eps, 100.0f, patchEmbd, posEmbd, mmProj, layers);
         }
-    }
-
-    /**
-     * Per-tensor activation clamp ranges from the calibration tensors (each a single F32 scalar);
-     * null if absent.
-     */
-    private static ClampInfo readClampInfo(Map<String, GGMLTensorEntry> t, String base) {
-        F32FloatTensor inMin = ModelLoader.f32OrNull(t, base + ".input_min"),
-                inMax = ModelLoader.f32OrNull(t, base + ".input_max");
-        F32FloatTensor outMin = ModelLoader.f32OrNull(t, base + ".output_min"),
-                outMax = ModelLoader.f32OrNull(t, base + ".output_max");
-        if (inMin == null || inMax == null || outMin == null || outMax == null) return null;
-        return new ClampInfo(
-                inMin.getFloat(0), inMax.getFloat(0), outMin.getFloat(0), outMax.getFloat(0));
     }
 }

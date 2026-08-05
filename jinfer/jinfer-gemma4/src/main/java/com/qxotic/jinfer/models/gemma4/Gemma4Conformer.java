@@ -44,13 +44,6 @@ public final class Gemma4Conformer implements Embedder<Media.Audio> {
     static final int CONTEXT = CHUNK + PAST; // 24 context slots per block
     static final int RPE = PAST + 1; // 13 relative positions
 
-    /**
-     * A projection with QAT calibration clamps (the mmproj's {@code <base>.input_min/max} and
-     * {@code output_min/max} scalars): input clamps before the matmul, output after - the
-     * reference's build_mm. Absent scalars default to +-MAX (no clamping).
-     */
-    record Clamped(FloatTensor w, float inMin, float inMax, float outMin, float outMax) {}
-
     record Block(
             F32FloatTensor ffNorm,
             Clamped ffUp,
@@ -157,32 +150,6 @@ public final class Gemma4Conformer implements Embedder<Media.Audio> {
         return emb;
     }
 
-    /** build_mm: clamp input into scratch, matmul, clamp output in place. */
-    private static void clampedGemm(
-            Clamped cw,
-            FloatTensor in,
-            int inDim,
-            FloatTensor out,
-            int outDim,
-            int rows,
-            FloatTensor scratch) {
-        FloatTensor src = in;
-        if (cw.inMin() > -Float.MAX_VALUE || cw.inMax() < Float.MAX_VALUE) {
-            long size = (long) rows * inDim;
-            for (long i = 0; i < size; i++) {
-                scratch.setFloat(i, Math.clamp(in.getFloat(i), cw.inMin(), cw.inMax()));
-            }
-            src = scratch;
-        }
-        cw.w().gemm(src, inDim, out, outDim, rows, outDim, inDim);
-        if (cw.outMin() > -Float.MAX_VALUE || cw.outMax() < Float.MAX_VALUE) {
-            long size = (long) rows * outDim;
-            for (long i = 0; i < size; i++) {
-                out.setFloat(i, Math.clamp(out.getFloat(i), cw.outMin(), cw.outMax()));
-            }
-        }
-    }
-
     @Override
     public void embed(Media.Audio audio, int maxChunkSize, Consumer<FloatTensor> sink) {
         try (Arena scratch = Arena.ofShared()) {
@@ -283,7 +250,7 @@ public final class Gemma4Conformer implements Embedder<Media.Audio> {
         }
         FloatTensor x = FloatTensor.allocateF32(a, Math.toIntExact((long) n * dim));
         FloatTensor clampBuf = FloatTensor.allocateF32(a, Math.toIntExact((long) n * ffDim));
-        clampedGemm(inputProj, flat, dim, x, dim, n, clampBuf);
+        inputProj.gemm(flat, dim, x, dim, n, clampBuf);
         if (tap != null) tap.stage("proj", x);
 
         // scratch shared across blocks
@@ -337,7 +304,7 @@ public final class Gemma4Conformer implements Embedder<Media.Audio> {
 
         // 3. tail: out projection (+bias) -> weightless RMS -> mm projection
         FloatTensor proj = FloatTensor.allocateF32(a, Math.toIntExact((long) n * outDim));
-        clampedGemm(outProj, x, dim, proj, outDim, n, clampBuf);
+        outProj.gemm(x, dim, proj, outDim, n, clampBuf);
         Parallel.forRows(
                 n,
                 t -> {
@@ -348,7 +315,7 @@ public final class Gemma4Conformer implements Embedder<Media.Audio> {
                     Norms.rmsnormNoWeight(proj, row, proj, row, outDim, eps);
                 });
         FloatTensor projOut = FloatTensor.allocateF32(a, Math.toIntExact((long) n * outDim));
-        clampedGemm(mmProj, proj, outDim, projOut, outDim, n, clampBuf);
+        mmProj.gemm(proj, outDim, projOut, outDim, n, clampBuf);
         projOut.copyTo(0, rowsOut, outOff, Math.toIntExact((long) n * outDim));
     }
 
@@ -424,7 +391,7 @@ public final class Gemma4Conformer implements Embedder<Media.Audio> {
             FloatTensor clampBuf) {
         Parallel.forRows(
                 n, t -> Norms.rmsnorm(norm, (long) t * dim, x, (long) t * dim, preNorm, dim, eps));
-        clampedGemm(up, norm, dim, ff, ffDim, n, clampBuf);
+        up.gemm(norm, dim, ff, ffDim, n, clampBuf);
         Parallel.forRows(
                 n,
                 t -> {
@@ -433,7 +400,7 @@ public final class Gemma4Conformer implements Embedder<Media.Audio> {
                         ff.setFloat(row + d, Activations.silu(ff.getFloat(row + d)));
                     }
                 });
-        clampedGemm(down, ff, ffDim, ffOut, dim, n, clampBuf);
+        down.gemm(ff, ffDim, ffOut, dim, n, clampBuf);
         Parallel.forRows(
                 n,
                 t -> {
@@ -469,9 +436,9 @@ public final class Gemma4Conformer implements Embedder<Media.Audio> {
                                 b.attnPreNorm(),
                                 dim,
                                 eps));
-        clampedGemm(b.q(), norm, dim, qT, dim, n, clampBuf);
-        clampedGemm(b.k(), norm, dim, kT, dim, n, clampBuf);
-        clampedGemm(b.v(), norm, dim, vT, dim, n, clampBuf);
+        b.q().gemm(norm, dim, qT, dim, n, clampBuf);
+        b.k().gemm(norm, dim, kT, dim, n, clampBuf);
+        b.v().gemm(norm, dim, vT, dim, n, clampBuf);
 
         float qScale = (float) ((1.0 / Math.sqrt(headDim)) / Math.log(2.0)); // (1/sqrt(d))/ln2
         float kScale = (float) (Math.log1p(Math.exp(1.0)) / Math.log(2.0)); // softplus(1)/ln2
@@ -554,7 +521,7 @@ public final class Gemma4Conformer implements Embedder<Media.Audio> {
                 });
 
         // o projection, post-norm, full residual
-        clampedGemm(b.o(), attnOut, dim, norm, dim, n, clampBuf);
+        b.o().gemm(attnOut, dim, norm, dim, n, clampBuf);
         Parallel.forRows(
                 n,
                 t -> {
@@ -580,7 +547,7 @@ public final class Gemma4Conformer implements Embedder<Media.Audio> {
                 t ->
                         Norms.rmsnorm(
                                 norm, (long) t * dim, x, (long) t * dim, b.normConv(), dim, eps));
-        clampedGemm(b.convPw1(), norm, dim, pw, dim * 2, n, clampBuf);
+        b.convPw1().gemm(norm, dim, pw, dim * 2, n, clampBuf);
         Parallel.forRows(
                 n,
                 t -> {
@@ -616,7 +583,7 @@ public final class Gemma4Conformer implements Embedder<Media.Audio> {
                         norm.setFloat(row + d, Activations.silu(norm.getFloat(row + d)));
                     }
                 });
-        clampedGemm(b.convPw2(), norm, dim, glu, dim, n, clampBuf);
+        b.convPw2().gemm(norm, dim, glu, dim, n, clampBuf);
         Parallel.forRows(
                 n,
                 t -> {
@@ -650,25 +617,25 @@ public final class Gemma4Conformer implements Embedder<Media.Audio> {
                 blocks[i] =
                         new Block(
                                 f32(t, p + "ffn_norm.weight", dim),
-                                cw(t, p + "ffn_up", (long) dim * ffDim),
-                                cw(t, p + "ffn_down", (long) dim * ffDim),
+                                Clamped.load(t, p + "ffn_up", (long) dim * ffDim),
+                                Clamped.load(t, p + "ffn_down", (long) dim * ffDim),
                                 f32(t, p + "ffn_post_norm.weight", dim),
                                 f32(t, p + "attn_pre_norm.weight", dim),
-                                cw(t, p + "attn_q", (long) dim * dim),
-                                cw(t, p + "attn_k", (long) dim * dim),
-                                cw(t, p + "attn_v", (long) dim * dim),
-                                cw(t, p + "attn_out", (long) dim * dim),
+                                Clamped.load(t, p + "attn_q", (long) dim * dim),
+                                Clamped.load(t, p + "attn_k", (long) dim * dim),
+                                Clamped.load(t, p + "attn_v", (long) dim * dim),
+                                Clamped.load(t, p + "attn_out", (long) dim * dim),
                                 f32(t, p + "attn_post_norm.weight", dim),
                                 w(t, p + "attn_k_rel.weight", (long) dim * dim),
                                 f32(t, p + "per_dim_scale.weight", dim / heads),
                                 f32(t, p + "conv_norm.weight", dim), // module PRE-norm
-                                cw(t, p + "conv_pw1", (long) dim * dim * 2),
+                                Clamped.load(t, p + "conv_pw1", (long) dim * dim * 2),
                                 f32(t, p + "conv_dw.weight", dim * 5),
                                 f32(t, p + "norm_conv.weight", dim), // post-depthwise norm
-                                cw(t, p + "conv_pw2", (long) dim * dim),
+                                Clamped.load(t, p + "conv_pw2", (long) dim * dim),
                                 f32(t, p + "ffn_norm_1.weight", dim),
-                                cw(t, p + "ffn_up_1", (long) dim * ffDim),
-                                cw(t, p + "ffn_down_1", (long) dim * ffDim),
+                                Clamped.load(t, p + "ffn_up_1", (long) dim * ffDim),
+                                Clamped.load(t, p + "ffn_down_1", (long) dim * ffDim),
                                 f32(t, p + "ffn_post_norm_1.weight", dim),
                                 f32(t, p + "ln2.weight", dim));
             }
@@ -683,11 +650,11 @@ public final class Gemma4Conformer implements Embedder<Media.Audio> {
                     f32(t, "a.conv1d.0.norm.weight", 128),
                     taps(t, "a.conv1d.1.weight", 3 * 3 * 128 * 32),
                     f32(t, "a.conv1d.1.norm.weight", 32),
-                    cw(t, "a.input_projection", (long) dim * dim),
+                    Clamped.load(t, "a.input_projection", (long) dim * dim),
                     blocks,
-                    cw(t, "a.pre_encode.out", (long) dim * outDim),
+                    Clamped.load(t, "a.pre_encode.out", (long) dim * outDim),
                     f32(t, "a.pre_encode.out.bias", outDim),
-                    cw(t, "mm.a.input_projection", (long) outDim * outDim));
+                    Clamped.load(t, "mm.a.input_projection", (long) outDim * outDim));
         }
     }
 
@@ -717,20 +684,6 @@ public final class Gemma4Conformer implements Embedder<Media.Audio> {
                             + " heads dividing the width); a newer jinfer may support this"
                             + " variant");
         }
-    }
-
-    private static Clamped cw(Map<String, GGMLTensorEntry> t, String base, long expected) {
-        return new Clamped(
-                w(t, base + ".weight", expected),
-                scalar(t, base + ".input_min", -Float.MAX_VALUE),
-                scalar(t, base + ".input_max", Float.MAX_VALUE),
-                scalar(t, base + ".output_min", -Float.MAX_VALUE),
-                scalar(t, base + ".output_max", Float.MAX_VALUE));
-    }
-
-    private static float scalar(Map<String, GGMLTensorEntry> t, String name, float dflt) {
-        GGMLTensorEntry e = t.get(name);
-        return e == null ? dflt : ModelLoader.loadQuantized(e).getFloat(0);
     }
 
     private static FloatTensor w(Map<String, GGMLTensorEntry> t, String name, long expected) {
