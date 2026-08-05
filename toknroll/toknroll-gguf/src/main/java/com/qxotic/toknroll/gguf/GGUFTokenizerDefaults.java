@@ -113,7 +113,7 @@ final class GGUFTokenizerDefaults {
         builder.registerModelFactory("gemma4", GGUFTokenizerModelFactory::buildSentencePieceModel);
 
         // Name groups mirror llama.cpp's llama-vocab.cpp: names listed together share a
-        // byte-identical regex set there, so here they share one compiled splitter.
+        // byte-identical regex set there, so here they share one splitter factory.
         registerPreTokenizers(
                 builder,
                 GPT2_PATTERN,
@@ -171,26 +171,37 @@ final class GGUFTokenizerDefaults {
         return Splitter.regex(Pattern.compile(pattern, Pattern.UNICODE_CHARACTER_CLASS));
     }
 
-    /** Registers the splitter under every key, each with the identity normalizer. */
+    /**
+     * Registers the splitter factory under every key, each with the identity normalizer. Factories
+     * must capture pattern STRINGS, never compiled {@link Pattern}s: resolution invokes the one
+     * factory the GGUF's pre name selects, so patterns compile once per load - and a native image
+     * that build-time-initializes this table bakes only strings into its heap, not compiled pattern
+     * node trees.
+     */
     private static void register(
-            GGUFTokenizerLoader.Builder builder, Splitter splitter, String... keys) {
+            GGUFTokenizerLoader.Builder builder, Function<GGUF, Splitter> factory, String... keys) {
         for (String key : keys) {
-            builder.registerPreTokenizer(key, gguf -> splitter);
+            builder.registerPreTokenizer(key, factory);
             builder.registerNormalizer(key, IDENTITY_NORMALIZER_FACTORY);
         }
     }
 
     private static void registerPreTokenizers(
             GGUFTokenizerLoader.Builder builder, String pattern, String... keys) {
-        register(builder, regexSplitter(pattern), keys);
+        register(builder, gguf -> regexSplitter(pattern), keys);
     }
 
     private static void registerSequencePreTokenizers(
             GGUFTokenizerLoader.Builder builder, String[] patterns, String... keys) {
-        Splitter[] stages = new Splitter[patterns.length];
-        for (int i = 0; i < patterns.length; i++) {
-            stages[i] = regexSplitter(patterns[i]);
-        }
-        register(builder, Splitter.sequence(stages), keys);
+        register(
+                builder,
+                gguf -> {
+                    Splitter[] stages = new Splitter[patterns.length];
+                    for (int i = 0; i < patterns.length; i++) {
+                        stages[i] = regexSplitter(patterns[i]);
+                    }
+                    return Splitter.sequence(stages);
+                },
+                keys);
     }
 }
