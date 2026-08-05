@@ -16,27 +16,20 @@ import org.junit.jupiter.api.Test;
  */
 class MmprojPairingTest {
 
-    private static final Path E2B_MMPROJ =
-            Path.of(
-                    "/home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf");
-    private static final Path B12_MMPROJ =
-            Path.of(
-                    "/home/mukel/Desktop/playground/models/unsloth/gemma-4-12b-it-GGUF/mmproj-F32.gguf");
-
     @Test
     void theRightSidecarPasses() {
-        Assumptions.assumeTrue(Files.exists(E2B_MMPROJ));
-        assertDoesNotThrow(() -> Gemma4.validateMmproj(E2B_MMPROJ, 1536));
+        Assumptions.assumeTrue(Files.exists(TestModels.E2B_MMPROJ));
+        assertDoesNotThrow(() -> Gemma4.validatePairing(TestModels.E2B_MMPROJ, 1536));
     }
 
     @Test
     void aSidecarFromAnotherSizeFailsWithTheRemedy() {
-        Assumptions.assumeTrue(Files.exists(E2B_MMPROJ));
+        Assumptions.assumeTrue(Files.exists(TestModels.E2B_MMPROJ));
         // the E2B sidecar (1536) offered to a 12b-sized model (3840)
         IllegalArgumentException e =
                 assertThrows(
                         IllegalArgumentException.class,
-                        () -> Gemma4.validateMmproj(E2B_MMPROJ, 3840));
+                        () -> Gemma4.validatePairing(TestModels.E2B_MMPROJ, 3840));
         assertTrue(e.getMessage().contains("1536"), e.getMessage());
         assertTrue(e.getMessage().contains("3840"), e.getMessage());
         assertTrue(e.getMessage().contains("different Gemma 4 size"), e.getMessage());
@@ -61,11 +54,11 @@ class MmprojPairingTest {
 
     @Test
     void theTwelveBSidecarRejectsAnE2bModel() {
-        Assumptions.assumeTrue(Files.exists(B12_MMPROJ));
+        Assumptions.assumeTrue(Files.exists(TestModels.B12_MMPROJ));
         IllegalArgumentException e =
                 assertThrows(
                         IllegalArgumentException.class,
-                        () -> Gemma4.validateMmproj(B12_MMPROJ, 1536));
+                        () -> Gemma4.validatePairing(TestModels.B12_MMPROJ, 1536));
         assertTrue(e.getMessage().contains("different Gemma 4 size"), e.getMessage());
     }
 }

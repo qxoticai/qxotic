@@ -21,13 +21,7 @@ import org.junit.jupiter.params.provider.CsvSource;
 class MelParityTest {
 
     private static final Path ORACLE =
-            Path.of("../../test-fixtures/audio/oracle")
-                            .toAbsolutePath()
-                            .normalize()
-                            .toFile()
-                            .isDirectory()
-                    ? Path.of("../../test-fixtures/audio/oracle").toAbsolutePath().normalize()
-                    : Path.of("../test-fixtures/audio/oracle").toAbsolutePath().normalize();
+            Path.of("../../test-fixtures/audio/oracle").toAbsolutePath().normalize();
 
     private static float[] input(String kind, int n) {
         float[] pcm = new float[n];
@@ -45,10 +39,8 @@ class MelParityTest {
         return pcm;
     }
 
-    private record OracleChunk(float[] data, int frames, int nMel) {}
-
-    /** Parses "mel[chunk][m=..][t=..] = value" lines into mel-major chunks. */
-    private static List<OracleChunk> parseDump(Path file) throws IOException {
+    /** Parses "mel[chunk][m=..][t=..] = value" lines into time-major chunks. */
+    private static List<AudioPreprocess.MelChunk> parseDump(Path file) throws IOException {
         Pattern val = Pattern.compile("mel\\[(\\d+)\\]\\[m=(\\d+)\\]\\[t=(\\d+)\\] = (-?[0-9.]+)");
         Pattern dims = Pattern.compile("chunk (\\d+) has n_len=(\\d+), n_mel=(\\d+)");
         java.util.Map<Integer, int[]> shapes = new java.util.HashMap<>();
@@ -68,12 +60,12 @@ class MelParityTest {
                 float[] cell = data.computeIfAbsent(c, k -> new float[shape[0] * shape[1]]);
                 int mel = Integer.parseInt(m.group(2));
                 int t = Integer.parseInt(m.group(3));
-                cell[mel * shape[0] + t] = Float.parseFloat(m.group(4));
+                cell[t * shape[1] + mel] = Float.parseFloat(m.group(4));
             }
         }
-        List<OracleChunk> out = new java.util.ArrayList<>();
+        List<AudioPreprocess.MelChunk> out = new java.util.ArrayList<>();
         for (int c = 0; c < shapes.size(); c++) {
-            out.add(new OracleChunk(data.get(c), shapes.get(c)[0], shapes.get(c)[1]));
+            out.add(new AudioPreprocess.MelChunk(data.get(c), shapes.get(c)[0]));
         }
         return out;
     }
@@ -89,15 +81,14 @@ class MelParityTest {
     void melMatchesLlamaCpp(String kind, int n, String dumpFile) throws IOException {
         Path dump = ORACLE.resolve(dumpFile);
         Assumptions.assumeTrue(Files.exists(dump), "oracle dump missing: " + dump);
-        List<OracleChunk> oracle = parseDump(dump);
+        List<AudioPreprocess.MelChunk> oracle = parseDump(dump);
         List<AudioPreprocess.MelChunk> ours = new AudioPreprocess(128).logMel(input(kind, n));
         assertEquals(oracle.size(), ours.size(), "chunk count");
         for (int c = 0; c < ours.size(); c++) {
-            OracleChunk expectedChunk = oracle.get(c);
+            AudioPreprocess.MelChunk expectedChunk = oracle.get(c);
             float[] expected = expectedChunk.data();
             AudioPreprocess.MelChunk chunk = ours.get(c);
             assertEquals(expectedChunk.frames(), chunk.frames(), "frames, chunk " + c);
-            assertEquals(expectedChunk.nMel(), chunk.nMel(), "nMel, chunk " + c);
             double worst = 0;
             double sum = 0;
             int worstAt = -1;
@@ -110,13 +101,14 @@ class MelParityTest {
                 }
             }
             double mean = sum / expected.length;
-            // The mean pins structure (a recipe error shifts everything). Constant inputs
+            // The mean pins structure (a recipe error shifts everything); libm ulps (C sinf
+            // vs Java's rounded double sine, in both inputs and twiddle tables) set the floor.
+            // Constant inputs
             // (zero/half) are bit-identical on both sides and hold a tight bound; the sine
             // inputs are generated with C sinf there and Java's rounded double-sine here, so
             // the INPUT signals differ by result-ulps before the pipeline runs - the residual
             // (~2e-3 worst) lives only in floor-adjacent leakage bins where ln amplifies it.
             // Embedding-level parity is the final gate.
-            // even exact inputs carry sinf-vs-Math.sin ulps in the twiddle tables
             boolean exactInput = !kind.equals("440");
             assertTrue(mean < (exactInput ? 5e-6 : 5e-5), "chunk " + c + " mean |diff| " + mean);
             assertTrue(

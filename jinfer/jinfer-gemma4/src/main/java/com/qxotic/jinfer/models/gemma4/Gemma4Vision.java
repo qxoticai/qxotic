@@ -407,6 +407,30 @@ public final class Gemma4Vision implements Embedder<Media.Image>, VisionBudget {
 
     // === loader ===
 
+    /**
+     * Metadata/tensor agreement for the conv patch embedding: it must be [visionDim, 3*patch*patch]
+     * or the patchify silently mis-embeds. Shared by both vision towers.
+     */
+    static FloatTensor checkPatchEmbd(
+            Path mmproj, FloatTensor patchEmbd, int visionDim, int patchSize) {
+        long expected = (long) visionDim * 3 * patchSize * patchSize;
+        if (patchEmbd.size() != expected) {
+            throw new IllegalArgumentException(
+                    "'"
+                            + mmproj.getFileName()
+                            + "': v.patch_embd has "
+                            + patchEmbd.size()
+                            + " elements but patch size "
+                            + patchSize
+                            + " and embedding_length "
+                            + visionDim
+                            + " imply "
+                            + expected
+                            + " - the sidecar's metadata and tensors disagree");
+        }
+        return patchEmbd;
+    }
+
     public static Gemma4Vision loadModel(Path mmprojPath, Arena arena) throws IOException {
         try (FileChannel fc = FileChannel.open(mmprojPath, StandardOpenOption.READ)) {
             var gguf = ModelLoader.readGguf(fc, mmprojPath.toString());
@@ -448,21 +472,12 @@ public final class Gemma4Vision implements Embedder<Media.Image>, VisionBudget {
                                 + visionDim
                                 + " - unsupported gemma4v geometry");
             }
-            FloatTensor patchEmbd = ModelLoader.loadQuantized(t.get("v.patch_embd.weight"));
-            if (patchEmbd.size() != (long) visionDim * 3 * patchSize * patchSize) {
-                throw new IllegalArgumentException(
-                        "'"
-                                + mmprojPath.getFileName()
-                                + "': v.patch_embd has "
-                                + patchEmbd.size()
-                                + " elements but patch_size "
-                                + patchSize
-                                + " and embedding_length "
-                                + visionDim
-                                + " imply "
-                                + ((long) visionDim * 3 * patchSize * patchSize)
-                                + " - the sidecar's metadata and tensors disagree");
-            }
+            FloatTensor patchEmbd =
+                    checkPatchEmbd(
+                            mmprojPath,
+                            ModelLoader.loadQuantized(t.get("v.patch_embd.weight")),
+                            visionDim,
+                            patchSize);
             FloatTensor posEmbd = ModelLoader.loadQuantized(t.get("v.position_embd.weight"));
             if (posEmbd.size() % (visionDim * 2L) != 0) {
                 throw new IllegalArgumentException(

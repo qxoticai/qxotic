@@ -18,9 +18,9 @@
 // Each 30 s chunk encodes independently (no cross-chunk attention).
 package com.qxotic.jinfer.models.gemma4;
 
-import com.qxotic.jinfer.Activations;
 import com.qxotic.jinfer.Embedder;
 import com.qxotic.jinfer.F32FloatTensor;
+import com.qxotic.jinfer.FastMath;
 import com.qxotic.jinfer.FloatTensor;
 import com.qxotic.jinfer.Media;
 import com.qxotic.jinfer.Norms;
@@ -55,12 +55,12 @@ public final class Gemma4Conformer implements Embedder<Media.Audio> {
             Clamped v,
             Clamped o,
             F32FloatTensor attnPostNorm,
-            FloatTensor kRel,
+            F32FloatTensor rel, // kRel @ posEmb, [RPE x dim], precomputed at load
             F32FloatTensor perDimScale,
-            F32FloatTensor normConv,
+            F32FloatTensor convPreNorm,
             Clamped convPw1,
             F32FloatTensor convDw,
-            F32FloatTensor convNorm,
+            F32FloatTensor convPostNorm,
             Clamped convPw2,
             F32FloatTensor ffNorm1,
             Clamped ffUp1,
@@ -86,16 +86,6 @@ public final class Gemma4Conformer implements Embedder<Media.Audio> {
     final Clamped outProj; // [1024 -> 1536]
     final F32FloatTensor outProjBias; // [1536]
     final Clamped mmProj; // [1536 -> 1536]
-    final float[] posEmb; // [RPE * dim] sinusoidal, host-built once
-
-    /** Parity-bisect hook: called with named intermediate stages when set (tests only). */
-    interface Tap {
-        void stage(String name, FloatTensor data);
-
-        void stageArr(String name, float[] data);
-    }
-
-    Tap tap; // null in production
 
     private Gemma4Conformer(
             int dim,
@@ -130,7 +120,6 @@ public final class Gemma4Conformer implements Embedder<Media.Audio> {
         this.outProj = outProj;
         this.outProjBias = outProjBias;
         this.mmProj = mmProj;
-        this.posEmb = buildPosEmb(dim);
     }
 
     // Sinusoidal RPE table for positions [PAST .. 0]: emb[p][i] = sin(pos/ts_i),
@@ -160,29 +149,13 @@ public final class Gemma4Conformer implements Embedder<Media.Audio> {
     /** Output tokens for {@code audio}: per 30 s chunk, mel frames through two stride-2 convs. */
     @Override
     public int positions(Media.Audio audio) {
-        int monoLen = audio.pcm().length / Math.max(1, audio.channels());
-        if (audio.sampleRate() != AudioPreprocess.SAMPLE_RATE) {
-            monoLen =
-                    Math.max(
-                            1,
-                            (int)
-                                    Math.round(
-                                            monoLen
-                                                    * ((double) AudioPreprocess.SAMPLE_RATE
-                                                            / audio.sampleRate())));
-        }
+        int monoLen = AudioPreprocess.mono16kLength(audio);
         int total = 0;
-        for (int off = 0; off < Math.max(1, monoLen); off += AudioPreprocess.CHUNK_SAMPLES) {
+        for (int off = 0; off < monoLen; off += AudioPreprocess.CHUNK_SAMPLES) {
             int len = Math.min(AudioPreprocess.CHUNK_SAMPLES, monoLen - off);
-            total += tokensForFrames(framesFor(len));
+            total += tokensForFrames(AudioPreprocess.framesFor(len));
         }
         return Math.max(1, total);
-    }
-
-    static int framesFor(int chunkSamples) {
-        return (chunkSamples + AudioPreprocess.WINDOW / 2 - (AudioPreprocess.WINDOW + 1))
-                        / AudioPreprocess.HOP
-                + 1;
     }
 
     static int tokensForFrames(int frames) {
@@ -203,13 +176,18 @@ public final class Gemma4Conformer implements Embedder<Media.Audio> {
     private FloatTensor encode(Media.Audio audio, Arena scratch) {
         List<AudioPreprocess.MelChunk> mels = preprocess.logMel(audio);
         int totalTokens = 0;
-        for (AudioPreprocess.MelChunk mel : mels) totalTokens += tokensForFrames(mel.frames());
+        int maxFrames = 1;
+        for (AudioPreprocess.MelChunk mel : mels) {
+            totalTokens += tokensForFrames(mel.frames());
+            maxFrames = Math.max(maxFrames, mel.frames());
+        }
         FloatTensor rows =
                 FloatTensor.allocateF32(scratch, Math.toIntExact((long) totalTokens * outDim));
+        Scratch sc = Scratch.allocate(scratch, maxFrames, dim, ffDim, outDim, nMel);
         int at = 0;
         for (AudioPreprocess.MelChunk mel : mels) {
             int tokens = tokensForFrames(mel.frames());
-            forward(mel, rows, (long) at * outDim, scratch);
+            forward(mel, rows, (long) at * outDim, sc);
             at += tokens;
         }
         return rows;
@@ -217,114 +195,104 @@ public final class Gemma4Conformer implements Embedder<Media.Audio> {
 
     // === the tower ===
 
-    private void forward(AudioPreprocess.MelChunk mel, FloatTensor rowsOut, long outOff, Arena a) {
+    /** Per-encode scratch, sized once for the largest chunk and reused across chunks. */
+    private record Scratch(
+            float[] c0,
+            float[] c1,
+            FloatTensor flat,
+            FloatTensor x,
+            FloatTensor clampBuf,
+            FloatTensor norm,
+            FloatTensor ff,
+            FloatTensor ffOut,
+            FloatTensor qT,
+            FloatTensor kT,
+            FloatTensor vT,
+            FloatTensor attnOut,
+            FloatTensor pw,
+            FloatTensor glu,
+            FloatTensor proj,
+            FloatTensor projOut) {
+        static Scratch allocate(Arena a, int maxFrames, int dim, int ffDim, int outDim, int nMel) {
+            int t2 = (maxFrames - 1) / 2 + 1;
+            int n = tokensForFrames(maxFrames);
+            return new Scratch(
+                    new float[128 * t2 * (nMel / 2)],
+                    new float[32 * n * (nMel / 4)],
+                    FloatTensor.allocateF32(a, n * dim),
+                    FloatTensor.allocateF32(a, n * dim),
+                    FloatTensor.allocateF32(a, n * ffDim),
+                    FloatTensor.allocateF32(a, n * dim),
+                    FloatTensor.allocateF32(a, n * ffDim),
+                    FloatTensor.allocateF32(a, n * dim),
+                    FloatTensor.allocateF32(a, n * dim),
+                    FloatTensor.allocateF32(a, n * dim),
+                    FloatTensor.allocateF32(a, n * dim),
+                    FloatTensor.allocateF32(a, n * dim),
+                    FloatTensor.allocateF32(a, n * dim * 2),
+                    FloatTensor.allocateF32(a, n * dim),
+                    FloatTensor.allocateF32(a, n * outDim),
+                    FloatTensor.allocateF32(a, n * outDim));
+        }
+    }
+
+    private void forward(
+            AudioPreprocess.MelChunk mel, FloatTensor rowsOut, long outOff, Scratch sc) {
         int frames = mel.frames();
         int t2 = (frames - 1) / 2 + 1;
-        int t4 = (t2 - 1) / 2 + 1;
-        int n = t4; // encoder positions
+        int n = tokensForFrames(frames); // encoder positions
 
-        // 1. subsampling: input [time][freq] from the mel-major chunk
-        float[] in0 = new float[frames * nMel];
-        for (int f = 0; f < nMel; f++) {
-            for (int t = 0; t < frames; t++) {
-                in0[t * nMel + f] = mel.data()[f * frames + t];
-            }
-        }
-        float[] c0 = conv2d(in0, frames, nMel, 1, conv0, 128); // [128ch][t2][64]
+        // 1. subsampling: the mel chunk is already time-major [t][freq], conv2d's input layout
+        float[] c0 = sc.c0();
+        conv2d(mel.data(), frames, nMel, 1, conv0, 128, c0); // [128ch][t2][64]
         layerNormChannelsRelu(c0, 128, t2 * (nMel / 2), norm0);
-        if (tap != null) tap.stageArr("sub0", c0);
-        float[] c1 = conv2d(c0, t2, nMel / 2, 128, conv1, 32); // [32ch][t4][32]
+        float[] c1 = sc.c1();
+        conv2d(c0, t2, nMel / 2, 128, conv1, 32, c1); // [32ch][n][32]
         int f4 = nMel / 4;
-        layerNormChannelsRelu(c1, 32, t4 * f4, norm1);
-        if (tap != null) tap.stageArr("sub1", c1);
+        layerNormChannelsRelu(c1, 32, n * f4, norm1);
 
         // flatten [freq * ch] per timestep - ggml's permute(1,2,0,3) leaves CHANNELS fastest
         // (feature = f*32 + c), pinned by the node_34 trace anchor; then the input projection
-        FloatTensor flat = FloatTensor.allocateF32(a, Math.toIntExact((long) n * dim));
+        FloatTensor flat = sc.flat();
         for (int c = 0; c < 32; c++) {
             for (int t = 0; t < n; t++) {
                 for (int f = 0; f < f4; f++) {
-                    flat.setFloat((long) t * dim + f * 32 + c, c1[(c * t4 + t) * f4 + f]);
+                    flat.setFloat((long) t * dim + f * 32 + c, c1[(c * n + t) * f4 + f]);
                 }
             }
         }
-        FloatTensor x = FloatTensor.allocateF32(a, Math.toIntExact((long) n * dim));
-        FloatTensor clampBuf = FloatTensor.allocateF32(a, Math.toIntExact((long) n * ffDim));
-        inputProj.gemm(flat, dim, x, dim, n, clampBuf);
-        if (tap != null) tap.stage("proj", x);
+        FloatTensor x = sc.x();
+        inputProj.gemm(flat, dim, x, dim, n, sc.clampBuf());
 
-        // scratch shared across blocks
-        FloatTensor norm = FloatTensor.allocateF32(a, Math.toIntExact((long) n * dim));
-        FloatTensor ff = FloatTensor.allocateF32(a, Math.toIntExact((long) n * ffDim));
-        FloatTensor ffOut = FloatTensor.allocateF32(a, Math.toIntExact((long) n * dim));
-        FloatTensor qT = FloatTensor.allocateF32(a, Math.toIntExact((long) n * dim));
-        FloatTensor kT = FloatTensor.allocateF32(a, Math.toIntExact((long) n * dim));
-        FloatTensor vT = FloatTensor.allocateF32(a, Math.toIntExact((long) n * dim));
-        FloatTensor attnOut = FloatTensor.allocateF32(a, Math.toIntExact((long) n * dim));
-        FloatTensor pw = FloatTensor.allocateF32(a, Math.toIntExact((long) n * dim * 2));
-        FloatTensor glu = FloatTensor.allocateF32(a, Math.toIntExact((long) n * dim));
-        FloatTensor relRows = FloatTensor.allocateF32(a, Math.toIntExact((long) RPE * dim));
-        FloatTensor posRows = FloatTensor.allocateF32(a, Math.toIntExact((long) RPE * dim));
-        for (int i = 0; i < RPE * dim; i++) posRows.setFloat(i, posEmb[i]);
-
-        int bi = 0;
         for (Block b : blocks) {
-            halfFfn(
-                    x,
-                    b.ffNorm(),
-                    b.ffUp(),
-                    b.ffDown(),
-                    b.ffPostNorm(),
-                    n,
-                    norm,
-                    ff,
-                    ffOut,
-                    clampBuf);
-            if (tap != null) tap.stage("b" + bi + ".ffn1", x);
-            attention(x, b, n, norm, qT, kT, vT, attnOut, relRows, posRows, clampBuf);
-            if (tap != null) tap.stage("b" + bi + ".attn", x);
-            convModule(x, b, n, norm, pw, glu, clampBuf);
-            if (tap != null) tap.stage("b" + bi + ".conv", x);
-            halfFfn(
-                    x,
-                    b.ffNorm1(),
-                    b.ffUp1(),
-                    b.ffDown1(),
-                    b.ffPostNorm1(),
-                    n,
-                    norm,
-                    ff,
-                    ffOut,
-                    clampBuf);
-            bi++;
+            halfFfn(x, b.ffNorm(), b.ffUp(), b.ffDown(), b.ffPostNorm(), n, sc);
+            attention(x, b, n, sc);
+            convModule(x, b, n, sc);
+            halfFfn(x, b.ffNorm1(), b.ffUp1(), b.ffDown1(), b.ffPostNorm1(), n, sc);
             Parallel.forRows(
                     n, t -> Norms.rmsnorm(x, (long) t * dim, x, (long) t * dim, b.ln2(), dim, eps));
         }
-        if (tap != null) tap.stage("body", x);
 
         // 3. tail: out projection (+bias) -> weightless RMS -> mm projection
-        FloatTensor proj = FloatTensor.allocateF32(a, Math.toIntExact((long) n * outDim));
-        outProj.gemm(x, dim, proj, outDim, n, clampBuf);
+        FloatTensor proj = sc.proj();
+        outProj.gemm(x, dim, proj, outDim, n, sc.clampBuf());
         Parallel.forRows(
                 n,
                 t -> {
                     long row = (long) t * outDim;
-                    for (int d = 0; d < outDim; d++) {
-                        proj.setFloat(row + d, proj.getFloat(row + d) + outProjBias.getFloat(d));
-                    }
+                    proj.addInPlace(row, outProjBias, 0, outDim);
                     Norms.rmsnormNoWeight(proj, row, proj, row, outDim, eps);
                 });
-        FloatTensor projOut = FloatTensor.allocateF32(a, Math.toIntExact((long) n * outDim));
-        mmProj.gemm(proj, outDim, projOut, outDim, n, clampBuf);
+        FloatTensor projOut = sc.projOut();
+        mmProj.gemm(proj, outDim, projOut, outDim, n, sc.clampBuf());
         projOut.copyTo(0, rowsOut, outOff, Math.toIntExact((long) n * outDim));
     }
 
     /** 3x3 stride-2 pad-1 conv2d over [inCh][timeIn][freqIn] -> [outCh][ceil(t/2)][ceil(f/2)]. */
-    private static float[] conv2d(
-            float[] in, int timeIn, int freqIn, int inCh, float[] taps, int outCh) {
+    private static void conv2d(
+            float[] in, int timeIn, int freqIn, int inCh, float[] taps, int outCh, float[] out) {
         int timeOut = (timeIn - 1) / 2 + 1;
         int freqOut = (freqIn - 1) / 2 + 1;
-        float[] out = new float[outCh * timeOut * freqOut];
         Parallel.parallelFor(
                 0,
                 outCh,
@@ -350,7 +318,6 @@ public final class Gemma4Conformer implements Embedder<Media.Audio> {
                         }
                     }
                 });
-        return out;
     }
 
     /** Per-position LayerNorm across channels (weight, no bias), then ReLU, in place. */
@@ -385,46 +352,31 @@ public final class Gemma4Conformer implements Embedder<Media.Audio> {
             Clamped down,
             F32FloatTensor postNorm,
             int n,
-            FloatTensor norm,
-            FloatTensor ff,
-            FloatTensor ffOut,
-            FloatTensor clampBuf) {
+            Scratch sc) {
+        FloatTensor norm = sc.norm();
+        FloatTensor ff = sc.ff();
+        FloatTensor ffOut = sc.ffOut();
         Parallel.forRows(
                 n, t -> Norms.rmsnorm(norm, (long) t * dim, x, (long) t * dim, preNorm, dim, eps));
-        up.gemm(norm, dim, ff, ffDim, n, clampBuf);
-        Parallel.forRows(
-                n,
-                t -> {
-                    long row = (long) t * ffDim;
-                    for (int d = 0; d < ffDim; d++) {
-                        ff.setFloat(row + d, Activations.silu(ff.getFloat(row + d)));
-                    }
-                });
-        down.gemm(ff, ffDim, ffOut, dim, n, clampBuf);
+        up.gemm(norm, dim, ff, ffDim, n, sc.clampBuf());
+        Parallel.forRows(n, t -> ff.siluInPlace((long) t * ffDim, ffDim));
+        down.gemm(ff, ffDim, ffOut, dim, n, sc.clampBuf());
         Parallel.forRows(
                 n,
                 t -> {
                     long row = (long) t * dim;
                     Norms.rmsnorm(ffOut, row, ffOut, row, postNorm, dim, eps);
-                    for (int d = 0; d < dim; d++) {
-                        x.setFloat(row + d, x.getFloat(row + d) + 0.5f * ffOut.getFloat(row + d));
-                    }
+                    x.saxpyInPlace(row, ffOut, row, dim, 0.5f);
                 });
     }
 
     /** Chunked local attention with sinusoidal RPE; full residual onto x. */
-    private void attention(
-            FloatTensor x,
-            Block b,
-            int n,
-            FloatTensor norm,
-            FloatTensor qT,
-            FloatTensor kT,
-            FloatTensor vT,
-            FloatTensor attnOut,
-            FloatTensor relRows,
-            FloatTensor posRows,
-            FloatTensor clampBuf) {
+    private void attention(FloatTensor x, Block b, int n, Scratch sc) {
+        FloatTensor norm = sc.norm();
+        FloatTensor qT = sc.qT();
+        FloatTensor kT = sc.kT();
+        FloatTensor vT = sc.vT();
+        FloatTensor attnOut = sc.attnOut();
         Parallel.forRows(
                 n,
                 t ->
@@ -436,9 +388,9 @@ public final class Gemma4Conformer implements Embedder<Media.Audio> {
                                 b.attnPreNorm(),
                                 dim,
                                 eps));
-        b.q().gemm(norm, dim, qT, dim, n, clampBuf);
-        b.k().gemm(norm, dim, kT, dim, n, clampBuf);
-        b.v().gemm(norm, dim, vT, dim, n, clampBuf);
+        b.q().gemm(norm, dim, qT, dim, n, sc.clampBuf());
+        b.k().gemm(norm, dim, kT, dim, n, sc.clampBuf());
+        b.v().gemm(norm, dim, vT, dim, n, sc.clampBuf());
 
         float qScale = (float) ((1.0 / Math.sqrt(headDim)) / Math.log(2.0)); // (1/sqrt(d))/ln2
         float kScale = (float) (Math.log1p(Math.exp(1.0)) / Math.log(2.0)); // softplus(1)/ln2
@@ -460,9 +412,7 @@ public final class Gemma4Conformer implements Embedder<Media.Audio> {
                     }
                 });
 
-        // RPE projection of the sinusoid table: [RPE x dim]
-        b.kRel().gemm(posRows, dim, relRows, dim, RPE, dim, dim);
-
+        F32FloatTensor rel = b.rel(); // kRel @ posEmb, precomputed at load
         int numBlocks = (n + CHUNK - 1) / CHUNK;
         Parallel.parallelFor(
                 0,
@@ -483,78 +433,69 @@ public final class Gemma4Conformer implements Embedder<Media.Audio> {
                                 scores[s] = -1e9f;
                                 continue;
                             }
-                            long kRow = (long) gk * dim + hBase;
-                            float ac = 0f;
-                            for (int d = 0; d < headDim; d++) {
-                                ac += qT.getFloat(qRow + d) * kT.getFloat(kRow + d);
-                            }
-                            float bd = 0f;
+                            float ac = qT.dot(qRow, kT, (long) gk * dim + hBase, headDim);
                             int p = s - c;
-                            if (p >= 0 && p < RPE) {
-                                long relRow = (long) p * dim + hBase;
-                                for (int d = 0; d < headDim; d++) {
-                                    bd += qT.getFloat(qRow + d) * relRows.getFloat(relRow + d);
-                                }
-                            }
-                            float score = ac + bd;
-                            scores[s] = softcap * (float) Math.tanh(score / softcap);
+                            float bd =
+                                    p >= 0 && p < RPE
+                                            ? qT.dot(qRow, rel, (long) p * dim + hBase, headDim)
+                                            : 0f;
+                            scores[s] = softcap * FastMath.tanh((ac + bd) / softcap);
                         }
-                        // softmax over the context slots
+                        // softmax over the context slots, normalized in place
                         float max = Float.NEGATIVE_INFINITY;
                         for (int s = 0; s < CONTEXT; s++) max = Math.max(max, scores[s]);
                         float sum = 0f;
                         for (int s = 0; s < CONTEXT; s++) {
-                            scores[s] = (float) Math.exp(scores[s] - max);
+                            scores[s] = FastMath.expNeg(scores[s] - max);
                             sum += scores[s];
                         }
+                        float inv = 1f / sum;
                         long outRow = (long) gq * dim + hBase;
-                        for (int d = 0; d < headDim; d++) {
-                            float acc = 0f;
-                            for (int s = 0; s < CONTEXT; s++) {
-                                int gk = blk * CHUNK - PAST + s;
-                                if (gk < 0 || gk >= n || scores[s] == 0f) continue;
-                                acc += (scores[s] / sum) * vT.getFloat((long) gk * dim + hBase + d);
-                            }
-                            attnOut.setFloat(outRow + d, acc);
+                        attnOut.fillInPlace(outRow, headDim, 0f);
+                        for (int s = 0; s < CONTEXT; s++) {
+                            int gk = blk * CHUNK - PAST + s;
+                            if (gk < 0 || gk >= n || scores[s] == 0f) continue;
+                            attnOut.saxpyInPlace(
+                                    outRow, vT, (long) gk * dim + hBase, headDim, scores[s] * inv);
                         }
                     }
                 });
 
         // o projection, post-norm, full residual
-        b.o().gemm(attnOut, dim, norm, dim, n, clampBuf);
+        b.o().gemm(attnOut, dim, norm, dim, n, sc.clampBuf());
         Parallel.forRows(
                 n,
                 t -> {
                     long row = (long) t * dim;
                     Norms.rmsnorm(norm, row, norm, row, b.attnPostNorm(), dim, eps);
-                    for (int d = 0; d < dim; d++) {
-                        x.setFloat(row + d, x.getFloat(row + d) + norm.getFloat(row + d));
-                    }
+                    x.addInPlace(row, norm, row, dim);
                 });
     }
 
     /** Conv module: rms -> pw1 -> GLU -> causal depthwise k=5 -> rms -> SiLU -> pw2; residual. */
-    private void convModule(
-            FloatTensor x,
-            Block b,
-            int n,
-            FloatTensor norm,
-            FloatTensor pw,
-            FloatTensor glu,
-            FloatTensor clampBuf) {
+    private void convModule(FloatTensor x, Block b, int n, Scratch sc) {
+        FloatTensor norm = sc.norm();
+        FloatTensor pw = sc.pw();
+        FloatTensor glu = sc.glu();
         Parallel.forRows(
                 n,
                 t ->
                         Norms.rmsnorm(
-                                norm, (long) t * dim, x, (long) t * dim, b.normConv(), dim, eps));
-        b.convPw1().gemm(norm, dim, pw, dim * 2, n, clampBuf);
+                                norm,
+                                (long) t * dim,
+                                x,
+                                (long) t * dim,
+                                b.convPreNorm(),
+                                dim,
+                                eps));
+        b.convPw1().gemm(norm, dim, pw, dim * 2, n, sc.clampBuf());
         Parallel.forRows(
                 n,
                 t -> {
                     long src = (long) t * dim * 2;
                     long dst = (long) t * dim;
                     for (int d = 0; d < dim; d++) {
-                        float gate = Activations.sigmoid(pw.getFloat(src + dim + d));
+                        float gate = FastMath.sigmoid(pw.getFloat(src + dim + d));
                         glu.setFloat(dst + d, pw.getFloat(src + d) * gate);
                     }
                 });
@@ -578,21 +519,19 @@ public final class Gemma4Conformer implements Embedder<Media.Audio> {
                 n,
                 t -> {
                     long row = (long) t * dim;
-                    Norms.rmsnorm(norm, row, norm, row, b.convNorm(), dim, eps);
-                    for (int d = 0; d < dim; d++) {
-                        norm.setFloat(row + d, Activations.silu(norm.getFloat(row + d)));
-                    }
+                    Norms.rmsnorm(norm, row, norm, row, b.convPostNorm(), dim, eps);
+                    norm.siluInPlace(row, dim);
                 });
-        b.convPw2().gemm(norm, dim, glu, dim, n, clampBuf);
+        b.convPw2().gemm(norm, dim, glu, dim, n, sc.clampBuf());
         Parallel.forRows(
                 n,
                 t -> {
                     long row = (long) t * dim;
-                    for (int d = 0; d < dim; d++) {
-                        x.setFloat(row + d, x.getFloat(row + d) + glu.getFloat(row + d));
-                    }
+                    x.addInPlace(row, glu, row, dim);
                 });
     }
+
+    // === loader ===
 
     // === loader ===
 
@@ -611,6 +550,12 @@ public final class Gemma4Conformer implements Embedder<Media.Audio> {
                             float.class, "clip.audio.attention.layer_norm_epsilon", 1e-6f);
             validateArchitecture(mmprojPath, dim, heads, nMel);
 
+            // the sinusoidal RPE table projected through each block's kRel, once at load - the
+            // forward pass then reads a constant
+            FloatTensor posRows = FloatTensor.allocateF32(arena, RPE * dim);
+            float[] posEmb = buildPosEmb(dim);
+            for (int i = 0; i < RPE * dim; i++) posRows.setFloat(i, posEmb[i]);
+
             Block[] blocks = new Block[nBlocks];
             for (int i = 0; i < nBlocks; i++) {
                 String p = "a.blk." + i + ".";
@@ -626,12 +571,16 @@ public final class Gemma4Conformer implements Embedder<Media.Audio> {
                                 Clamped.load(t, p + "attn_v", (long) dim * dim),
                                 Clamped.load(t, p + "attn_out", (long) dim * dim),
                                 f32(t, p + "attn_post_norm.weight", dim),
-                                w(t, p + "attn_k_rel.weight", (long) dim * dim),
+                                relProjection(
+                                        w(t, p + "attn_k_rel.weight", (long) dim * dim),
+                                        posRows,
+                                        dim,
+                                        arena),
                                 f32(t, p + "per_dim_scale.weight", dim / heads),
-                                f32(t, p + "conv_norm.weight", dim), // module PRE-norm
+                                f32(t, p + "conv_norm.weight", dim),
                                 Clamped.load(t, p + "conv_pw1", (long) dim * dim * 2),
                                 f32(t, p + "conv_dw.weight", dim * 5),
-                                f32(t, p + "norm_conv.weight", dim), // post-depthwise norm
+                                f32(t, p + "norm_conv.weight", dim),
                                 Clamped.load(t, p + "conv_pw2", (long) dim * dim),
                                 f32(t, p + "ffn_norm_1.weight", dim),
                                 Clamped.load(t, p + "ffn_up_1", (long) dim * ffDim),
@@ -667,7 +616,7 @@ public final class Gemma4Conformer implements Embedder<Media.Audio> {
      */
     static void validateArchitecture(Path mmproj, int dim, int heads, int nMel) {
         int flattened = (nMel / 4) * 32; // freq/4 after two stride-2 convs, 32 output channels
-        if (flattened != dim || dim % heads != 0 || dim % 2 != 0) {
+        if (flattened != dim || dim % heads != 0) {
             throw new IllegalArgumentException(
                     "'"
                             + mmproj.getFileName()
@@ -686,15 +635,15 @@ public final class Gemma4Conformer implements Embedder<Media.Audio> {
         }
     }
 
+    private static F32FloatTensor relProjection(
+            FloatTensor kRel, FloatTensor posRows, int dim, Arena arena) {
+        FloatTensor rel = FloatTensor.allocateF32(arena, RPE * dim);
+        kRel.gemm(posRows, dim, rel, dim, RPE, dim, dim);
+        return (F32FloatTensor) rel;
+    }
+
     private static FloatTensor w(Map<String, GGMLTensorEntry> t, String name, long expected) {
-        GGMLTensorEntry e = t.get(name);
-        if (e == null) throw new IllegalStateException("mmproj tensor missing: " + name);
-        FloatTensor w = ModelLoader.loadQuantized(e);
-        if (w.size() != expected) {
-            throw new IllegalStateException(
-                    name + ": expected " + expected + " elements, GGUF has " + w.size());
-        }
-        return w;
+        return Clamped.require(t, name, expected);
     }
 
     private static F32FloatTensor f32(Map<String, GGMLTensorEntry> t, String name, long expected) {
@@ -706,9 +655,8 @@ public final class Gemma4Conformer implements Embedder<Media.Audio> {
     }
 
     private static float[] taps(Map<String, GGMLTensorEntry> t, String name, int expected) {
-        FloatTensor w = w(t, name, expected);
         float[] out = new float[expected];
-        for (int i = 0; i < expected; i++) out[i] = w.getFloat(i);
+        w(t, name, expected).copyRow(0, out, 0, expected);
         return out;
     }
 }

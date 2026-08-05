@@ -232,23 +232,12 @@ public final class Gemma4VisionUnified implements Embedder<Media.Image>, VisionB
             float rmsEps =
                     gguf.getValueOrDefault(
                             float.class, "clip.vision.attention.layer_norm_epsilon", 1e-6f);
-            FloatTensor patchEmbd = ModelLoader.loadQuantized(t.get("v.patch_embd.weight"));
-            // metadata/tensor agreement: the conv patch embedding must be [visionDim,
-            // 3*patch*patch] or the patchify silently mis-embeds
-            if (patchEmbd.size() != (long) visionDim * 3 * patchSize * patchSize) {
-                throw new IllegalArgumentException(
-                        "'"
-                                + mmprojPath.getFileName()
-                                + "': v.patch_embd has "
-                                + patchEmbd.size()
-                                + " elements but patch_size*merge "
-                                + patchSize
-                                + " and embedding_length "
-                                + visionDim
-                                + " imply "
-                                + ((long) visionDim * 3 * patchSize * patchSize)
-                                + " - the sidecar's metadata and tensors disagree");
-            }
+            FloatTensor patchEmbd =
+                    Gemma4Vision.checkPatchEmbd(
+                            mmprojPath,
+                            ModelLoader.loadQuantized(t.get("v.patch_embd.weight")),
+                            visionDim,
+                            patchSize);
             FloatTensor patchBias = ModelLoader.loadQuantized(t.get("v.patch_embd.bias"));
             FloatTensor posEmbd = ModelLoader.loadQuantized(t.get("v.position_embd.weight"));
             int posSize = (int) (posEmbd.size() / (visionDim * 2L));

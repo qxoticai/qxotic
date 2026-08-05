@@ -1156,73 +1156,57 @@ public final class Gemma4
      * remedy, not at the first media request with a shape error.
      */
     public Gemma4 withMediaEncoders(Path mmprojGguf, Arena arena) throws IOException {
-        validateMmproj(mmprojGguf, configuration.embeddingLength());
-        this.vision = loadVision(mmprojGguf, arena);
-        this.audio = loadAudio(mmprojGguf, arena);
+        MmprojInfo info = validatePairing(mmprojGguf, configuration.embeddingLength());
+        this.vision = loadVision(mmprojGguf, info.visionType(), arena);
+        this.audio = loadAudio(mmprojGguf, info.audioType(), arena);
         return this;
     }
 
+    /** The sidecar's projector types, read once at attach and reused for dispatch. */
+    record MmprojInfo(String visionType, String audioType) {}
+
     /**
-     * The pairing contract: every projector the sidecar carries must be a Gemma 4 type and must
-     * project into the text model's embedding width. Package-visible so the check is testable
-     * against real mmproj headers without loading a text model.
+     * The pairing contract, header-only: the sidecar must carry at least one projector and every
+     * {@code projection_dim} must equal the text model's embedding width - a wrong-size sidecar
+     * fails with the remedy. Family membership is enforced by the dispatch switches in {@code
+     * loadVision}/{@code loadAudio}. Package-visible so MmprojPairingTest pins the contract against
+     * real headers without loading a text model.
      */
-    static void validateMmproj(Path mmprojGguf, int textEmbeddingLength) throws IOException {
-        String visionType;
-        String audioType;
-        long visionDim;
-        long audioDim;
+    static MmprojInfo validatePairing(Path mmprojGguf, int textEmbeddingLength) throws IOException {
         try (FileChannel fc = FileChannel.open(mmprojGguf, StandardOpenOption.READ)) {
             var gguf = ModelLoader.readGguf(fc, mmprojGguf.toString());
-            visionType = gguf.getStringOrDefault("clip.vision.projector_type", "");
-            audioType = gguf.getStringOrDefault("clip.audio.projector_type", "");
-            visionDim = gguf.getValueOrDefault(int.class, "clip.vision.projection_dim", 0);
-            audioDim = gguf.getValueOrDefault(int.class, "clip.audio.projection_dim", 0);
+            String visionType = gguf.getStringOrDefault("clip.vision.projector_type", "");
+            String audioType = gguf.getStringOrDefault("clip.audio.projector_type", "");
+            if (visionType.isEmpty() && audioType.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "'"
+                                + mmprojGguf.getFileName()
+                                + "' carries no vision or audio projector - it is not an mmproj"
+                                + " sidecar for this model");
+            }
+            checkProjectionDim(
+                    mmprojGguf,
+                    "vision",
+                    gguf.getValueOrDefault(int.class, "clip.vision.projection_dim", 0),
+                    textEmbeddingLength);
+            checkProjectionDim(
+                    mmprojGguf,
+                    "audio",
+                    gguf.getValueOrDefault(int.class, "clip.audio.projection_dim", 0),
+                    textEmbeddingLength);
+            return new MmprojInfo(visionType, audioType);
         }
-        if (visionType.isEmpty() && audioType.isEmpty()) {
-            throw new IllegalArgumentException(
-                    "'"
-                            + mmprojGguf.getFileName()
-                            + "' carries no vision or audio projector - it is not an mmproj"
-                            + " sidecar for this model");
-        }
-        check(mmprojGguf, "vision", visionType, VISION_TYPES, visionDim, textEmbeddingLength);
-        check(mmprojGguf, "audio", audioType, AUDIO_TYPES, audioDim, textEmbeddingLength);
     }
 
-    private static final java.util.Set<String> VISION_TYPES =
-            java.util.Set.of("gemma4v", "gemma4uv");
-    private static final java.util.Set<String> AUDIO_TYPES =
-            java.util.Set.of("gemma4ua", "gemma4a");
-
-    private static void check(
-            Path mmproj,
-            String lane,
-            String type,
-            java.util.Set<String> known,
-            long projectionDim,
-            int textDim) {
-        if (type.isEmpty()) return; // sidecar has no adapter for this lane - fine
-        if (!known.contains(type)) {
-            throw new IllegalArgumentException(
-                    "'"
-                            + mmproj.getFileName()
-                            + "' carries a '"
-                            + type
-                            + "' "
-                            + lane
-                            + " projector, which is not a Gemma 4 type "
-                            + known
-                            + " - this mmproj belongs to a different model family");
-        }
-        if (projectionDim != 0 && projectionDim != textDim) {
+    private static void checkProjectionDim(Path mmproj, String lane, long dim, int textDim) {
+        if (dim != 0 && dim != textDim) {
             throw new IllegalArgumentException(
                     "'"
                             + mmproj.getFileName()
                             + "' projects "
                             + lane
                             + " into "
-                            + projectionDim
+                            + dim
                             + "-dim embeddings but this model expects "
                             + textDim
                             + " - the sidecar belongs to a different Gemma 4 size; use the"
@@ -1254,42 +1238,47 @@ public final class Gemma4
     }
 
     /**
-     * Pick the image encoder that matches the mmproj's projector_type: {@code gemma4uv} -> the
-     * minimal {@link Gemma4VisionUnified} (12b), otherwise the full-ViT {@link Gemma4Vision}
-     * (E2B/gemma4v).
+     * The image encoder the sidecar's {@code clip.vision.projector_type} names; the dispatch IS the
+     * family validation - an unknown type refuses instead of falling through to the wrong tower.
      */
-    private static Embedder<Media.Image> loadVision(Path mmprojGguf, Arena arena)
+    private static Embedder<Media.Image> loadVision(Path mmprojGguf, String type, Arena arena)
             throws IOException {
-        String type;
-        try (FileChannel fc = FileChannel.open(mmprojGguf, StandardOpenOption.READ)) {
-            type =
-                    ModelLoader.readGguf(fc, mmprojGguf.toString())
-                            .getStringOrDefault("clip.vision.projector_type", "");
-        }
-        if (type.isEmpty()) return null; // audio-only mmproj: no vision adapter
-        return "gemma4uv".equals(type)
-                ? Gemma4VisionUnified.loadModel(mmprojGguf, arena)
-                : Gemma4Vision.loadModel(mmprojGguf, arena);
+        return switch (type) {
+            case "" -> null; // audio-only sidecar
+            case "gemma4uv" -> Gemma4VisionUnified.loadModel(mmprojGguf, arena);
+            case "gemma4v" -> Gemma4Vision.loadModel(mmprojGguf, arena);
+            default ->
+                    throw new IllegalArgumentException(
+                            "'"
+                                    + mmprojGguf.getFileName()
+                                    + "' carries a '"
+                                    + type
+                                    + "' vision projector, which is not a Gemma 4 type [gemma4v,"
+                                    + " gemma4uv] - this mmproj belongs to a different model"
+                                    + " family");
+        };
     }
 
     /**
-     * Load the audio encoder the mmproj's {@code clip.audio.projector_type} names: {@code gemma4ua}
-     * - the encoder-free frame projector (12b sidecars, {@link Gemma4Audio}); {@code gemma4a} - the
-     * Conformer tower (E2B/E4B, {@link Gemma4Conformer}); else null. Both feed the same causal
-     * audio lane in the turn template.
+     * The audio encoder the sidecar's {@code clip.audio.projector_type} names: {@code gemma4ua} the
+     * encoder-free frame projector (12b), {@code gemma4a} the Conformer tower (E2B/E4B). Both feed
+     * the same causal audio lane in the turn template.
      */
-    private static Embedder<Media.Audio> loadAudio(Path mmprojGguf, Arena arena)
+    private static Embedder<Media.Audio> loadAudio(Path mmprojGguf, String type, Arena arena)
             throws IOException {
-        String type;
-        try (FileChannel fc = FileChannel.open(mmprojGguf, StandardOpenOption.READ)) {
-            type =
-                    ModelLoader.readGguf(fc, mmprojGguf.toString())
-                            .getStringOrDefault("clip.audio.projector_type", "");
-        }
         return switch (type) {
+            case "" -> null; // vision-only sidecar
             case "gemma4ua" -> Gemma4Audio.loadModel(mmprojGguf, arena);
             case "gemma4a" -> Gemma4Conformer.loadModel(mmprojGguf, arena);
-            default -> null;
+            default ->
+                    throw new IllegalArgumentException(
+                            "'"
+                                    + mmprojGguf.getFileName()
+                                    + "' carries a '"
+                                    + type
+                                    + "' audio projector, which is not a Gemma 4 type [gemma4ua,"
+                                    + " gemma4a] - this mmproj belongs to a different model"
+                                    + " family");
         };
     }
 

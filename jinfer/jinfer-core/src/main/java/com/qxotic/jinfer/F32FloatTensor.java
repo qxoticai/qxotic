@@ -451,6 +451,25 @@ public final class F32FloatTensor extends SegmentFloatTensor {
     }
 
     @Override
+    public FloatTensor siluInPlace(long thisOffset, int size) {
+        if (!USE_VECTOR_API) return super.siluInPlace(thisOffset, size);
+        int upperBound = F_SPECIES.loopBound(size);
+        int i = 0;
+        for (; i < upperBound; i += F_SPECIES.length()) {
+            long byteOff = vbase + (thisOffset + i) * Float.BYTES;
+            var g =
+                    FloatVector.fromMemorySegment(
+                            F_SPECIES, vseg, byteOff, ByteOrder.LITTLE_ENDIAN);
+            siluVec(g).intoMemorySegment(vseg, byteOff, ByteOrder.LITTLE_ENDIAN);
+        }
+        for (; i < size; i++) {
+            float g = getFloat(thisOffset + i);
+            setFloat(thisOffset + i, (float) (g / (1.0 + Math.exp(-g))));
+        }
+        return this;
+    }
+
+    @Override
     FloatTensor siluMultiplyInPlace(long thisOffset, FloatTensor that, long thatOffset, int size) {
         if (that instanceof F32FloatTensor f32 && USE_VECTOR_API) {
             // silu(g)*u, fully vectorized. silu(g)=g*(0.5+0.5*tanh(g/2)) via a Pade(7,7) rational

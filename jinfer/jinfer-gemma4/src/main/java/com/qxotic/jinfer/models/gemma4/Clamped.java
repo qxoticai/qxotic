@@ -17,30 +17,39 @@ record Clamped(FloatTensor w, float inMin, float inMax, float outMin, float outM
 
     /** Loads {@code <base>.weight} (size-asserted) plus its optional calibration scalars. */
     static Clamped load(Map<String, GGMLTensorEntry> t, String base, long expectedElements) {
-        GGMLTensorEntry e = t.get(base + ".weight");
-        if (e == null) {
-            throw new IllegalStateException("mmproj tensor missing: " + base + ".weight");
-        }
-        FloatTensor w = ModelLoader.loadQuantized(e);
-        if (w.size() != expectedElements) {
-            throw new IllegalStateException(
-                    base
-                            + ".weight: expected "
-                            + expectedElements
-                            + " elements, GGUF has "
-                            + w.size());
-        }
         return new Clamped(
-                w,
+                require(t, base + ".weight", expectedElements),
                 scalar(t, base + ".input_min", -Float.MAX_VALUE),
                 scalar(t, base + ".input_max", Float.MAX_VALUE),
                 scalar(t, base + ".output_min", -Float.MAX_VALUE),
                 scalar(t, base + ".output_max", Float.MAX_VALUE));
     }
 
-    private static float scalar(Map<String, GGMLTensorEntry> t, String name, float dflt) {
+    /** A required mmproj tensor with an exact element count - the package's one loading gate. */
+    static FloatTensor require(Map<String, GGMLTensorEntry> t, String name, long expectedElements) {
         GGMLTensorEntry e = t.get(name);
-        return e == null ? dflt : ModelLoader.loadQuantized(e).getFloat(0);
+        if (e == null) {
+            throw new IllegalStateException("mmproj tensor missing: " + name);
+        }
+        FloatTensor w = ModelLoader.loadQuantized(e);
+        if (w.size() != expectedElements) {
+            throw new IllegalStateException(
+                    name + ": expected " + expectedElements + " elements, GGUF has " + w.size());
+        }
+        return w;
+    }
+
+    private static float scalar(Map<String, GGMLTensorEntry> t, String name, float dflt) {
+        var f = ModelLoader.f32OrNull(t, name);
+        return f == null ? dflt : f.getFloat(0);
+    }
+
+    private boolean clampsInput() {
+        return inMin > -Float.MAX_VALUE || inMax < Float.MAX_VALUE;
+    }
+
+    private boolean clampsOutput() {
+        return outMin > -Float.MAX_VALUE || outMax < Float.MAX_VALUE;
     }
 
     /**
@@ -56,14 +65,14 @@ record Clamped(FloatTensor w, float inMin, float inMax, float outMin, float outM
             int rows,
             FloatTensor clampTmp) {
         FloatTensor src = in;
-        if (inMin > -Float.MAX_VALUE || inMax < Float.MAX_VALUE) {
+        if (clampsInput()) {
             int need = rows * inDim;
             in.copyTo(0, clampTmp, 0, need);
             clampTmp.clampInPlace(0, need, inMin, inMax);
             src = clampTmp;
         }
         w.gemm(src, inDim, out, outDim, rows, outDim, inDim);
-        if (outMin > -Float.MAX_VALUE || outMax < Float.MAX_VALUE) {
+        if (clampsOutput()) {
             out.clampInPlace(0, rows * outDim, outMin, outMax);
         }
     }

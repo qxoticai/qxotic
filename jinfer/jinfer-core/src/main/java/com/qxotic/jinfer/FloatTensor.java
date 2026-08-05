@@ -553,6 +553,14 @@ public abstract class FloatTensor {
         float apply(float value, int index);
     }
 
+    /**
+     * {@code x = x * sigmoid(x)} over the span - bare SiLU (the fused gate form is {@link
+     * #siluMultiplyInPlace}). F32 overrides with the vectorized rational-tanh SiLU.
+     */
+    public FloatTensor siluInPlace(long thisOffset, int size) {
+        return mapInPlace(thisOffset, size, Activations::silu);
+    }
+
     public FloatTensor mapInPlace(long thisOffset, int size, MapFunction mapFunction) {
         long endIndex = thisOffset + size;
         for (long i = thisOffset; i < endIndex; ++i) {

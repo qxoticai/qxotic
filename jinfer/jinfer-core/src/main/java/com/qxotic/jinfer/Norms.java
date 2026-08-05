@@ -177,14 +177,14 @@ public final class Norms {
     /** Bare RMS norm (normalize to unit RMS, no learned weights) — e.g. Gemma's V norm. */
     public static void rmsnormNoWeight(
             FloatTensor out, long outOffset, FloatTensor x, long xOffset, int size, float eps) {
-        float ss = 0f;
-        for (int i = 0; i < size; i++) {
-            float xi = x.getFloat(xOffset + i);
-            ss += xi * xi;
+        // vectorized sum + vectorized scale; the in-place case (the common one) never copies
+        float rms = (float) Math.sqrt(sumOfSquares(x, xOffset, size) / size + eps);
+        if (out == x && outOffset == xOffset) {
+            x.divideInPlace(xOffset, size, rms);
+            return;
         }
-        ss = (float) (1.0 / Math.sqrt(ss / size + eps));
         for (int i = 0; i < size; i++) {
-            out.setFloat(outOffset + i, ss * x.getFloat(xOffset + i));
+            out.setFloat(outOffset + i, x.getFloat(xOffset + i) / rms);
         }
     }
 

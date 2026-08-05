@@ -27,12 +27,14 @@ public final class AudioPreprocess {
     static final int N_BINS = N_FFT / 2 + 1; // 257
     static final float MEL_FLOOR = 0.001f;
 
-    /** One 30-second window of log-mels, mel-major: {@code data[m * frames + t]}. */
-    public record MelChunk(float[] data, int frames, int nMel) {}
+    /** One 30-second window of log-mels, time-major: {@code data[t * nMel + m]}. */
+    public record MelChunk(float[] data, int frames) {}
 
     final int nMel;
     final float[] hann; // [N_FFT]: periodic Hann(WINDOW) in [0, WINDOW), zeros to N_FFT
     final float[] melFb; // [nMel * N_BINS]
+    final int[] bandStart; // [nMel] first nonzero bin, rounded down to the 4-group boundary
+    final int[] bandEnd; // [nMel] one past the last nonzero bin
 
     /**
      * @param nMel clip.audio.num_mel_bins from the mmproj.
@@ -41,6 +43,34 @@ public final class AudioPreprocess {
         this.nMel = nMel;
         this.hann = buildHann();
         this.melFb = buildMelFilterbank(nMel);
+        this.bandStart = new int[nMel];
+        this.bandEnd = new int[nMel];
+        for (int m = 0; m < nMel; m++) {
+            int first = N_BINS;
+            int last = -1;
+            for (int b = 0; b < N_BINS; b++) {
+                if (melFb[m * N_BINS + b] != 0f) {
+                    if (first == N_BINS) first = b;
+                    last = b;
+                }
+            }
+            // triangular filters are ~2 nonzero bins out of 257; skipping the all-zero 4-groups
+            // leaves the surviving group sums bit-identical (adding a 0f product is a no-op)
+            bandStart[m] = first == N_BINS ? 0 : first & ~3;
+            bandEnd[m] = last + 1;
+        }
+    }
+
+    /** The 16 kHz mono sample count {@link #toMono16k} would produce for {@code audio}. */
+    public static int mono16kLength(Media.Audio audio) {
+        int monoLen = audio.pcm().length / Math.max(1, audio.channels());
+        if (audio.sampleRate() == SAMPLE_RATE) return Math.max(1, monoLen);
+        return Math.max(1, (int) Math.round(monoLen * ((double) SAMPLE_RATE / audio.sampleRate())));
+    }
+
+    /** Mel frames for one chunk of {@code chunkSamples} 16 kHz samples (the PyTorch count). */
+    public static int framesFor(int chunkSamples) {
+        return (chunkSamples + WINDOW / 2 - (WINDOW + 1)) / HOP + 1;
     }
 
     /** Downmix+resample to 16 kHz mono, then log-mel per 30 s chunk. */
@@ -61,48 +91,55 @@ public final class AudioPreprocess {
         // semicausal left pad + right pad to the PyTorch frame count (unfold(WINDOW+1, HOP) on a
         // left-padded waveform); the spectrogram then runs unpadded over this buffer
         int padLeft = WINDOW / 2; // 160
-        int ptFrames = (len + padLeft - (WINDOW + 1)) / HOP + 1;
-        int paddedNeeded = (ptFrames - 1) * HOP + N_FFT;
+        int frames = framesFor(len);
+        int paddedNeeded = (frames - 1) * HOP + N_FFT;
         int totalPad = Math.max(paddedNeeded - len, padLeft);
-        float[] padded = new float[totalPad + len];
+        float[] padded = new float[totalPad + len]; // sized so every frame's window is in range
         System.arraycopy(pcm, from, padded, padLeft, len);
 
-        int frames = Math.min((padded.length - N_FFT) / HOP + 1, ptFrames);
-        float[] out = new float[nMel * frames];
-        float[] fftIn = new float[N_FFT * 2];
-        float[] fftOut = new float[N_FFT * 8];
-        float[] mag = new float[N_BINS];
-        for (int t = 0; t < frames; t++) {
-            int off = t * HOP;
-            for (int k = 0; k < N_FFT; k++) {
-                fftIn[k] = hann[k] * padded[off + k];
-            }
-            fftReal(fftIn, 0, N_FFT, fftOut, 0);
-            for (int b = 0; b < N_BINS; b++) {
-                float power = fftOut[2 * b] * fftOut[2 * b] + fftOut[2 * b + 1] * fftOut[2 * b + 1];
-                mag[b] = (float) Math.sqrt(power);
-            }
-            for (int m = 0; m < nMel; m++) {
-                // mirrors the reference's unrolled accumulation: each group of four products is
-                // multiplied and summed in FLOAT, then widened onto the double accumulator -
-                // double-multiplying here shifts floor-adjacent bins visibly in ln space
-                double sum = 0.0;
-                int base = m * N_BINS;
-                int b = 0;
-                for (; b < N_BINS - 3; b += 4) {
-                    sum +=
-                            mag[b] * melFb[base + b]
-                                    + mag[b + 1] * melFb[base + b + 1]
-                                    + mag[b + 2] * melFb[base + b + 2]
-                                    + mag[b + 3] * melFb[base + b + 3];
-                }
-                for (; b < N_BINS; b++) {
-                    sum += mag[b] * melFb[base + b];
-                }
-                out[m * frames + t] = (float) Math.log(Math.max(sum, MEL_FLOOR));
-            }
-        }
-        return new MelChunk(out, frames, nMel);
+        float[] out = new float[frames * nMel];
+        com.qxotic.jinfer.Parallel.parallelFor(
+                0,
+                frames,
+                t -> {
+                    // per-frame scratch: the FFT is the reference's op-for-op port, so the
+                    // per-frame numbers are identical no matter which thread runs the frame
+                    float[] fftIn = new float[N_FFT * 2];
+                    float[] fftOut = new float[N_FFT * 8];
+                    float[] mag = new float[N_BINS];
+                    int off = t * HOP;
+                    for (int k = 0; k < WINDOW; k++) { // hann[WINDOW..N_FFT) is all zeros
+                        fftIn[k] = hann[k] * padded[off + k];
+                    }
+                    fftReal(fftIn, 0, N_FFT, fftOut, 0);
+                    for (int b = 0; b < N_BINS; b++) {
+                        float power =
+                                fftOut[2 * b] * fftOut[2 * b]
+                                        + fftOut[2 * b + 1] * fftOut[2 * b + 1];
+                        mag[b] = (float) Math.sqrt(power);
+                    }
+                    int lastGroup = (N_BINS - 1) & ~3; // the reference's scalar-tail start (256)
+                    for (int m = 0; m < nMel; m++) {
+                        // the reference's 4-unrolled accumulation restricted to the filter's
+                        // nonzero band: whole groups only (zero products inside a surviving
+                        // group are float no-ops), so every group sum is bit-identical
+                        double sum = 0.0;
+                        int base = m * N_BINS;
+                        int end = Math.min(bandEnd[m], lastGroup);
+                        for (int b = bandStart[m]; b < end; b += 4) {
+                            sum +=
+                                    mag[b] * melFb[base + b]
+                                            + mag[b + 1] * melFb[base + b + 1]
+                                            + mag[b + 2] * melFb[base + b + 2]
+                                            + mag[b + 3] * melFb[base + b + 3];
+                        }
+                        for (int b = Math.max(bandStart[m], lastGroup); b < bandEnd[m]; b++) {
+                            sum += mag[b] * melFb[base + b];
+                        }
+                        out[t * nMel + m] = (float) Math.log(Math.max(sum, MEL_FLOOR));
+                    }
+                });
+        return new MelChunk(out, frames);
     }
 
     // periodic Hann(WINDOW) left-aligned in an N_FFT buffer (the reference does NOT center it).
@@ -156,14 +193,14 @@ public final class AudioPreprocess {
     // llama.cpp's recursive real-input radix-2 FFT (mtmd-audio.cpp fft_impl), ported with the
     // same table twiddles, scratch layout and operation order so near-zero leakage bins round
     // identically - an algebraically equal FFT with different op order fails ln-space parity.
-    private final float[] sinVals = new float[N_FFT];
-    private final float[] cosVals = new float[N_FFT];
+    private static final float[] SIN_VALS = new float[N_FFT];
+    private static final float[] COS_VALS = new float[N_FFT];
 
-    {
+    static {
         for (int i = 0; i < N_FFT; i++) {
             double theta = (2.0 * Math.PI * i) / N_FFT;
-            sinVals[i] = (float) Math.sin((double) (float) theta);
-            cosVals[i] = (float) Math.cos((double) (float) theta);
+            SIN_VALS[i] = (float) Math.sin((double) (float) theta);
+            COS_VALS[i] = (float) Math.cos((double) (float) theta);
         }
     }
 
@@ -171,7 +208,7 @@ public final class AudioPreprocess {
      * Real-input forward FFT: {@code in} holds N reals (capacity 2N, tail is scratch); {@code out}
      * holds interleaved re/im (capacity 8N, tail is scratch).
      */
-    void fftReal(float[] in, int inOff, int n, float[] out, int outOff) {
+    static void fftReal(float[] in, int inOff, int n, float[] out, int outOff) {
         if (n == 1) {
             out[outOff] = in[inOff];
             out[outOff + 1] = 0.0f;
@@ -194,8 +231,8 @@ public final class AudioPreprocess {
         int step = N_FFT / n;
         for (int k = 0; k < half; k++) {
             int idx = k * step; // t = 2*pi*k/n
-            float re = cosVals[idx];
-            float im = -sinVals[idx];
+            float re = COS_VALS[idx];
+            float im = -SIN_VALS[idx];
             float reOdd = out[oddFft + 2 * k];
             float imOdd = out[oddFft + 2 * k + 1];
             out[outOff + 2 * k] = out[evenFft + 2 * k] + re * reOdd - im * imOdd;

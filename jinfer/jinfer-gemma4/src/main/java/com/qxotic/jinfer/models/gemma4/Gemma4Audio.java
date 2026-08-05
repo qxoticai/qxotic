@@ -127,38 +127,8 @@ public final class Gemma4Audio implements Embedder<Media.Audio> {
         return rows;
     }
 
-    /**
-     * Downmix to mono and resample to 16 kHz (linear). llama.cpp resamples with a higher-order
-     * kernel, so for exact parity supply already-16 kHz-mono audio; this keeps arbitrary inputs
-     * usable.
-     */
     private static float[] toMono16k(Media.Audio audio) {
-        int ch = Math.max(1, audio.channels());
-        float[] in = audio.pcm();
-        int frames = in.length / ch;
-        float[] mono = new float[frames];
-        if (ch == 1) {
-            mono = in;
-        } else {
-            for (int i = 0; i < frames; i++) {
-                float s = 0f;
-                for (int c = 0; c < ch; c++) s += in[i * ch + c];
-                mono[i] = s / ch;
-            }
-        }
-        if (audio.sampleRate() == SAMPLE_RATE) return mono;
-        double ratio = (double) SAMPLE_RATE / audio.sampleRate();
-        int outLen = (int) Math.round(mono.length * ratio);
-        float[] out = new float[Math.max(1, outLen)];
-        for (int i = 0; i < out.length; i++) {
-            double srcPos = i / ratio;
-            int j = (int) srcPos;
-            double frac = srcPos - j;
-            float a = mono[Math.min(j, mono.length - 1)];
-            float b = mono[Math.min(j + 1, mono.length - 1)];
-            out[i] = (float) (a + (b - a) * frac);
-        }
-        return out;
+        return AudioPreprocess.toMono16k(audio);
     }
 
     // === loader ===

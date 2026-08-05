@@ -22,11 +22,6 @@ import org.junit.jupiter.api.Test;
  */
 class ConformerEmbedParityTest {
 
-    private static final Path MMPROJ =
-            Path.of(
-                    System.getProperty(
-                            "jinfer.test.e2bMmproj",
-                            "/home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf"));
     private static final Path WAV =
             Path.of("../../test-fixtures/audio/sine440-3s.wav").toAbsolutePath().normalize();
 
@@ -64,11 +59,20 @@ class ConformerEmbedParityTest {
         throw new IOException("no data chunk in " + wav);
     }
 
+    private static double worst(FloatTensor rows, long offset, float[] reference) {
+        double worst = 0;
+        for (int i = 0; i < reference.length; i++) {
+            worst = Math.max(worst, Math.abs(rows.getFloat(offset + i) - reference[i]));
+        }
+        return worst;
+    }
+
     @Test
     void towerMatchesLlamaCppEmbeddings() throws IOException {
-        Assumptions.assumeTrue(Files.exists(MMPROJ), "mmproj missing: " + MMPROJ);
+        Assumptions.assumeTrue(
+                Files.exists(TestModels.E2B_MMPROJ), "mmproj missing: " + TestModels.E2B_MMPROJ);
         Assumptions.assumeTrue(Files.exists(WAV), "fixture missing: " + WAV);
-        Gemma4Conformer tower = Gemma4Conformer.loadModel(MMPROJ, Arena.ofAuto());
+        Gemma4Conformer tower = Gemma4Conformer.loadModel(TestModels.E2B_MMPROJ, Arena.ofAuto());
         float[] pcm = readWav16kMono(WAV);
         Media.Audio audio = new Media.Audio(pcm, 16000, 1);
 
@@ -86,14 +90,8 @@ class ConformerEmbedParityTest {
         double mean = sum / rows.size();
         double std = Math.sqrt(sumSq / rows.size() - mean * mean);
 
-        double worstFirst = 0;
-        for (int i = 0; i < 16; i++) {
-            worstFirst = Math.max(worstFirst, Math.abs(rows.getFloat(i) - FIRST16[i]));
-        }
-        double worstLast = 0;
-        for (int i = 0; i < 16; i++) {
-            worstLast = Math.max(worstLast, Math.abs(rows.getFloat(1536 - 16 + i) - LAST16[i]));
-        }
+        double worstFirst = worst(rows, 0, FIRST16);
+        double worstLast = worst(rows, 1536 - 16, LAST16);
         String report =
                 String.format(
                         "mean %.6f (ref %.6f)  std %.6f (ref %.6f)  worstFirst16 %.4f  worstLast16"
