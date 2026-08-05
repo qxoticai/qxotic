@@ -195,6 +195,124 @@ public final class F32FloatTensor extends SegmentFloatTensor {
     }
 
     @Override
+    public float max(long thisOffset, int size) {
+        if (!USE_VECTOR_API) return super.max(thisOffset, size);
+        int upperBound = F_SPECIES.loopBound(size);
+        int i = 0;
+        float max = Float.NEGATIVE_INFINITY;
+        if (upperBound > 0) {
+            FloatVector acc = FloatVector.broadcast(F_SPECIES, Float.NEGATIVE_INFINITY);
+            for (; i < upperBound; i += F_SPECIES.length()) {
+                acc =
+                        acc.max(
+                                FloatVector.fromMemorySegment(
+                                        F_SPECIES,
+                                        vseg,
+                                        vbase + (thisOffset + i) * Float.BYTES,
+                                        ByteOrder.LITTLE_ENDIAN));
+            }
+            max = acc.reduceLanes(VectorOperators.MAX);
+        }
+        for (; i < size; i++) max = Math.max(max, getFloat(thisOffset + i));
+        return max;
+    }
+
+    @Override
+    public FloatTensor maskBelowInPlace(long thisOffset, int size, float threshold) {
+        if (!USE_VECTOR_API) return super.maskBelowInPlace(thisOffset, size, threshold);
+        FloatVector ninf = FloatVector.broadcast(F_SPECIES, Float.NEGATIVE_INFINITY);
+        FloatVector t = FloatVector.broadcast(F_SPECIES, threshold);
+        int upperBound = F_SPECIES.loopBound(size);
+        int i = 0;
+        for (; i < upperBound; i += F_SPECIES.length()) {
+            long byteOff = vbase + (thisOffset + i) * Float.BYTES;
+            FloatVector v =
+                    FloatVector.fromMemorySegment(
+                            F_SPECIES, vseg, byteOff, ByteOrder.LITTLE_ENDIAN);
+            v.blend(ninf, v.compare(VectorOperators.LT, t))
+                    .intoMemorySegment(vseg, byteOff, ByteOrder.LITTLE_ENDIAN);
+        }
+        for (; i < size; i++) {
+            if (getFloat(thisOffset + i) < threshold) {
+                setFloat(thisOffset + i, Float.NEGATIVE_INFINITY);
+            }
+        }
+        return this;
+    }
+
+    @Override
+    public double expSum(long thisOffset, int size, float max) {
+        if (!USE_VECTOR_API) return super.expSum(thisOffset, size, max);
+        return FastMath.expSum(this, thisOffset, size, max);
+    }
+
+    @Override
+    public int collectAtOrAbove(long thisOffset, int size, float threshold, int[] out) {
+        if (!USE_VECTOR_API) return super.collectAtOrAbove(thisOffset, size, threshold, out);
+        FloatVector ninf = FloatVector.broadcast(F_SPECIES, Float.NEGATIVE_INFINITY);
+        FloatVector t = FloatVector.broadcast(F_SPECIES, threshold);
+        int len = F_SPECIES.length();
+        int upperBound = F_SPECIES.loopBound(size);
+        int count = 0;
+        int i = 0;
+        for (; i < upperBound; i += len) {
+            long byteOff = vbase + (thisOffset + i) * Float.BYTES;
+            FloatVector v =
+                    FloatVector.fromMemorySegment(
+                            F_SPECIES, vseg, byteOff, ByteOrder.LITTLE_ENDIAN);
+            if (v.compare(VectorOperators.GE, t).anyTrue()) {
+                for (int l = 0; l < len; l++) {
+                    if (getFloat(thisOffset + i + l) >= threshold) {
+                        out[count++] = i + l;
+                    } else {
+                        setFloat(thisOffset + i + l, Float.NEGATIVE_INFINITY);
+                    }
+                }
+            } else {
+                ninf.intoMemorySegment(vseg, byteOff, ByteOrder.LITTLE_ENDIAN);
+            }
+        }
+        for (; i < size; i++) {
+            if (getFloat(thisOffset + i) >= threshold) {
+                out[count++] = i;
+            } else {
+                setFloat(thisOffset + i, Float.NEGATIVE_INFINITY);
+            }
+        }
+        return count;
+    }
+
+    @Override
+    public float kthLargestThreshold(long thisOffset, int size, float[] minHeap) {
+        if (!USE_VECTOR_API) return super.kthLargestThreshold(thisOffset, size, minHeap);
+        java.util.Arrays.fill(minHeap, Float.NEGATIVE_INFINITY);
+        int len = F_SPECIES.length();
+        int upperBound = F_SPECIES.loopBound(size);
+        int i = 0;
+        for (; i < upperBound; i += len) {
+            FloatVector v =
+                    FloatVector.fromMemorySegment(
+                            F_SPECIES,
+                            vseg,
+                            vbase + (thisOffset + i) * Float.BYTES,
+                            ByteOrder.LITTLE_ENDIAN);
+            // chunks entirely at or below the current k-th largest cannot change the heap
+            if (v.compare(VectorOperators.GT, FloatVector.broadcast(F_SPECIES, minHeap[0]))
+                    .anyTrue()) {
+                for (int l = 0; l < len; l++) {
+                    float f = getFloat(thisOffset + i + l);
+                    if (f > minHeap[0]) FloatTensor.heapReplaceMin(minHeap, f);
+                }
+            }
+        }
+        for (; i < size; i++) {
+            float f = getFloat(thisOffset + i);
+            if (f > minHeap[0]) FloatTensor.heapReplaceMin(minHeap, f);
+        }
+        return minHeap[0];
+    }
+
+    @Override
     public FloatTensor divideInPlace(long thisOffset, int size, float value) {
         if (USE_VECTOR_API) {
             int upperBound = F_SPECIES.loopBound(size);

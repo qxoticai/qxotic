@@ -52,35 +52,10 @@ public interface Sampler {
      * deterministic reading of the same contract).
      */
     static Sampler withTopK(Sampler inner, int k) {
-        float[] heap = new float[k]; // min-heap of the k largest logits seen so far
+        float[] heap = new float[k]; // caller-owned scratch for the k-th-largest scan
         return logits -> {
             int n = Math.toIntExact(logits.size());
-            java.util.Arrays.fill(heap, Float.NEGATIVE_INFINITY);
-            for (int i = 0; i < n; i++) {
-                float v = logits.getFloat(i);
-                if (v > heap[0]) {
-                    heap[0] = v;
-                    int prev = 0, next;
-                    while ((next = 2 * prev + 1) < k) {
-                        int r = next + 1;
-                        if (r < k && heap[r] < heap[next]) next = r;
-                        if (heap[next] < heap[prev]) {
-                            float t = heap[prev];
-                            heap[prev] = heap[next];
-                            heap[next] = t;
-                            prev = next;
-                        } else {
-                            break;
-                        }
-                    }
-                }
-            }
-            float threshold = heap[0];
-            for (int i = 0; i < n; i++) {
-                if (logits.getFloat(i) < threshold) {
-                    logits.setFloat(i, Float.NEGATIVE_INFINITY);
-                }
-            }
+            logits.maskBelowInPlace(0, n, logits.kthLargestThreshold(0, n, heap));
             return inner.sampleToken(logits);
         };
     }
@@ -93,16 +68,7 @@ public interface Sampler {
         float logMinP = (float) Math.log(minP);
         return logits -> {
             int n = Math.toIntExact(logits.size());
-            float max = Float.NEGATIVE_INFINITY;
-            for (int i = 0; i < n; i++) {
-                max = Math.max(max, logits.getFloat(i));
-            }
-            float threshold = max + logMinP;
-            for (int i = 0; i < n; i++) {
-                if (logits.getFloat(i) < threshold) {
-                    logits.setFloat(i, Float.NEGATIVE_INFINITY);
-                }
-            }
+            logits.maskBelowInPlace(0, n, logits.max(0, n) + logMinP);
             return inner.sampleToken(logits);
         };
     }
@@ -225,26 +191,13 @@ final class NucleusFilter implements Sampler {
     @Override
     public int sampleToken(FloatTensor logits) {
         int n = Math.toIntExact(logits.size());
-        float max = Float.NEGATIVE_INFINITY;
-        for (int i = 0; i < n; i++) {
-            max = Math.max(max, logits.getFloat(i));
-        }
-        double denom = 0;
-        for (int i = 0; i < n; i++) {
-            denom = denom + Math.exp(logits.getFloat(i) - max);
-        }
+        float max = logits.max(0, n);
+        double denom = logits.expSum(0, n, max);
         // tokens below probability (1-topP)/(n-1) cannot be part of any nucleus of mass topP;
         // the same cut in the logit domain (one log instead of n exps) masks them outright, and
         // they never enter the candidate set
         float cutoff = (float) (max + Math.log((1.0 - topP) / (n - 1) * denom));
-        int head = 0;
-        for (int i = 0; i < n; i++) {
-            if (logits.getFloat(i) >= cutoff) {
-                candidates[head++] = i;
-            } else {
-                logits.setFloat(i, Float.NEGATIVE_INFINITY);
-            }
-        }
+        int head = logits.collectAtOrAbove(0, n, cutoff, candidates);
         for (int i = head / 2 - 1; i >= 0; --i) {
             siftDown(i, head, logits);
         }

@@ -230,6 +230,15 @@ public final class FastMath {
      * {@link F32FloatTensor#softmaxInPlace} (the sampler's vocab softmax and the MoE routers).
      */
     static double expSumInPlace(F32FloatTensor t, long offset, int n, float max) {
+        return expSum(t, offset, n, max, true);
+    }
+
+    /** As {@link #expSumInPlace} but read-only: the sum without writing the exponentials back. */
+    static double expSum(F32FloatTensor t, long offset, int n, float max) {
+        return expSum(t, offset, n, max, false);
+    }
+
+    private static double expSum(F32FloatTensor t, long offset, int n, float max, boolean store) {
         int i = 0;
         double sum = 0;
         if (FloatTensor.USE_VECTOR_API) {
@@ -276,7 +285,7 @@ public final class FastMath {
                     p =
                             p.mul(eb.reinterpretAsFloats())
                                     .blend(vZero, x.compare(VectorOperators.LT, vUnder));
-                    p.intoMemorySegment(seg, byteOffset, ByteOrder.LITTLE_ENDIAN);
+                    if (store) p.intoMemorySegment(seg, byteOffset, ByteOrder.LITTLE_ENDIAN);
                     acc = acc.add(p);
                 }
                 sum = acc.reduceLanes(VectorOperators.ADD);
@@ -284,7 +293,7 @@ public final class FastMath {
         }
         for (; i < n; i++) {
             float p = expNeg(t.getFloat(offset + i) - max);
-            t.setFloat(offset + i, p);
+            if (store) t.setFloat(offset + i, p);
             sum += p;
         }
         return sum;

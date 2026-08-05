@@ -440,10 +440,77 @@ public abstract class FloatTensor {
         return acc;
     }
 
-    float max(long thisOffset, int size) {
+    public float max(long thisOffset, int size) {
         float acc = Float.NEGATIVE_INFINITY;
         for (int i = 0; i < size; ++i) acc = Math.max(acc, getFloat(thisOffset + i));
         return acc;
+    }
+
+    /** Masks every value below {@code threshold} to -inf - the sampler filters' cut. */
+    public FloatTensor maskBelowInPlace(long thisOffset, int size, float threshold) {
+        for (int i = 0; i < size; i++) {
+            if (getFloat(thisOffset + i) < threshold) {
+                setFloat(thisOffset + i, Float.NEGATIVE_INFINITY);
+            }
+        }
+        return this;
+    }
+
+    /** {@code sum(e^(x - max))} over the window, read-only - a softmax denominator. */
+    public double expSum(long thisOffset, int size, float max) {
+        double sum = 0;
+        for (int i = 0; i < size; i++) {
+            sum += Math.exp(getFloat(thisOffset + i) - max);
+        }
+        return sum;
+    }
+
+    /**
+     * Splits the window at {@code threshold}: window-relative indices of values {@code >=
+     * threshold} land in {@code out} (returning the count), values below are masked to -inf in
+     * place - the nucleus filter's candidate pass, fused.
+     */
+    public int collectAtOrAbove(long thisOffset, int size, float threshold, int[] out) {
+        int count = 0;
+        for (int i = 0; i < size; i++) {
+            if (getFloat(thisOffset + i) >= threshold) {
+                out[count++] = i;
+            } else {
+                setFloat(thisOffset + i, Float.NEGATIVE_INFINITY);
+            }
+        }
+        return count;
+    }
+
+    /**
+     * The k-th largest value in the window, where k = {@code minHeap.length} (caller-owned scratch,
+     * overwritten) - the top-k filter's threshold.
+     */
+    public float kthLargestThreshold(long thisOffset, int size, float[] minHeap) {
+        java.util.Arrays.fill(minHeap, Float.NEGATIVE_INFINITY);
+        for (int i = 0; i < size; i++) {
+            float f = getFloat(thisOffset + i);
+            if (f > minHeap[0]) heapReplaceMin(minHeap, f);
+        }
+        return minHeap[0];
+    }
+
+    static void heapReplaceMin(float[] heap, float value) {
+        heap[0] = value;
+        int k = heap.length;
+        int prev = 0, next;
+        while ((next = 2 * prev + 1) < k) {
+            int r = next + 1;
+            if (r < k && heap[r] < heap[next]) next = r;
+            if (heap[next] < heap[prev]) {
+                float tmp = heap[prev];
+                heap[prev] = heap[next];
+                heap[next] = tmp;
+                prev = next;
+            } else {
+                break;
+            }
+        }
     }
 
     public void copyTo(long thisOffset, FloatTensor that, long thatOffset, int size) {
