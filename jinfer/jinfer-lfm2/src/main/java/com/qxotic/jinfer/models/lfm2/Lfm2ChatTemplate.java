@@ -60,8 +60,24 @@ public final class Lfm2ChatTemplate implements TurnTemplate {
     private final List<Batch> generationPrompt;
     private final IntSequence closeTurnIds; // <|im_end|>\n, constant
     private final List<Batch> closeTurn;
+    // the LFM2.5-2.6B-era template pre-opens the think span: its generation prompt is
+    // <|im_start|>assistant\n<think> and the reply begins INSIDE it (the seed IS the tag)
+    private final boolean opensThink;
+    private final List<Batch> generationPromptThink;
+    private final int[] thinkSeed;
 
+    /** Pre-2.6B framing: the generation prompt ends at {@code assistant\n}. */
     public Lfm2ChatTemplate(Tokenizer tokenizer) {
+        this(tokenizer, false);
+    }
+
+    /**
+     * {@code opensThink} is the checkpoint's declaration (read from its chat template source by
+     * {@link Lfm2#template()}) that the generation prompt pre-opens {@code <think>} - the
+     * LFM2.5-2.6B family. Without the tag those models answer off-distribution (garbage or empty
+     * content with the real answer stuck in a self-opened think span).
+     */
+    public Lfm2ChatTemplate(Tokenizer tokenizer, boolean opensThink) {
         this.tokenizer = tokenizer;
         this.bos = SpecialTokens.require(tokenizer, "<|startoftext|>");
         this.imStart = SpecialTokens.require(tokenizer, "<|im_start|>");
@@ -77,6 +93,19 @@ public final class Lfm2ChatTemplate implements TurnTemplate {
         this.generationPrompt = List.of(Batch.prefill(generationPromptIds.toArray()));
         this.closeTurnIds = IntSequence.of(imEnd).concat(tokenizer.encode("\n"));
         this.closeTurn = List.of(Batch.prefill(closeTurnIds.toArray()));
+        this.opensThink = opensThink && thinkOpen != null;
+        if (this.opensThink) {
+            this.generationPromptThink =
+                    List.of(
+                            Batch.prefill(
+                                    generationPromptIds
+                                            .concat(IntSequence.of(thinkOpen))
+                                            .toArray()));
+            this.thinkSeed = new int[] {thinkOpen};
+        } else {
+            this.generationPromptThink = generationPrompt;
+            this.thinkSeed = new int[0];
+        }
     }
 
     // ---- ChatTemplate: the codec ----
@@ -269,7 +298,16 @@ public final class Lfm2ChatTemplate implements TurnTemplate {
 
     @Override
     public List<Batch> generationPrompt(boolean thinking) {
-        return generationPrompt;
+        // thinking off on an opensThink checkpoint keeps the bare scaffold: the reference has no
+        // off branch (these models always think), but the bare form composes with the marker ban
+        // where a pre-opened span the sampler cannot close would not
+        return thinking ? generationPromptThink : generationPrompt;
+    }
+
+    /** The pre-opened think tag - co-owned with {@link #generationPrompt(boolean)}. */
+    @Override
+    public int[] replySeed(boolean thinking) {
+        return thinking ? thinkSeed : new int[0];
     }
 
     @Override

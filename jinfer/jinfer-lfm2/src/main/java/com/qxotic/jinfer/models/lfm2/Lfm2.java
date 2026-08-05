@@ -163,7 +163,13 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
     }
 
     private Lfm2ChatTemplate template() {
-        if (chatTemplate == null) chatTemplate = new Lfm2ChatTemplate(tokenizer());
+        if (chatTemplate == null) {
+            // the 2.6B-era template's generation prompt is "<|im_start|>assistant\n<think>" -
+            // detect the pre-opened think span from the checkpoint's own template source
+            boolean opensThink =
+                    chatTemplateSource != null && chatTemplateSource.contains("assistant\n<think>");
+            chatTemplate = new Lfm2ChatTemplate(tokenizer(), opensThink);
+        }
         return chatTemplate;
     }
 
