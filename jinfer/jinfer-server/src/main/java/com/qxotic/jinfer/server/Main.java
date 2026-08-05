@@ -474,22 +474,35 @@ public class Main {
             System.exit(-1);
             return;
         }
-        LoadedModel<?> model =
-                options.mediaProjector() != null
-                        ? null // a media sidecar is never AOT-preloaded: load the pair fresh
-                        : AOT.tryUsePreLoaded(options.modelPath(), options.maxTokens());
-        if (model == null) {
+        LoadedModel<?> model;
+        try {
             model =
                     options.mediaProjector() != null
-                            ? Models.load(
-                                    options.modelPath(),
-                                    options.mediaProjector(),
-                                    options.maxTokens(),
-                                    java.lang.foreign.Arena.global())
-                            : Models.load(
-                                    options.modelPath(),
-                                    options.maxTokens(),
-                                    java.lang.foreign.Arena.global());
+                            ? null // a media sidecar is never AOT-preloaded: load the pair fresh
+                            : AOT.tryUsePreLoaded(options.modelPath(), options.maxTokens());
+            if (model == null) {
+                model =
+                        options.mediaProjector() != null
+                                ? Models.load(
+                                        options.modelPath(),
+                                        options.mediaProjector(),
+                                        options.maxTokens(),
+                                        java.lang.foreign.Arena.global())
+                                : Models.load(
+                                        options.modelPath(),
+                                        options.maxTokens(),
+                                        java.lang.foreign.Arena.global());
+            }
+        } catch (IllegalArgumentException
+                | IllegalStateException
+                | java.io.UncheckedIOException
+                | java.nio.file.NoSuchFileException e) {
+            // load errors carry their remedy in the message (wrong mmproj, unknown architecture,
+            // split GGUF, bad pre-tokenizer flag, ...) - print it, don't bury it in a stack trace;
+            // anything else is a bug and still traces
+            System.err.println("ERROR " + e.getMessage());
+            System.exit(1);
+            return;
         }
         if (options.server()) {
             Server.start(model, options); // resolves sampling itself, to report value provenance
