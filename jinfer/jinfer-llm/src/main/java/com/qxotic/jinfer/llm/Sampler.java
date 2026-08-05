@@ -1,7 +1,6 @@
 package com.qxotic.jinfer.llm;
 
 import com.qxotic.jinfer.*;
-import java.util.Comparator;
 import java.util.Set;
 import java.util.random.RandomGenerator;
 import java.util.random.RandomGeneratorFactory;
@@ -126,8 +125,9 @@ public interface Sampler {
         if (bannedTokens.isEmpty()) {
             return inner;
         }
+        int[] banned = bannedTokens.stream().mapToInt(Integer::intValue).toArray();
         return logits -> {
-            for (int token : bannedTokens) logits.setFloat(token, Float.NEGATIVE_INFINITY);
+            for (int token : banned) logits.setFloat(token, Float.NEGATIVE_INFINITY);
             return inner.sampleToken(logits);
         };
     }
@@ -194,21 +194,22 @@ final class NucleusFilter implements Sampler {
         this.inner = inner;
     }
 
-    static void swap(int[] array, int from, int to) {
-        int tmp = array[from];
-        array[from] = array[to];
-        array[to] = tmp;
+    private void swap(int from, int to) {
+        int tmp = candidates[from];
+        candidates[from] = candidates[to];
+        candidates[to] = tmp;
     }
 
-    static void siftDown(int[] array, int from, int n, Comparator<Integer> comparator) {
+    /** Max-heap sift on candidate ids ordered by their logits - primitives only, no boxing. */
+    private void siftDown(int from, int n, FloatTensor logits) {
         int prev = from, next;
         while ((next = 2 * prev + 1) < n) {
-            int r = 2 * prev + 2;
-            if (r < n && comparator.compare(array[r], array[next]) < 0) {
+            int r = next + 1;
+            if (r < n && logits.getFloat(candidates[r]) > logits.getFloat(candidates[next])) {
                 next = r;
             }
-            if (comparator.compare(array[next], array[prev]) < 0) {
-                swap(array, prev, next);
+            if (logits.getFloat(candidates[next]) > logits.getFloat(candidates[prev])) {
+                swap(prev, next);
                 prev = next;
             } else {
                 break;
@@ -220,7 +221,8 @@ final class NucleusFilter implements Sampler {
      * Masks everything outside the smallest set of tokens whose probabilities sum past {@code topP}
      * (the last token crossing the line is kept, llama.cpp's cut), then delegates. Works on raw
      * logits - probabilities are derived on the fly so the tensor still holds logits for the
-     * temperature stage downstream.
+     * temperature stage downstream. Scratch is allocated at construction; the per-token path
+     * allocates nothing.
      */
     @Override
     public int sampleToken(FloatTensor logits) {
@@ -241,17 +243,15 @@ final class NucleusFilter implements Sampler {
                 candidates[head++] = i;
             }
         }
-        Comparator<Integer> byLogitDesc =
-                Comparator.comparingDouble((Integer i) -> logits.getFloat(i)).reversed();
         for (int i = head / 2 - 1; i >= 0; --i) {
-            siftDown(candidates, i, head, byLogitDesc);
+            siftDown(i, head, logits);
         }
         double cumulative = 0;
         int kept = 0;
         for (int remaining = head; remaining > 0 && cumulative < topP; remaining--) {
             int id = candidates[0];
-            swap(candidates, 0, remaining - 1);
-            siftDown(candidates, 0, remaining - 1, byLogitDesc);
+            swap(0, remaining - 1);
+            siftDown(0, remaining - 1, logits);
             keptIds[kept] = id;
             keptLogits[kept] = logits.getFloat(id);
             kept++;
