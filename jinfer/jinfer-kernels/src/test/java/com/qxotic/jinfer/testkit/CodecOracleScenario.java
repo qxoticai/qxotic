@@ -36,7 +36,20 @@ public final class CodecOracleScenario {
             java.util.function.Function<Tokenizer, ChatTemplate> template,
             Map<String, Object> renderVars)
             throws Exception {
-        this.support = new OracleSupport(gguf);
+        this(gguf, null, template, renderVars);
+    }
+
+    /**
+     * Like the main constructor but rendering {@code templateSource} as the oracle instead of the
+     * GGUF's embedded template - for pinning against an upstream template fix the GGUF predates.
+     */
+    public CodecOracleScenario(
+            Path gguf,
+            String templateSource,
+            java.util.function.Function<Tokenizer, ChatTemplate> template,
+            Map<String, Object> renderVars)
+            throws Exception {
+        this.support = new OracleSupport(gguf, templateSource);
         this.tokenizer = support.tokenizer;
         this.specials = SpecialTokens.encoder(tokenizer);
         this.template = template.apply(tokenizer);

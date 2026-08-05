@@ -420,8 +420,13 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
      * the system turn ({@code <|tool>declaration:...<tool|>}), and the whole call round-trip as ONE
      * open model turn: {@code <|tool_call>call:...<tool_call|>} then folded {@code
      * <|tool_response>response:...<tool_response|>} blocks then the answer text, with the
-     * generation prompt suppressed while the model turn is open. Punts: {@link Part.Reasoning}
-     * (thought channel not ported) and media on a text-only load.
+     * generation prompt suppressed while the model turn is open. Reasoning follows the upstream
+     * template fix (35b4173): a {@link Part.Reasoning} renders as {@code <|channel>thought\n...} in
+     * assistant turns AFTER the last user message (the in-flight tool loop) and is stripped
+     * everywhere before it; {@code preserve_thinking} is not plumbed (punts to the whole render).
+     * Punts: media on a text-only load. Known fidelity gap (pre-existing, matching the pinned
+     * {@code <|think|>} gap): the reference opens {@code <|channel>thought\n} after a trailing tool
+     * response when thinking is on - plumbing it needs a conversation-aware replySeed.
      */
     @Override
     public List<Batch> encode(Conversation conversation) {
@@ -434,31 +439,62 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
             systemBlock(systemFirst ? msgs.get(0) : null, conversation.tools(), out);
             if (systemFirst) start = 1;
         }
+        // upstream template fix 35b4173: reasoning is PRESERVED in turns after the last user
+        // message (the in-flight tool loop) and stripped everywhere before it
+        int lastUserIdx = -1;
+        for (int i = 0; i < msgs.size(); i++) {
+            if (msgs.get(i).role().equals(Role.USER)) lastUserIdx = i;
+        }
         // the template's per-message state: 'call'/'response' leave the model turn OPEN
         String prev = null;
         Role prevNonToolRole = null;
+        TokenRuns carry = null; // merged model turns share ONE runs so their text BPE-fuses
         for (int i = start; i < msgs.size(); i++) {
             Message m = msgs.get(i);
             if (m.role().equals(Role.TOOL)) continue; // folded into its call turn below
             prev = null;
-            boolean continuation =
-                    m.role().equals(Role.ASSISTANT) && Role.ASSISTANT.equals(prevNonToolRole);
+            boolean assistant = m.role().equals(Role.ASSISTANT);
+            boolean continuation = assistant && Role.ASSISTANT.equals(prevNonToolRole);
             prevNonToolRole = m.role();
             List<Part.ToolCall> calls =
                     m.content().stream()
                             .filter(p -> p instanceof Part.ToolCall)
                             .map(p -> (Part.ToolCall) p)
                             .toList();
-            if (calls.isEmpty() && !continuation) {
+            // thinking_gate (preserve_thinking defaults false and is not plumbed - a request
+            // setting it punts to the whole render): render reasoning only after the last user
+            Part.Reasoning reasoning = assistant ? m.reasoning() : null;
+            String thought =
+                    reasoning != null && i > lastUserIdx && !reasoning.text().isEmpty()
+                            ? reasoning.text()
+                            : null;
+            // turn-tag balance (upstream fix): an assistant turn does not close when the next
+            // non-tool message is also assistant - the turns merge into one model turn
+            Role nextRole = null;
+            for (int j = i + 1; j < msgs.size(); j++) {
+                if (!msgs.get(j).role().equals(Role.TOOL)) {
+                    nextRole = msgs.get(j).role();
+                    break;
+                }
+            }
+            boolean continuesIntoNext = assistant && Role.ASSISTANT.equals(nextRole);
+            if (calls.isEmpty() && !continuation && reasoning == null && !continuesIntoNext) {
                 out.addAll(encodeTurn(m));
                 continue;
             }
             if (m.content().stream().anyMatch(p -> p instanceof Part.Blob)) {
                 throw new UnsupportedConversation("media in a tool-call/continuation model turn");
             }
-            TokenRuns runs = proto.fresh();
+            TokenRuns runs = carry != null ? carry : proto.fresh();
+            carry = null;
             if (!continuation) {
                 runs.id(turnOpen).text(roleName(m.role())).text("\n");
+            }
+            if (thought != null) {
+                // <|channel>thought\n{reasoning}\n<channel|> - before calls and content
+                runs.id(require(CHANNEL_OPEN))
+                        .text("thought\n" + thought + "\n")
+                        .id(require(CHANNEL_CLOSE));
             }
             for (Part.ToolCall call : calls) {
                 runs.id(require("<|tool_call>"));
@@ -483,7 +519,16 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
             runs.text(content);
             if ("call".equals(prev)) {
                 runs.id(require("<|tool_response>")); // awaiting results: the turn stays open
-            } else if (!(responses && content.isEmpty())) {
+            } else if (continuesIntoNext) {
+                // turn-tag balance (upstream fix): no close - the next assistant message
+                // continues this model turn; hand it the SAME runs so juxtaposed text
+                // BPE-merges exactly like the whole render
+                carry = runs;
+                continue;
+            } else if (!(responses && content.isEmpty() && nextRole == null)) {
+                // close unless the conversation ENDS on folded responses with no answer yet
+                // (then the open turn is the generation surface); a following non-assistant
+                // turn always closes this one (upstream turn-tag balance: next_nt.found)
                 runs.id(turnClose).text("\n");
             }
             out.addAll(runs.batches());
@@ -553,7 +598,10 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
                             case Part.Blob b -> !toolTurn;
                             case Part.ToolCall c -> assistant;
                             case Part.ToolResult r -> toolTurn;
-                            default -> false; // Reasoning: thought channel not ported
+                            // upstream fix 35b4173: reasoning renders in turns after the last
+                            // user message (thought channel), stripped before it
+                            case Part.Reasoning r -> assistant;
+                            default -> false;
                         };
                 if (!ok)
                     throw new UnsupportedConversation(

@@ -228,7 +228,7 @@ final class Gemma4ToolSyntax {
                 }
                 out.text("]");
             }
-            case null -> out.text("None");
+            case null -> out.text("null"); // upstream fix 35b4173: JSON null, not Python None
             default -> out.text(String.valueOf(v)); // numbers render as Jinja does (3, 3.0)
         }
     }

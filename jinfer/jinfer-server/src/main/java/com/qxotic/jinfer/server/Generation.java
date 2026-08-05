@@ -275,12 +275,25 @@ final class Generation {
             String content = Values.messageContent(raw2);
             List<Part> callParts = toolCallParts(m.get("tool_calls"));
             if (callParts == null) return null; // malformed tool_calls: whole-render
+            // an assistant echo may return its reasoning (reasoning/reasoning_content) - typed as
+            // Part.Reasoning so templates that preserve thought in the tool loop can re-render it
+            Part reasoning = null;
+            if ("assistant".equals(role)) {
+                String rt = Values.stringValue(m.get("reasoning"), null);
+                if (rt == null) rt = Values.stringValue(m.get("reasoning_content"), null);
+                if (rt != null && !rt.isBlank()) {
+                    reasoning = new Part.Reasoning(List.of(new Part.Text(rt)), null);
+                }
+            }
             if (contentParts != null) {
-                List<Part> all = new ArrayList<>(contentParts);
+                List<Part> all = new ArrayList<>();
+                if (reasoning != null) all.add(reasoning);
+                all.addAll(contentParts);
                 all.addAll(callParts);
                 out.add(new Message(new Role(role), all));
-            } else if (!callParts.isEmpty()) {
+            } else if (!callParts.isEmpty() || reasoning != null) {
                 List<Part> all = new ArrayList<>();
+                if (reasoning != null) all.add(reasoning);
                 if (!content.isEmpty()) all.add(new Part.Text(content));
                 all.addAll(callParts);
                 out.add(new Message(new Role(role), all));
@@ -440,14 +453,28 @@ final class Generation {
             Object args = f.get("arguments");
             Map<String, Object> argMap = new LinkedHashMap<>();
             if (args instanceof String s && !s.isBlank()) {
+                // upstream template fix 35b4173: arguments must deserialize to a JSON object -
+                // the reference raises rather than silently rendering an empty argument map
+                Object parsed;
                 try {
-                    if (JsonCodec.parse(s) instanceof Map<?, ?> parsed)
-                        argMap.putAll((Map<String, Object>) parsed);
+                    parsed = JsonCodec.parse(s);
                 } catch (RuntimeException notJson) {
-                    /* leave empty */
+                    parsed = null;
                 }
+                LLMOptions.require(
+                        parsed instanceof Map<?, ?>,
+                        "tool_calls[].function.arguments must be a JSON object (mapping), got:"
+                                + " %s",
+                        s.length() > 80 ? s.substring(0, 80) + "..." : s);
+                argMap.putAll((Map<String, Object>) parsed);
             } else if (args instanceof Map<?, ?> parsed) {
                 argMap.putAll((Map<String, Object>) parsed);
+            } else if (args != null && !(args instanceof String)) {
+                LLMOptions.require(
+                        false,
+                        "tool_calls[].function.arguments must be a JSON object (mapping), got a"
+                                + " %s",
+                        args.getClass().getSimpleName());
             }
             parts.add(new Part.ToolCall(Values.stringValue(call.get("id"), ""), name, argMap));
         }
