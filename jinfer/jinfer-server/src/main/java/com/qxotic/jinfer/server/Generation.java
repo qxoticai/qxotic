@@ -231,6 +231,21 @@ final class Generation {
             if (!(raw instanceof Map<?, ?> m)) return null;
             String role = Values.stringValue(m.get("role"), "user");
             if (m.get("function_call") != null) return null; // legacy shape: whole-render
+            if ("tool".equals(role)) {
+                // typed lowering: the wire carries the result text and its tool_call_id, and
+                // every native template folds Part.ToolResult - five of them accept ONLY that
+                // shape, and lowering as plain Text silently rendered their served tool results
+                // empty (templates on the generic per-turn path punt to the whole render, which
+                // reads the raw maps and never sees this part)
+                out.add(
+                        new Message(
+                                new Role(role),
+                                List.of(
+                                        new Part.ToolResult(
+                                                Values.stringValue(m.get("tool_call_id"), ""),
+                                                Values.messageContent(m.get("content"))))));
+                continue;
+            }
             Object raw2 = m.get("content");
             List<Part> contentParts = null; // typed lowering when the array carries images
             if (raw2 instanceof List<?> parts) {
