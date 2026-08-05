@@ -180,16 +180,13 @@ record CategoricalSampler(RandomGenerator rng) implements Sampler {
 
 final class NucleusFilter implements Sampler {
 
+    // the one buffer, sized once at construction: candidate token ids, heap-ordered in place
     private final int[] candidates;
-    private final float[] keptLogits;
-    private final int[] keptIds;
     private final float topP;
     private final Sampler inner;
 
     NucleusFilter(int vocabularySize, float topP, Sampler inner) {
         this.candidates = new int[vocabularySize];
-        this.keptLogits = new float[vocabularySize];
-        this.keptIds = new int[vocabularySize];
         this.topP = topP;
         this.inner = inner;
     }
@@ -221,8 +218,9 @@ final class NucleusFilter implements Sampler {
      * Masks everything outside the smallest set of tokens whose probabilities sum past {@code topP}
      * (the last token crossing the line is kept, llama.cpp's cut), then delegates. Works on raw
      * logits - probabilities are derived on the fly so the tensor still holds logits for the
-     * temperature stage downstream. Scratch is allocated at construction; the per-token path
-     * allocates nothing.
+     * temperature stage downstream. Heap extraction reorders {@code candidates} in place (the
+     * nucleus ends up in its tail), so the only buffer is the candidate ids, sized once at
+     * construction; the per-token path allocates nothing.
      */
     @Override
     public int sampleToken(FloatTensor logits) {
@@ -235,33 +233,32 @@ final class NucleusFilter implements Sampler {
         for (int i = 0; i < n; i++) {
             denom = denom + Math.exp(logits.getFloat(i) - max);
         }
-        // tokens below this probability cannot be part of any nucleus of mass topP
+        // tokens below this probability cannot be part of any nucleus of mass topP; they are
+        // masked outright and never enter the candidate set
         double cutoff = (1.0 - topP) / (n - 1);
         int head = 0;
         for (int i = 0; i < n; i++) {
             if (Math.exp(logits.getFloat(i) - max) / denom >= cutoff) {
                 candidates[head++] = i;
+            } else {
+                logits.setFloat(i, Float.NEGATIVE_INFINITY);
             }
         }
         for (int i = head / 2 - 1; i >= 0; --i) {
             siftDown(i, head, logits);
         }
+        // extract-max parks each nucleus token at the shrinking tail: after the loop the nucleus
+        // occupies candidates[remaining..head) and the also-rans candidates[0..remaining)
         double cumulative = 0;
-        int kept = 0;
-        for (int remaining = head; remaining > 0 && cumulative < topP; remaining--) {
+        int remaining = head;
+        while (remaining > 0 && cumulative < topP) {
             int id = candidates[0];
-            swap(0, remaining - 1);
-            siftDown(0, remaining - 1, logits);
-            keptIds[kept] = id;
-            keptLogits[kept] = logits.getFloat(id);
-            kept++;
             cumulative += Math.exp(logits.getFloat(id) - max) / denom;
+            swap(0, --remaining);
+            siftDown(0, remaining, logits);
         }
-        for (int i = 0; i < n; i++) {
-            logits.setFloat(i, Float.NEGATIVE_INFINITY);
-        }
-        for (int i = 0; i < kept; i++) {
-            logits.setFloat(keptIds[i], keptLogits[i]);
+        for (int i = 0; i < remaining; i++) {
+            logits.setFloat(candidates[i], Float.NEGATIVE_INFINITY);
         }
         return inner.sampleToken(logits);
     }
