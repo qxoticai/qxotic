@@ -44,11 +44,12 @@ public record LLMOptions(
 
     /**
      * Fills unset sampling flags from the container's recommendations ({@code general.sampling.*}
-     * via {@link com.qxotic.jinfer.chat.SamplingDefaults}), then the shared engine baseline. An
-     * explicit CLI flag always wins. Called once, right after the model loads; everything
-     * downstream reads resolved, non-null values.
+     * via {@link com.qxotic.jinfer.chat.LoadedModel.SamplingDefaults}), then the shared engine
+     * baseline. An explicit CLI flag always wins. Called once, right after the model loads;
+     * everything downstream reads resolved, non-null values.
      */
-    public LLMOptions withResolvedSampling(com.qxotic.jinfer.chat.SamplingDefaults defaults) {
+    public LLMOptions withResolvedSampling(
+            com.qxotic.jinfer.chat.LoadedModel.SamplingDefaults defaults) {
         return new LLMOptions(
                 modelPath,
                 mediaProjector,

@@ -151,7 +151,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                 stopTokens(),
                 modelSeed,
                 chatTemplate(),
-                com.qxotic.jinfer.chat.SamplingDefaults.NONE);
+                com.qxotic.jinfer.chat.LoadedModel.SamplingDefaults.NONE);
     }
 
     private com.qxotic.jinfer.chat.ChatTemplate chatTemplate; // memoized, like turnTemplate

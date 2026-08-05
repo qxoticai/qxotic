@@ -131,7 +131,8 @@ public final class Models {
     private static <S extends com.qxotic.jinfer.RuntimeState> LoadedModel<S> sampled(
             LoadedModel<S> loaded, GGUF gguf) {
         return loaded.withSamplingDefaults(
-                SamplingDefaults.fromGGUF(gguf).withFallback(loaded.samplingDefaults()));
+                LoadedModel.SamplingDefaults.fromGGUF(gguf)
+                        .withFallback(loaded.samplingDefaults()));
     }
 
     static <S extends com.qxotic.jinfer.RuntimeState> LoadedModel<S> mediaSeeded(

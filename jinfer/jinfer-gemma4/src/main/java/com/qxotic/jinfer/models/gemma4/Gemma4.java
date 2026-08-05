@@ -265,7 +265,7 @@ public final class Gemma4
                 turnTemplate().map(t -> (com.qxotic.jinfer.chat.ChatTemplate) t),
                 // Google's recommended sampling for Gemma - GGUFs converted before the
                 // general.sampling.* convention lack it; container values override these
-                new com.qxotic.jinfer.chat.SamplingDefaults(1.0f, 0.95f));
+                new com.qxotic.jinfer.chat.LoadedModel.SamplingDefaults(1.0f, 0.95f));
     }
 
     public java.util.Optional<com.qxotic.jinfer.chat.TurnTemplate> turnTemplate() {

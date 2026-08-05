@@ -162,7 +162,7 @@ public final class GptOss
                 turnTemplate().map(t -> (com.qxotic.jinfer.chat.ChatTemplate) t),
                 // OpenAI's recommended sampling for gpt-oss (temperature 1.0, top_p 1.0);
                 // container general.sampling.* values override these
-                new com.qxotic.jinfer.chat.SamplingDefaults(1.0f, 1.0f));
+                new com.qxotic.jinfer.chat.LoadedModel.SamplingDefaults(1.0f, 1.0f));
     }
 
     public java.util.Optional<com.qxotic.jinfer.chat.TurnTemplate> turnTemplate() {

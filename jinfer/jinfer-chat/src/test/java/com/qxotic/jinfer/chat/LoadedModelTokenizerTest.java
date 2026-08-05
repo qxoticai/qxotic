@@ -75,7 +75,7 @@ final class LoadedModelTokenizerTest {
                 Set.of(2),
                 new byte[] {1, 2, 3, 4},
                 Optional.empty(),
-                SamplingDefaults.NONE);
+                LoadedModel.SamplingDefaults.NONE);
     }
 
     /** Never runs: the record only needs a non-null model with a stable identity. */
