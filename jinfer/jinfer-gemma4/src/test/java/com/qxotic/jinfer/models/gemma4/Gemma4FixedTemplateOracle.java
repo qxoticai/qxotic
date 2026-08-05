@@ -212,6 +212,32 @@ public final class Gemma4FixedTemplateOracle {
                         Gemma4ToolOracle.assistantCall("get_weather", Map.of("city", "Paris")),
                         new Message(Role.TOOL, List.of(new Part.Text("18C, sunny")))));
 
+        // parallel calls with id-less (server-shaped) results fold positionally, one response
+        // block per result, in call order
+        o.compareToolsExpected(
+                "parallel calls fold id-less results positionally",
+                SYS
+                        + "<|turn>user\nParis and Berlin?<turn|>\n"
+                        + GEN
+                        + "<|tool_call>call:get_weather{city:<|\"|>Paris<|\"|>}<tool_call|>"
+                        + "<|tool_call>call:get_weather{city:<|\"|>Berlin<|\"|>}<tool_call|>"
+                        + "<|tool_response>response:get_weather{value:<|\"|>18C<|\"|>}"
+                        + "<tool_response|>"
+                        + "<|tool_response>response:get_weather{value:<|\"|>12C<|\"|>}"
+                        + "<tool_response|><|channel>thought\n",
+                List.of(WEATHER),
+                List.of(
+                        Message.user("Paris and Berlin?"),
+                        new Message(
+                                Role.ASSISTANT,
+                                List.of(
+                                        new Part.ToolCall(
+                                                "", "get_weather", Map.of("city", "Paris")),
+                                        new Part.ToolCall(
+                                                "", "get_weather", Map.of("city", "Berlin")))),
+                        new Message(Role.TOOL, List.of(new Part.Text("18C"))),
+                        new Message(Role.TOOL, List.of(new Part.Text("12C")))));
+
         o.finish("Gemma4FixedTemplateOracle[thoughtTail]");
     }
 }

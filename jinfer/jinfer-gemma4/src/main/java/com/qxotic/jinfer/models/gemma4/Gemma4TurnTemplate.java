@@ -519,6 +519,7 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
             // server's lowering shape - same law as NemotronH); dropping the Text form silently
             // starved the model of every served tool result.
             boolean responses = false;
+            int nthResult = 0; // results fold in call order: the id-less Text shape resolves
             for (int j = i + 1; j < msgs.size() && msgs.get(j).role().equals(Role.TOOL); j++) {
                 for (Part part : msgs.get(j).content()) {
                     String callId;
@@ -533,7 +534,11 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
                         continue;
                     }
                     runs.id(require("<|tool_response>"));
-                    String name = resolveName(calls, callId);
+                    String name =
+                            callId.isEmpty() && nthResult < calls.size()
+                                    ? calls.get(nthResult).name()
+                                    : resolveName(calls, callId);
+                    nthResult++;
                     sinkInto(runs, s -> Gemma4ToolSyntax.response(name, resultText, s));
                     runs.id(require("<tool_response|>"));
                     responses = true;
@@ -545,7 +550,6 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
             runs.text(content);
             if ("call".equals(prev)) {
                 runs.id(require("<|tool_response>")); // awaiting results: the turn stays open
-                openTail = true;
             } else if (continuesIntoNext) {
                 // turn-tag balance (upstream fix): no close - the next assistant message
                 // continues this model turn; hand it the SAME runs so juxtaposed text
