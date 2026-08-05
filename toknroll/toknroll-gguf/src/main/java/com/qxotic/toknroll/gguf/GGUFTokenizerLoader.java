@@ -118,6 +118,31 @@ public final class GGUFTokenizerLoader {
             return this;
         }
 
+        /**
+         * Aliases {@code key} to an already-registered {@code targetKey}: the target's splitter
+         * factory - and its normalizer factory, when it has one - serve the alias. For GGUFs whose
+         * {@code tokenizer.ggml.pre} names a scheme identical to a known one.
+         */
+        public Builder aliasPreTokenizer(String key, String targetKey) {
+            String k = GGUFMetadataKeys.normalizeKey(key, "key");
+            String t = GGUFMetadataKeys.normalizeKey(targetKey, "targetKey");
+            Function<GGUF, Splitter> splitter = splitters.get(t);
+            if (splitter == null) {
+                throw new IllegalArgumentException(
+                        "cannot alias '"
+                                + key
+                                + "' to unknown pre-tokenizer '"
+                                + targetKey
+                                + "' (supported: "
+                                + String.join(", ", new java.util.TreeSet<>(splitters.keySet()))
+                                + ")");
+            }
+            splitters.put(k, splitter);
+            Function<GGUF, Normalizer> normalizer = normalizers.get(t);
+            if (normalizer != null) normalizers.put(k, normalizer);
+            return this;
+        }
+
         Builder registerPreFallback(String modelKey, String preKey) {
             preFallbackByModel.put(
                     GGUFMetadataKeys.normalizeKey(modelKey, "modelKey"),
@@ -359,7 +384,10 @@ public final class GGUFTokenizerLoader {
                             + preKey
                             + "' for model '"
                             + modelKey
-                            + "'. Register it via registerPreTokenizer(...)");
+                            + "'. Register it via registerPreTokenizer(...) or alias it to one of:"
+                            + " "
+                            + String.join(
+                                    ", ", new java.util.TreeSet<>(registries.splitters.keySet())));
         }
         Splitter splitter = splitterFactory.apply(gguf);
 

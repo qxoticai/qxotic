@@ -17,6 +17,24 @@ class GGUFTokenizerLoaderApiTest {
     }
 
     @Test
+    void aliasPreTokenizerAcceptsKnownTarget() {
+        assertNotNull(
+                GGUFTokenizerLoader.createBuilderWithBuiltins()
+                        .aliasPreTokenizer("yi", "llama-bpe")
+                        .build());
+    }
+
+    @Test
+    void aliasPreTokenizerRejectsUnknownTarget() {
+        GGUFTokenizerLoader.Builder builder = GGUFTokenizerLoader.createBuilderWithBuiltins();
+        IllegalArgumentException e =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> builder.aliasPreTokenizer("yi", "no-such-scheme"));
+        org.junit.jupiter.api.Assertions.assertTrue(e.getMessage().contains("llama-bpe"));
+    }
+
+    @Test
     void fromLocalRejectsNonGgufFile(@TempDir Path tempDir) throws Exception {
         GGUFTokenizerLoader loader = GGUFTokenizerLoader.createBuilderWithBuiltins().build();
         Path file = tempDir.resolve("not-gguf.txt");

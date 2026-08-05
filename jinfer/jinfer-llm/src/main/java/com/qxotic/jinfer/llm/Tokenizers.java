@@ -60,7 +60,46 @@ public final class Tokenizers {
                         .registerPreTokenizer(
                                 "lfm2", g -> Splitter.regex(Pattern.compile(LFM2_PRE_PATTERN)))
                         .registerNormalizer("lfm2", g -> Normalizer.identity());
-        return registrations.apply(builder).build().fromGGUF(gguf);
+        builder = registrations.apply(builder);
+        applyPropertyOverrides(builder);
+        try {
+            return builder.build().fromGGUF(gguf);
+        } catch (IllegalArgumentException e) {
+            if (e.getMessage() != null
+                    && e.getMessage().startsWith("Unsupported GGUF pre-tokenizer key")) {
+                throw new IllegalArgumentException(
+                        e.getMessage()
+                                + ". Quick fix without code:"
+                                + " -Djinfer.preTokenizer.<name>=<known-name> to alias a known"
+                                + " scheme, or -Djinfer.preTokenizer.<name>=regex:<pattern> to"
+                                + " supply one",
+                        e);
+            }
+            throw e;
+        }
+    }
+
+    /**
+     * The end-user escape hatch for a GGUF whose {@code tokenizer.ggml.pre} nobody registered yet:
+     * {@code -Djinfer.preTokenizer.<name>=<known-name>} aliases a known scheme (most "new"
+     * pre-tokenizers are an existing scheme under a new name), {@code
+     * -Djinfer.preTokenizer.<name>=regex:<pattern>} supplies one (identity normalizer). Applied
+     * LAST, so a property can also override a registration.
+     */
+    private static void applyPropertyOverrides(GGUFTokenizerLoader.Builder builder) {
+        String prefix = "jinfer.preTokenizer.";
+        for (String key : System.getProperties().stringPropertyNames()) {
+            if (!key.startsWith(prefix)) continue;
+            String name = key.substring(prefix.length());
+            String value = System.getProperty(key);
+            if (value.startsWith("regex:")) {
+                Pattern pattern = Pattern.compile(value.substring("regex:".length()));
+                builder.registerPreTokenizer(name, g -> Splitter.regex(pattern))
+                        .registerNormalizer(name, g -> Normalizer.identity());
+            } else {
+                builder.aliasPreTokenizer(name, value); // throws with the known names on a typo
+            }
+        }
     }
 
     /** The GGUF's raw Jinja chat-template source, or {@code ""} when it carries none. */
