@@ -11,7 +11,6 @@ import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.chat.ToolCallSyntax;
 import com.qxotic.jinfer.media.AudioCodec;
 import com.qxotic.jinfer.media.ImageCodec;
-import com.qxotic.jinfer.media.VideoCodec;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
@@ -39,11 +38,17 @@ final class JinferMappings {
     // ---- Spring AI -> jinfer (typed, for the native codec) ----
 
     static List<Message> toMessages(List<org.springframework.ai.chat.messages.Message> messages) {
+        return toMessages(messages, com.qxotic.jinfer.media.VideoSampler.UNIFORM);
+    }
+
+    static List<Message> toMessages(
+            List<org.springframework.ai.chat.messages.Message> messages,
+            com.qxotic.jinfer.media.VideoSampler videoSampler) {
         List<Message> out = new ArrayList<>(messages.size());
         for (org.springframework.ai.chat.messages.Message m : messages) {
             switch (m) {
                 case SystemMessage s -> out.add(new Message(Role.SYSTEM, s.getText()));
-                case UserMessage u -> out.add(new Message(Role.USER, userParts(u)));
+                case UserMessage u -> out.add(new Message(Role.USER, userParts(u, videoSampler)));
                 case AssistantMessage ai -> out.add(assistant(ai));
                 case ToolResponseMessage r -> {
                     List<Part> results = new ArrayList<>(r.getResponses().size());
@@ -61,7 +66,8 @@ final class JinferMappings {
     }
 
     /** User content, media included: text stays text, image/audio/video decode to media parts. */
-    private static List<Part> userParts(UserMessage u) {
+    private static List<Part> userParts(
+            UserMessage u, com.qxotic.jinfer.media.VideoSampler videoSampler) {
         List<Part> parts = new ArrayList<>();
         if (u.getText() != null && !u.getText().isEmpty()) {
             parts.add(new Part.Text(u.getText(), null));
@@ -79,7 +85,7 @@ final class JinferMappings {
                 }
                 case "video" -> {
                     java.nio.file.Path src = localPath(media);
-                    parts.add(blob(kind, sha256(src), () -> VideoCodec.ffmpeg().uniform(src)));
+                    parts.add(blob(kind, sha256(src), () -> videoSampler.sample(src)));
                 }
                 default ->
                         throw new UnsupportedOperationException(

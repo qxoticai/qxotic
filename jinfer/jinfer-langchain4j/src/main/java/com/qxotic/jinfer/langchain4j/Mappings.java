@@ -12,7 +12,6 @@ import com.qxotic.jinfer.chat.ToolCallSyntax;
 import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.media.AudioCodec;
 import com.qxotic.jinfer.media.ImageCodec;
-import com.qxotic.jinfer.media.VideoCodec;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.AiMessage;
@@ -65,11 +64,16 @@ final class Mappings {
     // ---- langchain4j -> jinfer (typed, for the native codec) ----
 
     static List<Message> toMessages(List<ChatMessage> messages) {
+        return toMessages(messages, com.qxotic.jinfer.media.VideoSampler.UNIFORM);
+    }
+
+    static List<Message> toMessages(
+            List<ChatMessage> messages, com.qxotic.jinfer.media.VideoSampler videoSampler) {
         List<Message> out = new ArrayList<>(messages.size());
         for (ChatMessage m : messages) {
             switch (m) {
                 case SystemMessage s -> out.add(new Message(Role.SYSTEM, s.text()));
-                case UserMessage u -> out.add(new Message(Role.USER, userParts(u)));
+                case UserMessage u -> out.add(new Message(Role.USER, userParts(u, videoSampler)));
                 case AiMessage ai -> out.add(assistant(ai));
                 case ToolExecutionResultMessage r ->
                         out.add(
@@ -84,7 +88,8 @@ final class Mappings {
     }
 
     /** User content, media included: text stays text, image/audio/video decode to media parts. */
-    private static List<Part> userParts(UserMessage u) {
+    private static List<Part> userParts(
+            UserMessage u, com.qxotic.jinfer.media.VideoSampler videoSampler) {
         List<Part> parts = new ArrayList<>();
         for (Content c : u.contents()) {
             switch (c) {
@@ -99,7 +104,7 @@ final class Mappings {
                 }
                 case VideoContent v -> {
                     Path src = localPath(v.video().url());
-                    parts.add(blob("video", sha256(src), () -> VideoCodec.ffmpeg().uniform(src)));
+                    parts.add(blob("video", sha256(src), () -> videoSampler.sample(src)));
                 }
                 default ->
                         throw new UnsupportedFeatureException(

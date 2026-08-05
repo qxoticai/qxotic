@@ -80,6 +80,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     // cached-prompt view state: EMPTY for the base model. Converted to jinfer types ONCE at view
     // creation (media decoded once, not per request); a view's conversations all start with this
     // prefix, its KV restored from the engine's block tree instead of re-prefilled.
+    final com.qxotic.jinfer.media.VideoSampler videoSampler;
     final CachedPrompt prefix;
 
     private JinferChatModel(Builder b) {
@@ -102,6 +103,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                                         : b.modelName,
                                 b.cachedPrompts,
                                 b.cachedSessions);
+        this.videoSampler = b.videoSampler;
         this.prefix = CachedPrompt.NONE;
         this.observationRegistry =
                 b.observationRegistry == null ? ObservationRegistry.NOOP : b.observationRegistry;
@@ -129,6 +131,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         this.defaultOptions = base.defaultOptions;
         this.observationRegistry = base.observationRegistry;
         this.observationConvention = base.observationConvention;
+        this.videoSampler = base.videoSampler;
         this.prefix = prefix;
     }
 
@@ -158,7 +161,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             List<ToolCallback> tools) {
         return withPrefix(
                 prefix.merge(
-                        JinferMappings.toMessages(prefixMessages),
+                        JinferMappings.toMessages(prefixMessages, videoSampler),
                         tools == null ? List.of() : JinferMappings.toTools(tools)));
     }
 
@@ -199,7 +202,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                             + " withCachedPrompt(...) instead");
         }
         List<Message> messages = new ArrayList<>(prefix.messages());
-        messages.addAll(JinferMappings.toMessages(prompt.getInstructions()));
+        messages.addAll(JinferMappings.toMessages(prompt.getInstructions(), videoSampler));
         List<org.springframework.ai.chat.messages.Message> instructions = prompt.getInstructions();
         ChatEngine.Request lowered =
                 new ChatEngine.Request(
@@ -485,6 +488,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         private LoadedModel<?> loaded;
         private String modelName;
         private Path mediaProjector;
+        private com.qxotic.jinfer.media.VideoSampler videoSampler =
+                com.qxotic.jinfer.media.VideoSampler.UNIFORM;
         private Path cachedPrompts;
         private int cachedSessions;
         private int contextLength;
@@ -522,6 +527,17 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
          */
         public Builder modelName(String modelName) {
             this.modelName = modelName;
+            return this;
+        }
+
+        /**
+         * How video content becomes frames - default {@link
+         * com.qxotic.jinfer.media.VideoSampler#UNIFORM} (the reference policy: 32 frames uniform
+         * across the whole duration). Any policy composes: {@code v -> VideoCodec.ffmpeg().span(v,
+         * 8)}, a window of a long source, caller-curated timestamps.
+         */
+        public Builder videoSampler(com.qxotic.jinfer.media.VideoSampler videoSampler) {
+            this.videoSampler = java.util.Objects.requireNonNull(videoSampler);
             return this;
         }
 

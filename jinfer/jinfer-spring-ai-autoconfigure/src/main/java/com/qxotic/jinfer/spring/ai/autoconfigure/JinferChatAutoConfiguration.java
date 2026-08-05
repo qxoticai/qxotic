@@ -25,7 +25,8 @@ public class JinferChatAutoConfiguration {
     public JinferChatModel jinferChatModel(
             JinferChatProperties properties,
             ObjectProvider<ObservationRegistry> observationRegistry,
-            ObjectProvider<ChatModelObservationConvention> observationConvention) {
+            ObjectProvider<ChatModelObservationConvention> observationConvention,
+            ObjectProvider<com.qxotic.jinfer.media.VideoSampler> videoSampler) {
         if (!StringUtils.hasText(properties.modelPath())) {
             throw new IllegalStateException(
                     "spring.ai.jinfer.chat.model-path is required: point it at a local GGUF file");
@@ -43,6 +44,7 @@ public class JinferChatAutoConfiguration {
                         .timeout(properties.timeout());
         observationRegistry.ifAvailable(builder::observationRegistry);
         observationConvention.ifAvailable(builder::observationConvention);
+        videoSampler.ifAvailable(builder::videoSampler); // a VideoSampler bean overrides UNIFORM
         if (StringUtils.hasText(properties.mediaProjector())) {
             builder.mediaProjector(Path.of(properties.mediaProjector()));
         }
