@@ -37,7 +37,8 @@ public record LoadedModel<S extends RuntimeState>(
         String chatTemplateSource,
         Set<Integer> stopTokens,
         byte[] seed,
-        Optional<ChatTemplate> template) {
+        Optional<ChatTemplate> template,
+        SamplingDefaults samplingDefaults) {
 
     public LoadedModel {
         if (model == null) throw new IllegalArgumentException("null model");
@@ -45,8 +46,36 @@ public record LoadedModel<S extends RuntimeState>(
         if (chatTemplateSource == null) throw new IllegalArgumentException("null template source");
         if (seed == null) throw new IllegalArgumentException("null seed");
         if (template == null) throw new IllegalArgumentException("null template optional");
+        if (samplingDefaults == null) throw new IllegalArgumentException("null sampling defaults");
         stopTokens = Set.copyOf(stopTokens);
         seed = seed.clone();
+    }
+
+    /**
+     * Without container sampling recommendations - the ports' construction form; {@code
+     * Models.load} attaches {@link SamplingDefaults#fromGGUF} on the way out.
+     */
+    public LoadedModel(
+            LanguageModel<?, ?, S> model,
+            Tokenizer tokenizer,
+            String chatTemplateSource,
+            Set<Integer> stopTokens,
+            byte[] seed,
+            Optional<ChatTemplate> template) {
+        this(
+                model,
+                tokenizer,
+                chatTemplateSource,
+                stopTokens,
+                seed,
+                template,
+                SamplingDefaults.NONE);
+    }
+
+    /** The same model with the container's recommended sampling parameters attached. */
+    public LoadedModel<S> withSamplingDefaults(SamplingDefaults samplingDefaults) {
+        return new LoadedModel<>(
+                model, tokenizer, chatTemplateSource, stopTokens, seed, template, samplingDefaults);
     }
 
     /**
@@ -68,7 +97,8 @@ public record LoadedModel<S extends RuntimeState>(
                 chatTemplateSource,
                 stopTokens,
                 reseed(seed, tokenizer),
-                template);
+                template,
+                samplingDefaults);
     }
 
     /**
@@ -88,7 +118,8 @@ public record LoadedModel<S extends RuntimeState>(
         if (source == null || source.isBlank()) {
             throw new IllegalArgumentException("blank chat template source");
         }
-        return new LoadedModel<>(model, tokenizer, source, stopTokens, seed, Optional.empty());
+        return new LoadedModel<>(
+                model, tokenizer, source, stopTokens, seed, Optional.empty(), samplingDefaults);
     }
 
     /**
@@ -102,7 +133,13 @@ public record LoadedModel<S extends RuntimeState>(
     public LoadedModel<S> withTemplate(ChatTemplate template) {
         if (template == null) throw new IllegalArgumentException("null template");
         return new LoadedModel<>(
-                model, tokenizer, chatTemplateSource, stopTokens, seed, Optional.of(template));
+                model,
+                tokenizer,
+                chatTemplateSource,
+                stopTokens,
+                seed,
+                Optional.of(template),
+                samplingDefaults);
     }
 
     /**

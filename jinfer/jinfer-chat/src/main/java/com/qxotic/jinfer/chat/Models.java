@@ -84,7 +84,12 @@ public final class Models {
      * exception).
      */
     public static LoadedModel<?> load(Path path, int ctx, Arena arena) throws IOException {
-        return open(path, (fc, gguf) -> provider(gguf).load(fc, gguf, ctx, arena));
+        return open(
+                path,
+                (fc, gguf) ->
+                        provider(gguf)
+                                .load(fc, gguf, ctx, arena)
+                                .withSamplingDefaults(SamplingDefaults.fromGGUF(gguf)));
     }
 
     /**
@@ -108,7 +113,12 @@ public final class Models {
     public static LoadedModel<?> load(Path path, Path mediaProjector, int ctx, Arena arena)
             throws IOException {
         return mediaSeeded(
-                open(path, (fc, gguf) -> provider(gguf).load(fc, gguf, ctx, mediaProjector, arena)),
+                open(
+                        path,
+                        (fc, gguf) ->
+                                provider(gguf)
+                                        .load(fc, gguf, ctx, mediaProjector, arena)
+                                        .withSamplingDefaults(SamplingDefaults.fromGGUF(gguf))),
                 mediaProjector);
     }
 
@@ -138,7 +148,8 @@ public final class Models {
                     loaded.chatTemplateSource(),
                     loaded.stopTokens(),
                     sha.digest(),
-                    loaded.template());
+                    loaded.template(),
+                    loaded.samplingDefaults());
         } catch (java.security.NoSuchAlgorithmException e) {
             throw new AssertionError(e);
         }
@@ -150,7 +161,9 @@ public final class Models {
      */
     public static LoadedModel<?> load(FileChannel fileChannel, GGUF gguf, int ctx, Arena arena)
             throws IOException {
-        return provider(gguf).load(fileChannel, gguf, ctx, arena);
+        return provider(gguf)
+                .load(fileChannel, gguf, ctx, arena)
+                .withSamplingDefaults(SamplingDefaults.fromGGUF(gguf));
     }
 
     /**

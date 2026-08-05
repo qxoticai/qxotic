@@ -13,8 +13,8 @@ public record LLMOptions(
         boolean server,
         String host,
         int port,
-        float temperature,
-        float topp,
+        Float temperature,
+        Float topp,
         long seed,
         int maxTokens,
         boolean stream,
@@ -33,9 +33,44 @@ public record LLMOptions(
                 server || interactive || prompt != null,
                 "Missing argument: --prompt is required in --instruct mode e.g. --prompt \"Why is"
                         + " the sky blue?\"");
-        require(0 <= temperature, "Invalid argument: --temperature must be non-negative");
-        require(0 <= topp && topp <= 1, "Invalid argument: --top-p must be within [0, 1]");
+        require(
+                temperature == null || 0 <= temperature,
+                "Invalid argument: --temperature must be non-negative");
+        require(
+                topp == null || (0 <= topp && topp <= 1),
+                "Invalid argument: --top-p must be within [0, 1]");
         require(0 <= port && port <= 65535, "Invalid argument: --port must be within [0, 65535]");
+    }
+
+    /**
+     * Fills unset sampling flags from the container's recommendations ({@code general.sampling.*}
+     * via {@link com.qxotic.jinfer.chat.SamplingDefaults}), then the engine defaults (temperature
+     * 1.0, top-p 0.95). An explicit CLI flag always wins. Called once, right after the model loads;
+     * everything downstream reads resolved, non-null values.
+     */
+    public LLMOptions withResolvedSampling(com.qxotic.jinfer.chat.SamplingDefaults defaults) {
+        return new LLMOptions(
+                modelPath,
+                mediaProjector,
+                prompt,
+                systemPrompt,
+                interactive,
+                server,
+                host,
+                port,
+                temperature != null ? temperature : defaults.temperatureOr(1f),
+                topp != null ? topp : defaults.topPOr(0.95f),
+                seed,
+                maxTokens,
+                stream,
+                echo,
+                think,
+                thinkInline,
+                colors,
+                rawPrompt,
+                noGrammar,
+                promptCache,
+                promptCacheReadOnly);
     }
 
     public static void require(boolean condition, String messageFormat, Object... args) {

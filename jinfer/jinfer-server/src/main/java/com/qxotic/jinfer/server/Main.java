@@ -264,7 +264,9 @@ public class Main {
         out.println("  --port <int>                  server bind port, default 17325");
         out.println("  --prompt, -p <string>         input prompt");
         out.println("  --system-prompt, -sp <string> system prompt for chat/instruct mode");
-        out.println("  --temperature, -temp <float>  temperature in [0,inf], default 1.0");
+        out.println(
+                "  --temperature, -temp <float>  temperature in [0,inf], default: the model's"
+                        + " GGUF-recommended value (general.sampling.temp), else 1.0");
         out.println(
                 "  --top-p <float>               p value in top-p (nucleus) sampling in [0,1]"
                         + " default 0.95");
@@ -315,8 +317,8 @@ public class Main {
     static LLMOptions parseOptions(String[] args) {
         String prompt = null;
         String systemPrompt = null;
-        float temperature = 1f;
-        float topp = 0.95f;
+        Float temperature = null; // unset = the model's GGUF-recommended value, else 1.0
+        Float topp = null; // unset = the model's GGUF-recommended value, else 0.95
         Path modelPath = null;
         Path mediaProjector = null;
         long seed = System.nanoTime();
@@ -475,6 +477,7 @@ public class Main {
                                     options.maxTokens(),
                                     java.lang.foreign.Arena.global());
         }
+        options = options.withResolvedSampling(model.samplingDefaults());
         if (options.server()) {
             Server.start(model, options);
             return;

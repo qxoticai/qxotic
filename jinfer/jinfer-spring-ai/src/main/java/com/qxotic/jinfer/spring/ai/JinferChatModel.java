@@ -108,11 +108,24 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         this.observationRegistry =
                 b.observationRegistry == null ? ObservationRegistry.NOOP : b.observationRegistry;
         this.observationConvention = b.observationConvention;
+        // precedence: request > builder > the container's recommendation (general.sampling.*)
+        // > engine defaults (greedy, top-p 0.95) applied at request mapping
+        var recommended = engine.loaded().samplingDefaults();
         JinferChatOptions knobs =
                 JinferChatOptions.builder()
                         .model(engine.modelName())
-                        .temperature(b.temperature)
-                        .topP(b.topP)
+                        .temperature(
+                                b.temperature != null
+                                        ? b.temperature
+                                        : recommended.temperature() == null
+                                                ? null
+                                                : recommended.temperature().doubleValue())
+                        .topP(
+                                b.topP != null
+                                        ? b.topP
+                                        : recommended.topP() == null
+                                                ? null
+                                                : recommended.topP().doubleValue())
                         .maxTokens(b.maxTokens)
                         .seed(b.seed)
                         .thinking(b.thinking)

@@ -85,11 +85,17 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         this.prefix = CachedPrompt.NONE;
         // Jinfer-typed ALWAYS: ChatModel.chat merges defaults.overrideWith(request), and only a
         // jinfer-typed receiver preserves grammar/seed from either side of the merge
+        // precedence: request > builder > the container's recommendation (general.sampling.*)
+        // > engine defaults (greedy, top-p 0.95) applied at request mapping
+        var recommended = engine.loaded().samplingDefaults();
         JinferChatRequestParameters base =
                 JinferChatRequestParameters.builder()
                         .modelName(engine.modelName())
-                        .temperature(b.temperature)
-                        .topP(b.topP)
+                        .temperature(
+                                b.temperature != null
+                                        ? b.temperature
+                                        : toDouble(recommended.temperature()))
+                        .topP(b.topP != null ? b.topP : toDouble(recommended.topP()))
                         .maxOutputTokens(b.maxOutputTokens)
                         .build();
         // caller-supplied defaults win field-by-field; unsupported ones reject HERE, eagerly - a
@@ -341,6 +347,10 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                             + " same reply - pick one");
     }
 
+    private static Double toDouble(Float f) {
+        return f == null ? null : f.doubleValue();
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -442,13 +452,21 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             return this;
         }
 
-        /** Sampling temperature; default 0 (greedy argmax). Per-request values override. */
+        /**
+         * Sampling temperature; default: the model's GGUF-recommended value ({@code
+         * general.sampling.temp}) when the container carries one, else 0 (greedy argmax).
+         * Per-request values override.
+         */
         public Builder temperature(Double temperature) {
             this.temperature = temperature;
             return this;
         }
 
-        /** Nucleus sampling mass, effective only at temperature &gt; 0; default 0.95. */
+        /**
+         * Nucleus sampling mass, effective only at temperature &gt; 0; default: the model's
+         * GGUF-recommended value ({@code general.sampling.top_p}) when the container carries one,
+         * else 0.95.
+         */
         public Builder topP(Double topP) {
             this.topP = topP;
             return this;
