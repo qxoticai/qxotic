@@ -250,19 +250,22 @@ public final class Models {
         for (ModelProvider p : PROVIDERS) {
             if (p.supports(arch)) return p;
         }
-        if (PROVIDERS.isEmpty()) {
-            throw new IllegalArgumentException(
-                    "no model ports on the classpath - add the port artifacts for your models (e.g."
-                        + " com.qxotic:jinfer-llama), and if you shade jinfer into one jar, merge"
-                        + " META-INF/services (Maven Shade: ServicesResourceTransformer) or"
-                        + " ServiceLoader finds nothing");
-        }
         String artifact = null;
         for (var e : PORT_ARTIFACTS.entrySet()) {
             if (arch.equals(e.getKey()) || arch.startsWith(e.getKey())) {
                 artifact = e.getValue();
                 break;
             }
+        }
+        if (PROVIDERS.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "no model ports on the classpath. This GGUF is architecture '"
+                            + arch
+                            + "' - add "
+                            + (artifact != null ? artifact : "its port artifact")
+                            + " (or com.qxotic:jinfer-models-all for every port). If you shade"
+                            + " jinfer into one jar, merge META-INF/services (Maven Shade:"
+                            + " ServicesResourceTransformer) or ServiceLoader finds nothing");
         }
         java.util.SortedSet<String> here = supportedArchitectures();
         throw new IllegalArgumentException(
