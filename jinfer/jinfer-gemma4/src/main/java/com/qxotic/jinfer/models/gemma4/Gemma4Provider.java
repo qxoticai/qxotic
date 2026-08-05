@@ -16,6 +16,11 @@ public final class Gemma4Provider implements ModelProvider {
     }
 
     @Override
+    public java.util.Set<String> architectures() {
+        return java.util.Set.of("gemma4");
+    }
+
+    @Override
     public LoadedModel<?> load(FileChannel fileChannel, GGUF gguf, int contextLength, Arena arena)
             throws IOException {
         return Gemma4.loadModel(fileChannel, gguf, contextLength, arena).loaded();

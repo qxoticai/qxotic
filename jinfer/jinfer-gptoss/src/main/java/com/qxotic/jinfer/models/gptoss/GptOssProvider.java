@@ -16,6 +16,11 @@ public final class GptOssProvider implements ModelProvider {
     }
 
     @Override
+    public java.util.Set<String> architectures() {
+        return java.util.Set.of("gpt-oss");
+    }
+
+    @Override
     public LoadedModel<?> load(FileChannel fileChannel, GGUF gguf, int contextLength, Arena arena)
             throws IOException {
         return GptOss.loadModel(fileChannel, gguf, contextLength, arena).loaded();

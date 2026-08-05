@@ -16,6 +16,11 @@ public final class Lfm2Provider implements ModelProvider {
     }
 
     @Override
+    public java.util.Set<String> architectures() {
+        return java.util.Set.of("lfm2", "lfm2moe"); // representative: supports() matches lfm*
+    }
+
+    @Override
     public LoadedModel<?> load(FileChannel fileChannel, GGUF gguf, int contextLength, Arena arena)
             throws IOException {
         return Lfm2.loadModel(fileChannel, gguf, contextLength, arena).loaded();

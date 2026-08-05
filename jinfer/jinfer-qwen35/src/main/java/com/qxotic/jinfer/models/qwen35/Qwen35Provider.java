@@ -16,7 +16,12 @@ public final class Qwen35Provider implements ModelProvider {
 
     @Override
     public boolean supports(String architecture) {
-        return "qwen35".equals(architecture) || "qwen35moe".equals(architecture);
+        return architectures().contains(architecture);
+    }
+
+    @Override
+    public java.util.Set<String> architectures() {
+        return java.util.Set.of("qwen35", "qwen35moe");
     }
 
     @Override

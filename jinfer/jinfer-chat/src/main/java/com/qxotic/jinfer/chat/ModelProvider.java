@@ -17,6 +17,17 @@ public interface ModelProvider {
     boolean supports(String architecture);
 
     /**
+     * The architectures this port claims, for DIAGNOSTICS: error messages and {@link
+     * Models#supportedArchitectures()} enumerate these so a failed load can say what the classpath
+     * actually provides. {@link #supports} stays the dispatch authority (a port matching by prefix
+     * lists representative names here). Default empty: the port still works, it just cannot
+     * introduce itself in error messages.
+     */
+    default java.util.Set<String> architectures() {
+        return java.util.Set.of();
+    }
+
+    /**
      * Loads a GENERATIVE model from an already-parsed GGUF; {@code fileChannel} supplies the tensor
      * data, mapped into {@code arena} (who provides the arena owns the weights' lifetime; it must
      * outlive every model sharing them). {@code contextLength} -1 means the model's full context.

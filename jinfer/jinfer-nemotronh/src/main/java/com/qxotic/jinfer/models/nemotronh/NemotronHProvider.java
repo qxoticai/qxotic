@@ -12,7 +12,12 @@ public final class NemotronHProvider implements ModelProvider {
 
     @Override
     public boolean supports(String architecture) {
-        return "nemotron_h".equals(architecture) || "nemotron_h_moe".equals(architecture);
+        return architectures().contains(architecture);
+    }
+
+    @Override
+    public java.util.Set<String> architectures() {
+        return java.util.Set.of("nemotron_h", "nemotron_h_moe");
     }
 
     @Override

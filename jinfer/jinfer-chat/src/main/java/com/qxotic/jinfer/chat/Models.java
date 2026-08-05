@@ -165,17 +165,64 @@ public final class Models {
         }
     }
 
-    /** The port claiming the GGUF's architecture; throws when no port on the classpath does. */
+    /**
+     * The architectures the classpath's ports claim (sorted) - what {@link #load} can dispatch. For
+     * tooling and startup banners; a port that does not enumerate (default {@link
+     * ModelProvider#architectures()}) dispatches fine but is absent here.
+     */
+    public static java.util.SortedSet<String> supportedArchitectures() {
+        java.util.TreeSet<String> archs = new java.util.TreeSet<>();
+        for (ModelProvider p : PROVIDERS) archs.addAll(p.architectures());
+        return archs;
+    }
+
+    // arch (or prefix, for pattern-matching ports) -> the Maven artifact that provides it.
+    // DIAGNOSTICS ONLY - dispatch never reads this; it exists so "unsupported architecture"
+    // can name the jar to add. Kept in sync with the in-repo ports by hand; an entry for a
+    // port the user has is harmless (dispatch already succeeded).
+    private static final java.util.Map<String, String> PORT_ARTIFACTS =
+            java.util.Map.of(
+                    "gemma4", "com.qxotic:jinfer-gemma4",
+                    "gpt-oss", "com.qxotic:jinfer-gptoss",
+                    "lfm", "com.qxotic:jinfer-lfm2",
+                    "llama", "com.qxotic:jinfer-llama",
+                    "minicpm", "com.qxotic:jinfer-llama",
+                    "mistral3", "com.qxotic:jinfer-llama",
+                    "smollm3", "com.qxotic:jinfer-llama",
+                    "nemotron_h", "com.qxotic:jinfer-nemotronh",
+                    "qwen35", "com.qxotic:jinfer-qwen35",
+                    "inflect", "com.qxotic:jinfer-inflect2");
+
+    /** The port claiming the GGUF's architecture; throws a REMEDY-naming error when none does. */
     private static ModelProvider provider(GGUF gguf) {
         String arch = gguf.getString("general.architecture");
         for (ModelProvider p : PROVIDERS) {
             if (p.supports(arch)) return p;
         }
+        if (PROVIDERS.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "no model ports on the classpath - add the port artifacts for your models (e.g."
+                        + " com.qxotic:jinfer-llama), and if you shade jinfer into one jar, merge"
+                        + " META-INF/services (Maven Shade: ServicesResourceTransformer) or"
+                        + " ServiceLoader finds nothing");
+        }
+        String artifact = null;
+        for (var e : PORT_ARTIFACTS.entrySet()) {
+            if (arch.equals(e.getKey()) || arch.startsWith(e.getKey())) {
+                artifact = e.getValue();
+                break;
+            }
+        }
+        java.util.SortedSet<String> here = supportedArchitectures();
         throw new IllegalArgumentException(
                 "unsupported architecture '"
                         + arch
-                        + "' ("
-                        + PROVIDERS.size()
-                        + " ports on the classpath)");
+                        + "'"
+                        + (artifact != null
+                                ? " - add " + artifact + " to the classpath"
+                                : " - no known jinfer port for it")
+                        + " (ports here support: "
+                        + (here.isEmpty() ? PROVIDERS.size() + " unenumerated port(s)" : here)
+                        + ")");
     }
 }

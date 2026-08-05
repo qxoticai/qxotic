@@ -24,6 +24,11 @@ public final class Inflect2Provider implements ModelProvider {
     }
 
     @Override
+    public java.util.Set<String> architectures() {
+        return java.util.Set.of("inflect2"); // representative: supports() matches inflect*
+    }
+
+    @Override
     public SpeechModel<?, ?, ?> loadSpeech(
             FileChannel fileChannel, GGUF gguf, java.nio.file.Path path, Arena arena)
             throws IOException {

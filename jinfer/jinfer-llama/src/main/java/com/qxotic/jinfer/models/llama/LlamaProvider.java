@@ -12,7 +12,12 @@ public final class LlamaProvider implements ModelProvider {
 
     @Override
     public boolean supports(String architecture) {
-        return java.util.Set.of("llama", "minicpm", "mistral3", "smollm3").contains(architecture);
+        return architectures().contains(architecture);
+    }
+
+    @Override
+    public java.util.Set<String> architectures() {
+        return java.util.Set.of("llama", "minicpm", "mistral3", "smollm3");
     }
 
     @Override
