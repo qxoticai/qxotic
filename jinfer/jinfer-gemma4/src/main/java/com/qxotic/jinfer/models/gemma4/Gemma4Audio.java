@@ -171,11 +171,29 @@ public final class Gemma4Audio implements Embedder<Media.Audio> {
             float eps =
                     gguf.getValueOrDefault(
                             float.class, "clip.audio.attention.layer_norm_epsilon", 1e-6f);
-            FloatTensor mmProj = ModelLoader.loadQuantized(t.get("mm.a.input_projection.weight"));
+            GGMLTensorEntry mmProjEntry = t.get("mm.a.input_projection.weight");
+            if (mmProjEntry == null) {
+                throw new IllegalArgumentException(
+                        "'"
+                                + mmprojPath.getFileName()
+                                + "' declares a gemma4ua audio projector but carries no"
+                                + " mm.a.input_projection.weight - the sidecar is malformed");
+            }
+            FloatTensor mmProj = ModelLoader.loadQuantized(mmProjEntry);
             // The raw-waveform FRAME SIZE (640) is the projection's input dim.
             // clip.audio.num_mel_bins reads
             // 128 (a stale/repurposed value); llama.cpp hardcodes 640 for gemma4ua, so derive it
             // from the weight.
+            if (mmProj.size() % modelDim != 0) {
+                throw new IllegalArgumentException(
+                        "'"
+                                + mmprojPath.getFileName()
+                                + "': mm.a.input_projection has "
+                                + mmProj.size()
+                                + " elements, not a multiple of projection_dim "
+                                + modelDim
+                                + " - the frame size would truncate; the sidecar is malformed");
+            }
             int frameSize = (int) (mmProj.size() / modelDim);
             return new Gemma4Audio(frameSize, modelDim, eps, mmProj);
         }

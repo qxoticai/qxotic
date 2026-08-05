@@ -43,6 +43,23 @@ class MmprojPairingTest {
     }
 
     @Test
+    void unsupportedConformerGeometryRefusesLoudly() {
+        Path fake = Path.of("variant-mmproj.gguf");
+        // the supported family shape passes; each broken invariant refuses with the geometry
+        assertDoesNotThrow(() -> Gemma4Conformer.validateArchitecture(fake, 1024, 8, 128));
+        for (int[] bad : new int[][] {{1024, 8, 80}, {1024, 7, 128}, {768, 8, 128}}) {
+            int dim = bad[0];
+            int heads = bad[1];
+            int mel = bad[2];
+            IllegalArgumentException e =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () -> Gemma4Conformer.validateArchitecture(fake, dim, heads, mel));
+            assertTrue(e.getMessage().contains("geometry"), e.getMessage());
+        }
+    }
+
+    @Test
     void theTwelveBSidecarRejectsAnE2bModel() {
         Assumptions.assumeTrue(Files.exists(B12_MMPROJ));
         IllegalArgumentException e =

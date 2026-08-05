@@ -481,8 +481,44 @@ public final class Gemma4Vision implements Embedder<Media.Image>, VisionBudget {
             float eps =
                     gguf.getValueOrDefault(
                             float.class, "clip.vision.attention.layer_norm_epsilon", 1e-6f);
+            // the geometry invariants a variant file would break silently: heads must divide
+            // the width, the patch embedding must match [visionDim, 3*patch*patch], and the
+            // position table must split evenly - each otherwise mis-embeds without an error
+            if (visionDim % nHead != 0) {
+                throw new IllegalArgumentException(
+                        "'"
+                                + mmprojPath.getFileName()
+                                + "': vision head_count "
+                                + nHead
+                                + " does not divide embedding_length "
+                                + visionDim
+                                + " - unsupported gemma4v geometry");
+            }
             FloatTensor patchEmbd = ModelLoader.loadQuantized(t.get("v.patch_embd.weight"));
+            if (patchEmbd.size() != (long) visionDim * 3 * patchSize * patchSize) {
+                throw new IllegalArgumentException(
+                        "'"
+                                + mmprojPath.getFileName()
+                                + "': v.patch_embd has "
+                                + patchEmbd.size()
+                                + " elements but patch_size "
+                                + patchSize
+                                + " and embedding_length "
+                                + visionDim
+                                + " imply "
+                                + ((long) visionDim * 3 * patchSize * patchSize)
+                                + " - the sidecar's metadata and tensors disagree");
+            }
             FloatTensor posEmbd = ModelLoader.loadQuantized(t.get("v.position_embd.weight"));
+            if (posEmbd.size() % (visionDim * 2L) != 0) {
+                throw new IllegalArgumentException(
+                        "'"
+                                + mmprojPath.getFileName()
+                                + "': v.position_embd has "
+                                + posEmbd.size()
+                                + " elements, not a multiple of 2*embedding_length - the"
+                                + " sidecar's metadata and tensors disagree");
+            }
             int posSize = (int) (posEmbd.size() / (visionDim * 2L));
             FloatTensor mmProj = ModelLoader.loadQuantized(t.get("mm.input_projection.weight"));
             ClampInfo mmProjClamp = readClampInfo(t, "mm.input_projection");

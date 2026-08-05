@@ -642,6 +642,7 @@ public final class Gemma4Conformer implements Embedder<Media.Audio> {
             float eps =
                     gguf.getValueOrDefault(
                             float.class, "clip.audio.attention.layer_norm_epsilon", 1e-6f);
+            validateArchitecture(mmprojPath, dim, heads, nMel);
 
             Block[] blocks = new Block[nBlocks];
             for (int i = 0; i < nBlocks; i++) {
@@ -687,6 +688,34 @@ public final class Gemma4Conformer implements Embedder<Media.Audio> {
                     cw(t, "a.pre_encode.out", (long) dim * outDim),
                     f32(t, "a.pre_encode.out.bias", outDim),
                     cw(t, "mm.a.input_projection", (long) outDim * outDim));
+        }
+    }
+
+    /**
+     * The geometry this port implements (the E2B/E4B family): the subsampling ladder (1 -> 128 ->
+     * 32 channels over two stride-2 convs) must flatten to exactly the encoder width, heads must
+     * divide it, and the RPE sinusoid needs it even. A gemma4a variant violating any of these would
+     * otherwise produce silently wrong rows (a partial flatten still feeds shape-compatible GEMMs),
+     * so it refuses loudly instead. Package-visible for direct testing.
+     */
+    static void validateArchitecture(Path mmproj, int dim, int heads, int nMel) {
+        int flattened = (nMel / 4) * 32; // freq/4 after two stride-2 convs, 32 output channels
+        if (flattened != dim || dim % heads != 0 || dim % 2 != 0) {
+            throw new IllegalArgumentException(
+                    "'"
+                            + mmproj.getFileName()
+                            + "' declares a gemma4a geometry this port does not implement (mel"
+                            + " bins "
+                            + nMel
+                            + " -> flattened "
+                            + flattened
+                            + ", encoder width "
+                            + dim
+                            + ", heads "
+                            + heads
+                            + ") - supported is the E2B/E4B family shape (128 mels, width 1024,"
+                            + " heads dividing the width); a newer jinfer may support this"
+                            + " variant");
         }
     }
 
