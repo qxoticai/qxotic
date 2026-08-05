@@ -1200,9 +1200,10 @@ public final class Gemma4
     }
 
     /**
-     * Load the audio encoder if the mmproj carries a {@code gemma4ua} adapter ({@link
-     * Gemma4Audio}); else null. (The E2B {@code gemma4a} conformer is a different, unimplemented
-     * projector, so only gemma4ua matches.)
+     * Load the audio encoder the mmproj's {@code clip.audio.projector_type} names: {@code gemma4ua}
+     * - the encoder-free frame projector (12b sidecars, {@link Gemma4Audio}); {@code gemma4a} - the
+     * Conformer tower (E2B/E4B, {@link Gemma4Conformer}); else null. Both feed the same causal
+     * audio lane in the turn template.
      */
     private static Embedder<Media.Audio> loadAudio(Path mmprojGguf, Arena arena)
             throws IOException {
@@ -1212,7 +1213,11 @@ public final class Gemma4
                     ModelLoader.readGguf(fc, mmprojGguf.toString())
                             .getStringOrDefault("clip.audio.projector_type", "");
         }
-        return "gemma4ua".equals(type) ? Gemma4Audio.loadModel(mmprojGguf, arena) : null;
+        return switch (type) {
+            case "gemma4ua" -> Gemma4Audio.loadModel(mmprojGguf, arena);
+            case "gemma4a" -> Gemma4Conformer.loadModel(mmprojGguf, arena);
+            default -> null;
+        };
     }
 
     public static Gemma4 loadModel(
