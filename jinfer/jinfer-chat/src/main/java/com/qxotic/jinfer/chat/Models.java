@@ -282,7 +282,9 @@ public final class Models {
                         + "'"
                         + (artifact != null
                                 ? " on the classpath - add " + artifact
-                                : " exists in this jinfer version (a newer jinfer may add one)")
+                                : " on the classpath, and none ships with this jinfer version"
+                                        + " (a newer jinfer, or a third-party ModelProvider,"
+                                        + " may support it)")
                         + ". Supported architectures: "
                         + (here.isEmpty()
                                 ? PROVIDERS.size() + " provider(s), none enumerated"
