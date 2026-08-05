@@ -11,6 +11,15 @@ import java.util.regex.Pattern;
  * The one place GGUF tokenizer knowledge lives: builds a toknroll {@link Tokenizer} from a GGUF's
  * {@code tokenizer.ggml.*} metadata, with the model-family pre-tokenizers toknroll's builtins lack
  * registered here. Everything above this consumes the container-blind {@link Tokenizer}.
+ *
+ * <p>WHY CENTRAL, not per-port: {@code tokenizer.ggml.pre} names are orthogonal to {@code
+ * general.architecture} - one arch port serves many tokenizer families (Yi-style derivatives of the
+ * llama arch each carry their own pre name), so the port that loads a model is not the owner of its
+ * tokenizer knowledge. A registration is a name and a regex - tiny - so ALL known ones live in this
+ * shared table (llama.cpp's architecture: one table in llama-vocab.cpp), updated with the core. The
+ * {@link #fromGGUF(GGUF, java.util.function.UnaryOperator)} overload covers a port-PRIVATE piece; a
+ * novel pre-tokenizer on a shared arch is an upstream-the-regex situation, and the unknown-name
+ * error says so loudly.
  */
 public final class Tokenizers {
 
