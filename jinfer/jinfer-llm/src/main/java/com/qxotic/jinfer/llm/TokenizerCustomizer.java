@@ -8,21 +8,21 @@ import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
  * family's pre-tokenizer, normalizer, or tokenization model - the pieces resolved by name from the
  * GGUF's {@code tokenizer.ggml.*} metadata ({@code tokenizer.ggml.pre} for pre-tokenizers).
  *
- * <p>Contributions apply AFTER toknroll's builtins and jinfer's bundled registrations, so a
- * contribution can also override one. Without a matching registration, an unknown name fails loudly
+ * <p>Customizers apply AFTER toknroll's builtins and jinfer's bundled registrations, so a
+ * customizer can also override one. Without a matching registration, an unknown name fails loudly
  * at load with the register-it remedy - never silently mis-tokenizes.
  *
  * <pre>{@code
- * public final class MyFamilyTokenizer implements TokenizerContribution {
- *     public void contribute(GGUFTokenizerLoader.Builder builder) {
+ * public final class MyFamilyTokenizer implements TokenizerCustomizer {
+ *     public void customize(GGUFTokenizerLoader.Builder builder) {
  *         builder.registerPreTokenizer("myfamily", g -> Splitter.regex(MY_PATTERN))
  *                .registerNormalizer("myfamily", g -> Normalizer.identity());
  *     }
  * }
  * }</pre>
  */
-public interface TokenizerContribution {
+public interface TokenizerCustomizer {
 
-    /** Register this family's tokenizer pieces on the loader builder. */
-    void contribute(GGUFTokenizerLoader.Builder builder);
+    /** Customize the loader builder with this family's tokenizer pieces. */
+    void customize(GGUFTokenizerLoader.Builder builder);
 }

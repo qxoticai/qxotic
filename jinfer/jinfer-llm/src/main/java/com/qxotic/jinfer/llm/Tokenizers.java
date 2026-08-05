@@ -30,9 +30,9 @@ public final class Tokenizers {
     }
 
     /**
-     * Builtins, then the bundled family registrations, then {@link TokenizerContribution} services
+     * Builtins, then the bundled family registrations, then {@link TokenizerCustomizer} services
      * LAST - a provider jar's contribution can add its family or override an entry. Package-visible
-     * for the contribution test.
+     * for the customizer test.
      */
     static GGUFTokenizerLoader.Builder builder() {
         GGUFTokenizerLoader.Builder builder =
@@ -40,9 +40,9 @@ public final class Tokenizers {
                         .registerPreTokenizer(
                                 "lfm2", g -> Splitter.regex(Pattern.compile(LFM2_PRE_PATTERN)))
                         .registerNormalizer("lfm2", g -> Normalizer.identity());
-        for (TokenizerContribution contribution :
-                java.util.ServiceLoader.load(TokenizerContribution.class)) {
-            contribution.contribute(builder);
+        for (TokenizerCustomizer customizer :
+                java.util.ServiceLoader.load(TokenizerCustomizer.class)) {
+            customizer.customize(builder);
         }
         return builder;
     }
