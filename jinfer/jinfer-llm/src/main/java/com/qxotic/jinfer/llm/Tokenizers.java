@@ -26,12 +26,25 @@ public final class Tokenizers {
     private Tokenizers() {}
 
     public static Tokenizer fromGGUF(GGUF gguf) {
-        return GGUFTokenizerLoader.createBuilderWithBuiltins()
-                .registerPreTokenizer(
-                        "lfm2", g -> Splitter.regex(Pattern.compile(LFM2_PRE_PATTERN)))
-                .registerNormalizer("lfm2", g -> Normalizer.identity())
-                .build()
-                .fromGGUF(gguf);
+        return builder().build().fromGGUF(gguf);
+    }
+
+    /**
+     * Builtins, then the bundled family registrations, then {@link TokenizerContribution} services
+     * LAST - a provider jar's contribution can add its family or override an entry. Package-visible
+     * for the contribution test.
+     */
+    static GGUFTokenizerLoader.Builder builder() {
+        GGUFTokenizerLoader.Builder builder =
+                GGUFTokenizerLoader.createBuilderWithBuiltins()
+                        .registerPreTokenizer(
+                                "lfm2", g -> Splitter.regex(Pattern.compile(LFM2_PRE_PATTERN)))
+                        .registerNormalizer("lfm2", g -> Normalizer.identity());
+        for (TokenizerContribution contribution :
+                java.util.ServiceLoader.load(TokenizerContribution.class)) {
+            contribution.contribute(builder);
+        }
+        return builder;
     }
 
     /** The GGUF's raw Jinja chat-template source, or {@code ""} when it carries none. */
