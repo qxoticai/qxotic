@@ -287,6 +287,47 @@ public final class Models {
                     java.util.Map.entry("inflect", "com.qxotic:jinfer-inflect2"));
 
     /**
+     * The provider for {@code arch} among {@code providers}, or null: highest {@link
+     * ModelProvider#priority()} wins (a third-party override REPLACES a bundled port by declaring a
+     * higher value); equal priorities resolve deterministically by class name - never by classpath
+     * order - and warn, so an accidental duplicate is visible without breaking the
+     * deliberate-override case. Package-visible for its unit test.
+     */
+    static ModelProvider select(List<ModelProvider> providers, String arch) {
+        ModelProvider best = null;
+        ModelProvider contender = null; // an equal-priority rival of best, for the warning
+        for (ModelProvider p : providers) {
+            if (!p.supports(arch)) continue;
+            if (best == null) {
+                best = p;
+            } else if (p.priority() > best.priority()) {
+                best = p;
+                contender = null;
+            } else if (p.priority() == best.priority()) {
+                // deterministic tie-break: class name order, not jar order
+                if (p.getClass().getName().compareTo(best.getClass().getName()) < 0) {
+                    contender = best;
+                    best = p;
+                } else {
+                    contender = p;
+                }
+            }
+        }
+        if (contender != null) {
+            System.err.println(
+                    "jinfer: architecture '"
+                            + arch
+                            + "' is claimed by both "
+                            + best.getClass().getName()
+                            + " (selected, deterministic by class name) and "
+                            + contender.getClass().getName()
+                            + " at equal priority - override ModelProvider.priority() on the one"
+                            + " that should win");
+        }
+        return best;
+    }
+
+    /**
      * The diagnostics table's answer for {@code arch}, or null - package-visible for the drift test
      * (every classpath port's architecture must resolve here, so a new port cannot land without its
      * remedy entry).

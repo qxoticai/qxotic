@@ -17,6 +17,16 @@ public interface ModelProvider {
     boolean supports(String architecture);
 
     /**
+     * Wins ties when several providers claim one architecture: highest priority is selected. The
+     * bundled providers all sit at the default 0, so a third-party override declares a higher value
+     * to REPLACE one (equal priorities resolve deterministically by class name, with a warning
+     * naming this knob).
+     */
+    default int priority() {
+        return 0;
+    }
+
+    /**
      * The architectures this port claims, for DIAGNOSTICS: error messages and {@link
      * Models#supportedArchitectures()} enumerate these so a failed load can say what the classpath
      * actually provides. {@link #supports} stays the dispatch authority (a port matching by prefix
