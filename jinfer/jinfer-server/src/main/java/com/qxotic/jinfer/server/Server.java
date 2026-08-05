@@ -81,7 +81,32 @@ public final class Server {
      * SSE write-stall watchdog is process-wide.
      */
     public static Running start(LoadedModel<?> model, LLMOptions options) throws IOException {
-        return new Server(model, options).serve(model, options);
+        LLMOptions resolved = options.withResolvedSampling(model.samplingDefaults());
+        Running running = new Server(model, resolved).serve(model, resolved);
+        // where each value came from: the user's flag, the model (GGUF metadata or its port's
+        // author recommendation), or jinfer's baseline - so a surprising default explains itself
+        System.out.printf(
+                "sampling: temperature %s, top-p %s; request values override%n",
+                describe(
+                        resolved.temperature(),
+                        options.temperature() != null,
+                        model.samplingDefaults().temperature() != null),
+                describe(
+                        resolved.topp(),
+                        options.topp() != null,
+                        model.samplingDefaults().topP() != null));
+        return running;
+    }
+
+    private static String describe(float value, boolean userSet, boolean modelRecommended) {
+        String source =
+                userSet ? "set by you" : modelRecommended ? "model default" : "jinfer default";
+        return trim(value) + " (" + source + ")";
+    }
+
+    /** A float for humans and JSON: {@code 0.2}, not {@code 0.20000000298023224}. */
+    private static double trim(float value) {
+        return Math.round(value * 1000.0) / 1000.0;
     }
 
     /**
@@ -165,8 +190,8 @@ public final class Server {
                                 "n_vocab", model.model().config().vocabularySize(),
                                 "sampling",
                                         Map.of(
-                                                "temperature", options.temperature(),
-                                                "top_p", options.topp()),
+                                                "temperature", trim(options.temperature()),
+                                                "top_p", trim(options.topp())),
                                 "prompt_cache", promptCacheProps()));
         Function<Map<String, Object>, Object> tokenize =
                 request ->
@@ -211,10 +236,6 @@ public final class Server {
                 options.host(),
                 server.getAddress().getPort(),
                 com.qxotic.jinfer.chat.Models.supportedArchitectures());
-        // resolved once at load: CLI flag > GGUF general.sampling.* > port > engine baseline
-        System.out.printf(
-                "sampling defaults: temperature %.2f, top-p %.2f (request values override)%n",
-                options.temperature(), options.topp());
         return running;
     }
 

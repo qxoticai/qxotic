@@ -456,9 +456,9 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         }
 
         /**
-         * Sampling temperature; default: the model's GGUF-recommended value ({@code
-         * general.sampling.temp}) when the container carries one, else 0.8. Per-request values
-         * override; pass 0 for greedy argmax.
+         * Sampling temperature; default: the model's recommended value (the GGUF's {@code
+         * general.sampling.temp}, or the model author's recommendation shipped with the port), else
+         * 0.8. Per-request values override; pass 0 for greedy argmax.
          */
         public Builder temperature(Double temperature) {
             this.temperature = temperature;
@@ -467,8 +467,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
 
         /**
          * Nucleus sampling mass, effective only at temperature &gt; 0; default: the model's
-         * GGUF-recommended value ({@code general.sampling.top_p}) when the container carries one,
-         * else 0.95.
+         * recommended value (the GGUF's {@code general.sampling.top_p}, or the port's), else 0.95.
          */
         public Builder topP(Double topP) {
             this.topP = topP;

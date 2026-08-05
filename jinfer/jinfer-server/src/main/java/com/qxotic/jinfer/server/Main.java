@@ -265,11 +265,11 @@ public class Main {
         out.println("  --prompt, -p <string>         input prompt");
         out.println("  --system-prompt, -sp <string> system prompt for chat/instruct mode");
         out.println(
-                "  --temperature, -temp <float>  temperature in [0,inf], default: the model's"
-                        + " GGUF-recommended value (general.sampling.temp), else 0.8");
+                "  --temperature, -temp <float>  temperature in [0,inf]; default: the model's"
+                        + " recommended value, else 0.8");
         out.println(
-                "  --top-p <float>               p value in top-p (nucleus) sampling in [0,1]"
-                        + " default 0.95");
+                "  --top-p <float>               top-p (nucleus) mass in [0,1]; default: the"
+                        + " model's recommended value, else 0.95");
         out.println("  --seed <long>                 random seed, default System.nanoTime()");
         out.println(
                 "  --max-tokens, -n <int>        number of steps to run for < 0 = limited by"
@@ -477,11 +477,11 @@ public class Main {
                                     options.maxTokens(),
                                     java.lang.foreign.Arena.global());
         }
-        options = options.withResolvedSampling(model.samplingDefaults());
         if (options.server()) {
-            Server.start(model, options);
+            Server.start(model, options); // resolves sampling itself, to report value provenance
             return;
         }
+        options = options.withResolvedSampling(model.samplingDefaults());
         Sampler sampler =
                 Sampler.select(
                         model.model().config().vocabularySize(),
