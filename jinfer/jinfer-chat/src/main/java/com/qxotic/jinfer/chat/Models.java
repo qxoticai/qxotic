@@ -237,6 +237,18 @@ public final class Models {
                     "qwen35", "com.qxotic:jinfer-qwen35",
                     "inflect", "com.qxotic:jinfer-inflect2");
 
+    /**
+     * The diagnostics table's answer for {@code arch}, or null - package-visible for the drift test
+     * (every classpath port's architecture must resolve here, so a new port cannot land without its
+     * remedy entry).
+     */
+    static String artifactFor(String arch) {
+        for (var e : PORT_ARTIFACTS.entrySet()) {
+            if (arch.equals(e.getKey()) || arch.startsWith(e.getKey())) return e.getValue();
+        }
+        return null;
+    }
+
     /** A numeric metadata value whatever its GGUF width (split.* is UINT16 in the wild). */
     private static long metadataLong(GGUF gguf, String key) {
         if (!gguf.containsKey(key)) return 0;
@@ -250,13 +262,7 @@ public final class Models {
         for (ModelProvider p : PROVIDERS) {
             if (p.supports(arch)) return p;
         }
-        String artifact = null;
-        for (var e : PORT_ARTIFACTS.entrySet()) {
-            if (arch.equals(e.getKey()) || arch.startsWith(e.getKey())) {
-                artifact = e.getValue();
-                break;
-            }
-        }
+        String artifact = artifactFor(arch);
         if (PROVIDERS.isEmpty()) {
             throw new IllegalArgumentException(
                     "no model ports on the classpath. This GGUF is architecture '"
@@ -274,7 +280,8 @@ public final class Models {
                         + "'"
                         + (artifact != null
                                 ? " - add " + artifact + " to the classpath"
-                                : " - no known jinfer port for it")
+                                : " - no port for it in THIS jinfer version (a newer jinfer or"
+                                        + " a com.qxotic:jinfer-* port artifact may support it)")
                         + " (ports here support: "
                         + (here.isEmpty() ? PROVIDERS.size() + " unenumerated port(s)" : here)
                         + ")");
