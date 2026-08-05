@@ -16,6 +16,61 @@ class GGUFTokenizerLoaderApiTest {
         assertNotNull(GGUFTokenizerLoader.createEmptyBuilder().build());
     }
 
+    /**
+     * Pins builtin coverage of the common llama.cpp pre-tokenizer names (llama-vocab.cpp). Aliasing
+     * TO a name only succeeds when that name is registered, so this walks the public API.
+     */
+    @Test
+    void builtinsCoverCommonLlamaCppPreTokenizers() {
+        String[] names = {
+            // gpt-2 regex group
+            "gpt-2",
+            "gpt2",
+            "granite-docling",
+            "exaone4",
+            "modern-bert",
+            // llama3 regex group
+            "llama3",
+            "llama-v3",
+            "llama-bpe",
+            "pixtral",
+            "smollm3",
+            "llama4",
+            "glm4",
+            "dbrx",
+            "smaug-bpe",
+            "falcon3",
+            "falcon-h1",
+            "jina-v5-nano",
+            // qwen2 regex group
+            "qwen2",
+            "solar-open",
+            "hunyuan",
+            "grok-2",
+            "deepseek-r1-qwen",
+            // remaining singles and staged sets
+            "qwen35",
+            "tekken",
+            "gpt-4o",
+            "kanana2",
+            "minimax-m2",
+            "kimi-k2",
+            "gemma4",
+            "granite-embed-multi-311m",
+            "deepseek-v3",
+            "smollm",
+            "command-r",
+            "exaone",
+            "minicpm5",
+            "default",
+        };
+        GGUFTokenizerLoader.Builder builder = GGUFTokenizerLoader.createBuilderWithBuiltins();
+        for (String name : names) {
+            builder.aliasPreTokenizer("probe-" + name, name);
+        }
+        assertNotNull(builder.build());
+    }
+
     @Test
     void aliasPreTokenizerAcceptsKnownTarget() {
         assertNotNull(

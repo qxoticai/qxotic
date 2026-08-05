@@ -86,6 +86,16 @@ final class GGUFTokenizerDefaults {
 
     private static final String CJK_RANGE = "[一-龥぀-ゟ゠-ヿ]+";
 
+    // minicpm5 main pass (after the 1-3 digit stage): qwen2 with unbounded digit runs.
+    private static final String MINICPM5_MAIN =
+            "(?:'[sS]|'[tT]|'[rR][eE]|'[vV][eE]|'[mM]|'[lL][lL]|'[dD])|[^\\r"
+                    + "\\n"
+                    + "\\p{L}\\p{N}]?\\p{L}+|\\p{N}+| ?[^\\s\\p{L}\\p{N}]+[\\r"
+                    + "\\n"
+                    + "]*|\\s*[\\r"
+                    + "\\n"
+                    + "]+|\\s+(?!\\S)|\\s+";
+
     private static final Normalizer IDENTITY_NORMALIZER = Normalizer.identity();
     private static final Function<GGUF, Normalizer> IDENTITY_NORMALIZER_FACTORY =
             gguf -> IDENTITY_NORMALIZER;
@@ -102,7 +112,16 @@ final class GGUFTokenizerDefaults {
         builder.registerModelFactory("llama", GGUFTokenizerModelFactory::buildSentencePieceModel);
         builder.registerModelFactory("gemma4", GGUFTokenizerModelFactory::buildSentencePieceModel);
 
-        registerPreTokenizers(builder, GPT2_PATTERN, "gpt-2", "gpt2");
+        // Name groups mirror llama.cpp's llama-vocab.cpp: names listed together share a
+        // byte-identical regex set there, so here they share one compiled splitter.
+        registerPreTokenizers(
+                builder,
+                GPT2_PATTERN,
+                "gpt-2",
+                "gpt2",
+                "granite-docling",
+                "exaone4",
+                "modern-bert");
         registerPreTokenizers(
                 builder,
                 LLAMA3_PATTERN,
@@ -114,55 +133,35 @@ final class GGUFTokenizerDefaults {
                 "llama4",
                 "glm4",
                 "dbrx",
-                "smaug-bpe");
-        registerPreTokenizers(builder, QWEN2_PATTERN, "qwen2");
+                "smaug-bpe",
+                "falcon3",
+                "falcon-h1",
+                "jina-v5-nano");
+        registerPreTokenizers(
+                builder,
+                QWEN2_PATTERN,
+                "qwen2",
+                "solar-open",
+                "hunyuan",
+                "grok-2",
+                "deepseek-r1-qwen");
         registerPreTokenizers(builder, QWEN35_PATTERN, "qwen35");
         registerPreTokenizers(builder, TEKKEN_PATTERN, "tekken");
         registerPreTokenizers(builder, GPT4O_PATTERN, "gpt-4o", "kanana2", "minimax-m2");
         registerPreTokenizers(builder, KIMI_K2_PATTERN, "kimi-k2");
-        registerPreTokenizers(builder, GEMMA4_PATTERN, "gemma4");
+        registerPreTokenizers(builder, GEMMA4_PATTERN, "gemma4", "granite-embed-multi-311m");
 
-        builder.registerPreTokenizer(
-                "deepseek-v3",
-                gguf ->
-                        Splitter.sequence(
-                                Splitter.regex(
-                                        Pattern.compile(
-                                                "\\p{N}{1,3}", Pattern.UNICODE_CHARACTER_CLASS)),
-                                Splitter.regex(
-                                        Pattern.compile(
-                                                CJK_RANGE, Pattern.UNICODE_CHARACTER_CLASS)),
-                                Splitter.regex(
-                                        Pattern.compile(
-                                                DEEPSEEK_V3_MAIN,
-                                                Pattern.UNICODE_CHARACTER_CLASS))));
+        registerSequencePreTokenizers(
+                builder, new String[] {"\\p{N}{1,3}", CJK_RANGE, DEEPSEEK_V3_MAIN}, "deepseek-v3");
+        // Digit-first stacks: every digit split apart, then the GPT-2 word-level pass.
+        registerSequencePreTokenizers(
+                builder, new String[] {"\\p{N}", GPT2_PATTERN}, "smollm", "command-r", "exaone");
+        registerSequencePreTokenizers(
+                builder, new String[] {"\\p{N}{1,3}", MINICPM5_MAIN}, "minicpm5");
 
         // SPM models with "default" pre-tokenizer need identity splitter + metaspace normalizer.
         builder.registerPreTokenizer("default", gguf -> Splitter.identity());
         builder.registerNormalizer("default", METASPACE_NORMALIZER_FACTORY);
-
-        registerNormalizers(
-                builder,
-                "gpt-2",
-                "gpt2",
-                "llama3",
-                "llama-v3",
-                "llama-bpe",
-                "pixtral",
-                "smollm3",
-                "llama4",
-                "glm4",
-                "dbrx",
-                "smaug-bpe",
-                "qwen2",
-                "qwen35",
-                "tekken",
-                "gpt-4o",
-                "kanana2",
-                "minimax-m2",
-                "kimi-k2",
-                "deepseek-v3",
-                "gemma4");
 
         builder.registerPreFallback("gemma4", "gemma4");
         builder.registerNormalizerFallback("gemma4", "gemma4");
@@ -172,17 +171,26 @@ final class GGUFTokenizerDefaults {
         return Splitter.regex(Pattern.compile(pattern, Pattern.UNICODE_CHARACTER_CLASS));
     }
 
-    private static void registerPreTokenizers(
-            GGUFTokenizerLoader.Builder builder, String pattern, String... keys) {
-        Splitter splitter = regexSplitter(pattern);
+    /** Registers the splitter under every key, each with the identity normalizer. */
+    private static void register(
+            GGUFTokenizerLoader.Builder builder, Splitter splitter, String... keys) {
         for (String key : keys) {
             builder.registerPreTokenizer(key, gguf -> splitter);
+            builder.registerNormalizer(key, IDENTITY_NORMALIZER_FACTORY);
         }
     }
 
-    private static void registerNormalizers(GGUFTokenizerLoader.Builder builder, String... keys) {
-        for (String key : keys) {
-            builder.registerNormalizer(key, IDENTITY_NORMALIZER_FACTORY);
+    private static void registerPreTokenizers(
+            GGUFTokenizerLoader.Builder builder, String pattern, String... keys) {
+        register(builder, regexSplitter(pattern), keys);
+    }
+
+    private static void registerSequencePreTokenizers(
+            GGUFTokenizerLoader.Builder builder, String[] patterns, String... keys) {
+        Splitter[] stages = new Splitter[patterns.length];
+        for (int i = 0; i < patterns.length; i++) {
+            stages[i] = regexSplitter(patterns[i]);
         }
+        register(builder, Splitter.sequence(stages), keys);
     }
 }
