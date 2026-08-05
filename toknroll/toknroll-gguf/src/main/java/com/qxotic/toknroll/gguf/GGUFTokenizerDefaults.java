@@ -86,6 +86,21 @@ final class GGUFTokenizerDefaults {
 
     private static final String CJK_RANGE = "[一-龥぀-ゟ゠-ヿ]+";
 
+    private static final String LFM2_PATTERN =
+            "(?i:'s|'t|'re|'ve|'m|'ll|'d)"
+                    + "|[^\\r"
+                    + "\\n"
+                    + "\\p{L}\\p{N}]?[\\p{L}\\p{M}]+"
+                    + "|\\p{N}{1,3}"
+                    + "| ?[^\\s\\p{L}\\p{N}]+[\\r"
+                    + "\\n"
+                    + "]*"
+                    + "|\\s*[\\r"
+                    + "\\n"
+                    + "]+"
+                    + "|\\s+(?!\\S)"
+                    + "|\\s+";
+
     // minicpm5 main pass (after the 1-3 digit stage): qwen2 with unbounded digit runs.
     private static final String MINICPM5_MAIN =
             "(?:'[sS]|'[tT]|'[rR][eE]|'[vV][eE]|'[mM]|'[lL][lL]|'[dD])|[^\\r"
@@ -146,6 +161,7 @@ final class GGUFTokenizerDefaults {
                 "grok-2",
                 "deepseek-r1-qwen");
         registerPreTokenizers(builder, QWEN35_PATTERN, "qwen35");
+        registerPreTokenizers(builder, LFM2_PATTERN, "lfm2");
         registerPreTokenizers(builder, TEKKEN_PATTERN, "tekken");
         registerPreTokenizers(builder, GPT4O_PATTERN, "gpt-4o", "kanana2", "minimax-m2");
         registerPreTokenizers(builder, KIMI_K2_PATTERN, "kimi-k2");
@@ -171,37 +187,31 @@ final class GGUFTokenizerDefaults {
         return Splitter.regex(Pattern.compile(pattern, Pattern.UNICODE_CHARACTER_CLASS));
     }
 
-    /**
-     * Registers the splitter factory under every key, each with the identity normalizer. Factories
-     * must capture pattern STRINGS, never compiled {@link Pattern}s: resolution invokes the one
-     * factory the GGUF's pre name selects, so patterns compile once per load - and a native image
-     * that build-time-initializes this table bakes only strings into its heap, not compiled pattern
-     * node trees.
-     */
-    private static void register(
-            GGUFTokenizerLoader.Builder builder, Function<GGUF, Splitter> factory, String... keys) {
-        for (String key : keys) {
-            builder.registerPreTokenizer(key, factory);
-            builder.registerNormalizer(key, IDENTITY_NORMALIZER_FACTORY);
-        }
-    }
-
     private static void registerPreTokenizers(
             GGUFTokenizerLoader.Builder builder, String pattern, String... keys) {
-        register(builder, gguf -> regexSplitter(pattern), keys);
+        registerSequencePreTokenizers(builder, new String[] {pattern}, keys);
     }
 
+    /**
+     * Registers a staged splitter factory under every key, each with the identity normalizer. The
+     * factory captures pattern STRINGS, never compiled {@link Pattern}s: resolution invokes the one
+     * factory the GGUF's pre name selects, so patterns compile once per load - and a native image
+     * that build-time-initializes this table bakes only strings into its heap, not compiled pattern
+     * node trees. {@link Splitter#sequence} collapses a single stage to the stage itself.
+     */
     private static void registerSequencePreTokenizers(
             GGUFTokenizerLoader.Builder builder, String[] patterns, String... keys) {
-        register(
-                builder,
+        Function<GGUF, Splitter> factory =
                 gguf -> {
                     Splitter[] stages = new Splitter[patterns.length];
                     for (int i = 0; i < patterns.length; i++) {
                         stages[i] = regexSplitter(patterns[i]);
                     }
                     return Splitter.sequence(stages);
-                },
-                keys);
+                };
+        for (String key : keys) {
+            builder.registerPreTokenizer(key, factory);
+            builder.registerNormalizer(key, IDENTITY_NORMALIZER_FACTORY);
+        }
     }
 }

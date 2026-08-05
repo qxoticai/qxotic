@@ -11,10 +11,12 @@ import com.qxotic.toknroll.impl.ImplAccessor;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.TreeSet;
 import java.util.function.Function;
 
 /**
@@ -121,20 +123,22 @@ public final class GGUFTokenizerLoader {
         /**
          * Aliases {@code key} to an already-registered {@code targetKey}: the target's splitter
          * factory - and its normalizer factory, when it has one - serve the alias. For GGUFs whose
-         * {@code tokenizer.ggml.pre} names a scheme identical to a known one.
+         * {@code tokenizer.ggml.pre} names a scheme identical to a known one. The target's
+         * factories are captured at call time; re-registering the target later does not affect the
+         * alias.
          */
         public Builder aliasPreTokenizer(String key, String targetKey) {
             String k = GGUFMetadataKeys.normalizeKey(key, "key");
             String t = GGUFMetadataKeys.normalizeKey(targetKey, "targetKey");
             Function<GGUF, Splitter> splitter = splitters.get(t);
             if (splitter == null) {
-                throw new IllegalArgumentException(
+                throw new UnsupportedPreTokenizerException(
                         "cannot alias '"
                                 + key
                                 + "' to unknown pre-tokenizer '"
                                 + targetKey
                                 + "' (supported: "
-                                + String.join(", ", new java.util.TreeSet<>(splitters.keySet()))
+                                + sortedKeys(splitters.keySet())
                                 + ")");
             }
             splitters.put(k, splitter);
@@ -363,7 +367,7 @@ public final class GGUFTokenizerLoader {
                     "Unsupported GGUF tokenizer model '"
                             + modelKey
                             + "' (supported: "
-                            + String.join(", ", registries.modelFactories.keySet())
+                            + sortedKeys(registries.modelFactories.keySet())
                             + ")");
         }
 
@@ -379,15 +383,14 @@ public final class GGUFTokenizerLoader {
         }
         Function<GGUF, Splitter> splitterFactory = registries.splitters.get(preKey);
         if (splitterFactory == null) {
-            throw new IllegalArgumentException(
+            throw new UnsupportedPreTokenizerException(
                     "Unsupported GGUF pre-tokenizer key '"
                             + preKey
                             + "' for model '"
                             + modelKey
                             + "'. Register it via registerPreTokenizer(...) or alias it to one of:"
                             + " "
-                            + String.join(
-                                    ", ", new java.util.TreeSet<>(registries.splitters.keySet())));
+                            + sortedKeys(registries.splitters.keySet()));
         }
         Splitter splitter = splitterFactory.apply(gguf);
 
@@ -418,6 +421,21 @@ public final class GGUFTokenizerLoader {
         }
 
         return tokenizer;
+    }
+
+    /**
+     * An unknown {@code tokenizer.ggml.pre} name - either at resolution time or as an alias target.
+     * A distinct type so callers can attach their own remedy (a flag, a config key) without
+     * matching on message text.
+     */
+    public static final class UnsupportedPreTokenizerException extends IllegalArgumentException {
+        UnsupportedPreTokenizerException(String message) {
+            super(message);
+        }
+    }
+
+    private static String sortedKeys(Collection<String> keys) {
+        return String.join(", ", new TreeSet<>(keys));
     }
 
     private static Tokenizer wrapSentencePieceDecode(Tokenizer base) {

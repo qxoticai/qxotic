@@ -10,32 +10,29 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 import java.util.regex.Pattern;
 
 /**
  * The one place GGUF tokenizer knowledge lives: builds a toknroll {@link Tokenizer} from a GGUF's
- * {@code tokenizer.ggml.*} metadata, with the model-family pre-tokenizers toknroll's builtins lack
- * registered here. Everything above this consumes the container-blind {@link Tokenizer}.
+ * {@code tokenizer.ggml.*} metadata. Everything above this consumes the container-blind {@link
+ * Tokenizer}.
  *
  * <p>WHY CENTRAL, not per-port: {@code tokenizer.ggml.pre} names are orthogonal to {@code
  * general.architecture} - one arch port serves many tokenizer families (Yi-style derivatives of the
  * llama arch each carry their own pre name), so the port that loads a model is not the owner of its
- * tokenizer knowledge. A registration is a name and a regex - tiny - so ALL known ones live in this
- * shared table (llama.cpp's architecture: one table in llama-vocab.cpp), updated with the core. The
- * {@link #fromGGUF(GGUF, java.util.function.UnaryOperator)} overload covers a port-PRIVATE piece; a
- * novel pre-tokenizer on a shared arch is an upstream-the-regex situation, and the unknown-name
- * error says so loudly.
+ * tokenizer knowledge. Known names live in toknroll's builtin table (llama.cpp's architecture: one
+ * table in llama-vocab.cpp), updated with the core. The {@link #fromGGUF(GGUF,
+ * java.util.function.UnaryOperator)} overload covers a port-PRIVATE piece; a novel pre-tokenizer on
+ * a shared arch is an upstream-the-regex situation, and the unknown-name error says so loudly.
  */
 public final class Tokenizers {
 
-    private static final String LFM2_PRE_PATTERN =
-            "(?i:'s|'t|'re|'ve|'m|'ll|'d)"
-                    + "|[^\\r\\n\\p{L}\\p{N}]?[\\p{L}\\p{M}]+"
-                    + "|\\p{N}{1,3}"
-                    + "| ?[^\\s\\p{L}\\p{N}]+[\\r\\n]*"
-                    + "|\\s*[\\r\\n]+"
-                    + "|\\s+(?!\\S)"
-                    + "|\\s+";
+    private static final String OVERRIDE_USAGE =
+            "-Djinfer.preTokenizer.<name>=alias:<known-name> to alias a known scheme,"
+                    + " =regex:<pattern> to supply one, or =file:<path> with one regex per line"
+                    + " (multiple lines = staged split)";
 
     private Tokenizers() {}
 
@@ -53,34 +50,21 @@ public final class Tokenizers {
      *         b.registerPreTokenizer("myfamily", g -> Splitter.regex(MY_PATTERN)));
      * }</pre>
      *
-     * <p>Registrations apply after the builtins and the bundled families, so they can override. An
-     * unregistered {@code tokenizer.ggml.pre} still fails loudly with the register-it remedy -
-     * nothing silently mis-tokenizes.
+     * <p>Registrations apply after the builtins, so they can override. An unregistered {@code
+     * tokenizer.ggml.pre} still fails loudly with the register-it remedy - nothing silently
+     * mis-tokenizes.
      */
     public static Tokenizer fromGGUF(
             GGUF gguf,
             java.util.function.UnaryOperator<GGUFTokenizerLoader.Builder> registrations) {
         GGUFTokenizerLoader.Builder builder =
-                GGUFTokenizerLoader.createBuilderWithBuiltins()
-                        .registerPreTokenizer(
-                                "lfm2", g -> Splitter.regex(Pattern.compile(LFM2_PRE_PATTERN)))
-                        .registerNormalizer("lfm2", g -> Normalizer.identity());
-        builder = registrations.apply(builder);
+                registrations.apply(GGUFTokenizerLoader.createBuilderWithBuiltins());
         applyPropertyOverrides(builder);
         try {
             return builder.build().fromGGUF(gguf);
-        } catch (IllegalArgumentException e) {
-            if (e.getMessage() != null
-                    && e.getMessage().startsWith("Unsupported GGUF pre-tokenizer key")) {
-                throw new IllegalArgumentException(
-                        e.getMessage()
-                                + ". Quick fix without code:"
-                                + " -Djinfer.preTokenizer.<name>=alias:<known-name> to alias a"
-                                + " known scheme, =regex:<pattern> to supply one, or =file:<path>"
-                                + " with one regex per line (multiple lines = staged split)",
-                        e);
-            }
-            throw e;
+        } catch (GGUFTokenizerLoader.UnsupportedPreTokenizerException e) {
+            throw new IllegalArgumentException(
+                    e.getMessage() + ". Quick fix without code: " + OVERRIDE_USAGE, e);
         }
     }
 
@@ -92,11 +76,14 @@ public final class Tokenizers {
      * -Djinfer.preTokenizer.<name>=file:<path>} reads patterns from a file - one regex per line,
      * blank lines and {@code #} comments skipped, multiple lines forming a staged {@link
      * Splitter#sequence} (some schemes split digits or CJK first, then the main pattern). Supplied
-     * patterns get an identity normalizer. Applied LAST, so a property can also override a
-     * registration.
+     * patterns compile with {@link Pattern#UNICODE_CHARACTER_CLASS}, like every builtin, and get an
+     * identity normalizer. Applied LAST, so a property can also override a registration; supplied
+     * names register before aliases so an alias can target another override. Every override is
+     * validated eagerly - a typo'd flag fails the load even when the GGUF never selects it.
      */
     private static void applyPropertyOverrides(GGUFTokenizerLoader.Builder builder) {
         String prefix = "jinfer.preTokenizer.";
+        Map<String, String> aliases = new TreeMap<>();
         for (String key : System.getProperties().stringPropertyNames()) {
             if (!key.startsWith(prefix)) continue;
             String name = key.substring(prefix.length());
@@ -105,47 +92,52 @@ public final class Tokenizers {
                 registerSupplied(builder, name, List.of(value.substring("regex:".length())));
             } else if (value.startsWith("file:")) {
                 Path path = Path.of(value.substring("file:".length()));
-                List<String> patterns;
-                try {
-                    patterns =
-                            Files.readAllLines(path).stream()
-                                    .filter(line -> !line.isBlank() && !line.startsWith("#"))
-                                    .toList();
-                } catch (IOException e) {
-                    throw new UncheckedIOException("-D" + key + ": cannot read '" + path + "'", e);
-                }
-                if (patterns.isEmpty()) {
-                    throw new IllegalArgumentException(
-                            "-D"
-                                    + key
-                                    + ": '"
-                                    + path
-                                    + "' holds no patterns - one regex per"
-                                    + " line, blank lines and # comments skipped");
-                }
-                registerSupplied(builder, name, patterns);
+                registerSupplied(builder, name, readPatterns(key, path));
             } else if (value.startsWith("alias:")) {
-                // throws with the known names on a typo
-                builder.aliasPreTokenizer(name, value.substring("alias:".length()));
+                aliases.put(name, value.substring("alias:".length()));
             } else {
                 throw new IllegalArgumentException(
-                        "-D"
-                                + key
-                                + "="
-                                + value
-                                + ": the value must be alias:<known-name>,"
-                                + " regex:<pattern>, or file:<path> (one regex per line)");
+                        "-D" + key + "=" + value + ": the value must be " + OVERRIDE_USAGE);
             }
         }
+        // throws with the known names on a typo'd target
+        aliases.forEach(builder::aliasPreTokenizer);
+    }
+
+    private static List<String> readPatterns(String key, Path path) {
+        List<String> patterns;
+        try {
+            patterns =
+                    Files.readAllLines(path).stream()
+                            .filter(line -> !line.isBlank() && !line.startsWith("#"))
+                            .toList();
+        } catch (IOException e) {
+            throw new UncheckedIOException("-D" + key + ": cannot read '" + path + "'", e);
+        }
+        if (patterns.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "-D"
+                            + key
+                            + ": '"
+                            + path
+                            + "' holds no patterns - one regex per line, blank lines and #"
+                            + " comments skipped");
+        }
+        return patterns;
     }
 
     private static void registerSupplied(
             GGUFTokenizerLoader.Builder builder, String name, List<String> patterns) {
-        Splitter[] stages =
-                patterns.stream()
-                        .map(p -> Splitter.regex(Pattern.compile(p)))
-                        .toArray(Splitter[]::new);
-        Splitter splitter = stages.length == 1 ? stages[0] : Splitter.sequence(stages);
+        Splitter splitter =
+                Splitter.sequence(
+                        patterns.stream()
+                                .map(
+                                        p ->
+                                                Splitter.regex(
+                                                        Pattern.compile(
+                                                                p,
+                                                                Pattern.UNICODE_CHARACTER_CLASS)))
+                                .toArray(Splitter[]::new));
         builder.registerPreTokenizer(name, g -> splitter)
                 .registerNormalizer(name, g -> Normalizer.identity());
     }

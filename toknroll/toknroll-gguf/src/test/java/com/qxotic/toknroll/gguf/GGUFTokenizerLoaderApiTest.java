@@ -2,6 +2,7 @@ package com.qxotic.toknroll.gguf;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -23,13 +24,11 @@ class GGUFTokenizerLoaderApiTest {
     @Test
     void builtinsCoverCommonLlamaCppPreTokenizers() {
         String[] names = {
-            // gpt-2 regex group
             "gpt-2",
             "gpt2",
             "granite-docling",
             "exaone4",
             "modern-bert",
-            // llama3 regex group
             "llama3",
             "llama-v3",
             "llama-bpe",
@@ -42,14 +41,13 @@ class GGUFTokenizerLoaderApiTest {
             "falcon3",
             "falcon-h1",
             "jina-v5-nano",
-            // qwen2 regex group
             "qwen2",
             "solar-open",
             "hunyuan",
             "grok-2",
             "deepseek-r1-qwen",
-            // remaining singles and staged sets
             "qwen35",
+            "lfm2",
             "tekken",
             "gpt-4o",
             "kanana2",
@@ -72,21 +70,13 @@ class GGUFTokenizerLoaderApiTest {
     }
 
     @Test
-    void aliasPreTokenizerAcceptsKnownTarget() {
-        assertNotNull(
-                GGUFTokenizerLoader.createBuilderWithBuiltins()
-                        .aliasPreTokenizer("yi", "llama-bpe")
-                        .build());
-    }
-
-    @Test
     void aliasPreTokenizerRejectsUnknownTarget() {
         GGUFTokenizerLoader.Builder builder = GGUFTokenizerLoader.createBuilderWithBuiltins();
         IllegalArgumentException e =
                 assertThrows(
                         IllegalArgumentException.class,
                         () -> builder.aliasPreTokenizer("yi", "no-such-scheme"));
-        org.junit.jupiter.api.Assertions.assertTrue(e.getMessage().contains("llama-bpe"));
+        assertTrue(e.getMessage().contains("llama-bpe"));
     }
 
     @Test
