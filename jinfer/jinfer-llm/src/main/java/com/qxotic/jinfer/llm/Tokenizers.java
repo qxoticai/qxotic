@@ -26,25 +26,32 @@ public final class Tokenizers {
     private Tokenizers() {}
 
     public static Tokenizer fromGGUF(GGUF gguf) {
-        return builder().build().fromGGUF(gguf);
+        return fromGGUF(gguf, b -> b);
     }
 
     /**
-     * Builtins, then the bundled family registrations, then {@link TokenizerCustomizer} services
-     * LAST - a provider jar's contribution can add its family or override an entry. Package-visible
-     * for the customizer test.
+     * As {@link #fromGGUF(GGUF)} with the caller's own registrations - the entry for a model port
+     * whose family needs a pre-tokenizer, normalizer or tokenization model the builtins lack. The
+     * port owns its load path, so it passes the pieces right here; no registry:
+     *
+     * <pre>{@code
+     * Tokenizers.fromGGUF(gguf, b ->
+     *         b.registerPreTokenizer("myfamily", g -> Splitter.regex(MY_PATTERN)));
+     * }</pre>
+     *
+     * <p>Registrations apply after the builtins and the bundled families, so they can override. An
+     * unregistered {@code tokenizer.ggml.pre} still fails loudly with the register-it remedy -
+     * nothing silently mis-tokenizes.
      */
-    static GGUFTokenizerLoader.Builder builder() {
+    public static Tokenizer fromGGUF(
+            GGUF gguf,
+            java.util.function.UnaryOperator<GGUFTokenizerLoader.Builder> registrations) {
         GGUFTokenizerLoader.Builder builder =
                 GGUFTokenizerLoader.createBuilderWithBuiltins()
                         .registerPreTokenizer(
                                 "lfm2", g -> Splitter.regex(Pattern.compile(LFM2_PRE_PATTERN)))
                         .registerNormalizer("lfm2", g -> Normalizer.identity());
-        for (TokenizerCustomizer customizer :
-                java.util.ServiceLoader.load(TokenizerCustomizer.class)) {
-            customizer.customize(builder);
-        }
-        return builder;
+        return registrations.apply(builder).build().fromGGUF(gguf);
     }
 
     /** The GGUF's raw Jinja chat-template source, or {@code ""} when it carries none. */
