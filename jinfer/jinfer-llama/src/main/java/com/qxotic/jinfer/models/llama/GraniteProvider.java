@@ -16,6 +16,11 @@ public final class GraniteProvider implements ModelProvider {
     }
 
     @Override
+    public java.util.Set<String> architectures() {
+        return java.util.Set.of("granite");
+    }
+
+    @Override
     public LoadedModel<?> load(FileChannel fileChannel, GGUF gguf, int contextLength, Arena arena)
             throws IOException {
         return Granite.loadModel(fileChannel, gguf, contextLength, arena).loaded();

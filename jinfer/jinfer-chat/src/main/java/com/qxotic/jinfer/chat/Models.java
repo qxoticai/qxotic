@@ -23,10 +23,58 @@ public final class Models {
 
     private Models() {}
 
-    private static final List<ModelProvider> PROVIDERS =
-            ServiceLoader.load(ModelProvider.class).stream()
-                    .map(ServiceLoader.Provider::get)
-                    .toList();
+    // The in-repo provider classes, for the SHADING fallback below and its drift test. Absent
+    // classes are silently skipped, so this list is a superset of any given classpath.
+    private static final List<String> KNOWN_PROVIDER_CLASSES =
+            List.of(
+                    "com.qxotic.jinfer.models.llama.LlamaProvider",
+                    "com.qxotic.jinfer.models.llama.GraniteProvider",
+                    "com.qxotic.jinfer.models.gemma4.Gemma4Provider",
+                    "com.qxotic.jinfer.models.lfm2.Lfm2Provider",
+                    "com.qxotic.jinfer.models.qwen35.Qwen35Provider",
+                    "com.qxotic.jinfer.models.nemotronh.NemotronHProvider",
+                    "com.qxotic.jinfer.models.gptoss.GptOssProvider",
+                    "com.qxotic.jinfer.models.inflect2.Inflect2Provider");
+
+    private static final List<ModelProvider> PROVIDERS = discover();
+
+    /**
+     * ServiceLoader first - the contract. When it finds NOTHING, the likeliest cause is a shaded
+     * jar built without merging {@code META-INF/services} (the provider CLASSES survive shading;
+     * only the registration files get dropped), so fall back to the known class names and warn: the
+     * setup works, but the build should add the transformer before relocation breaks it too.
+     */
+    private static List<ModelProvider> discover() {
+        List<ModelProvider> loaded =
+                ServiceLoader.load(ModelProvider.class).stream()
+                        .map(ServiceLoader.Provider::get)
+                        .toList();
+        if (!loaded.isEmpty()) return loaded;
+        List<ModelProvider> recovered = new java.util.ArrayList<>();
+        for (String name : KNOWN_PROVIDER_CLASSES) {
+            try {
+                recovered.add(
+                        (ModelProvider) Class.forName(name).getDeclaredConstructor().newInstance());
+            } catch (ReflectiveOperationException | LinkageError absent) {
+                // not on this classpath - fine, the list is a superset
+            }
+        }
+        if (!recovered.isEmpty()) {
+            System.err.println(
+                    "jinfer: ServiceLoader found no model providers but "
+                            + recovered.size()
+                            + " provider class(es) are present - your build likely shades jinfer"
+                            + " without merging META-INF/services (Maven Shade:"
+                            + " ServicesResourceTransformer). Recovered them reflectively; fix"
+                            + " the build, this fallback cannot see third-party providers.");
+        }
+        return List.copyOf(recovered);
+    }
+
+    /** Package-visible for the drift test: the fallback list must cover every classpath port. */
+    static List<String> knownProviderClasses() {
+        return KNOWN_PROVIDER_CLASSES;
+    }
 
     /**
      * Loads {@code path} at context size {@code ctx} (-1 = the model's full context). Weights map
@@ -225,17 +273,18 @@ public final class Models {
     // can name the jar to add. Kept in sync with the in-repo ports by hand; an entry for a
     // port the user has is harmless (dispatch already succeeded).
     private static final java.util.Map<String, String> PORT_ARTIFACTS =
-            java.util.Map.of(
-                    "gemma4", "com.qxotic:jinfer-gemma4",
-                    "gpt-oss", "com.qxotic:jinfer-gptoss",
-                    "lfm", "com.qxotic:jinfer-lfm2",
-                    "llama", "com.qxotic:jinfer-llama",
-                    "minicpm", "com.qxotic:jinfer-llama",
-                    "mistral3", "com.qxotic:jinfer-llama",
-                    "smollm3", "com.qxotic:jinfer-llama",
-                    "nemotron_h", "com.qxotic:jinfer-nemotronh",
-                    "qwen35", "com.qxotic:jinfer-qwen35",
-                    "inflect", "com.qxotic:jinfer-inflect2");
+            java.util.Map.ofEntries(
+                    java.util.Map.entry("gemma4", "com.qxotic:jinfer-gemma4"),
+                    java.util.Map.entry("gpt-oss", "com.qxotic:jinfer-gptoss"),
+                    java.util.Map.entry("lfm", "com.qxotic:jinfer-lfm2"),
+                    java.util.Map.entry("llama", "com.qxotic:jinfer-llama"),
+                    java.util.Map.entry("granite", "com.qxotic:jinfer-llama"),
+                    java.util.Map.entry("minicpm", "com.qxotic:jinfer-llama"),
+                    java.util.Map.entry("mistral3", "com.qxotic:jinfer-llama"),
+                    java.util.Map.entry("smollm3", "com.qxotic:jinfer-llama"),
+                    java.util.Map.entry("nemotron_h", "com.qxotic:jinfer-nemotronh"),
+                    java.util.Map.entry("qwen35", "com.qxotic:jinfer-qwen35"),
+                    java.util.Map.entry("inflect", "com.qxotic:jinfer-inflect2"));
 
     /**
      * The diagnostics table's answer for {@code arch}, or null - package-visible for the drift test

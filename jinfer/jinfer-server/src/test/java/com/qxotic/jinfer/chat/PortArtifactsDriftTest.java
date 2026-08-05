@@ -14,6 +14,21 @@ import org.junit.jupiter.api.Test;
 final class PortArtifactsDriftTest {
 
     @Test
+    void everyClasspathProviderIsInTheShadingFallback() {
+        var known = Models.knownProviderClasses();
+        for (var provider :
+                java.util.ServiceLoader.load(ModelProvider.class).stream()
+                        .map(java.util.ServiceLoader.Provider::get)
+                        .toList()) {
+            org.junit.jupiter.api.Assertions.assertTrue(
+                    known.contains(provider.getClass().getName()),
+                    provider.getClass().getName()
+                            + " is not in Models.KNOWN_PROVIDER_CLASSES - add it so shading"
+                            + " without ServicesResourceTransformer still recovers this port");
+        }
+    }
+
+    @Test
     void everyPortArchitectureHasARemedyEntry() {
         var archs = Models.supportedArchitectures();
         assertFalse(archs.isEmpty(), "no ports on the test classpath");
