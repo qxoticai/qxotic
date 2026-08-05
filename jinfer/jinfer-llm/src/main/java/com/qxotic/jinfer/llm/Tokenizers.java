@@ -75,10 +75,9 @@ public final class Tokenizers {
                 throw new IllegalArgumentException(
                         e.getMessage()
                                 + ". Quick fix without code:"
-                                + " -Djinfer.preTokenizer.<name>=<known-name> to alias a known"
-                                + " scheme, or -Djinfer.preTokenizer.<name>=regex:<pattern> to"
-                                + " supply one, or -Djinfer.preTokenizer.<name>=file:<path> with"
-                                + " one regex per line (multiple lines = staged split)",
+                                + " -Djinfer.preTokenizer.<name>=alias:<known-name> to alias a"
+                                + " known scheme, =regex:<pattern> to supply one, or =file:<path>"
+                                + " with one regex per line (multiple lines = staged split)",
                         e);
             }
             throw e;
@@ -87,7 +86,7 @@ public final class Tokenizers {
 
     /**
      * The end-user escape hatch for a GGUF whose {@code tokenizer.ggml.pre} nobody registered yet:
-     * {@code -Djinfer.preTokenizer.<name>=<known-name>} aliases a known scheme (most "new"
+     * {@code -Djinfer.preTokenizer.<name>=alias:<known-name>} aliases a known scheme (most "new"
      * pre-tokenizers are an existing scheme under a new name), {@code
      * -Djinfer.preTokenizer.<name>=regex:<pattern>} supplies one, and {@code
      * -Djinfer.preTokenizer.<name>=file:<path>} reads patterns from a file - one regex per line,
@@ -125,8 +124,17 @@ public final class Tokenizers {
                                     + " line, blank lines and # comments skipped");
                 }
                 registerSupplied(builder, name, patterns);
+            } else if (value.startsWith("alias:")) {
+                // throws with the known names on a typo
+                builder.aliasPreTokenizer(name, value.substring("alias:".length()));
             } else {
-                builder.aliasPreTokenizer(name, value); // throws with the known names on a typo
+                throw new IllegalArgumentException(
+                        "-D"
+                                + key
+                                + "="
+                                + value
+                                + ": the value must be alias:<known-name>,"
+                                + " regex:<pattern>, or file:<path> (one regex per line)");
             }
         }
     }
