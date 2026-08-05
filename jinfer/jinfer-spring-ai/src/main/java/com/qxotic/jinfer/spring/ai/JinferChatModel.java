@@ -228,10 +228,10 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                         null, // Spring AI has no reasoning-budget knob
                         options.getTimeout() == null ? 0 : options.getTimeout().toNanos(),
                         options.getTemperature() == null
-                                ? com.qxotic.jinfer.chat.SamplingDefaults.DEFAULT_TEMPERATURE
+                                ? engine.loaded().samplingDefaults().effectiveTemperature()
                                 : options.getTemperature().floatValue(),
                         options.getTopP() == null
-                                ? com.qxotic.jinfer.chat.SamplingDefaults.DEFAULT_TOP_P
+                                ? engine.loaded().samplingDefaults().effectiveTopP()
                                 : options.getTopP().floatValue(),
                         options.getSeed() == null ? 42 : options.getSeed(),
                         grammar(options.getOutputSchema()),

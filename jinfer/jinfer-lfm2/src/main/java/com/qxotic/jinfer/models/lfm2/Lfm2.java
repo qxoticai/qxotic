@@ -154,7 +154,8 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
                 chatTemplateSource,
                 stopTokens(),
                 modelSeed,
-                java.util.Optional.of(template()));
+                java.util.Optional.of(template()),
+                com.qxotic.jinfer.chat.SamplingDefaults.NONE);
     }
 
     /** The per-turn view of the same template (turn-aligned cache scenarios refine through it). */

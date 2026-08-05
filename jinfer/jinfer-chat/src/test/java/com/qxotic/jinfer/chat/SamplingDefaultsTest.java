@@ -20,8 +20,8 @@ class SamplingDefaultsTest {
     void noneFallsThroughToEngineBaseline() {
         var merged = SamplingDefaults.NONE.withFallback(SamplingDefaults.NONE);
         assertNull(merged.temperature());
-        assertEquals(SamplingDefaults.DEFAULT_TEMPERATURE, merged.effectiveTemperature());
-        assertEquals(SamplingDefaults.DEFAULT_TOP_P, merged.effectiveTopP());
+        assertEquals(0.8f, merged.effectiveTemperature());
+        assertEquals(0.95f, merged.effectiveTopP());
     }
 
     @Test

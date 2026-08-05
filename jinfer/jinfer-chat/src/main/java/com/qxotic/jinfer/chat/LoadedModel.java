@@ -51,27 +51,6 @@ public record LoadedModel<S extends RuntimeState>(
         seed = seed.clone();
     }
 
-    /**
-     * Without container sampling recommendations - the ports' construction form; {@code
-     * Models.load} attaches {@link SamplingDefaults#fromGGUF} on the way out.
-     */
-    public LoadedModel(
-            LanguageModel<?, ?, S> model,
-            Tokenizer tokenizer,
-            String chatTemplateSource,
-            Set<Integer> stopTokens,
-            byte[] seed,
-            Optional<ChatTemplate> template) {
-        this(
-                model,
-                tokenizer,
-                chatTemplateSource,
-                stopTokens,
-                seed,
-                template,
-                SamplingDefaults.NONE);
-    }
-
     /** The same model with the container's recommended sampling parameters attached. */
     public LoadedModel<S> withSamplingDefaults(SamplingDefaults samplingDefaults) {
         return new LoadedModel<>(

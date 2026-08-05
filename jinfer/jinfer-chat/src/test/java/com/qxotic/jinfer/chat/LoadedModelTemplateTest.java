@@ -73,7 +73,8 @@ final class LoadedModelTemplateTest {
                 "{{ container_wire }}",
                 Set.of(2),
                 new byte[] {1, 2, 3, 4},
-                template);
+                template,
+                SamplingDefaults.NONE);
     }
 
     /** Never encodes: the record only needs a stable identity in the template slot. */

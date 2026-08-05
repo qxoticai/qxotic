@@ -90,7 +90,8 @@ public final class NemotronH
                 chatTemplateSource,
                 stopTokens(),
                 modelSeed,
-                turnTemplate().map(t -> (com.qxotic.jinfer.chat.ChatTemplate) t));
+                turnTemplate().map(t -> (com.qxotic.jinfer.chat.ChatTemplate) t),
+                com.qxotic.jinfer.chat.SamplingDefaults.NONE);
     }
 
     public java.util.Optional<com.qxotic.jinfer.chat.TurnTemplate> turnTemplate() {

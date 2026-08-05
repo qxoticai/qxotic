@@ -74,7 +74,8 @@ final class LoadedModelTokenizerTest {
                 "{{ messages }}",
                 Set.of(2),
                 new byte[] {1, 2, 3, 4},
-                Optional.empty());
+                Optional.empty(),
+                SamplingDefaults.NONE);
     }
 
     /** Never runs: the record only needs a non-null model with a stable identity. */

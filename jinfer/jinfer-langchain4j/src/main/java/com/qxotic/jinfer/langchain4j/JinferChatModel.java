@@ -4,7 +4,6 @@ import com.qxotic.jinfer.chat.CachedPrompt;
 import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.Message;
-import com.qxotic.jinfer.chat.SamplingDefaults;
 import com.qxotic.jinfer.llm.Grammar;
 import com.qxotic.jinfer.llm.TextStops;
 import dev.langchain4j.agent.tool.ToolSpecification;
@@ -265,9 +264,11 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                         null, // langchain4j has no reasoning-budget knob
                         timeoutNanos,
                         p.temperature() == null
-                                ? SamplingDefaults.DEFAULT_TEMPERATURE
+                                ? engine.loaded().samplingDefaults().effectiveTemperature()
                                 : p.temperature().floatValue(),
-                        p.topP() == null ? SamplingDefaults.DEFAULT_TOP_P : p.topP().floatValue(),
+                        p.topP() == null
+                                ? engine.loaded().samplingDefaults().effectiveTopP()
+                                : p.topP().floatValue(),
                         j != null && j.seed() != null ? j.seed() : seed,
                         grammar(p, j),
                         p.toolChoice() == ToolChoice.REQUIRED ? "" : null,
