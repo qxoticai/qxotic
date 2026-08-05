@@ -163,6 +163,10 @@ public final class Server {
                                 "n_ctx", model.model().config().contextLength(),
                                 "n_batch", RuntimeFlags.MAX_PROMPT_SEQUENCE_LENGTH,
                                 "n_vocab", model.model().config().vocabularySize(),
+                                "sampling",
+                                        Map.of(
+                                                "temperature", options.temperature(),
+                                                "top_p", options.topp()),
                                 "prompt_cache", promptCacheProps()));
         Function<Map<String, Object>, Object> tokenize =
                 request ->
@@ -207,6 +211,10 @@ public final class Server {
                 options.host(),
                 server.getAddress().getPort(),
                 com.qxotic.jinfer.chat.Models.supportedArchitectures());
+        // resolved once at load: CLI flag > GGUF general.sampling.* > port > engine baseline
+        System.out.printf(
+                "sampling defaults: temperature %.2f, top-p %.2f (request values override)%n",
+                options.temperature(), options.topp());
         return running;
     }
 

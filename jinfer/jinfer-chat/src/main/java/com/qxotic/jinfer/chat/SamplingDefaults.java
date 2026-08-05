@@ -11,7 +11,16 @@ import com.qxotic.format.gguf.GGUF;
  */
 public record SamplingDefaults(Float temperature, Float topP) {
 
-    /** No container recommendations - every lookup falls through to the caller's fallback. */
+    /**
+     * The engine baseline, OK-ish for any chat model (llama.cpp's defaults): the bottom of the
+     * three-layer chain {@code request/config > container recommendation > this baseline}. Use
+     * {@link #effectiveTemperature()}/{@link #effectiveTopP()} to resolve the full chain's tail.
+     */
+    public static final float DEFAULT_TEMPERATURE = 0.8f;
+
+    public static final float DEFAULT_TOP_P = 0.95f;
+
+    /** No container recommendations - every lookup falls through to the engine baseline. */
     public static final SamplingDefaults NONE = new SamplingDefaults(null, null);
 
     public static SamplingDefaults fromGGUF(GGUF gguf) {
@@ -30,5 +39,26 @@ public record SamplingDefaults(Float temperature, Float topP) {
 
     public float topPOr(float fallback) {
         return topP != null ? topP : fallback;
+    }
+
+    /**
+     * Field-wise precedence merge: this record's values where present, {@code fallback}'s where
+     * not. {@code Models.load} uses it to layer the GGUF's recommendations over the port's
+     * (model-author) recommendations.
+     */
+    public SamplingDefaults withFallback(SamplingDefaults fallback) {
+        return new SamplingDefaults(
+                temperature != null ? temperature : fallback.temperature,
+                topP != null ? topP : fallback.topP);
+    }
+
+    /** The container's recommendation, or the engine baseline when it carries none. */
+    public float effectiveTemperature() {
+        return temperatureOr(DEFAULT_TEMPERATURE);
+    }
+
+    /** The container's recommendation, or the engine baseline when it carries none. */
+    public float effectiveTopP() {
+        return topPOr(DEFAULT_TOP_P);
     }
 }

@@ -84,12 +84,7 @@ public final class Models {
      * exception).
      */
     public static LoadedModel<?> load(Path path, int ctx, Arena arena) throws IOException {
-        return open(
-                path,
-                (fc, gguf) ->
-                        provider(gguf)
-                                .load(fc, gguf, ctx, arena)
-                                .withSamplingDefaults(SamplingDefaults.fromGGUF(gguf)));
+        return open(path, (fc, gguf) -> sampled(provider(gguf).load(fc, gguf, ctx, arena), gguf));
     }
 
     /**
@@ -116,9 +111,9 @@ public final class Models {
                 open(
                         path,
                         (fc, gguf) ->
-                                provider(gguf)
-                                        .load(fc, gguf, ctx, mediaProjector, arena)
-                                        .withSamplingDefaults(SamplingDefaults.fromGGUF(gguf))),
+                                sampled(
+                                        provider(gguf).load(fc, gguf, ctx, mediaProjector, arena),
+                                        gguf)),
                 mediaProjector);
     }
 
@@ -129,6 +124,16 @@ public final class Models {
      * KV must be part of the key space - a different projector (or decoder, or plan) producing
      * different rows for the same bytes must never serve the old blocks.
      */
+    /**
+     * Attaches the effective sampling recommendations: the GGUF's {@code general.sampling.*} where
+     * present, falling back to the port's model-author recommendation, if it declared one.
+     */
+    private static <S extends com.qxotic.jinfer.RuntimeState> LoadedModel<S> sampled(
+            LoadedModel<S> loaded, GGUF gguf) {
+        return loaded.withSamplingDefaults(
+                SamplingDefaults.fromGGUF(gguf).withFallback(loaded.samplingDefaults()));
+    }
+
     static <S extends com.qxotic.jinfer.RuntimeState> LoadedModel<S> mediaSeeded(
             LoadedModel<S> loaded, Path mediaProjector) {
         try {
@@ -161,9 +166,7 @@ public final class Models {
      */
     public static LoadedModel<?> load(FileChannel fileChannel, GGUF gguf, int ctx, Arena arena)
             throws IOException {
-        return provider(gguf)
-                .load(fileChannel, gguf, ctx, arena)
-                .withSamplingDefaults(SamplingDefaults.fromGGUF(gguf));
+        return sampled(provider(gguf).load(fileChannel, gguf, ctx, arena), gguf);
     }
 
     /**

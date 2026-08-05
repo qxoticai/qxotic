@@ -109,7 +109,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                 b.observationRegistry == null ? ObservationRegistry.NOOP : b.observationRegistry;
         this.observationConvention = b.observationConvention;
         // precedence: request > builder > the container's recommendation (general.sampling.*)
-        // > engine defaults (greedy, top-p 0.95) applied at request mapping
+        // > port author recommendation > the engine baseline (SamplingDefaults.DEFAULT_*)
         var recommended = engine.loaded().samplingDefaults();
         JinferChatOptions knobs =
                 JinferChatOptions.builder()
@@ -228,9 +228,11 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                         null, // Spring AI has no reasoning-budget knob
                         options.getTimeout() == null ? 0 : options.getTimeout().toNanos(),
                         options.getTemperature() == null
-                                ? 0.0f
+                                ? com.qxotic.jinfer.chat.SamplingDefaults.DEFAULT_TEMPERATURE
                                 : options.getTemperature().floatValue(),
-                        options.getTopP() == null ? 0.95f : options.getTopP().floatValue(),
+                        options.getTopP() == null
+                                ? com.qxotic.jinfer.chat.SamplingDefaults.DEFAULT_TOP_P
+                                : options.getTopP().floatValue(),
                         options.getSeed() == null ? 42 : options.getSeed(),
                         grammar(options.getOutputSchema()),
                         null, // Spring AI has no forced-tool-call knob

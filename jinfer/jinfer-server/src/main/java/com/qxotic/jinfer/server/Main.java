@@ -266,7 +266,7 @@ public class Main {
         out.println("  --system-prompt, -sp <string> system prompt for chat/instruct mode");
         out.println(
                 "  --temperature, -temp <float>  temperature in [0,inf], default: the model's"
-                        + " GGUF-recommended value (general.sampling.temp), else 1.0");
+                        + " GGUF-recommended value (general.sampling.temp), else 0.8");
         out.println(
                 "  --top-p <float>               p value in top-p (nucleus) sampling in [0,1]"
                         + " default 0.95");
@@ -317,7 +317,7 @@ public class Main {
     static LLMOptions parseOptions(String[] args) {
         String prompt = null;
         String systemPrompt = null;
-        Float temperature = null; // unset = the model's GGUF-recommended value, else 1.0
+        Float temperature = null; // unset = the model's GGUF-recommended value, else 0.8
         Float topp = null; // unset = the model's GGUF-recommended value, else 0.95
         Path modelPath = null;
         Path mediaProjector = null;

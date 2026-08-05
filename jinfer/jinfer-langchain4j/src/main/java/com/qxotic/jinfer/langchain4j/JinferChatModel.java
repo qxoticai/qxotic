@@ -4,6 +4,7 @@ import com.qxotic.jinfer.chat.CachedPrompt;
 import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.chat.SamplingDefaults;
 import com.qxotic.jinfer.llm.Grammar;
 import com.qxotic.jinfer.llm.TextStops;
 import dev.langchain4j.agent.tool.ToolSpecification;
@@ -86,7 +87,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         // Jinfer-typed ALWAYS: ChatModel.chat merges defaults.overrideWith(request), and only a
         // jinfer-typed receiver preserves grammar/seed from either side of the merge
         // precedence: request > builder > the container's recommendation (general.sampling.*)
-        // > engine defaults (greedy, top-p 0.95) applied at request mapping
+        // > port author recommendation > the engine baseline (SamplingDefaults.DEFAULT_*)
         var recommended = engine.loaded().samplingDefaults();
         JinferChatRequestParameters base =
                 JinferChatRequestParameters.builder()
@@ -263,8 +264,10 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                         p.maxOutputTokens() == null ? -1 : p.maxOutputTokens(),
                         null, // langchain4j has no reasoning-budget knob
                         timeoutNanos,
-                        p.temperature() == null ? 0.0f : p.temperature().floatValue(),
-                        p.topP() == null ? 0.95f : p.topP().floatValue(),
+                        p.temperature() == null
+                                ? SamplingDefaults.DEFAULT_TEMPERATURE
+                                : p.temperature().floatValue(),
+                        p.topP() == null ? SamplingDefaults.DEFAULT_TOP_P : p.topP().floatValue(),
                         j != null && j.seed() != null ? j.seed() : seed,
                         grammar(p, j),
                         p.toolChoice() == ToolChoice.REQUIRED ? "" : null,
@@ -454,8 +457,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
 
         /**
          * Sampling temperature; default: the model's GGUF-recommended value ({@code
-         * general.sampling.temp}) when the container carries one, else 0 (greedy argmax).
-         * Per-request values override.
+         * general.sampling.temp}) when the container carries one, else 0.8. Per-request values
+         * override; pass 0 for greedy argmax.
          */
         public Builder temperature(Double temperature) {
             this.temperature = temperature;

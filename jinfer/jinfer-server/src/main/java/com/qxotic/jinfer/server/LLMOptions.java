@@ -44,9 +44,9 @@ public record LLMOptions(
 
     /**
      * Fills unset sampling flags from the container's recommendations ({@code general.sampling.*}
-     * via {@link com.qxotic.jinfer.chat.SamplingDefaults}), then the engine defaults (temperature
-     * 1.0, top-p 0.95). An explicit CLI flag always wins. Called once, right after the model loads;
-     * everything downstream reads resolved, non-null values.
+     * via {@link com.qxotic.jinfer.chat.SamplingDefaults}), then the shared engine baseline. An
+     * explicit CLI flag always wins. Called once, right after the model loads; everything
+     * downstream reads resolved, non-null values.
      */
     public LLMOptions withResolvedSampling(com.qxotic.jinfer.chat.SamplingDefaults defaults) {
         return new LLMOptions(
@@ -58,8 +58,8 @@ public record LLMOptions(
                 server,
                 host,
                 port,
-                temperature != null ? temperature : defaults.temperatureOr(1f),
-                topp != null ? topp : defaults.topPOr(0.95f),
+                temperature != null ? temperature : defaults.effectiveTemperature(),
+                topp != null ? topp : defaults.effectiveTopP(),
                 seed,
                 maxTokens,
                 stream,
