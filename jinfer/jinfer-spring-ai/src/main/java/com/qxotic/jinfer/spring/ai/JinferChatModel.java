@@ -237,7 +237,9 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                                 ? engine.loaded().samplingDefaults().effectiveTopK()
                                 : options.getTopK(),
                         engine.loaded().samplingDefaults().effectiveMinP(),
-                        options.getSeed() == null ? 42 : options.getSeed(),
+                        options.getSeed() == null
+                                ? java.util.concurrent.ThreadLocalRandom.current().nextLong()
+                                : options.getSeed(),
                         grammar(options.getOutputSchema()),
                         null, // Spring AI has no forced-tool-call knob
                         cached,
@@ -626,9 +628,10 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         }
 
         /**
-         * RNG seed for temperature sampling; default 42. Per-request options override. Same seed
-         * does NOT guarantee byte-identical replay at temperature &gt; 0: the CPU backend's
-         * run-to-run FP jitter flips near-tie samples.
+         * RNG seed for temperature sampling; default: a fresh random seed per request. Set one to
+         * pin sampling; per-request options override. Same seed does NOT guarantee byte-identical
+         * replay at temperature &gt; 0: the CPU backend's run-to-run FP jitter flips near-tie
+         * samples.
          */
         public Builder seed(Long seed) {
             this.seed = seed;

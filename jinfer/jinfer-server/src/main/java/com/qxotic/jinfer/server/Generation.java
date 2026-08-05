@@ -146,7 +146,12 @@ final class Generation {
                         Values.floatValue(request.get("top_p"), options.topp()),
                         Values.intValue(request.get("top_k"), options.topk()),
                         Values.floatValue(request.get("min_p"), options.minp()),
-                        Values.longValue(request.get("seed"), options.seed()),
+                        Values.longValue(
+                                request.get("seed"),
+                                options.seed() != null
+                                        ? options.seed()
+                                        : java.util.concurrent.ThreadLocalRandom.current()
+                                                .nextLong()),
                         grammarSpec(request),
                         nativeForcedOk() ? ToolUse.forced(request) : null,
                         false,
@@ -540,7 +545,12 @@ final class Generation {
                         Values.floatValue(request.get("top_p"), options.topp()),
                         Values.intValue(request.get("top_k"), options.topk()),
                         Values.floatValue(request.get("min_p"), options.minp()),
-                        Values.longValue(request.get("seed"), options.seed()),
+                        Values.longValue(
+                                request.get("seed"),
+                                options.seed() != null
+                                        ? options.seed()
+                                        : java.util.concurrent.ThreadLocalRandom.current()
+                                                .nextLong()),
                         think,
                         maxTokens,
                         reasoningMax(request),

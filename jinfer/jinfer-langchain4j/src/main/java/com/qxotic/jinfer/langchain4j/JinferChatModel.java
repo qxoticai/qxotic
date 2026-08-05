@@ -52,7 +52,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     final ChatEngine engine;
     final ChatRequestParameters defaults;
     final boolean thinking;
-    final long seed;
+    final Long seed;
     final long timeoutNanos;
     final List<ChatModelListener> listeners;
     final com.qxotic.jinfer.media.VideoSampler videoSampler;
@@ -274,7 +274,12 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                                 ? engine.loaded().samplingDefaults().effectiveTopK()
                                 : p.topK(),
                         engine.loaded().samplingDefaults().effectiveMinP(),
-                        j != null && j.seed() != null ? j.seed() : seed,
+                        j != null && j.seed() != null
+                                ? j.seed()
+                                : seed != null
+                                        ? seed
+                                        : java.util.concurrent.ThreadLocalRandom.current()
+                                                .nextLong(),
                         grammar(p, j),
                         p.toolChoice() == ToolChoice.REQUIRED ? "" : null,
                         cached,
@@ -381,7 +386,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         private ChatRequestParameters defaultParameters;
         private List<ChatModelListener> listeners = List.of();
         private boolean thinking = true;
-        private long seed = 42;
+        private Long seed;
         private Duration timeout;
 
         /** The GGUF to load. Required unless {@link #model}. */
@@ -526,12 +531,12 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         }
 
         /**
-         * RNG seed for temperature sampling; default 42. A per-request {@link
-         * JinferChatRequestParameters#seed} wins over this. Same seed does NOT guarantee
-         * byte-identical replay at temperature &gt; 0: the CPU backend's run-to-run FP jitter flips
-         * near-tie samples.
+         * RNG seed for temperature sampling; default: a fresh random seed per request. Set one to
+         * pin sampling - a per-request {@link JinferChatRequestParameters#seed} wins over this.
+         * Same seed does NOT guarantee byte-identical replay across processes: the CPU backend's
+         * run-to-run FP jitter can flip a near-tie.
          */
-        public Builder seed(long seed) {
+        public Builder seed(Long seed) {
             this.seed = seed;
             return this;
         }

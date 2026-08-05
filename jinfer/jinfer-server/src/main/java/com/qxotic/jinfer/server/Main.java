@@ -276,7 +276,9 @@ public class Main {
         out.println(
                 "  --min-p <float>               min-p cutoff relative to the top token, in"
                         + " [0,1]; default: the model's recommended value, else 0.05");
-        out.println("  --seed <long>                 random seed, default System.nanoTime()");
+        out.println(
+                "  --seed <long>                 pins the sampling seed; default: a fresh random"
+                        + " seed per request");
         out.println(
                 "  --max-tokens, -n <int>        number of steps to run for < 0 = limited by"
                         + " context length, default "
@@ -329,7 +331,7 @@ public class Main {
         Float minp = null; // unset = the model's recommended value, else 0.05
         Path modelPath = null;
         Path mediaProjector = null;
-        long seed = System.nanoTime();
+        Long seed = null; // unset = a fresh random seed per request
         int maxTokens = DEFAULT_MAX_TOKENS;
         boolean interactive = false;
         boolean server = false;
@@ -501,7 +503,9 @@ public class Main {
                         options.topk(),
                         options.topp(),
                         options.minp(),
-                        options.seed());
+                        options.seed() != null
+                                ? options.seed()
+                                : java.util.concurrent.ThreadLocalRandom.current().nextLong());
         if (!options.think()) {
             sampler = Thinking.banMarkers(sampler, model.tokenizer());
         }

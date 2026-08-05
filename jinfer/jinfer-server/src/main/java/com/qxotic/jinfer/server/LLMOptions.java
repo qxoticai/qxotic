@@ -17,7 +17,7 @@ public record LLMOptions(
         Float topp,
         Integer topk,
         Float minp,
-        long seed,
+        Long seed,
         int maxTokens,
         boolean stream,
         boolean echo,
