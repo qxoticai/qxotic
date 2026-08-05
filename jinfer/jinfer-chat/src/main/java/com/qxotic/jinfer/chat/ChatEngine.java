@@ -281,8 +281,12 @@ public final class ChatEngine {
         if (closed) throw new IllegalStateException("the model is closed");
     }
 
-    /** The encoded prompt plus the reply parser when the model has a native codec. */
-    public record Encoded(List<Batch> prompt, Optional<ChatTemplate> template) {}
+    /**
+     * The encoded prompt, the reply parser source when the model has a native codec, and the
+     * prompt's reply seed - the trailing ids grammatically part of the reply, co-produced with the
+     * prompt ({@link ChatTemplate.Prompt}) so parser state can never disagree with the tail.
+     */
+    public record Encoded(List<Batch> prompt, Optional<ChatTemplate> template, int[] replySeed) {}
 
     /**
      * One request in jinfer terms - what both integrations mean once their own option types are
@@ -383,7 +387,7 @@ public final class ChatEngine {
                 long timeoutNanos,
                 List<String> stops) {
             return new Prepared(
-                    new Encoded(List.of(Batch.prefill(promptTokens)), Optional.empty()),
+                    new Encoded(List.of(Batch.prefill(promptTokens)), Optional.empty(), new int[0]),
                     sampler,
                     maxTokens,
                     timeoutNanos,
@@ -428,6 +432,7 @@ public final class ChatEngine {
                 request.cachedView()
                         ? encodeNative(conversation)
                         : encode(conversation, messageMaps, toolMaps, request.templateKwargs());
+        int[] parserSeed = encoded.replySeed();
         Sampler sampler =
                 RequestPolicy.sampler(
                         loaded,
@@ -436,11 +441,13 @@ public final class ChatEngine {
                         request.seed(),
                         think,
                         request.maxTokens(),
-                        request.reasoningMaxTokens());
+                        request.reasoningMaxTokens(),
+                        parserSeed);
         if (request.grammar() != null) {
-            sampler = RequestPolicy.constrained(loaded, sampler, request.grammar().cursor(), think);
+            sampler =
+                    RequestPolicy.constrained(
+                            loaded, sampler, request.grammar().cursor(), parserSeed);
         }
-        int[] parserSeed = encoded.template().map(t -> t.replySeed(think)).orElse(new int[0]);
         if (request.forcedTool() != null) {
             // a named choice pins that tool alone; the prompt still frames every offered tool
             List<Tool> pinned =
@@ -458,7 +465,7 @@ public final class ChatEngine {
                                                             + " native codec that declares one"));
             List<Batch> prompt = new ArrayList<>(encoded.prompt());
             prompt.add(forced.seed());
-            encoded = new Encoded(List.copyOf(prompt), encoded.template());
+            encoded = new Encoded(List.copyOf(prompt), encoded.template(), encoded.replySeed());
             sampler = forced.sampler();
             parserSeed = forced.parserSeed();
         }
@@ -492,7 +499,8 @@ public final class ChatEngine {
         // Conversation.thinking by the time encoding happens), so it alone does not punt.
         if (template.isPresent() && !unknownKwargs(templateKwargs)) {
             try {
-                return new Encoded(template.get().encode(conversation), template);
+                ChatTemplate.Prompt p = template.get().encodePrompt(conversation);
+                return new Encoded(p.batches(), template, p.replySeed());
             } catch (UnsupportedConversation punt) {
                 punted = punt; // fall through; the parser (same reply grammar) stays usable
             }
@@ -511,7 +519,12 @@ public final class ChatEngine {
                         true,
                         conversation.thinking(),
                         templateKwargs);
-        return new Encoded(List.of(Batch.prefill(ids.toArray())), template);
+        // whole-render fallback: the template's STATIC seed is the only tail knowledge we
+        // have for an arbitrary rendered prompt (conversation-shaped tails need the codec path)
+        return new Encoded(
+                List.of(Batch.prefill(ids.toArray())),
+                template,
+                template.map(t -> t.replySeed(conversation.thinking())).orElse(new int[0]));
     }
 
     /** Any key the native path has no equivalent for; template-encoding must punt on these. */
@@ -746,7 +759,8 @@ public final class ChatEngine {
                                                 "cached prompts need a native chat-template codec;"
                                                     + " this model only has the Jinja whole-render"
                                                     + " (no prefix-stability guarantee)"));
-        return new Encoded(template.encode(conversation), Optional.of(template));
+        ChatTemplate.Prompt p = template.encodePrompt(conversation);
+        return new Encoded(p.batches(), Optional.of(template), p.replySeed());
     }
 
     /**

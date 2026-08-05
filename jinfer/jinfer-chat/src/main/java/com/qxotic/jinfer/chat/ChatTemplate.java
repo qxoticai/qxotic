@@ -52,6 +52,24 @@ public interface ChatTemplate {
     List<Batch> encode(Conversation conversation);
 
     /**
+     * An encoded prompt together with the trailing ids that grammatically belong to the REPLY -
+     * co-produced by {@link #encodePrompt} so the prompt's tail and the parser's initial state can
+     * never disagree (the tail may depend on conversation SHAPE, e.g. Gemma opens {@code
+     * <|channel>thought\n} only after a trailing tool response with thinking on).
+     */
+    record Prompt(List<Batch> batches, int[] replySeed) {}
+
+    /**
+     * {@link #encode} plus the reply seed the encoded prompt actually ends with. The default
+     * derives the seed from the static {@link #replySeed(boolean)} - correct for every template
+     * whose tail is a pure function of the thinking flag; a template with a conversation-shaped
+     * tail overrides this and builds both in ONE pass.
+     */
+    default Prompt encodePrompt(Conversation conversation) {
+        return new Prompt(encode(conversation), replySeed(conversation.thinking()));
+    }
+
+    /**
      * True when this template holds the encoder-projected rows for {@code contentKey} in its
      * in-process media cache, letting a caller who has only the SOURCE bytes skip decoding
      * entirely: pass a keyed {@link Part.Blob} with an EMPTY payload (a frameless {@code

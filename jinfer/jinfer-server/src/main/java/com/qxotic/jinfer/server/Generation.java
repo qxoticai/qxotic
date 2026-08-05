@@ -518,6 +518,9 @@ final class Generation {
         int maxTokens = maxTokens(request);
         boolean think = requestThink(request);
         Grammar.Spec grammar = grammarSpec(request);
+        // a raw prompt has no conversation, so the template's STATIC seed is the only possible
+        // tail knowledge (the chat path gets the conversation-aware seed from encodePrompt)
+        int[] replySeed = model.template().map(t -> t.replySeed(think)).orElseGet(() -> new int[0]);
         Sampler sampler =
                 RequestPolicy.sampler(
                         model,
@@ -526,9 +529,10 @@ final class Generation {
                         Values.longValue(request.get("seed"), options.seed()),
                         think,
                         maxTokens,
-                        reasoningMax(request));
+                        reasoningMax(request),
+                        replySeed);
         if (grammar != null) {
-            sampler = RequestPolicy.constrained(model, sampler, grammar.cursor(), think);
+            sampler = RequestPolicy.constrained(model, sampler, grammar.cursor(), replySeed);
         }
         ChatEngine.Prepared prepared =
                 ChatEngine.Prepared.raw(

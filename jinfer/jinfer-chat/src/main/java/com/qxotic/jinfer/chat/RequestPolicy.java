@@ -36,7 +36,8 @@ public final class RequestPolicy {
             long seed,
             boolean think,
             int maxTokens,
-            Integer reasoningOverride) {
+            Integer reasoningOverride,
+            int[] replySeed) {
         Sampler sampler =
                 Sampler.select(m.model().config().vocabularySize(), temperature, topP, seed);
         if (!think) {
@@ -47,11 +48,14 @@ public final class RequestPolicy {
                         ? reasoningOverride
                         : maxTokens >= 0 ? Math.max(1, maxTokens / 2) : -1;
         // prompt-opened spans (replySeed carries the open id): the cap must start ARMED - the
-        // open token never passes through the sampler on those families
+        // open token never passes through the sampler on those families. The seed is the
+        // ENCODED prompt's tail ({@link ChatTemplate.Prompt}); it may depend on conversation
+        // shape, which is why the caller supplies it instead of this method querying the
+        // template's static answer.
         boolean startInThink = false;
         java.util.OptionalInt open = SpecialTokens.find(m.tokenizer(), Thinking.OPEN);
-        if (open.isPresent() && m.template().isPresent()) {
-            for (int t : m.template().get().replySeed(think)) {
+        if (open.isPresent()) {
+            for (int t : replySeed) {
                 if (t == open.getAsInt()) {
                     startInThink = true;
                     break;
@@ -68,17 +72,17 @@ public final class RequestPolicy {
      * stop tokens.
      */
     public static Sampler constrained(
-            LoadedModel<?> m, Sampler s, Grammar.Cursor g, boolean think) {
+            LoadedModel<?> m, Sampler s, Grammar.Cursor g, int[] replySeed) {
         // channel-scoped: the model's OWN reply parser is the channel authority - the grammar
         // exists only where text becomes output (reasoning, scaffold and call payloads stay
         // free; Harmony's analysis channel reasons at full strength under a JSON schema). The
-        // wrapper owns a private parser copy pre-fed the reply seed, so it starts in the exact
-        // span state the prompt left the model in.
+        // wrapper owns a private parser copy pre-fed the reply seed (the encoded prompt's
+        // tail), so it starts in the exact span state the prompt left the model in.
         ReplyParser parser =
                 m.template()
                         .map(ChatTemplate::parser)
                         .orElseGet(() -> ReplyParser.spans(m.tokenizer()));
-        for (int t : m.template().map(tp -> tp.replySeed(think)).orElseGet(() -> new int[0])) {
+        for (int t : replySeed) {
             parser.feed(t);
         }
         java.util.Set<String> output = parser.outputChannels();

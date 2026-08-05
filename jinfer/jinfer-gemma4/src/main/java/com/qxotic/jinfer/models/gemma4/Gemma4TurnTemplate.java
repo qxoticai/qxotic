@@ -73,6 +73,9 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
     // them to strip thought from history), so token presence cannot tell the two apart - given the
     // scaffold off-contract, E2B answers in reasoning prose instead of skipping the thought.
     private final List<Batch> generationPromptNoThink;
+    // the checkpoint declares channel-aware generation scaffolding (12B/26B); without it the
+    // tool-response thought tail would be off-template (E2B)
+    private final boolean scaffoldsNonThinking;
     private final List<Batch> closeTurn; // <turn|>\n, constant
     private final TokenRuns proto; // compiled spelling table, forked per turn
 
@@ -116,6 +119,7 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
         close.add(turnClose);
         close.addAll(newline);
         this.closeTurn = List.of(Batch.prefill(close));
+        this.scaffoldsNonThinking = scaffoldsNonThinking;
         this.proto = new TokenRuns(tokenizer);
     }
 
@@ -424,12 +428,19 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
      * template fix (35b4173): a {@link Part.Reasoning} renders as {@code <|channel>thought\n...} in
      * assistant turns AFTER the last user message (the in-flight tool loop) and is stripped
      * everywhere before it; {@code preserve_thinking} is not plumbed (punts to the whole render).
-     * Punts: media on a text-only load. Known fidelity gap (pre-existing, matching the pinned
-     * {@code <|think|>} gap): the reference opens {@code <|channel>thought\n} after a trailing tool
-     * response when thinking is on - plumbing it needs a conversation-aware replySeed.
+     * Punts: media on a text-only load.
+     *
+     * <p>The generation tail follows the fixed reference plus llama.cpp's patch on its one quirk:
+     * after a TRAILING tool response with thinking on, the prompt re-opens the thought channel
+     * ({@code <|channel>thought\n}) and the reply begins inside it - so this method co-produces
+     * that tail with its {@link Prompt#replySeed} (one computation, parser state cannot disagree
+     * with the prompt). When the final model turn CLOSED with {@code prev} still reading 'response'
+     * (an assistant message carrying call + answer content), the raw template emits a bare thought
+     * channel outside any turn; llama.cpp reopens the model turn instead, and this port follows the
+     * patch.
      */
     @Override
-    public List<Batch> encode(Conversation conversation) {
+    public Prompt encodePrompt(Conversation conversation) {
         requireSupported(conversation);
         List<Message> msgs = conversation.messages();
         List<Batch> out = new ArrayList<>(conversationStart());
@@ -448,11 +459,13 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
         // the template's per-message state: 'call'/'response' leave the model turn OPEN
         String prev = null;
         Role prevNonToolRole = null;
+        boolean openTail = false; // did the FINAL emitted turn stay open?
         TokenRuns carry = null; // merged model turns share ONE runs so their text BPE-fuses
         for (int i = start; i < msgs.size(); i++) {
             Message m = msgs.get(i);
             if (m.role().equals(Role.TOOL)) continue; // folded into its call turn below
             prev = null;
+            openTail = false;
             boolean assistant = m.role().equals(Role.ASSISTANT);
             boolean continuation = assistant && Role.ASSISTANT.equals(prevNonToolRole);
             prevNonToolRole = m.role();
@@ -501,14 +514,27 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
                 sinkInto(runs, s -> Gemma4ToolSyntax.call(call.name(), call.arguments(), s));
                 runs.id(require("<tool_call|>"));
             }
-            // forward-fold the consecutive tool-role results, names resolved from the calls
+            // forward-fold the consecutive tool-role results, names resolved from the calls.
+            // A tool turn's result arrives as Part.ToolResult (typed API) OR Part.Text (the
+            // server's lowering shape - same law as NemotronH); dropping the Text form silently
+            // starved the model of every served tool result.
             boolean responses = false;
             for (int j = i + 1; j < msgs.size() && msgs.get(j).role().equals(Role.TOOL); j++) {
                 for (Part part : msgs.get(j).content()) {
-                    if (!(part instanceof Part.ToolResult r)) continue;
+                    String callId;
+                    String resultText;
+                    if (part instanceof Part.ToolResult r) {
+                        callId = r.callId();
+                        resultText = r.text();
+                    } else if (part instanceof Part.Text t && !t.text().isEmpty()) {
+                        callId = "";
+                        resultText = t.text();
+                    } else {
+                        continue;
+                    }
                     runs.id(require("<|tool_response>"));
-                    String name = resolveName(calls, r.callId());
-                    sinkInto(runs, s -> Gemma4ToolSyntax.response(name, r.text(), s));
+                    String name = resolveName(calls, callId);
+                    sinkInto(runs, s -> Gemma4ToolSyntax.response(name, resultText, s));
                     runs.id(require("<tool_response|>"));
                     responses = true;
                     prev = "response";
@@ -519,6 +545,7 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
             runs.text(content);
             if ("call".equals(prev)) {
                 runs.id(require("<|tool_response>")); // awaiting results: the turn stays open
+                openTail = true;
             } else if (continuesIntoNext) {
                 // turn-tag balance (upstream fix): no close - the next assistant message
                 // continues this model turn; hand it the SAME runs so juxtaposed text
@@ -530,13 +557,36 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
                 // (then the open turn is the generation surface); a following non-assistant
                 // turn always closes this one (upstream turn-tag balance: next_nt.found)
                 runs.id(turnClose).text("\n");
+            } else {
+                openTail = true; // trailing folded responses: the model turn stays open
             }
             out.addAll(runs.batches());
         }
-        if (!"call".equals(prev) && !"response".equals(prev)) {
+        int[] seed = new int[0];
+        if ("call".equals(prev)) {
+            // awaiting tool results in the open turn - no scaffold, no seed
+        } else if ("response".equals(prev) && openTail) {
+            if (conversation.thinking() && scaffoldsNonThinking) {
+                // the model RESUMES thinking after tool results: the prompt opens the channel
+                // and the reply starts inside it - the seed IS this tail, by construction
+                TokenRuns tail = proto.fresh();
+                tail.id(require(CHANNEL_OPEN)).text("thought\n");
+                List<Batch> tailBatches = tail.batches();
+                out.addAll(tailBatches);
+                seed = Batch.tokenIds(tailBatches);
+            }
+            // thinking off: the model answers directly in the open turn (reference emits nothing)
+        } else {
+            // normal end - and the llama.cpp patch: a CLOSED final turn always reopens
+            // <|turn>model regardless of what prev reads
             out.addAll(generationPrompt(conversation.thinking()));
         }
-        return out;
+        return new Prompt(out, seed);
+    }
+
+    @Override
+    public List<Batch> encode(Conversation conversation) {
+        return encodePrompt(conversation).batches();
     }
 
     /**

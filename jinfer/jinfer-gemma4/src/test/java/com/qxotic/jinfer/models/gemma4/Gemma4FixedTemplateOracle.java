@@ -117,4 +117,101 @@ public final class Gemma4FixedTemplateOracle {
 
         o.finish("Gemma4FixedTemplateOracle");
     }
+
+    /**
+     * The tool-response thought tail (scaffolded checkpoints only, 12B/26B): after a trailing tool
+     * response with thinking on, the prompt re-opens the thought channel and the reply seed IS that
+     * tail - co-produced, so the two cannot disagree.
+     */
+    @Test
+    void toolResponseThoughtTail() throws Exception {
+        Path model = ModelFixture.GEMMA4_E2B_Q8.path();
+        Assumptions.assumeTrue(Files.exists(model), "model not found: " + model);
+        CodecOracleScenario o =
+                new CodecOracleScenario(
+                        model,
+                        tokenizer -> new Gemma4TurnTemplate(tokenizer, null, 0, true),
+                        Map.of("bos_token", "<bos>"));
+        List<Message> loop =
+                List.of(
+                        Message.user("Weather in Paris?"),
+                        Gemma4ToolOracle.assistantCall("get_weather", Map.of("city", "Paris")),
+                        new Message(Role.TOOL, List.of(new Part.ToolResult("", "18C, sunny"))));
+
+        // thinking on: the tail opens the channel (compareToolsExpected drives thinking=true)
+        o.compareToolsExpected(
+                "trailing tool response opens the thought channel",
+                SYS
+                        + "<|turn>user\nWeather in Paris?<turn|>\n"
+                        + GEN
+                        + "<|tool_call>call:get_weather{city:<|\"|>Paris<|\"|>}<tool_call|>"
+                        + "<|tool_response>response:get_weather{value:<|\"|>18C, sunny<|\"|>}"
+                        + "<tool_response|><|channel>thought\n",
+                List.of(WEATHER),
+                loop);
+
+        // co-production: the reply seed equals the ids the encoded prompt actually ends with
+        var thinkingOn = new com.qxotic.jinfer.chat.Conversation(loop, List.of(WEATHER), true, "");
+        var prompt = o.template.encodePrompt(thinkingOn);
+        int[] seed = prompt.replySeed();
+        o.check(seed.length > 0, "thinking tail produces a reply seed");
+        List<Integer> ids = new java.util.ArrayList<>();
+        for (int id : com.qxotic.jinfer.Batch.tokenIds(prompt.batches())) ids.add(id);
+        boolean endsWithSeed = ids.size() >= seed.length;
+        for (int k = 0; endsWithSeed && k < seed.length; k++) {
+            endsWithSeed = ids.get(ids.size() - seed.length + k) == seed[k];
+        }
+        o.check(endsWithSeed, "the prompt ends with exactly the reply seed");
+
+        // thinking off: no tail, no seed - the model answers in the open turn
+        var thinkingOff =
+                new com.qxotic.jinfer.chat.Conversation(loop, List.of(WEATHER), false, "");
+        var offPrompt = o.template.encodePrompt(thinkingOff);
+        o.check(offPrompt.replySeed().length == 0, "thinking off has no reply seed");
+        List<Integer> offIds = new java.util.ArrayList<>();
+        for (int id : com.qxotic.jinfer.Batch.tokenIds(offPrompt.batches())) offIds.add(id);
+        o.check(
+                offIds.get(offIds.size() - 1) == o.special("<tool_response|>"),
+                "thinking off ends at the folded response");
+
+        // llama.cpp patch: a CLOSED final turn (call + answer content in one message) reopens
+        // the model turn instead of emitting a bare thought channel outside any turn
+        o.compareToolsExpected(
+                "closed call+content turn reopens the model turn",
+                SYS
+                        + "<|turn>user\nWeather in Paris?<turn|>\n"
+                        + GEN
+                        + "<|tool_call>call:get_weather{city:<|\"|>Paris<|\"|>}<tool_call|>"
+                        + "<|tool_response>response:get_weather{value:<|\"|>18C, sunny<|\"|>}"
+                        + "<tool_response|>Checking now.<turn|>\n"
+                        + GEN,
+                List.of(WEATHER),
+                List.of(
+                        Message.user("Weather in Paris?"),
+                        new Message(
+                                Role.ASSISTANT,
+                                List.of(
+                                        new Part.ToolCall(
+                                                "", "get_weather", Map.of("city", "Paris")),
+                                        new Part.Text("Checking now."))),
+                        new Message(Role.TOOL, List.of(new Part.ToolResult("", "18C, sunny")))));
+
+        // the SERVER's lowering shape: a tool turn carrying Part.Text (not Part.ToolResult) must
+        // fold identically - dropping it silently starved the model of every served tool result
+        o.compareToolsExpected(
+                "Text-shaped tool turn folds as a response (server lowering)",
+                SYS
+                        + "<|turn>user\nWeather in Paris?<turn|>\n"
+                        + GEN
+                        + "<|tool_call>call:get_weather{city:<|\"|>Paris<|\"|>}<tool_call|>"
+                        + "<|tool_response>response:get_weather{value:<|\"|>18C, sunny<|\"|>}"
+                        + "<tool_response|><|channel>thought\n",
+                List.of(WEATHER),
+                List.of(
+                        Message.user("Weather in Paris?"),
+                        Gemma4ToolOracle.assistantCall("get_weather", Map.of("city", "Paris")),
+                        new Message(Role.TOOL, List.of(new Part.Text("18C, sunny")))));
+
+        o.finish("Gemma4FixedTemplateOracle[thoughtTail]");
+    }
 }
