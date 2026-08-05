@@ -5,8 +5,11 @@ import com.qxotic.toknroll.Normalizer;
 import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
-import java.util.Map;
-import java.util.TreeMap;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
 import java.util.regex.Pattern;
 
 /**
@@ -74,7 +77,8 @@ public final class Tokenizers {
                                 + ". Quick fix without code:"
                                 + " -Djinfer.preTokenizer.<name>=<known-name> to alias a known"
                                 + " scheme, or -Djinfer.preTokenizer.<name>=regex:<pattern> to"
-                                + " supply one (multi-stage: <name>.1=regex:..., <name>.2=...)",
+                                + " supply one, or -Djinfer.preTokenizer.<name>=file:<path> with"
+                                + " one regex per line (multiple lines = staged split)",
                         e);
             }
             throw e;
@@ -85,75 +89,57 @@ public final class Tokenizers {
      * The end-user escape hatch for a GGUF whose {@code tokenizer.ggml.pre} nobody registered yet:
      * {@code -Djinfer.preTokenizer.<name>=<known-name>} aliases a known scheme (most "new"
      * pre-tokenizers are an existing scheme under a new name), {@code
-     * -Djinfer.preTokenizer.<name>=regex:<pattern>} supplies one (identity normalizer). A
-     * multi-stage splitter (some schemes split digits or CJK first, then the main pattern) uses one
-     * property per stage: {@code -Djinfer.preTokenizer.<name>.1=regex:...}, {@code
-     * -Djinfer.preTokenizer.<name>.2=regex:...} - indices contiguous from 1, each stage splitting
-     * the previous stage's fragments. Applied LAST, so a property can also override a registration.
+     * -Djinfer.preTokenizer.<name>=regex:<pattern>} supplies one, and {@code
+     * -Djinfer.preTokenizer.<name>=file:<path>} reads patterns from a file - one regex per line,
+     * blank lines and {@code #} comments skipped, multiple lines forming a staged {@link
+     * Splitter#sequence} (some schemes split digits or CJK first, then the main pattern). Supplied
+     * patterns get an identity normalizer. Applied LAST, so a property can also override a
+     * registration.
      */
     private static void applyPropertyOverrides(GGUFTokenizerLoader.Builder builder) {
         String prefix = "jinfer.preTokenizer.";
-        Map<String, TreeMap<Integer, String>> byName = new TreeMap<>();
         for (String key : System.getProperties().stringPropertyNames()) {
             if (!key.startsWith(prefix)) continue;
             String name = key.substring(prefix.length());
-            int stage = 0; // 0 = the unsuffixed, single-stage form
-            int dot = name.lastIndexOf('.');
-            if (dot > 0 && name.substring(dot + 1).chars().allMatch(Character::isDigit)) {
-                stage = Integer.parseInt(name.substring(dot + 1));
-                name = name.substring(0, dot);
+            String value = System.getProperty(key);
+            if (value.startsWith("regex:")) {
+                registerSupplied(builder, name, List.of(value.substring("regex:".length())));
+            } else if (value.startsWith("file:")) {
+                Path path = Path.of(value.substring("file:".length()));
+                List<String> patterns;
+                try {
+                    patterns =
+                            Files.readAllLines(path).stream()
+                                    .filter(line -> !line.isBlank() && !line.startsWith("#"))
+                                    .toList();
+                } catch (IOException e) {
+                    throw new UncheckedIOException("-D" + key + ": cannot read '" + path + "'", e);
+                }
+                if (patterns.isEmpty()) {
+                    throw new IllegalArgumentException(
+                            "-D"
+                                    + key
+                                    + ": '"
+                                    + path
+                                    + "' holds no patterns - one regex per"
+                                    + " line, blank lines and # comments skipped");
+                }
+                registerSupplied(builder, name, patterns);
+            } else {
+                builder.aliasPreTokenizer(name, value); // throws with the known names on a typo
             }
-            byName.computeIfAbsent(name, n -> new TreeMap<>()).put(stage, System.getProperty(key));
         }
-        for (Map.Entry<String, TreeMap<Integer, String>> e : byName.entrySet()) {
-            String name = e.getKey();
-            TreeMap<Integer, String> stages = e.getValue();
-            if (stages.containsKey(0)) {
-                if (stages.size() > 1) {
-                    throw new IllegalArgumentException(
-                            "-Djinfer.preTokenizer."
-                                    + name
-                                    + " mixes the single-value form with numbered stages - use"
-                                    + " either =<value> or .1=, .2=, ... but not both");
-                }
-                String value = stages.get(0);
-                if (value.startsWith("regex:")) {
-                    Pattern pattern = Pattern.compile(value.substring("regex:".length()));
-                    builder.registerPreTokenizer(name, g -> Splitter.regex(pattern))
-                            .registerNormalizer(name, g -> Normalizer.identity());
-                } else {
-                    builder.aliasPreTokenizer(name, value); // throws with the known names on a typo
-                }
-                continue;
-            }
-            Splitter[] sequence = new Splitter[stages.size()];
-            int expected = 1;
-            for (Map.Entry<Integer, String> stage : stages.entrySet()) {
-                if (stage.getKey() != expected) {
-                    throw new IllegalArgumentException(
-                            "-Djinfer.preTokenizer."
-                                    + name
-                                    + ".* stages must be contiguous from 1 - missing stage "
-                                    + expected);
-                }
-                if (!stage.getValue().startsWith("regex:")) {
-                    throw new IllegalArgumentException(
-                            "-Djinfer.preTokenizer."
-                                    + name
-                                    + "."
-                                    + stage.getKey()
-                                    + " must be regex:<pattern> - only the single-value form can"
-                                    + " alias a known scheme");
-                }
-                sequence[expected - 1] =
-                        Splitter.regex(
-                                Pattern.compile(stage.getValue().substring("regex:".length())));
-                expected++;
-            }
-            Splitter splitter = Splitter.sequence(sequence);
-            builder.registerPreTokenizer(name, g -> splitter)
-                    .registerNormalizer(name, g -> Normalizer.identity());
-        }
+    }
+
+    private static void registerSupplied(
+            GGUFTokenizerLoader.Builder builder, String name, List<String> patterns) {
+        Splitter[] stages =
+                patterns.stream()
+                        .map(p -> Splitter.regex(Pattern.compile(p)))
+                        .toArray(Splitter[]::new);
+        Splitter splitter = stages.length == 1 ? stages[0] : Splitter.sequence(stages);
+        builder.registerPreTokenizer(name, g -> splitter)
+                .registerNormalizer(name, g -> Normalizer.identity());
     }
 
     /** The GGUF's raw Jinja chat-template source, or {@code ""} when it carries none. */
