@@ -1150,11 +1150,84 @@ public final class Gemma4
         return loadModel(textGguf, maxContextLength, arena).withMediaEncoders(mmprojGguf, arena);
     }
 
-    /** Attaches the mmproj GGUF's vision/audio encoders to an already-loaded text model. */
+    /**
+     * Attaches the mmproj GGUF's vision/audio encoders to an already-loaded text model. The pair is
+     * validated first: a sidecar from another family or another Gemma 4 size fails HERE with the
+     * remedy, not at the first media request with a shape error.
+     */
     public Gemma4 withMediaEncoders(Path mmprojGguf, Arena arena) throws IOException {
+        validateMmproj(mmprojGguf, configuration.embeddingLength());
         this.vision = loadVision(mmprojGguf, arena);
         this.audio = loadAudio(mmprojGguf, arena);
         return this;
+    }
+
+    /**
+     * The pairing contract: every projector the sidecar carries must be a Gemma 4 type and must
+     * project into the text model's embedding width. Package-visible so the check is testable
+     * against real mmproj headers without loading a text model.
+     */
+    static void validateMmproj(Path mmprojGguf, int textEmbeddingLength) throws IOException {
+        String visionType;
+        String audioType;
+        long visionDim;
+        long audioDim;
+        try (FileChannel fc = FileChannel.open(mmprojGguf, StandardOpenOption.READ)) {
+            var gguf = ModelLoader.readGguf(fc, mmprojGguf.toString());
+            visionType = gguf.getStringOrDefault("clip.vision.projector_type", "");
+            audioType = gguf.getStringOrDefault("clip.audio.projector_type", "");
+            visionDim = gguf.getValueOrDefault(int.class, "clip.vision.projection_dim", 0);
+            audioDim = gguf.getValueOrDefault(int.class, "clip.audio.projection_dim", 0);
+        }
+        if (visionType.isEmpty() && audioType.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "'"
+                            + mmprojGguf.getFileName()
+                            + "' carries no vision or audio projector - it is not an mmproj"
+                            + " sidecar for this model");
+        }
+        check(mmprojGguf, "vision", visionType, VISION_TYPES, visionDim, textEmbeddingLength);
+        check(mmprojGguf, "audio", audioType, AUDIO_TYPES, audioDim, textEmbeddingLength);
+    }
+
+    private static final java.util.Set<String> VISION_TYPES =
+            java.util.Set.of("gemma4v", "gemma4uv");
+    private static final java.util.Set<String> AUDIO_TYPES =
+            java.util.Set.of("gemma4ua", "gemma4a");
+
+    private static void check(
+            Path mmproj,
+            String lane,
+            String type,
+            java.util.Set<String> known,
+            long projectionDim,
+            int textDim) {
+        if (type.isEmpty()) return; // sidecar has no adapter for this lane - fine
+        if (!known.contains(type)) {
+            throw new IllegalArgumentException(
+                    "'"
+                            + mmproj.getFileName()
+                            + "' carries a '"
+                            + type
+                            + "' "
+                            + lane
+                            + " projector, which is not a Gemma 4 type "
+                            + known
+                            + " - this mmproj belongs to a different model family");
+        }
+        if (projectionDim != 0 && projectionDim != textDim) {
+            throw new IllegalArgumentException(
+                    "'"
+                            + mmproj.getFileName()
+                            + "' projects "
+                            + lane
+                            + " into "
+                            + projectionDim
+                            + "-dim embeddings but this model expects "
+                            + textDim
+                            + " - the sidecar belongs to a different Gemma 4 size; use the"
+                            + " mmproj shipped with this model");
+        }
     }
 
     /**
