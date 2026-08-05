@@ -203,8 +203,10 @@ public final class Server {
         // the CLI path never closes the handle; ^C must still free the engine deterministically
         Runtime.getRuntime().addShutdownHook(new Thread(running::close));
         System.out.printf(
-                "OpenAI-compatible server listening on http://%s:%d%n",
-                options.host(), server.getAddress().getPort());
+                "OpenAI-compatible server listening on http://%s:%d (architectures: %s)%n",
+                options.host(),
+                server.getAddress().getPort(),
+                com.qxotic.jinfer.chat.Models.supportedArchitectures());
         return running;
     }
 

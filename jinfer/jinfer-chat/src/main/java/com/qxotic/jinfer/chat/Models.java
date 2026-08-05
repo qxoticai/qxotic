@@ -40,6 +40,20 @@ public final class Models {
     }
 
     /**
+     * The one-argument bliss form: full model context, GC-managed weights ({@code Arena.ofAuto()} -
+     * freed when the model becomes unreachable). Reach for the explicit overload when you need a
+     * bounded context or deterministic weight lifetime.
+     */
+    public static LoadedModel<?> load(Path path) throws IOException {
+        return load(path, -1, Arena.ofAuto());
+    }
+
+    /** As {@link #load(Path)} with a bounded context length. */
+    public static LoadedModel<?> load(Path path, int ctx) throws IOException {
+        return load(path, ctx, Arena.ofAuto());
+    }
+
+    /**
      * Multimodal load: the text model plus its media sidecar (mmproj GGUF with the vision/audio
      * encoders). Throws {@link UnsupportedOperationException} for architectures without one.
      */
@@ -139,14 +153,44 @@ public final class Models {
      */
     private static <T> T open(Path path, Load<T> load) throws IOException {
         Telemetry.install();
+        if (!Files.exists(path)) {
+            throw new java.nio.file.NoSuchFileException(
+                    path.toString(), null, "model file not found");
+        }
         ModelLoadEvent event = new ModelLoadEvent();
         event.begin();
         try (FileChannel fc = FileChannel.open(path, StandardOpenOption.READ)) {
             fc.position(0L);
-            GGUF gguf =
-                    GGUF.read(
-                            Channels.newChannel(
-                                    new BufferedInputStream(Channels.newInputStream(fc), 1 << 20)));
+            GGUF gguf;
+            try {
+                gguf =
+                        GGUF.read(
+                                Channels.newChannel(
+                                        new BufferedInputStream(
+                                                Channels.newInputStream(fc), 1 << 20)));
+            } catch (com.qxotic.format.gguf.GGUFFormatException e) {
+                throw new IllegalArgumentException(
+                        path
+                                + " is not a GGUF model file ("
+                                + e.getMessage()
+                                + "). If this is a HuggingFace checkpoint (safetensors/pytorch),"
+                                + " convert it with llama.cpp's convert_hf_to_gguf.py",
+                        e);
+            }
+            // a SPLIT part carries only its own slice of the tensors; loading one alone would
+            // build a silently WRONG model (missing weights) - refuse with the remedy instead
+            long splitCount = metadataLong(gguf, "split.count");
+            if (splitCount > 1) {
+                throw new UnsupportedOperationException(
+                        path.getFileName()
+                                + " is part "
+                                + (metadataLong(gguf, "split.no") + 1)
+                                + " of a "
+                                + splitCount
+                                + "-file split GGUF - split models are not supported yet; merge the"
+                                + " parts first: llama.cpp's llama-gguf-split --merge <part1>"
+                                + " <out>");
+            }
             T loaded = load.apply(fc, gguf);
             if (event.isEnabled()) {
                 String arch = gguf.getString("general.architecture");
@@ -192,6 +236,13 @@ public final class Models {
                     "nemotron_h", "com.qxotic:jinfer-nemotronh",
                     "qwen35", "com.qxotic:jinfer-qwen35",
                     "inflect", "com.qxotic:jinfer-inflect2");
+
+    /** A numeric metadata value whatever its GGUF width (split.* is UINT16 in the wild). */
+    private static long metadataLong(GGUF gguf, String key) {
+        if (!gguf.containsKey(key)) return 0;
+        Object v = gguf.getValue(Object.class, key);
+        return v instanceof Number n ? n.longValue() : 0;
+    }
 
     /** The port claiming the GGUF's architecture; throws a REMEDY-naming error when none does. */
     private static ModelProvider provider(GGUF gguf) {
