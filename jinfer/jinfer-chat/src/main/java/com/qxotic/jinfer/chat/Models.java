@@ -277,14 +277,13 @@ public final class Models {
         }
         java.util.SortedSet<String> here = supportedArchitectures();
         throw new IllegalArgumentException(
-                "architecture '"
+                "no provider for architecture '"
                         + arch
-                        + "' is not on the classpath"
+                        + "'"
                         + (artifact != null
-                                ? " - add " + artifact
-                                : ", and no artifact of THIS jinfer version supports it (a newer"
-                                        + " jinfer may)")
-                        + ". Supported architectures here: "
+                                ? " on the classpath - add " + artifact
+                                : " exists in this jinfer version (a newer jinfer may add one)")
+                        + ". Supported architectures: "
                         + (here.isEmpty()
                                 ? PROVIDERS.size() + " provider(s), none enumerated"
                                 : here));
