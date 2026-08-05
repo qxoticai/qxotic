@@ -20,6 +20,7 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
         implements StructuredOutputChatOptions {
 
     private final Long seed;
+    private final Double minP;
     private final Boolean thinking;
     private final Duration timeout;
     private final String outputSchema;
@@ -48,14 +49,24 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
                 topK,
                 topP);
         this.seed = b.seed;
+        this.minP = b.minP;
         this.thinking = b.thinking;
         this.timeout = b.timeout;
         this.outputSchema = b.outputSchema;
     }
 
-    /** Deterministic sampling seed; null = the model's default (42). */
+    /** Sampling seed; null = a fresh random seed per request (set one to pin sampling). */
     public Long getSeed() {
         return seed;
+    }
+
+    /**
+     * Min-p cutoff relative to the top token, in [0,1] (0 disables); null falls to the model's
+     * recommended value, else 0.05. Spring AI has no standard slot for min-p, so it lives here with
+     * the other jinfer extras.
+     */
+    public Double getMinP() {
+        return minP;
     }
 
     /** The model's reasoning scaffold toggle (templates without one ignore it). Default on. */
@@ -92,6 +103,7 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
                 .toolCallbacks(getToolCallbacks())
                 .toolContext(getToolContext())
                 .seed(seed)
+                .minP(minP)
                 .thinking(thinking)
                 .timeout(timeout)
                 .outputSchema(outputSchema);
@@ -122,6 +134,7 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
         }
         if (o instanceof JinferChatOptions j) {
             if (j.seed != null) b.seed(j.seed);
+            if (j.minP != null) b.minP(j.minP);
             if (j.thinking != null) b.thinking(j.thinking);
             if (j.timeout != null) b.timeout(j.timeout);
         }
@@ -131,6 +144,7 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
     public static final class Builder extends DefaultToolCallingChatOptions.Builder<Builder>
             implements StructuredOutputChatOptions.Builder<Builder> {
         private Long seed;
+        private Double minP;
         private Boolean thinking;
         private Duration timeout;
         private String outputSchema;
@@ -139,6 +153,11 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
 
         public Builder seed(Long seed) {
             this.seed = seed;
+            return this;
+        }
+
+        public Builder minP(Double minP) {
+            this.minP = minP;
             return this;
         }
 

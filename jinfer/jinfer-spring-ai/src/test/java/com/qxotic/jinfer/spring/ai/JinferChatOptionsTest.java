@@ -16,6 +16,17 @@ import org.springframework.ai.tool.definition.ToolDefinition;
 /** Options plumbing: mutate/copy semantics and the foreign-options tolerance the advisor needs. */
 class JinferChatOptionsTest {
 
+    @Test
+    void minPCopiesOntoAndMutates() {
+        JinferChatOptions base = JinferChatOptions.builder().minP(0.1).build();
+        assertEquals(0.1, base.mutate().build().getMinP());
+        JinferChatOptions override = JinferChatOptions.builder().minP(0.0).build();
+        assertEquals(0.0, JinferChatOptions.copyOnto(base, override).getMinP());
+        // a foreign sparse options object must not wipe it
+        ChatOptions foreign = ChatOptions.builder().temperature(0.5).build();
+        assertEquals(0.1, JinferChatOptions.copyOnto(base, foreign).getMinP());
+    }
+
     private static ToolCallback noopTool() {
         ToolDefinition def = DefaultToolDefinition.builder().name("noop").inputSchema("{}").build();
         return new ToolCallback() {

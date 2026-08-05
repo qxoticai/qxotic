@@ -44,11 +44,13 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
 
     private final String grammar;
     private final Long seed;
+    private final Double minP;
 
     protected JinferChatRequestParameters(Builder builder) {
         super(builder);
         this.grammar = builder.grammar;
         this.seed = builder.seed;
+        this.minP = builder.minP;
     }
 
     /** Raw GBNF constraining the reply, or null. */
@@ -61,6 +63,15 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
         return seed;
     }
 
+    /**
+     * Min-p cutoff relative to the top token, in [0,1] (0 disables); null falls to the model's
+     * recommended value, else 0.05. langchain4j has no standard slot for min-p, so it lives here
+     * with the other jinfer extras.
+     */
+    public Double minP() {
+        return minP;
+    }
+
     @Override
     public JinferChatRequestParameters overrideWith(ChatRequestParameters that) {
         return builder().overrideWith(this).overrideWith(that).build();
@@ -71,12 +82,13 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
         return o instanceof JinferChatRequestParameters that
                 && super.equals(that)
                 && Objects.equals(grammar, that.grammar)
-                && Objects.equals(seed, that.seed);
+                && Objects.equals(seed, that.seed)
+                && Objects.equals(minP, that.minP);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(super.hashCode(), grammar, seed);
+        return Objects.hash(super.hashCode(), grammar, seed, minP);
     }
 
     @Override
@@ -85,6 +97,8 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
                 + (grammar == null ? "null" : "'" + grammar + "'")
                 + ", seed="
                 + seed
+                + ", minP="
+                + minP
                 + ", "
                 + super.toString()
                 + "}";
@@ -98,6 +112,7 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
 
         private String grammar;
         private Long seed;
+        private Double minP;
 
         @Override
         public Builder overrideWith(ChatRequestParameters parameters) {
@@ -105,6 +120,7 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
             if (parameters instanceof JinferChatRequestParameters j) {
                 if (j.grammar() != null) grammar(j.grammar());
                 if (j.seed() != null) seed(j.seed());
+                if (j.minP() != null) minP(j.minP());
             }
             return this;
         }
@@ -116,6 +132,11 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
 
         public Builder seed(Long seed) {
             this.seed = seed;
+            return this;
+        }
+
+        public Builder minP(Double minP) {
+            this.minP = minP;
             return this;
         }
 

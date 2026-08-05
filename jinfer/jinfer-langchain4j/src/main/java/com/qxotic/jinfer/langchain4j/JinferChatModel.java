@@ -97,6 +97,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                                         : toDouble(recommended.temperature()))
                         .topP(b.topP != null ? b.topP : toDouble(recommended.topP()))
                         .topK(b.topK != null ? b.topK : recommended.topK())
+                        .minP(b.minP != null ? b.minP : toDouble(recommended.minP()))
                         .maxOutputTokens(b.maxOutputTokens)
                         .build();
         // caller-supplied defaults win field-by-field; unsupported ones reject HERE, eagerly - a
@@ -273,7 +274,9 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                         p.topK() == null
                                 ? engine.loaded().samplingDefaults().effectiveTopK()
                                 : p.topK(),
-                        engine.loaded().samplingDefaults().effectiveMinP(),
+                        j != null && j.minP() != null
+                                ? j.minP().floatValue()
+                                : engine.loaded().samplingDefaults().effectiveMinP(),
                         j != null && j.seed() != null
                                 ? j.seed()
                                 : seed != null
@@ -382,6 +385,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         private Double temperature;
         private Double topP;
         private Integer topK;
+        private Double minP;
         private Integer maxOutputTokens;
         private ChatRequestParameters defaultParameters;
         private List<ChatModelListener> listeners = List.of();
@@ -492,6 +496,16 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
          */
         public Builder topK(Integer topK) {
             this.topK = topK;
+            return this;
+        }
+
+        /**
+         * Min-p cutoff relative to the top token, in [0,1] (0 disables); default: the model's
+         * recommended value ({@code general.sampling.min_p}, or the port's), else 0.05. Per-request
+         * {@link JinferChatRequestParameters#minP} overrides.
+         */
+        public Builder minP(Double minP) {
+            this.minP = minP;
             return this;
         }
 

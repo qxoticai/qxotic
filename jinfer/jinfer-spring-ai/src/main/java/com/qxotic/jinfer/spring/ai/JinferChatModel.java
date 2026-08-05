@@ -126,6 +126,13 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                                         : recommended.topP() == null
                                                 ? null
                                                 : recommended.topP().doubleValue())
+                        .topK(b.topK != null ? b.topK : recommended.topK())
+                        .minP(
+                                b.minP != null
+                                        ? b.minP
+                                        : recommended.minP() == null
+                                                ? null
+                                                : recommended.minP().doubleValue())
                         .maxTokens(b.maxTokens)
                         .seed(b.seed)
                         .thinking(b.thinking)
@@ -236,7 +243,9 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                         options.getTopK() == null
                                 ? engine.loaded().samplingDefaults().effectiveTopK()
                                 : options.getTopK(),
-                        engine.loaded().samplingDefaults().effectiveMinP(),
+                        options.getMinP() != null
+                                ? options.getMinP().floatValue()
+                                : engine.loaded().samplingDefaults().effectiveMinP(),
                         options.getSeed() == null
                                 ? java.util.concurrent.ThreadLocalRandom.current().nextLong()
                                 : options.getSeed(),
@@ -516,6 +525,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         private int contextLength;
         private Double temperature;
         private Double topP;
+        private Integer topK;
+        private Double minP;
         private Integer maxTokens;
         private Long seed;
         private Boolean thinking;
@@ -614,6 +625,24 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
          */
         public Builder topP(Double topP) {
             this.topP = topP;
+            return this;
+        }
+
+        /**
+         * Top-k cutoff (0 disables); default: the model's recommended value, else 40. Per-request
+         * options override.
+         */
+        public Builder topK(Integer topK) {
+            this.topK = topK;
+            return this;
+        }
+
+        /**
+         * Min-p cutoff relative to the top token, in [0,1] (0 disables); default: the model's
+         * recommended value, else 0.05. Per-request options override.
+         */
+        public Builder minP(Double minP) {
+            this.minP = minP;
             return this;
         }
 

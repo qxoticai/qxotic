@@ -52,6 +52,19 @@ class JinferChatRequestParametersTest {
     }
 
     @Test
+    void minPRidesTheMergeLikeEveryJinferExtra() {
+        JinferChatRequestParameters defaults =
+                JinferChatRequestParameters.builder().minP(0.1).build();
+        // a default-typed request leaves it standing; a jinfer-typed request overrides it
+        ChatRequestParameters plain =
+                DefaultChatRequestParameters.builder().temperature(0.5).build();
+        assertEquals(0.1, ((JinferChatRequestParameters) defaults.overrideWith(plain)).minP());
+        JinferChatRequestParameters pinned =
+                JinferChatRequestParameters.builder().minP(0.0).build();
+        assertEquals(0.0, ((JinferChatRequestParameters) defaults.overrideWith(pinned)).minP());
+    }
+
+    @Test
     void jinferRequestFieldsSurviveJinferDefaults() {
         JinferChatRequestParameters defaults =
                 JinferChatRequestParameters.builder().seed(1L).temperature(0.0).build();
