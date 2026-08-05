@@ -372,6 +372,11 @@ final class Generation {
         byte[] encoded = dataUriBytes(urlOf(videoUrl), "video_url");
         try {
             byte[] key = java.security.MessageDigest.getInstance("SHA-256").digest(encoded);
+            if (template != null && template.mediaEncodingCached(key)) {
+                // full skip: no temp file, no ffmpeg, no encoder - the template replays its
+                // cached rows for this digest (a frameless keyed blob is that contract)
+                return new Part.Blob(new com.qxotic.jinfer.Media.Video(java.util.List.of()), key);
+            }
             java.nio.file.Path tmp = java.nio.file.Files.createTempFile("jinfer-video", ".bin");
             try {
                 java.nio.file.Files.write(tmp, encoded);

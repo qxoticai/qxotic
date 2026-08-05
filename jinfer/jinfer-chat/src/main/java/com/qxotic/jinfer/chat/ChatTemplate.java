@@ -52,6 +52,18 @@ public interface ChatTemplate {
     List<Batch> encode(Conversation conversation);
 
     /**
+     * True when this template holds the encoder-projected rows for {@code contentKey} in its
+     * in-process media cache, letting a caller who has only the SOURCE bytes skip decoding
+     * entirely: pass a keyed {@link Part.Blob} with an EMPTY payload (a frameless {@code
+     * Media.Video}) and {@link #encode} replays the cached rows byte-identically to a cold run. A
+     * template answering true must honor that empty-payload form - and throw loudly if the entry
+     * vanished in between, never encode an empty payload as if it were real. Default: no cache.
+     */
+    default boolean mediaEncodingCached(byte[] contentKey) {
+        return false;
+    }
+
+    /**
      * A fresh, single-use parser for one generation pass. Stateful; the driver creates one per
      * request and feeds it every sampled token in order.
      */

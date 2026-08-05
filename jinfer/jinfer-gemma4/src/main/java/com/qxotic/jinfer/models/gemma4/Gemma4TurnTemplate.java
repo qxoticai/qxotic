@@ -149,26 +149,106 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
         return runs.batches();
     }
 
+    // === in-process media-encode cache ===
+    // SHA-keyed replay of encoder output: the towers are deterministic functions of (source
+    // bytes, budgets, sampler policy), and budgets/policy are process-static (they also rotate
+    // the KV-cache seed via encodePlanId) - so the SOURCE digest alone keys the projected rows
+    // in-process. Values hold rows plus block structure; replay re-emits timestamp TEXT through
+    // the token runs so tokenization fuses with the surrounding turn exactly like a cold encode
+    // (the byte-identity law forbids caching finished batches - they would freeze token
+    // boundaries that depend on neighboring text). Bounded LRU by rows bytes
+    // (-Djinfer.mediaCacheMB, default 192); keyless blobs bypass the cache.
+
+    private static final long MEDIA_CACHE_BYTES = Long.getLong("jinfer.mediaCacheMB", 192) << 20;
+
+    /**
+     * One wrapped media block: optional leading text, then {@code <open>} [rows] {@code <close>}.
+     */
+    private record CachedBlock(
+            String text,
+            int openId,
+            int closeId,
+            FloatTensor rows,
+            boolean bidirectional,
+            byte[] blockKey) {}
+
+    private final java.util.LinkedHashMap<java.nio.ByteBuffer, List<CachedBlock>> mediaCache =
+            new java.util.LinkedHashMap<>(16, 0.75f, true);
+    private long mediaCacheBytes;
+
+    @Override
+    public boolean mediaEncodingCached(byte[] contentKey) {
+        return contentKey != null && cacheGet(contentKey) != null;
+    }
+
+    private List<CachedBlock> cacheGet(byte[] key) {
+        synchronized (mediaCache) {
+            return mediaCache.get(java.nio.ByteBuffer.wrap(key)); // get() refreshes LRU order
+        }
+    }
+
+    private void cachePut(byte[] key, List<CachedBlock> blocks) {
+        long add = 0;
+        for (CachedBlock b : blocks) add += b.rows().size() * Float.BYTES;
+        synchronized (mediaCache) {
+            if (mediaCache.putIfAbsent(java.nio.ByteBuffer.wrap(key), blocks) != null) return;
+            mediaCacheBytes += add;
+            var eldest = mediaCache.entrySet().iterator();
+            while (mediaCacheBytes > MEDIA_CACHE_BYTES && mediaCache.size() > 1) {
+                var e = eldest.next();
+                eldest.remove();
+                for (CachedBlock b : e.getValue()) mediaCacheBytes -= b.rows().size() * Float.BYTES;
+            }
+        }
+    }
+
     /**
      * {@code <open>} [embeddings] {@code <close>}: wrapper ids around the encoded block —
-     * bidirectional for images (one attention group), causal for audio (gemma4ua).
+     * bidirectional for images (one attention group), causal for audio (gemma4ua). A keyed blob
+     * replays from the media cache when its digest is known - the media payload is not touched on a
+     * hit, which is what lets a caller pass a frameless keyed video (see {@link
+     * com.qxotic.jinfer.chat.ChatTemplate#mediaEncodingCached}).
      */
     private void encodeMedia(Part.Blob blob, TokenRuns runs) {
+        byte[] key = blob.contentKey();
+        if (key != null) {
+            List<CachedBlock> hit = cacheGet(key);
+            if (hit != null) {
+                for (CachedBlock b : hit) emit(null, runs, b);
+                return;
+            }
+            if (blob.media() instanceof Media.Video v && v.frames().isEmpty()) {
+                throw new IllegalStateException(
+                        "frameless keyed video: its media-cache entry was evicted between the"
+                                + " caller's mediaEncodingCached check and encode - retry with the"
+                                + " decoded video");
+            }
+        }
+        List<CachedBlock> record = key == null ? null : new ArrayList<>();
         Media m = blob.media();
         switch (m) {
             case Media.Image img ->
-                    imageBlock(encode(Media.Image.class, img), blob.contentKey(), runs);
-            case Media.Audio aud -> {
-                FloatTensor rows = encode(Media.Audio.class, aud);
-                runs.id(SpecialTokens.require(tokenizer, "<|audio>"))
-                        .block(
-                                Batch.embeddings(
-                                        rows,
-                                        (int) (rows.size() / modelDim),
-                                        false,
-                                        blob.contentKey()))
-                        .id(SpecialTokens.require(tokenizer, "<audio|>"));
-            }
+                    emit(
+                            record,
+                            runs,
+                            block(
+                                    null,
+                                    "<|image>",
+                                    "<image|>",
+                                    encode(Media.Image.class, img),
+                                    true,
+                                    key));
+            case Media.Audio aud ->
+                    emit(
+                            record,
+                            runs,
+                            block(
+                                    null,
+                                    "<|audio>",
+                                    "<audio|>",
+                                    encode(Media.Audio.class, aud),
+                                    false,
+                                    key));
             case Media.Video vid -> {
                 // Video decomposes into frames, rendered token-exact with the reference
                 // processor's replace_video_token: segments "MM:SS <|image>[soft]<image|>" joined
@@ -176,16 +256,27 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
                 // minutes/seconds are the floor of the frame's TRUE timestamp (any sampling).
                 // Frames encode at the VIDEO budget (default 70, the reference video processor's
                 // own; -Djinfer.gemma4.videoTokenBudget) - stills keep the independent image
-                // budget, so many frames fit the context.
+                // budget, so many frames fit the context. Frame keys DERIVE from the video key
+                // (digest ‖ timestamp) - never shared (same key + same in-batch positions would
+                // collide across frames).
                 boolean first = true;
                 for (Media.Video.Frame frame : vid.frames()) {
                     java.time.Duration t = frame.timestamp();
-                    runs.text(
+                    String ts =
                             String.format(
                                     first ? "%02d:%02d " : " %02d:%02d ",
                                     t.toMinutes(),
-                                    t.toSecondsPart()));
-                    imageBlock(encodeFrame(frame.image()), frameKey(blob.contentKey(), t), runs);
+                                    t.toSecondsPart());
+                    emit(
+                            record,
+                            runs,
+                            block(
+                                    ts,
+                                    "<|image>",
+                                    "<image|>",
+                                    encodeFrame(frame.image()),
+                                    true,
+                                    frameKey(key, t)));
                     first = false;
                 }
             }
@@ -193,18 +284,32 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
                     throw new IllegalArgumentException(
                             "Gemma 4: unsupported media " + m.getClass().getSimpleName());
         }
+        if (record != null) cachePut(key, record);
     }
 
-    /**
-     * {@code <|image>} [rows] {@code <image|>} - the shared image-block wrapper (stills and video
-     * frames). The source digest keys the block deterministically; a video frame carries its
-     * DERIVED key, never the raw video key (same key + same in-batch positions would collide across
-     * frames).
-     */
-    private void imageBlock(FloatTensor rows, byte[] key, TokenRuns runs) {
-        runs.id(SpecialTokens.require(tokenizer, "<|image>"))
-                .block(Batch.embeddings(rows, (int) (rows.size() / modelDim), true, key))
-                .id(SpecialTokens.require(tokenizer, "<image|>"));
+    private CachedBlock block(
+            String text, String open, String close, FloatTensor rows, boolean bidi, byte[] key) {
+        return new CachedBlock(
+                text,
+                SpecialTokens.require(tokenizer, open),
+                SpecialTokens.require(tokenizer, close),
+                rows,
+                bidi,
+                key);
+    }
+
+    /** Emit one block into the runs, recording it for the cache when {@code record} is present. */
+    private void emit(List<CachedBlock> record, TokenRuns runs, CachedBlock b) {
+        if (b.text() != null) runs.text(b.text());
+        runs.id(b.openId())
+                .block(
+                        Batch.embeddings(
+                                b.rows(),
+                                (int) (b.rows().size() / modelDim),
+                                b.bidirectional(),
+                                b.blockKey()))
+                .id(b.closeId());
+        if (record != null) record.add(b);
     }
 
     /**
