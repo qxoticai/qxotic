@@ -233,12 +233,13 @@ final class NucleusFilter implements Sampler {
         for (int i = 0; i < n; i++) {
             denom = denom + Math.exp(logits.getFloat(i) - max);
         }
-        // tokens below this probability cannot be part of any nucleus of mass topP; they are
-        // masked outright and never enter the candidate set
-        double cutoff = (1.0 - topP) / (n - 1);
+        // tokens below probability (1-topP)/(n-1) cannot be part of any nucleus of mass topP;
+        // the same cut in the logit domain (one log instead of n exps) masks them outright, and
+        // they never enter the candidate set
+        float cutoff = (float) (max + Math.log((1.0 - topP) / (n - 1) * denom));
         int head = 0;
         for (int i = 0; i < n; i++) {
-            if (Math.exp(logits.getFloat(i) - max) / denom >= cutoff) {
+            if (logits.getFloat(i) >= cutoff) {
                 candidates[head++] = i;
             } else {
                 logits.setFloat(i, Float.NEGATIVE_INFINITY);
