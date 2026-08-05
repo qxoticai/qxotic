@@ -91,6 +91,10 @@ public final class MiniCpm5ChatTemplate implements ChatTemplate {
             }
         }
 
+        // cache-boundary law (ChatTemplate): preamble, turns, scaffold-last are separate
+        // batches. Every boundary sits at an <|im_start|> special, so the split is token-exact
+        // with the whole render (BPE cannot merge across a special).
+        List<Batch> out = new java.util.ArrayList<>();
         TokenRuns runs = proto.fresh();
         runs.id(bos);
         if (!tools.isEmpty()) {
@@ -109,8 +113,14 @@ public final class MiniCpm5ChatTemplate implements ChatTemplate {
 
         for (int i = sys != null ? 1 : 0; i < msgs.size(); i++) {
             Message m = msgs.get(i);
+            boolean toolContinuation =
+                    m.role().equals(Role.TOOL) && i > 0 && msgs.get(i - 1).role().equals(Role.TOOL);
+            if (!toolContinuation) { // a folded tool run stays inside its turn's batch
+                out.addAll(runs.batches());
+                runs = proto.fresh();
+            }
             if (m.role().equals(Role.TOOL)) {
-                if (i == 0 || !msgs.get(i - 1).role().equals(Role.TOOL)) {
+                if (!toolContinuation) {
                     runs.id(imStart).text("user"); // no newline: the response block brings its own
                 }
                 runs.text("\n").id(toolResponse).text("\n");
@@ -153,10 +163,13 @@ public final class MiniCpm5ChatTemplate implements ChatTemplate {
             runs.id(imEnd).text("\n");
         }
 
+        out.addAll(runs.batches());
+        runs = proto.fresh();
         runs.id(imStart).text("assistant\n");
         if (conversation.thinking()) runs.id(think).text("\n");
         else runs.id(think).text("\n\n").id(endThink).text("\n\n");
-        return List.of(runs.batch());
+        out.addAll(runs.batches()); // scaffold last: the cache's own-block convention
+        return out;
     }
 
     private static String strip(String s, char c) {

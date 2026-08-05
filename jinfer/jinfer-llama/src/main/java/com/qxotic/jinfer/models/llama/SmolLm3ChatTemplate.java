@@ -118,6 +118,10 @@ public final class SmolLm3ChatTemplate implements ChatTemplate {
             custom = sysContent.replace("/no_think", "").replace("/think", "").stripTrailing();
         }
 
+        // cache-boundary law (ChatTemplate): preamble, turns, scaffold-last are separate
+        // batches. Every boundary sits at an <|im_start|> special, so the split is token-exact
+        // with the whole render.
+        List<Batch> out = new java.util.ArrayList<>();
         TokenRuns runs = proto.fresh();
         runs.id(imStart).text("system\n");
         if (sysContent != null && sysContent.contains("/system_override")) {
@@ -145,6 +149,8 @@ public final class SmolLm3ChatTemplate implements ChatTemplate {
 
         for (int i = sys != null ? 1 : 0; i < msgs.size(); i++) {
             Message m = msgs.get(i);
+            out.addAll(runs.batches());
+            runs = proto.fresh();
             if (m.role().equals(Role.ASSISTANT)) {
                 runs.id(imStart).text("assistant\n");
                 if (!thinkMode) runs.id(think).text("\n\n").id(endThink).text("\n");
@@ -179,9 +185,12 @@ public final class SmolLm3ChatTemplate implements ChatTemplate {
             }
         }
 
+        out.addAll(runs.batches());
+        runs = proto.fresh();
         runs.id(imStart).text("assistant\n");
         if (!thinkMode) runs.id(think).text("\n\n").id(endThink).text("\n");
-        return List.of(runs.batch());
+        out.addAll(runs.batches()); // scaffold last: the cache's own-block convention
+        return out;
     }
 
     private static String stripLeadingNewlines(String s) {
