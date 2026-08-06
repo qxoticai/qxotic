@@ -30,6 +30,7 @@
     <module>jinfer-nemotronh</module>
     <module>jinfer-lfm2</module>
     <module>jinfer-server</module>
+    <module>jinfer-cli</module>
     <module>jinfer-models-all</module>
     <module>jinfer-langchain4j</module>
     <module>jinfer-spring-ai</module>
@@ -115,6 +116,11 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-hub</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>jinfer-server</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
@@ -258,7 +264,7 @@
           </configuration>
         </plugin>
 
-        <!-- Shared by jinfer-server and jinfer-bench: an executable fat jar, and (under -Pnative) the
+        <!-- Shared by jinfer-cli and jinfer-bench: an executable fat jar, and (under -Pnative) the
              native image built from it. Both differ only in the jinfer.image.* properties. -->
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>

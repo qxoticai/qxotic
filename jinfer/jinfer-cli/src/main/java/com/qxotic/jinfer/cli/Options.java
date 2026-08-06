@@ -1,9 +1,11 @@
-package com.qxotic.jinfer.server;
+package com.qxotic.jinfer.cli;
 
 import com.qxotic.jinfer.*;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.llm.Sampling;
+import com.qxotic.jinfer.server.Server;
+import com.qxotic.jinfer.server.ServerConfig;
 import java.net.InetSocketAddress;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -106,8 +108,10 @@ public record Options(
 
     /**
      * Rejects a bad COMMAND LINE. The message is printed next to the usage block and the process
-     * exits 1, which is why it names flags; {@link Validation#require} is its request-side
-     * counterpart, whose messages travel to a client in a 400 and must not.
+     * exits 1, which is why it names flags; jinfer-server's {@code Validation.require} is its
+     * request-side counterpart, whose messages travel to a client in a 400 and must not. Two copies
+     * of four lines, because the two contracts are genuinely different - and because this module
+     * cannot see that one, which is the boundary doing its job.
      */
     public static void require(boolean condition, String messageFormat, Object... args) {
         if (!condition) {

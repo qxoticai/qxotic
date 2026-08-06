@@ -2,7 +2,6 @@ package com.qxotic.jinfer.server;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.chat.LoadedModel;
@@ -22,7 +21,9 @@ import org.junit.jupiter.api.TestInstance;
  * Grammar has ONE switch. It used to have two that disagreed: {@code --no-grammar} refused the
  * request with a 400, while {@code -Djinfer.grammar=false} silently returned 200 with unconstrained
  * output - a client that asked for JSON got prose and no indication that its constraint had been
- * dropped. The property is gone; this pins the behaviour that replaced it.
+ * dropped. The property is gone; this pins the behaviour that replaced it. The other half of the
+ * switch - that --no-grammar is refused outside --server, where it did nothing at all - is a
+ * command-line rule, and lives in jinfer-cli's OptionsTest.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class GrammarSwitchTest {
@@ -104,43 +105,5 @@ class GrammarSwitchTest {
                 }
             }
         }
-    }
-
-    /**
-     * --no-grammar only has meaning where requests exist. It used to be accepted in chat and
-     * instruct mode and do nothing at all.
-     */
-    @Test
-    void noGrammarIsRejectedOutsideServerMode() {
-        assertThrows(IllegalArgumentException.class, () -> optionsNoGrammar(false));
-        optionsNoGrammar(true); // the same flags in server mode are fine
-    }
-
-    private static Options optionsNoGrammar(boolean server) {
-        return new Options(
-                Path.of("model.gguf"),
-                null,
-                "hi",
-                null,
-                false,
-                server,
-                "127.0.0.1",
-                0,
-                null,
-                null,
-                null,
-                null,
-                null,
-                128,
-                true,
-                false,
-                true,
-                false,
-                false,
-                false,
-                true,
-                null,
-                false,
-                null);
     }
 }

@@ -12,12 +12,11 @@
   <packaging>jar</packaging>
 
   <name>jinfer-server</name>
-  <description>OpenAI-compatible HTTP server and CLI launcher</description>
+  <description>The OpenAI-compatible HTTP server, as a library: hand it a LoadedModel and a
+    ServerConfig. It carries no model ports and no downloader - loading is the caller's, which is
+    what jinfer-cli is for.</description>
 
   <properties>
-    <jinfer.image.name>jinfer</jinfer.image.name>
-    <jinfer.image.mainClass>com.qxotic.jinfer.server.Main</jinfer.image.mainClass>
-    <jinfer.image.addModules>jdk.incubator.vector,jdk.httpserver</jinfer.image.addModules>
     <maven.deploy.skip>true</maven.deploy.skip>
   </properties>
 
@@ -43,35 +42,6 @@
       <artifactId>jinfer-jinja</artifactId>
     </dependency>
     <dependency>
-      <!-- model refs on the model and mmproj flags: resolve and download from HF / ModelScope -->
-      <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-hub</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-gemma4</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-llama</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-qwen35</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-gptoss</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-nemotronh</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-lfm2</artifactId>
-    </dependency>
-    <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>gguf</artifactId>
     </dependency>
@@ -87,31 +57,13 @@
       <type>test-jar</type>
       <scope>test</scope>
     </dependency>
+    <dependency>
+      <!-- ONE port, test only: the HTTP tests need something that can load the Llama fixture.
+           At compile scope the server would be handing every consumer six architectures. -->
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-llama</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
-  <!-- The shade + native-image configuration lives in jinfer-parent's pluginManagement; this
-       module only names the executable it produces (the jinfer.image.* properties above). -->
-  <build>
-    <finalName>${jinfer.image.name}</finalName>
-    <plugins>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-shade-plugin</artifactId>
-      </plugin>
-    </plugins>
-  </build>
-
-  <profiles>
-    <profile>
-      <id>native</id>
-      <build>
-        <plugins>
-          <plugin>
-            <groupId>org.graalvm.buildtools</groupId>
-            <artifactId>native-maven-plugin</artifactId>
-          </plugin>
-        </plugins>
-      </build>
-    </profile>
-  </profiles>
 </project>

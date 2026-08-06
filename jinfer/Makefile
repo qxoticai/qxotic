@@ -1,6 +1,6 @@
 # jinfer build entry points - thin wrappers over the Maven build. The poms are the source of
 # truth: jinfer-parent's pluginManagement owns the shared shade + native-image configuration,
-# jinfer-server/-bench name their executable via the jinfer.image.* properties.
+# jinfer-cli/-bench name their executable via the jinfer.image.* properties.
 
 JAVA ?= java
 JAR_FILE = jinfer.jar
@@ -36,7 +36,7 @@ test:
 
 jar:
 	mvn -o package -DskipTests
-	cp jinfer-server/target/jinfer.jar $(JAR_FILE)
+	cp jinfer-cli/target/jinfer.jar $(JAR_FILE)
 
 clean:
 	mvn clean
@@ -72,7 +72,7 @@ check-native-image:
 	esac
 
 native: check-native-image
-	mvn -o -Pnative -pl jinfer-server -am package -DskipTests -Djinfer.PreloadGGUF=$(PRELOAD_GGUF)
-	cp jinfer-server/target/jinfer$(EXE) $(NATIVE_FILE)
+	mvn -o -Pnative -pl jinfer-cli -am package -DskipTests -Djinfer.PreloadGGUF=$(PRELOAD_GGUF)
+	cp jinfer-cli/target/jinfer$(EXE) $(NATIVE_FILE)
 
 .PHONY: default compile test-compile test jar clean run-jar-command test-golden check-native-image native

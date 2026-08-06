@@ -16,10 +16,16 @@ jinfer-<model>  one module per curated model (lfm2, gemma4, llama, gptoss, qwen3
                 ports too: jinfer-qwen3 is arch "qwen3" (Qwen3-Embedding pooling +
                 Qwen3-Reranker judging), no chat template, loaded via Models.loadEmbedder
                 / loadReranker
-jinfer-server   OpenAI-compatible HTTP server on top
+jinfer-hub      model refs, the cache, and downloads (a TOOL concern - no library depends on it)
+jinfer-server   the OpenAI-compatible HTTP server as a library: hand it a LoadedModel and a
+                ServerConfig. No model ports, no downloader, no printing, no ambient configuration
+jinfer-cli      the deliverable: the `jinfer` jar and native binary. The chat loop, the argv
+                parser, the shade and native-image configuration, and the only module that
+                depends on everything - which is what keeps the others from having to
 ```
 
-Dependencies flow strictly downward (core &larr; jinja &larr; kernels &larr; models &larr; server); no cycles.
+Dependencies flow strictly downward (core &larr; jinja &larr; kernels &larr; models &larr; server &larr; cli);
+no cycles. Nothing depends on jinfer-cli; that is what makes it free to amalgamate.
 
 ## Chat flow: conversation to tokens to KV
 

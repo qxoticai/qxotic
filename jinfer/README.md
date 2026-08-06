@@ -111,7 +111,7 @@ PRELOAD_GGUF=model.gguf make native    # embed the model, instant TTFT
 Java 25 (`--enable-preview` for `MemorySegment` mmap).
 
 ```bash
-mvn package      # -> jinfer-server/target/jinfer.jar
+mvn package      # -> jinfer-cli/target/jinfer.jar
 make jar         # same thing, via the Makefile
 ```
 
