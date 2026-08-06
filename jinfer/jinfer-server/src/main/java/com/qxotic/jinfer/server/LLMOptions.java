@@ -61,6 +61,8 @@ public record LLMOptions(
      */
     public LLMOptions withResolvedSampling(
             com.qxotic.jinfer.chat.LoadedModel.SamplingDefaults defaults) {
+        com.qxotic.jinfer.llm.Sampling resolved =
+                defaults.resolve(temperature, topp, topk, minp, seed);
         return new LLMOptions(
                 modelPath,
                 companions,
@@ -70,10 +72,10 @@ public record LLMOptions(
                 server,
                 host,
                 port,
-                temperature != null ? temperature : defaults.effectiveTemperature(),
-                topp != null ? topp : defaults.effectiveTopP(),
-                topk != null ? topk : defaults.effectiveTopK(),
-                minp != null ? minp : defaults.effectiveMinP(),
+                resolved.temperature(),
+                resolved.topP(),
+                resolved.topK(),
+                resolved.minP(),
                 seed,
                 maxTokens,
                 stream,
@@ -85,6 +87,15 @@ public record LLMOptions(
                 noGrammar,
                 promptCache,
                 promptCacheReadOnly);
+    }
+
+    /**
+     * The sampling stack these options describe. Valid only AFTER {@link #withResolvedSampling}:
+     * before it the four knobs are still nullable, and {@link com.qxotic.jinfer.llm.Sampling} takes
+     * values, not maybes.
+     */
+    public com.qxotic.jinfer.llm.Sampling sampling() {
+        return new com.qxotic.jinfer.llm.Sampling(temperature, topp, topk, minp, seed);
     }
 
     public static void require(boolean condition, String messageFormat, Object... args) {

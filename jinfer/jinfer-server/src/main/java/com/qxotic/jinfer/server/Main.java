@@ -729,16 +729,7 @@ public class Main {
             return;
         }
         options = resolved;
-        Sampler sampler =
-                Sampler.select(
-                        model.model().config().vocabularySize(),
-                        options.temperature(),
-                        options.topk(),
-                        options.topp(),
-                        options.minp(),
-                        options.seed() != null
-                                ? options.seed()
-                                : java.util.concurrent.ThreadLocalRandom.current().nextLong());
+        Sampler sampler = options.sampling().sampler(model.model().config().vocabularySize());
         if (!options.think()) {
             sampler = Thinking.banMarkers(sampler, model.tokenizer());
         }

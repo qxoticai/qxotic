@@ -3,6 +3,7 @@ package com.qxotic.jinfer.chat;
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.llm.Grammar;
 import com.qxotic.jinfer.llm.Sampler;
+import com.qxotic.jinfer.llm.Sampling;
 import com.qxotic.jinfer.llm.SpecialTokens;
 import java.util.List;
 import java.util.Optional;
@@ -24,25 +25,19 @@ public final class RequestPolicy {
     public static final int THINK_FLOOR = 16;
 
     /**
-     * The standard jinfer sampling stack: (temperature, topP, seed) plus the reasoning policy -
+     * The standard jinfer sampling stack: a resolved {@link Sampling} plus the reasoning policy -
      * thinking on caps the think span so it cannot starve the visible answer ({@code
      * reasoningOverride}: null = half of {@code maxTokens}, -1 = uncapped); thinking off masks the
      * think markers outright.
      */
     public static Sampler sampler(
             LoadedModel<?> m,
-            float temperature,
-            float topP,
-            int topK,
-            float minP,
-            long seed,
+            Sampling sampling,
             boolean think,
             int maxTokens,
             Integer reasoningOverride,
             int[] replySeed) {
-        Sampler sampler =
-                Sampler.select(
-                        m.model().config().vocabularySize(), temperature, topK, topP, minP, seed);
+        Sampler sampler = sampling.sampler(m.model().config().vocabularySize());
         if (!think) {
             return Thinking.banMarkers(sampler, m.tokenizer());
         }

@@ -9,6 +9,7 @@ import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.Grammar;
 import com.qxotic.jinfer.llm.Sampler;
+import com.qxotic.jinfer.llm.Sampling;
 import com.qxotic.jinfer.llm.TextStops;
 import com.qxotic.jinfer.telemetry.InferenceEvent;
 import com.qxotic.jinfer.telemetry.Telemetry;
@@ -322,26 +323,20 @@ public final class ChatEngine {
             int maxTokens,
             Integer reasoningMaxTokens,
             long timeoutNanos,
-            float temperature,
-            float topP,
-            int topK,
-            float minP,
-            long seed,
+            Sampling sampling,
             Grammar.Spec grammar,
             String forcedTool,
             boolean cachedView,
             List<String> stops,
             java.util.Map<String, Object> templateKwargs) {
 
-        // ranges, not taste: this is a positional record with adjacent same-typed knobs, so a
-        // transposed temperature/topP would otherwise sample differently and silently
+        // ranges, not taste: this is a positional record, so a transposed pair of same-typed
+        // knobs would otherwise run silently. The four sampling knobs used to sit here loose and
+        // adjacent; Sampling groups them and validates its own ranges
         public Request {
             if (messages == null || messages.isEmpty())
                 throw new IllegalArgumentException("a request needs at least one message");
-            if (temperature < 0) throw new IllegalArgumentException("temperature " + temperature);
-            if (topP <= 0 || topP > 1) throw new IllegalArgumentException("topP " + topP);
-            if (topK < 0) throw new IllegalArgumentException("topK " + topK);
-            if (minP < 0 || minP > 1) throw new IllegalArgumentException("minP " + minP);
+            if (sampling == null) throw new IllegalArgumentException("sampling is required");
             if (maxTokens < -1) throw new IllegalArgumentException("maxTokens " + maxTokens);
             if (reasoningMaxTokens != null && reasoningMaxTokens < -1)
                 throw new IllegalArgumentException("reasoningMaxTokens " + reasoningMaxTokens);
@@ -446,11 +441,7 @@ public final class ChatEngine {
         Sampler sampler =
                 RequestPolicy.sampler(
                         loaded,
-                        request.temperature(),
-                        request.topP(),
-                        request.topK(),
-                        request.minP(),
-                        request.seed(),
+                        request.sampling(),
                         think,
                         request.maxTokens(),
                         request.reasoningMaxTokens(),

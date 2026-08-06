@@ -234,21 +234,20 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                         options.getMaxTokens() == null ? -1 : options.getMaxTokens(),
                         null, // Spring AI has no reasoning-budget knob
                         options.getTimeout() == null ? 0 : options.getTimeout().toNanos(),
-                        options.getTemperature() == null
-                                ? engine.loaded().samplingDefaults().effectiveTemperature()
-                                : options.getTemperature().floatValue(),
-                        options.getTopP() == null
-                                ? engine.loaded().samplingDefaults().effectiveTopP()
-                                : options.getTopP().floatValue(),
-                        options.getTopK() == null
-                                ? engine.loaded().samplingDefaults().effectiveTopK()
-                                : options.getTopK(),
-                        options.getMinP() != null
-                                ? options.getMinP().floatValue()
-                                : engine.loaded().samplingDefaults().effectiveMinP(),
-                        options.getSeed() == null
-                                ? java.util.concurrent.ThreadLocalRandom.current().nextLong()
-                                : options.getSeed(),
+                        engine.loaded()
+                                .samplingDefaults()
+                                .resolve(
+                                        options.getTemperature() == null
+                                                ? null
+                                                : options.getTemperature().floatValue(),
+                                        options.getTopP() == null
+                                                ? null
+                                                : options.getTopP().floatValue(),
+                                        options.getTopK(),
+                                        options.getMinP() == null
+                                                ? null
+                                                : options.getMinP().floatValue(),
+                                        options.getSeed()),
                         grammar(options.getOutputSchema()),
                         null, // Spring AI has no forced-tool-call knob
                         cached,

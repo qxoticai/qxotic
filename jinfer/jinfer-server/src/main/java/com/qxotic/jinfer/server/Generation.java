@@ -44,11 +44,14 @@ final class Generation {
     // whether close() appends the catalog (a read-write --cache): the blocks a server
     // accumulates survive its restarts
     private final boolean saveCatalog;
+    // this server's configured stack, resolved once; every request overrides a copy of it
+    private final Sampling defaultSampling;
 
     Generation(LoadedModel<?> chatModel, LLMOptions options, Metrics metrics) {
         this.metrics = metrics;
         this.model = chatModel;
         this.options = options;
+        this.defaultSampling = options.sampling();
         this.template = chatModel.template().orElse(null);
         this.specials = SpecialTokens.encoder(model.tokenizer());
         java.nio.file.Path catalog = options.promptCache();
@@ -151,16 +154,7 @@ final class Generation {
                         maxTokens(request),
                         reasoningMax(request),
                         ServerFlags.SERVER_REQUEST_TIMEOUT_NANOS,
-                        Values.floatValue(request.get("temperature"), options.temperature()),
-                        Values.floatValue(request.get("top_p"), options.topp()),
-                        Values.intValue(request.get("top_k"), options.topk()),
-                        Values.floatValue(request.get("min_p"), options.minp()),
-                        Values.longValue(
-                                request.get("seed"),
-                                options.seed() != null
-                                        ? options.seed()
-                                        : java.util.concurrent.ThreadLocalRandom.current()
-                                                .nextLong()),
+                        sampling(request),
                         grammarSpec(request),
                         nativeForcedOk() ? ToolUse.forced(request) : null,
                         false,
@@ -541,16 +535,7 @@ final class Generation {
         Sampler sampler =
                 RequestPolicy.sampler(
                         model,
-                        Values.floatValue(request.get("temperature"), options.temperature()),
-                        Values.floatValue(request.get("top_p"), options.topp()),
-                        Values.intValue(request.get("top_k"), options.topk()),
-                        Values.floatValue(request.get("min_p"), options.minp()),
-                        Values.longValue(
-                                request.get("seed"),
-                                options.seed() != null
-                                        ? options.seed()
-                                        : java.util.concurrent.ThreadLocalRandom.current()
-                                                .nextLong()),
+                        sampling(request),
                         think,
                         maxTokens,
                         reasoningMax(request),
@@ -691,6 +676,22 @@ final class Generation {
             return Grammar.json(tokenizer);
         }
         return null;
+    }
+
+    /**
+     * The server's configured stack with this request's overrides on top. Both framings (chat and
+     * raw prompt) read it here rather than each spelling out the same five fallbacks, which is how
+     * they came to disagree: one resolved a missing seed per request, the other per process.
+     */
+    private Sampling sampling(Map<String, Object> request) {
+        return new Sampling(
+                Values.floatValue(request.get("temperature"), defaultSampling.temperature()),
+                Values.floatValue(request.get("top_p"), defaultSampling.topP()),
+                Values.intValue(request.get("top_k"), defaultSampling.topK()),
+                Values.floatValue(request.get("min_p"), defaultSampling.minP()),
+                request.get("seed") == null
+                        ? defaultSampling.seed()
+                        : Values.longValue(request.get("seed"), 0L));
     }
 
     /** Request budget under the server's own ceiling ({@code jinfer.serverMaxTokens}). */

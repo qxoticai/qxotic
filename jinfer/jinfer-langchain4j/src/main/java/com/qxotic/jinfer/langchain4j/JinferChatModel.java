@@ -265,24 +265,18 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                         p.maxOutputTokens() == null ? -1 : p.maxOutputTokens(),
                         null, // langchain4j has no reasoning-budget knob
                         timeoutNanos,
-                        p.temperature() == null
-                                ? engine.loaded().samplingDefaults().effectiveTemperature()
-                                : p.temperature().floatValue(),
-                        p.topP() == null
-                                ? engine.loaded().samplingDefaults().effectiveTopP()
-                                : p.topP().floatValue(),
-                        p.topK() == null
-                                ? engine.loaded().samplingDefaults().effectiveTopK()
-                                : p.topK(),
-                        j != null && j.minP() != null
-                                ? j.minP().floatValue()
-                                : engine.loaded().samplingDefaults().effectiveMinP(),
-                        j != null && j.seed() != null
-                                ? j.seed()
-                                : seed != null
-                                        ? seed
-                                        : java.util.concurrent.ThreadLocalRandom.current()
-                                                .nextLong(),
+                        engine.loaded()
+                                .samplingDefaults()
+                                .resolve(
+                                        p.temperature() == null
+                                                ? null
+                                                : p.temperature().floatValue(),
+                                        p.topP() == null ? null : p.topP().floatValue(),
+                                        p.topK(),
+                                        j == null || j.minP() == null
+                                                ? null
+                                                : j.minP().floatValue(),
+                                        j != null && j.seed() != null ? j.seed() : seed),
                         grammar(p, j),
                         p.toolChoice() == ToolChoice.REQUIRED ? "" : null,
                         cached,

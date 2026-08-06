@@ -4,6 +4,7 @@ import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.LanguageModel;
 import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.jinfer.cache.StateCodec;
+import com.qxotic.jinfer.llm.Sampling;
 import com.qxotic.toknroll.Tokenizer;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -206,6 +207,26 @@ public record LoadedModel<S extends RuntimeState>(
                     topP != null ? topP : fallback.topP,
                     topK != null ? topK : fallback.topK,
                     minP != null ? minP : fallback.minP);
+        }
+
+        /**
+         * The layered chain, resolved into one value: each non-null argument (a request field or a
+         * CLI flag) wins, then this record's recommendation, then the engine baseline. This is the
+         * ONLY place the chain is applied - a caller that reaches for {@link #effectiveTemperature}
+         * and friends field by field is re-implementing it, and the four call sites that did so
+         * disagreed about seeds.
+         *
+         * <p>{@code seed} passes through untouched: no layer below a caller has an opinion about
+         * randomness, and null means fresh randomness per call.
+         */
+        public Sampling resolve(
+                Float temperature, Float topP, Integer topK, Float minP, Long seed) {
+            return new Sampling(
+                    temperature != null ? temperature : effectiveTemperature(),
+                    topP != null ? topP : effectiveTopP(),
+                    topK != null ? topK : effectiveTopK(),
+                    minP != null ? minP : effectiveMinP(),
+                    seed);
         }
 
         /** The recommended temperature, or the engine baseline when no layer has one. */
