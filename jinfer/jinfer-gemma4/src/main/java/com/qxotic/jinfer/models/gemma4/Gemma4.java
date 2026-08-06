@@ -384,7 +384,7 @@ public final class Gemma4
         final F32FloatTensor[] rmsPostFFNWeights;
         final F32FloatTensor rmsFinalWeights;
         final float[] layerOutputScales;
-        final F32FloatTensor ropeRealFull, ropeImagFull, ropeRealSWA, ropeImagSWA;
+        final RoPE.Schedule ropeFull, ropeSWA; // two schedules: different width AND different theta
         final FloatTensor classifierWeights;
         // Per-layer embeddings (null when absent)
         final FloatTensor perLayerTokenEmbeddings, perLayerModelProjection;
@@ -416,10 +416,8 @@ public final class Gemma4
                 F32FloatTensor[] rmsPostFFNWeights,
                 F32FloatTensor rmsFinalWeights,
                 float[] layerOutputScales,
-                F32FloatTensor ropeRealFull,
-                F32FloatTensor ropeImagFull,
-                F32FloatTensor ropeRealSWA,
-                F32FloatTensor ropeImagSWA,
+                RoPE.Schedule ropeFull,
+                RoPE.Schedule ropeSWA,
                 FloatTensor classifierWeights,
                 FloatTensor perLayerTokenEmbeddings,
                 FloatTensor perLayerModelProjection,
@@ -451,10 +449,8 @@ public final class Gemma4
             this.rmsPostFFNWeights = rmsPostFFNWeights;
             this.rmsFinalWeights = rmsFinalWeights;
             this.layerOutputScales = layerOutputScales;
-            this.ropeRealFull = ropeRealFull;
-            this.ropeImagFull = ropeImagFull;
-            this.ropeRealSWA = ropeRealSWA;
-            this.ropeImagSWA = ropeImagSWA;
+            this.ropeFull = ropeFull;
+            this.ropeSWA = ropeSWA;
             this.classifierWeights = classifierWeights;
             this.perLayerTokenEmbeddings = perLayerTokenEmbeddings;
             this.perLayerModelProjection = perLayerModelProjection;
@@ -482,6 +478,8 @@ public final class Gemma4
         // the single-token reference scratch from the production State are dropped here.)
         final int contextCapacity, batchCapacity;
         final FloatTensor residual, xb, xbK, xb2, hb, hb2, query, logits;
+        // TWO rotary scratches: gemma alternates schedules per layer, and they differ in width
+        final FloatTensor ropeCosFull, ropeSinFull, ropeCosSWA, ropeSinSWA;
         int[] lastTokens; // ids of the last ingested token batch (row->token, for the MTP draft
         // seam)
         final FlashAttention.DecodeScratch decodeScratch = new FlashAttention.DecodeScratch(arena);
@@ -530,6 +528,10 @@ public final class Gemma4
             this.hb2 = FloatTensor.allocateF32(arena, c * maxHiddenDim);
             this.query = FloatTensor.allocateF32(arena, c * maxQueryDim);
             this.logits = FloatTensor.allocateF32(arena, config.vocabularySize());
+            this.ropeCosFull = FloatTensor.allocateF32(arena, c * (config.headSizeFull() / 2));
+            this.ropeSinFull = FloatTensor.allocateF32(arena, c * (config.headSizeFull() / 2));
+            this.ropeCosSWA = FloatTensor.allocateF32(arena, c * (config.headSizeSWA() / 2));
+            this.ropeSinSWA = FloatTensor.allocateF32(arena, c * (config.headSizeSWA() / 2));
             int plDim = config.embeddingLengthPerLayer();
             this.perLayerInputs =
                     plDim > 0
@@ -594,6 +596,22 @@ public final class Gemma4
      * the retained row(s).
      */
     void forward(State state, int[] tokens, int tokenOffset, int startPos, int seqLen) {
+        // ONCE for the batch, both schedules: an angle never depends on the layer
+        Configuration cfg = configuration;
+        RoPE.fill(
+                state.ropeCosFull,
+                state.ropeSinFull,
+                startPos,
+                seqLen,
+                cfg.headSizeFull() / 2,
+                weights.ropeFull);
+        RoPE.fill(
+                state.ropeCosSWA,
+                state.ropeSinSWA,
+                startPos,
+                seqLen,
+                cfg.headSizeSWA() / 2,
+                weights.ropeSWA);
         embed(state, tokens, tokenOffset, seqLen);
         buildPerLayerInputs(state, tokens, tokenOffset, seqLen);
         for (int l = 0; l < configuration.numberOfLayers(); l++) {
@@ -719,8 +737,8 @@ public final class Gemma4
         int nKvHeads = config.numberOfKeyValueHeadsPerLayer()[l],
                 kvMul = config.numberOfHeads() / nKvHeads;
         int kvLayer = config.kvSourceLayer(l);
-        F32FloatTensor real = swa ? weights.ropeRealSWA : weights.ropeRealFull;
-        F32FloatTensor imag = swa ? weights.ropeImagSWA : weights.ropeImagFull;
+        FloatTensor cos = swa ? state.ropeCosSWA : state.ropeCosFull;
+        FloatTensor sin = swa ? state.ropeSinSWA : state.ropeSinFull;
 
         // pre-attention norm (rows independent -> parallel)
         F32FloatTensor attNormW = weights.rmsAttentionWeights[l];
@@ -737,10 +755,9 @@ public final class Gemma4
                 headSize,
                 halfHead,
                 weights.queryNormWeights[l],
-                startPos,
                 seqLen,
-                real,
-                imag);
+                cos,
+                sin);
 
         // K/V projection into the per-layer LINEAR batch buffer (own-KV layers): K-norm + RoPE, V
         // no-weight norm. NOT written to the ring yet — committed at chunk end so prior reads stay
@@ -760,10 +777,9 @@ public final class Gemma4
                     headSize,
                     halfHead,
                     weights.keyNormWeights[l],
-                    startPos,
                     seqLen,
-                    real,
-                    imag);
+                    cos,
+                    sin);
             Parallel.forRows(
                     seqLen,
                     s -> {
@@ -809,10 +825,9 @@ public final class Gemma4
             int headSize,
             int halfHead,
             F32FloatTensor normW,
-            int startPos,
             int seqLen,
-            F32FloatTensor real,
-            F32FloatTensor imag) {
+            FloatTensor cos,
+            FloatTensor sin) {
         float eps = configuration.rmsNormEps();
         Parallel.forRows(
                 seqLen,
@@ -821,8 +836,15 @@ public final class Gemma4
                         int off = s * rowStride + h * headSize;
                         rmsnorm(t, off, t, off, normW, headSize, eps);
                     }
-                    RoPE.applyNeox(
-                            t, s * rowStride, nHeads, headSize, halfHead, startPos + s, real, imag);
+                    for (int h = 0; h < nHeads; h++) {
+                        RoPE.applyNeox(
+                                t,
+                                (long) s * rowStride + (long) h * headSize,
+                                s,
+                                cos,
+                                sin,
+                                halfHead);
+                    }
                 });
     }
 
@@ -1447,21 +1469,12 @@ public final class Gemma4
     static Weights loadWeights(
             Map<String, GGMLTensorEntry> tensors, Configuration config, Arena arena) {
         int n = config.numberOfLayers();
-        RoPE.Freqs ropeSwa =
-                RoPE.precomputeFreqsCis(
-                        config.contextLength(), config.headSizeSWA(), config.ropeThetaSWA());
+        RoPE.Schedule ropeSwa = RoPE.plain(config.headSizeSWA(), config.ropeThetaSWA());
         float[] freqs = ModelLoader.ropeFreqFactors(tensors);
-        RoPE.Freqs ropeFull =
+        RoPE.Schedule ropeFull =
                 freqs != null
-                        ? RoPE.precomputeFreqsCisFromFreqs(
-                                config.contextLength(),
-                                config.headSizeFull(),
-                                config.ropeThetaFull(),
-                                freqs)
-                        : RoPE.precomputeFreqsCis(
-                                config.contextLength(),
-                                config.headSizeFull(),
-                                config.ropeThetaFull());
+                        ? RoPE.withFreqFactors(config.headSizeFull(), config.ropeThetaFull(), freqs)
+                        : RoPE.plain(config.headSizeFull(), config.ropeThetaFull());
 
         FloatTensor tokenEmbeddings = ModelLoader.loadQuantized(tensors.get("token_embd.weight"));
 
@@ -1548,10 +1561,8 @@ public final class Gemma4
                 ModelLoader.f32Array(n, i -> tensors.get("blk." + i + ".post_ffw_norm.weight")),
                 ModelLoader.toF32Tensor(tensors.get("output_norm.weight")),
                 layerOutputScales,
-                F32FloatTensor.of(arena, ropeFull.cos()),
-                F32FloatTensor.of(arena, ropeFull.sin()),
-                F32FloatTensor.of(arena, ropeSwa.cos()),
-                F32FloatTensor.of(arena, ropeSwa.sin()),
+                ropeFull,
+                ropeSwa,
                 tensors.containsKey("output.weight")
                         ? ModelLoader.loadQuantized(tensors.get("output.weight"))
                         : tokenEmbeddings,

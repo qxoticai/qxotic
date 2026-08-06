@@ -92,7 +92,7 @@ public final class ModelLoader {
     /**
      * The optional "llama3" RoPE frequency-scaling factors ({@code rope_freqs.weight}), or null if
      * the model uses plain RoPE. These are per-frequency divisors (1.0 for high frequencies, up to
-     * the long-context factor for low frequencies); see {@link RoPE#precomputeFreqsCisFromFreqs}.
+     * the long-context factor for low frequencies); see {@code RoPE.withFreqFactors}.
      */
     public static float[] ropeFreqFactors(Map<String, GGMLTensorEntry> tensorEntries) {
         GGMLTensorEntry e = tensorEntries.get("rope_freqs.weight");

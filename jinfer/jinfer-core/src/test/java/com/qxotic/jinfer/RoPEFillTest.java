@@ -95,24 +95,6 @@ final class RoPEFillTest {
     }
 
     /**
-     * And the fill agrees with the front-loaded table it replaces. This pins the port migration:
-     * every model's rotation must see the values it saw before.
-     */
-    @Test
-    void theFillAgreesWithThePrecomputedTable() {
-        RoPE.Freqs table = RoPE.precomputeFreqsCis(1024, HEAD_SIZE, THETA);
-        Range range = fill(1000, 24);
-        for (int row = 0; row < 24; row++) {
-            for (int i = 0; i < HALF; i++) {
-                int a = (1000 + row) * HALF + i;
-                long b = (long) row * HALF + i;
-                assertEquals(table.cos()[a], range.cos().getFloat(b), 0f);
-                assertEquals(table.sin()[a], range.sin().getFloat(b), 0f);
-            }
-        }
-    }
-
-    /**
      * The two axes are independent: the same schedule drives either rotation, and they differ only
      * in which dimensions pair. NeoX is not an alternative to YaRN - it answers a different
      * question, and a port picks one of each.

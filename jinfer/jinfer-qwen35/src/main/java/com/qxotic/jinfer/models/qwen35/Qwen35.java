@@ -11,7 +11,7 @@
 // Only the gated delta-net recurrence + conv ring stay sequential over the chunk's rows,
 // carried forward in the State exactly as in a streaming decode. This
 // keeps the port to public jinfer kernels only (matmul / flashDecode / gemm-with-offset /
-// Activations.siluMultiply / RoPE.precomputeFreqsCis) and the shared scalar helpers
+// Activations.siluMultiply / RoPE.plain) and the shared scalar helpers
 // (Activations.sigmoid/silu/softplus) + RoPE.applyInterleaved. Text-only -> implements only
 // LanguageModel.
 package com.qxotic.jinfer.models.qwen35;

@@ -35,7 +35,11 @@ public final class Gemma4MtpDecoder {
     private final int backboneOwnKv;
 
     // rope tables per attention regime (same theta/head-size convention as the backbone)
-    private final F32FloatTensor realSWA, imagSWA, realFull, imagFull;
+    // its OWN schedules: the draft head carries its own rope_freqs, so it is not simply the
+    // backbone's. They cost nothing to keep separate now that a schedule is not a table.
+    private final RoPE.Schedule ropeSWA, ropeFull;
+    // one row: the draft head decodes a single position at a time
+    private final F32FloatTensor cosSWA, sinSWA, cosFull, sinFull;
 
     // scratch (single-token draft; small)
     private final F32FloatTensor xh, cur, xb, q, attn, hb, hb2, hNext;
@@ -50,16 +54,16 @@ public final class Gemma4MtpDecoder {
         this.backboneOwnKv = backbone.config().ownKvLayers();
         int ctx = backbone.config().contextLength();
 
-        RoPE.Freqs swa = RoPE.precomputeFreqsCis(ctx, cfg.headSizeSWA(), cfg.ropeThetaSWA());
-        RoPE.Freqs full =
+        this.ropeSWA = RoPE.plain(cfg.headSizeSWA(), cfg.ropeThetaSWA());
+        this.ropeFull =
                 w.ropeFreqFactors != null
-                        ? RoPE.precomputeFreqsCisFromFreqs(
-                                ctx, cfg.headSizeFull(), cfg.ropeThetaFull(), w.ropeFreqFactors)
-                        : RoPE.precomputeFreqsCis(ctx, cfg.headSizeFull(), cfg.ropeThetaFull());
-        this.realSWA = F32FloatTensor.of(arena, swa.cos());
-        this.imagSWA = F32FloatTensor.of(arena, swa.sin());
-        this.realFull = F32FloatTensor.of(arena, full.cos());
-        this.imagFull = F32FloatTensor.of(arena, full.sin());
+                        ? RoPE.withFreqFactors(
+                                cfg.headSizeFull(), cfg.ropeThetaFull(), w.ropeFreqFactors)
+                        : RoPE.plain(cfg.headSizeFull(), cfg.ropeThetaFull());
+        this.cosSWA = F32FloatTensor.allocate(arena, cfg.headSizeSWA() / 2);
+        this.sinSWA = F32FloatTensor.allocate(arena, cfg.headSizeSWA() / 2);
+        this.cosFull = F32FloatTensor.allocate(arena, cfg.headSizeFull() / 2);
+        this.sinFull = F32FloatTensor.allocate(arena, cfg.headSizeFull() / 2);
 
         int dim = cfg.embeddingLength();
         int maxQ = cfg.numberOfHeads() * cfg.headSizeFull();
@@ -87,6 +91,9 @@ public final class Gemma4MtpDecoder {
             int position) {
         int bd = cfg.backboneDim(), dim = cfg.embeddingLength();
         float eps = cfg.rmsNormEps();
+        // one row for this position, both schedules; every layer reads it
+        RoPE.fill(cosSWA, sinSWA, position, 1, cfg.headSizeSWA() / 2, ropeSWA);
+        RoPE.fill(cosFull, sinFull, position, 1, cfg.headSizeFull() / 2, ropeFull);
 
         // xh = concat( backbone.tokEmbd[token] * sqrt(bd) , hidden )
         FloatTensor btok = backbone.weights().tokenEmbeddings;
@@ -100,7 +107,7 @@ public final class Gemma4MtpDecoder {
         for (int l = 0; l < cfg.numberOfLayers(); l++) {
             boolean swa = cfg.isSWA()[l];
             int headSize = cfg.headSize(l), halfHead = headSize / 2, qDim = cfg.queryDim(l);
-            F32FloatTensor real = swa ? realSWA : realFull, imag = swa ? imagSWA : imagFull;
+            FloatTensor cos = swa ? cosSWA : cosFull, sin = swa ? sinSWA : sinFull;
 
             // attn: norm -> Q -> per-head q_norm + rope -> Q-only attention on backbone rings -> wo
             // -> post_norm -> +res
@@ -109,7 +116,9 @@ public final class Gemma4MtpDecoder {
             for (int h = 0; h < cfg.numberOfHeads(); h++) {
                 rmsnorm(q, h * headSize, q, h * headSize, w.attnQNorm[l], headSize, eps);
             }
-            RoPE.applyNeox(q, 0, cfg.numberOfHeads(), headSize, halfHead, position, real, imag);
+            for (int h = 0; h < cfg.numberOfHeads(); h++) {
+                RoPE.applyNeox(q, (long) h * headSize, 0, cos, sin, halfHead);
+            }
 
             int kvSrc = swa ? backboneOwnKv - 2 : backboneOwnKv - 1;
             int bkvDim = backbone.config().kvDim(kvSrc);
