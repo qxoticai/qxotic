@@ -23,7 +23,7 @@ final class RoPEFillTest {
         Arena arena = Arena.ofAuto();
         F32FloatTensor cos = F32FloatTensor.allocate(arena, count * HALF);
         F32FloatTensor sin = F32FloatTensor.allocate(arena, count * HALF);
-        RoPE.fill(cos, sin, from, count, RoPE.plain(HEAD_SIZE, THETA));
+        RoPE.fill(cos, sin, from, count, HALF, RoPE.plain(HEAD_SIZE, THETA));
         return new Range(cos, sin);
     }
 
@@ -78,19 +78,19 @@ final class RoPEFillTest {
         F32FloatTensor wc = F32FloatTensor.allocate(arena, 300 * HALF);
         F32FloatTensor ws = F32FloatTensor.allocate(arena, 300 * HALF);
         RoPE.Schedule scaled = RoPE.withFreqFactors(HEAD_SIZE, THETA, factors);
-        RoPE.fill(wc, ws, 0, 300, scaled);
+        RoPE.fill(wc, ws, 0, 300, HALF, scaled);
         F32FloatTensor pc = F32FloatTensor.allocate(arena, 4 * HALF);
         F32FloatTensor ps = F32FloatTensor.allocate(arena, 4 * HALF);
-        RoPE.fill(pc, ps, 296, 4, scaled);
+        RoPE.fill(pc, ps, 296, 4, HALF, scaled);
         assertSameRows(new Range(wc, ws), 296, new Range(pc, ps), 4);
 
         F32FloatTensor yc = F32FloatTensor.allocate(arena, 300 * HALF);
         F32FloatTensor ys = F32FloatTensor.allocate(arena, 300 * HALF);
         RoPE.Schedule yarn = RoPE.yarn(HEAD_SIZE, THETA, 4f, 4096, 32f, 1f, 1f, 1f);
-        RoPE.fill(yc, ys, 0, 300, yarn);
+        RoPE.fill(yc, ys, 0, 300, HALF, yarn);
         F32FloatTensor ypc = F32FloatTensor.allocate(arena, 4 * HALF);
         F32FloatTensor yps = F32FloatTensor.allocate(arena, 4 * HALF);
-        RoPE.fill(ypc, yps, 296, 4, yarn);
+        RoPE.fill(ypc, yps, 296, 4, HALF, yarn);
         assertSameRows(new Range(yc, ys), 296, new Range(ypc, yps), 4);
     }
 
@@ -114,15 +114,15 @@ final class RoPEFillTest {
 
     /**
      * The two axes are independent: the same schedule drives either rotation, and they differ only
-     * in which dimensions pair. This is the confusion the API exists to prevent - NeoX is not an
-     * alternative to YaRN, it answers a different question.
+     * in which dimensions pair. NeoX is not an alternative to YaRN - it answers a different
+     * question, and a port picks one of each.
      */
     @Test
     void aScheduleDrivesEitherRotation() {
         Arena arena = Arena.ofAuto();
         F32FloatTensor cos = F32FloatTensor.allocate(arena, HALF);
         F32FloatTensor sin = F32FloatTensor.allocate(arena, HALF);
-        RoPE.fill(cos, sin, 7, 1, RoPE.plain(HEAD_SIZE, THETA));
+        RoPE.fill(cos, sin, 7, 1, HALF, RoPE.plain(HEAD_SIZE, THETA));
 
         F32FloatTensor interleaved = F32FloatTensor.allocate(arena, HEAD_SIZE);
         F32FloatTensor neox = F32FloatTensor.allocate(arena, HEAD_SIZE);
@@ -130,8 +130,8 @@ final class RoPEFillTest {
             interleaved.setFloat(i, i + 1);
             neox.setFloat(i, i + 1);
         }
-        RoPE.Rotation.INTERLEAVED.apply(interleaved, 0, 0, cos, sin, HALF);
-        RoPE.Rotation.NEOX.apply(neox, 0, 0, cos, sin, HALF);
+        RoPE.applyInterleaved(interleaved, 0, 0, cos, sin, HALF);
+        RoPE.applyNeox(neox, 0, 0, cos, sin, HALF);
 
         // lane 0 turns (d0, d1) one way and (d0, d64) the other, from the same cos/sin
         float c = cos.getFloat(0), s = sin.getFloat(0);
@@ -146,11 +146,11 @@ final class RoPEFillTest {
         int lanes = 16; // rotate 32 of the 128 dims
         F32FloatTensor cos = F32FloatTensor.allocate(arena, lanes);
         F32FloatTensor sin = F32FloatTensor.allocate(arena, lanes);
-        RoPE.fill(cos, sin, 3, 1, RoPE.plain(2 * lanes, THETA));
+        RoPE.fill(cos, sin, 3, 1, lanes, RoPE.plain(2 * lanes, THETA));
 
         F32FloatTensor head = F32FloatTensor.allocate(arena, HEAD_SIZE);
         for (int i = 0; i < HEAD_SIZE; i++) head.setFloat(i, i + 1);
-        RoPE.Rotation.INTERLEAVED.apply(head, 0, 0, cos, sin, lanes);
+        RoPE.applyInterleaved(head, 0, 0, cos, sin, lanes);
         for (int i = 2 * lanes; i < HEAD_SIZE; i++) {
             assertEquals(i + 1, head.getFloat(i), 0f, "dim " + i + " must be untouched");
         }
