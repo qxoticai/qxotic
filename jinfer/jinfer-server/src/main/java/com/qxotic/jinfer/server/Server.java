@@ -173,7 +173,10 @@ public final class Server {
                 request ->
                         Map.of(
                                 "model", config.modelName(),
-                                "n_ctx", model.model().config().contextLength(),
+                                // what a request may actually use, not what the model was
+                                // trained for: a client sizing to the latter gets refused
+                                "n_ctx", config.cache().contextCapacity(),
+                                "n_ctx_train", model.model().config().contextLength(),
                                 "n_batch", RuntimeFlags.MAX_PROMPT_SEQUENCE_LENGTH,
                                 "n_vocab", model.model().config().vocabularySize(),
                                 "sampling",

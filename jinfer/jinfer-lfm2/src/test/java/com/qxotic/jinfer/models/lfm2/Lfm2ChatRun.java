@@ -37,7 +37,7 @@ public final class Lfm2ChatRun {
         TurnTemplate template = model.turnTemplate().orElseThrow();
         Set<Integer> stops = model.stopTokens();
 
-        Lfm2.State s = model.newState(c.contextLength(), 512);
+        Lfm2.State s = model.newState(Math.min(c.contextLength(), 4096), 512);
 
         // Turn 1: system + user, incremental from conversation start.
         List<Batch> batches = new ArrayList<>(template.conversationStart());

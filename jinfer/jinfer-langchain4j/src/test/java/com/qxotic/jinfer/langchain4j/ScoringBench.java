@@ -217,7 +217,9 @@ public final class ScoringBench {
 
     static <S extends RuntimeState> S newState(LoadedReranker<S> loaded) {
         return loaded.model()
-                .newState(loaded.model().config().contextLength(), RuntimeFlags.BATCH_CAPACITY);
+                .newState(
+                        Math.min(loaded.model().config().contextLength(), 4096),
+                        RuntimeFlags.BATCH_CAPACITY);
     }
 
     static <S extends RuntimeState> void ingest(LoadedReranker<S> loaded, S state, Batch batch) {

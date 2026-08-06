@@ -169,7 +169,7 @@ public final class Gemma4VisionRun {
         if (sot >= 0) post.add(sot);
         post.addAll(tk.encode("model\n").toList());
 
-        int cap = model.config().contextLength();
+        int cap = Math.min(model.config().contextLength(), 4096);
         Gemma4.State s = model.newState(cap, Math.max(nImg, Math.max(pre.size(), post.size())) + 4);
         model.ingest(s, Batch.prefill(arr(pre)));
         model.ingest(s, Batch.embeddings(imgRows, nImg));

@@ -64,7 +64,9 @@ public final class Lfm2Run {
         int[] ids = promptTokens.stream().mapToInt(Integer::intValue).toArray();
         System.err.println("prompt tokens: " + promptTokens);
 
-        Lfm2.State s = model.newState(c.contextLength(), Math.max(16, ids.length));
+        Lfm2.State s =
+                model.newState(
+                        Math.min(c.contextLength(), ids.length + 256), Math.max(16, ids.length));
         model.ingest(s, com.qxotic.jinfer.Batch.prefill(ids));
 
         Set<Integer> stops = model.stopTokens();
