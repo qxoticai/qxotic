@@ -88,7 +88,7 @@ public final class ServerIntegrationTest {
         Path model = modelPath();
         modelId = model.getFileName().toString();
         Assumptions.assumeTrue(Files.exists(model), "model not found: " + model);
-        LoadedModel<?> llama = Models.load(model, 2048, java.lang.foreign.Arena.ofAuto());
+        LoadedModel<?> llama = Models.load(model, java.lang.foreign.Arena.ofAuto());
         ServerConfig config = ServerTestSupport.config(model);
         Server.Running server = Server.start(llama, config);
         base = ServerTestSupport.baseUrl(server);

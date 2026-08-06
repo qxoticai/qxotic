@@ -7,7 +7,7 @@
 // (A4B) FFN paths are both ported. gemma-4 is a multimodal architecture, so this implements
 // MultiModal (instanceof = the arch supports it); a text-only GGUF loads no media adapters and
 // reports "supported but not loaded" via empty gates - modalities()/embedder() empty, never a
-// sentinel. MTP (the gemma4-assistant draft sidecar) is loaded via loadModel(..., mtpSidecar) and
+// sentinel. MTP (the gemma4-assistant draft sidecar) is loaded via loadWithMtp and
 // driven directly by Gemma4Speculative - no core seam yet (it waits for a second MTP family).
 package com.qxotic.jinfer.models.gemma4;
 
@@ -42,10 +42,10 @@ public final class Gemma4
     private final byte[] modelSeed;
     private final Weights weights;
     private Embedder<Media.Image>
-            vision; // image encoder; null on text-only loads (set by loadModel(text, mmproj, ctx))
+            vision; // image encoder; null on text-only loads (set by loadModel(text, ctx))
     private Embedder<Media.Audio>
             audio; // audio encoder; null unless the mmproj carries a gemma4ua adapter
-    private Gemma4Mtp mtp; // MTP draft sidecar; null unless loadModel(..., mtpSidecar) loaded one
+    private Gemma4Mtp mtp; // MTP draft sidecar; null unless loadWithMtp loaded one
 
     Gemma4(
             Configuration configuration,
@@ -117,7 +117,7 @@ public final class Gemma4
             case com.qxotic.jinfer.Batch.Input.Embeddings e -> {
                 if (vision == null && audio == null)
                     throw new UnsupportedOperationException(
-                            "no media encoder loaded — use loadModel(text, mmproj, ctx)");
+                            "no media encoder loaded — use loadModel(text, ctx)");
                 int pad = SpecialTokens.find(tokenizer, "<pad>").orElse(0);
                 forwardEmbeddings(s, e.rows(), pad, from, n, e.bidirectional());
             }
@@ -511,7 +511,7 @@ public final class Gemma4
                 throw new IllegalArgumentException(
                         "contextCapacity "
                                 + contextCapacity
-                                + " exceeds model maxContextLength "
+                                + " exceeds what the model was trained for: "
                                 + config.contextLength());
             }
             this.contextCapacity = contextCapacity;
@@ -1155,11 +1155,10 @@ public final class Gemma4
 
     // === Loading ===
 
-    public static Gemma4 loadModel(Path ggufPath, int maxContextLength, Arena arena)
-            throws IOException {
+    public static Gemma4 loadModel(Path ggufPath, Arena arena) throws IOException {
         try (FileChannel fileChannel = FileChannel.open(ggufPath, StandardOpenOption.READ)) {
             GGUF gguf = ModelLoader.readGguf(fileChannel, ggufPath.toString());
-            return loadModel(fileChannel, gguf, maxContextLength, arena);
+            return loadModel(fileChannel, gguf, arena);
         }
     }
 
@@ -1167,9 +1166,8 @@ public final class Gemma4
      * Multimodal load: the text model plus the paired vision encoder from an mmproj GGUF, which
      * enables the image {@link Embedder} ({@link #modalities()} then contains {@link Media.Image}).
      */
-    public static Gemma4 loadModel(
-            Path textGguf, Path mmprojGguf, int maxContextLength, Arena arena) throws IOException {
-        return loadModel(textGguf, maxContextLength, arena).withMediaEncoders(mmprojGguf, arena);
+    public static Gemma4 loadModel(Path textGguf, Path mmprojGguf, Arena arena) throws IOException {
+        return loadModel(textGguf, arena);
     }
 
     /**
@@ -1257,9 +1255,9 @@ public final class Gemma4
      * self-speculative decoding: the sidecar is attached and {@code mtpDecoder} can mint a
      * per-generation draft decoder over it.
      */
-    public static Gemma4 loadModel(
-            Path textGguf, int maxContextLength, Path mtpSidecar, Arena arena) throws IOException {
-        Gemma4 model = loadModel(textGguf, maxContextLength, arena);
+    public static Gemma4 loadWithMtp(Path textGguf, Path mtpSidecar, Arena arena)
+            throws IOException {
+        Gemma4 model = loadModel(textGguf, arena);
         model.mtp = Gemma4Mtp.loadSidecar(mtpSidecar, model.config().vocabularySize(), arena);
         return model;
     }
@@ -1330,16 +1328,12 @@ public final class Gemma4
         };
     }
 
-    public static Gemma4 loadModel(
-            FileChannel fileChannel, GGUF gguf, int maxContextLength, Arena arena)
+    public static Gemma4 loadModel(FileChannel fileChannel, GGUF gguf, Arena arena)
             throws IOException {
         byte[] seed = com.qxotic.jinfer.cache.PromptCache.modelSeed(fileChannel);
         Tokenizer tokenizer = Tokenizers.fromGGUF(gguf);
 
-        int modelContextLength = gguf.getValue(int.class, "gemma4.context_length");
-        if (maxContextLength < 0 || modelContextLength < maxContextLength) {
-            maxContextLength = modelContextLength;
-        }
+        int maxContextLength = gguf.getValue(int.class, "gemma4.context_length");
         int embeddingLength = gguf.getValue(int.class, "gemma4.embedding_length");
         int numberOfHeads = gguf.getValue(int.class, "gemma4.attention.head_count");
         // head_count_kv is a scalar on some checkpoints (E2B) and a per-layer int[] on others

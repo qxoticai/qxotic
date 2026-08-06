@@ -66,7 +66,7 @@ public final class Gemma4MultimodalCacheRun {
         boolean big = args.length > 0 && args[0].equals("12b");
         Path text = big ? B12 : E2B, mmproj = big ? B12_MMPROJ : E2B_MMPROJ;
         budget = big ? 14L << 30 : 4L << 30; // 12B SWA checkpoints are ~hundreds of MB per block
-        model = Gemma4.loadModel(text, mmproj, 4096, Arena.ofAuto());
+        model = Gemma4.loadModel(text, Arena.ofAuto());
         template = model.turnTemplate().orElseThrow();
         codec = model.stateCodec().orElseThrow();
         stops = model.stopTokens();

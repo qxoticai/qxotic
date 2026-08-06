@@ -36,7 +36,7 @@ final class ChatEngineWeightsOwnershipTest {
     @Test
     void anEngineGivenAModelDoesNotFreeTheCallersWeights() throws IOException {
         try (Arena weights = Arena.ofShared()) {
-            LoadedModel<?> loaded = Models.load(model(), 512, weights);
+            LoadedModel<?> loaded = Models.load(model(), weights);
             ChatEngine engine = new ChatEngine(loaded, "borrowed", HOT_ONLY);
 
             assertSame(loaded, engine.loaded(), "the engine must use the model it was given");
@@ -52,7 +52,7 @@ final class ChatEngineWeightsOwnershipTest {
 
     @Test
     void anEngineThatLoadedItsOwnWeightsFreesThem() {
-        ChatEngine engine = new ChatEngine(model(), null, 512, HOT_ONLY);
+        ChatEngine engine = new ChatEngine(model(), null, HOT_ONLY);
         engine.close();
         // the arena is internal, so the observable contract is that close returns and stays
         // idempotent - a second close would hit the JDK's one-shot Arena.close if it were not
@@ -62,8 +62,7 @@ final class ChatEngineWeightsOwnershipTest {
     @Test
     void closeIsIdempotentOnABorrowedEngineToo() throws IOException {
         try (Arena weights = Arena.ofShared()) {
-            ChatEngine engine =
-                    new ChatEngine(Models.load(model(), 512, weights), "borrowed", HOT_ONLY);
+            ChatEngine engine = new ChatEngine(Models.load(model(), weights), "borrowed", HOT_ONLY);
             engine.close();
             engine.close();
             assertTrue(weights.scope().isAlive());
@@ -76,8 +75,7 @@ final class ChatEngineWeightsOwnershipTest {
         // engine still lives is on you. This only asserts the ordering the contract prescribes -
         // engine first, then the arena - leaves nothing alive.
         Arena weights = Arena.ofShared();
-        ChatEngine engine =
-                new ChatEngine(Models.load(model(), 512, weights), "borrowed", HOT_ONLY);
+        ChatEngine engine = new ChatEngine(Models.load(model(), weights), "borrowed", HOT_ONLY);
         engine.close();
         weights.close();
         assertFalse(weights.scope().isAlive());

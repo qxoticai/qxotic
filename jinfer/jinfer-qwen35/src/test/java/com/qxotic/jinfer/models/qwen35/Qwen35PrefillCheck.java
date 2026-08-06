@@ -40,7 +40,7 @@ public final class Qwen35PrefillCheck {
             System.out.println("Qwen35PrefillCheck: model not found (" + path + "), skipping");
             return;
         }
-        Qwen35 model = Qwen35.loadModel(path, 4096, Arena.ofAuto());
+        Qwen35 model = Qwen35.loadModel(path, Arena.ofAuto());
         int vocab = model.config().vocabularySize();
         com.qxotic.toknroll.IntSequence prompt =
                 model.tokenizer()

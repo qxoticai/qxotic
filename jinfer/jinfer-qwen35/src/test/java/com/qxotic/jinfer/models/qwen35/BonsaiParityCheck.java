@@ -54,7 +54,7 @@ public final class BonsaiParityCheck {
     void greedyParity() throws Exception {
         Path model = ModelFixture.BONSAI_27B_Q1.path();
         Assumptions.assumeTrue(Files.exists(model), "model not found: " + model);
-        Qwen35 model35 = Qwen35.loadModel(model, 4096, Arena.ofAuto());
+        Qwen35 model35 = Qwen35.loadModel(model, Arena.ofAuto());
         var tokenizer = model35.tokenizer();
         Set<Integer> stops = model35.stopTokens();
 

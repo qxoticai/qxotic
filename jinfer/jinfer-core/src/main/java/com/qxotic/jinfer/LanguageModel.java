@@ -19,14 +19,14 @@ public interface LanguageModel<C extends Config, W, S extends RuntimeState> exte
     }
 
     /**
-     * A state sized for one generation over a {@code promptLen}-token prompt: full context, batch
-     * capacity clamped to the prompt (min 16 rows - the loop needs a tail token with fresh logits;
-     * max {@link RuntimeFlags#BATCH_CAPACITY}). Owns the sizing policy consumers used to hand-roll.
+     * A state of {@code contextCapacity} positions with its BATCH capacity clamped to the prompt
+     * (min 16 rows - the loop needs a tail token with fresh logits; max {@link
+     * RuntimeFlags#BATCH_CAPACITY}). The batch clamp is the whole point; how big the context should
+     * be is the caller's policy, because only the caller knows whether more turns are coming.
      */
-    default S stateFor(int promptLen) {
+    default S stateFor(int promptLen, int contextCapacity) {
         return newState(
-                config().contextLength(),
-                Math.min(Math.max(promptLen, 16), RuntimeFlags.BATCH_CAPACITY));
+                contextCapacity, Math.min(Math.max(promptLen, 16), RuntimeFlags.BATCH_CAPACITY));
     }
 
     /** Vocabulary logits for the {@code output}-th retained hidden state (0 .. outputCount()-1). */

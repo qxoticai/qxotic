@@ -21,8 +21,7 @@ public final class NemotronHProvider implements ModelProvider {
     }
 
     @Override
-    public LoadedModel<?> load(FileChannel fileChannel, GGUF gguf, int contextLength, Arena arena)
-            throws IOException {
-        return NemotronH.loadModel(fileChannel, gguf, contextLength, arena).loaded();
+    public LoadedModel<?> load(FileChannel fileChannel, GGUF gguf, Arena arena) throws IOException {
+        return NemotronH.loadModel(fileChannel, gguf, arena).loaded();
     }
 }

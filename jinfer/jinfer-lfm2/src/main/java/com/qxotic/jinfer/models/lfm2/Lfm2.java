@@ -819,22 +819,20 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
 
     // === Loading ===
 
-    public static Lfm2 loadModel(Path ggufPath, int contextLength, Arena arena) throws IOException {
+    public static Lfm2 loadModel(Path ggufPath, Arena arena) throws IOException {
         try (FileChannel fileChannel = FileChannel.open(ggufPath, StandardOpenOption.READ)) {
             GGUF gguf = ModelLoader.readGguf(fileChannel, ggufPath.toString());
-            return loadModel(fileChannel, gguf, contextLength, arena);
+            return loadModel(fileChannel, gguf, arena);
         }
     }
 
-    public static Lfm2 loadModel(FileChannel fileChannel, GGUF gguf, int contextLength, Arena arena)
+    public static Lfm2 loadModel(FileChannel fileChannel, GGUF gguf, Arena arena)
             throws IOException {
         byte[] seed = com.qxotic.jinfer.cache.PromptCache.modelSeed(fileChannel);
         Tokenizer tokenizer = Tokenizers.fromGGUF(gguf);
         String arch = gguf.getString("general.architecture");
 
-        int modelContextLength = gguf.getValue(int.class, arch + ".context_length");
-        if (contextLength < 0 || modelContextLength < contextLength)
-            contextLength = modelContextLength;
+        int contextLength = gguf.getValue(int.class, arch + ".context_length");
 
         int embeddingLength = gguf.getValue(int.class, arch + ".embedding_length");
         int numberOfHeads = gguf.getValue(int.class, arch + ".attention.head_count");

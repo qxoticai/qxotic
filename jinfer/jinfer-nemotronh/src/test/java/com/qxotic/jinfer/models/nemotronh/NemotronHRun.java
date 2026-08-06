@@ -32,7 +32,7 @@ public final class NemotronHRun {
         String promptStr = args.length > 1 ? args[1] : "The capital of France is";
         int nTokens = args.length > 2 ? Integer.parseInt(args[2]) : 32;
 
-        NemotronH model = NemotronH.loadModel(Path.of(path), 4096, Arena.ofAuto());
+        NemotronH model = NemotronH.loadModel(Path.of(path), Arena.ofAuto());
         var c = model.config();
         System.err.printf(
                 "config: dim=%d layers=%d heads=%d kvHeads=%d vocab=%d ctx=%d experts=%d%n",

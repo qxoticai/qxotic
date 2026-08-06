@@ -79,7 +79,7 @@ final class VectorScalarParityTest {
     /** Forked entry point: greedy-decode {@link #STEPS} tokens and print them. */
     public static void main(String[] args) throws Exception {
         try (Arena weights = Arena.ofShared()) {
-            System.out.println("WALK " + greedy(Models.load(Path.of(args[0]), 512, weights)));
+            System.out.println("WALK " + greedy(Models.load(Path.of(args[0]), weights)));
         }
     }
 

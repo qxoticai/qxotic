@@ -27,7 +27,7 @@ class Qwen35ResetIdentityTest {
         Assumptions.assumeTrue(
                 Files.exists(ModelFixture.QWEN35_2B_Q8.path()),
                 "model not found: " + ModelFixture.QWEN35_2B_Q8.path());
-        Qwen35 model = Qwen35.loadModel(ModelFixture.QWEN35_2B_Q8.path(), 1024, Arena.ofAuto());
+        Qwen35 model = Qwen35.loadModel(ModelFixture.QWEN35_2B_Q8.path(), Arena.ofAuto());
         var tokenizer = model.loaded().tokenizer();
         IntSequence first = tokenizer.encode("The capital of France is");
         IntSequence second = tokenizer.encode("Once upon a time there was");

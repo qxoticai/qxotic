@@ -41,7 +41,7 @@ public final class Gemma4MtpParityTest {
             System.out.println("Gemma4MtpParityTest: model/sidecar absent, skipping");
             return;
         }
-        Gemma4 backbone = Gemma4.loadModel(model, 4096, Arena.ofAuto());
+        Gemma4 backbone = Gemma4.loadModel(model, Arena.ofAuto());
         Gemma4Mtp mtp =
                 Gemma4Mtp.loadSidecar(sidecar, backbone.config().vocabularySize(), Arena.ofAuto());
         Gemma4MtpDecoder decoder = new Gemma4MtpDecoder(mtp, backbone, Arena.ofAuto());

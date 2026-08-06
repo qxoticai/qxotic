@@ -32,7 +32,7 @@ class ServerCacheFileTest {
         String prompt = "The capital of France is Paris. Answer in one word: what is it?";
         HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
         try (Arena arena = Arena.ofShared()) {
-            LoadedModel<?> model = Models.load(gguf, 2048, arena);
+            LoadedModel<?> model = Models.load(gguf, arena);
 
             try (Server.Running first =
                     Server.start(model, ServerTestSupport.config(gguf, catalog, false))) {

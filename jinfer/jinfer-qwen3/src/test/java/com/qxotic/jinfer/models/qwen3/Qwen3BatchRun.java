@@ -32,7 +32,7 @@ public final class Qwen3BatchRun {
 
     private static void main(String[] args) throws Exception {
         int ctx = 8192;
-        Qwen3 model = Qwen3.loadModel(Path.of(args[0]), ctx, Arena.ofAuto());
+        Qwen3 model = Qwen3.loadModel(Path.of(args[0]), Arena.ofAuto());
         var tk = model.tokenizer();
         int eos = SpecialTokens.find(tk, "<|endoftext|>").orElse(151643);
         int dim = model.config().embeddingLength();

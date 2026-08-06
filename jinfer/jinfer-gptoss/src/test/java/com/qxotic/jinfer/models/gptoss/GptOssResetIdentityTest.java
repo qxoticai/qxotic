@@ -27,7 +27,7 @@ class GptOssResetIdentityTest {
                 "model not found: " + ModelFixture.GPTOSS_20B_Q8.path());
         GptOss model =
                 GptOss.loadModel(
-                        ModelFixture.GPTOSS_20B_Q8.path(), 1024, java.lang.foreign.Arena.ofAuto());
+                        ModelFixture.GPTOSS_20B_Q8.path(), java.lang.foreign.Arena.ofAuto());
         var tokenizer = model.loaded().tokenizer();
         IntSequence first = tokenizer.encode("The capital of France is");
         IntSequence second = tokenizer.encode("Once upon a time there was");

@@ -41,7 +41,7 @@ class ServerContractTest {
         Path gguf = ModelFixture.LLAMA32_1B_Q8.require();
         modelId = gguf.getFileName().toString();
         arena = Arena.ofShared();
-        LoadedModel<?> model = Models.load(gguf, 2048, arena);
+        LoadedModel<?> model = Models.load(gguf, arena);
         server = Server.start(model, ServerTestSupport.config(gguf));
         base = ServerTestSupport.baseUrl(server);
         client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
@@ -185,7 +185,7 @@ class ServerContractTest {
     void anUnseededServerAnswersRequests() throws Exception {
         try (Arena weights = Arena.ofShared()) {
             Path gguf = ModelFixture.LLAMA32_1B_Q8.require();
-            LoadedModel<?> model = Models.load(gguf, 2048, weights);
+            LoadedModel<?> model = Models.load(gguf, weights);
             try (Server.Running unseeded =
                     Server.start(model, ServerTestSupport.configUnseeded(gguf))) {
                 HttpResponse<String> response =

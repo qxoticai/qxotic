@@ -41,13 +41,14 @@ public interface ModelProvider {
     /**
      * Loads a GENERATIVE model from an already-parsed GGUF; {@code fileChannel} supplies the tensor
      * data, mapped into {@code arena} (who provides the arena owns the weights' lifetime; it must
-     * outlive every model sharing them). {@code contextLength} -1 means the model's full context.
+     * outlive every model sharing them). Nothing here is sized by context: a state's size is chosen
+     * at {@code newState}, and the model's own context length comes from the GGUF.
      *
      * <p>Every capability here is optional and {@link #supports} is the only requirement: a port
      * overrides the loads its architecture actually has, and a speech-only or embedding-only port
      * keeps the rest of these defaults.
      */
-    default LoadedModel<?> load(FileChannel fileChannel, GGUF gguf, int contextLength, Arena arena)
+    default LoadedModel<?> load(FileChannel fileChannel, GGUF gguf, Arena arena)
             throws IOException {
         throw new UnsupportedOperationException(
                 "'"
@@ -86,14 +87,10 @@ public interface ModelProvider {
      * non-empty one is a caller asking for something this architecture does not have.
      */
     default LoadedModel<?> load(
-            FileChannel fileChannel,
-            GGUF gguf,
-            int contextLength,
-            Arena arena,
-            Map<String, Path> companions)
+            FileChannel fileChannel, GGUF gguf, Arena arena, Map<String, Path> companions)
             throws IOException {
         if (companions.isEmpty()) {
-            return load(fileChannel, gguf, contextLength, arena);
+            return load(fileChannel, gguf, arena);
         }
         throw new UnsupportedOperationException(
                 "'"
@@ -109,8 +106,7 @@ public interface ModelProvider {
      * architectures are generative-only keep this default.
      */
     default LoadedEmbedder<?> loadEmbedder(
-            FileChannel fileChannel, GGUF gguf, int contextLength, Path path, Arena arena)
-            throws IOException {
+            FileChannel fileChannel, GGUF gguf, Path path, Arena arena) throws IOException {
         throw new UnsupportedOperationException(
                 "'"
                         + gguf.getString("general.architecture")
@@ -164,8 +160,7 @@ public interface ModelProvider {
      * default.
      */
     default LoadedReranker<?> loadReranker(
-            FileChannel fileChannel, GGUF gguf, int contextLength, Path path, Arena arena)
-            throws IOException {
+            FileChannel fileChannel, GGUF gguf, Path path, Arena arena) throws IOException {
         throw new UnsupportedOperationException(
                 "'" + gguf.getString("general.architecture") + "' is not a reranker architecture");
     }

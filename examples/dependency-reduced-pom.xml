@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+  <parent>
+    <artifactId>qxotic-parent</artifactId>
+    <groupId>com.qxotic</groupId>
+    <version>0.1.0</version>
+  </parent>
+  <modelVersion>4.0.0</modelVersion>
+  <artifactId>examples</artifactId>
+  <name>Quixotic Examples</name>
+  <description>Example applications demonstrating Quixotic AI usage</description>
+  <build>
+    <plugins>
+      <plugin>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <compilerArgs>
+            <arg>--add-modules</arg>
+            <arg>jdk.incubator.vector</arg>
+          </compilerArgs>
+        </configuration>
+      </plugin>
+      <plugin>
+        <artifactId>maven-shade-plugin</artifactId>
+        <version>3.6.0</version>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals>
+              <goal>shade</goal>
+            </goals>
+            <configuration>
+              <transformers>
+                <transformer />
+                <transformer>
+                  <mainClass>com.qxotic.jota.examples.demos.Mandelbrot</mainClass>
+                </transformer>
+              </transformers>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+  <profiles>
+    <profile>
+      <id>jvm-panama</id>
+      <dependencies>
+        <dependency>
+          <groupId>com.qxotic</groupId>
+          <artifactId>jota-backend-panama</artifactId>
+        </dependency>
+      </dependencies>
+    </profile>
+    <profile>
+      <id>native-image</id>
+    </profile>
+  </profiles>
+  <properties>
+    <maven.compiler.release>25</maven.compiler.release>
+    <maven.compiler.target>25</maven.compiler.target>
+    <maven.deploy.skip>true</maven.deploy.skip>
+    <maven.compiler.source>25</maven.compiler.source>
+  </properties>
+</project>

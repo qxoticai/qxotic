@@ -68,7 +68,7 @@ public final class Gemma4Speculative {
             Gemma4MtpDecoder decoder = model.mtpDecoder(scratch);
             if (decoder == null)
                 throw new IllegalStateException(
-                        "MTP sidecar not loaded - use loadModel(gguf, ctx, mtpSidecar)");
+                        "MTP sidecar not loaded - use loadWithMtp(gguf, mtpSidecar, arena)");
             Result result =
                     generate(
                             model, s, depth, maxTokens, stops, recorder, decoder, dim, vocab,

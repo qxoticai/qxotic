@@ -78,28 +78,23 @@ public final class Models {
     }
 
     /**
-     * Loads {@code path} at context size {@code ctx} (-1 = the model's full context). Weights map
-     * into {@code arena}: who provides the arena owns the weights' lifetime ({@code ofAuto} =
-     * GC-managed, {@code global} = process, a scoped arena = deterministic - it must outlive every
-     * model sharing the weights, and closing it while any computation runs is a crash, not an
-     * exception).
+     * Loads {@code path}. Nothing here is sized by context - a state's size is chosen when the
+     * state is allocated, not when the weights are mapped. Weights map into {@code arena}: who
+     * provides the arena owns the weights' lifetime ({@code ofAuto} = GC-managed, {@code global} =
+     * process, a scoped arena = deterministic - it must outlive every model sharing the weights,
+     * and closing it while any computation runs is a crash, not an exception).
      */
-    public static LoadedModel<?> load(Path path, int ctx, Arena arena) throws IOException {
-        return open(path, (fc, gguf) -> sampled(provider(gguf).load(fc, gguf, ctx, arena), gguf));
+    public static LoadedModel<?> load(Path path, Arena arena) throws IOException {
+        return open(path, (fc, gguf) -> sampled(provider(gguf).load(fc, gguf, arena), gguf));
     }
 
     /**
-     * The one-argument bliss form: full model context, GC-managed weights ({@code Arena.ofAuto()} -
-     * freed when the model becomes unreachable). Reach for the explicit overload when you need a
-     * bounded context or deterministic weight lifetime.
+     * The one-argument bliss form: GC-managed weights ({@code Arena.ofAuto()} - freed when the
+     * model becomes unreachable). Reach for the explicit overload when you need a deterministic
+     * weight lifetime.
      */
     public static LoadedModel<?> load(Path path) throws IOException {
-        return load(path, -1, Arena.ofAuto());
-    }
-
-    /** As {@link #load(Path)} with a bounded context length. */
-    public static LoadedModel<?> load(Path path, int ctx) throws IOException {
-        return load(path, ctx, Arena.ofAuto());
+        return load(path, Arena.ofAuto());
     }
 
     /**
@@ -110,7 +105,7 @@ public final class Models {
      * <p>Values are PATHS to single FILES, never references: resolving a reference is a
      * downloader's job, done before this call, so no library load ever touches the network.
      */
-    public static LoadedModel<?> load(Path path, int ctx, Arena arena, Map<String, Path> companions)
+    public static LoadedModel<?> load(Path path, Arena arena, Map<String, Path> companions)
             throws IOException {
         // copyOf: immutable for the port's lifetime, and it rejects a null capability or path at
         // the boundary rather than inside a loader that cannot say which entry was wrong
@@ -121,7 +116,7 @@ public final class Models {
                     ModelProvider provider = provider(gguf);
                     requireAccepted(provider, gguf, attached);
                     return companionSeeded(
-                            sampled(provider.load(fc, gguf, ctx, arena, attached), gguf), attached);
+                            sampled(provider.load(fc, gguf, arena, attached), gguf), attached);
                 });
     }
 
@@ -206,34 +201,32 @@ public final class Models {
     }
 
     /**
-     * As {@link #load(Path, int, Arena)} but reusing an already-parsed {@code gguf} (the header is
-     * not re-read) - used by AOT preload. {@code fileChannel} supplies the tensor data to mmap.
+     * As {@link #load(Path, Arena)} but reusing an already-parsed {@code gguf} (the header is not
+     * re-read) - used by AOT preload. {@code fileChannel} supplies the tensor data to mmap.
      */
-    public static LoadedModel<?> load(FileChannel fileChannel, GGUF gguf, int ctx, Arena arena)
+    public static LoadedModel<?> load(FileChannel fileChannel, GGUF gguf, Arena arena)
             throws IOException {
-        return sampled(provider(gguf).load(fileChannel, gguf, ctx, arena), gguf);
+        return sampled(provider(gguf).load(fileChannel, gguf, arena), gguf);
     }
 
     /**
-     * Loads an embedding model (an {@code EmbeddingModel} port, e.g. Qwen3-Embedding) at context
-     * size {@code ctx}; same architecture dispatch as {@link #load}. Generative-only architectures
-     * fail with a clear {@link UnsupportedOperationException}.
+     * Loads an embedding model (an {@code EmbeddingModel} port, e.g. Qwen3-Embedding); same
+     * architecture dispatch as {@link #load}. Generative-only architectures fail with a clear
+     * {@link UnsupportedOperationException}.
      */
-    public static LoadedEmbedder<?> loadEmbedder(Path path, int ctx, Arena arena)
-            throws IOException {
-        return open(path, (fc, gguf) -> provider(gguf).loadEmbedder(fc, gguf, ctx, path, arena));
+    public static LoadedEmbedder<?> loadEmbedder(Path path, Arena arena) throws IOException {
+        return open(path, (fc, gguf) -> provider(gguf).loadEmbedder(fc, gguf, path, arena));
     }
 
     /**
-     * Loads a RERANKER (a cross-encoder recipe over a port's backbone, e.g. Qwen3-Reranker) at
-     * context size {@code ctx}; same architecture dispatch as {@link #load}. Architectures with no
-     * reranker recipe fail with a clear {@link UnsupportedOperationException}. The GGUF must be the
-     * reranker of its family - an architecture cannot tell its reranker and embedder apart, so a
-     * wrong file scores rather than refuses.
+     * Loads a RERANKER (a cross-encoder recipe over a port's backbone, e.g. Qwen3-Reranker); same
+     * architecture dispatch as {@link #load}. Architectures with no reranker recipe fail with a
+     * clear {@link UnsupportedOperationException}. The GGUF must be the reranker of its family - an
+     * architecture cannot tell its reranker and embedder apart, so a wrong file scores rather than
+     * refuses.
      */
-    public static LoadedReranker<?> loadReranker(Path path, int ctx, Arena arena)
-            throws IOException {
-        return open(path, (fc, gguf) -> provider(gguf).loadReranker(fc, gguf, ctx, path, arena));
+    public static LoadedReranker<?> loadReranker(Path path, Arena arena) throws IOException {
+        return open(path, (fc, gguf) -> provider(gguf).loadReranker(fc, gguf, path, arena));
     }
 
     /**

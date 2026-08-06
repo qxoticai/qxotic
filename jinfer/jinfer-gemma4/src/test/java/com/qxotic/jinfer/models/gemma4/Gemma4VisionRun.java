@@ -131,7 +131,7 @@ public final class Gemma4VisionRun {
      */
     static void e2e(String textGguf, String mmproj, String imagePath, String prompt)
             throws Exception {
-        Gemma4 model = Gemma4.loadModel(Path.of(textGguf), Path.of(mmproj), 4096, Arena.ofAuto());
+        Gemma4 model = Gemma4.loadModel(Path.of(textGguf), Path.of(mmproj), Arena.ofAuto());
         var tk = model.tokenizer();
         java.util.function.ToIntBiFunction<String, Integer> spFind =
                 (n, d) -> com.qxotic.jinfer.llm.SpecialTokens.find(tk, n).orElse(d);

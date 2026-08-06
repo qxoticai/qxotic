@@ -28,7 +28,7 @@ public final class GptOssCacheRun {
     private static void main(String[] args) throws Exception {
         Path path =
                 Path.of(args.length > 0 ? args[0] : ModelFixture.GPTOSS_20B_Q8.path().toString());
-        GptOss m = GptOss.loadModel(path, 8192, java.lang.foreign.Arena.ofAuto());
+        GptOss m = GptOss.loadModel(path, java.lang.foreign.Arena.ofAuto());
         Harness<GptOss.State> h =
                 new Harness<>(
                         m.loaded(),

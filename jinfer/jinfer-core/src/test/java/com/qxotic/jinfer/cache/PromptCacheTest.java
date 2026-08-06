@@ -36,6 +36,13 @@ public final class PromptCacheTest {
 
     static final int CONTEXT = 64;
 
+    /**
+     * The cache allocates states of this size, and a prompt past it is refused. Matching the fake
+     * model's own context length keeps the two bounds - trained-for and allocated - coincident,
+     * which is what the guard tests below are written against.
+     */
+    private static final int CTX = CONTEXT;
+
     static final class FakeState extends BaseState {
         /** Every token id the model actually ingested, in order. */
         final List<Integer> ingested = new ArrayList<>();
@@ -160,11 +167,12 @@ public final class PromptCacheTest {
     }
 
     static PromptCache<FakeState> cache(FakeModel model, int hot, long budget) {
-        return PromptCache.of(model, SEED, new PromptCache.Options(hot, budget, null, false));
+        return PromptCache.of(model, SEED, new PromptCache.Options(hot, CTX, budget, null, false));
     }
 
     static PromptCache<FakeState> onCatalog(FakeModel model, Path catalog, boolean readOnly) {
-        return PromptCache.of(model, SEED, new PromptCache.Options(0, 1 << 20, catalog, readOnly));
+        return PromptCache.of(
+                model, SEED, new PromptCache.Options(0, CTX, 1 << 20, catalog, readOnly));
     }
 
     static List<Batch> prompt(int... ids) {
@@ -550,7 +558,8 @@ public final class PromptCacheTest {
         FakeModel model = fine();
         Path missing = Path.of("/nonexistent/jinfer/catalog.jkvf");
         try (var cache =
-                PromptCache.of(model, SEED, new PromptCache.Options(1, 1 << 20, missing, true))) {
+                PromptCache.of(
+                        model, SEED, new PromptCache.Options(1, CTX, 1 << 20, missing, true))) {
             assertTrue(cache.blockCaching(), "RAM blocks still work");
             generate(cache, turns(new int[] {1, 2}), 7);
             cache.save(); // no-op, must not try to create the file
@@ -589,7 +598,7 @@ public final class PromptCacheTest {
         }
         long size = Files.size(catalog);
         try (var frozen =
-                PromptCache.of(model, SEED, new PromptCache.Options(0, 0, catalog, false))) {
+                PromptCache.of(model, SEED, new PromptCache.Options(0, CTX, 0, catalog, false))) {
             Served hit = generate(frozen, turns(new int[] {1, 2, 3, 4}, new int[] {9}), 7);
             assertEquals(PromptCache.Tier.BLOCKS, hit.tier(), "the mount serves");
             assertTrue(frozen.sample().refusals() > 0, "growth is refused, and counted");
@@ -657,16 +666,18 @@ public final class PromptCacheTest {
         // int widens silently into the long slot: a transposed (budget, hot) pair must not
         // become a million-session hot layer with a 4-byte budget
         assertThrows(
-                IllegalArgumentException.class, () -> new PromptCache.Options(-1, 1, null, false));
+                IllegalArgumentException.class,
+                () -> new PromptCache.Options(-1, CTX, 1, null, false));
         assertThrows(
-                IllegalArgumentException.class, () -> new PromptCache.Options(1, -1, null, false));
+                IllegalArgumentException.class,
+                () -> new PromptCache.Options(1, CTX, -1, null, false));
         assertThrows(
                 IllegalArgumentException.class,
                 () ->
                         PromptCache.of(
                                 new FakeModel(null),
                                 null,
-                                new PromptCache.Options(0, 0, null, false)));
+                                new PromptCache.Options(0, CTX, 0, null, false)));
     }
 
     @Test

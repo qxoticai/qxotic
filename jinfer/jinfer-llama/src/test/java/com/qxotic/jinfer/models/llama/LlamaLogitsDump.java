@@ -30,7 +30,7 @@ public final class LlamaLogitsDump {
     }
 
     private static void main(String[] args) throws Exception {
-        Llama model = Llama.loadModel(Path.of(args[0]), 256, Arena.ofAuto());
+        Llama model = Llama.loadModel(Path.of(args[0]), Arena.ofAuto());
         int vocab = model.config().vocabularySize();
         int n = 48;
         int[] ids = new int[n];
