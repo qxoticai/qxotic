@@ -1,20 +1,32 @@
 package com.qxotic.jinfer;
 
 /**
- * Rotary position embeddings, in two halves that need not know about each other.
+ * Rotary position embeddings, as TWO independent choices.
  *
- * <p>A {@link Schedule} says what ANGLE each lane rotates by at a given position - the only thing
- * the variants (plain, llama3 frequency scaling, YaRN) differ in. {@link #fill} turns a schedule
- * into cos/sin for a range of positions, and {@link #applyInterleaved}/{@link #applyNeox} rotate a
- * head with them. Supporting an architecture means writing one schedule; nothing else here changes.
+ * <p>A {@link Schedule} says what ANGLE each lane turns through at a position. A {@link Rotation}
+ * says WHICH TWO DIMENSIONS of a head turn together. They are orthogonal, and conflating them is
+ * the usual way this gets confusing - NeoX is not an alternative to YaRN, it answers a different
+ * question:
+ *
+ * <pre>
+ *                      schedule                  rotation
+ *   Llama 3            withFreqFactors           INTERLEAVED
+ *   Qwen3 / Qwen3.5    plain                     NEOX
+ *   gpt-oss            yarn                      NEOX
+ *   Gemma 4            plain (two of them)       NEOX
+ * </pre>
+ *
+ * <p>{@link #fill} turns a schedule into cos/sin for a range of positions; {@link Rotation#apply}
+ * turns a head with them. Supporting an architecture is picking a rotation and writing a schedule -
+ * usually a four-line lambda. Nothing else here changes.
  *
  * <p>Values are produced for the batch about to be ingested and read by every layer, because an
  * angle depends on the position and the schedule and never on the layer. Nothing is retained
  * between ingests, so no buffer anywhere is sized by context.
  *
- * <p>A lane is a rotated PAIR of dimensions, so a head of {@code headSize} has {@code headSize / 2}
- * of them. One per-lane cos/sin layout serves both rotations - interleaved ({@code ROPE_TYPE_NORM})
- * and rotate-half ({@code NEOX}) - so a port picks a rotation, not a layout.
+ * <p>A LANE is a rotated PAIR of dimensions. A head rotating {@code ropeDim} of its dimensions has
+ * {@code ropeDim / 2} lanes, which is fewer than {@code headSize / 2} under partial rotary - the
+ * dimensions above {@code ropeDim} are left alone by both rotations.
  */
 public final class RoPE {
 
@@ -23,36 +35,42 @@ public final class RoPE {
     // ---- schedules: the only thing a variant defines ------------------------
 
     /**
-     * The rotation angles for one position, one per lane.
+     * What angle each lane turns through - the whole of a variant.
      *
-     * <p>Every factory below hoists what depends only on the lane - notably one {@code Math.pow}
-     * per frequency - out of the position loop, so a fill costs one cosine and one sine per lane
-     * and nothing else. The tables this replaced recomputed that {@code pow} for every (position,
-     * lane) pair.
+     * <p>Every factory below hoists what depends only on the lane, notably one {@code Math.pow} per
+     * frequency, out of the position loop; a fill is then exactly one cosine and one sine per lane.
+     * The front-loaded tables this replaced recomputed that {@code pow} for every (position, lane)
+     * pair.
+     *
+     * @param lanes rotated pairs per head, {@code ropeDim / 2}
+     * @param amplitude a constant factor on the resulting cos/sin - NOT on the angle. 1 for
+     *     everything but YaRN, which folds its attention scaling in here
      */
-    @FunctionalInterface
-    public interface Schedule {
+    public record Schedule(int lanes, float amplitude, Angles angles) {
 
         /** Writes {@code out.length} angles for {@code position}. */
-        void angles(int position, float[] out);
+        @FunctionalInterface
+        public interface Angles {
+            void of(int position, float[] out);
+        }
 
-        /**
-         * A constant factor applied to the resulting cos/sin - not to the angle. 1 for everything
-         * but YaRN, which folds its attention scaling in here.
-         */
-        default float amplitude() {
-            return 1f;
+        public Schedule {
+            if (lanes <= 0) throw new IllegalArgumentException("lanes " + lanes);
+            if (angles == null) throw new IllegalArgumentException("null angles");
         }
     }
 
     /** Plain RoPE: {@code angle(j) = position * theta^(-2j/headSize)}. */
     public static Schedule plain(int headSize, double theta) {
         float[] freq = baseFrequencies(headSize, theta);
-        return (position, out) -> {
-            for (int j = 0; j < out.length; j++) {
-                out[j] = position * freq[j];
-            }
-        };
+        return new Schedule(
+                headSize / 2,
+                1f,
+                (position, out) -> {
+                    for (int j = 0; j < out.length; j++) {
+                        out[j] = position * freq[j];
+                    }
+                });
     }
 
     /**
@@ -63,11 +81,14 @@ public final class RoPE {
     public static Schedule withFreqFactors(int headSize, double theta, float[] freqFactors) {
         assert freqFactors.length == headSize / 2;
         float[] freq = baseFrequencies(headSize, theta);
-        return (position, out) -> {
-            for (int j = 0; j < out.length; j++) {
-                out[j] = position * freq[j] / freqFactors[j];
-            }
-        };
+        return new Schedule(
+                headSize / 2,
+                1f,
+                (position, out) -> {
+                    for (int j = 0; j < out.length; j++) {
+                        out[j] = position * freq[j] / freqFactors[j];
+                    }
+                });
     }
 
     /**
@@ -119,21 +140,16 @@ public final class RoPE {
                         * (extFactor != 0f
                                 ? (float) (1.0 + 0.1 * Math.log(1.0 / Math.max(1e-12, freqScale)))
                                 : 1f);
-        return new Schedule() {
-            @Override
-            public void angles(int position, float[] out) {
-                for (int j = 0; j < out.length; j++) {
-                    float extrapolated = (float) (position * base[j]);
-                    float interpolated = freqScale * extrapolated;
-                    out[j] = interpolated * (1f - ramp[j]) + extrapolated * ramp[j];
-                }
-            }
-
-            @Override
-            public float amplitude() {
-                return amplitude;
-            }
-        };
+        return new Schedule(
+                lanes,
+                amplitude,
+                (position, out) -> {
+                    for (int j = 0; j < out.length; j++) {
+                        float extrapolated = (float) (position * base[j]);
+                        float interpolated = freqScale * extrapolated;
+                        out[j] = interpolated * (1f - ramp[j]) + extrapolated * ramp[j];
+                    }
+                });
     }
 
     /** {@code theta^(-2j/headSize)} per lane - where every schedule starts. */
@@ -160,65 +176,113 @@ public final class RoPE {
     /**
      * Writes cos/sin for positions {@code [fromPosition, fromPosition + count)} at {@code row *
      * lanes}, where {@code row} is the position's index WITHIN the range - the index {@link
-     * #applyInterleaved} and {@link #applyNeox} take. A state fills its scratch once per ingest and
-     * hands rows to every layer.
+     * Rotation#apply} takes. A state fills its scratch once per ingest and hands rows to every
+     * layer.
      *
-     * <p>The buffers may be larger than {@code count * lanes} (scratch is sized for the largest
-     * batch, a decode step fills one row), so the extent is the arguments' business, not theirs.
+     * <p>The buffers may be larger than {@code count * lanes}: scratch is sized for the largest
+     * batch and a decode step fills one row. The extent is this call's business, not theirs.
      */
     public static void fill(
-            FloatTensor cos,
-            FloatTensor sin,
-            int fromPosition,
-            int count,
-            int lanes,
-            Schedule schedule) {
+            FloatTensor cos, FloatTensor sin, int fromPosition, int count, Schedule schedule) {
+        int lanes = schedule.lanes();
         float amplitude = schedule.amplitude();
+        Schedule.Angles angles = schedule.angles();
         // ponytail: one small array per ingest (lanes floats, ~1 KB); hoist it into the state's
         // scratch if a profile ever shows the allocation
-        float[] angles = new float[lanes];
+        float[] row = new float[lanes];
         long n = 0;
         for (int p = 0; p < count; p++) {
-            schedule.angles(fromPosition + p, angles);
+            angles.of(fromPosition + p, row);
             for (int j = 0; j < lanes; j++, n++) {
-                cos.setFloat(n, (float) (Math.cos(angles[j]) * amplitude));
-                sin.setFloat(n, (float) (Math.sin(angles[j]) * amplitude));
+                cos.setFloat(n, (float) (Math.cos(row[j]) * amplitude));
+                sin.setFloat(n, (float) (Math.sin(row[j]) * amplitude));
             }
         }
     }
 
-    // ---- apply -------------------------------------------------------------
+    // ---- rotation ----------------------------------------------------------
 
     /**
-     * Interleaved (GPT-J) rotation of one head: pairs adjacent dims (2j, 2j+1). The GGUF "llama"
-     * convention (ROPE_TYPE_NORM) - weights are permuted at conversion so this reproduces HF's
-     * rotate-half.
+     * Which two dimensions of a head turn together. Independent of the {@link Schedule}: any
+     * schedule works with either rotation, and an architecture picks one of each.
+     *
+     * <p>A port holds its rotation as a field and never chooses again, so adding an architecture
+     * cannot pick the wrong apply method - a mistake that produces fluent, subtly worse output and
+     * no error at all.
      */
-    public static void applyInterleaved(
-            FloatTensor q, long headOffset, int row, FloatTensor cos, FloatTensor sin, int lanes) {
-        long base = (long) row * lanes;
-        for (int j = 0; j < lanes; j++) {
-            float c = cos.getFloat(base + j), s = sin.getFloat(base + j);
-            long i = headOffset + 2L * j;
-            float v0 = q.getFloat(i), v1 = q.getFloat(i + 1);
-            q.setFloat(i, v0 * c - v1 * s);
-            q.setFloat(i + 1, v0 * s + v1 * c);
+    public enum Rotation {
+
+        /**
+         * GPT-J style: pairs adjacent dims (2j, 2j+1). The GGUF "llama" convention (ROPE_TYPE_NORM)
+         * - weights are permuted at conversion so this reproduces HF's rotate-half.
+         */
+        INTERLEAVED {
+            @Override
+            long first(long headOffset, int j, int lanes) {
+                return headOffset + 2L * j;
+            }
+
+            @Override
+            long second(long headOffset, int j, int lanes) {
+                return headOffset + 2L * j + 1;
+            }
+        },
+
+        /**
+         * Rotate-half: pairs dim {@code j} with {@code j + lanes} - the layout HF and gpt-oss apply
+         * directly, with no conversion-time permutation.
+         */
+        NEOX {
+            @Override
+            long first(long headOffset, int j, int lanes) {
+                return headOffset + j;
+            }
+
+            @Override
+            long second(long headOffset, int j, int lanes) {
+                return headOffset + j + lanes;
+            }
+        };
+
+        abstract long first(long headOffset, int j, int lanes);
+
+        abstract long second(long headOffset, int j, int lanes);
+
+        /**
+         * Turns one head of {@code q} at {@code headOffset} by the angles at {@code row} of the
+         * cos/sin buffers. Dimensions above {@code 2 * lanes} are left alone, which is what partial
+         * rotary means.
+         */
+        public void apply(
+                FloatTensor q,
+                long headOffset,
+                int row,
+                FloatTensor cos,
+                FloatTensor sin,
+                int lanes) {
+            long base = (long) row * lanes;
+            for (int j = 0; j < lanes; j++) {
+                float c = cos.getFloat(base + j), s = sin.getFloat(base + j);
+                long a = first(headOffset, j, lanes), b = second(headOffset, j, lanes);
+                float v0 = q.getFloat(a), v1 = q.getFloat(b);
+                q.setFloat(a, v0 * c - v1 * s);
+                q.setFloat(b, v0 * s + v1 * c);
+            }
         }
-    }
 
-    /**
-     * Rotate-half (NEOX) rotation of one head: pairs dim {@code j} with {@code j + lanes} - the
-     * layout HF and gpt-oss apply directly, with no conversion-time permutation.
-     */
-    public static void applyNeox(
-            FloatTensor q, long headOffset, int row, FloatTensor cos, FloatTensor sin, int lanes) {
-        long base = (long) row * lanes;
-        for (int j = 0; j < lanes; j++) {
-            float c = cos.getFloat(base + j), s = sin.getFloat(base + j);
-            long i = headOffset + j;
-            float v0 = q.getFloat(i), v1 = q.getFloat(i + lanes);
-            q.setFloat(i, v0 * c - v1 * s);
-            q.setFloat(i + lanes, v0 * s + v1 * c);
+        /** {@link #apply} over {@code nHeads} consecutive heads of {@code headSize} each. */
+        public void applyHeads(
+                FloatTensor q,
+                long offset,
+                int nHeads,
+                int headSize,
+                int row,
+                FloatTensor cos,
+                FloatTensor sin,
+                int lanes) {
+            for (int h = 0; h < nHeads; h++) {
+                apply(q, offset + (long) h * headSize, row, cos, sin, lanes);
+            }
         }
     }
 
@@ -237,7 +301,7 @@ public final class RoPE {
      */
     @Deprecated
     public static Freqs precomputeFreqsCis(int contextLength, int headSize, double theta) {
-        return table(contextLength, headSize / 2, plain(headSize, theta));
+        return table(contextLength, plain(headSize, theta));
     }
 
     /**
@@ -246,7 +310,7 @@ public final class RoPE {
     @Deprecated
     public static Freqs precomputeFreqsCisFromFreqs(
             int contextLength, int headSize, double theta, float[] freqFactors) {
-        return table(contextLength, headSize / 2, withFreqFactors(headSize, theta, freqFactors));
+        return table(contextLength, withFreqFactors(headSize, theta, freqFactors));
     }
 
     /**
@@ -265,7 +329,6 @@ public final class RoPE {
             float attnFactor) {
         return table(
                 contextLength,
-                headSize / 2,
                 yarn(
                         headSize,
                         theta,
@@ -277,13 +340,14 @@ public final class RoPE {
                         attnFactor));
     }
 
-    private static Freqs table(int count, int lanes, Schedule schedule) {
+    private static Freqs table(int count, Schedule schedule) {
+        int lanes = schedule.lanes();
         float amplitude = schedule.amplitude();
         float[] cos = new float[count * lanes], sin = new float[count * lanes];
         float[] angles = new float[lanes];
         int n = 0;
         for (int p = 0; p < count; p++) {
-            schedule.angles(p, angles);
+            schedule.angles().of(p, angles);
             for (int j = 0; j < lanes; j++, n++) {
                 cos[n] = (float) (Math.cos(angles[j]) * amplitude);
                 sin[n] = (float) (Math.sin(angles[j]) * amplitude);
@@ -337,8 +401,6 @@ public final class RoPE {
             int position,
             F32FloatTensor cr,
             F32FloatTensor ci) {
-        for (int h = 0; h < nHeads; h++) {
-            applyNeox(tensor, offset + (long) h * headSize, position, cr, ci, lanes);
-        }
+        Rotation.NEOX.applyHeads(tensor, offset, nHeads, headSize, position, cr, ci, lanes);
     }
 }
