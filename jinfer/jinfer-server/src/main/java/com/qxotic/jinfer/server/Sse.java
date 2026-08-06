@@ -83,9 +83,12 @@ final class Sse {
                                     long start = stream.writeStartNanos;
                                     if (start != 0
                                             && now - start > ServerFlags.SERVER_WRITE_STALL_NANOS) {
-                                        System.err.println(
-                                                "closing stalled streaming client "
-                                                        + stream.exchange.getRemoteAddress());
+                                        Log.LOG.log(
+                                                System.Logger.Level.WARNING,
+                                                () ->
+                                                        "closing stalled streaming client "
+                                                                + stream.exchange
+                                                                        .getRemoteAddress());
                                         ACTIVE.remove(stream);
                                         stream.exchange.close();
                                     }

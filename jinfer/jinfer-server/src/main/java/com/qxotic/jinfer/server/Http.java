@@ -34,9 +34,14 @@ final class Http {
     }
 
     static void log(HttpExchange exchange) {
-        System.err.printf(
-                "%s %s from %s%n",
-                exchange.getRequestMethod(), exchange.getRequestURI(), exchange.getRemoteAddress());
+        Log.LOG.log(
+                System.Logger.Level.INFO,
+                () ->
+                        "%s %s from %s"
+                                .formatted(
+                                        exchange.getRequestMethod(),
+                                        exchange.getRequestURI(),
+                                        exchange.getRemoteAddress()));
     }
 
     static void cors(HttpExchange exchange) {
@@ -105,15 +110,15 @@ final class Http {
         try {
             sendError(exchange, status, message);
         } catch (IOException e) {
-            System.err.println("client connection lost: " + e);
+            // routine: the client hung up. Nothing here is actionable, so it stays below INFO
+            Log.LOG.log(System.Logger.Level.DEBUG, "client connection lost", e);
         } catch (RuntimeException e) {
-            System.err.println(
-                    "response already committed, dropping error ("
-                            + status
-                            + " "
-                            + message
-                            + "): "
-                            + e);
+            Log.LOG.log(
+                    System.Logger.Level.WARNING,
+                    () ->
+                            "response already committed, dropping error (%d %s)"
+                                    .formatted(status, message),
+                    e);
         }
     }
 

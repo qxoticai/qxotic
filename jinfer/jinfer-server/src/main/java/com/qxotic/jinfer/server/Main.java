@@ -516,6 +516,19 @@ public class Main {
         System.setErr(utf8Stream(FileDescriptor.err));
     }
 
+    /**
+     * One line per log record, since this is a console tool: java.util.logging's default is a
+     * two-line record led by a date, the logging class and the method, which buries the message
+     * that matters. Only a default - an explicit {@code -D} wins, and an embedder running its own
+     * backend never reaches java.util.logging at all.
+     */
+    private static void oneLineLogs() {
+        String format = "java.util.logging.SimpleFormatter.format";
+        if (System.getProperty(format) == null) {
+            System.setProperty(format, "%1$tT %4$-7s %5$s%6$s%n");
+        }
+    }
+
     private static PrintStream utf8Stream(FileDescriptor fd) {
         return new PrintStream(
                 new BufferedOutputStream(new FileOutputStream(fd), 8192),
@@ -646,6 +659,7 @@ public class Main {
 
     public static void main(String[] args) throws IOException {
         forceUtf8Console();
+        oneLineLogs();
         if (args.length > 0 && !args[0].startsWith("-")) {
             if (args[0].equals("list")) {
                 LLMOptions.require(args.length == 1, "list takes no arguments");
@@ -709,11 +723,12 @@ public class Main {
             System.exit(1);
             return;
         }
+        LLMOptions resolved = options.withResolvedSampling(model.samplingDefaults());
         if (options.server()) {
-            Server.start(model, options); // resolves sampling itself, to report value provenance
+            serve(model, options, resolved);
             return;
         }
-        options = options.withResolvedSampling(model.samplingDefaults());
+        options = resolved;
         Sampler sampler =
                 Sampler.select(
                         model.model().config().vocabularySize(),
@@ -728,6 +743,57 @@ public class Main {
             sampler = Thinking.banMarkers(sampler, model.tokenizer());
         }
         runGeneric(model, sampler, options);
+    }
+
+    /**
+     * Serves over HTTP, and owns the presentation {@link Server} deliberately has none of: what is
+     * being served, where each sampling value came from, and - last, because it is the one line a
+     * reader acts on - the endpoint, whose port only exists once {@code start} has bound it.
+     *
+     * <p>The classpath's full architecture list used to go in the first line, which answered a
+     * question nobody asks at startup; it belongs in the "no provider for architecture" error,
+     * where it already is.
+     */
+    private static void serve(LoadedModel<?> model, LLMOptions options, LLMOptions resolved)
+            throws IOException {
+        System.out.printf(
+                "model       %s  (%s, ctx %d)%n",
+                options.modelPath().getFileName(),
+                model.model().getClass().getSimpleName(),
+                model.model().config().contextLength());
+        options.companions()
+                .forEach(
+                        (capability, file) ->
+                                System.out.printf(
+                                        "companion   %s = %s%n", capability, file.getFileName()));
+        var defaults = model.samplingDefaults();
+        System.out.printf(
+                "sampling    temperature %s, top-k %s, top-p %s, min-p %s; requests override%n",
+                describe(
+                        resolved.temperature(),
+                        options.temperature() != null,
+                        defaults.temperature() != null),
+                describe(resolved.topk(), options.topk() != null, defaults.topK() != null),
+                describe(resolved.topp(), options.topp() != null, defaults.topP() != null),
+                describe(resolved.minp(), options.minp() != null, defaults.minP() != null));
+        Server.Running running = Server.start(model, resolved);
+        // the CLI never closes the handle; ^C must still free the engine deterministically
+        Runtime.getRuntime().addShutdownHook(new Thread(running::close));
+        System.out.printf(
+                "listening   http://%s:%d  (OpenAI-compatible)%n",
+                options.host(), running.address().getPort());
+    }
+
+    /**
+     * A resolved sampling value with its provenance: the user's flag, the model (GGUF metadata or
+     * its port author's recommendation), or jinfer's baseline - so a surprising default explains
+     * itself instead of being blamed on the server.
+     */
+    private static String describe(Number value, boolean userSet, boolean modelRecommended) {
+        String source =
+                userSet ? "set by user" : modelRecommended ? "model default" : "jinfer default";
+        String shown = value instanceof Float f ? String.valueOf(Server.trim(f)) : value.toString();
+        return shown + " (" + source + ")";
     }
 
     /**

@@ -88,32 +88,36 @@ final class ToolUse {
         // think-STRIPPED content, so a call the model emits before it closes </think> (or in an
         // unterminated think span) would be deleted before we ever see it. Decoding the raw
         // response tokens renders special tokens (<|tool_call_start|>, <think>) as literal text.
-        String text = forcedPrefix(request);
         String decoded = model.tokenizer().decode(reply.tokens());
-        text +=
-                !decoded.strip().isEmpty()
-                        ? decoded
-                        : (reply.reasoning() != null ? reply.reasoning() + "\n" : "")
-                                + reply.text();
-        boolean debug = System.getProperty("jinfer.debugToolCalls") != null;
+        String text =
+                forcedPrefix(request)
+                        + (!decoded.strip().isEmpty()
+                                ? decoded
+                                : (reply.reasoning() != null ? reply.reasoning() + "\n" : "")
+                                        + reply.text());
         List<Map<String, Object>> toolCalls = ToolCalls.parseToolCalls(text, names(request));
         if (toolCalls.isEmpty()) {
             // A reply that smells like an attempted call (markers or a "name" key) but parsed to
-            // nothing is the diagnostic we care about; surface it even without the debug flag.
+            // nothing is the diagnostic we care about; it warns, while a successful parse is
+            // routine and only shows at DEBUG (which replaced a -Djinfer.debugToolCalls flag -
+            // that is precisely what a log level is)
             String t = text.strip();
             if (t.contains(ToolCalls.TC_START) || t.contains("\"name\"")) {
-                System.err.println(
-                        "[tool-parse] tools offered but parsed 0 calls from reply: "
-                                + t.replace("\n", "\\n"));
+                Log.LOG.log(
+                        System.Logger.Level.WARNING,
+                        () ->
+                                "tools offered but parsed 0 calls from reply: "
+                                        + t.replace("\n", "\\n"));
             }
             return reply;
         }
-        if (debug)
-            System.err.println(
-                    "[tool-parse] found "
-                            + toolCalls.size()
-                            + " call(s) in: "
-                            + text.strip().replace("\n", "\\n"));
+        Log.LOG.log(
+                System.Logger.Level.DEBUG,
+                () ->
+                        "found "
+                                + toolCalls.size()
+                                + " tool call(s) in: "
+                                + text.strip().replace("\n", "\\n"));
         int marker = text.indexOf(ToolCalls.TC_START);
         return reply.asToolCalls(
                 ToolCalls.fromWire(toolCalls), marker > 0 ? text.substring(0, marker).strip() : "");

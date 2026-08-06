@@ -79,67 +79,20 @@ public final class Server {
      * module - load a model (jinfer-core), then hand it here to serve it. Each call serves an
      * independent instance: own worker queue, own generation state, own {@link Metrics}; only the
      * SSE write-stall watchdog is process-wide.
+     *
+     * <p>Prints NOTHING and installs no shutdown hook: what a start is worth announcing, and who
+     * owns the process's exit, are the caller's to decide - see {@link Main} for the CLI's answer.
+     * Unset sampling options are resolved here ({@link LLMOptions#withResolvedSampling}) so an
+     * embedder gets the model's own recommendations without asking; passing already-resolved
+     * options is a no-op, since an explicit value always wins.
      */
     public static Running start(LoadedModel<?> model, LLMOptions options) throws IOException {
         LLMOptions resolved = options.withResolvedSampling(model.samplingDefaults());
-        banner(model, options);
-        Running running = new Server(model, resolved).serve(model, resolved);
-        // the endpoint goes LAST, below the sampling line: it is the one line a reader acts on,
-        // and the bound address is only known once serve() has actually bound it (port 0)
-        // where each value came from: the user's flag, the model (GGUF metadata or its port's
-        // author recommendation), or jinfer's baseline - so a surprising default explains itself
-        System.out.printf(
-                "sampling    temperature %s, top-k %s, top-p %s, min-p %s; requests override%n",
-                describe(
-                        resolved.temperature(),
-                        options.temperature() != null,
-                        model.samplingDefaults().temperature() != null),
-                describe(
-                        resolved.topk(),
-                        options.topk() != null,
-                        model.samplingDefaults().topK() != null),
-                describe(
-                        resolved.topp(),
-                        options.topp() != null,
-                        model.samplingDefaults().topP() != null),
-                describe(
-                        resolved.minp(),
-                        options.minp() != null,
-                        model.samplingDefaults().minP() != null));
-        System.out.printf(
-                "listening   http://%s:%d  (OpenAI-compatible)%n",
-                options.host(), running.address().getPort());
-        return running;
-    }
-
-    /**
-     * What is actually being served: the model, the port that loaded it, its context, and every
-     * companion attached. The classpath's full architecture list used to go here, which answered a
-     * question nobody asks at startup - it belongs in the "no provider for architecture" error,
-     * where it already is.
-     */
-    private static void banner(LoadedModel<?> model, LLMOptions options) {
-        System.out.printf(
-                "model       %s  (%s, ctx %d)%n",
-                options.modelPath().getFileName(),
-                model.model().getClass().getSimpleName(),
-                model.model().config().contextLength());
-        options.companions()
-                .forEach(
-                        (capability, file) ->
-                                System.out.printf(
-                                        "companion   %s = %s%n", capability, file.getFileName()));
-    }
-
-    private static String describe(Number value, boolean userSet, boolean modelRecommended) {
-        String source =
-                userSet ? "set by you" : modelRecommended ? "model default" : "jinfer default";
-        String shown = value instanceof Float f ? String.valueOf(trim(f)) : value.toString();
-        return shown + " (" + source + ")";
+        return new Server(model, resolved).serve(model, resolved);
     }
 
     /** A float for humans and JSON: {@code 0.2}, not {@code 0.20000000298023224}. */
-    private static double trim(float value) {
+    static double trim(float value) {
         return Math.round(value * 1000.0) / 1000.0;
     }
 
@@ -264,10 +217,10 @@ public final class Server {
         // so a fixed pool also caps the threads slow-loris connections can pin
         server.setExecutor(Executors.newFixedThreadPool(ServerFlags.SERVER_THREADS));
         server.start();
-        Running running = new Running(server, generation);
-        // the CLI path never closes the handle; ^C must still free the engine deterministically
-        Runtime.getRuntime().addShutdownHook(new Thread(running::close));
-        return running;
+        // no shutdown hook here: one per start() is a hook the embedder cannot unregister, and it
+        // pins the engine for the life of the JVM. The CLI, which never closes the handle,
+        // registers its own; every other caller closes the handle it was given.
+        return new Running(server, generation);
     }
 
     /**
@@ -357,13 +310,12 @@ public final class Server {
                         // cannot frame (media on a text-only model, a shape with no codec)
                         Http.sendErrorQuietly(exchange, 400, Http.errorMessage(e));
                     } catch (IOException e) {
-                        System.err.println("client connection lost: " + e);
+                        Log.LOG.log(System.Logger.Level.DEBUG, "client connection lost", e);
                     } catch (Throwable t) {
                         // Anything else is OURS. Catching RuntimeException as 400 here reported
                         // server defects as client errors - an NPE came back as a 400 quoting the
                         // null field - so they neither showed up as failures nor were actionable.
-                        System.err.println("request " + id + " failed:");
-                        t.printStackTrace();
+                        Log.LOG.log(System.Logger.Level.ERROR, "request " + id + " failed", t);
                         Http.sendErrorQuietly(exchange, 500, "Internal server error");
                     }
                 });

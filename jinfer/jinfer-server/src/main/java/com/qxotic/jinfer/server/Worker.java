@@ -39,8 +39,7 @@ final class Worker {
                                 } catch (InterruptedException e) {
                                     return;
                                 } catch (Throwable t) {
-                                    System.err.println("generation worker:");
-                                    t.printStackTrace();
+                                    Log.LOG.log(System.Logger.Level.ERROR, "generation worker", t);
                                 }
                             }
                         });

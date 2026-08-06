@@ -126,8 +126,9 @@ final class ToolCalls {
             for (Map<String, Object> call : parseToolCallBlock(content)) {
                 if (!knownTools.isEmpty()
                         && !knownTools.contains(Values.stringValue(call.get("name"), ""))) {
-                    System.err.println(
-                            "dropping tool call to undefined function: " + call.get("name"));
+                    Log.LOG.log(
+                            System.Logger.Level.WARNING,
+                            () -> "dropping tool call to undefined function: " + call.get("name"));
                     continue;
                 }
                 Map<String, Object> normalized = normalizeToolCall(call, calls.size());

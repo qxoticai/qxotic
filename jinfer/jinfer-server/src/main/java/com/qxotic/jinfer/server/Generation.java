@@ -66,11 +66,16 @@ final class Generation {
         boolean usable = catalog != null && engine.blockCaching();
         this.saveCatalog = usable && !options.promptCacheReadOnly();
         if (usable) {
-            System.out.printf(
-                    "prompt cache: %s%s%s%n",
-                    catalog,
-                    mounted ? " (mounted)" : " (new)",
-                    options.promptCacheReadOnly() ? " read-only" : ", saved at shutdown");
+            Log.LOG.log(
+                    System.Logger.Level.INFO,
+                    () ->
+                            "prompt cache: %s%s%s"
+                                    .formatted(
+                                            catalog,
+                                            mounted ? " (mounted)" : " (new)",
+                                            options.promptCacheReadOnly()
+                                                    ? " read-only"
+                                                    : ", saved at shutdown"));
         }
     }
 
@@ -97,10 +102,14 @@ final class Generation {
             // best-effort: a failed write-back must never block the engine's shutdown
             try {
                 engine.savePrompts();
-                System.out.println("prompt cache saved: " + options.promptCache());
+                Log.LOG.log(
+                        System.Logger.Level.INFO,
+                        () -> "prompt cache saved: " + options.promptCache());
             } catch (RuntimeException e) {
-                System.err.println(
-                        "failed to save prompt cache " + options.promptCache() + ": " + e);
+                Log.LOG.log(
+                        System.Logger.Level.WARNING,
+                        () -> "failed to save prompt cache " + options.promptCache(),
+                        e);
             }
         }
         engine.close();
