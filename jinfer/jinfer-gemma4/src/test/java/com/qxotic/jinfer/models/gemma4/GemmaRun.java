@@ -54,7 +54,7 @@ public final class GemmaRun {
         int[] ids = promptTokens.stream().mapToInt(Integer::intValue).toArray();
         System.err.println("prompt tokens: " + promptTokens);
 
-        int cap = contextCapacity > 0 ? contextCapacity : c.contextLength();
+        int cap = contextCapacity > 0 ? contextCapacity : Math.min(c.contextLength(), 4096);
         Gemma4.State s = model.newState(cap, Math.max(16, ids.length));
         System.err.println("contextCapacity=" + cap);
         long t0 = System.nanoTime();
