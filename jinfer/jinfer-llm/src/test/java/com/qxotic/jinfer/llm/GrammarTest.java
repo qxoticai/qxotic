@@ -2246,9 +2246,6 @@ public final class GrammarTest {
         System.out.println("-- enable/disable --");
         MockV v = new MockV();
 
-        // With ENABLED=true, grammar should constrain
-        check("grammar enabled", RuntimeFlags.GRAMMAR);
-
         Grammar.Spec s = Grammar.of("root ::= \"a\"", v);
         check("enabled compiles", s.isValid());
         Grammar.Cursor c = s.cursor();

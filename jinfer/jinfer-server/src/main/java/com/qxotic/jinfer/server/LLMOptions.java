@@ -51,6 +51,13 @@ public record LLMOptions(
                 minp == null || (0 <= minp && minp <= 1),
                 "Invalid argument: --min-p must be within [0, 1]");
         require(0 <= port && port <= 65535, "Invalid argument: --port must be within [0, 65535]");
+        // the only thing --no-grammar does is refuse requests that ask for a grammar, and only
+        // the HTTP API has requests. Accepting it elsewhere made it a flag that did nothing.
+        require(
+                !noGrammar || server,
+                "Invalid argument: --no-grammar applies to --server (it refuses requests carrying"
+                        + " grammar or response_format); there is nothing to refuse in chat or"
+                        + " instruct mode");
     }
 
     /**

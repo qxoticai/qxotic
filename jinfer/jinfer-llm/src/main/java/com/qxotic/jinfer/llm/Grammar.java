@@ -174,7 +174,6 @@ public final class Grammar {
     }
 
     static Spec json(Vocab v) {
-        if (!RuntimeFlags.GRAMMAR) return Spec.DISABLED;
         // NUL-prefixed builtin keys can never collide with a user grammar string
         return cache(v).computeIfAbsent("\0json", k -> build(JSON_GRAMMAR, v));
     }
@@ -189,7 +188,6 @@ public final class Grammar {
     }
 
     static Spec jsonCompact(Vocab v) {
-        if (!RuntimeFlags.GRAMMAR) return Spec.DISABLED;
         return cache(v).computeIfAbsent("\0jsonCompact", k -> build(JSON_COMPACT_GRAMMAR, v));
     }
 
@@ -202,7 +200,6 @@ public final class Grammar {
     }
 
     public static Spec of(String g, Vocab v) {
-        if (!RuntimeFlags.GRAMMAR) return Spec.DISABLED;
         return cache(v).computeIfAbsent(g, k -> build(k, v));
     }
 
@@ -800,7 +797,6 @@ public final class Grammar {
      * {@code choice(v, "yes", "no")} forces the model to answer yes or no.
      */
     static Spec choice(Vocab v, String... options) {
-        if (!RuntimeFlags.GRAMMAR) return Spec.DISABLED;
         StringBuilder sb = new StringBuilder("root ::= ");
         for (int i = 0; i < options.length; i++) {
             if (i > 0) sb.append(" | ");
@@ -830,7 +826,6 @@ public final class Grammar {
      * is always valid JSON satisfying the supported constraints, never a broken grammar.
      */
     static Spec fromSchema(Map<String, Object> schema, Vocab v) {
-        if (!RuntimeFlags.GRAMMAR) return Spec.DISABLED;
         return of(Schema.toGbnf(schema), v);
     }
 

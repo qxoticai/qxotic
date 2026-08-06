@@ -51,9 +51,6 @@ public final class RuntimeFlags {
             Integer.getInteger("jinfer.decodeThreads", physicalCoreCount());
     static final boolean DECODE_SPIN = !"false".equals(System.getProperty("jinfer.decodeSpin"));
 
-    // grammar-constrained decoding (GBNF / response_format json_object)
-    public static final boolean GRAMMAR = !"false".equals(System.getProperty("jinfer.grammar"));
-
     // prompt cache
     public static final boolean PROMPT_CACHE =
             !"false".equals(System.getProperty("jinfer.promptCache"));

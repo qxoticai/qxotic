@@ -107,7 +107,7 @@ public interface Sampler {
      */
     static Sampler withPrefixGrammar(
             Sampler inner, Grammar.Cursor cursor, int eosToken, int[] epilogue) {
-        if (cursor == null || !RuntimeFlags.GRAMMAR) return inner;
+        if (cursor == null) return inner;
         boolean[] released = {false};
         int[] forced = {0};
         return logits -> {

@@ -22,13 +22,28 @@ final class ServerTestSupport {
 
     /** As {@link #options(Path)} with a {@code --cache} / {@code --cache-ro} file. */
     static LLMOptions options(Path gguf, Path promptCache, boolean readOnly) {
+        return options(gguf, promptCache, readOnly, false, true);
+    }
+
+    /** As {@link #options(Path)} with {@code --no-grammar}: every grammar request is refused. */
+    static LLMOptions optionsNoGrammar(Path gguf) {
+        return optionsNoGrammar(gguf, true);
+    }
+
+    /** {@code --no-grammar} in a chosen mode; outside {@code --server} it must not be accepted. */
+    static LLMOptions optionsNoGrammar(Path gguf, boolean server) {
+        return options(gguf, null, false, true, server);
+    }
+
+    private static LLMOptions options(
+            Path gguf, Path promptCache, boolean readOnly, boolean noGrammar, boolean server) {
         return new LLMOptions(
                 gguf,
-                null, // mediaProjector
-                null,
+                null, // companions
+                server ? null : "hi", // a prompt is required outside server mode
                 null,
                 false,
-                true,
+                server,
                 "127.0.0.1",
                 0,
                 1f,
@@ -43,7 +58,7 @@ final class ServerTestSupport {
                 false,
                 false,
                 false,
-                false,
+                noGrammar,
                 promptCache,
                 readOnly);
     }
@@ -76,6 +91,24 @@ final class ServerTestSupport {
                 + "\"}],\"max_tokens\":"
                 + maxTokens
                 + "}";
+    }
+
+    /** The assistant message content of a chat-completions response. */
+    static String messageContent(String body) {
+        Object parsed = com.qxotic.jinfer.chat.JsonCodec.parse(body);
+        Object choice =
+                com.qxotic.jinfer.chat.Values.asArray(
+                                com.qxotic.jinfer.chat.Values.asObject(parsed, "response")
+                                        .get("choices"),
+                                "choices")
+                        .get(0);
+        return com.qxotic.jinfer.chat.Values.stringValue(
+                com.qxotic.jinfer.chat.Values.asObject(
+                                com.qxotic.jinfer.chat.Values.asObject(choice, "choice")
+                                        .get("message"),
+                                "message")
+                        .get("content"),
+                "");
     }
 
     /** The value of one counter in a Prometheus exposition; fails loudly when absent. */

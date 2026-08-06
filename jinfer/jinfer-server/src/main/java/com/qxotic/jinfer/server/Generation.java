@@ -666,7 +666,6 @@ final class Generation {
      * {type: "json_object"}} - or null when unconstrained; the engine turns it into a cursor.
      */
     private Grammar.Spec grammarSpec(Map<String, Object> request) {
-        if (!RuntimeFlags.GRAMMAR) return null;
         Tokenizer tokenizer = model.tokenizer();
         Object gbnf = request.get("grammar");
         if (gbnf instanceof String g && !g.isBlank()) {
