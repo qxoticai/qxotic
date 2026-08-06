@@ -178,7 +178,7 @@ public class Main {
         int totalPrompt = promptTokens.length();
         ReplyParser parser = ReplyParser.spans(tokenizer);
         StringBuilder text = new StringBuilder();
-        InlineThink inlineThink = new InlineThink();
+        Thinking.Inline inlineThink = new Thinking.Inline();
         java.util.function.BiConsumer<String, Boolean> collect =
                 (fragment, reasoning) -> {
                     if (!reasoning) {

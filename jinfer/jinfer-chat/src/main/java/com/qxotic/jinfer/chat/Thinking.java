@@ -8,9 +8,10 @@ import java.util.HashSet;
 import java.util.Set;
 
 /**
- * Think-channel sampling controls: {@link Sampler} wrappers that steer the model's reasoning span
- * using its think-marker ids. Chat-layer knowledge (the markers are template structure), layered on
- * top of the token-level sampler by the generation driver.
+ * Think-channel controls: {@link Sampler} wrappers that steer the model's reasoning span using its
+ * think-marker ids, and {@link Inline}, which puts the markers back into a merged text stream.
+ * Chat-layer knowledge (the markers are template structure), layered on top of the token-level
+ * sampler by the generation driver.
  */
 public final class Thinking {
 
@@ -20,6 +21,38 @@ public final class Thinking {
     static final String CLOSE = "</think>";
 
     private Thinking() {}
+
+    /**
+     * Projects the two-channel reply (each fragment tagged reasoning or content) into ONE text
+     * stream with the think span marked inline, for consumers that want thinking in the content
+     * rather than in a channel of its own: llama.cpp's {@code reasoning_format: "none"} and the
+     * CLI's {@code --think} display text.
+     *
+     * <p>Stateful per reply, because a fragment does not know what the previous one was: the open
+     * marker attaches to the FIRST reasoning fragment and the close to the FIRST content fragment
+     * after the span. An unterminated span (generation ended while thinking) stays unclosed, which
+     * is what the raw token stream did.
+     */
+    public static final class Inline {
+
+        private boolean open;
+
+        /** The fragment as it should appear inline, markers attached at channel transitions. */
+        public String project(String fragment, boolean reasoning) {
+            if (reasoning) {
+                if (!open) {
+                    open = true;
+                    return OPEN + fragment;
+                }
+                return fragment;
+            }
+            if (open) {
+                open = false;
+                return CLOSE + fragment;
+            }
+            return fragment;
+        }
+    }
 
     /**
      * Bans the {@code <think>}/{@code </think>} markers so a non-thinking request can never open a

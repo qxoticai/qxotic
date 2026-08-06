@@ -9,6 +9,7 @@ import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.RequestPolicy;
 import com.qxotic.jinfer.chat.Role;
+import com.qxotic.jinfer.chat.Thinking;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.chat.ToolCallSyntax;
 import com.qxotic.jinfer.chat.Values;
@@ -580,7 +581,7 @@ final class Generation {
         private final StringBuilder reasoning = new StringBuilder();
         private final TextStops.Holdback holdback; // null when neither streaming nor text stops
         private final Consumer<String> onReasoning;
-        private final InlineThink inline; // null when reasoning routes to its own channel
+        private final Thinking.Inline inline; // null when reasoning routes to its own channel
 
         FragmentRouter(
                 List<String> textStops,
@@ -592,7 +593,7 @@ final class Generation {
                             ? new TextStops.Holdback(textStops, onText != null ? onText : t -> {})
                             : null;
             this.onReasoning = onReasoning;
-            this.inline = inline ? new InlineThink() : null;
+            this.inline = inline ? new Thinking.Inline() : null;
         }
 
         void fragment(String fragment, boolean reasoningChannel) {
