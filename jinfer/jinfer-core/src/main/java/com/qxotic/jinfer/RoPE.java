@@ -162,11 +162,11 @@ public final class RoPE {
         return freq;
     }
 
-    static double yarnCorrDim(int nDims, int nCtxOrig, float nRot, float base) {
+    private static double yarnCorrDim(int nDims, int nCtxOrig, float nRot, float base) {
         return nDims * Math.log(nCtxOrig / (nRot * 2.0 * Math.PI)) / (2.0 * Math.log(base));
     }
 
-    static float yarnRamp(float low, float high, int i0) {
+    private static float yarnRamp(float low, float high, int i0) {
         float y = (i0 / 2f - low) / Math.max(0.001f, high - low);
         return 1f - Math.min(1f, Math.max(0f, y));
     }
