@@ -1,32 +1,35 @@
 package com.qxotic.jinfer;
 
+import java.util.function.IntUnaryOperator;
+
 /**
  * Rotary position embeddings, as TWO independent choices.
  *
- * <p>A {@link Schedule} says what ANGLE each lane turns through at a position. A {@link Rotation}
- * says WHICH TWO DIMENSIONS of a head turn together. They are orthogonal, and conflating them is
- * the usual way this gets confusing - NeoX is not an alternative to YaRN, it answers a different
- * question:
+ * <p>A {@link Schedule} says what ANGLE each lane turns through at a position. The rotation -
+ * {@link #applyInterleaved} or {@link #applyNeox} - says WHICH TWO DIMENSIONS of a head turn
+ * together. They are orthogonal, and conflating them is the usual way this gets confusing: NeoX is
+ * not an alternative to YaRN, it answers a different question.
  *
  * <pre>
- *                      schedule                  rotation
- *   Llama 3            withFreqFactors           INTERLEAVED
- *   Qwen3 / Qwen3.5    plain                     NEOX
- *   gpt-oss            yarn                      NEOX
- *   Gemma 4            plain (two of them)       NEOX
+ *                      schedule                          rotation
+ *   Llama 3            withFreqFactors                   interleaved
+ *   Granite            plain or withFreqFactors          interleaved
+ *   Qwen3 / Qwen3.5    plain                             NeoX
+ *   LFM2               plain                             NeoX
+ *   gpt-oss            yarn                              NeoX
+ *   Gemma 4            two: SWA plain, full either       NeoX
  * </pre>
  *
- * <p>{@link #fill} turns a schedule into cos/sin for a range of positions; {@link Rotation#apply}
- * turns a head with them. Supporting an architecture is picking a rotation and writing a schedule -
- * usually a four-line lambda. Nothing else here changes.
+ * <p>Supporting an architecture is picking a rotation and writing a schedule - usually a four-line
+ * lambda. Nothing else here changes.
  *
  * <p>Values are produced for the batch about to be ingested and read by every layer, because an
  * angle depends on the position and the schedule and never on the layer. Nothing is retained
  * between ingests, so no buffer anywhere is sized by context.
  *
  * <p>A LANE is a rotated PAIR of dimensions. A head rotating {@code ropeDim} of its dimensions has
- * {@code ropeDim / 2} lanes, which is fewer than {@code headSize / 2} under partial rotary - the
- * dimensions above {@code ropeDim} are left alone by both rotations.
+ * {@code ropeDim / 2} lanes, fewer than {@code headSize / 2} under partial rotary - the dimensions
+ * above {@code ropeDim} are left alone by both rotations.
  */
 public final class RoPE {
 
@@ -41,10 +44,6 @@ public final class RoPE {
      * frequency, out of the position loop; a fill is then exactly one cosine and one sine per lane.
      * The front-loaded tables this replaced recomputed that {@code pow} for every (position, lane)
      * pair.
-     *
-     * @param lanes rotated pairs per head, {@code ropeDim / 2}
-     * @param amplitude a constant factor on the resulting cos/sin - NOT on the angle. 1 for
-     *     everything but YaRN, which folds its attention scaling in here
      */
     @FunctionalInterface
     public interface Schedule {
@@ -104,26 +103,10 @@ public final class RoPE {
         assert headSize % 2 == 0;
         int lanes = headSize / 2;
         float freqScale = scalingFactor == 0f ? 1f : 1f / scalingFactor;
-        float corrStart =
-                Math.max(
-                        0f,
-                        (float)
-                                Math.floor(
-                                        yarnCorrDim(
-                                                headSize,
-                                                originalContextLength,
-                                                betaFast,
-                                                (float) theta)));
-        float corrEnd =
-                Math.min(
-                        headSize - 1f,
-                        (float)
-                                Math.ceil(
-                                        yarnCorrDim(
-                                                headSize,
-                                                originalContextLength,
-                                                betaSlow,
-                                                (float) theta)));
+        double fast = yarnCorrDim(headSize, originalContextLength, betaFast, (float) theta);
+        double slow = yarnCorrDim(headSize, originalContextLength, betaSlow, (float) theta);
+        float corrStart = Math.max(0f, (float) Math.floor(fast));
+        float corrEnd = Math.min(headSize - 1f, (float) Math.ceil(slow));
         double[] base = new double[lanes];
         float[] ramp = new float[lanes];
         for (int j = 0; j < lanes; j++) {
@@ -175,9 +158,8 @@ public final class RoPE {
 
     /**
      * Writes cos/sin for positions {@code [fromPosition, fromPosition + count)} at {@code row *
-     * lanes}, where {@code row} is the position's index WITHIN the range - the index {@link
-     * Rotation#apply} takes. A state fills its scratch once per ingest and hands rows to every
-     * layer.
+     * lanes}, where {@code row} is the position's index WITHIN the range - the index the rotations
+     * take. A state fills its scratch once per ingest and hands rows to every layer.
      *
      * <p>The buffers may be larger than {@code count * lanes}: scratch is sized for the largest
      * batch and a decode step fills one row. The extent is this call's business, not theirs.
@@ -210,7 +192,7 @@ public final class RoPE {
     private static void fill(
             FloatTensor cos,
             FloatTensor sin,
-            java.util.function.IntUnaryOperator positionOf,
+            IntUnaryOperator positionOf,
             int count,
             int lanes,
             Schedule schedule) {

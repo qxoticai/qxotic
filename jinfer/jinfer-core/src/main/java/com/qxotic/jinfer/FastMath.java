@@ -41,7 +41,7 @@ public final class FastMath {
 
     /**
      * e^x for {@code x <= 0} (the softmax domain; the 2^n splice overflows past x ~ +88). Below
-     * {@link #EXP_UNDERFLOW} returns exactly 0 (the true value is a subnormal <= 1.2e-38).
+     * {@link #EXP_UNDERFLOW} returns exactly 0 (the true value is a subnormal {@code <= 1.2e-38}).
      */
     public static float expNeg(float x) {
         if (x < EXP_UNDERFLOW) return 0f;
@@ -61,12 +61,13 @@ public final class FastMath {
     }
 
     /**
-     * Sigmoid over the full float range, via {@code e = expNeg(-|x|)}: for x >= 0, {@code 1/(1+e)};
-     * for x < 0, {@code e/(1+e)} - computed as that DIVISION, never as {@code 1 - 1/(1+e)}, which
-     * cancels catastrophically once e drops below the ulp of 1 (x < -15.9 would return 0 instead of
-     * e; caught by SigmoidAccuracyTest at introduction). Saturates to exactly 1 past x > 87.3 and
-     * to exactly 0 past x < -87.34, where the true value is a subnormal (<= 1.2e-38) - flushed,
-     * matching the engine's existing subnormal convention.
+     * Sigmoid over the full float range, via {@code e = expNeg(-|x|)}: for {@code x >= 0}, {@code
+     * 1/(1+e)}; for {@code x < 0}, {@code e/(1+e)} - computed as that DIVISION, never as {@code 1 -
+     * 1/(1+e)}, which cancels catastrophically once e drops below the ulp of 1 ({@code x < -15.9}
+     * would return 0 instead of e; caught by SigmoidAccuracyTest at introduction). Saturates to
+     * exactly 1 past {@code x > 87.3} and to exactly 0 past {@code x < -87.34}, where the true
+     * value is a subnormal ({@code <= 1.2e-38}) - flushed, matching the engine's existing subnormal
+     * convention.
      */
     public static float sigmoid(float x) {
         // branch-free: -|x| by forcing the sign bit, numerator selected by sign-mask bit blend.
