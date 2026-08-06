@@ -9,7 +9,7 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * spring.ai.jinfer.chat} (constructor binding; a record needs no setter boilerplate).
  *
  * @param modelPath path to the GGUF model file (required)
- * @param mediaProjector path to the media sidecar (mmproj GGUF: vision/audio encoders) for
+ * @param companions capability to file: the auxiliary files that give the model a capability it
  *     multimodal models
  * @param cachedPrompts path to a cached-prompt artifact (.jkv) to mount at startup;
  *     model-seed-checked
@@ -24,7 +24,7 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
 @ConfigurationProperties("spring.ai.jinfer.chat")
 public record JinferChatProperties(
         String modelPath,
-        String mediaProjector,
+        java.util.Map<String, String> companions,
         String cachedPrompts,
         @DefaultValue("0") int cachedSessions,
         @DefaultValue("0") int contextLength,

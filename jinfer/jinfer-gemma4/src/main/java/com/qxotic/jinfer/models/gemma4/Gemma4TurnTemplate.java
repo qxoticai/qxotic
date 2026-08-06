@@ -167,17 +167,26 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
         return runs.batches();
     }
 
-    // === in-process media-encode cache ===
-    // SHA-keyed replay of encoder output: the towers are deterministic functions of (source
-    // bytes, budgets, sampler policy), and budgets/policy are process-static (they also rotate
-    // the KV-cache seed via encodePlanId) - so the SOURCE digest alone keys the projected rows
-    // in-process. Values hold rows plus block structure; replay re-emits timestamp TEXT through
-    // the token runs so tokenization fuses with the surrounding turn exactly like a cold encode
-    // (the byte-identity law forbids caching finished batches - they would freeze token
-    // boundaries that depend on neighboring text). Bounded LRU by rows bytes
-    // (-Djinfer.mediaCacheMB, default 192); keyless blobs bypass the cache.
+    // === media-encode cache: PER MODEL, in memory ===
+    // Replay of encoder output, keyed by the media's SOURCE digest. The digest alone is a complete
+    // key BECAUSE THIS CACHE BELONGS TO ONE MODEL: everything else the towers depend on - the
+    // projector, the image decoder, the token budgets, the resize mode - is fixed for this
+    // template's lifetime, so it cannot vary between two entries here. (The BLOCK key handed to
+    // Batch.embeddings is a different matter: it outlives the process, so it has to carry what
+    // this one may omit.)
+    //
+    // Values hold rows plus block structure, never a finished batch: replay re-emits timestamp TEXT
+    // through the token runs so tokenization fuses with the surrounding turn exactly like a cold
+    // encode, and a finished batch would freeze token boundaries that depend on neighboring text
+    // (the byte-identity law). Keyless blobs bypass the cache.
 
-    private static final long MEDIA_CACHE_BYTES = Long.getLong("jinfer.mediaCacheMB", 192) << 20;
+    /**
+     * LRU budget in rows bytes, PER MODEL - each loaded model keeps its own cache, so N models cost
+     * N times this. Sized for one model's working set rather than a process-wide pool, because a
+     * model's cached rows are worthless to any other model: they were produced by its projector.
+     */
+    private static final long MEDIA_CACHE_BYTES_PER_MODEL =
+            Long.getLong("jinfer.mediaCacheMB", 192) << 20;
 
     /**
      * One wrapped media block: optional leading text, then {@code <open>} [rows] {@code <close>}.
@@ -190,9 +199,24 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
             boolean bidirectional,
             byte[] blockKey) {}
 
-    private final java.util.LinkedHashMap<java.nio.ByteBuffer, List<CachedBlock>> mediaCache =
+    /** Access-ordered, so {@code get} refreshes LRU position. Keys print as {@code sha256:…}. */
+    private final java.util.LinkedHashMap<String, List<CachedBlock>> mediaCache =
             new java.util.LinkedHashMap<>(16, 0.75f, true);
+
     private long mediaCacheBytes;
+
+    /** A digest as a map key: a String has value equality, which a {@code byte[]} does not. */
+    private static String cacheKey(byte[] digest) {
+        return "sha256:" + java.util.HexFormat.of().formatHex(digest);
+    }
+
+    private static long rowsBytes(List<CachedBlock> blocks) {
+        long bytes = 0;
+        for (CachedBlock b : blocks) {
+            bytes += b.rows().size() * Float.BYTES;
+        }
+        return bytes;
+    }
 
     @Override
     public boolean mediaEncodingCached(byte[] contentKey) {
@@ -201,21 +225,21 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
 
     private List<CachedBlock> cacheGet(byte[] key) {
         synchronized (mediaCache) {
-            return mediaCache.get(java.nio.ByteBuffer.wrap(key)); // get() refreshes LRU order
+            return mediaCache.get(cacheKey(key));
         }
     }
 
     private void cachePut(byte[] key, List<CachedBlock> blocks) {
-        long add = 0;
-        for (CachedBlock b : blocks) add += b.rows().size() * Float.BYTES;
+        long add = rowsBytes(blocks);
         synchronized (mediaCache) {
-            if (mediaCache.putIfAbsent(java.nio.ByteBuffer.wrap(key), blocks) != null) return;
+            if (mediaCache.putIfAbsent(cacheKey(key), blocks) != null) return;
             mediaCacheBytes += add;
             var eldest = mediaCache.entrySet().iterator();
-            while (mediaCacheBytes > MEDIA_CACHE_BYTES && mediaCache.size() > 1) {
-                var e = eldest.next();
+            // never evict the entry just inserted (it is the one the caller is about to use), so a
+            // single oversized entry is allowed to exceed the budget rather than evict itself
+            while (mediaCacheBytes > MEDIA_CACHE_BYTES_PER_MODEL && mediaCache.size() > 1) {
+                mediaCacheBytes -= rowsBytes(eldest.next().getValue());
                 eldest.remove();
-                for (CachedBlock b : e.getValue()) mediaCacheBytes -= b.rows().size() * Float.BYTES;
             }
         }
     }

@@ -82,12 +82,14 @@ public final class Server {
      */
     public static Running start(LoadedModel<?> model, LLMOptions options) throws IOException {
         LLMOptions resolved = options.withResolvedSampling(model.samplingDefaults());
+        banner(model, options);
         Running running = new Server(model, resolved).serve(model, resolved);
+        // the endpoint goes LAST, below the sampling line: it is the one line a reader acts on,
+        // and the bound address is only known once serve() has actually bound it (port 0)
         // where each value came from: the user's flag, the model (GGUF metadata or its port's
         // author recommendation), or jinfer's baseline - so a surprising default explains itself
         System.out.printf(
-                "sampling: temperature %s, top-k %s, top-p %s, min-p %s; request values"
-                        + " override%n",
+                "sampling    temperature %s, top-k %s, top-p %s, min-p %s; requests override%n",
                 describe(
                         resolved.temperature(),
                         options.temperature() != null,
@@ -104,7 +106,29 @@ public final class Server {
                         resolved.minp(),
                         options.minp() != null,
                         model.samplingDefaults().minP() != null));
+        System.out.printf(
+                "listening   http://%s:%d  (OpenAI-compatible)%n",
+                options.host(), running.address().getPort());
         return running;
+    }
+
+    /**
+     * What is actually being served: the model, the port that loaded it, its context, and every
+     * companion attached. The classpath's full architecture list used to go here, which answered a
+     * question nobody asks at startup - it belongs in the "no provider for architecture" error,
+     * where it already is.
+     */
+    private static void banner(LoadedModel<?> model, LLMOptions options) {
+        System.out.printf(
+                "model       %s  (%s, ctx %d)%n",
+                options.modelPath().getFileName(),
+                model.model().getClass().getSimpleName(),
+                model.model().config().contextLength());
+        options.companions()
+                .forEach(
+                        (capability, file) ->
+                                System.out.printf(
+                                        "companion   %s = %s%n", capability, file.getFileName()));
     }
 
     private static String describe(Number value, boolean userSet, boolean modelRecommended) {
@@ -243,11 +267,6 @@ public final class Server {
         Running running = new Running(server, generation);
         // the CLI path never closes the handle; ^C must still free the engine deterministically
         Runtime.getRuntime().addShutdownHook(new Thread(running::close));
-        System.out.printf(
-                "OpenAI-compatible server listening on http://%s:%d (architectures: %s)%n",
-                options.host(),
-                server.getAddress().getPort(),
-                com.qxotic.jinfer.chat.Models.supportedArchitectures());
         return running;
     }
 

@@ -120,7 +120,7 @@ class LocalAgentIT {
         eyes =
                 JinferChatModel.builder()
                         .modelPath(EYES)
-                        .mediaProjector(EYES_MMPROJ)
+                        .companion("media", EYES_MMPROJ)
                         .contextLength(4096)
                         .maxOutputTokens(256)
                         .build();

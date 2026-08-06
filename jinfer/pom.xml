@@ -19,6 +19,7 @@
     <module>jinfer-core</module>
     <module>jinfer-llm</module>
     <module>jinfer-chat</module>
+    <module>jinfer-hub</module>
     <module>jinfer-jinja</module>
     <module>jinfer-kernels</module>
     <module>jinfer-gemma4</module>
@@ -109,6 +110,11 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-chat</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>jinfer-hub</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
@@ -269,6 +275,13 @@
                 <transformers>
                   <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                     <mainClass>${jinfer.image.mainClass}</mainClass>
+                    <manifestEntries>
+                      <!-- jinfer maps weights with MemorySegment::reinterpret. Declaring it here
+                           means `java -jar jinfer.jar` is quiet: without it the JVM prints four
+                           restricted-method warnings that only the native-access flag silences,
+                           and a user reading them cannot tell them from a real problem. -->
+                      <Enable-Native-Access>ALL-UNNAMED</Enable-Native-Access>
+                    </manifestEntries>
                   </transformer>
                   <!-- merge META-INF/services across modules (ModelProvider arch dispatch) -->
                   <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer" />
@@ -327,7 +340,10 @@
                    live in the image heap (the daemon thread does not survive the build); LeakWatch
                    additionally because -Djinfer.leakDetection is a RUN-time flag that build-time
                    initialization would freeze to the builder's value. -->
-              <buildArg>--initialize-at-run-time=com.qxotic.jinfer.RuntimeFlags,com.qxotic.jinfer.server.ServerFlags,com.qxotic.jinfer.Parallel,com.qxotic.jinfer.MatMul,com.qxotic.jinfer.Dispatch,com.qxotic.jinfer.JamMatMul,com.qxotic.jinfer.LeakWatch,com.qxotic.jinfer.LeakWatch$Holder,com.qxotic.jinfer.BaseState,com.qxotic.jinfer.cache.CacheStore,com.qxotic.jinfer.models.gemma4.VisionPreprocess,com.qxotic.jam.NativeJAM,com.qxotic.jam.NativeLoader</buildArg>
+              <buildArg>--initialize-at-run-time=com.qxotic.jinfer.RuntimeFlags,com.qxotic.jinfer.server.ServerFlags,com.qxotic.jinfer.Parallel,com.qxotic.jinfer.MatMul,com.qxotic.jinfer.Dispatch,com.qxotic.jinfer.JamMatMul,com.qxotic.jinfer.LeakWatch,com.qxotic.jinfer.LeakWatch$Holder,com.qxotic.jinfer.BaseState,com.qxotic.jinfer.cache.CacheStore,com.qxotic.jinfer.models.gemma4.VisionPreprocess,com.qxotic.jinfer.hub.Fetch,com.qxotic.jinfer.hub.Proxies,com.qxotic.jam.NativeJAM,com.qxotic.jam.NativeLoader</buildArg>
+              <!-- hub.Fetch/Proxies: an HttpClient cannot live in the image heap, and both read
+                   JINFER_DOWNLOAD_THREADS and the proxy variables into statics - build-time init
+                   would freeze the BUILD machine's environment into the binary. -->
               <buildArg>-H:IncludeResources=com/qxotic/jam/native/.*</buildArg>
               <buildArg>-Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0</buildArg>
               <buildArg>-Djinfer.PreloadGGUF=${jinfer.PreloadGGUF}</buildArg>

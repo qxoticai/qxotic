@@ -4,6 +4,8 @@ target/
 
 # Fat jar
 jinfer.jar
+/jinfer
+/jinfer.exe
 
 # Native images and PGO artifacts
 ./jinfer

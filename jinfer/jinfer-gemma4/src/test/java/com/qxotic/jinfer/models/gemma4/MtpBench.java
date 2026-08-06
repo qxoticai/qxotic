@@ -1,7 +1,7 @@
 // Stage-4 MTP benchmark: plain greedy vs speculative decode at depths 1..3, across prompt types
 // (predictable list / code / prose), production engine config (jam). Reports decode tok/s,
 // acceptance rate, tokens-per-forward, and the honest verdict of where MTP pays.
-//   java ... com.qxotic.jinfer.models.gemma4.MtpBench [maxTokens] [reps]
+//   java ... com.qxotic.jinfer.models.gemma4.MtpBench [maxTokens] [reps] [depths, e.g. 1,2,3]
 package com.qxotic.jinfer.models.gemma4;
 
 import com.qxotic.jinfer.Batch;
@@ -33,6 +33,7 @@ public final class MtpBench {
     private static void main(String[] args) throws Exception {
         int maxTokens = args.length > 0 ? Integer.parseInt(args[0]) : 128;
         int reps = args.length > 1 ? Integer.parseInt(args[1]) : 3;
+        int[] depths = args.length > 2 ? depths(args[2]) : new int[] {1, 2, 3};
         Path model = ModelFixture.GEMMA4_E2B_Q8.path();
         Path sidecar = ModelFixture.GEMMA4_E2B_MTP.path();
         if (!Files.exists(model) || !Files.exists(sidecar)) {
@@ -87,7 +88,7 @@ public final class MtpBench {
                     "%-20s %-9s %8d %8.1f %10s %10s %9s%n",
                     c.name, "plain", plainCount, plainBest, "-", "-", "1.00x");
 
-            for (int depth : new int[] {1, 2, 3}) {
+            for (int depth : depths) {
                 double best = 0;
                 Gemma4Speculative.Result last = null;
                 for (int r = 0; r < reps; r++) {
@@ -113,6 +114,15 @@ public final class MtpBench {
                         best / plainBest);
             }
         }
+    }
+
+    private static int[] depths(String csv) {
+        String[] parts = csv.split(",");
+        int[] depths = new int[parts.length];
+        for (int i = 0; i < parts.length; i++) {
+            depths[i] = Integer.parseInt(parts[i].trim());
+        }
+        return depths;
     }
 
     static int[] withBos(int bos, List<Integer> enc) {

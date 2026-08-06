@@ -330,13 +330,10 @@ final class Generation {
      */
     private Part imagePart(Object imageUrl) {
         LLMOptions.require(
-                options.mediaProjector() != null,
-                "image input is not enabled on this server (start it with --mmproj"
-                        + " <projector.gguf>)");
-        LLMOptions.require(
                 model.model() instanceof com.qxotic.jinfer.MultiModal mm
                         && mm.modalities().contains(com.qxotic.jinfer.Media.Image.class),
-                "the loaded projector provides no image encoder for this model");
+                "this model cannot read images: no vision encoder is loaded. Start the server with"
+                        + " a projector that carries one, e.g. --with media=<mmproj.gguf>");
         byte[] encoded = dataUriBytes(urlOf(imageUrl), "image_url");
         try {
             byte[] key = java.security.MessageDigest.getInstance("SHA-256").digest(encoded);
@@ -355,13 +352,10 @@ final class Generation {
      */
     private Part audioPart(Object inputAudio) {
         LLMOptions.require(
-                options.mediaProjector() != null,
-                "audio input is not enabled on this server (start it with --mmproj"
-                        + " <projector.gguf>)");
-        LLMOptions.require(
                 model.model() instanceof com.qxotic.jinfer.MultiModal mm
                         && mm.modalities().contains(com.qxotic.jinfer.Media.Audio.class),
-                "the loaded projector provides no audio encoder for this model");
+                "this model cannot read audio: no audio encoder is loaded. Start the server with a"
+                        + " projector that carries one, e.g. --with media=<mmproj.gguf>");
         Map<String, Object> audio = Values.asObject(inputAudio, "input_audio");
         byte[] encoded;
         try {
@@ -391,14 +385,11 @@ final class Generation {
      */
     private Part videoPart(Object videoUrl) {
         LLMOptions.require(
-                options.mediaProjector() != null,
-                "video input is not enabled on this server (start it with --mmproj"
-                        + " <projector.gguf>)");
-        LLMOptions.require(
                 model.model() instanceof com.qxotic.jinfer.MultiModal mm
                         && mm.modalities().contains(com.qxotic.jinfer.Media.Image.class),
-                "the loaded projector provides no vision encoder for this model (video decomposes"
-                        + " into image frames)");
+                "this model cannot read video: no vision encoder is loaded (video decomposes into"
+                        + " image frames). Start the server with a projector that carries one,"
+                        + " e.g. --with media=<mmproj.gguf>");
         byte[] encoded = dataUriBytes(urlOf(videoUrl), "video_url");
         try {
             byte[] key = java.security.MessageDigest.getInstance("SHA-256").digest(encoded);

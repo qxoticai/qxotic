@@ -22,6 +22,7 @@ import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Thinking;
+import com.qxotic.jinfer.hub.ModelStore;
 import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
 import com.qxotic.toknroll.IntSequence;
@@ -251,12 +252,32 @@ public class Main {
 
     static void printUsage(PrintStream out) {
         out.println("Usage:  java -jar jinfer.jar [options]");
+        out.println(
+                "        java -jar jinfer.jar pull [--force] <ref>...  download models, print"
+                        + " paths");
+        out.println();
+        out.println(
+                "A remote model is a URL without the scheme: "
+                        + " <host>/<owner>/<repo>[@rev][/path][:quant]");
+        out.println(
+                "  hf.co/unsloth/gemma-4-E2B-it-GGUF:Q4_K_M     "
+                        + " modelscope.cn/Qwen/Qwen3-0.6B-GGUF:Q8_0");
+        out.println(
+                "Hosts: hf.co, modelscope.cn. Quant defaults to Q4_K_M. Anything else is a local"
+                        + " file path.");
+        out.println(
+                "Cache: $JINFER_MODELS, else the platform cache dir. HF_TOKEN for gated repos,"
+                        + " JINFER_OFFLINE=1 to never fetch.");
         out.println();
         out.println("Options:");
-        out.println("  --model, -m <path>            required, path to .gguf file");
         out.println(
-                "  --mmproj <path>               media projector .gguf (vision/audio encoders);"
-                        + " enables image_url content on /v1/chat/completions");
+                "  --model, -m <path|ref>        required, a .gguf file or a remote model -"
+                        + " downloaded on first use");
+        out.println("  --mmproj <path|ref>           shorthand for --with media=<...>");
+        out.println(
+                "  --with <capability>=<file>    attach a COMPANION that gives the model a"
+                        + " capability: a path or a ref, named explicitly. gemma4: media"
+                        + " (vision/audio encoders)");
         out.println("  --interactive, --chat, -i     run in chat mode");
         out.println("  --instruct                    run in instruct (once) mode, default mode");
         out.println("  --server                      run an OpenAI-compatible HTTP server");
@@ -310,6 +331,11 @@ public class Main {
         out.println("  /context                      show context token usage");
         out.println();
         out.println("Examples:");
+        out.println("  java -jar jinfer.jar --model hf.co/unsloth/gemma-4-E2B-it-GGUF --chat");
+        out.println(
+                "  java -jar jinfer.jar --model hf.co/unsloth/gemma-4-E2B-it-GGUF --mmproj"
+                        + " hf.co/unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf --server");
+        out.println("  java -jar jinfer.jar pull hf.co/ggml-org/stories15M_MOE:Q8_0");
         out.println("  java -jar jinfer.jar --model LFM2.5-1.2B-Instruct-Q8_0.gguf --chat");
         out.println(
                 "  java -jar jinfer.jar --model LFM2.5-1.2B-Instruct-Q8_0.gguf --prompt \"Tell me a"
@@ -329,8 +355,10 @@ public class Main {
         Float topp = null; // unset = the model's recommended value, else 0.95
         Integer topk = null; // unset = the model's recommended value, else 40
         Float minp = null; // unset = the model's recommended value, else 0.05
-        Path modelPath = null;
-        Path mediaProjector = null;
+        // paths or hub refs; resolved (and downloaded, if needed) once parsing has succeeded
+        String modelRef = null;
+        // capability -> path or ref; resolved once parsing has succeeded
+        java.util.Map<String, String> companionRefs = new java.util.LinkedHashMap<>();
         Long seed = null; // unset = a fresh random seed per request
         int maxTokens = DEFAULT_MAX_TOKENS;
         boolean interactive = false;
@@ -379,8 +407,16 @@ public class Main {
                         case "--top-p" -> topp = Float.parseFloat(nextArg);
                         case "--top-k" -> topk = Integer.parseInt(nextArg);
                         case "--min-p" -> minp = Float.parseFloat(nextArg);
-                        case "--model", "-m" -> modelPath = Path.of(nextArg);
-                        case "--mmproj" -> mediaProjector = Path.of(nextArg);
+                        case "--model", "-m" -> modelRef = nextArg;
+                        case "--mmproj" -> companionRefs.put("media", nextArg);
+                        case "--with" -> {
+                            int eq = nextArg.indexOf('=');
+                            LLMOptions.require(
+                                    eq > 0 && eq < nextArg.length() - 1,
+                                    "--with takes <capability>=<path|ref>, got %s",
+                                    nextArg);
+                            companionRefs.put(nextArg.substring(0, eq), nextArg.substring(eq + 1));
+                        }
                         case "--host" -> host = nextArg;
                         case "--port" -> port = Integer.parseInt(nextArg);
                         case "--seed", "-s" -> seed = Long.parseLong(nextArg);
@@ -418,9 +454,34 @@ public class Main {
                 List.of("on", "off", "auto").contains(colorMode),
                 "Invalid argument: --color must be one of on|off|auto");
         boolean color = LLMOptions.supportsAnsiColors(colorMode);
+        // AFTER the loop, so --help and a bad flag never trigger a download first
+        Path modelPath;
+        java.util.Map<String, Path> companions = new java.util.LinkedHashMap<>();
+        try {
+            modelPath = modelRef == null ? null : ModelStore.resolve(modelRef);
+            if (!companionRefs.isEmpty()) {
+                // ONE header read for all of them, and the capability is checked before any file
+                // is fetched: a wrong knob should fail on the knob, not on a missing download
+                java.util.Map<String, String> offered;
+                try {
+                    offered = Models.companionFiles(modelPath);
+                } catch (IOException e) {
+                    throw new java.io.UncheckedIOException(e);
+                }
+                for (var wanted : companionRefs.entrySet()) {
+                    companions.put(
+                            wanted.getKey(),
+                            resolveCompanion(offered, wanted.getKey(), wanted.getValue()));
+                }
+            }
+        } catch (RuntimeException e) {
+            // a ref that cannot be resolved carries its own remedy (gated repo, unknown quant,
+            // no such repository); the usage block would only bury it
+            throw new ResolveFailure(e);
+        }
         return new LLMOptions(
                 modelPath,
-                mediaProjector,
+                java.util.Map.copyOf(companions),
                 prompt,
                 systemPrompt,
                 interactive,
@@ -462,11 +523,153 @@ public class Main {
                 StandardCharsets.UTF_8);
     }
 
+    /**
+     * One companion, from whatever the flag said. {@code auto} asks the model's ARCHITECTURE which
+     * filename carries the capability, then asks the hub to find that file in the model's own
+     * repository - so a user names a capability and never a filename.
+     */
+    /**
+     * One companion, named EXPLICITLY. There is no "find it for me": a companion changes what the
+     * model produces - a projector is in the media cache key - so which file it is belongs in the
+     * command line where it can be read, reproduced and pinned.
+     */
+    private static Path resolveCompanion(
+            java.util.Map<String, String> offered, String capability, String value) {
+        String fileName = offered.get(capability);
+        LLMOptions.require(
+                fileName != null,
+                "this model has no '%s' capability. It offers: %s",
+                capability,
+                offered.isEmpty() ? "none" : new java.util.TreeSet<>(offered.keySet()));
+        LLMOptions.require(
+                !"auto".equals(value),
+                "name the '%s' file rather than 'auto' - it is usually called %s*, and browsing"
+                        + " the model's repository shows which precisions it ships",
+                capability,
+                fileName);
+        return ModelStore.resolve(value);
+    }
+
+    /** A model ref that could not be resolved: the cause already says what to do about it. */
+    private static final class ResolveFailure extends RuntimeException {
+        ResolveFailure(RuntimeException cause) {
+            super(cause.getMessage(), cause); // the cause's own words, not its class name
+        }
+    }
+
+    /**
+     * Downloads each ref and prints where it landed, one path per line, so the output pipes. The
+     * only thing {@code -m <ref>} does not already do implicitly - it exists to warm a CI image or
+     * a laptop before a flight.
+     */
+    private static void pull(String[] args) {
+        boolean force = false;
+        List<String> refs = new ArrayList<>();
+        for (String arg : args) {
+            if (arg.equals("--force") || arg.equals("-f")) {
+                force = true;
+            } else {
+                refs.add(arg);
+            }
+        }
+        if (refs.isEmpty()) {
+            System.err.println("ERROR pull needs at least one model ref, e.g.");
+            System.err.println("  jinfer pull hf.co/unsloth/gemma-4-E2B-it-GGUF:Q4_K_M");
+            System.err.println("  jinfer pull --force <ref>    re-download even if cached");
+            System.exit(2);
+            return;
+        }
+        for (String ref : refs) {
+            try {
+                if (force) {
+                    ModelStore.evict(ref);
+                }
+                System.out.println(ModelStore.resolve(ref));
+            } catch (RuntimeException e) {
+                System.err.println("ERROR " + message(e));
+                System.exit(1);
+                return;
+            }
+        }
+    }
+
+    /** The remedy a resolution failure carries, unwrapping the plumbing around it. */
+    private static String message(Throwable failure) {
+        Throwable root = failure;
+        while (root.getMessage() == null && root.getCause() != null) {
+            root = root.getCause();
+        }
+        return root.getMessage();
+    }
+
+    /**
+     * What the local cache holds, as refs with their sizes. Every line pastes straight back into
+     * {@code --model} or {@code --with}, which is the point: the cache path IS the ref.
+     */
+    private static void list() {
+        java.util.List<String> refs = ModelStore.cached();
+        if (refs.isEmpty()) {
+            System.out.println("no models cached in " + ModelStore.root());
+            return;
+        }
+        int width = refs.stream().mapToInt(String::length).max().orElse(0);
+        long total = 0;
+        for (String ref : refs) {
+            long size = sizeOf(ModelStore.root().resolve(ref)); // resolve() ignores an absolute ref
+            total += size;
+            System.out.printf("%-" + width + "s  %10s%n", ref, humanBytes(size));
+        }
+        System.out.printf("%-" + width + "s  %10s%n", "total", humanBytes(total));
+    }
+
+    private static long sizeOf(Path file) {
+        try {
+            return Files.size(file);
+        } catch (IOException unreadable) {
+            return 0;
+        }
+    }
+
+    private static String humanBytes(long bytes) {
+        if (bytes < 1024) {
+            return bytes + " B";
+        }
+        String[] units = {"KB", "MB", "GB", "TB"};
+        double value = bytes;
+        int unit = -1;
+        while (value >= 1024 && unit < units.length - 1) {
+            value /= 1024;
+            unit++;
+        }
+        return String.format(Locale.ROOT, value >= 100 ? "%.0f %s" : "%.1f %s", value, units[unit]);
+    }
+
     public static void main(String[] args) throws IOException {
         forceUtf8Console();
+        if (args.length > 0 && !args[0].startsWith("-")) {
+            if (args[0].equals("list")) {
+                LLMOptions.require(args.length == 1, "list takes no arguments");
+                list();
+                return;
+            }
+            if (!args[0].equals("pull")) {
+                System.err.println(
+                        "ERROR unknown command: " + args[0] + " (the only one is: pull)");
+                System.err.println();
+                printUsage(System.err);
+                System.exit(2);
+                return;
+            }
+            pull(java.util.Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
         LLMOptions options;
         try {
             options = parseOptions(args);
+        } catch (ResolveFailure e) {
+            System.err.println("ERROR " + message(e));
+            System.exit(1);
+            return;
         } catch (IllegalArgumentException e) {
             System.err.println("ERROR " + e.getMessage());
             System.err.println();
@@ -476,14 +679,14 @@ public class Main {
         }
         LoadedModel<?> model;
         try {
-            if (options.mediaProjector() != null) {
-                // a media sidecar is never AOT-preloaded: load the pair fresh
+            if (!options.companions().isEmpty()) {
+                // a model with companions is never AOT-preloaded: load the set fresh
                 model =
                         Models.load(
                                 options.modelPath(),
-                                options.mediaProjector(),
                                 options.maxTokens(),
-                                java.lang.foreign.Arena.global());
+                                java.lang.foreign.Arena.global(),
+                                options.companions());
             } else {
                 model = AOT.tryUsePreLoaded(options.modelPath(), options.maxTokens());
                 if (model == null) {

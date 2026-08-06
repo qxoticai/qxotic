@@ -6,7 +6,7 @@ import java.util.Locale;
 
 public record LLMOptions(
         Path modelPath,
-        Path mediaProjector,
+        java.util.Map<String, Path> companions,
         String prompt,
         String systemPrompt,
         boolean interactive,
@@ -30,6 +30,9 @@ public record LLMOptions(
         boolean promptCacheReadOnly) {
 
     public LLMOptions {
+        // never null and never the caller's copy: every reader can iterate it without a guard, and
+        // "no companions" and "an empty map" stop being two states that behave differently
+        companions = companions == null ? java.util.Map.of() : java.util.Map.copyOf(companions);
         require(modelPath != null, "Missing argument: --model <path> is required");
         require(
                 server || interactive || prompt != null,
@@ -60,7 +63,7 @@ public record LLMOptions(
             com.qxotic.jinfer.chat.LoadedModel.SamplingDefaults defaults) {
         return new LLMOptions(
                 modelPath,
-                mediaProjector,
+                companions,
                 prompt,
                 systemPrompt,
                 interactive,

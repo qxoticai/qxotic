@@ -43,6 +43,11 @@
       <artifactId>jinfer-jinja</artifactId>
     </dependency>
     <dependency>
+      <!-- model refs on the model and mmproj flags: resolve and download from HF / ModelScope -->
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-hub</artifactId>
+    </dependency>
+    <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-gemma4</artifactId>
     </dependency>

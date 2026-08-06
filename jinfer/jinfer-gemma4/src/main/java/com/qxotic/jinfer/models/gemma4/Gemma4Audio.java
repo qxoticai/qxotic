@@ -136,7 +136,22 @@ public final class Gemma4Audio implements Embedder<Media.Audio> {
     public static Gemma4Audio loadModel(Path mmprojPath, Arena arena) throws IOException {
         try (FileChannel fc = FileChannel.open(mmprojPath, StandardOpenOption.READ)) {
             var gguf = ModelLoader.readGguf(fc, mmprojPath.toString());
-            Map<String, GGMLTensorEntry> t = ModelLoader.loadTensors(fc, gguf, arena);
+            return loadModel(mmprojPath, gguf, ModelLoader.loadTensors(fc, gguf, arena), arena);
+        }
+    }
+
+    /**
+     * As {@link #loadModel(Path, Arena)} over an mmproj ALREADY parsed and mapped: one header read
+     * and one mapping serve both towers of a sidecar carrying vision AND audio. {@code mmprojPath}
+     * is a label for messages here - nothing is read from it.
+     */
+    public static Gemma4Audio loadModel(
+            Path mmprojPath,
+            com.qxotic.format.gguf.GGUF gguf,
+            Map<String, GGMLTensorEntry> t,
+            Arena arena)
+            throws IOException {
+        {
             int modelDim = gguf.getValueOrDefault(int.class, "clip.audio.projection_dim", 3840);
             float eps =
                     gguf.getValueOrDefault(

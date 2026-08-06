@@ -48,7 +48,7 @@ class Gemma4MediaIT {
         model =
                 JinferChatModel.builder()
                         .modelPath(MODEL)
-                        .mediaProjector(MMPROJ)
+                        .companion("media", MMPROJ)
                         .contextLength(4096)
                         .maxTokens(512)
                         .build();

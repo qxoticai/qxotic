@@ -92,7 +92,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                 b.loaded == null
                         ? new ChatEngine(
                                 b.modelPath,
-                                b.mediaProjector,
+                                java.util.Map.copyOf(b.companions),
                                 b.contextLength,
                                 b.cachedPrompts,
                                 b.cachedSessions)
@@ -517,7 +517,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         private Path modelPath;
         private LoadedModel<?> loaded;
         private String modelName;
-        private Path mediaProjector;
+        private final java.util.Map<String, Path> companions = new java.util.LinkedHashMap<>();
         private com.qxotic.jinfer.media.VideoSampler videoSampler =
                 com.qxotic.jinfer.media.VideoSampler.UNIFORM;
         private Path cachedPrompts;
@@ -573,9 +573,13 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             return this;
         }
 
-        /** The media sidecar (mmproj GGUF: vision/audio encoders) for multimodal models. */
-        public Builder mediaProjector(Path mediaProjector) {
-            this.mediaProjector = mediaProjector;
+        /**
+         * Attaches a COMPANION: an auxiliary file that gives the model a capability it does not
+         * have alone, keyed by that capability - {@code "media"} for the mmproj GGUF carrying the
+         * vision and audio encoders. What an architecture accepts is {@code Models.companions}.
+         */
+        public Builder companion(String capability, Path file) {
+            this.companions.put(capability, file);
             return this;
         }
 
@@ -708,9 +712,9 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             if ((modelPath == null) == (loaded == null))
                 throw new IllegalArgumentException(
                         "exactly one of modelPath(...) or model(...) is required");
-            if (loaded != null && (mediaProjector != null || contextLength != 0))
+            if (loaded != null && (!companions.isEmpty() || contextLength != 0))
                 throw new IllegalArgumentException(
-                        "mediaProjector/contextLength are load-time settings; apply them when you"
+                        "companions/contextLength are load-time settings; apply them when you"
                                 + " build the LoadedModel passed to model(...)");
             return new JinferChatModel(this);
         }

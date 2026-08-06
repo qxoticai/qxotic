@@ -102,6 +102,22 @@ public final class InflectTTS
         return wrap(Inflect2.load(channel, gguf, arena), path, null);
     }
 
+    /**
+     * As {@link #load(FileChannel, GGUF, Path, Arena)} with an explicit pronunciation lexicon,
+     * which REPLACES the discovery ladder rather than joining it: naming a file and silently
+     * falling back to another would be the same lie as ignoring it. Unreadable throws.
+     */
+    public static InflectTTS load(
+            java.nio.channels.FileChannel channel,
+            com.qxotic.format.gguf.GGUF gguf,
+            Path path,
+            Arena arena,
+            Path lexicon)
+            throws IOException {
+        if (lexicon == null) throw new IllegalArgumentException("null lexicon");
+        return wrap(Inflect2.load(channel, gguf, arena), path, lexicon);
+    }
+
     /** Load from a ZIP overlay appended to the running executable, e.g. {@code "default.gguf"}. */
     public static InflectTTS loadSelfArchive(String entryName) throws IOException {
         return wrap(Inflect2.loadSelfArchive(entryName), null, null);

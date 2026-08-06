@@ -43,7 +43,7 @@ class JinferChatAutoConfigurationTest {
                 .withUserConfiguration(PropsOnly.class)
                 .withPropertyValues(
                         "spring.ai.jinfer.chat.model-path=/x.gguf",
-                        "spring.ai.jinfer.chat.media-projector=/mmproj.gguf",
+                        "spring.ai.jinfer.chat.companions.media=/mmproj.gguf",
                         "spring.ai.jinfer.chat.cached-prompts=/personas.jkv",
                         "spring.ai.jinfer.chat.context-length=8192",
                         "spring.ai.jinfer.chat.temperature=0.7",
@@ -56,7 +56,7 @@ class JinferChatAutoConfigurationTest {
                         context -> {
                             JinferChatProperties p = context.getBean(JinferChatProperties.class);
                             assertThat(p.modelPath()).isEqualTo("/x.gguf");
-                            assertThat(p.mediaProjector()).isEqualTo("/mmproj.gguf");
+                            assertThat(p.companions()).containsEntry("media", "/mmproj.gguf");
                             assertThat(p.cachedPrompts()).isEqualTo("/personas.jkv");
                             assertThat(p.contextLength()).isEqualTo(8192);
                             assertThat(p.temperature()).isEqualTo(0.7);

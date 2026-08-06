@@ -28,10 +28,30 @@ public final class Inflect2Provider implements ModelProvider {
         return java.util.Set.of("inflect2"); // representative: supports() matches inflect*
     }
 
+    /** The pronunciation lexicon: what turns text into phonemes without an external process. */
+    @Override
+    public java.util.Map<String, String> companionFiles() {
+        return java.util.Map.of("phonemes", "lexicon");
+    }
+
     @Override
     public SpeechModel<?, ?, ?> loadSpeech(
             FileChannel fileChannel, GGUF gguf, java.nio.file.Path path, Arena arena)
             throws IOException {
         return InflectTTS.load(fileChannel, gguf, path, arena);
+    }
+
+    @Override
+    public SpeechModel<?, ?, ?> loadSpeech(
+            FileChannel fileChannel,
+            GGUF gguf,
+            java.nio.file.Path path,
+            Arena arena,
+            java.util.Map<String, java.nio.file.Path> companions)
+            throws IOException {
+        java.nio.file.Path lexicon = companions.get("phonemes");
+        return lexicon == null
+                ? InflectTTS.load(fileChannel, gguf, path, arena)
+                : InflectTTS.load(fileChannel, gguf, path, arena, lexicon);
     }
 }

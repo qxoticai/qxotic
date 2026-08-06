@@ -50,7 +50,7 @@ class Gemma4MediaIT {
         model =
                 JinferChatModel.builder()
                         .modelPath(MODEL)
-                        .mediaProjector(MMPROJ)
+                        .companion("media", MMPROJ)
                         .contextLength(4096)
                         .maxOutputTokens(512)
                         .build();
@@ -116,7 +116,7 @@ class Gemma4MediaIT {
         try (JinferChatModel audioModel =
                 JinferChatModel.builder()
                         .modelPath(AUDIO_MODEL)
-                        .mediaProjector(AUDIO_MMPROJ)
+                        .companion("media", AUDIO_MMPROJ)
                         .contextLength(4096)
                         .maxOutputTokens(512)
                         .build()) {

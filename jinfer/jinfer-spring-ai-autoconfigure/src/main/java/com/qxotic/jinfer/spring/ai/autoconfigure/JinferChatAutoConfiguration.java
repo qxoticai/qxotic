@@ -45,8 +45,10 @@ public class JinferChatAutoConfiguration {
         observationRegistry.ifAvailable(builder::observationRegistry);
         observationConvention.ifAvailable(builder::observationConvention);
         videoSampler.ifAvailable(builder::videoSampler); // a VideoSampler bean overrides UNIFORM
-        if (StringUtils.hasText(properties.mediaProjector())) {
-            builder.mediaProjector(Path.of(properties.mediaProjector()));
+        if (properties.companions() != null) {
+            properties
+                    .companions()
+                    .forEach((capability, file) -> builder.companion(capability, Path.of(file)));
         }
         if (StringUtils.hasText(properties.cachedPrompts())) {
             builder.loadCachedPrompts(Path.of(properties.cachedPrompts()));

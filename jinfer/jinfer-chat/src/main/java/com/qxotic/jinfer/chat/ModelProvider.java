@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
+import java.util.Map;
 
 /**
  * One port's entry in the architecture dispatch: a {@link java.util.ServiceLoader} service each
@@ -55,14 +56,51 @@ public interface ModelProvider {
     }
 
     /**
-     * As {@link #load(FileChannel, GGUF, int, Arena)} plus the architecture's media sidecar
-     * (llama.cpp's mmproj convention: vision/audio encoders in a separate GGUF). Ports without
-     * media support keep this default.
+     * The COMPANION FILES this architecture can take: capability name to the filename that carries
+     * it. Distinct from the {@code companions} map a caller ATTACHES, which is capability name to a
+     * {@link Path} - this one is what the architecture OFFERS. A companion is an auxiliary file
+     * that has no meaning without this model and is loaded by this port into the same arena - a
+     * media projector, a draft head, a pronunciation lexicon.
+     *
+     * <pre>
+     *   Map.of("media", "mmproj", "speculation", "mtp")
+     * </pre>
+     *
+     * <p>The CAPABILITY is what a user asks for; the filename is this port's business, and how a
+     * downloader finds it in the model's repository. Naming the capability rather than the file is
+     * what lets a second implementation of the same capability arrive without renaming anything a
+     * user types (speculation is MTP here and Eagle3 elsewhere).
+     *
+     * <p>Declaring one does NOT attach it: every companion costs memory or changes behaviour, so
+     * attaching stays the caller's explicit act.
+     */
+    default Map<String, String> companionFiles() {
+        return Map.of();
+    }
+
+    /**
+     * As {@link #load(FileChannel, GGUF, int, Arena)} plus the companions the caller attached,
+     * keyed by the capability names this port {@link #companions() declares}.
+     *
+     * <p>The default serves every port that takes none: an empty map is the plain load, and a
+     * non-empty one is a caller asking for something this architecture does not have.
      */
     default LoadedModel<?> load(
-            FileChannel fileChannel, GGUF gguf, int contextLength, Path mediaProjector, Arena arena)
+            FileChannel fileChannel,
+            GGUF gguf,
+            int contextLength,
+            Arena arena,
+            Map<String, Path> companions)
             throws IOException {
-        throw new UnsupportedOperationException("this architecture has no media sidecar support");
+        if (companions.isEmpty()) {
+            return load(fileChannel, gguf, contextLength, arena);
+        }
+        throw new UnsupportedOperationException(
+                "'"
+                        + gguf.getString("general.architecture")
+                        + "' takes no companions, but "
+                        + companions.keySet()
+                        + " were attached");
     }
 
     /**
@@ -91,6 +129,33 @@ public interface ModelProvider {
             FileChannel fileChannel, GGUF gguf, Path path, Arena arena) throws IOException {
         throw new UnsupportedOperationException(
                 "'" + gguf.getString("general.architecture") + "' is not a speech architecture");
+    }
+
+    /**
+     * As {@link #loadSpeech(FileChannel, GGUF, Path, Arena)} plus the companions the caller
+     * attached, keyed by the capability names this port {@link #companionFiles() declares} - a
+     * pronunciation lexicon, for a port that turns text into phonemes.
+     *
+     * <p>The default serves every port that takes none, so a speech port with no companions needs
+     * no change: an empty map is the plain load, and a non-empty one is a caller asking for
+     * something this architecture does not have.
+     */
+    default com.qxotic.jinfer.SpeechModel<?, ?, ?> loadSpeech(
+            FileChannel fileChannel,
+            GGUF gguf,
+            Path path,
+            Arena arena,
+            Map<String, Path> companions)
+            throws IOException {
+        if (companions.isEmpty()) {
+            return loadSpeech(fileChannel, gguf, path, arena);
+        }
+        throw new UnsupportedOperationException(
+                "'"
+                        + gguf.getString("general.architecture")
+                        + "' takes no companions, but "
+                        + companions.keySet()
+                        + " were attached");
     }
 
     /**

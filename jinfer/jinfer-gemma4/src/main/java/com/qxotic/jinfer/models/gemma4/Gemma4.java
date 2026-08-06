@@ -1156,9 +1156,15 @@ public final class Gemma4
      * remedy, not at the first media request with a shape error.
      */
     public Gemma4 withMediaEncoders(Path mmprojGguf, Arena arena) throws IOException {
-        MmprojInfo info = validatePairing(mmprojGguf, configuration.embeddingLength());
-        this.vision = loadVision(mmprojGguf, info.visionType(), arena);
-        this.audio = loadAudio(mmprojGguf, info.audioType(), arena);
+        // ONE open, ONE header parse, ONE tensor mapping - a sidecar carrying both towers used to
+        // pay for three of each (validate, then vision, then audio, all by path)
+        try (FileChannel fc = FileChannel.open(mmprojGguf, StandardOpenOption.READ)) {
+            var gguf = ModelLoader.readGguf(fc, mmprojGguf.toString());
+            MmprojInfo info = validatePairing(gguf, mmprojGguf, configuration.embeddingLength());
+            Map<String, GGMLTensorEntry> tensors = ModelLoader.loadTensors(fc, gguf, arena);
+            this.vision = loadVision(mmprojGguf, gguf, tensors, info.visionType(), arena);
+            this.audio = loadAudio(mmprojGguf, gguf, tensors, info.audioType(), arena);
+        }
         return this;
     }
 
@@ -1174,7 +1180,17 @@ public final class Gemma4
      */
     static MmprojInfo validatePairing(Path mmprojGguf, int textEmbeddingLength) throws IOException {
         try (FileChannel fc = FileChannel.open(mmprojGguf, StandardOpenOption.READ)) {
-            var gguf = ModelLoader.readGguf(fc, mmprojGguf.toString());
+            return validatePairing(
+                    ModelLoader.readGguf(fc, mmprojGguf.toString()),
+                    mmprojGguf,
+                    textEmbeddingLength);
+        }
+    }
+
+    /** The same contract over an already-parsed header - no I/O, so the attach path reuses it. */
+    static MmprojInfo validatePairing(
+            com.qxotic.format.gguf.GGUF gguf, Path mmprojGguf, int textEmbeddingLength) {
+        {
             String visionType = gguf.getStringOrDefault("clip.vision.projector_type", "");
             String audioType = gguf.getStringOrDefault("clip.audio.projector_type", "");
             if (visionType.isEmpty() && audioType.isEmpty()) {
@@ -1241,12 +1257,17 @@ public final class Gemma4
      * The image encoder the sidecar's {@code clip.vision.projector_type} names; the dispatch IS the
      * family validation - an unknown type refuses instead of falling through to the wrong tower.
      */
-    private static Embedder<Media.Image> loadVision(Path mmprojGguf, String type, Arena arena)
+    private static Embedder<Media.Image> loadVision(
+            Path mmprojGguf,
+            com.qxotic.format.gguf.GGUF gguf,
+            Map<String, GGMLTensorEntry> tensors,
+            String type,
+            Arena arena)
             throws IOException {
         return switch (type) {
             case "" -> null; // audio-only sidecar
-            case "gemma4uv" -> Gemma4VisionUnified.loadModel(mmprojGguf, arena);
-            case "gemma4v" -> Gemma4Vision.loadModel(mmprojGguf, arena);
+            case "gemma4uv" -> Gemma4VisionUnified.loadModel(mmprojGguf, gguf, tensors, arena);
+            case "gemma4v" -> Gemma4Vision.loadModel(mmprojGguf, gguf, tensors, arena);
             default ->
                     throw new IllegalArgumentException(
                             "'"
@@ -1264,12 +1285,17 @@ public final class Gemma4
      * encoder-free frame projector (12b), {@code gemma4a} the Conformer tower (E2B/E4B). Both feed
      * the same causal audio lane in the turn template.
      */
-    private static Embedder<Media.Audio> loadAudio(Path mmprojGguf, String type, Arena arena)
+    private static Embedder<Media.Audio> loadAudio(
+            Path mmprojGguf,
+            com.qxotic.format.gguf.GGUF gguf,
+            Map<String, GGMLTensorEntry> tensors,
+            String type,
+            Arena arena)
             throws IOException {
         return switch (type) {
             case "" -> null; // vision-only sidecar
-            case "gemma4ua" -> Gemma4Audio.loadModel(mmprojGguf, arena);
-            case "gemma4a" -> Gemma4Conformer.loadModel(mmprojGguf, arena);
+            case "gemma4ua" -> Gemma4Audio.loadModel(mmprojGguf, gguf, tensors, arena);
+            case "gemma4a" -> Gemma4Conformer.loadModel(mmprojGguf, gguf, tensors, arena);
             default ->
                     throw new IllegalArgumentException(
                             "'"

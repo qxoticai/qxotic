@@ -12,6 +12,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.List;
+import java.util.Map;
 import java.util.ServiceLoader;
 
 /**
@@ -102,27 +103,63 @@ public final class Models {
     }
 
     /**
-     * Multimodal load: the text model plus its media sidecar (mmproj GGUF with the vision/audio
-     * encoders). Throws {@link UnsupportedOperationException} for architectures without one.
+     * Load with COMPANIONS: auxiliary files that give the model a capability it does not have on
+     * its own, keyed by capability name - {@code "media"} for a projector, {@code "speculation"}
+     * for a draft head. What each architecture accepts is {@link #companionFiles(Path)}.
+     *
+     * <p>Values are PATHS to single FILES, never references: resolving a reference is a
+     * downloader's job, done before this call, so no library load ever touches the network.
      */
-    public static LoadedModel<?> load(Path path, Path mediaProjector, int ctx, Arena arena)
+    public static LoadedModel<?> load(Path path, int ctx, Arena arena, Map<String, Path> companions)
             throws IOException {
-        return mediaSeeded(
-                open(
-                        path,
-                        (fc, gguf) ->
-                                sampled(
-                                        provider(gguf).load(fc, gguf, ctx, mediaProjector, arena),
-                                        gguf)),
-                mediaProjector);
+        // copyOf: immutable for the port's lifetime, and it rejects a null capability or path at
+        // the boundary rather than inside a loader that cannot say which entry was wrong
+        Map<String, Path> attached = Map.copyOf(companions);
+        return open(
+                path,
+                (fc, gguf) -> {
+                    ModelProvider provider = provider(gguf);
+                    requireAccepted(provider, gguf, attached);
+                    return companionSeeded(
+                            sampled(provider.load(fc, gguf, ctx, arena, attached), gguf), attached);
+                });
     }
 
     /**
-     * Re-roots the cache seed with the ENCODER IDENTITY: the projector file, the image decoder
-     * implementation, and the model's preprocessing plan. Media blocks are content-keyed by their
-     * SOURCE bytes (see {@code Batch.embeddings}), so everything between those bytes and the stored
-     * KV must be part of the key space - a different projector (or decoder, or plan) producing
-     * different rows for the same bytes must never serve the old blocks.
+     * The capabilities {@code path}'s architecture can gain from a companion, and the filename that
+     * carries each - the GGUF header only, no weights. A caller uses it to reject a capability this
+     * architecture does not have BEFORE fetching anything for it, and to say what the file is
+     * usually called when it does.
+     */
+    public static Map<String, String> companionFiles(Path path) throws IOException {
+        return open(path, (fc, gguf) -> provider(gguf).companionFiles());
+    }
+
+    /** A companion this architecture does not have is a mistake, not something to ignore. */
+    private static void requireAccepted(
+            ModelProvider provider, GGUF gguf, Map<String, Path> companions) {
+        Map<String, String> accepted = provider.companionFiles();
+        for (String capability : companions.keySet()) {
+            if (!accepted.containsKey(capability)) {
+                throw new IllegalArgumentException(
+                        "'"
+                                + gguf.getString("general.architecture")
+                                + "' has no '"
+                                + capability
+                                + "' capability. It offers: "
+                                + (accepted.isEmpty()
+                                        ? "none"
+                                        : new java.util.TreeSet<>(accepted.keySet())));
+            }
+        }
+    }
+
+    /**
+     * Re-roots the cache seed with EVERY ATTACHED COMPANION, plus the image decoder and the model's
+     * preprocessing plan. Media blocks are content-keyed by their SOURCE bytes (see {@code
+     * Batch.embeddings}), so everything standing between those bytes and the stored KV must be part
+     * of the key space: a different projector producing different rows for the same image must
+     * never be served blocks cached under the old one.
      */
     /**
      * Attaches the effective sampling recommendations: the GGUF's {@code general.sampling.*} where
@@ -135,12 +172,19 @@ public final class Models {
                         .withFallback(loaded.samplingDefaults()));
     }
 
-    static <S extends com.qxotic.jinfer.RuntimeState> LoadedModel<S> mediaSeeded(
-            LoadedModel<S> loaded, Path mediaProjector) {
+    static <S extends com.qxotic.jinfer.RuntimeState> LoadedModel<S> companionSeeded(
+            LoadedModel<S> loaded, Map<String, Path> companions) {
+        if (companions.isEmpty()) {
+            return loaded;
+        }
         try {
             java.security.MessageDigest sha = java.security.MessageDigest.getInstance("SHA-256");
             sha.update(loaded.seed());
-            sha.update(com.qxotic.jinfer.cache.PromptCache.modelSeed(mediaProjector));
+            // sorted, so the seed does not depend on the order a caller listed them in
+            for (var companion : new java.util.TreeMap<>(companions).entrySet()) {
+                sha.update(companion.getKey().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                sha.update(com.qxotic.jinfer.cache.PromptCache.modelSeed(companion.getValue()));
+            }
             sha.update(
                     com.qxotic.jinfer.media.ImageCodec.decoder()
                             .name()
@@ -203,7 +247,25 @@ public final class Models {
      */
     public static com.qxotic.jinfer.SpeechModel<?, ?, ?> loadSpeech(Path path, Arena arena)
             throws IOException {
-        return open(path, (fc, gguf) -> provider(gguf).loadSpeech(fc, gguf, path, arena));
+        return loadSpeech(path, arena, Map.of());
+    }
+
+    /**
+     * As {@link #loadSpeech(Path, Arena)} with COMPANIONS - {@code "phonemes"} for a pronunciation
+     * lexicon. A port's own discovery (a lexicon beside the GGUF, then the classpath, then an
+     * external tool) remains the DEFAULT; naming one here overrides that ladder rather than
+     * extending it.
+     */
+    public static com.qxotic.jinfer.SpeechModel<?, ?, ?> loadSpeech(
+            Path path, Arena arena, Map<String, Path> companions) throws IOException {
+        Map<String, Path> attached = Map.copyOf(companions);
+        return open(
+                path,
+                (fc, gguf) -> {
+                    ModelProvider provider = provider(gguf);
+                    requireAccepted(provider, gguf, attached);
+                    return provider.loadSpeech(fc, gguf, path, arena, attached);
+                });
     }
 
     private interface Load<T> {

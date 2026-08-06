@@ -79,16 +79,17 @@ public final class ChatEngine {
      * always kernel-reclaimable, but load-time conversions/repacks are anonymous memory that a
      * GC-managed arena would only free at a GC that a native-heavy JVM never runs.
      */
-    private static Owned load(Path modelPath, Path mediaProjector, int contextLength) {
+    private static Owned load(
+            Path modelPath, java.util.Map<String, Path> companions, int contextLength) {
         java.lang.foreign.Arena weights = java.lang.foreign.Arena.ofShared();
         // the integrations' builder contract is "0 = the model's own maximum"; Models.load spells
         // that -1 - without this both integrations crashed in the port's tensor sizing on 0
         int ctx = contextLength <= 0 ? -1 : contextLength;
         try {
             return new Owned(
-                    mediaProjector == null
+                    companions.isEmpty()
                             ? Models.load(modelPath, ctx, weights)
-                            : Models.load(modelPath, mediaProjector, ctx, weights),
+                            : Models.load(modelPath, ctx, weights, companions),
                     weights);
         } catch (IOException e) {
             weights.close(); // a leaked ofShared arena has no Cleaner: free before failing
@@ -101,12 +102,12 @@ public final class ChatEngine {
 
     public ChatEngine(
             Path modelPath,
-            Path mediaProjector,
+            java.util.Map<String, Path> companions,
             int contextLength,
             Path cachedPrompts,
             int cachedSessions) {
         this(
-                load(modelPath, mediaProjector, contextLength),
+                load(modelPath, java.util.Map.copyOf(companions), contextLength),
                 modelPath.getFileName().toString(),
                 cachedPrompts,
                 true,
@@ -515,7 +516,8 @@ public final class ChatEngine {
             throw new UnsupportedOperationException(
                     "image/audio/video input is not supported by this model"
                             + (punted != null ? ": " + punted.getMessage() : "")
-                            + " (for Gemma 4, pass the mmproj GGUF via mediaProjector(...))");
+                            + " (for Gemma 4, attach the media companion: companion(\"media\","
+                            + " mmproj))");
         }
         List<Object> tools = toolMaps.get();
         IntSequence ids =
