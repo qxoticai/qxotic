@@ -17,63 +17,127 @@ public final class RoPE {
     /** Precomputed rotary tables: cos and sin per (position, frequency). */
     public record Freqs(float[] cos, float[] sin) {}
 
-    public static void applyInterleaved(
-            FloatTensor q, int headOffset, int position, float[] cr, float[] ci, int ropeHalf) {
-        int base = position * ropeHalf;
-        for (int i = 0; i < ropeHalf; i++) {
-            float fcr = cr[base + i];
-            float fci = ci[base + i];
-            int idx = headOffset + 2 * i;
-            float v0 = q.getFloat(idx);
-            float v1 = q.getFloat(idx + 1);
-            q.setFloat(idx, v0 * fcr - v1 * fci);
-            q.setFloat(idx + 1, v0 * fci + v1 * fcr);
-        }
-    }
-
     /**
-     * Rotate-half (NEOX) RoPE over one head: pairs dim {@code i} with {@code i+ropeHalf} (the
-     * {@code (i, i+ropeHalf)} layout HF/gpt-oss apply directly, no conversion-time permutation).
-     * Same cos/sin table layout as {@link #applyInterleaved} (stride {@code ropeHalf}).
+     * Fills rows for positions {@code [fromPosition, fromPosition + count)} into a caller's buffers
+     * at {@code row * halfHead}, where {@code row} is the position's index WITHIN the range.
+     *
+     * <p>This is how rotary values reach the model: a state fills its scratch once per ingest and
+     * every layer reads it, because the values depend only on the position and the schedule, never
+     * on the layer. Nothing is retained between ingests, so no buffer anywhere is sized by context
+     * - which for a sliding-window model like Gemma 4 is the difference between 1.5 MB of flat
+     * scratch and 402 MB of table at 128k, against a KV cache of 811 MB.
+     *
+     * <p>The arithmetic is character-for-character that of {@link #precomputeFreqsCis}, so a range
+     * holds exactly the values the same positions held in a front-loaded table.
      */
-    public static void applyNeox(
-            FloatTensor q, long headOffset, int position, float[] cr, float[] ci, int ropeHalf) {
-        int base = position * ropeHalf;
-        for (int i = 0; i < ropeHalf; i++) {
-            float fcr = cr[base + i];
-            float fci = ci[base + i];
-            float v0 = q.getFloat(headOffset + i);
-            float v1 = q.getFloat(headOffset + i + ropeHalf);
-            q.setFloat(headOffset + i, v0 * fcr - v1 * fci);
-            q.setFloat(headOffset + i + ropeHalf, v0 * fci + v1 * fcr);
-        }
-    }
-
-    /**
-     * Rotate-half (NEOX) RoPE over {@code nHeads} consecutive heads of {@code headSize} each, with
-     * the cos/sin table held in native F32 tensors (the layout Llama/Gemma keep). Bit-identical to
-     * {@link #applyNeox(FloatTensor, int, int, float[], float[], int)} per head.
-     */
-    public static void applyNeox(
-            FloatTensor tensor,
-            long offset,
-            int nHeads,
+    public static void fill(
+            FloatTensor cos,
+            FloatTensor sin,
+            int fromPosition,
+            int count,
             int headSize,
-            int halfHead,
-            int position,
-            F32FloatTensor cr,
-            F32FloatTensor ci) {
-        for (int h = 0; h < nHeads; h++) {
-            long poffset = offset + (long) h * headSize;
-            for (int i = 0; i < halfHead; i++) {
-                float fcr = cr.getFloat(position * halfHead + i);
-                float fci = ci.getFloat(position * halfHead + i);
-                float v0 = tensor.getFloat(poffset + i);
-                float v1 = tensor.getFloat(poffset + i + halfHead);
-                tensor.setFloat(poffset + i, v0 * fcr - v1 * fci);
-                tensor.setFloat(poffset + i + halfHead, v0 * fci + v1 * fcr);
+            double theta) {
+        assert headSize % 2 == 0;
+        int halfHead = headSize / 2;
+        long n = 0;
+        for (int p = 0; p < count; p++) {
+            int pos = fromPosition + p;
+            for (int i = 0; i < headSize; i += 2) {
+                float freq = (float) (1.0 / Math.pow(theta, i / (double) headSize));
+                float val = pos * freq;
+                cos.setFloat(n, (float) Math.cos(val));
+                sin.setFloat(n, (float) Math.sin(val));
+                n++;
             }
         }
+        assert n == (long) count * halfHead;
+    }
+
+    /** {@link #fill} with llama3 per-frequency scaling ({@code rope_freqs.weight}). */
+    public static void fillFromFreqs(
+            FloatTensor cos,
+            FloatTensor sin,
+            int fromPosition,
+            int count,
+            int headSize,
+            double ropeTheta,
+            float[] ropeFreqFactors) {
+        int halfHead = ropeFreqFactors.length;
+        assert halfHead == headSize / 2;
+        long n = 0;
+        for (int p = 0; p < count; p++) {
+            int pos = fromPosition + p;
+            for (int i = 0; i < halfHead; i++) {
+                float baseFreq = (float) (1.0 / Math.pow(ropeTheta, (2.0 * i) / headSize));
+                float val = pos * baseFreq / ropeFreqFactors[i];
+                cos.setFloat(n, (float) Math.cos(val));
+                sin.setFloat(n, (float) Math.sin(val));
+                n++;
+            }
+        }
+        assert n == (long) count * halfHead;
+    }
+
+    /**
+     * {@link #fill} with YaRN interpolation. The schedule is position-independent, so it is
+     * computed once per call exactly as the front-loaded table computed it once per model.
+     */
+    public static void fillYarn(
+            FloatTensor cos,
+            FloatTensor sin,
+            int fromPosition,
+            int count,
+            int headSize,
+            double ropeTheta,
+            float ropeScalingFactor,
+            int originalContextLength,
+            float betaFast,
+            float betaSlow,
+            float extFactor,
+            float attnFactor) {
+        assert headSize % 2 == 0;
+        int halfHead = headSize / 2;
+        float freqScale = ropeScalingFactor == 0f ? 1f : 1f / ropeScalingFactor;
+        float corrStart =
+                Math.max(
+                        0f,
+                        (float)
+                                Math.floor(
+                                        yarnCorrDim(
+                                                headSize,
+                                                originalContextLength,
+                                                betaFast,
+                                                (float) ropeTheta)));
+        float corrEnd =
+                Math.min(
+                        headSize - 1f,
+                        (float)
+                                Math.ceil(
+                                        yarnCorrDim(
+                                                headSize,
+                                                originalContextLength,
+                                                betaSlow,
+                                                (float) ropeTheta)));
+        float mscale =
+                attnFactor
+                        * (extFactor != 0f
+                                ? (float) (1.0 + 0.1 * Math.log(1.0 / Math.max(1e-12, freqScale)))
+                                : 1f);
+        long n = 0;
+        for (int p = 0; p < count; p++) {
+            int pos = fromPosition + p;
+            for (int i = 0; i < headSize; i += 2) {
+                double baseFreq = 1.0 / Math.pow(ropeTheta, i / (double) headSize);
+                float thetaExtrap = (float) (pos * baseFreq);
+                float thetaInterp = freqScale * thetaExtrap;
+                float ramp = yarnRamp(corrStart, corrEnd, i) * extFactor;
+                float theta = thetaInterp * (1f - ramp) + thetaExtrap * ramp;
+                cos.setFloat(n, (float) (Math.cos(theta) * mscale));
+                sin.setFloat(n, (float) (Math.sin(theta) * mscale));
+                n++;
+            }
+        }
+        assert n == (long) count * halfHead;
     }
 
     public static Freqs precomputeFreqsCis(int contextLength, int headSize, double theta) {
