@@ -182,6 +182,14 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
     // === Forward ===
 
     void forward(State state, int[] tokens, int tokenOffset, int startPos, int seqLen) {
+        // ONCE for the batch: an angle never depends on the layer
+        RoPE.fill(
+                state.ropeCos,
+                state.ropeSin,
+                startPos,
+                seqLen,
+                configuration.headSizeFull / 2,
+                weights.rope());
         embed(state, tokens, tokenOffset, seqLen);
         for (int l = 0; l < configuration.numberOfLayers; l++) layer(state, l, startPos, seqLen);
         commitKv(state, startPos, seqLen);
@@ -283,7 +291,6 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
         int nKvHeads = config.numberOfKeyValueHeadsPerLayer[l],
                 kvMul = config.numberOfHeads / nKvHeads;
         AttentionWeights attn = weights.layers[l].attention();
-        F32FloatTensor real = weights.ropeReal, imag = weights.ropeImag;
 
         F32FloatTensor attNormW = weights.layers[l].attnNorm();
         Parallel.forRows(
@@ -306,10 +313,9 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
                 headSize,
                 halfHead,
                 attn.qNorm(),
-                startPos,
                 seqLen,
-                real,
-                imag);
+                state.ropeCos,
+                state.ropeSin);
 
         FloatTensor bK = state.batchK[l], bV = state.batchV[l];
         attn.wk().gemm(state.xb, dim, bK, kvDim, seqLen, kvDim, dim);
@@ -322,10 +328,9 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
                 headSize,
                 halfHead,
                 attn.kNorm(),
-                startPos,
                 seqLen,
-                real,
-                imag);
+                state.ropeCos,
+                state.ropeSin);
 
         float scale = 1.0f / (float) Math.sqrt(headSize);
         if (seqLen > 1) {
@@ -393,12 +398,10 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
             int headSize,
             int halfHead,
             F32FloatTensor normW,
-            int startPos,
             int seqLen,
-            F32FloatTensor real,
-            F32FloatTensor imag) {
+            FloatTensor cos,
+            FloatTensor sin) {
         float eps = configuration.rmsNormEps;
-        int ctx = configuration.contextLength;
         Parallel.forRows(
                 seqLen,
                 s -> {
@@ -406,16 +409,15 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
                         long off = (long) s * rowStride + (long) h * headSize;
                         rmsnorm(t, off, t, off, normW, headSize, eps);
                     }
-                    int ropePos = Math.max(0, Math.min(ctx - 1, startPos + s));
-                    RoPE.applyNeox(
-                            t,
-                            (long) s * rowStride,
-                            nHeads,
-                            headSize,
-                            halfHead,
-                            ropePos,
-                            real,
-                            imag);
+                    for (int h = 0; h < nHeads; h++) {
+                        RoPE.applyNeox(
+                                t,
+                                (long) s * rowStride + (long) h * headSize,
+                                s,
+                                cos,
+                                sin,
+                                halfHead);
+                    }
                 });
     }
 
@@ -701,8 +703,7 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
             FloatTensor tokenEmbeddings,
             LayerWeights[] layers,
             F32FloatTensor finalNorm,
-            F32FloatTensor ropeReal,
-            F32FloatTensor ropeImag,
+            RoPE.Schedule rope,
             FloatTensor wcls) {}
 
     // === State ===
@@ -710,6 +711,7 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
     public static final class State extends com.qxotic.jinfer.BaseState {
         final int contextCapacity, batchCapacity;
         final FloatTensor residual, xb, xbK, xb2, hb, hb2, query, logits;
+        final FloatTensor ropeCos, ropeSin;
         final FlashAttention.DecodeScratch decodeScratch = new FlashAttention.DecodeScratch(arena);
         final FloatTensor[] keyCache,
                 valueCache,
@@ -763,6 +765,9 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
             this.hb = FloatTensor.allocateF32(arena, c * maxHiddenDim);
             this.hb2 = FloatTensor.allocateF32(arena, c * maxHiddenDim);
             this.logits = FloatTensor.allocateF32(arena, config.vocabularySize);
+            // rotary values for the batch about to be ingested: sized by BATCH, never context
+            this.ropeCos = FloatTensor.allocateF32(arena, c * (config.headSizeFull / 2));
+            this.ropeSin = FloatTensor.allocateF32(arena, c * (config.headSizeFull / 2));
             this.shortConvTmp = FloatTensor.allocateF32(arena, c * 3 * dim);
             this.shortConvOut = FloatTensor.allocateF32(arena, c * dim);
             int n = config.numberOfLayers;
@@ -901,11 +906,7 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
     static Weights loadWeights(
             Map<String, GGMLTensorEntry> tensors, Configuration config, Arena arena) {
         int n = config.numberOfLayers;
-        RoPE.Freqs rope =
-                RoPE.precomputeFreqsCis(
-                        config.contextLength(), config.headSizeFull, config.ropeTheta);
-        F32FloatTensor ropeReal = F32FloatTensor.of(arena, rope.cos());
-        F32FloatTensor ropeImag = F32FloatTensor.of(arena, rope.sin());
+        RoPE.Schedule rope = RoPE.plain(config.headSizeFull, config.ropeTheta);
 
         FloatTensor tokenEmbeddings = ModelLoader.loadQuantized(tensors.get("token_embd.weight"));
         FloatTensor wcls =
@@ -978,6 +979,6 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
                             dense,
                             moe);
         }
-        return new Weights(tokenEmbeddings, layers, finalNorm, ropeReal, ropeImag, wcls);
+        return new Weights(tokenEmbeddings, layers, finalNorm, rope, wcls);
     }
 }

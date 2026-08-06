@@ -191,29 +191,23 @@ public final class GptOss
      * YaRN-scaled RoPE tables (cos/sin), attention mscale baked in; canonical params (betaFast=32,
      * betaSlow=1, extFactor=1).
      */
-    static float[][] precomputeYarnRope(
-            int contextLength,
-            int headSize,
-            double ropeTheta,
-            float ropeScalingFactor,
-            int originalContextLength) {
-        RoPE.Freqs rope =
-                RoPE.precomputeFreqsCisYarn(
-                        contextLength,
-                        headSize,
-                        ropeTheta,
-                        ropeScalingFactor,
-                        originalContextLength,
-                        32f,
-                        1f,
-                        1f,
-                        1f);
-        return new float[][] {rope.cos(), rope.sin()};
+    static RoPE.Schedule yarnSchedule(
+            int headSize, double ropeTheta, float ropeScalingFactor, int originalContextLength) {
+        return RoPE.yarn(
+                headSize, ropeTheta, ropeScalingFactor, originalContextLength, 32f, 1f, 1f, 1f);
     }
 
     // === Forward ===
 
     void forward(State state, int[] tokens, int tokenOffset, int startPos, int seqLen) {
+        // ONCE for the batch: an angle never depends on the layer
+        RoPE.fill(
+                state.ropeCos,
+                state.ropeSin,
+                startPos,
+                seqLen,
+                configuration.headSize() / 2,
+                weights.rope());
         embed(state, tokens, tokenOffset, seqLen);
         int lastLayer = configuration.numberOfLayers() - 1;
         for (int l = 0; l < lastLayer; l++) layer(state, l, startPos, seqLen);
@@ -263,7 +257,7 @@ public final class GptOss
         float eps = config.rmsNormEps();
         boolean isSWA = config.isSWA(l);
         AttentionWeights attn = weights.layers()[l].attention();
-        float[] cos = weights.ropeCos(), sin = weights.ropeSin();
+        FloatTensor cos = state.ropeCos, sin = state.ropeSin;
         FloatTensor bK = state.batchK[l], bV = state.batchV[l];
 
         F32FloatTensor attNormW = weights.layers()[l].attnNorm();
@@ -289,7 +283,7 @@ public final class GptOss
                         RoPE.applyNeox(
                                 state.q,
                                 (long) s * queryDim + (long) h * headSize,
-                                startPos + s,
+                                s,
                                 cos,
                                 sin,
                                 halfHead);
@@ -306,12 +300,7 @@ public final class GptOss
                     addBias(bV, (long) s * kvDim, attn.vBias(), 0, kvDim);
                     for (int h = 0; h < kvHeads; h++) {
                         RoPE.applyNeox(
-                                bK,
-                                (long) s * kvDim + (long) h * headSize,
-                                startPos + s,
-                                cos,
-                                sin,
-                                halfHead);
+                                bK, (long) s * kvDim + (long) h * headSize, s, cos, sin, halfHead);
                     }
                 });
 
@@ -499,7 +488,7 @@ public final class GptOss
         int kvHeads = config.numberOfKeyValueHeads(), kvDim = config.kvDim();
         float eps = config.rmsNormEps();
         AttentionWeights attn = weights.layers()[l].attention();
-        float[] cos = weights.ropeCos(), sin = weights.ropeSin();
+        FloatTensor cos = state.ropeCos, sin = state.ropeSin;
         FloatTensor bK = state.batchK[l], bV = state.batchV[l];
         F32FloatTensor attNormW = weights.layers()[l].attnNorm();
         Parallel.forRows(
@@ -522,12 +511,7 @@ public final class GptOss
                     addBias(bV, (long) s * kvDim, attn.vBias(), 0, kvDim);
                     for (int h = 0; h < kvHeads; h++)
                         RoPE.applyNeox(
-                                bK,
-                                (long) s * kvDim + (long) h * headSize,
-                                startPos + s,
-                                cos,
-                                sin,
-                                halfHead);
+                                bK, (long) s * kvDim + (long) h * headSize, s, cos, sin, halfHead);
                 });
         for (int s = 0; s < seqLen; s++) {
             int kvPos = config.kvCacheIndex(l, startPos + s);
@@ -552,7 +536,7 @@ public final class GptOss
         float eps = config.rmsNormEps();
         boolean isSWA = config.isSWA(L);
         AttentionWeights attn = weights.layers()[L].attention();
-        float[] cos = weights.ropeCos(), sin = weights.ropeSin();
+        FloatTensor cos = state.ropeCos, sin = state.ropeSin;
         int startPos = state.position - state.lastChunkLen;
         int pos = startPos + i;
 
@@ -568,8 +552,10 @@ public final class GptOss
                 eps);
         attn.wq().gemm(state.tscratch, dim, state.q, queryDim, 1, queryDim, dim);
         addBias(state.q, 0, attn.qBias(), 0, queryDim);
+        // the lazy tail runs outside any ingest, so it fills row 0 for its own position
+        RoPE.fill(cos, sin, pos, 1, halfHead, weights.rope());
         for (int h = 0; h < heads; h++)
-            RoPE.applyNeox(state.q, (long) h * headSize, pos, cos, sin, halfHead);
+            RoPE.applyNeox(state.q, (long) h * headSize, 0, cos, sin, halfHead);
         float scale = 1.0f / (float) Math.sqrt(headSize);
         int attStart = config.attentionStart(L, pos);
         int ringMask = isSWA ? config.slidingWindow() - 1 : 0;
@@ -686,14 +672,15 @@ public final class GptOss
             LayerWeights[] layers,
             F32FloatTensor outputNorm,
             FloatTensor outputWeight,
-            float[] ropeCos,
-            float[] ropeSin) {}
+            RoPE.Schedule rope) {}
 
     // === State ===
 
     public static final class State extends com.qxotic.jinfer.BaseState {
         final int contextCapacity, batchCapacity;
         final FloatTensor residual, xb, xb2, xbK, q, logits, th, tscratch;
+        // rotary values for the batch about to be ingested: sized by BATCH, never context
+        final FloatTensor ropeCos, ropeSin;
         final FlashAttention.DecodeScratch decodeScratch = new FlashAttention.DecodeScratch(arena);
         final FloatTensor[] keyCache, valueCache, batchK, batchV;
         // MoE scratch (chunk-wide CSR routing); gpt-oss is all-MoE so always allocated.
@@ -730,6 +717,8 @@ public final class GptOss
             this.xbK = FloatTensor.allocateF32(arena, c * queryDim);
             this.q = FloatTensor.allocateF32(arena, c * queryDim);
             this.logits = FloatTensor.allocateF32(arena, config.vocabularySize());
+            this.ropeCos = FloatTensor.allocateF32(arena, c * (config.headSize() / 2));
+            this.ropeSin = FloatTensor.allocateF32(arena, c * (config.headSize() / 2));
             this.th = FloatTensor.allocateF32(arena, dim);
             this.tscratch = FloatTensor.allocateF32(arena, dim);
             this.hb = FloatTensor.allocateF32(arena, c * expertFF);
@@ -851,9 +840,8 @@ public final class GptOss
                 tensors.containsKey("output.weight")
                         ? ModelLoader.loadQuantized(tensors.get("output.weight"))
                         : tokenEmbeddings; // tied embeddings
-        float[][] rope =
-                precomputeYarnRope(
-                        config.contextLength(),
+        RoPE.Schedule rope =
+                yarnSchedule(
                         config.headSize(),
                         config.ropeTheta(),
                         config.ropeScalingFactor(),
@@ -889,6 +877,6 @@ public final class GptOss
                     ModelLoader.toF32Tensor(tensors.get(p + "post_attention_norm.weight"));
             layers[i] = new LayerWeights(attnNorm, postAttnNorm, attention, moe);
         }
-        return new Weights(tokenEmbeddings, layers, outputNorm, outputWeight, rope[0], rope[1]);
+        return new Weights(tokenEmbeddings, layers, outputNorm, outputWeight, rope);
     }
 }
