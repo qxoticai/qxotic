@@ -602,22 +602,18 @@ public final class Qwen3
 
     // === Loading ===
 
-    public static Qwen3 loadModel(Path ggufPath, int contextLength, Arena arena)
-            throws IOException {
+    public static Qwen3 loadModel(Path ggufPath, Arena arena) throws IOException {
         try (FileChannel fileChannel = FileChannel.open(ggufPath, StandardOpenOption.READ)) {
             GGUF gguf = ModelLoader.readGguf(fileChannel, ggufPath.toString());
-            return loadModel(fileChannel, gguf, contextLength, arena);
+            return loadModel(fileChannel, gguf, arena);
         }
     }
 
-    static Qwen3 loadModel(FileChannel fileChannel, GGUF gguf, int contextLength, Arena arena)
-            throws IOException {
+    static Qwen3 loadModel(FileChannel fileChannel, GGUF gguf, Arena arena) throws IOException {
         Tokenizer tokenizer = Tokenizers.fromGGUF(gguf);
         String arch = gguf.getString("general.architecture");
 
-        int modelContextLength = gguf.getValue(int.class, arch + ".context_length");
-        if (contextLength < 0 || modelContextLength < contextLength)
-            contextLength = modelContextLength;
+        int contextLength = gguf.getValue(int.class, arch + ".context_length");
 
         int embeddingLength = gguf.getValue(int.class, arch + ".embedding_length");
         int numberOfLayers = gguf.getValue(int.class, arch + ".block_count");

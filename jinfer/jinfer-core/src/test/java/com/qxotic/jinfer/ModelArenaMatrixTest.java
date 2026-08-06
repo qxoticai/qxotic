@@ -64,7 +64,7 @@ class ModelArenaMatrixTest {
     @Test
     void borrowedArenaIsNeverTouched() {
         try (Arena arena = Arena.ofShared()) {
-            BaseStateLifecycleTest.ProbeState s = model.newState(8, 8, arena);
+            BaseStateLifecycleTest.ProbeState s = model.newState(8, arena);
             s.close();
             assertTrue(
                     arena.scope().isAlive(), "borrowed: close must not touch the caller's arena");
@@ -93,7 +93,7 @@ class ModelArenaMatrixTest {
     @Test
     void nonCloseableArenasAreSafeBorrowedAndAdopted() {
         for (Arena arena : new Arena[] {Arena.ofAuto(), Arena.global()}) {
-            BaseStateLifecycleTest.ProbeState borrowed = model.newState(8, 8, arena);
+            BaseStateLifecycleTest.ProbeState borrowed = model.newState(8, arena);
             assertDoesNotThrow(borrowed::close);
             BaseStateLifecycleTest.ProbeState adopted = model.newState(8, 8, arena, true);
             assertDoesNotThrow(adopted::close); // owning ofAuto/global = nothing to free eagerly

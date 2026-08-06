@@ -26,8 +26,7 @@ class Gemma4ResetIdentityTest {
         Assumptions.assumeTrue(
                 Files.exists(ModelFixture.GEMMA4_E2B_QAT_Q4.path()),
                 "model not found: " + ModelFixture.GEMMA4_E2B_QAT_Q4.path());
-        Gemma4 model =
-                Gemma4.loadModel(ModelFixture.GEMMA4_E2B_QAT_Q4.path(), 1024, Arena.ofAuto());
+        Gemma4 model = Gemma4.loadModel(ModelFixture.GEMMA4_E2B_QAT_Q4.path(), Arena.ofAuto());
         var tokenizer = model.loaded().tokenizer();
         IntSequence first = tokenizer.encode("The capital of France is");
         IntSequence second = tokenizer.encode("Once upon a time there was");

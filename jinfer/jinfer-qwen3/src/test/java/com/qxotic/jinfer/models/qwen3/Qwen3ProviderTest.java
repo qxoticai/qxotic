@@ -27,7 +27,6 @@ class Qwen3ProviderTest {
                         () ->
                                 Models.load(
                                         ModelFixture.QWEN3_RERANKER_06B_Q8.require(),
-                                        512,
                                         Arena.ofAuto()));
         assertTrue(e.getMessage().contains("loadEmbedder"), e.getMessage());
         assertTrue(e.getMessage().contains("loadReranker"), e.getMessage());

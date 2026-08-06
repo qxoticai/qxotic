@@ -45,7 +45,7 @@ public class Detect {
         Path gguf   = Models.gemmaDetect(args, 2);
         Path mmproj = Models.gemmaDetectMmproj(args, 3);
 
-        var model = Gemma4.loadModel(gguf, mmproj, 4096, Arena.ofAuto());
+        var model = Gemma4.loadModel(gguf, mmproj, Arena.ofAuto());
         var template = model.turnTemplate().orElseThrow();
         Media.Image img = ImageCodec.load(image);
 

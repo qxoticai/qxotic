@@ -39,7 +39,7 @@ class GrammarSwitchTest {
         Path gguf = ModelFixture.LLAMA32_1B_Q8.require();
         modelId = gguf.getFileName().toString();
         arena = Arena.ofShared();
-        LoadedModel<?> model = Models.load(gguf, 2048, arena);
+        LoadedModel<?> model = Models.load(gguf, arena);
         server = Server.start(model, ServerTestSupport.config(gguf));
         base = ServerTestSupport.baseUrl(server);
         client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
@@ -80,7 +80,7 @@ class GrammarSwitchTest {
     void aRefusedGrammarIs400NotUnconstrained200() throws Exception {
         try (Arena weights = Arena.ofShared()) {
             Path gguf = ModelFixture.LLAMA32_1B_Q8.require();
-            LoadedModel<?> model = Models.load(gguf, 2048, weights);
+            LoadedModel<?> model = Models.load(gguf, weights);
             try (Server.Running refusing =
                     Server.start(model, ServerTestSupport.configNoGrammar(gguf))) {
                 String url = ServerTestSupport.baseUrl(refusing) + "/v1/chat/completions";

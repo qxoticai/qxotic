@@ -194,7 +194,7 @@ public final class Inflect2 {
      * entry, where the header has been read to decide which port to call.
      */
     public static Inflect2 load(FileChannel channel, GGUF gguf, Arena arena) throws IOException {
-        return load(gguf, ModelLoader.loadTensors(channel, gguf, 0, arena));
+        return load(gguf, ModelLoader.loadTensors(channel, gguf, arena));
     }
 
     /**

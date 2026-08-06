@@ -25,8 +25,7 @@ public final class Qwen35Provider implements ModelProvider {
     }
 
     @Override
-    public LoadedModel<?> load(FileChannel fileChannel, GGUF gguf, int contextLength, Arena arena)
-            throws IOException {
-        return Qwen35.loadModel(fileChannel, gguf, contextLength, arena).loaded();
+    public LoadedModel<?> load(FileChannel fileChannel, GGUF gguf, Arena arena) throws IOException {
+        return Qwen35.loadModel(fileChannel, gguf, arena).loaded();
     }
 }

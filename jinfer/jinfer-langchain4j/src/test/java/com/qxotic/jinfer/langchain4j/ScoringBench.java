@@ -54,8 +54,7 @@ public final class ScoringBench {
                         .contextLength(2048)
                         .build();
         LoadedReranker<?> naive =
-                Models.loadReranker(
-                        ModelFixture.QWEN3_RERANKER_06B_Q8.path(), 2048, Arena.ofAuto());
+                Models.loadReranker(ModelFixture.QWEN3_RERANKER_06B_Q8.path(), Arena.ofAuto());
 
         for (int k : K) {
             List<TextSegment> docs = corpus(k);
@@ -110,9 +109,7 @@ public final class ScoringBench {
     void phases() throws Exception {
         Assumptions.assumeTrue(
                 Files.exists(ModelFixture.QWEN3_RERANKER_06B_Q8.path()), "model not found");
-        phases(
-                Models.loadReranker(
-                        ModelFixture.QWEN3_RERANKER_06B_Q8.path(), 2048, Arena.ofAuto()));
+        phases(Models.loadReranker(ModelFixture.QWEN3_RERANKER_06B_Q8.path(), Arena.ofAuto()));
     }
 
     static <S extends RuntimeState> void phases(LoadedReranker<S> loaded) {

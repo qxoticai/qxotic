@@ -56,7 +56,7 @@ public class GemmaVideo {
         System.err.printf("sampled %d frames uniformly (%dx%d)%n",
                 vid.frames().size(), first.width(), first.height());
 
-        Gemma4 model = Gemma4.loadModel(textGguf, mmproj, 8192, java.lang.foreign.Arena.ofAuto());   // frame tokens need headroom
+        Gemma4 model = Gemma4.loadModel(textGguf, mmproj, java.lang.foreign.Arena.ofAuto());   // frame tokens need headroom
         TurnTemplate template = model.turnTemplate().orElseThrow();
         Set<Integer> stops = model.stopTokens();
 

@@ -19,9 +19,10 @@ public final class Generator {
 
     private Generator() {}
 
-    /** See {@link LanguageModel#stateFor} - the policy's home; kept here for its many callers. */
-    public static <S extends RuntimeState> S stateFor(LanguageModel<?, ?, S> model, int promptLen) {
-        return model.stateFor(promptLen);
+    /** See {@link LanguageModel#stateFor} - kept here for its many callers. */
+    public static <S extends RuntimeState> S stateFor(
+            LanguageModel<?, ?, S> model, int promptLen, int contextCapacity) {
+        return model.stateFor(promptLen, contextCapacity);
     }
 
     /**
@@ -109,18 +110,20 @@ public final class Generator {
             Set<Integer> stopTokens,
             TokenSink sink,
             java.util.function.IntConsumer afterIngest) {
-        int contextLength = model.config().contextLength();
+        // the STATE's ring is the bound: it may be smaller than what the model was trained for,
+        // and it is what the generation actually runs in
+        int capacity = state.contextCapacity();
         int promptCount = Batch.positions(prompt);
         int promptPositions = state.position() + promptCount;
         require(
-                promptPositions <= contextLength,
-                "Prompt exceeds context length (%d tokens used, %d available)",
+                promptPositions <= capacity,
+                "Prompt exceeds context capacity (%d tokens used, %d available - raise --ctx-size)",
                 promptPositions,
-                contextLength);
+                capacity);
         int actualMaxTokens =
                 maxTokens < 0
-                        ? contextLength - promptPositions
-                        : Math.min(maxTokens, contextLength - promptPositions);
+                        ? capacity - promptPositions
+                        : Math.min(maxTokens, capacity - promptPositions);
 
         long deadlineNanos = timeoutNanos != 0 ? System.nanoTime() + timeoutNanos : Long.MAX_VALUE;
         try {
@@ -249,7 +252,7 @@ public final class Generator {
             java.util.function.IntConsumer afterIngest,
             long[] prefillDoneNanos) {
         int vocab = model.config().vocabularySize();
-        int contextLength = model.config().contextLength();
+        int contextLength = state.contextCapacity();
         for (Batch batch : Batch.prepare(prompt, state.batchCapacity())) {
             model.ingest(state, batch); // the port chunks internally + runs the decode pool
         }

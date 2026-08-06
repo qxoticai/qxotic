@@ -24,7 +24,7 @@ public final class Lfm2CacheRun {
 
     private static void main(String[] args) throws Exception {
         Path path = Path.of(args.length > 0 ? args[0] : ModelFixture.LFM25_8B_Q8.path().toString());
-        Lfm2 m = Lfm2.loadModel(path, 4096, java.lang.foreign.Arena.ofAuto());
+        Lfm2 m = Lfm2.loadModel(path, java.lang.foreign.Arena.ofAuto());
         Harness<Lfm2.State> h =
                 new Harness<>(
                         m.loaded(),

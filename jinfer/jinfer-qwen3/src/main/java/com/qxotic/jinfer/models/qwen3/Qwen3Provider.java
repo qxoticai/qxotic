@@ -29,8 +29,7 @@ public final class Qwen3Provider implements ModelProvider {
     }
 
     @Override
-    public LoadedModel<?> load(FileChannel fileChannel, GGUF gguf, int contextLength, Arena arena)
-            throws IOException {
+    public LoadedModel<?> load(FileChannel fileChannel, GGUF gguf, Arena arena) throws IOException {
         throw new UnsupportedOperationException(
                 "'qwen3' is the Qwen3 RETRIEVAL family (Qwen3-Embedding, Qwen3-Reranker), not a"
                         + " generative model - load it with Models.loadEmbedder or"
@@ -39,9 +38,8 @@ public final class Qwen3Provider implements ModelProvider {
 
     @Override
     public LoadedEmbedder<?> loadEmbedder(
-            FileChannel fileChannel, GGUF gguf, int contextLength, Path path, Arena arena)
-            throws IOException {
-        Qwen3 m = Qwen3.loadModel(fileChannel, gguf, contextLength, arena);
+            FileChannel fileChannel, GGUF gguf, Path path, Arena arena) throws IOException {
+        Qwen3 m = Qwen3.loadModel(fileChannel, gguf, arena);
         // last-token pooling wants a trailing EOS on every sequence (the llama.cpp convention)
         int eos =
                 SpecialTokens.find(m.tokenizer(), "<|endoftext|>")
@@ -59,9 +57,8 @@ public final class Qwen3Provider implements ModelProvider {
 
     @Override
     public LoadedReranker<?> loadReranker(
-            FileChannel fileChannel, GGUF gguf, int contextLength, Path path, Arena arena)
-            throws IOException {
-        Qwen3 m = Qwen3.loadModel(fileChannel, gguf, contextLength, arena);
+            FileChannel fileChannel, GGUF gguf, Path path, Arena arena) throws IOException {
+        Qwen3 m = Qwen3.loadModel(fileChannel, gguf, arena);
         return new LoadedReranker<>(m, new Qwen3Reranker(m), path.getFileName().toString());
     }
 }

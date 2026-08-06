@@ -54,7 +54,12 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
      *     file degrades to serving without it instead of failing the boot (an existing but
      *     incompatible file fails loudly in both modes - see {@code openCatalog})
      */
-    public record Options(int hotSessions, long blockBudgetBytes, Path catalog, boolean readOnly) {
+    public record Options(
+            int hotSessions,
+            int contextCapacity,
+            long blockBudgetBytes,
+            Path catalog,
+            boolean readOnly) {
 
         /**
          * What a caller with no opinion gets: 4 live conversations and a 2 GB block layer, RAM
@@ -63,27 +68,34 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
          * differ. Turning the block layer off is {@code withBlockBudget(0)}, which the boolean flag
          * duplicated.
          */
-        public static final Options DEFAULTS = new Options(4, 2048L << 20, null, false);
+        public static final Options DEFAULTS = new Options(4, 4096, 2048L << 20, null, false);
 
         /** These options over {@code catalog}, read-only or accumulating. */
         public Options withCatalog(Path catalog, boolean readOnly) {
-            return new Options(hotSessions, blockBudgetBytes, catalog, readOnly);
+            return new Options(hotSessions, contextCapacity, blockBudgetBytes, catalog, readOnly);
         }
 
         /** These options with a different block-layer budget; 0 disables the block layer. */
         public Options withBlockBudget(long blockBudgetBytes) {
-            return new Options(hotSessions, blockBudgetBytes, catalog, readOnly);
+            return new Options(hotSessions, contextCapacity, blockBudgetBytes, catalog, readOnly);
         }
 
         /** These options with a different number of resident conversations. */
         public Options withHotSessions(int hotSessions) {
-            return new Options(hotSessions, blockBudgetBytes, catalog, readOnly);
+            return new Options(hotSessions, contextCapacity, blockBudgetBytes, catalog, readOnly);
+        }
+
+        /** These options with a different state size; refused above the model's contextLength. */
+        public Options withContextCapacity(int contextCapacity) {
+            return new Options(hotSessions, contextCapacity, blockBudgetBytes, catalog, readOnly);
         }
 
         // ranges, not taste: int widens silently into the long slot, so transposed
         // (budget, hotSessions) literals would compile and build a pathological cache
         public Options {
             if (hotSessions < 0) throw new IllegalArgumentException("hotSessions " + hotSessions);
+            if (contextCapacity < 1)
+                throw new IllegalArgumentException("contextCapacity " + contextCapacity);
             if (blockBudgetBytes < 0)
                 throw new IllegalArgumentException("blockBudgetBytes " + blockBudgetBytes);
         }
@@ -113,6 +125,8 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
     // must clear); with hotSessions=0 one WIPED bare allocation is retained as the spare, so
     // the stateless default still allocates its context once and keeps none of the content.
     private final int hotCapacity;
+    // every state this cache allocates is this many positions; a prompt past it is refused
+    private final int contextCapacity;
     private final ArrayDeque<CachedSession<S>> hot = new ArrayDeque<>();
     private S spare;
     private boolean closed;
@@ -135,6 +149,7 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
         this.store = store;
         this.writeBack = writeBack;
         this.hotCapacity = Math.max(0, options.hotSessions());
+        this.contextCapacity = options.contextCapacity();
     }
 
     /**
@@ -383,8 +398,8 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
         // hold the whole prompt per batch; fine codecs use the standard one-generation sizing
         S state =
                 coarse
-                        ? model.newState(model.config().contextLength(), Math.max(total, 16))
-                        : model.stateFor(total);
+                        ? model.newState(contextCapacity, Math.max(total, 16))
+                        : model.stateFor(total, contextCapacity);
         try {
             // capped ONE SHORT like every resume: an uncapped resume would dedup into a chunk
             // boundary earlier traffic committed and silently skip the split-last single that
@@ -608,7 +623,7 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
     /** Full batch capacity, not prompt-sized: this allocation serves every later request too. */
     private S freshState() {
         statesAllocated++;
-        return model.newState(model.config().contextLength(), RuntimeFlags.BATCH_CAPACITY);
+        return model.newState(contextCapacity, RuntimeFlags.BATCH_CAPACITY);
     }
 
     private void closeSession(CachedSession<S> session) {
@@ -624,14 +639,15 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
         if (closed) throw new IllegalStateException("the cache is closed");
     }
 
+    /** Whether the prompt fits the STATE this cache allocates, which is what it will run in. */
     private void checkFitsContext(int positions) {
-        if (positions > model.config().contextLength()) {
+        if (positions > contextCapacity) {
             throw new IllegalArgumentException(
-                    "Prompt exceeds context length ("
+                    "Prompt exceeds context capacity ("
                             + positions
                             + " tokens, "
-                            + model.config().contextLength()
-                            + " available)");
+                            + contextCapacity
+                            + " available - raise --ctx-size)");
         }
     }
 

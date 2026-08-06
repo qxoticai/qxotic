@@ -21,9 +21,8 @@ public final class Gemma4Provider implements ModelProvider {
     }
 
     @Override
-    public LoadedModel<?> load(FileChannel fileChannel, GGUF gguf, int contextLength, Arena arena)
-            throws IOException {
-        return Gemma4.loadModel(fileChannel, gguf, contextLength, arena).loaded();
+    public LoadedModel<?> load(FileChannel fileChannel, GGUF gguf, Arena arena) throws IOException {
+        return Gemma4.loadModel(fileChannel, gguf, arena).loaded();
     }
 
     /** Gemma 4's vision and audio encoders ship as a separate mmproj GGUF. */
@@ -36,11 +35,10 @@ public final class Gemma4Provider implements ModelProvider {
     public LoadedModel<?> load(
             FileChannel fileChannel,
             GGUF gguf,
-            int contextLength,
             Arena arena,
             java.util.Map<String, java.nio.file.Path> companions)
             throws IOException {
-        var model = Gemma4.loadModel(fileChannel, gguf, contextLength, arena);
+        var model = Gemma4.loadModel(fileChannel, gguf, arena);
         java.nio.file.Path media = companions.get("media");
         return (media == null ? model : model.withMediaEncoders(media, arena)).loaded();
     }

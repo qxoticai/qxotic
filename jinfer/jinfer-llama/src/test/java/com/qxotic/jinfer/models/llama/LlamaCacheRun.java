@@ -28,7 +28,7 @@ public final class LlamaCacheRun {
     private static void main(String[] args) throws Exception {
         Path path =
                 Path.of(args.length > 0 ? args[0] : ModelFixture.LLAMA32_1B_Q8.path().toString());
-        Llama m = Llama.loadModel(path, 8192, Arena.ofAuto());
+        Llama m = Llama.loadModel(path, Arena.ofAuto());
         Harness<Llama.State> h =
                 new Harness<>(m.loaded(), m.turnTemplate().orElseThrow(), path, 8192);
         new CacheScenario<>(

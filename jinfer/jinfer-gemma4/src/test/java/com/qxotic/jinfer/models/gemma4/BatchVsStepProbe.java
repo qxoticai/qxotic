@@ -39,7 +39,7 @@ public final class BatchVsStepProbe {
             System.out.println("BatchVsStepProbe: model absent, skipping");
             return;
         }
-        Gemma4 m = Gemma4.loadModel(model, 4096, Arena.ofAuto());
+        Gemma4 m = Gemma4.loadModel(model, Arena.ofAuto());
         var tk = m.tokenizer();
         int bos = SpecialTokens.find(tk, "<bos>").orElse(2);
         Set<Integer> stops = m.stopTokens();

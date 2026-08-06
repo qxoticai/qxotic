@@ -31,7 +31,7 @@ public final class GraniteCacheRun {
                         args.length > 0
                                 ? args[0]
                                 : ModelFixture.GRANITE_41_3B_Q8.path().toString());
-        Granite m = Granite.loadModel(path, 8192, Arena.ofAuto());
+        Granite m = Granite.loadModel(path, Arena.ofAuto());
         Harness<Granite.State> h =
                 new Harness<>(m.loaded(), m.turnTemplate().orElseThrow(), path, 8192);
         new CacheScenario<>(

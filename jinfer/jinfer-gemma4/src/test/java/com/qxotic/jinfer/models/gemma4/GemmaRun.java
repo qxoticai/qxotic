@@ -34,7 +34,7 @@ public final class GemmaRun {
         int contextCapacity =
                 args.length > 3 ? Integer.parseInt(args[3]) : -1; // -1 → full model context
 
-        Gemma4 model = Gemma4.loadModel(Path.of(path), 4096, Arena.ofAuto());
+        Gemma4 model = Gemma4.loadModel(Path.of(path), Arena.ofAuto());
         var c = model.config();
         System.err.printf(
                 "config: dim=%d layers=%d heads=%d vocab=%d ctx=%d ownKv=%d plDim=%d%n",

@@ -26,7 +26,7 @@ class Lfm2ResetIdentityTest {
         Assumptions.assumeTrue(
                 Files.exists(ModelFixture.LFM25_350M_Q8.path()),
                 "model not found: " + ModelFixture.LFM25_350M_Q8.path());
-        Lfm2 model = Lfm2.loadModel(ModelFixture.LFM25_350M_Q8.path(), 1024, Arena.ofAuto());
+        Lfm2 model = Lfm2.loadModel(ModelFixture.LFM25_350M_Q8.path(), Arena.ofAuto());
         var tokenizer = model.loaded().tokenizer();
         IntSequence first = tokenizer.encode("The capital of France is");
         IntSequence second = tokenizer.encode("Once upon a time there was");

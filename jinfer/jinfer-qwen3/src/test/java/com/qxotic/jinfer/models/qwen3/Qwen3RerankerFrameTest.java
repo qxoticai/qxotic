@@ -45,8 +45,7 @@ class Qwen3RerankerFrameTest {
     @Test
     void frameIsTokenExact() throws IOException {
         LoadedReranker<?> loaded =
-                Models.loadReranker(
-                        ModelFixture.QWEN3_RERANKER_06B_Q8.require(), 512, Arena.ofAuto());
+                Models.loadReranker(ModelFixture.QWEN3_RERANKER_06B_Q8.require(), Arena.ofAuto());
         Reranker<?> reranker = loaded.reranker();
         Batch head = reranker.head(reranker.defaultInstruction(), QUERY);
         Batch document = reranker.document(DOCUMENT);

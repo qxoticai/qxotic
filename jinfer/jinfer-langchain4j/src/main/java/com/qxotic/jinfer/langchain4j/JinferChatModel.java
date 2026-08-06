@@ -67,9 +67,11 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
      * application did not ask it to write.
      */
     private static com.qxotic.jinfer.cache.PromptCache.Options cacheOptions(
-            java.nio.file.Path cachedPrompts, int cachedSessions) {
-        return com.qxotic.jinfer.cache.PromptCache.Options.DEFAULTS
-                .withHotSessions(cachedSessions)
+            java.nio.file.Path cachedPrompts, int cachedSessions, int contextLength) {
+        var defaults = com.qxotic.jinfer.cache.PromptCache.Options.DEFAULTS;
+        return defaults.withHotSessions(cachedSessions)
+                .withContextCapacity(
+                        contextLength <= 0 ? defaults.contextCapacity() : contextLength)
                 .withCatalog(cachedPrompts, true);
     }
 
@@ -79,14 +81,13 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                         ? new ChatEngine(
                                 b.modelPath,
                                 java.util.Map.copyOf(b.companions),
-                                b.contextLength,
-                                cacheOptions(b.cachedPrompts, b.cachedSessions))
+                                cacheOptions(b.cachedPrompts, b.cachedSessions, b.contextLength))
                         : new ChatEngine(
                                 b.loaded,
                                 b.modelName == null
                                         ? b.loaded.model().getClass().getSimpleName()
                                         : b.modelName,
-                                cacheOptions(b.cachedPrompts, b.cachedSessions));
+                                cacheOptions(b.cachedPrompts, b.cachedSessions, b.contextLength));
         this.thinking = b.thinking;
         this.seed = b.seed;
         this.timeoutNanos = b.timeout == null ? 0 : b.timeout.toNanos();

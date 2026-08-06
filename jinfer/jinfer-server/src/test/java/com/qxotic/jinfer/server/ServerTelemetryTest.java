@@ -31,7 +31,7 @@ class ServerTelemetryTest {
         Path gguf = ModelFixture.LLAMA32_1B_Q8.require();
         Path jfr = Files.createTempFile("jinfer-server", ".jfr");
         try (Arena arena = Arena.ofShared()) {
-            LoadedModel<?> model = Models.load(gguf, 2048, arena);
+            LoadedModel<?> model = Models.load(gguf, arena);
             try (Server.Running server = Server.start(model, ServerTestSupport.config(gguf))) {
                 HttpClient client =
                         HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
@@ -68,7 +68,7 @@ class ServerTelemetryTest {
     void twoServersInOneJvmDoNotShareCounters() throws Exception {
         Path gguf = ModelFixture.LLAMA32_1B_Q8.require();
         try (Arena arena = Arena.ofShared()) {
-            LoadedModel<?> model = Models.load(gguf, 2048, arena);
+            LoadedModel<?> model = Models.load(gguf, arena);
             try (Server.Running busy = Server.start(model, ServerTestSupport.config(gguf));
                     Server.Running idle = Server.start(model, ServerTestSupport.config(gguf))) {
                 HttpClient client =

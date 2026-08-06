@@ -60,9 +60,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
             try {
                 // same contract as the chat builder: <= 0 means the model's own maximum (-1 to the
                 // loader); a literal 0 would crash the port's tensor sizing
-                this.loaded =
-                        Models.loadEmbedder(
-                                b.modelPath, b.contextLength <= 0 ? -1 : b.contextLength, arena);
+                this.loaded = Models.loadEmbedder(b.modelPath, arena);
             } catch (IOException e) {
                 throw new UncheckedIOException("failed to load " + b.modelPath, e);
             }

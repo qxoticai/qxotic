@@ -173,10 +173,8 @@ public class Main {
                             printer.accept(token);
                         };
         int startPosition = state.position();
-        int budget =
-                options.maxTokens() < 0
-                        ? -1
-                        : options.maxTokens() - (startPosition + promptTokens.length());
+        // GENERATED tokens; the state was sized for prompt + budget, so nothing is subtracted
+        int budget = options.maxOutputTokens();
         int totalPrompt = promptTokens.length();
         ReplyParser parser = ReplyParser.spans(tokenizer);
         StringBuilder text = new StringBuilder();
@@ -218,7 +216,7 @@ public class Main {
                 "%n%scontext: %d/%d prompt: %.2f tokens/s (%d) generation: %.2f tokens/s (%d)%s%n",
                 timingPrefix,
                 startPosition + totalPrompt + generated,
-                model.model().config().contextLength(),
+                state.contextCapacity(),
                 totalPrompt / (result.promptNanos() / 1e9),
                 totalPrompt,
                 generated / (result.predictedNanos() / 1e9),
@@ -250,7 +248,8 @@ public class Main {
         return chars.toString();
     }
 
-    static final int DEFAULT_MAX_TOKENS = 1024;
+    /** llama.cpp's default too: big enough for real work, small enough to allocate blind. */
+    static final int DEFAULT_CTX_SIZE = 4096;
 
     static void printUsage(PrintStream out) {
         out.println("Usage:  java -jar jinfer.jar [options]");
@@ -313,9 +312,13 @@ public class Main {
                 "  --seed <long>                 pins the sampling seed; default: a fresh random"
                         + " seed per request");
         out.println(
-                "  --max-tokens, -n <int>        number of steps to run for < 0 = limited by"
-                        + " context length, default "
-                        + DEFAULT_MAX_TOKENS);
+                "  --max-tokens, -n <int>        tokens to GENERATE per turn; -1 = as many as the"
+                        + " context allows, the default");
+        out.println(
+                "  --ctx-size, -c <int>          conversation size in tokens, default "
+                        + DEFAULT_CTX_SIZE
+                        + "; refused above the model's own context length. A one-shot --prompt"
+                        + " allocates only prompt + --max-tokens");
         out.println(
                 "  --stream <boolean>            print tokens during generation; accepts"
                         + " true|false|on|off, default true");
@@ -372,7 +375,8 @@ public class Main {
         // capability -> path or ref; resolved once parsing has succeeded
         java.util.Map<String, String> companionRefs = new java.util.LinkedHashMap<>();
         Long seed = null; // unset = a fresh random seed per request
-        int maxTokens = DEFAULT_MAX_TOKENS;
+        int maxOutputTokens = -1;
+        int ctxSize = DEFAULT_CTX_SIZE;
         boolean interactive = false;
         boolean server = false;
         String host = "127.0.0.1";
@@ -452,7 +456,8 @@ public class Main {
                                         limits.withRequestTimeout(
                                                 Options.seconds(optionName, nextArg));
                         case "--seed", "-s" -> seed = Long.parseLong(nextArg);
-                        case "--max-tokens", "-n" -> maxTokens = Integer.parseInt(nextArg);
+                        case "--max-tokens", "-n" -> maxOutputTokens = Integer.parseInt(nextArg);
+                        case "--ctx-size", "-c" -> ctxSize = Integer.parseInt(nextArg);
                         case "--stream" -> stream = Options.parseBooleanOption(optionName, nextArg);
                         case "--echo" -> echo = Options.parseBooleanOption(optionName, nextArg);
                         case "--color" -> colorMode = nextArg.toLowerCase(Locale.ROOT);
@@ -524,7 +529,8 @@ public class Main {
                 topk,
                 minp,
                 seed,
-                maxTokens,
+                maxOutputTokens,
+                ctxSize,
                 stream,
                 echo,
                 think,
@@ -730,17 +736,12 @@ public class Main {
                 model =
                         Models.load(
                                 options.modelPath(),
-                                options.maxTokens(),
                                 java.lang.foreign.Arena.global(),
                                 options.companions());
             } else {
-                model = AOT.tryUsePreLoaded(options.modelPath(), options.maxTokens());
+                model = AOT.tryUsePreLoaded(options.modelPath());
                 if (model == null) {
-                    model =
-                            Models.load(
-                                    options.modelPath(),
-                                    options.maxTokens(),
-                                    java.lang.foreign.Arena.global());
+                    model = Models.load(options.modelPath(), java.lang.foreign.Arena.global());
                 }
             }
         } catch (IllegalArgumentException
@@ -758,6 +759,13 @@ public class Main {
         Sampling sampling = options.sampling(model.samplingDefaults());
         if (options.server()) {
             serve(model, options, sampling);
+            return;
+        }
+        try {
+            options.contextCapacity(model); // --ctx-size against what the model was trained for
+        } catch (IllegalArgumentException e) {
+            System.err.println("ERROR " + e.getMessage());
+            System.exit(1);
             return;
         }
         Sampler sampler = sampling.sampler(model.model().config().vocabularySize());
@@ -778,10 +786,13 @@ public class Main {
      */
     private static void serve(LoadedModel<?> model, Options options, Sampling sampling)
             throws IOException {
+        // both numbers, because one of them used to be a lie: what this run allocated, and what
+        // the model can actually take
         System.out.printf(
-                "model       %s  (%s, ctx %d)%n",
+                "model       %s  (%s, ctx %d of %d)%n",
                 options.modelPath().getFileName(),
                 model.model().getClass().getSimpleName(),
+                options.contextCapacity(model),
                 model.model().config().contextLength());
         options.companions()
                 .forEach(
@@ -886,6 +897,7 @@ public class Main {
                             model.seed(),
                             new PromptCache.Options(
                                     0,
+                                    options.contextCapacity(model),
                                     Long.MAX_VALUE,
                                     options.promptCache(),
                                     options.promptCacheReadOnly()))) {
@@ -927,7 +939,11 @@ public class Main {
             return;
         }
 
-        S state = Generator.stateFor(model.model(), promptTokens.length());
+        S state =
+                Generator.stateFor(
+                        model.model(),
+                        promptTokens.length(),
+                        options.oneShotCapacity(model, promptTokens.length()));
         CliReply reply = generateCli(model, state, promptTokens, stops, sampler, options);
         if (!options.stream()) {
             System.out.println(reply.text());
@@ -947,7 +963,7 @@ public class Main {
             LoadedModel<S> model, ChatTemplate template, Sampler sampler, Options options)
             throws IOException {
         Set<Integer> stops = model.stopTokens();
-        int contextLength = model.model().config().contextLength();
+        int contextLength = options.contextCapacity(model);
         S state = model.model().newState(contextLength, RuntimeFlags.BATCH_CAPACITY);
         List<Message> opening = new ArrayList<>();
         if (options.systemPrompt() != null) {
@@ -1026,7 +1042,10 @@ public class Main {
                 CliReply reply =
                         generateCli(
                                 model,
-                                Generator.stateFor(model.model(), promptTokens.length()),
+                                Generator.stateFor(
+                                        model.model(),
+                                        promptTokens.length(),
+                                        options.contextCapacity(model)),
                                 promptTokens,
                                 stops,
                                 sampler,
@@ -1045,7 +1064,7 @@ final class AOT {
     // native image (AOT class initialized-at-build-time) this skips re-reading and re-parsing the
     // header at startup; the tensor data is still mmap'd at runtime. Arch-agnostic: any new-API
     // port
-    // loads from it via Models.load(fileChannel, gguf, ctx).
+    // loads from it via Models.load(fileChannel, ctx).
     //
     // Tradeoff vs the old per-model AOT: that one baked the fully materialized tokenizer + config
     // and
@@ -1079,10 +1098,9 @@ final class AOT {
 
     /**
      * The preloaded model when {@code modelPath} matches the baked one, else null (the caller falls
-     * back to {@link Models#load(Path, int)}). Reuses the baked GGUF, so only the tensor data is
-     * read.
+     * back to {@link Models#load(Path)}). Reuses the baked GGUF, so only the tensor data is read.
      */
-    static LoadedModel<?> tryUsePreLoaded(Path modelPath, int contextLength) throws IOException {
+    static LoadedModel<?> tryUsePreLoaded(Path modelPath) throws IOException {
         PartialModel preLoaded = PRELOADED_GGUF;
         if (preLoaded == null) {
             return null;
@@ -1092,8 +1110,7 @@ final class AOT {
         }
         try (var timer = Timer.log("Load tensors from pre-loaded model");
                 FileChannel fileChannel = FileChannel.open(modelPath, StandardOpenOption.READ)) {
-            return Models.load(
-                    fileChannel, preLoaded.gguf(), contextLength, java.lang.foreign.Arena.global());
+            return Models.load(fileChannel, preLoaded.gguf(), java.lang.foreign.Arena.global());
         }
     }
 }

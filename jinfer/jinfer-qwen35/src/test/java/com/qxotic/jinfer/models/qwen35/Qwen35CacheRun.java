@@ -26,7 +26,7 @@ public final class Qwen35CacheRun {
     private static void main(String[] args) throws Exception {
         Path path =
                 Path.of(args.length > 0 ? args[0] : ModelFixture.QWEN35_2B_Q8.path().toString());
-        Qwen35 m = Qwen35.loadModel(path, 4096, java.lang.foreign.Arena.ofAuto());
+        Qwen35 m = Qwen35.loadModel(path, java.lang.foreign.Arena.ofAuto());
         Harness<Qwen35.State> h =
                 new Harness<>(
                         m.loaded(),

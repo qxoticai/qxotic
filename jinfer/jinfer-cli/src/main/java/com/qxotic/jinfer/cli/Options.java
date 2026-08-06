@@ -21,9 +21,11 @@ import java.util.Locale;
  * checks here exist to produce a good message next to a usage block, while {@link ServerConfig}
  * validates its own contract for any caller.
  *
- * @param maxTokens the CLI's budget flag. In server mode it becomes the DEFAULT completion budget
- *     for a request that omits {@code max_tokens}; in chat and instruct mode it is a total context
- *     cap, which is a second meaning the flag should not have (see the note in Main's usage)
+ * @param maxOutputTokens tokens GENERATED per turn, -1 = as many as the context allows. The same
+ *     meaning in every mode; in server mode it is the default for a request that omits {@code
+ *     max_tokens}
+ * @param ctxSize the size of a session's state, and the ceiling on every one-shot. Refused above
+ *     the model's own context length
  */
 public record Options(
         Path modelPath,
@@ -39,7 +41,8 @@ public record Options(
         Integer topk,
         Float minp,
         Long seed,
-        int maxTokens,
+        int maxOutputTokens,
+        int ctxSize,
         boolean stream,
         boolean echo,
         boolean think,
@@ -76,6 +79,10 @@ public record Options(
         // checked here, before InetSocketAddress can say "port out of range" without saying which
         // flag or how to fix it
         require(0 <= port && port <= 65535, "Invalid argument: --port must be within [0, 65535]");
+        require(ctxSize >= 1, "Invalid argument: --ctx-size must be at least 1");
+        require(
+                maxOutputTokens >= -1,
+                "Invalid argument: --max-tokens must be -1 (fill the context) or non-negative");
         // the only thing --no-grammar does is refuse requests that ask for a grammar, and only
         // the HTTP API has requests. Accepting it elsewhere made it a flag that did nothing.
         require(
@@ -89,6 +96,33 @@ public record Options(
      * The sampling stack these flags describe, over the model's own recommendations: an explicit
      * flag wins, then the container's {@code general.sampling.*}, then the engine baseline.
      */
+    /**
+     * The state size for a SESSION - a conversation grows across turns and a KV ring cannot grow
+     * with it, so it is pre-sized. Refused above what the model was trained for.
+     */
+    public int contextCapacity(LoadedModel<?> model) {
+        int trained = model.model().config().contextLength();
+        require(
+                ctxSize <= trained,
+                "Invalid argument: --ctx-size %d exceeds what %s was trained for (%d)",
+                ctxSize,
+                modelPath.getFileName(),
+                trained);
+        return ctxSize;
+    }
+
+    /**
+     * The state size for a ONE-SHOT: exactly the work, never more. A single generation needs the
+     * prompt plus its budget and not one position beyond, which is why instruct mode needs no size
+     * flag of its own - and why the banner stopped carrying an arbitrary number.
+     */
+    public int oneShotCapacity(LoadedModel<?> model, int promptLen) {
+        int session = contextCapacity(model);
+        return maxOutputTokens < 0
+                ? session
+                : Math.max(16, Math.min(session, promptLen + maxOutputTokens));
+    }
+
     public Sampling sampling(LoadedModel.SamplingDefaults defaults) {
         return defaults.resolve(temperature, topp, topk, minp, seed);
     }
@@ -101,9 +135,11 @@ public record Options(
         return new ServerConfig(
                 modelPath.getFileName().toString(),
                 new InetSocketAddress(host, port),
-                new ServerConfig.Defaults(sampling(defaults), maxTokens, think, rawPrompt),
+                new ServerConfig.Defaults(sampling(defaults), maxOutputTokens, think, rawPrompt),
                 limits.withGrammar(!noGrammar),
-                PromptCache.Options.DEFAULTS.withCatalog(promptCache, promptCacheReadOnly));
+                PromptCache.Options.DEFAULTS
+                        .withContextCapacity(ctxSize)
+                        .withCatalog(promptCache, promptCacheReadOnly));
     }
 
     /**
