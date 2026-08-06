@@ -58,7 +58,7 @@ public final class JinferDocumentPostProcessor implements DocumentPostProcessor,
             } catch (IOException e) {
                 throw new UncheckedIOException("failed to load " + b.modelPath, e);
             }
-            this.state = newState(loaded, arena);
+            this.state = newState(loaded, b.contextLength, arena);
             // the card's own wording is only knowable once the port is loaded
             this.instruction =
                     b.instruction == null ? loaded.reranker().defaultInstruction() : b.instruction;
@@ -70,10 +70,13 @@ public final class JinferDocumentPostProcessor implements DocumentPostProcessor,
         }
     }
 
-    private static <S extends RuntimeState> S newState(LoadedReranker<S> l, Arena arena) {
+    private static <S extends RuntimeState> S newState(
+            LoadedReranker<S> l, int contextLength, Arena arena) {
         return l.model()
                 .newState(
-                        l.model().config().contextLength(),
+                        Math.min(
+                                contextLength <= 0 ? Integer.MAX_VALUE : contextLength,
+                                l.model().config().contextLength()),
                         RuntimeFlags.BATCH_CAPACITY,
                         arena,
                         true);

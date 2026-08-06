@@ -52,7 +52,6 @@ public final class Gemma4MtpDecoder {
         this.w = mtp.weights();
         this.backbone = backbone;
         this.backboneOwnKv = backbone.config().ownKvLayers();
-        int ctx = backbone.config().contextLength();
 
         this.ropeSWA = RoPE.plain(cfg.headSizeSWA(), cfg.ropeThetaSWA());
         this.ropeFull =

@@ -127,9 +127,11 @@ public final class JinferBench {
             LoadedModel<?> model = loadAny(Path.of(path), ctx);
             String name = name(path);
             if (p > 0)
-                rows.add(measure(model, name, prefillThreads, "pp" + p, p, true, warmup, reps));
+                rows.add(
+                        measure(model, name, prefillThreads, "pp" + p, p, true, ctx, warmup, reps));
             if (n > 0)
-                rows.add(measure(model, name, decodeThreads, "tg" + n, n, false, warmup, reps));
+                rows.add(
+                        measure(model, name, decodeThreads, "tg" + n, n, false, ctx, warmup, reps));
         }
         printTable(rows);
     }
@@ -175,9 +177,12 @@ public final class JinferBench {
             String test,
             int count,
             boolean prefill,
+            int ctx,
             int minWarmup,
             int reps) {
-        int ctx = model.model().config().contextLength();
+        // the BENCH's context (-p + -n + slack, or --ctx), never the model's own: config
+        // .contextLength() is what the model was trained for, and allocating a state that size
+        // per rep is gigabytes nobody asked for
         int vocab = model.model().config().vocabularySize();
         int[] prompt = fillerTokens(vocab, prefill ? count : 1);
 
