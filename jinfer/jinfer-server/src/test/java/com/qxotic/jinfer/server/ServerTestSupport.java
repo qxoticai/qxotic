@@ -30,7 +30,8 @@ final class ServerTestSupport {
                 new ServerConfig.Defaults(
                         new Sampling(1f, 0.95f, 40, 0.05f, 42L), 2048, true, false),
                 ServerConfig.Limits.DEFAULTS,
-                new com.qxotic.jinfer.cache.PromptCache.Options(4, 0, promptCache, readOnly));
+                com.qxotic.jinfer.cache.PromptCache.Options.DEFAULTS.withCatalog(
+                        promptCache, readOnly));
     }
 
     /**

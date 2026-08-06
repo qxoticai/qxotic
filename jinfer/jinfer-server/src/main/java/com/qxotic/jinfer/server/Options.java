@@ -101,11 +101,7 @@ public record Options(
                 new InetSocketAddress(host, port),
                 new ServerConfig.Defaults(sampling(defaults), maxTokens, think, rawPrompt),
                 limits.withGrammar(!noGrammar),
-                new PromptCache.Options(
-                        RuntimeFlags.SESSIONS,
-                        RuntimeFlags.PROMPT_CACHE ? RuntimeFlags.PROMPT_CACHE_BUDGET_BYTES : 0,
-                        promptCache,
-                        promptCacheReadOnly));
+                PromptCache.Options.DEFAULTS.withCatalog(promptCache, promptCacheReadOnly));
     }
 
     /**

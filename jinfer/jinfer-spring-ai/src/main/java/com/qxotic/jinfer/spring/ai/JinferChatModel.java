@@ -83,6 +83,18 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     final com.qxotic.jinfer.media.VideoSampler videoSampler;
     final CachedPrompt prefix;
 
+    /**
+     * The builder's two cache knobs as the cache's own record. Read-only: this mounts a catalog to
+     * SERVE, never to write - a provider embedded in an application must not append to a file the
+     * application did not ask it to write.
+     */
+    private static com.qxotic.jinfer.cache.PromptCache.Options cacheOptions(
+            java.nio.file.Path cachedPrompts, int cachedSessions) {
+        return com.qxotic.jinfer.cache.PromptCache.Options.DEFAULTS
+                .withHotSessions(cachedSessions)
+                .withCatalog(cachedPrompts, true);
+    }
+
     private JinferChatModel(Builder b) {
         if (b.defaultOptions != null && hasKnobs(b)) {
             throw new IllegalArgumentException(
@@ -94,15 +106,13 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                                 b.modelPath,
                                 java.util.Map.copyOf(b.companions),
                                 b.contextLength,
-                                b.cachedPrompts,
-                                b.cachedSessions)
+                                cacheOptions(b.cachedPrompts, b.cachedSessions))
                         : new ChatEngine(
                                 b.loaded,
                                 b.modelName == null
                                         ? b.loaded.model().getClass().getSimpleName()
                                         : b.modelName,
-                                b.cachedPrompts,
-                                b.cachedSessions);
+                                cacheOptions(b.cachedPrompts, b.cachedSessions));
         this.videoSampler = b.videoSampler;
         this.prefix = CachedPrompt.NONE;
         this.observationRegistry =

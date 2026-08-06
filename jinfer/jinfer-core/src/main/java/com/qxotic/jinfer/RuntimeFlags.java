@@ -51,16 +51,6 @@ public final class RuntimeFlags {
             Integer.getInteger("jinfer.decodeThreads", physicalCoreCount());
     static final boolean DECODE_SPIN = !"false".equals(System.getProperty("jinfer.decodeSpin"));
 
-    // prompt cache
-    public static final boolean PROMPT_CACHE =
-            !"false".equals(System.getProperty("jinfer.promptCache"));
-
-    /** Live conversations kept resident for append-only reuse (tier 1); each holds a full state. */
-    public static final int SESSIONS = Integer.getInteger("jinfer.sessions", 4);
-
-    public static final long PROMPT_CACHE_BUDGET_BYTES =
-            Long.getLong("jinfer.promptCacheMB", 2048L) * (1L << 20);
-
     /**
      * Best-effort physical-core count for sizing the bandwidth-bound decode pool. Linux reports SMT
      * state via sysfs (SMT on => 2 hardware threads per core => logical/2; off => logical).

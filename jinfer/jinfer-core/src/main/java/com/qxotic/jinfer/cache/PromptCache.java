@@ -56,6 +56,30 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
      */
     public record Options(int hotSessions, long blockBudgetBytes, Path catalog, boolean readOnly) {
 
+        /**
+         * What a caller with no opinion gets: 4 live conversations and a 2 GB block layer, RAM
+         * only. These were jinfer.sessions / jinfer.promptCacheMB / jinfer.promptCache, read inside
+         * ChatEngine - so an embedder could not set them and two engines in one process could not
+         * differ. Turning the block layer off is {@code withBlockBudget(0)}, which the boolean flag
+         * duplicated.
+         */
+        public static final Options DEFAULTS = new Options(4, 2048L << 20, null, false);
+
+        /** These options over {@code catalog}, read-only or accumulating. */
+        public Options withCatalog(Path catalog, boolean readOnly) {
+            return new Options(hotSessions, blockBudgetBytes, catalog, readOnly);
+        }
+
+        /** These options with a different block-layer budget; 0 disables the block layer. */
+        public Options withBlockBudget(long blockBudgetBytes) {
+            return new Options(hotSessions, blockBudgetBytes, catalog, readOnly);
+        }
+
+        /** These options with a different number of resident conversations. */
+        public Options withHotSessions(int hotSessions) {
+            return new Options(hotSessions, blockBudgetBytes, catalog, readOnly);
+        }
+
         // ranges, not taste: int widens silently into the long slot, so transposed
         // (budget, hotSessions) literals would compile and build a pathological cache
         public Options {

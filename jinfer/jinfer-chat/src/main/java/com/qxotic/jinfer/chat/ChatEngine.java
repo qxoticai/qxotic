@@ -3,7 +3,6 @@ package com.qxotic.jinfer.chat;
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.LanguageModel;
 import com.qxotic.jinfer.LeakWatch;
-import com.qxotic.jinfer.RuntimeFlags;
 import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.llm.Generator;
@@ -105,8 +104,7 @@ public final class ChatEngine {
             Path modelPath,
             java.util.Map<String, Path> companions,
             int contextLength,
-            Path cachedPrompts,
-            int cachedSessions) {
+            PromptCache.Options cacheOptions) {
         this(
                 // null = none, as everywhere else companions are accepted: "no companions" and
                 // "an empty map" must not be two states, and this threw NullPointerException
@@ -115,9 +113,7 @@ public final class ChatEngine {
                         companions == null ? java.util.Map.of() : java.util.Map.copyOf(companions),
                         contextLength),
                 modelPath.getFileName().toString(),
-                cachedPrompts,
-                true,
-                cachedSessions);
+                cacheOptions);
     }
 
     /**
@@ -129,55 +125,29 @@ public final class ChatEngine {
      * and is still the quiescence certificate, but it does NOT free weights it did not allocate -
      * close your arena after this engine, never before.
      *
-     * <p>{@code cachedPrompts} mounts READ-ONLY (serve-only; missing = degrade, incompatible = fail
-     * loudly); use the catalog constructor for a read-write accumulating file.
+     * <p>The cache is {@link PromptCache.Options}, which says everything there is to say about it:
+     * how many live conversations stay resident, the block layer's RAM budget (0 = blocks off), the
+     * catalog file (null = RAM only) and whether that file is served or also written. Three of
+     * those used to come from system properties read inside this constructor, which meant an
+     * embedder could not set them at all and two engines in one process could not differ.
      */
-    public ChatEngine(
-            LoadedModel<?> loaded, String modelName, Path cachedPrompts, int cachedSessions) {
-        this(loaded, modelName, cachedPrompts, true, cachedSessions);
+    public ChatEngine(LoadedModel<?> loaded, String modelName, PromptCache.Options cacheOptions) {
+        this(new Owned(loaded, null), modelName, cacheOptions);
     }
 
-    /**
-     * As above with a READ-WRITE catalog: the block layer lives on {@code catalog} (opened if
-     * present, created otherwise) and {@link #savePrompts} appends what this engine computed - the
-     * server's accumulating cache file. {@code readOnly} mounts serve-only.
-     */
-    public ChatEngine(
-            LoadedModel<?> loaded,
-            String modelName,
-            Path catalog,
-            boolean catalogReadOnly,
-            int cachedSessions) {
-        this(new Owned(loaded, null), modelName, catalog, catalogReadOnly, cachedSessions);
-    }
-
-    private ChatEngine(
-            Owned owned,
-            String modelName,
-            Path catalog,
-            boolean catalogReadOnly,
-            int cachedSessions) {
+    private ChatEngine(Owned owned, String modelName, PromptCache.Options cacheOptions) {
         if (owned.loaded() == null) throw new IllegalArgumentException("null model");
         if (modelName == null) throw new IllegalArgumentException("null modelName");
         this.weights = owned.weights();
         this.loaded = owned.loaded();
         this.modelName = modelName;
+        if (cacheOptions == null) throw new IllegalArgumentException("null cache options");
         PromptCache<?> built = null;
         try {
             // PromptCache.of reads the model's capabilities itself (codec-less = hot-only,
-            // coarse = define-only writes); the flag is the block layer's off-switch, and an
+            // coarse = define-only writes); a zero budget is the block layer's off-switch, and an
             // explicit catalog still mounts - the caller pointed at an artifact on purpose
-            built =
-                    PromptCache.of(
-                            loaded.model(),
-                            loaded.seed(),
-                            new PromptCache.Options(
-                                    cachedSessions,
-                                    RuntimeFlags.PROMPT_CACHE
-                                            ? RuntimeFlags.PROMPT_CACHE_BUDGET_BYTES
-                                            : 0,
-                                    catalog,
-                                    catalogReadOnly));
+            built = PromptCache.of(loaded.model(), loaded.seed(), cacheOptions);
             this.cache = built;
             // inside the try: a malformed chat template in the GGUF throws at compile, and an
             // OWNED weights arena must not outlive a constructor that never returns
