@@ -155,4 +155,20 @@ final class RoPEFillTest {
             assertEquals(i + 1, head.getFloat(i), 0f, "dim " + i + " must be untouched");
         }
     }
+
+    /**
+     * A batch of independent sequences restarts its position at each boundary, so its rows are not
+     * a range. Each row must still hold what that position holds anywhere else.
+     */
+    @Test
+    void scatteredPositionsMatchTheirOwnRanges() {
+        int[] positions = {0, 1, 2, 0, 1, 511, 4999};
+        Arena arena = Arena.ofAuto();
+        F32FloatTensor cos = F32FloatTensor.allocate(arena, positions.length * HALF);
+        F32FloatTensor sin = F32FloatTensor.allocate(arena, positions.length * HALF);
+        RoPE.fill(cos, sin, positions, positions.length, HALF, RoPE.plain(HEAD_SIZE, THETA));
+        for (int r = 0; r < positions.length; r++) {
+            assertSameRows(new Range(cos, sin), r, fill(positions[r], 1), 1);
+        }
+    }
 }

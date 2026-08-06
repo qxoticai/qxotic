@@ -189,13 +189,38 @@ public final class RoPE {
             int count,
             int lanes,
             Schedule schedule) {
+        fill(cos, sin, r -> fromPosition + r, count, lanes, schedule);
+    }
+
+    /**
+     * As above for rows whose positions are NOT contiguous: row {@code r} takes {@code
+     * positions[r]}. A batch of independent sequences restarts the position at each sequence
+     * boundary, so its rows are not a range.
+     */
+    public static void fill(
+            FloatTensor cos,
+            FloatTensor sin,
+            int[] positions,
+            int count,
+            int lanes,
+            Schedule schedule) {
+        fill(cos, sin, r -> positions[r], count, lanes, schedule);
+    }
+
+    private static void fill(
+            FloatTensor cos,
+            FloatTensor sin,
+            java.util.function.IntUnaryOperator positionOf,
+            int count,
+            int lanes,
+            Schedule schedule) {
         float amplitude = schedule.amplitude();
         // ponytail: one small array per ingest (lanes floats, ~1 KB); hoist it into the state's
         // scratch if a profile ever shows the allocation
         float[] row = new float[lanes];
         long n = 0;
         for (int p = 0; p < count; p++) {
-            schedule.angles(fromPosition + p, row);
+            schedule.angles(positionOf.applyAsInt(p), row);
             for (int j = 0; j < lanes; j++, n++) {
                 cos.setFloat(n, (float) (Math.cos(row[j]) * amplitude));
                 sin.setFloat(n, (float) (Math.sin(row[j]) * amplitude));

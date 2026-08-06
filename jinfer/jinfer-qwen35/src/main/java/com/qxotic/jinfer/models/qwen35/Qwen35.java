@@ -190,6 +190,10 @@ public final class Qwen35
         Weights w = weights;
         int dim = config.embeddingLength;
         float eps = config.rmsNormEps;
+        // ONCE for the batch: an angle never depends on the layer
+        if (w.ropeHalf > 0) {
+            RoPE.fill(state.ropeCos, state.ropeSin, startPos, seqLen, w.ropeHalf, w.rope);
+        }
 
         for (int s = 0; s < seqLen; s++) {
             w.tokenEmbeddingTable.copyTo(tokens[tokenOffset + s] * dim, state.x, s * dim, dim);
@@ -312,17 +316,17 @@ public final class Qwen35
                             RoPE.applyInterleaved(
                                     state.attnQ,
                                     qDst + h * fHeadSz,
-                                    fStart + s,
-                                    w.ropeCr,
-                                    w.ropeCi,
+                                    s,
+                                    state.ropeCos,
+                                    state.ropeSin,
                                     w.ropeHalf);
                         for (int h = 0; h < fKvHeads; h++)
                             RoPE.applyInterleaved(
                                     state.k,
                                     kBase + h * fHeadSz,
-                                    fStart + s,
-                                    w.ropeCr,
-                                    w.ropeCi,
+                                    s,
+                                    state.ropeCos,
+                                    state.ropeSin,
                                     w.ropeHalf);
                     }
                 });
@@ -812,7 +816,7 @@ public final class Qwen35
         final FloatTensor[] ffnGate, ffnUp, ffnDown;
         final FloatTensor[] moeRouter, moeExpertGate, moeExpertUp, moeExpertDown;
         final FloatTensor[] moeSharedGate, moeSharedUp, moeSharedDown, moeSharedInputGate;
-        final float[] ropeCr, ropeCi;
+        final RoPE.Schedule rope; // null when this model does not rotate
         final int ropeHalf;
 
         Weights(
@@ -847,8 +851,7 @@ public final class Qwen35
                 FloatTensor[] moeSharedUp,
                 FloatTensor[] moeSharedDown,
                 FloatTensor[] moeSharedInputGate,
-                float[] ropeCr,
-                float[] ropeCi,
+                RoPE.Schedule rope,
                 int ropeHalf) {
             this.tokenEmbeddingTable = tokenEmbeddingTable;
             this.outputNorm = outputNorm;
@@ -881,8 +884,7 @@ public final class Qwen35
             this.moeSharedUp = moeSharedUp;
             this.moeSharedDown = moeSharedDown;
             this.moeSharedInputGate = moeSharedInputGate;
-            this.ropeCr = ropeCr;
-            this.ropeCi = ropeCi;
+            this.rope = rope;
             this.ropeHalf = ropeHalf;
         }
     }
@@ -917,6 +919,8 @@ public final class Qwen35
         }
 
         final FloatTensor x, xb, xb2, q, k, v, logits, ffnUp, ffnGate, ssmQkv, ssmTmp;
+        // rotary values for the batch about to be ingested: sized by BATCH, never context
+        final FloatTensor ropeCos, ropeSin;
         final FloatTensor attnQ,
                 attnOut,
                 gateProj,
@@ -995,6 +999,13 @@ public final class Qwen35
             this.k = FloatTensor.allocateF32(arena, B * kvDim);
             this.v = FloatTensor.allocateF32(arena, B * kvDim);
             this.logits = FloatTensor.allocateF32(arena, config.vocabularySize);
+            int lanes =
+                    Math.max(
+                            1,
+                            Math.max(0, Math.min(config.ropeDimensionCount, config.headSize) & ~1)
+                                    / 2);
+            this.ropeCos = FloatTensor.allocateF32(arena, B * lanes);
+            this.ropeSin = FloatTensor.allocateF32(arena, B * lanes);
             this.ffnUp = hiddenDim > 0 ? FloatTensor.allocateF32(arena, B * hiddenDim) : null;
             this.ffnGate = hiddenDim > 0 ? FloatTensor.allocateF32(arena, B * hiddenDim) : null;
             this.attnGateArr = new float[B * queryDim];
@@ -1197,10 +1208,7 @@ public final class Qwen35
                         : tokenEmbeddingTable;
 
         int ropeDim = Math.max(0, Math.min(config.ropeDimensionCount, config.headSize) & ~1);
-        RoPE.Freqs rope =
-                ropeDim > 0
-                        ? RoPE.precomputeFreqsCis(config.contextLength, ropeDim, config.ropeTheta)
-                        : null;
+        RoPE.Schedule rope = ropeDim > 0 ? RoPE.plain(ropeDim, config.ropeTheta) : null;
 
         return new Weights(
                 tokenEmbeddingTable,
@@ -1265,8 +1273,7 @@ public final class Qwen35
                                         tensors,
                                         "blk." + i + ".ffn_gate_inp_shexp.weight",
                                         "blk." + i + ".ffn_shared_expert_gate_inp.weight")),
-                rope != null ? rope.cos() : null,
-                rope != null ? rope.sin() : null,
+                rope,
                 ropeDim / 2);
     }
 }

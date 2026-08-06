@@ -151,6 +151,8 @@ public final class Qwen3
         Weights w = weights;
         int dim = config.embeddingLength;
         float eps = config.rmsNormEps;
+        // ONCE for the batch: an angle never depends on the layer
+        RoPE.fill(state.ropeCos, state.ropeSin, startPos, seqLen, config.ropeHalf(), w.rope());
 
         for (int s = 0; s < seqLen; s++) {
             w.tokenEmbeddingTable.copyTo(
@@ -230,12 +232,12 @@ public final class Qwen3
                                 qNorm,
                                 fHeadSz,
                                 eps); // per-head QK-norm before RoPE
-                        RoPE.applyNeox(state.attnQ, off, fStart + s, w.ropeCr, w.ropeCi, fHalf);
+                        RoPE.applyNeox(state.attnQ, off, s, state.ropeCos, state.ropeSin, fHalf);
                     }
                     for (int h = 0; h < fKvHeads; h++) {
                         long off = (long) s * fKvDim + (long) h * fHeadSz;
                         rmsnorm(state.k, off, state.k, off, kNorm, fHeadSz, eps);
-                        RoPE.applyNeox(state.k, off, fStart + s, w.ropeCr, w.ropeCi, fHalf);
+                        RoPE.applyNeox(state.k, off, s, state.ropeCos, state.ropeSin, fHalf);
                     }
                 });
 
@@ -330,6 +332,8 @@ public final class Qwen3
             nSeg++;
         }
 
+        // rows are not a range here - each sequence restarts at position 0
+        RoPE.fill(state.ropeCos, state.ropeSin, posOf, seqLen, config.ropeHalf(), w.rope());
         for (int s = 0; s < seqLen; s++) {
             w.tokenEmbeddingTable.copyTo((long) tokens[s] * dim, state.x, (long) s * dim, dim);
         }
@@ -413,12 +417,12 @@ public final class Qwen3
                     for (int h = 0; h < fHeads; h++) {
                         long off = (long) s * fQDim + (long) h * fHeadSz;
                         rmsnorm(state.attnQ, off, state.attnQ, off, qNorm, fHeadSz, eps);
-                        RoPE.applyNeox(state.attnQ, off, pos, w.ropeCr, w.ropeCi, fHalf);
+                        RoPE.applyNeox(state.attnQ, off, s, state.ropeCos, state.ropeSin, fHalf);
                     }
                     for (int h = 0; h < fKvHeads; h++) {
                         long off = (long) s * fKvDim + (long) h * fHeadSz;
                         rmsnorm(state.k, off, state.k, off, kNorm, fHeadSz, eps);
-                        RoPE.applyNeox(state.k, off, pos, w.ropeCr, w.ropeCi, fHalf);
+                        RoPE.applyNeox(state.k, off, s, state.ropeCos, state.ropeSin, fHalf);
                     }
                 });
 
@@ -525,14 +529,15 @@ public final class Qwen3
             FloatTensor[] w1,
             FloatTensor[] w3,
             FloatTensor[] w2,
-            float[] ropeCr,
-            float[] ropeCi) {}
+            RoPE.Schedule rope) {}
 
     // === State ===
 
     public static final class State extends com.qxotic.jinfer.BaseState {
         final int contextCapacity, batchCapacity;
         final FloatTensor x, xb, k, v, attnQ, attnOut, hb, hb2;
+        // rotary values for the batch about to be ingested: sized by BATCH, never context
+        final FloatTensor ropeCos, ropeSin;
         final FloatTensor segQ, segOut, segK, segV; // per-sequence attention scratch (packed path)
         final FloatTensor embOut; // pooled-embedding output, reused per pool() call
         final FloatTensor[] keyCache, valueCache;
@@ -561,6 +566,8 @@ public final class Qwen3
             this.attnOut = FloatTensor.allocateF32(arena, c * queryDim);
             this.hb = FloatTensor.allocateF32(arena, c * hidden);
             this.hb2 = FloatTensor.allocateF32(arena, c * hidden);
+            this.ropeCos = FloatTensor.allocateF32(arena, c * config.ropeHalf());
+            this.ropeSin = FloatTensor.allocateF32(arena, c * config.ropeHalf());
             // per-sequence attention scratch: q/out over a chunk's rows, K/V over a sequence's full
             // extent
             this.segQ = FloatTensor.allocateF32(arena, c * queryDim);
@@ -644,7 +651,7 @@ public final class Qwen3
 
         Map<String, GGMLTensorEntry> tensors = ModelLoader.loadTensors(fileChannel, gguf, arena);
         int ropeDim = Math.min(config.ropeDimensionCount, config.headSize);
-        RoPE.Freqs rope = RoPE.precomputeFreqsCis(config.contextLength, ropeDim, config.ropeTheta);
+        RoPE.Schedule rope = RoPE.plain(ropeDim, config.ropeTheta);
         return new Qwen3(
                 config,
                 tokenizer,
@@ -653,7 +660,7 @@ public final class Qwen3
     }
 
     static Weights loadWeights(
-            Map<String, GGMLTensorEntry> tensors, Configuration config, RoPE.Freqs rope) {
+            Map<String, GGMLTensorEntry> tensors, Configuration config, RoPE.Schedule rope) {
         int n = config.numberOfLayers;
         return new Weights(
                 ModelLoader.loadQuantized(tensors.get("token_embd.weight")),
@@ -669,7 +676,6 @@ public final class Qwen3
                 ModelLoader.quantArray(n, i -> tensors.get("blk." + i + ".ffn_gate.weight")),
                 ModelLoader.quantArray(n, i -> tensors.get("blk." + i + ".ffn_up.weight")),
                 ModelLoader.quantArray(n, i -> tensors.get("blk." + i + ".ffn_down.weight")),
-                rope.cos(),
-                rope.sin());
+                rope);
     }
 }
