@@ -963,8 +963,8 @@ public class Main {
             LoadedModel<S> model, ChatTemplate template, Sampler sampler, Options options)
             throws IOException {
         Set<Integer> stops = model.stopTokens();
-        int contextLength = options.contextCapacity(model);
-        S state = model.model().newState(contextLength, RuntimeFlags.BATCH_CAPACITY);
+        int capacity = options.contextCapacity(model);
+        S state = model.model().newState(capacity, RuntimeFlags.BATCH_CAPACITY);
         List<Message> opening = new ArrayList<>();
         if (options.systemPrompt() != null) {
             opening.add(Message.system(options.systemPrompt()));
@@ -979,7 +979,7 @@ public class Main {
                 String userText = reader.readLine();
                 if (userText == null || "/quit".equals(userText) || "/exit".equals(userText)) break;
                 if ("/context".equals(userText)) {
-                    System.out.printf("context: %d/%d tokens%n", state.position(), contextLength);
+                    System.out.printf("context: %d/%d tokens%n", state.position(), capacity);
                     continue;
                 }
                 conversation = conversation.append(Message.user(userText));
@@ -988,7 +988,7 @@ public class Main {
                 int lcp = commonPrefix(ingested, prompt);
                 IntSequence delta;
                 if (lcp < ingested.length()) {
-                    state = model.model().newState(contextLength, RuntimeFlags.BATCH_CAPACITY);
+                    state = model.model().newState(capacity, RuntimeFlags.BATCH_CAPACITY);
                     delta = prompt;
                 } else {
                     delta = prompt.subSequence(lcp, prompt.length());

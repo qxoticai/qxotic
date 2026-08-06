@@ -962,7 +962,9 @@ public final class ServerIntegrationTest {
         S state =
                 model.model()
                         .newState(
-                                model.model().config().contextLength(),
+                                Math.min(
+                                        model.model().config().contextLength(),
+                                        prompt.length() + 4096),
                                 Math.max(prompt.length(), 16));
         Generator.GenerationResult result =
                 Generator.generate(

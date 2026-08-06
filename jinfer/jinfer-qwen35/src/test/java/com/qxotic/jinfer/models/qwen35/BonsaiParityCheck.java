@@ -62,7 +62,9 @@ public final class BonsaiParityCheck {
         for (Case c : CASES) {
             int[] prompt = tokenizer.encode(c.prompt()).toArray();
             Qwen35.State state =
-                    model35.newState(model35.config().contextLength(), Math.max(16, prompt.length));
+                    model35.newState(
+                            Math.min(model35.config().contextLength(), prompt.length + 256),
+                            Math.max(16, prompt.length));
             model35.ingest(state, Batch.prefill(prompt));
 
             List<Integer> generated = new ArrayList<>();
