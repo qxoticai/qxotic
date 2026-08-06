@@ -23,7 +23,7 @@ final class RoPEFillTest {
         Arena arena = Arena.ofAuto();
         F32FloatTensor cos = F32FloatTensor.allocate(arena, count * HALF);
         F32FloatTensor sin = F32FloatTensor.allocate(arena, count * HALF);
-        RoPE.fill(cos, sin, from, count, HEAD_SIZE, THETA);
+        RoPE.fill(cos, sin, from, count, HALF, RoPE.plain(HEAD_SIZE, THETA));
         return new Range(cos, sin);
     }
 
@@ -77,18 +77,20 @@ final class RoPEFillTest {
 
         F32FloatTensor wc = F32FloatTensor.allocate(arena, 300 * HALF);
         F32FloatTensor ws = F32FloatTensor.allocate(arena, 300 * HALF);
-        RoPE.fillFromFreqs(wc, ws, 0, 300, HEAD_SIZE, THETA, factors);
+        RoPE.Schedule scaled = RoPE.withFreqFactors(HEAD_SIZE, THETA, factors);
+        RoPE.fill(wc, ws, 0, 300, HALF, scaled);
         F32FloatTensor pc = F32FloatTensor.allocate(arena, 4 * HALF);
         F32FloatTensor ps = F32FloatTensor.allocate(arena, 4 * HALF);
-        RoPE.fillFromFreqs(pc, ps, 296, 4, HEAD_SIZE, THETA, factors);
+        RoPE.fill(pc, ps, 296, 4, HALF, scaled);
         assertSameRows(new Range(wc, ws), 296, new Range(pc, ps), 4);
 
         F32FloatTensor yc = F32FloatTensor.allocate(arena, 300 * HALF);
         F32FloatTensor ys = F32FloatTensor.allocate(arena, 300 * HALF);
-        RoPE.fillYarn(yc, ys, 0, 300, HEAD_SIZE, THETA, 4f, 4096, 32f, 1f, 1f, 1f);
+        RoPE.Schedule yarn = RoPE.yarn(HEAD_SIZE, THETA, 4f, 4096, 32f, 1f, 1f, 1f);
+        RoPE.fill(yc, ys, 0, 300, HALF, yarn);
         F32FloatTensor ypc = F32FloatTensor.allocate(arena, 4 * HALF);
         F32FloatTensor yps = F32FloatTensor.allocate(arena, 4 * HALF);
-        RoPE.fillYarn(ypc, yps, 296, 4, HEAD_SIZE, THETA, 4f, 4096, 32f, 1f, 1f, 1f);
+        RoPE.fill(ypc, yps, 296, 4, HALF, yarn);
         assertSameRows(new Range(yc, ys), 296, new Range(ypc, yps), 4);
     }
 
