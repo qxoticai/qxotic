@@ -30,12 +30,12 @@ final class Sse {
      * Opens an SSE response: sets the event-stream headers, registers it with the reaper, and wraps
      * the body so each write is timed.
      */
-    static Stream begin(HttpExchange exchange) throws IOException {
+    static Stream begin(HttpExchange exchange, java.time.Duration writeTimeout) throws IOException {
         Headers headers = exchange.getResponseHeaders();
         headers.set("Content-Type", "text/event-stream; charset=utf-8");
         headers.set("Cache-Control", "no-cache");
         exchange.sendResponseHeaders(200, 0);
-        Stream stream = new Stream(exchange);
+        Stream stream = new Stream(exchange, writeTimeout.toNanos());
         ACTIVE.add(stream);
         return stream;
     }
@@ -58,9 +58,10 @@ final class Sse {
     }
 
     /**
-     * A reaper closes any stream whose in-flight write has blocked past {@code
-     * jinfer.serverWriteTimeout}; the blocked write then fails with IOException, aborting that
-     * generation cleanly.
+     * A reaper closes any stream whose in-flight write has blocked past ITS OWN server's write
+     * timeout; the blocked write then fails with IOException, aborting that generation cleanly. One
+     * reaper serves the process, but the threshold rides on each stream - two servers with
+     * different timeouts would otherwise both get whichever started first.
      */
     private static final java.util.concurrent.atomic.AtomicBoolean REAPER_STARTED =
             new java.util.concurrent.atomic.AtomicBoolean();
@@ -81,8 +82,7 @@ final class Sse {
                                 long now = System.nanoTime();
                                 for (Stream stream : ACTIVE) {
                                     long start = stream.writeStartNanos;
-                                    if (start != 0
-                                            && now - start > ServerFlags.SERVER_WRITE_STALL_NANOS) {
+                                    if (start != 0 && now - start > stream.writeStallNanos) {
                                         Log.LOG.log(
                                                 System.Logger.Level.WARNING,
                                                 () ->
@@ -105,10 +105,12 @@ final class Sse {
     static final class Stream implements AutoCloseable {
         private final HttpExchange exchange;
         private final OutputStream out;
+        private final long writeStallNanos;
         private volatile long writeStartNanos; // 0 = no write in flight
 
-        private Stream(HttpExchange exchange) {
+        private Stream(HttpExchange exchange, long writeStallNanos) {
             this.exchange = exchange;
+            this.writeStallNanos = writeStallNanos;
             this.out =
                     new FilterOutputStream(exchange.getResponseBody()) {
                         @Override

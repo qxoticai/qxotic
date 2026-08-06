@@ -35,14 +35,14 @@ class ServerCacheFileTest {
             LoadedModel<?> model = Models.load(gguf, 2048, arena);
 
             try (Server.Running first =
-                    Server.start(model, ServerTestSupport.options(gguf, catalog, false))) {
+                    Server.start(model, ServerTestSupport.config(gguf, catalog, false))) {
                 assertEquals(200, chat(client, first, gguf, prompt).statusCode());
             } // close appends the tree to the catalog
             assertTrue(Files.exists(catalog), "shutdown must write the catalog");
             assertTrue(Files.size(catalog) > 0, "an empty artifact cached nothing");
 
             try (Server.Running second =
-                    Server.start(model, ServerTestSupport.options(gguf, catalog, false))) {
+                    Server.start(model, ServerTestSupport.config(gguf, catalog, false))) {
                 HttpResponse<String> echoed = chat(client, second, gguf, prompt);
                 assertEquals(200, echoed.statusCode(), echoed.body());
                 assertTrue(

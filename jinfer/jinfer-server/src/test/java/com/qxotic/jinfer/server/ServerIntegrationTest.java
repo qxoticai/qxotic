@@ -89,8 +89,8 @@ public final class ServerIntegrationTest {
         modelId = model.getFileName().toString();
         Assumptions.assumeTrue(Files.exists(model), "model not found: " + model);
         LoadedModel<?> llama = Models.load(model, 2048, java.lang.foreign.Arena.ofAuto());
-        LLMOptions options = ServerTestSupport.options(model);
-        Server.Running server = Server.start(llama, options);
+        ServerConfig config = ServerTestSupport.config(model);
+        Server.Running server = Server.start(llama, config);
         base = ServerTestSupport.baseUrl(server);
         client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
 
@@ -985,12 +985,12 @@ public final class ServerIntegrationTest {
     }
 
     /**
-     * Server-side completion ceiling: an oversized request is clamped to jinfer.serverMaxTokens
-     * (set small for this isolated run), reporting finish_reason "length".
+     * Server-side completion ceiling: an oversized request is clamped to the configured
+     * --max-tokens-cap, reporting finish_reason "length".
      */
     private static void tokenCeiling() throws Exception {
-        int ceiling = ServerFlags.SERVER_MAX_TOKENS;
-        check(ceiling > 0, "ceiling mode needs -Djinfer.serverMaxTokens > 0 (" + ceiling + ")");
+        int ceiling = ServerConfig.Limits.DEFAULTS.maxTokens();
+        check(ceiling > 0, "ceiling mode needs a non-zero --max-tokens-cap (" + ceiling + ")");
         HttpResponse<String> response =
                 post(
                         "/v1/chat/completions",

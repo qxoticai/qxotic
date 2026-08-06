@@ -32,7 +32,7 @@ class ServerTelemetryTest {
         Path jfr = Files.createTempFile("jinfer-server", ".jfr");
         try (Arena arena = Arena.ofShared()) {
             LoadedModel<?> model = Models.load(gguf, 2048, arena);
-            try (Server.Running server = Server.start(model, ServerTestSupport.options(gguf))) {
+            try (Server.Running server = Server.start(model, ServerTestSupport.config(gguf))) {
                 HttpClient client =
                         HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
                 try (Recording recording = new Recording()) {
@@ -69,8 +69,8 @@ class ServerTelemetryTest {
         Path gguf = ModelFixture.LLAMA32_1B_Q8.require();
         try (Arena arena = Arena.ofShared()) {
             LoadedModel<?> model = Models.load(gguf, 2048, arena);
-            try (Server.Running busy = Server.start(model, ServerTestSupport.options(gguf));
-                    Server.Running idle = Server.start(model, ServerTestSupport.options(gguf))) {
+            try (Server.Running busy = Server.start(model, ServerTestSupport.config(gguf));
+                    Server.Running idle = Server.start(model, ServerTestSupport.config(gguf))) {
                 HttpClient client =
                         HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
                 assertEquals(200, chat(client, busy, gguf).statusCode());

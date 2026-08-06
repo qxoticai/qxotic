@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.server;
 
+import com.qxotic.jinfer.llm.Sampling;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -8,59 +9,59 @@ import java.nio.file.Path;
 
 /**
  * The server test package's single copy of the plumbing every HTTP test was duplicating: the
- * 20-positional-argument default {@link LLMOptions} (a transposed flag in any copy silently changes
- * what that test runs against), the chat-completions body, and the Prometheus counter parse.
+ * default {@link ServerConfig}, the chat-completions body, and the Prometheus counter parse. It
+ * used to build a 20-positional-argument LLMOptions, in which a transposed flag in any copy
+ * silently changed what that test ran against.
  */
 final class ServerTestSupport {
 
     private ServerTestSupport() {}
 
     /** The all-defaults server config the tests run against: think off, ephemeral port, seed 42. */
-    static LLMOptions options(Path gguf) {
-        return options(gguf, null, false);
+    static ServerConfig config(Path gguf) {
+        return config(gguf, null, false);
     }
 
-    /** As {@link #options(Path)} with a {@code --cache} / {@code --cache-ro} file. */
-    static LLMOptions options(Path gguf, Path promptCache, boolean readOnly) {
-        return options(gguf, promptCache, readOnly, false, true);
+    /** As {@link #config(Path)} with a {@code --cache} / {@code --cache-ro} file. */
+    static ServerConfig config(Path gguf, Path promptCache, boolean readOnly) {
+        return new ServerConfig(
+                gguf.getFileName().toString(),
+                new java.net.InetSocketAddress("127.0.0.1", 0),
+                new ServerConfig.Defaults(
+                        new Sampling(1f, 0.95f, 40, 0.05f, 42L), 2048, true, false),
+                ServerConfig.Limits.DEFAULTS,
+                new com.qxotic.jinfer.cache.PromptCache.Options(4, 0, promptCache, readOnly));
     }
 
-    /** As {@link #options(Path)} with {@code --no-grammar}: every grammar request is refused. */
-    static LLMOptions optionsNoGrammar(Path gguf) {
-        return optionsNoGrammar(gguf, true);
+    /**
+     * As {@link #config(Path)} with NO seed, which is the real default: fresh randomness per
+     * request. The seeded fixture hid a NullPointerException on this path for every server started
+     * without --seed, so it is worth its own factory.
+     */
+    static ServerConfig configUnseeded(Path gguf) {
+        ServerConfig base = config(gguf);
+        Sampling s = base.defaults().sampling();
+        return new ServerConfig(
+                base.modelName(),
+                base.bind(),
+                new ServerConfig.Defaults(
+                        new Sampling(s.temperature(), s.topP(), s.topK(), s.minP(), null),
+                        base.defaults().maxTokens(),
+                        base.defaults().think(),
+                        base.defaults().rawPrompt()),
+                base.limits(),
+                base.cache());
     }
 
-    /** {@code --no-grammar} in a chosen mode; outside {@code --server} it must not be accepted. */
-    static LLMOptions optionsNoGrammar(Path gguf, boolean server) {
-        return options(gguf, null, false, true, server);
-    }
-
-    private static LLMOptions options(
-            Path gguf, Path promptCache, boolean readOnly, boolean noGrammar, boolean server) {
-        return new LLMOptions(
-                gguf,
-                null, // companions
-                server ? null : "hi", // a prompt is required outside server mode
-                null,
-                false,
-                server,
-                "127.0.0.1",
-                0,
-                1f,
-                0.95f,
-                40,
-                0.05f,
-                42L,
-                2048,
-                true,
-                false,
-                true,
-                false,
-                false,
-                false,
-                noGrammar,
-                promptCache,
-                readOnly);
+    /** As {@link #config(Path)} with grammar requests refused. */
+    static ServerConfig configNoGrammar(Path gguf) {
+        ServerConfig base = config(gguf);
+        return new ServerConfig(
+                base.modelName(),
+                base.bind(),
+                base.defaults(),
+                base.limits().withGrammar(false),
+                base.cache());
     }
 
     static String baseUrl(Server.Running server) {

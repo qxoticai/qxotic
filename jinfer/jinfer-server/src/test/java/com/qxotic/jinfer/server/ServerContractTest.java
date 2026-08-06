@@ -42,7 +42,7 @@ class ServerContractTest {
         modelId = gguf.getFileName().toString();
         arena = Arena.ofShared();
         LoadedModel<?> model = Models.load(gguf, 2048, arena);
-        server = Server.start(model, ServerTestSupport.options(gguf));
+        server = Server.start(model, ServerTestSupport.config(gguf));
         base = ServerTestSupport.baseUrl(server);
         client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
     }
@@ -174,5 +174,27 @@ class ServerContractTest {
     @SuppressWarnings("unchecked")
     private static Map<String, Object> json(String body) {
         return (Map<String, Object>) JsonCodec.parse(body);
+    }
+
+    /**
+     * The DEFAULT server has no seed: every request draws its own randomness. This is the common
+     * case and it was broken - Sampling.seed() is a Long, and a conditional that mixed it with a
+     * long unboxed it, so an unseeded server answered 500 to everything.
+     */
+    @Test
+    void anUnseededServerAnswersRequests() throws Exception {
+        try (Arena weights = Arena.ofShared()) {
+            Path gguf = ModelFixture.LLAMA32_1B_Q8.require();
+            LoadedModel<?> model = Models.load(gguf, 2048, weights);
+            try (Server.Running unseeded =
+                    Server.start(model, ServerTestSupport.configUnseeded(gguf))) {
+                HttpResponse<String> response =
+                        ServerTestSupport.post(
+                                client,
+                                ServerTestSupport.baseUrl(unseeded) + "/v1/chat/completions",
+                                ServerTestSupport.chatBody(gguf.getFileName().toString(), "hi", 4));
+                assertEquals(200, response.statusCode(), response.body());
+            }
+        }
     }
 }

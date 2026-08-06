@@ -65,17 +65,13 @@ final class Http {
     }
 
     /**
-     * Reads the request body, bounded by {@code jinfer.serverMaxBodyMB}; returns null after sending
-     * 413 when the body exceeds the limit (callers must return immediately on null).
+     * Reads the request body, bounded by {@code maxBodyBytes}; returns null after sending 413 when
+     * the body exceeds the limit (callers must return immediately on null).
      */
-    static byte[] readBody(HttpExchange exchange) throws IOException {
-        byte[] body =
-                exchange.getRequestBody().readNBytes((int) ServerFlags.SERVER_MAX_BODY_BYTES + 1);
-        if (body.length > ServerFlags.SERVER_MAX_BODY_BYTES) {
-            sendError(
-                    exchange,
-                    413,
-                    "Request body exceeds " + (ServerFlags.SERVER_MAX_BODY_BYTES >> 20) + " MB");
+    static byte[] readBody(HttpExchange exchange, long maxBodyBytes) throws IOException {
+        byte[] body = exchange.getRequestBody().readNBytes((int) maxBodyBytes + 1);
+        if (body.length > maxBodyBytes) {
+            sendError(exchange, 413, "Request body exceeds " + (maxBodyBytes >> 20) + " MB");
             return null;
         }
         return body;

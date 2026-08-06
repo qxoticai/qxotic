@@ -39,7 +39,7 @@ class GrammarSwitchTest {
         modelId = gguf.getFileName().toString();
         arena = Arena.ofShared();
         LoadedModel<?> model = Models.load(gguf, 2048, arena);
-        server = Server.start(model, ServerTestSupport.options(gguf));
+        server = Server.start(model, ServerTestSupport.config(gguf));
         base = ServerTestSupport.baseUrl(server);
         client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
     }
@@ -81,7 +81,7 @@ class GrammarSwitchTest {
             Path gguf = ModelFixture.LLAMA32_1B_Q8.require();
             LoadedModel<?> model = Models.load(gguf, 2048, weights);
             try (Server.Running refusing =
-                    Server.start(model, ServerTestSupport.optionsNoGrammar(gguf))) {
+                    Server.start(model, ServerTestSupport.configNoGrammar(gguf))) {
                 String url = ServerTestSupport.baseUrl(refusing) + "/v1/chat/completions";
                 String id = gguf.getFileName().toString();
                 for (String constraint :
@@ -112,8 +112,35 @@ class GrammarSwitchTest {
      */
     @Test
     void noGrammarIsRejectedOutsideServerMode() {
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> ServerTestSupport.optionsNoGrammar(Path.of("model.gguf"), false));
+        assertThrows(IllegalArgumentException.class, () -> optionsNoGrammar(false));
+        optionsNoGrammar(true); // the same flags in server mode are fine
+    }
+
+    private static Options optionsNoGrammar(boolean server) {
+        return new Options(
+                Path.of("model.gguf"),
+                null,
+                "hi",
+                null,
+                false,
+                server,
+                "127.0.0.1",
+                0,
+                null,
+                null,
+                null,
+                null,
+                null,
+                128,
+                true,
+                false,
+                true,
+                false,
+                false,
+                false,
+                true,
+                null,
+                false,
+                null);
     }
 }

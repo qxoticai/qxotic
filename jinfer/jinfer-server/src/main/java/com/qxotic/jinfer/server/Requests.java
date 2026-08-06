@@ -20,9 +20,8 @@ final class Requests {
     private Requests() {}
 
     /** The model id to echo back: the request's {@code model}, else the served file name. */
-    static String modelId(Map<String, Object> request, LLMOptions options) {
-        return Values.stringValue(
-                request.get("model"), options.modelPath().getFileName().toString());
+    static String modelId(Map<String, Object> request, ServerConfig config) {
+        return Values.stringValue(request.get("model"), config.modelName());
     }
 
     /** The /v1/completions prompt: a string, or a string array joined by newlines. */

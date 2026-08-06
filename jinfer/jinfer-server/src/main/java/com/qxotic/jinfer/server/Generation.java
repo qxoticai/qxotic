@@ -34,7 +34,7 @@ import java.util.function.Consumer;
 final class Generation {
 
     private final LoadedModel<?> model;
-    private final LLMOptions options;
+    private final ServerConfig config;
     private final ChatTemplate template; // memoized model framing, null when the model has none
     // raw-prompt mode encodes text special-token-aware; nothing renders a template for it
     private final com.qxotic.toknroll.Specials specials;
@@ -48,14 +48,14 @@ final class Generation {
     // this server's configured stack, resolved once; every request overrides a copy of it
     private final Sampling defaultSampling;
 
-    Generation(LoadedModel<?> chatModel, LLMOptions options, Metrics metrics) {
+    Generation(LoadedModel<?> chatModel, ServerConfig config, Metrics metrics) {
         this.metrics = metrics;
         this.model = chatModel;
-        this.options = options;
-        this.defaultSampling = options.sampling();
+        this.config = config;
+        this.defaultSampling = config.defaults().sampling();
         this.template = chatModel.template().orElse(null);
         this.specials = SpecialTokens.encoder(model.tokenizer());
-        java.nio.file.Path catalog = options.promptCache();
+        java.nio.file.Path catalog = config.cache().catalog();
         boolean mounted = catalog != null && java.nio.file.Files.exists(catalog);
         // borrowed weights: the server loaded the model and keeps its arena. The engine's cache
         // owns the whole catalog policy - a codec-less model warns and ignores the file,
@@ -63,12 +63,12 @@ final class Generation {
         this.engine =
                 new ChatEngine(
                         chatModel,
-                        options.modelPath().getFileName().toString(),
+                        config.modelName(),
                         catalog,
-                        options.promptCacheReadOnly(),
+                        config.cache().readOnly(),
                         RuntimeFlags.SESSIONS);
         boolean usable = catalog != null && engine.blockCaching();
-        this.saveCatalog = usable && !options.promptCacheReadOnly();
+        this.saveCatalog = usable && !config.cache().readOnly();
         if (usable) {
             Log.LOG.log(
                     System.Logger.Level.INFO,
@@ -77,7 +77,7 @@ final class Generation {
                                     .formatted(
                                             catalog,
                                             mounted ? " (mounted)" : " (new)",
-                                            options.promptCacheReadOnly()
+                                            config.cache().readOnly()
                                                     ? " read-only"
                                                     : ", saved at shutdown"));
         }
@@ -108,11 +108,11 @@ final class Generation {
                 engine.savePrompts();
                 Log.LOG.log(
                         System.Logger.Level.INFO,
-                        () -> "prompt cache saved: " + options.promptCache());
+                        () -> "prompt cache saved: " + config.cache().catalog());
             } catch (RuntimeException e) {
                 Log.LOG.log(
                         System.Logger.Level.WARNING,
-                        () -> "failed to save prompt cache " + options.promptCache(),
+                        () -> "failed to save prompt cache " + config.cache().catalog(),
                         e);
             }
         }
@@ -154,7 +154,7 @@ final class Generation {
                         requestThink(request),
                         maxTokens(request),
                         reasoningMax(request),
-                        ServerFlags.SERVER_REQUEST_TIMEOUT_NANOS,
+                        config.limits().requestTimeout().toNanos(),
                         sampling(request),
                         grammarSpec(request),
                         nativeForcedOk() ? ToolUse.forced(request) : null,
@@ -285,7 +285,7 @@ final class Generation {
                                     contentParts.add(audioPart(pm.get("input_audio")));
                             case "video_url" -> contentParts.add(videoPart(pm.get("video_url")));
                             default ->
-                                    LLMOptions.require(
+                                    Validation.require(
                                             false,
                                             "unsupported content part type: %s",
                                             pm.get("type"));
@@ -333,7 +333,7 @@ final class Generation {
      * surface, and the OpenAI wire supports inline base64 everywhere.
      */
     private Part imagePart(Object imageUrl) {
-        LLMOptions.require(
+        Validation.require(
                 model.model() instanceof com.qxotic.jinfer.MultiModal mm
                         && mm.modalities().contains(com.qxotic.jinfer.Media.Image.class),
                 "this model cannot read images: no vision encoder is loaded. Start the server with"
@@ -355,7 +355,7 @@ final class Generation {
      * larger mmproj sidecars (gemma 12B+); a projector without them gets a clear 400.
      */
     private Part audioPart(Object inputAudio) {
-        LLMOptions.require(
+        Validation.require(
                 model.model() instanceof com.qxotic.jinfer.MultiModal mm
                         && mm.modalities().contains(com.qxotic.jinfer.Media.Audio.class),
                 "this model cannot read audio: no audio encoder is loaded. Start the server with a"
@@ -388,7 +388,7 @@ final class Generation {
      * the template derives each frame's cache key from this blob's digest plus its timestamp.
      */
     private Part videoPart(Object videoUrl) {
-        LLMOptions.require(
+        Validation.require(
                 model.model() instanceof com.qxotic.jinfer.MultiModal mm
                         && mm.modalities().contains(com.qxotic.jinfer.Media.Image.class),
                 "this model cannot read video: no vision encoder is loaded (video decomposes into"
@@ -429,12 +429,12 @@ final class Generation {
      * everywhere).
      */
     private static byte[] dataUriBytes(String url, String what) {
-        LLMOptions.require(
+        Validation.require(
                 url.startsWith("data:"),
                 "%s must be a data: URI (the server does not fetch remote URLs)",
                 what);
         int comma = url.indexOf(',');
-        LLMOptions.require(
+        Validation.require(
                 comma > 0 && url.substring(0, comma).endsWith(";base64"),
                 "%s data: URI must be base64-encoded (data:<mime>;base64,<payload>)",
                 what);
@@ -473,7 +473,7 @@ final class Generation {
                 } catch (RuntimeException notJson) {
                     parsed = null;
                 }
-                LLMOptions.require(
+                Validation.require(
                         parsed instanceof Map<?, ?>,
                         "tool_calls[].function.arguments must be a JSON object (mapping), got:"
                                 + " %s",
@@ -482,7 +482,7 @@ final class Generation {
             } else if (args instanceof Map<?, ?> parsed) {
                 argMap.putAll((Map<String, Object>) parsed);
             } else if (args != null && !(args instanceof String)) {
-                LLMOptions.require(
+                Validation.require(
                         false,
                         "tool_calls[].function.arguments must be a JSON object (mapping), got a"
                                 + " %s",
@@ -517,7 +517,9 @@ final class Generation {
     private Reply completion0(Map<String, Object> request, String prompt, Sinks sinks) {
         Tokenizer tokenizer = model.tokenizer();
         IntSequence promptTokens =
-                options.rawPrompt() ? specials.encode(tokenizer, prompt) : tokenizer.encode(prompt);
+                config.defaults().rawPrompt()
+                        ? specials.encode(tokenizer, prompt)
+                        : tokenizer.encode(prompt);
         return generate(request, promptTokens, sinks);
     }
 
@@ -549,7 +551,7 @@ final class Generation {
                         promptTokens.toArray(),
                         sampler,
                         maxTokens,
-                        ServerFlags.SERVER_REQUEST_TIMEOUT_NANOS,
+                        config.limits().requestTimeout().toNanos(),
                         textStops(request.get("stop")));
         return complete(
                 prepared, request, sinks, consumedPromptTokens(model.tokenizer(), promptTokens));
@@ -684,29 +686,32 @@ final class Generation {
      * they came to disagree: one resolved a missing seed per request, the other per process.
      */
     private Sampling sampling(Map<String, Object> request) {
+        // a STATEMENT, not a ternary: mixing Long and long in one conditional makes javac unbox
+        // the Long branch, so a server without --seed (the default, meaning fresh randomness per
+        // request) failed every request with a NullPointerException
+        Long seed = defaultSampling.seed();
+        if (request.get("seed") != null) {
+            seed = Values.longValue(request.get("seed"), 0L);
+        }
         return new Sampling(
                 Values.floatValue(request.get("temperature"), defaultSampling.temperature()),
                 Values.floatValue(request.get("top_p"), defaultSampling.topP()),
                 Values.intValue(request.get("top_k"), defaultSampling.topK()),
                 Values.floatValue(request.get("min_p"), defaultSampling.minP()),
-                request.get("seed") == null
-                        ? defaultSampling.seed()
-                        : Values.longValue(request.get("seed"), 0L));
+                seed);
     }
 
-    /** Request budget under the server's own ceiling ({@code jinfer.serverMaxTokens}). */
+    /** Request budget under the server's own ceiling ({@link ServerConfig.Limits#maxTokens}). */
     private int maxTokens(Map<String, Object> request) {
         int maxTokens =
                 Values.intValue(
                         request.getOrDefault("max_tokens", request.get("max_completion_tokens")),
-                        options.maxTokens());
-        LLMOptions.require(Values.intValue(request.get("n"), 1) == 1, "Only n=1 is supported");
-        LLMOptions.require(0 <= maxTokens, "Invalid argument: max_tokens must be non-negative");
-        if (ServerFlags.SERVER_MAX_TOKENS > 0) {
-            maxTokens =
-                    maxTokens < 0
-                            ? ServerFlags.SERVER_MAX_TOKENS
-                            : Math.min(maxTokens, ServerFlags.SERVER_MAX_TOKENS);
+                        config.defaults().maxTokens());
+        Validation.require(Values.intValue(request.get("n"), 1) == 1, "Only n=1 is supported");
+        Validation.require(0 <= maxTokens, "Invalid argument: max_tokens must be non-negative");
+        int ceiling = config.limits().maxTokens();
+        if (ceiling > 0) {
+            maxTokens = maxTokens < 0 ? ceiling : Math.min(maxTokens, ceiling);
         }
         return maxTokens;
     }
@@ -758,7 +763,7 @@ final class Generation {
                 && kwargs.get("enable_thinking") instanceof Boolean enabled) {
             return enabled;
         }
-        return options.think();
+        return config.defaults().think();
     }
 
     /**

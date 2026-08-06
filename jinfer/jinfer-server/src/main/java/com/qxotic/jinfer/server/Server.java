@@ -6,6 +6,7 @@ import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.Values;
 import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
+import com.qxotic.jinfer.llm.Sampling;
 import com.qxotic.jinfer.telemetry.InferenceEvent;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -30,15 +31,18 @@ import java.util.function.Function;
  */
 public final class Server {
 
-    private final Worker worker = new Worker();
+    private final Worker worker;
+    private final ServerConfig config;
     private final Metrics metrics = new Metrics();
     private final Generation generation;
 
     private final String servedModel;
 
-    private Server(LoadedModel<?> model, LLMOptions options) {
-        this.generation = new Generation(model, options, metrics);
-        this.servedModel = options.modelPath().getFileName().toString();
+    private Server(LoadedModel<?> model, ServerConfig config) {
+        this.generation = new Generation(model, config, metrics);
+        this.servedModel = config.modelName();
+        this.worker = new Worker(config.limits().queueDepth());
+        this.config = config;
     }
 
     /**
@@ -80,19 +84,16 @@ public final class Server {
      * independent instance: own worker queue, own generation state, own {@link Metrics}; only the
      * SSE write-stall watchdog is process-wide.
      *
-     * <p>Prints NOTHING and installs no shutdown hook: what a start is worth announcing, and who
-     * owns the process's exit, are the caller's to decide - see {@link Main} for the CLI's answer.
-     * Unset sampling options are resolved here ({@link LLMOptions#withResolvedSampling}) so an
-     * embedder gets the model's own recommendations without asking; passing already-resolved
-     * options is a no-op, since an explicit value always wins.
+     * <p>Prints NOTHING, reads no system properties or environment, and installs no shutdown hook:
+     * what a start is worth announcing, where its settings come from, and who owns the process's
+     * exit are all the caller's to decide - see {@link Main} for the CLI's answers.
      */
-    public static Running start(LoadedModel<?> model, LLMOptions options) throws IOException {
-        LLMOptions resolved = options.withResolvedSampling(model.samplingDefaults());
-        return new Server(model, resolved).serve(model, resolved);
+    public static Running start(LoadedModel<?> model, ServerConfig config) throws IOException {
+        return new Server(model, config).serve(model, config);
     }
 
     /** A float for humans and JSON: {@code 0.2}, not {@code 0.20000000298023224}. */
-    static double trim(float value) {
+    private static double trim(float value) {
         return Math.round(value * 1000.0) / 1000.0;
     }
 
@@ -119,9 +120,9 @@ public final class Server {
         return props;
     }
 
-    private Running serve(LoadedModel<?> model, LLMOptions options) throws IOException {
-        HttpServer server =
-                HttpServer.create(new InetSocketAddress(options.host(), options.port()), 0);
+    private Running serve(LoadedModel<?> model, ServerConfig config) throws IOException {
+        Sampling sampling = config.defaults().sampling();
+        HttpServer server = HttpServer.create(config.bind(), 0);
         String servedId = servedModel;
         Map<String, Object> modelCard =
                 Map.of("id", servedId, "object", "model", "created", 0, "owned_by", "jinfer");
@@ -150,9 +151,9 @@ public final class Server {
                     }
                 });
         server.createContext(
-                "/v1/chat/completions", exchange -> handleChatCompletion(exchange, options));
-        server.createContext("/v1/completions", exchange -> handleCompletion(exchange, options));
-        server.createContext("/v1/responses", exchange -> handleResponse(exchange, options));
+                "/v1/chat/completions", exchange -> handleChatCompletion(exchange, config));
+        server.createContext("/v1/completions", exchange -> handleCompletion(exchange, config));
+        server.createContext("/v1/responses", exchange -> handleResponse(exchange, config));
         jsonRoute(
                 server,
                 "/health",
@@ -171,16 +172,16 @@ public final class Server {
                 null,
                 request ->
                         Map.of(
-                                "model", options.modelPath().getFileName().toString(),
+                                "model", config.modelName(),
                                 "n_ctx", model.model().config().contextLength(),
                                 "n_batch", RuntimeFlags.MAX_PROMPT_SEQUENCE_LENGTH,
                                 "n_vocab", model.model().config().vocabularySize(),
                                 "sampling",
                                         Map.of(
-                                                "temperature", trim(options.temperature()),
-                                                "top_p", trim(options.topp()),
-                                                "top_k", options.topk(),
-                                                "min_p", trim(options.minp())),
+                                                "temperature", trim(sampling.temperature()),
+                                                "top_p", trim(sampling.topP()),
+                                                "top_k", sampling.topK(),
+                                                "min_p", trim(sampling.minP())),
                                 "prompt_cache", promptCacheProps()));
         Function<Map<String, Object>, Object> tokenize =
                 request ->
@@ -215,7 +216,7 @@ public final class Server {
         Sse.startReaper();
         // bounded pool: handlers only parse/validate and block on the generation queue latch,
         // so a fixed pool also caps the threads slow-loris connections can pin
-        server.setExecutor(Executors.newFixedThreadPool(ServerFlags.SERVER_THREADS));
+        server.setExecutor(Executors.newFixedThreadPool(config.limits().threads()));
         server.start();
         // no shutdown hook here: one per start() is a hook the embedder cannot unregister, and it
         // pins the engine for the life of the JVM. The CLI, which never closes the handle,
@@ -228,7 +229,7 @@ public final class Server {
      * preflight), an optional method restriction, the parsed JSON body for POST routes, and the
      * uniform 400 error envelope.
      */
-    private static void jsonRoute(
+    private void jsonRoute(
             HttpServer server,
             String path,
             String method,
@@ -245,7 +246,7 @@ public final class Server {
                     if (method != null && Http.requireMethod(exchange, method)) return;
                     Map<String, Object> request = Map.of();
                     if ("POST".equals(method)) {
-                        byte[] raw = Http.readBody(exchange);
+                        byte[] raw = Http.readBody(exchange, config.limits().maxBodyBytes());
                         if (raw == null) return;
                         try {
                             request =
@@ -284,10 +285,8 @@ public final class Server {
             throws IOException {
         if (Http.preamble(exchange)) return;
         if (Http.requireMethod(exchange, "POST")) return;
-        byte[] body =
-                Http.readBody(
-                        exchange); // read on the handler thread: a stalled upload must not block
-        // the generation worker
+        // read on the handler thread: a stalled upload must not block the generation worker
+        byte[] body = Http.readBody(exchange, config.limits().maxBodyBytes());
         if (body == null) return;
         Map<String, Object> request;
         try {
@@ -321,18 +320,18 @@ public final class Server {
                 });
     }
 
-    private void handleChatCompletion(HttpExchange exchange, LLMOptions options)
+    private void handleChatCompletion(HttpExchange exchange, ServerConfig config)
             throws IOException {
         handleGenerationPost(
                 exchange,
                 "chatcmpl-",
                 request -> {
                     Validation.validateChatRequest(request);
-                    Validation.validateGenerationParams(request, options);
+                    Validation.validateGenerationParams(request, config);
                 },
                 (request, id) -> {
                     List<Object> messages = Values.asArray(request.get("messages"), "messages");
-                    String modelId = Requests.modelId(request, options);
+                    String modelId = Requests.modelId(request, config);
                     if (Values.booleanValue(request.get("stream"), false)) {
                         streamChatCompletion(exchange, request, messages, modelId, id);
                     } else {
@@ -347,19 +346,19 @@ public final class Server {
                 });
     }
 
-    private void handleCompletion(HttpExchange exchange, LLMOptions options) throws IOException {
+    private void handleCompletion(HttpExchange exchange, ServerConfig config) throws IOException {
         handleGenerationPost(
                 exchange,
                 "cmpl-",
                 request -> {
-                    Validation.validateGenerationParams(request, options);
-                    LLMOptions.require(
+                    Validation.validateGenerationParams(request, config);
+                    Validation.require(
                             !Requests.completionPrompt(request).isBlank(),
                             "prompt must not be empty");
                 },
                 (request, id) -> {
                     String prompt = Requests.completionPrompt(request);
-                    String modelId = Requests.modelId(request, options);
+                    String modelId = Requests.modelId(request, config);
                     if (Values.booleanValue(request.get("stream"), false)) {
                         streamCompletion(exchange, request, prompt, modelId, id);
                     } else {
@@ -373,20 +372,20 @@ public final class Server {
                 });
     }
 
-    private void handleResponse(HttpExchange exchange, LLMOptions options) throws IOException {
+    private void handleResponse(HttpExchange exchange, ServerConfig config) throws IOException {
         handleGenerationPost(
                 exchange,
                 "resp-",
                 request -> {
                     Requests.normalizeResponse(request);
-                    Validation.validateGenerationParams(request, options);
-                    LLMOptions.require(
+                    Validation.validateGenerationParams(request, config);
+                    Validation.require(
                             !Requests.responseInputMessages(request).isEmpty(),
                             "input must not be empty");
                 },
                 (request, id) -> {
                     List<Object> messages = Requests.responseInputMessages(request);
-                    String modelId = Requests.modelId(request, options);
+                    String modelId = Requests.modelId(request, config);
                     if (Values.booleanValue(request.get("stream"), false)) {
                         streamResponse(exchange, request, messages, modelId, id);
                     } else {
@@ -408,7 +407,7 @@ public final class Server {
             String modelId,
             String id)
             throws IOException {
-        try (Sse.Stream sse = Sse.begin(exchange)) {
+        try (Sse.Stream sse = Sse.begin(exchange, config.limits().writeTimeout())) {
             Sse.guarded(
                     sse,
                     () -> {
@@ -505,7 +504,7 @@ public final class Server {
             String modelId,
             String id)
             throws IOException {
-        try (Sse.Stream sse = Sse.begin(exchange)) {
+        try (Sse.Stream sse = Sse.begin(exchange, config.limits().writeTimeout())) {
             Sse.guarded(
                     sse,
                     () -> {
@@ -535,7 +534,7 @@ public final class Server {
             String modelId,
             String id)
             throws IOException {
-        try (Sse.Stream sse = Sse.begin(exchange)) {
+        try (Sse.Stream sse = Sse.begin(exchange, config.limits().writeTimeout())) {
             Sse.guarded(
                     sse,
                     () -> {
@@ -669,11 +668,11 @@ public final class Server {
             rejected.end();
             rejected.commit();
             exchange.getResponseHeaders()
-                    .set("Retry-After", String.valueOf(Worker.retryAfterSeconds()));
+                    .set("Retry-After", String.valueOf(config.limits().retryAfterSeconds()));
             Http.sendError(
                     exchange,
                     503,
-                    "Server busy: " + ServerFlags.SERVER_QUEUE + " requests already queued");
+                    "Server busy: " + config.limits().queueDepth() + " requests already queued");
             return;
         }
         // a job that finished without ever answering (escaped exception) must not hang the client

@@ -72,7 +72,7 @@ public class Main {
         thoughtOut.println();
     }
 
-    private static IntConsumer streamingPrinter(Tokenizer tokenizer, LLMOptions options) {
+    private static IntConsumer streamingPrinter(Tokenizer tokenizer, Options options) {
         if (!options.stream()) {
             return token -> {};
         }
@@ -145,7 +145,7 @@ public class Main {
             IntSequence promptTokens,
             Set<Integer> stopTokens,
             Sampler sampler,
-            LLMOptions options) {
+            Options options) {
         return generateCli(model, state, promptTokens, stopTokens, sampler, options, null);
     }
 
@@ -155,7 +155,7 @@ public class Main {
             IntSequence promptTokens,
             Set<Integer> stopTokens,
             Sampler sampler,
-            LLMOptions options,
+            Options options,
             java.util.function.IntConsumer afterIngest) {
         Tokenizer tokenizer = model.tokenizer();
         if (options.echo()) {
@@ -283,6 +283,16 @@ public class Main {
         out.println("  --server                      run an OpenAI-compatible HTTP server");
         out.println("  --host <host>                 server bind host, default 127.0.0.1");
         out.println("  --port <int>                  server bind port, default 17325");
+        out.println("  --threads <int>               server handler threads, default 16");
+        out.println(
+                "  --queue <int>                 generation requests queued, default 4 (0 ="
+                        + " reject unless idle)");
+        out.println("  --max-body-mb <int>           request body limit, default 32");
+        out.println(
+                "  --max-tokens-cap <int>        ceiling on any request's completion, default"
+                        + " 4096 (0 = none)");
+        out.println("  --write-timeout <seconds>     streaming write stall limit, default 30");
+        out.println("  --request-timeout <seconds>   generation deadline, default 300 (0 = none)");
         out.println("  --prompt, -p <string>         input prompt");
         out.println("  --system-prompt, -sp <string> system prompt for chat/instruct mode");
         out.println(
@@ -348,7 +358,7 @@ public class Main {
                         + " 17325");
     }
 
-    static LLMOptions parseOptions(String[] args) {
+    static Options parseOptions(String[] args) {
         String prompt = null;
         String systemPrompt = null;
         Float temperature = null; // unset = the model's recommended value, else 0.8
@@ -374,10 +384,11 @@ public class Main {
         boolean noGrammar = false;
         Path promptCache = null;
         boolean promptCacheReadOnly = false;
+        ServerConfig.Limits limits = ServerConfig.Limits.DEFAULTS;
 
         for (int i = 0; i < args.length; i++) {
             String optionName = args[i];
-            LLMOptions.require(optionName.startsWith("-"), "Invalid option %s", optionName);
+            Options.require(optionName.startsWith("-"), "Invalid option %s", optionName);
             switch (optionName) {
                 case "--interactive", "--chat", "-i" -> interactive = true;
                 case "--instruct" -> interactive = false;
@@ -395,7 +406,7 @@ public class Main {
                         optionName = parts[0];
                         nextArg = parts[1];
                     } else {
-                        LLMOptions.require(
+                        Options.require(
                                 i + 1 < args.length, "Missing argument for option %s", optionName);
                         nextArg = args[i + 1];
                         i += 1;
@@ -411,7 +422,7 @@ public class Main {
                         case "--mmproj" -> companionRefs.put("media", nextArg);
                         case "--with" -> {
                             int eq = nextArg.indexOf('=');
-                            LLMOptions.require(
+                            Options.require(
                                     eq > 0 && eq < nextArg.length() - 1,
                                     "--with takes <capability>=<path|ref>, got %s",
                                     nextArg);
@@ -419,11 +430,29 @@ public class Main {
                         }
                         case "--host" -> host = nextArg;
                         case "--port" -> port = Integer.parseInt(nextArg);
+                        // the server's ceilings. These were jinfer.server* system properties,
+                        // which meant a flag and a -D could not both exist for one knob without
+                        // one of them being a lie about precedence
+                        case "--threads" -> limits = limits.withThreads(Integer.parseInt(nextArg));
+                        case "--queue" -> limits = limits.withQueueDepth(Integer.parseInt(nextArg));
+                        case "--max-body-mb" ->
+                                limits =
+                                        limits.withMaxBodyBytes(
+                                                (long) Integer.parseInt(nextArg) << 20);
+                        case "--max-tokens-cap" ->
+                                limits = limits.withMaxTokens(Integer.parseInt(nextArg));
+                        case "--write-timeout" ->
+                                limits =
+                                        limits.withWriteTimeout(
+                                                Options.seconds(optionName, nextArg));
+                        case "--request-timeout" ->
+                                limits =
+                                        limits.withRequestTimeout(
+                                                Options.seconds(optionName, nextArg));
                         case "--seed", "-s" -> seed = Long.parseLong(nextArg);
                         case "--max-tokens", "-n" -> maxTokens = Integer.parseInt(nextArg);
-                        case "--stream" ->
-                                stream = LLMOptions.parseBooleanOption(optionName, nextArg);
-                        case "--echo" -> echo = LLMOptions.parseBooleanOption(optionName, nextArg);
+                        case "--stream" -> stream = Options.parseBooleanOption(optionName, nextArg);
+                        case "--echo" -> echo = Options.parseBooleanOption(optionName, nextArg);
                         case "--color" -> colorMode = nextArg.toLowerCase(Locale.ROOT);
                         case "--cache" -> promptCache = Path.of(nextArg);
                         case "--cache-ro" -> {
@@ -437,7 +466,7 @@ public class Main {
                                 case "on", "true", "inline", "stdout" -> think = true;
                                 case "off", "false" -> think = false;
                                 default ->
-                                        LLMOptions.require(
+                                        Options.require(
                                                 false,
                                                 "Invalid argument for %s: expected off|on|inline"
                                                         + " (or false|true|stdout), got %s",
@@ -445,15 +474,15 @@ public class Main {
                                                 nextArg);
                             }
                         }
-                        default -> LLMOptions.require(false, "Unknown option: %s", optionName);
+                        default -> Options.require(false, "Unknown option: %s", optionName);
                     }
                 }
             }
         }
-        LLMOptions.require(
+        Options.require(
                 List.of("on", "off", "auto").contains(colorMode),
                 "Invalid argument: --color must be one of on|off|auto");
-        boolean color = LLMOptions.supportsAnsiColors(colorMode);
+        boolean color = Options.supportsAnsiColors(colorMode);
         // AFTER the loop, so --help and a bad flag never trigger a download first
         Path modelPath;
         java.util.Map<String, Path> companions = new java.util.LinkedHashMap<>();
@@ -479,7 +508,7 @@ public class Main {
             // no such repository); the usage block would only bury it
             throw new ResolveFailure(e);
         }
-        return new LLMOptions(
+        return new Options(
                 modelPath,
                 java.util.Map.copyOf(companions),
                 prompt,
@@ -502,7 +531,8 @@ public class Main {
                 rawPrompt,
                 noGrammar,
                 promptCache,
-                promptCacheReadOnly);
+                promptCacheReadOnly,
+                limits);
     }
 
     /**
@@ -549,12 +579,12 @@ public class Main {
     private static Path resolveCompanion(
             java.util.Map<String, String> offered, String capability, String value) {
         String fileName = offered.get(capability);
-        LLMOptions.require(
+        Options.require(
                 fileName != null,
                 "this model has no '%s' capability. It offers: %s",
                 capability,
                 offered.isEmpty() ? "none" : new java.util.TreeSet<>(offered.keySet()));
-        LLMOptions.require(
+        Options.require(
                 !"auto".equals(value),
                 "name the '%s' file rather than 'auto' - it is usually called %s*, and browsing"
                         + " the model's repository shows which precisions it ships",
@@ -662,7 +692,7 @@ public class Main {
         oneLineLogs();
         if (args.length > 0 && !args[0].startsWith("-")) {
             if (args[0].equals("list")) {
-                LLMOptions.require(args.length == 1, "list takes no arguments");
+                Options.require(args.length == 1, "list takes no arguments");
                 list();
                 return;
             }
@@ -677,7 +707,7 @@ public class Main {
             pull(java.util.Arrays.copyOfRange(args, 1, args.length));
             return;
         }
-        LLMOptions options;
+        Options options;
         try {
             options = parseOptions(args);
         } catch (ResolveFailure e) {
@@ -723,13 +753,12 @@ public class Main {
             System.exit(1);
             return;
         }
-        LLMOptions resolved = options.withResolvedSampling(model.samplingDefaults());
+        Sampling sampling = options.sampling(model.samplingDefaults());
         if (options.server()) {
-            serve(model, options, resolved);
+            serve(model, options, sampling);
             return;
         }
-        options = resolved;
-        Sampler sampler = options.sampling().sampler(model.model().config().vocabularySize());
+        Sampler sampler = sampling.sampler(model.model().config().vocabularySize());
         if (!options.think()) {
             sampler = Thinking.banMarkers(sampler, model.tokenizer());
         }
@@ -745,7 +774,7 @@ public class Main {
      * question nobody asks at startup; it belongs in the "no provider for architecture" error,
      * where it already is.
      */
-    private static void serve(LoadedModel<?> model, LLMOptions options, LLMOptions resolved)
+    private static void serve(LoadedModel<?> model, Options options, Sampling sampling)
             throws IOException {
         System.out.printf(
                 "model       %s  (%s, ctx %d)%n",
@@ -761,13 +790,13 @@ public class Main {
         System.out.printf(
                 "sampling    temperature %s, top-k %s, top-p %s, min-p %s; requests override%n",
                 describe(
-                        resolved.temperature(),
+                        sampling.temperature(),
                         options.temperature() != null,
                         defaults.temperature() != null),
-                describe(resolved.topk(), options.topk() != null, defaults.topK() != null),
-                describe(resolved.topp(), options.topp() != null, defaults.topP() != null),
-                describe(resolved.minp(), options.minp() != null, defaults.minP() != null));
-        Server.Running running = Server.start(model, resolved);
+                describe(sampling.topK(), options.topk() != null, defaults.topK() != null),
+                describe(sampling.topP(), options.topp() != null, defaults.topP() != null),
+                describe(sampling.minP(), options.minp() != null, defaults.minP() != null));
+        Server.Running running = Server.start(model, options.toServerConfig(defaults));
         // the CLI never closes the handle; ^C must still free the engine deterministically
         Runtime.getRuntime().addShutdownHook(new Thread(running::close));
         System.out.printf(
@@ -783,7 +812,10 @@ public class Main {
     private static String describe(Number value, boolean userSet, boolean modelRecommended) {
         String source =
                 userSet ? "set by user" : modelRecommended ? "model default" : "jinfer default";
-        String shown = value instanceof Float f ? String.valueOf(Server.trim(f)) : value.toString();
+        String shown =
+                value instanceof Float f
+                        ? String.valueOf(Math.round(f * 1000.0) / 1000.0)
+                        : value.toString();
         return shown + " (" + source + ")";
     }
 
@@ -795,7 +827,7 @@ public class Main {
      * whole-render Jinja path with a fresh state per turn.
      */
     static <S extends RuntimeState> void runGeneric(
-            LoadedModel<S> model, Sampler sampler, LLMOptions options) throws IOException {
+            LoadedModel<S> model, Sampler sampler, Options options) throws IOException {
         ChatTemplate template = options.rawPrompt() ? null : model.template().orElse(null);
         if (!options.interactive()) {
             runInstruct(model, template, sampler, options);
@@ -807,7 +839,7 @@ public class Main {
     }
 
     private static <S extends RuntimeState> void runInstruct(
-            LoadedModel<S> model, ChatTemplate template, Sampler sampler, LLMOptions options)
+            LoadedModel<S> model, ChatTemplate template, Sampler sampler, Options options)
             throws IOException {
         Set<Integer> stops = model.stopTokens();
         IntSequence promptTokens;
@@ -910,7 +942,7 @@ public class Main {
      * the splice makes it rare).
      */
     private static <S extends RuntimeState> void runChatCodec(
-            LoadedModel<S> model, ChatTemplate template, Sampler sampler, LLMOptions options)
+            LoadedModel<S> model, ChatTemplate template, Sampler sampler, Options options)
             throws IOException {
         Set<Integer> stops = model.stopTokens();
         int contextLength = model.model().config().contextLength();
@@ -972,7 +1004,7 @@ public class Main {
      * through the Jinja template each turn, fresh state.
      */
     private static <S extends RuntimeState> void runChatWholeRender(
-            LoadedModel<S> model, Sampler sampler, LLMOptions options) throws IOException {
+            LoadedModel<S> model, Sampler sampler, Options options) throws IOException {
         Set<Integer> stops = model.stopTokens();
         JinjaChatTemplate jinja =
                 new JinjaChatTemplate(model.tokenizer(), model.chatTemplateSource());

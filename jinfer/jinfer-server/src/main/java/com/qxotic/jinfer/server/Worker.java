@@ -8,18 +8,20 @@ import java.util.concurrent.SynchronousQueue;
 
 /**
  * The single generation worker. Generation runs one request at a time on a dedicated thread fed by
- * a bounded FIFO queue ({@code jinfer.serverQueue}; 0 = reject unless idle): a fixed serialization
- * point so the inference state is never shared across requests, with backpressure instead of
- * unbounded pile-up. Handlers parse/validate on their own thread and only block here, so a fixed
- * HTTP pool also caps the threads a slow client can pin.
+ * a bounded FIFO queue ({@code queueDepth}; 0 = reject unless idle): a fixed serialization point so
+ * the inference state is never shared across requests, with backpressure instead of unbounded
+ * pile-up. Handlers parse/validate on their own thread and only block here, so a fixed HTTP pool
+ * also caps the threads a slow client can pin.
  */
 final class Worker {
 
-    private final BlockingQueue<Runnable> queue =
-            ServerFlags.SERVER_QUEUE == 0
-                    ? new SynchronousQueue<>()
-                    : new ArrayBlockingQueue<>(ServerFlags.SERVER_QUEUE);
+    private final BlockingQueue<Runnable> queue;
     private volatile boolean busy;
+
+    Worker(int queueDepth) {
+        this.queue =
+                queueDepth == 0 ? new SynchronousQueue<>() : new ArrayBlockingQueue<>(queueDepth);
+    }
 
     void start() {
         Thread.ofPlatform()
@@ -83,10 +85,5 @@ final class Worker {
 
     boolean busy() {
         return busy;
-    }
-
-    /** Retry-After seconds suggested when the queue is full. */
-    static int retryAfterSeconds() {
-        return Math.max(1, 2 * (ServerFlags.SERVER_QUEUE + 1));
     }
 }

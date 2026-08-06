@@ -1,10 +1,29 @@
 package com.qxotic.jinfer.server;
 
 import com.qxotic.jinfer.*;
+import com.qxotic.jinfer.cache.PromptCache;
+import com.qxotic.jinfer.chat.LoadedModel;
+import com.qxotic.jinfer.llm.Sampling;
+import java.net.InetSocketAddress;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Locale;
 
-public record LLMOptions(
+/**
+ * The parsed command line: every flag, exactly as typed, with the four sampling knobs still
+ * nullable because "the user said nothing" is information the model's own recommendations need.
+ *
+ * <p>This is a CLI type, not a server one. It is wide because a command line is wide; what the
+ * server needs is the narrow projection {@link #toServerConfig} builds, and nothing downstream of
+ * that ever sees {@code --colors} or {@code --chat}. The two also validate different things: the
+ * checks here exist to produce a good message next to a usage block, while {@link ServerConfig}
+ * validates its own contract for any caller.
+ *
+ * @param maxTokens the CLI's budget flag. In server mode it becomes the DEFAULT completion budget
+ *     for a request that omits {@code max_tokens}; in chat and instruct mode it is a total context
+ *     cap, which is a second meaning the flag should not have (see the note in Main's usage)
+ */
+public record Options(
         Path modelPath,
         java.util.Map<String, Path> companions,
         String prompt,
@@ -27,12 +46,14 @@ public record LLMOptions(
         boolean rawPrompt,
         boolean noGrammar,
         Path promptCache,
-        boolean promptCacheReadOnly) {
+        boolean promptCacheReadOnly,
+        ServerConfig.Limits limits) {
 
-    public LLMOptions {
+    public Options {
         // never null and never the caller's copy: every reader can iterate it without a guard, and
         // "no companions" and "an empty map" stop being two states that behave differently
         companions = companions == null ? java.util.Map.of() : java.util.Map.copyOf(companions);
+        limits = limits == null ? ServerConfig.Limits.DEFAULTS : limits;
         require(modelPath != null, "Missing argument: --model <path> is required");
         require(
                 server || interactive || prompt != null,
@@ -42,14 +63,16 @@ public record LLMOptions(
                 temperature == null || 0 <= temperature,
                 "Invalid argument: --temperature must be non-negative");
         require(
-                topp == null || (0 <= topp && topp <= 1),
-                "Invalid argument: --top-p must be within [0, 1]");
+                topp == null || (0 < topp && topp <= 1),
+                "Invalid argument: --top-p must be within (0, 1] (1 disables it)");
         require(
                 topk == null || topk >= 0,
                 "Invalid argument: --top-k must be non-negative (0 disables it)");
         require(
                 minp == null || (0 <= minp && minp <= 1),
                 "Invalid argument: --min-p must be within [0, 1]");
+        // checked here, before InetSocketAddress can say "port out of range" without saying which
+        // flag or how to fix it
         require(0 <= port && port <= 65535, "Invalid argument: --port must be within [0, 65535]");
         // the only thing --no-grammar does is refuse requests that ask for a grammar, and only
         // the HTTP API has requests. Accepting it elsewhere made it a flag that did nothing.
@@ -61,50 +84,35 @@ public record LLMOptions(
     }
 
     /**
-     * Fills unset sampling flags from the container's recommendations ({@code general.sampling.*}
-     * via {@link com.qxotic.jinfer.chat.LoadedModel.SamplingDefaults}), then the shared engine
-     * baseline. An explicit CLI flag always wins. Called once, right after the model loads;
-     * everything downstream reads resolved, non-null values.
+     * The sampling stack these flags describe, over the model's own recommendations: an explicit
+     * flag wins, then the container's {@code general.sampling.*}, then the engine baseline.
      */
-    public LLMOptions withResolvedSampling(
-            com.qxotic.jinfer.chat.LoadedModel.SamplingDefaults defaults) {
-        com.qxotic.jinfer.llm.Sampling resolved =
-                defaults.resolve(temperature, topp, topk, minp, seed);
-        return new LLMOptions(
-                modelPath,
-                companions,
-                prompt,
-                systemPrompt,
-                interactive,
-                server,
-                host,
-                port,
-                resolved.temperature(),
-                resolved.topP(),
-                resolved.topK(),
-                resolved.minP(),
-                seed,
-                maxTokens,
-                stream,
-                echo,
-                think,
-                thinkInline,
-                colors,
-                rawPrompt,
-                noGrammar,
-                promptCache,
-                promptCacheReadOnly);
+    public Sampling sampling(LoadedModel.SamplingDefaults defaults) {
+        return defaults.resolve(temperature, topp, topk, minp, seed);
     }
 
     /**
-     * The sampling stack these options describe. Valid only AFTER {@link #withResolvedSampling}:
-     * before it the four knobs are still nullable, and {@link com.qxotic.jinfer.llm.Sampling} takes
-     * values, not maybes.
+     * The narrow projection {@link Server#start} takes. This is the one place flags become server
+     * configuration, which is why the server can promise it reads nothing else.
      */
-    public com.qxotic.jinfer.llm.Sampling sampling() {
-        return new com.qxotic.jinfer.llm.Sampling(temperature, topp, topk, minp, seed);
+    public ServerConfig toServerConfig(LoadedModel.SamplingDefaults defaults) {
+        return new ServerConfig(
+                modelPath.getFileName().toString(),
+                new InetSocketAddress(host, port),
+                new ServerConfig.Defaults(sampling(defaults), maxTokens, think, rawPrompt),
+                limits.withGrammar(!noGrammar),
+                new PromptCache.Options(
+                        RuntimeFlags.SESSIONS,
+                        RuntimeFlags.PROMPT_CACHE ? RuntimeFlags.PROMPT_CACHE_BUDGET_BYTES : 0,
+                        promptCache,
+                        promptCacheReadOnly));
     }
 
+    /**
+     * Rejects a bad COMMAND LINE. The message is printed next to the usage block and the process
+     * exits 1, which is why it names flags; {@link Validation#require} is its request-side
+     * counterpart, whose messages travel to a client in a 400 and must not.
+     */
     public static void require(boolean condition, String messageFormat, Object... args) {
         if (!condition) {
             throw new IllegalArgumentException(messageFormat.formatted(args));
@@ -124,6 +132,19 @@ public record LLMOptions(
                 yield false;
             }
         };
+    }
+
+    /** Seconds on the command line, a {@link Duration} everywhere after it. */
+    public static Duration seconds(String optionName, String value) {
+        long seconds;
+        try {
+            seconds = Long.parseLong(value);
+        } catch (NumberFormatException e) {
+            require(false, "Invalid argument for %s: expected seconds, got %s", optionName, value);
+            return Duration.ZERO;
+        }
+        require(seconds >= 0, "Invalid argument for %s: must be non-negative", optionName);
+        return Duration.ofSeconds(seconds);
     }
 
     public static boolean supportsAnsiColors(String colorMode) {
