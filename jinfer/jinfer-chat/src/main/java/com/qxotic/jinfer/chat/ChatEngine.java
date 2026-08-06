@@ -107,7 +107,12 @@ public final class ChatEngine {
             Path cachedPrompts,
             int cachedSessions) {
         this(
-                load(modelPath, java.util.Map.copyOf(companions), contextLength),
+                // null = none, as everywhere else companions are accepted: "no companions" and
+                // "an empty map" must not be two states, and this threw NullPointerException
+                load(
+                        modelPath,
+                        companions == null ? java.util.Map.of() : java.util.Map.copyOf(companions),
+                        contextLength),
                 modelPath.getFileName().toString(),
                 cachedPrompts,
                 true,
