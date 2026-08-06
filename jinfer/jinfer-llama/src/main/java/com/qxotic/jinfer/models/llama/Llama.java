@@ -216,6 +216,9 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
     void forward(State state, int[] tokens, int tokenOffset, int startPos, int seqLen) {
         Configuration config = configuration;
         Weights w = weights;
+        // ONCE for the batch: an angle depends on the position and the schedule, never on the
+        // layer, so all of them read these rows
+        RoPE.fill(state.ropeCos, state.ropeSin, startPos, seqLen, config.ropeHalf(), w.rope());
         int dim = config.embeddingLength;
         float eps = config.rmsNormEps;
         float embScale = config.embeddingScale, residScale = config.residualScale;
@@ -311,9 +314,9 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                             RoPE.applyInterleaved(
                                     state.k,
                                     s * kvDim + h * headSize,
-                                    startPos + s,
-                                    w.ropeCr,
-                                    w.ropeCi,
+                                    s,
+                                    state.ropeCos,
+                                    state.ropeSin,
                                     ropeHalf);
                     });
         }
@@ -360,8 +363,12 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                 queryDim,
                 dim); // Q for this row (attnQ is free scratch)
         if (config.useRope(L)) {
+            // the lazy tail runs outside any ingest, so it fills row 0 for its own position
+            // rather than trusting whatever range the last fill covered
+            RoPE.fill(state.ropeCos, state.ropeSin, pos, 1, ropeHalf, w.rope());
             for (int h = 0; h < heads; h++)
-                RoPE.applyInterleaved(state.attnQ, h * headSize, pos, w.ropeCr, w.ropeCi, ropeHalf);
+                RoPE.applyInterleaved(
+                        state.attnQ, h * headSize, 0, state.ropeCos, state.ropeSin, ropeHalf);
         }
         float aScale = config.attnTemp(pos);
         if (aScale != 1.0f) state.attnQ.mapInPlace(0, queryDim, v -> v * aScale);
@@ -437,17 +444,17 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                             RoPE.applyInterleaved(
                                     state.attnQ,
                                     s * fQDim + h * fHeadSz,
-                                    fStart + s,
-                                    w.ropeCr,
-                                    w.ropeCi,
+                                    s,
+                                    state.ropeCos,
+                                    state.ropeSin,
                                     fHalf);
                         for (int h = 0; h < fKvHeads; h++)
                             RoPE.applyInterleaved(
                                     state.k,
                                     s * fKvDim + h * fHeadSz,
-                                    fStart + s,
-                                    w.ropeCr,
-                                    w.ropeCi,
+                                    s,
+                                    state.ropeCos,
+                                    state.ropeSin,
                                     fHalf);
                     }
                     float aScale = config.attnTemp(fStart + s);
@@ -599,14 +606,14 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
             FloatTensor[] w1,
             FloatTensor[] w3,
             FloatTensor[] w2,
-            float[] ropeCr,
-            float[] ropeCi) {}
+            RoPE.Schedule rope) {}
 
     // === State ===
 
     public static final class State extends com.qxotic.jinfer.BaseState {
         final int contextCapacity, batchCapacity;
         final FloatTensor x, xb, k, v, attnQ, attnOut, hb, hb2, logits;
+        final FloatTensor ropeCos, ropeSin;
         // Lazy last-layer tail: single-row scratch, kept DISTINCT from the batch buffers so x/k/v
         // stay
         // read-only across queries (any retained row can be finished, in any order, repeatedly).
@@ -647,6 +654,9 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
             this.logits = FloatTensor.allocateF32(arena, config.vocabularySize);
             this.th = FloatTensor.allocateF32(arena, dim);
             this.tscratch = FloatTensor.allocateF32(arena, dim);
+            // rotary values for the batch about to be ingested: sized by BATCH, never context
+            this.ropeCos = FloatTensor.allocateF32(arena, c * config.ropeHalf());
+            this.ropeSin = FloatTensor.allocateF32(arena, c * config.ropeHalf());
             this.keyCache = new FloatTensor[config.numberOfLayers];
             this.valueCache = new FloatTensor[config.numberOfLayers];
             for (int l = 0; l < config.numberOfLayers; l++) {
@@ -758,7 +768,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                         noRopeLayerStep);
 
         Map<String, GGMLTensorEntry> tensors = ModelLoader.loadTensors(fileChannel, gguf, arena);
-        RoPE.Freqs rope = buildRope(gguf, arch, config, tensors);
+        RoPE.Schedule rope = buildRope(gguf, arch, config, tensors);
         return new Llama(
                 config,
                 tokenizer,
@@ -772,7 +782,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
      * (rope_freqs.weight), or plain RoPE (Llama/MiniCPM). Returns the interleaved cos/sin tables
      * applyInterleaved consumes.
      */
-    static RoPE.Freqs buildRope(
+    static RoPE.Schedule buildRope(
             GGUF gguf, String arch, Configuration config, Map<String, GGMLTensorEntry> tensors) {
         int ropeDim = Math.min(config.ropeDimensionCount, config.headSize);
         String scalingType = gguf.getValueOrDefault(String.class, arch + ".rope.scaling.type", "");
@@ -788,26 +798,17 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                             float.class, arch + ".rope.scaling.yarn_log_multiplier", 0f);
             float kMscale = factor <= 1f ? 1f : (float) (1.0 + 0.1 * Math.log(factor));
             float attnFactor = logMul != 0f ? 1.0f / kMscale : 1.0f;
-            return RoPE.precomputeFreqsCisYarn(
-                    config.contextLength,
-                    ropeDim,
-                    config.ropeTheta,
-                    factor,
-                    origCtx,
-                    betaFast,
-                    betaSlow,
-                    1f,
-                    attnFactor);
+            return RoPE.yarn(
+                    ropeDim, config.ropeTheta, factor, origCtx, betaFast, betaSlow, 1f, attnFactor);
         }
         float[] ropeFreqs = ModelLoader.ropeFreqFactors(tensors);
         return ropeFreqs != null
-                ? RoPE.precomputeFreqsCisFromFreqs(
-                        config.contextLength, ropeDim, config.ropeTheta, ropeFreqs)
-                : RoPE.precomputeFreqsCis(config.contextLength, ropeDim, config.ropeTheta);
+                ? RoPE.withFreqFactors(ropeDim, config.ropeTheta, ropeFreqs)
+                : RoPE.plain(ropeDim, config.ropeTheta);
     }
 
     static Weights loadWeights(
-            Map<String, GGMLTensorEntry> tensors, Configuration config, RoPE.Freqs rope) {
+            Map<String, GGMLTensorEntry> tensors, Configuration config, RoPE.Schedule rope) {
         int n = config.numberOfLayers;
         FloatTensor tokenEmbeddingTable =
                 ModelLoader.loadQuantized(tensors.get("token_embd.weight"));
@@ -828,7 +829,6 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                 ModelLoader.quantArray(n, i -> tensors.get("blk." + i + ".ffn_gate.weight")),
                 ModelLoader.quantArray(n, i -> tensors.get("blk." + i + ".ffn_up.weight")),
                 ModelLoader.quantArray(n, i -> tensors.get("blk." + i + ".ffn_down.weight")),
-                rope.cos(),
-                rope.sin());
+                rope);
     }
 }
