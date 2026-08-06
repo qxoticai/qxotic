@@ -178,6 +178,8 @@ public final class Granite
     void forward(State state, int[] tokens, int tokenOffset, int startPos, int seqLen) {
         Configuration config = configuration;
         Weights w = weights;
+        // ONCE for the batch: an angle never depends on the layer, so all of them read these rows
+        RoPE.fill(state.ropeCos, state.ropeSin, startPos, seqLen, config.ropeHalf(), w.rope());
         int dim = config.embeddingLength;
         float eps = config.rmsNormEps;
         float embScale = config.embeddingScale, residScale = config.residualScale;
@@ -256,17 +258,17 @@ public final class Granite
                         RoPE.applyInterleaved(
                                 state.attnQ,
                                 s * fQDim + h * fHeadSz,
-                                fStart + s,
-                                w.ropeCr,
-                                w.ropeCi,
+                                s,
+                                state.ropeCos,
+                                state.ropeSin,
                                 fHalf);
                     for (int h = 0; h < fKvHeads; h++)
                         RoPE.applyInterleaved(
                                 state.k,
                                 s * fKvDim + h * fHeadSz,
-                                fStart + s,
-                                w.ropeCr,
-                                w.ropeCi,
+                                s,
+                                state.ropeCos,
+                                state.ropeSin,
                                 fHalf);
                 });
 
@@ -396,14 +398,15 @@ public final class Granite
             FloatTensor[] w1,
             FloatTensor[] w3,
             FloatTensor[] w2,
-            float[] ropeCr,
-            float[] ropeCi) {}
+            RoPE.Schedule rope) {}
 
     // === State ===
 
     public static final class State extends com.qxotic.jinfer.BaseState {
         final int contextCapacity, batchCapacity;
         final FloatTensor x, xb, k, v, attnQ, attnOut, hb, hb2, logits;
+        // rotary values for the batch about to be ingested: sized by BATCH, never context
+        final FloatTensor ropeCos, ropeSin;
         final FlashAttention.DecodeScratch decodeScratch = new FlashAttention.DecodeScratch(arena);
         final FloatTensor[] keyCache, valueCache;
 
@@ -438,6 +441,8 @@ public final class Granite
             this.hb = FloatTensor.allocateF32(arena, c * hidden);
             this.hb2 = FloatTensor.allocateF32(arena, c * hidden);
             this.logits = FloatTensor.allocateF32(arena, config.vocabularySize);
+            this.ropeCos = FloatTensor.allocateF32(arena, c * config.ropeHalf());
+            this.ropeSin = FloatTensor.allocateF32(arena, c * config.ropeHalf());
             this.keyCache = new FloatTensor[config.numberOfLayers];
             this.valueCache = new FloatTensor[config.numberOfLayers];
             for (int l = 0; l < config.numberOfLayers; l++) {
@@ -527,7 +532,7 @@ public final class Granite
                         attentionScale);
 
         Map<String, GGMLTensorEntry> tensors = ModelLoader.loadTensors(fileChannel, gguf, arena);
-        RoPE.Freqs rope = buildRope(config, tensors);
+        RoPE.Schedule rope = buildRope(config, tensors);
         return new Granite(
                 config,
                 tokenizer,
@@ -538,19 +543,18 @@ public final class Granite
 
     /**
      * Plain RoPE for granite (freq base + dimension count); honors a rope_freqs.weight
-     * per-frequency scaling tensor if present. No YaRN. Returns the interleaved cos/sin tables.
+     * per-frequency scaling tensor if present. No YaRN.
      */
-    static RoPE.Freqs buildRope(Configuration config, Map<String, GGMLTensorEntry> tensors) {
+    static RoPE.Schedule buildRope(Configuration config, Map<String, GGMLTensorEntry> tensors) {
         int ropeDim = Math.min(config.ropeDimensionCount, config.headSize);
         float[] ropeFreqs = ModelLoader.ropeFreqFactors(tensors);
         return ropeFreqs != null
-                ? RoPE.precomputeFreqsCisFromFreqs(
-                        config.contextLength, ropeDim, config.ropeTheta, ropeFreqs)
-                : RoPE.precomputeFreqsCis(config.contextLength, ropeDim, config.ropeTheta);
+                ? RoPE.withFreqFactors(ropeDim, config.ropeTheta, ropeFreqs)
+                : RoPE.plain(ropeDim, config.ropeTheta);
     }
 
     static Weights loadWeights(
-            Map<String, GGMLTensorEntry> tensors, Configuration config, RoPE.Freqs rope) {
+            Map<String, GGMLTensorEntry> tensors, Configuration config, RoPE.Schedule rope) {
         int n = config.numberOfLayers;
         FloatTensor tokenEmbeddingTable =
                 ModelLoader.loadQuantized(tensors.get("token_embd.weight"));
@@ -571,7 +575,6 @@ public final class Granite
                 ModelLoader.quantArray(n, i -> tensors.get("blk." + i + ".ffn_gate.weight")),
                 ModelLoader.quantArray(n, i -> tensors.get("blk." + i + ".ffn_up.weight")),
                 ModelLoader.quantArray(n, i -> tensors.get("blk." + i + ".ffn_down.weight")),
-                rope.cos(),
-                rope.sin());
+                rope);
     }
 }
