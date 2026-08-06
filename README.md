@@ -44,7 +44,7 @@ This is a single Maven reactor rooted at the repository root.
 No subtree is dependency-closed - `jinfer` alone pulls in `gguf`, `json`, `toknroll` and four `jam` artifacts - so always build from the root and select what you want with `-pl … -am`:
 
 ```bash
-mvnd -pl jinfer/jinfer-server,jinfer/jinfer-bench -am package   # the jinfer CLI + benchmark
+mvnd -pl jinfer/jinfer-cli,jinfer/jinfer-bench -am package   # the jinfer CLI + benchmark
 mvnd -pl jam/jam-vector -am verify                              # jam and its backend parity tests
 mvnd package                                                    # everything
 ```
