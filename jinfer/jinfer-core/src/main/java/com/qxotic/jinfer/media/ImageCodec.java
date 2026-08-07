@@ -14,6 +14,8 @@ import java.util.Locale;
  */
 public final class ImageCodec {
 
+    private static final System.Logger LOG = System.getLogger("jinfer.media");
+
     private ImageCodec() {}
 
     private static volatile ImageDecoder decoder;
@@ -75,12 +77,11 @@ public final class ImageCodec {
         try {
             return (ImageDecoder) Class.forName(className).getDeclaredConstructor().newInstance();
         } catch (ReflectiveOperationException | LinkageError e) {
-            System.err.println(
-                    "image decoder '"
-                            + className
-                            + "' unavailable ("
-                            + e
-                            + "); falling back to ffmpeg");
+            LOG.log(
+                    System.Logger.Level.WARNING,
+                    "image decoder ''{0}'' unavailable ({1}); falling back to ffmpeg",
+                    className,
+                    e);
             return new FfmpegImageDecoder();
         }
     }

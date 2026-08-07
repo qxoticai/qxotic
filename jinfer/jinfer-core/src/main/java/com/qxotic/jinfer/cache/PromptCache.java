@@ -43,6 +43,8 @@ import java.util.List;
  */
 public final class PromptCache<S extends RuntimeState> implements AutoCloseable {
 
+    private static final System.Logger LOG = System.getLogger("jinfer.cache");
+
     /**
      * @param hotSessions live conversations retained; 0 = stateless between requests (the one
      *     allocation is still recycled as a wiped spare)
@@ -163,12 +165,11 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
         StateCodec<S> codec = model.stateCodec().orElse(null);
         if (codec == null && o.catalog() != null) {
             // never silently ignore a file the caller pointed at
-            System.err.println(
-                    "jinfer: catalog "
-                            + o.catalog()
-                            + " ignored: "
-                            + model.getClass().getSimpleName()
-                            + " has no state codec");
+            LOG.log(
+                    System.Logger.Level.WARNING,
+                    "catalog {0} ignored: {1} has no state codec",
+                    o.catalog(),
+                    model.getClass().getSimpleName());
         }
         boolean wantBlocks = codec != null && (o.blockBudgetBytes() > 0 || o.catalog() != null);
         if (!wantBlocks) {
@@ -206,10 +207,10 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
         try {
             if (!Files.exists(o.catalog())) {
                 if (o.readOnly()) {
-                    System.err.println(
-                            "jinfer: read-only cache missing ("
-                                    + o.catalog()
-                                    + "): serving without it");
+                    LOG.log(
+                            System.Logger.Level.WARNING,
+                            "read-only cache missing ({0}): serving without it",
+                            o.catalog());
                     return null;
                 }
                 FrozenBlocks.createEmpty(o.catalog(), seed);
@@ -573,12 +574,11 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
         if (session.length() != session.state().position()) {
             // stream and state disagree: pooling it would match a future prompt against DIFFERENT
             // content - silent poisoning. A caller bug (tail() not wired); free it, keep serving.
-            System.err.println(
-                    "jinfer: discarding desynced session (stream "
-                            + session.length()
-                            + " != state "
-                            + session.state().position()
-                            + ")");
+            LOG.log(
+                    System.Logger.Level.WARNING,
+                    "discarding desynced session (stream {0} != state {1})",
+                    session.length(),
+                    session.state().position());
             closeSession(session);
             return;
         }

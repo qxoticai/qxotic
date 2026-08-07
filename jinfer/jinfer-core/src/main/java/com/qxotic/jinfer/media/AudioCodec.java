@@ -16,6 +16,8 @@ import java.util.Locale;
  */
 public final class AudioCodec {
 
+    private static final System.Logger LOG = System.getLogger("jinfer.media");
+
     private AudioCodec() {}
 
     private static volatile AudioDecoder decoder;
@@ -124,12 +126,11 @@ public final class AudioCodec {
         try {
             return (AudioDecoder) Class.forName(className).getDeclaredConstructor().newInstance();
         } catch (ReflectiveOperationException | LinkageError e) {
-            System.err.println(
-                    "audio decoder '"
-                            + className
-                            + "' unavailable ("
-                            + e
-                            + "); falling back to ffmpeg");
+            LOG.log(
+                    System.Logger.Level.WARNING,
+                    "audio decoder ''{0}'' unavailable ({1}); falling back to ffmpeg",
+                    className,
+                    e);
             return new FfmpegAudioDecoder();
         }
     }
