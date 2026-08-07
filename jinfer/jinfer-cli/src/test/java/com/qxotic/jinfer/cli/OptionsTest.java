@@ -22,6 +22,7 @@ final class OptionsTest {
         return new Options(
                 Path.of("model.gguf"),
                 null,
+                null,
                 "hi",
                 null,
                 false,
@@ -68,6 +69,7 @@ final class OptionsTest {
                                 null,
                                 null,
                                 null,
+                                null,
                                 false,
                                 false,
                                 "127.0.0.1",
@@ -98,6 +100,7 @@ final class OptionsTest {
                 () ->
                         new Options(
                                 Path.of("model.gguf"),
+                                null,
                                 null,
                                 "hi",
                                 null,
@@ -165,6 +168,21 @@ final class OptionsTest {
                         () -> Options.parse(new String[] {"-m", m, "-p", "hi", "--top-k", "many"}));
         assertTrue(failure.getMessage().contains("--top-k"), failure.getMessage());
         assertTrue(failure.getMessage().contains("many"), failure.getMessage());
+    }
+
+    /** model= and tokenizer= are RESERVED --with roles: they route to their own seams. */
+    @Test
+    void reservedWithRolesRouteToTheirSeams(@TempDir Path dir) throws IOException {
+        Path m = model(dir);
+        Path t = Files.writeString(dir.resolve("other.gguf"), "another model");
+        Options options =
+                Options.parse(
+                        new String[] {
+                            "--with", "model=" + m, "--with", "tokenizer=" + t, "-p", "hi"
+                        });
+        assertEquals(m, options.modelPath(), "--with model= is -m by another spelling");
+        assertEquals(t, options.tokenizerPath());
+        assertEquals(0, options.companions().size(), "reserved roles are not companions");
     }
 
     @Test

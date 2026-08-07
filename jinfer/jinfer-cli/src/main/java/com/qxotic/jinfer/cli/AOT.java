@@ -210,16 +210,38 @@ final class AOT {
     }
 
     /**
-     * The CLI's one load path: the model consults the preload, companions pass through untouched
-     * (their ports parse them). A miss loads fresh through the same call. A runtime {@code
-     * -Djinfer.preTokenizer.*} override makes the tokenizer rebuild so the override applies: the
-     * escape hatch outranks the preload, and that precedence is this caller's policy, not the
-     * library's.
+     * The tokenizer another GGUF describes ({@code --with tokenizer=...}): served from the bake
+     * when the file is a proven preload, built fresh otherwise. {@code -Djinfer.preTokenizer.*}
+     * properties apply while BUILDING any tokenizer, so they compose with the override rather than
+     * fight it.
      */
-    static LoadedModel<?> load(Path modelPath, Map<String, Path> companions) throws IOException {
+    static Tokenizer tokenizerFrom(Path path) throws IOException {
+        PreloadedFile baked = match(PRELOADED, path);
+        if (baked != null && !Tokenizers.hasPropertyOverrides()) {
+            return baked.tokenizer();
+        }
+        try (FileChannel fileChannel = FileChannel.open(path, StandardOpenOption.READ)) {
+            return Tokenizers.fromGGUF(ModelLoader.readGguf(fileChannel, path.toString()));
+        }
+    }
+
+    /**
+     * The CLI's one load path: the model consults the preload, companions pass through untouched
+     * (their ports parse them), and {@code tokenizerOverride} - the file named by {@code --with
+     * tokenizer=} - outranks everything when present. Otherwise the baked tokenizer serves, unless
+     * a runtime {@code -Djinfer.preTokenizer.*} override makes it rebuild so the escape hatch
+     * applies. That precedence - explicit file, then properties, then bake, then the GGUF's own -
+     * is this caller's policy, not the library's.
+     */
+    static LoadedModel<?> load(Path modelPath, Map<String, Path> companions, Path tokenizerOverride)
+            throws IOException {
         PreloadedFile main = match(PRELOADED, modelPath);
         Tokenizer tokenizer =
-                main == null || Tokenizers.hasPropertyOverrides() ? null : main.tokenizer();
+                tokenizerOverride != null
+                        ? tokenizerFrom(tokenizerOverride)
+                        : main == null || Tokenizers.hasPropertyOverrides()
+                                ? null
+                                : main.tokenizer();
         try (var timer = Timer.log("Load model");
                 FileChannel fileChannel = FileChannel.open(modelPath, StandardOpenOption.READ)) {
             GGUF gguf =

@@ -39,6 +39,7 @@ import java.util.TreeSet;
 public record Options(
         Path modelPath,
         Map<String, Path> companions,
+        Path tokenizerPath,
         String prompt,
         String systemPrompt,
         boolean interactive,
@@ -267,6 +268,7 @@ public record Options(
         Float minp = null; // unset = the model's recommended value, else 0.05
         // paths or hub refs; resolved (and downloaded, if needed) once parsing has succeeded
         String modelRef = null;
+        String tokenizerRef = null;
         // capability -> path or ref; resolved once parsing has succeeded
         Map<String, String> companionRefs = new LinkedHashMap<>();
         Long seed = null; // unset = a fresh random seed per request
@@ -325,9 +327,19 @@ public record Options(
                             int eq = nextArg.indexOf('=');
                             require(
                                     eq > 0 && eq < nextArg.length() - 1,
-                                    "--with takes <capability>=<path|ref>, got %s",
+                                    "--with takes <role>=<path|ref>, got %s",
                                     nextArg);
-                            companionRefs.put(nextArg.substring(0, eq), nextArg.substring(eq + 1));
+                            String role = nextArg.substring(0, eq);
+                            String value = nextArg.substring(eq + 1);
+                            // ONE attachment syntax; two roles are RESERVED and route to their
+                            // own seams (the model anchors the load, the tokenizer is a typed
+                            // load argument), everything else is a companion capability that the
+                            // model's port validates
+                            switch (role) {
+                                case "model" -> modelRef = value;
+                                case "tokenizer" -> tokenizerRef = value;
+                                default -> companionRefs.put(role, value);
+                            }
                         }
                         case "--host" -> host = nextArg;
                         case "--port" -> port = parseInt(optionName, nextArg);
@@ -385,9 +397,11 @@ public record Options(
         boolean color = supportsAnsiColors(colorMode);
         // AFTER the loop, so --help and a bad flag never trigger a download first
         Path modelPath;
+        Path tokenizerPath;
         Map<String, Path> companions = new LinkedHashMap<>();
         try {
             modelPath = modelRef == null ? null : ModelStore.resolve(modelRef);
+            tokenizerPath = tokenizerRef == null ? null : ModelStore.resolve(tokenizerRef);
             if (!companionRefs.isEmpty()) {
                 // ONE header read at most (none when the model is preloaded - AOT answers from
                 // its baked header), and the capability is checked before any file is fetched: a
@@ -412,6 +426,7 @@ public record Options(
         return new Options(
                 modelPath,
                 Map.copyOf(companions),
+                tokenizerPath,
                 prompt,
                 systemPrompt,
                 interactive,
@@ -484,9 +499,10 @@ public record Options(
                         + " downloaded on first use");
         out.println("  --mmproj <path|ref>           shorthand for --with media=<...>");
         out.println(
-                "  --with <capability>=<file>    attach a COMPANION that gives the model a"
-                        + " capability: a path or a ref, named explicitly. gemma4: media"
-                        + " (vision/audio encoders)");
+                "  --with <role>=<path|ref>      attach a file by role. model= (same as -m) and"
+                        + " tokenizer= (use another GGUF's tokenizer; id-space checked) are"
+                        + " reserved; any other role is a COMPANION capability of the"
+                        + " architecture, e.g. gemma4: media (vision/audio encoders)");
         out.println("  --interactive, --chat, -i     run in chat mode");
         out.println("  --instruct                    run in instruct (once) mode, default mode");
         out.println("  --server                      run an OpenAI-compatible HTTP server");

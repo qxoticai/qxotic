@@ -75,7 +75,7 @@ public class Main {
         try {
             // ONE load path: every file - model and companions - uses its preload when it has
             // one, parses fresh when it does not; any mix composes
-            model = AOT.load(options.modelPath(), options.companions());
+            model = AOT.load(options.modelPath(), options.companions(), options.tokenizerPath());
         } catch (IllegalArgumentException
                 | IllegalStateException
                 | UnsupportedOperationException
