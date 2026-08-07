@@ -51,10 +51,6 @@
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-kernels</artifactId>
     </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-jinja</artifactId>
-    </dependency>
 
     <!-- The ports the binary carries. Named one by one rather than via jinfer-models-all, which
          would also pull in inflect2 (speech) and grow the native image for a mode the CLI has no
@@ -62,35 +58,37 @@
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-gemma4</artifactId>
+      <scope>runtime</scope>
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-llama</artifactId>
+      <scope>runtime</scope>
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-qwen35</artifactId>
+      <scope>runtime</scope>
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-gptoss</artifactId>
+      <scope>runtime</scope>
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-nemotronh</artifactId>
+      <scope>runtime</scope>
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-lfm2</artifactId>
+      <scope>runtime</scope>
     </dependency>
 
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>gguf</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>json</artifactId>
     </dependency>
   </dependencies>
 

@@ -177,6 +177,12 @@
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
+        <artifactId>jinfer-models-all</artifactId>
+        <version>${project.version}</version>
+        <type>pom</type>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
         <artifactId>jinfer-inflect2</artifactId>
         <version>${project.version}</version>
       </dependency>

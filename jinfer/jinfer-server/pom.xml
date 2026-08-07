@@ -39,19 +39,6 @@
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-jinja</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>gguf</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>json</artifactId>
-      <!-- JsonCodec: the OpenAI wire format and the whole-render chat fallback -->
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
       <artifactId>jinfer-kernels</artifactId>
       <version>${project.version}</version>
       <type>test-jar</type>
