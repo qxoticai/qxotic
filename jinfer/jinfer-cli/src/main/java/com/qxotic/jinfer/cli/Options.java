@@ -160,7 +160,7 @@ public record Options(
                 modelPath.getFileName().toString(),
                 new InetSocketAddress(host, port),
                 new ServerConfig.Defaults(sampling(defaults), maxOutputTokens, think, rawPrompt),
-                limits.withGrammar(!noGrammar),
+                limits.withGrammar(!noGrammar).withSpeculationDepth(specDepth()),
                 PromptCache.Options.DEFAULTS
                         .withContextCapacity(contextCapacity)
                         .withCatalog(promptCache, promptCacheReadOnly));

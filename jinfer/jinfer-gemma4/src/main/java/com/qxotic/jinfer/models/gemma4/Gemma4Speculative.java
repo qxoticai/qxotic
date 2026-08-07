@@ -8,7 +8,7 @@ import com.qxotic.jinfer.telemetry.SpeculationEvent;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
-import java.util.function.IntConsumer;
+import java.util.function.IntPredicate;
 
 /**
  * Self-speculative decode over the Gemma 4 MTP draft head (Stage 3). Per iteration: chain {@code
@@ -90,17 +90,18 @@ public final class Gemma4Speculative {
             Set<Integer> stops,
             int depth,
             TopRecorder recorder) {
-        return generate(model, s, maxTokens, stops, depth, Sampler.ARGMAX, null, recorder);
+        return generate(model, s, maxTokens, 0, stops, depth, Sampler.ARGMAX, null, recorder);
     }
 
     public static Result generate(
             Gemma4 model,
             Gemma4.State s,
             int maxTokens,
+            long timeoutNanos,
             Set<Integer> stops,
             int depth,
             Sampler sampler,
-            IntConsumer onEmit,
+            IntPredicate onEmit,
             TopRecorder recorder) {
         int vocab = model.config().vocabularySize();
         if (!model.speculationReady())
@@ -113,7 +114,16 @@ public final class Gemma4Speculative {
         }
         Result result =
                 generate(
-                        model, s, depth, maxTokens, stops, sampler, onEmit, recorder, scratch,
+                        model,
+                        s,
+                        depth,
+                        maxTokens,
+                        timeoutNanos,
+                        stops,
+                        sampler,
+                        onEmit,
+                        recorder,
+                        scratch,
                         vocab);
         // one emission point for three return sites inside the loop
         SpeculationEvent event = new SpeculationEvent();
@@ -131,12 +141,14 @@ public final class Gemma4Speculative {
             Gemma4.State s,
             int depth,
             int maxTokens,
+            long timeoutNanos,
             Set<Integer> stops,
             Sampler sampler,
-            IntConsumer onEmit,
+            IntPredicate onEmit,
             TopRecorder recorder,
             Scratch scratch,
             int vocab) {
+        long deadline = timeoutNanos != 0 ? System.nanoTime() + timeoutNanos : Long.MAX_VALUE;
         List<Integer> emitted = new ArrayList<>();
         List<Integer> committed = new ArrayList<>();
         int drafted = 0, acceptedTotal = 0, forwards = 0;
@@ -160,7 +172,8 @@ public final class Gemma4Speculative {
 
         int[] cand = new int[depth + 1];
         while (emitted.size() < maxTokens
-                && s.position() + depth + 1 <= s.contextCapacity()) { // a verify block must fit
+                && s.position() + depth + 1 <= s.contextCapacity() // a verify block must fit
+                && System.nanoTime() < deadline) {
             // draft chain: warm-up pairs (h, tLast) at tLast's position; heads chain greedily from
             // `next`
             int pos = s.position() - 1;
@@ -217,9 +230,10 @@ public final class Gemma4Speculative {
             int keep = stopIdx >= 0 ? stopIdx + 1 : accepted + 1;
             s.resumeAt(basePos + keep); // keep cand[0..keep), drop the rest
             for (int i = 0; i < keep; i++) committed.add(cand[i]);
+            boolean aborted = false;
             for (int i = 0; i < keep && (stopIdx < 0 || i < stopIdx); i++) {
                 emitted.add(cand[i]);
-                if (onEmit != null) onEmit.accept(cand[i]);
+                if (onEmit != null && !onEmit.test(cand[i])) aborted = true; // caller's abort
                 if (recorder != null) {
                     Top2 st = i == 0 ? pending : rowStats[i - 1]; // row that produced cand[i]
                     recorder.onEmit(cand[i], st.t1(), st.l1(), st.t2(), st.l2());
@@ -238,6 +252,8 @@ public final class Gemma4Speculative {
             if (stopIdx >= 0)
                 return new Result(
                         emitted, committed, cand[stopIdx], drafted, acceptedTotal, forwards);
+            if (aborted)
+                return new Result(emitted, committed, -1, drafted, acceptedTotal, forwards);
         }
         return new Result(emitted, committed, -1, drafted, acceptedTotal, forwards);
     }

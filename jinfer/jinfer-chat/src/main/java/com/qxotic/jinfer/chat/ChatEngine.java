@@ -9,6 +9,7 @@ import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.Grammar;
 import com.qxotic.jinfer.llm.Sampler;
 import com.qxotic.jinfer.llm.Sampling;
+import com.qxotic.jinfer.llm.SpeculativeDecoding;
 import com.qxotic.jinfer.llm.TextStops;
 import com.qxotic.jinfer.telemetry.InferenceEvent;
 import com.qxotic.jinfer.telemetry.Telemetry;
@@ -128,6 +129,26 @@ public final class ChatEngine {
     public ChatEngine(LoadedModel<?> loaded, String modelName, PromptCache.Options cacheOptions) {
         this(new Owned(loaded, null), modelName, cacheOptions);
     }
+
+    /**
+     * As {@link #ChatEngine(LoadedModel, String, PromptCache.Options)} with the SPECULATION depth
+     * for a model carrying a draft head (inert otherwise): drafts per verify, the caller's
+     * performance policy - it never changes what a pass produces, only how fast (verification keeps
+     * the sampler's own distribution).
+     */
+    public ChatEngine(
+            LoadedModel<?> loaded,
+            String modelName,
+            PromptCache.Options cacheOptions,
+            int speculationDepth) {
+        this(new Owned(loaded, null), modelName, cacheOptions);
+        if (speculationDepth < 1 || speculationDepth > 8) {
+            throw new IllegalArgumentException("speculationDepth " + speculationDepth);
+        }
+        this.speculationDepth = speculationDepth;
+    }
+
+    private int speculationDepth = 4; // drafts per verify when the model has a draft head
 
     private ChatEngine(Owned owned, String modelName, PromptCache.Options cacheOptions) {
         if (owned.loaded() == null) throw new IllegalArgumentException("null model");
@@ -695,20 +716,48 @@ public final class ChatEngine {
         // the facade validates the prompt (non-empty, fits the context) before any ingest
         return c.serve(
                 prompt,
-                (state, serving) ->
-                        new Outcome(
-                                Generator.generate(
-                                        model,
+                (state, serving) -> {
+                    if (model instanceof SpeculativeDecoding<?> capable
+                            && capable.speculationReady()) {
+                        // the model decodes with its own draft-and-verify; verified tokens land
+                        // on the state in batches, so the cache adopts them in bulk instead of
+                        // the per-token tail
+                        SpeculativeDecoding<S> speculative = (SpeculativeDecoding<S>) capable;
+                        long start = System.nanoTime();
+                        SpeculativeDecoding.Speculation spec =
+                                speculative.speculate(
                                         state,
-                                        List.of(),
-                                        sampler,
                                         maxTokens,
                                         timeoutNanos,
                                         loaded.stopTokens(),
-                                        sink,
-                                        serving::tail),
+                                        sampler,
+                                        speculationDepth,
+                                        sink::onToken);
+                        serving.adopt(spec.committed().toArray());
+                        return new Outcome(
+                                new Generator.GenerationResult(
+                                        spec.emitted(),
+                                        spec.stopToken(),
+                                        spec.stopToken() >= 0 ? "stop" : "length",
+                                        0 /* the cache served the prompt */,
+                                        System.nanoTime() - start),
                                 serving.restored(),
-                                serving.tier()));
+                                serving.tier());
+                    }
+                    return new Outcome(
+                            Generator.generate(
+                                    model,
+                                    state,
+                                    List.of(),
+                                    sampler,
+                                    maxTokens,
+                                    timeoutNanos,
+                                    loaded.stopTokens(),
+                                    sink,
+                                    serving::tail),
+                            serving.restored(),
+                            serving.tier());
+                });
     }
 
     // ---- cached prompts: define / export / save on the one PromptCache ----

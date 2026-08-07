@@ -208,10 +208,14 @@ final class Turn {
                 speculative.speculate(
                         state,
                         options.maxOutputTokens(),
+                        0 /* CLI: no deadline */,
                         stopTokens,
                         sampler,
                         options.specDepth(),
-                        rendering.sink());
+                        token -> {
+                            rendering.sink().accept(token);
+                            return true;
+                        });
         long decodeNanos = System.nanoTime() - decodeStart;
         Message message = rendering.parser.finish();
         Generator.GenerationResult result =
