@@ -1095,7 +1095,11 @@ public final class JinjaRenderer {
             Prog program = parse(source);
             return vars -> render(program, vars);
         } catch (RuntimeException e) {
-            System.err.println("[warn] chat template failed to parse: " + e.getMessage());
+            System.getLogger("jinfer.jinja")
+                    .log(
+                            System.Logger.Level.WARNING,
+                            "chat template failed to parse: {0}",
+                            e.getMessage());
             return null;
         }
     }

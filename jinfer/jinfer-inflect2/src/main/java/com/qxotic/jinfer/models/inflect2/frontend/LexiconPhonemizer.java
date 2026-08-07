@@ -83,11 +83,13 @@ final class LexiconPhonemizer implements Phonemizer {
         }
         if (dropped > 0 && !warned) {
             warned = true;
-            System.err.println(
-                    "[inflect2] "
-                            + dropped
-                            + " word(s) are not in the lexicon and were left unspoken; install"
-                            + " espeak-ng and remove the lexicon to phonemize them instead");
+            System.getLogger("jinfer.inflect2")
+                    .log(
+                            System.Logger.Level.WARNING,
+                            "{0} word(s) are not in the lexicon and were left unspoken; install"
+                                    + " espeak-ng and remove the lexicon to phonemize them"
+                                    + " instead",
+                            dropped);
         }
         return Symbols.blankIntersperse(Arrays.copyOf(symbols, length));
     }

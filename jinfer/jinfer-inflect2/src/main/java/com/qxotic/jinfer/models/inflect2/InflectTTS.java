@@ -156,10 +156,12 @@ public final class InflectTTS
         if (bundled != null) return bundled;
         Phonemizer espeak = Phonemizer.espeak();
         if (espeak != null) {
-            System.err.println(
-                    "[inflect2] no lexicon found, using espeak-ng: one subprocess per"
-                            + " punctuation-free run, and it must stay installed. Ship a"
-                            + " lexicon.bin beside the GGUF to avoid it.");
+            System.getLogger("jinfer.inflect2")
+                    .log(
+                            System.Logger.Level.WARNING,
+                            "no lexicon found, using espeak-ng: one subprocess per"
+                                    + " punctuation-free run, and it must stay installed. Ship a"
+                                    + " lexicon.bin beside the GGUF to avoid it.");
             return espeak;
         }
         throw new IOException(
