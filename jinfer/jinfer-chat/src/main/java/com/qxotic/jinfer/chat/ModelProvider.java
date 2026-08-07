@@ -69,22 +69,29 @@ public interface ModelProvider {
 
     /**
      * The COMPANION FILES this architecture can take: capability name to the filename that carries
-     * it. Distinct from the {@code companions} map a caller ATTACHES, which is capability name to a
-     * {@link Path} - this one is what the architecture OFFERS. A companion is an auxiliary file
-     * that has no meaning without this model and is loaded by this port into the same arena - a
-     * media projector, a draft head, a pronunciation lexicon.
+     * it, e.g. {@code Map.of("media", "mmproj", "speculation", "mtp")}. This is what the
+     * architecture OFFERS; what a caller ATTACHES is the capability-to-{@link Path} map on {@code
+     * load}. Declaring does not attach.
      *
-     * <pre>
-     *   Map.of("media", "mmproj", "speculation", "mtp")
-     * </pre>
+     * <p>WHAT A COMPANION IS - the whole concept, in four laws the implementation follows:
      *
-     * <p>The CAPABILITY is what a user asks for; the filename is this port's business, and how a
-     * downloader finds it in the model's repository. Naming the capability rather than the file is
-     * what lets a second implementation of the same capability arrive without renaming anything a
-     * user types (speculation is MTP here and Eagle3 elsewhere).
+     * <ol>
+     *   <li>ONE FILE that gives THIS architecture a capability its base model lacks - a media
+     *       projector, a draft head, a pronunciation lexicon. It has no meaning without its model
+     *       and is not independently loadable.
+     *   <li>Named by CAPABILITY, attached EXPLICITLY by the caller - never discovered, never
+     *       guessed. The capability is what a user asks for; the filename is this port's business
+     *       (and how a downloader finds it). Naming the capability is what lets a second
+     *       implementation arrive without renaming anything a user types (speculation is MTP today,
+     *       Eagle3 tomorrow).
+     *   <li>Loaded BY THE PORT, into the model's own arena; how is the port's business, and it is
+     *       not cached or preloaded - a companion header parse costs ~10 ms.
+     *   <li>Its BYTES JOIN THE CACHE SEED ({@code Models.load} does this), because a companion
+     *       changes what the model computes - cached KV must be keyed by it.
+     * </ol>
      *
-     * <p>Declaring one does NOT attach it: every companion costs memory or changes behaviour, so
-     * attaching stays the caller's explicit act.
+     * <p>And what a companion is NOT: not a tokenizer (that is the text-to-ids codec OUTSIDE the
+     * computation, passed as the {@code load} tokenizer argument), and not a model.
      */
     default Map<String, String> companionFiles() {
         return Map.of();
