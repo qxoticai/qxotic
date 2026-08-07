@@ -123,6 +123,19 @@ class ModelRefTest {
     }
 
     @Test
+    void isRemoteIsThePublicFormOfTheSameRule() {
+        assertTrue(ModelStore.isRemote("hf.co/a/b:Q8_0"));
+        assertTrue(ModelStore.isRemote("https://huggingface.co/a/b"));
+        assertTrue(
+                ModelStore.isRemote("https://example.org/models/x.gguf"), "a plain URL is remote");
+
+        assertFalse(ModelStore.isRemote("/models/mine.gguf"));
+        assertFalse(ModelStore.isRemote("./hf.co/a/b"), "the explicit-local escape stays local");
+        assertFalse(ModelStore.isRemote("example.org/models/x.gguf"), "no scheme, unknown host");
+        assertFalse(ModelStore.isRemote(null));
+    }
+
+    @Test
     void aBareRepositoryIsRefusedWithTheHostFormInTheMessage() {
         var failure =
                 assertThrows(
@@ -241,6 +254,63 @@ class ModelRefTest {
                 ModelStore.huggingFaceSnapshot(
                         ModelRef.parse("modelscope.cn/ggml-org/stories15M_MOE"), hub),
                 "ModelScope keeps its own layout; not ours to read");
+    }
+
+    @Test
+    void linkPublishesABlobAsARelativeSymlink(@TempDir Path repo) throws IOException {
+        Path blob = repo.resolve("blobs").resolve("a".repeat(64));
+        Files.createDirectories(blob.getParent());
+        Files.writeString(blob, "weights");
+        Path dest = repo.resolve("snapshots").resolve("c".repeat(40)).resolve("x.gguf");
+
+        assertEquals(dest, ModelStore.link(blob, dest));
+        assertTrue(Files.isSymbolicLink(dest));
+        assertFalse(
+                Files.readSymbolicLink(dest).isAbsolute(),
+                "relative, so the cache can move as a whole");
+        assertEquals("weights", Files.readString(dest));
+        assertEquals(dest, ModelStore.link(blob, dest), "publishing twice is a no-op");
+    }
+
+    @Test
+    void hubCacheGgufsAreListedAsRefs(@TempDir Path hub) throws IOException {
+        String commit = "c".repeat(40);
+        Path repo = hub.resolve("models--ggml-org--stories15M_MOE");
+        Path snapshot = repo.resolve("snapshots").resolve(commit);
+        Files.createDirectories(snapshot.resolve("sub"));
+        Files.createDirectories(repo.resolve("refs"));
+        Files.writeString(repo.resolve("refs/main"), commit);
+        Files.writeString(snapshot.resolve("model-Q8_0.gguf"), "weights");
+        Files.writeString(snapshot.resolve("sub/mmproj-f16.gguf"), "projector");
+        Files.writeString(snapshot.resolve("config.json"), "{}"); // the Python stack's litter
+        // a snapshot refs/ no longer names is history, not the cache's current answer
+        Files.createDirectories(repo.resolve("snapshots").resolve("d".repeat(40)));
+        Files.writeString(
+                repo.resolve("snapshots").resolve("d".repeat(40)).resolve("old.gguf"), "old");
+        // a repository with no refs cannot say which snapshot is current: skipped, not guessed
+        Files.createDirectories(hub.resolve("models--who--else/snapshots"));
+
+        assertEquals(
+                java.util.List.of(
+                        "hf.co/ggml-org/stories15M_MOE/model-Q8_0.gguf",
+                        "hf.co/ggml-org/stories15M_MOE/sub/mmproj-f16.gguf"),
+                ModelStore.huggingFaceCached(hub).stream().map(ModelStore.Cached::ref).toList());
+    }
+
+    @Test
+    void evictHubSparesABlobStillLinkedElsewhere(@TempDir Path repo) throws IOException {
+        Path blob = repo.resolve("blobs").resolve("a".repeat(64));
+        Files.createDirectories(blob.getParent());
+        Files.writeString(blob, "weights");
+        Path first = repo.resolve("snapshots").resolve("c".repeat(40)).resolve("x.gguf");
+        Path second = repo.resolve("snapshots").resolve("d".repeat(40)).resolve("x.gguf");
+        ModelStore.link(blob, first);
+        ModelStore.link(blob, second);
+
+        assertTrue(ModelStore.evictHub(first));
+        assertTrue(Files.exists(blob), "another snapshot still links these bytes");
+        assertTrue(ModelStore.evictHub(second));
+        assertFalse(Files.exists(blob), "the last link took the blob with it");
     }
 
     @Test

@@ -656,27 +656,19 @@ public class Main {
      * {@code --model} or {@code --with}, which is the point: the cache path IS the ref.
      */
     private static void list() {
-        java.util.List<String> refs = ModelStore.cached();
-        if (refs.isEmpty()) {
+        java.util.List<ModelStore.Cached> models = ModelStore.cached();
+        if (models.isEmpty()) {
             System.out.println("no models cached in " + ModelStore.root());
             return;
         }
-        int width = refs.stream().mapToInt(String::length).max().orElse(0);
+        int width = models.stream().mapToInt(m -> m.ref().length()).max().orElse(0);
         long total = 0;
-        for (String ref : refs) {
-            long size = sizeOf(ModelStore.root().resolve(ref)); // resolve() ignores an absolute ref
-            total += size;
-            System.out.printf("%-" + width + "s  %10s%n", ref, humanBytes(size));
+        for (ModelStore.Cached model : models) {
+            total += model.sizeBytes();
+            System.out.printf(
+                    "%-" + width + "s  %10s%n", model.ref(), humanBytes(model.sizeBytes()));
         }
         System.out.printf("%-" + width + "s  %10s%n", "total", humanBytes(total));
-    }
-
-    private static long sizeOf(Path file) {
-        try {
-            return Files.size(file);
-        } catch (IOException unreadable) {
-            return 0;
-        }
     }
 
     private static String humanBytes(long bytes) {

@@ -89,6 +89,45 @@ class ModelHubIT {
                 "the chunk map is deleted once the file is published");
     }
 
+    /**
+     * The default-root behavior, driven through the package seams so the test never touches the
+     * machine's real {@code ~/.cache/huggingface}: an {@code hf.co} download lands in the shared
+     * hub layout - blob named by its sha256, snapshot symlink, {@code refs/main} - and jinfer's own
+     * read side (and llama.cpp's, which reads the same layout) finds it as a cache hit.
+     */
+    @Test
+    void writeThroughPopulatesTheSharedHubLayout(@TempDir Path root, @TempDir Path hub)
+            throws Exception {
+        assumeReachable("huggingface.co");
+        useCache(root);
+        ModelRef ref = ModelRef.parse(REPO + ":Q8_0");
+        String commit = ModelStore.hubCommit(ref);
+        org.junit.jupiter.api.Assertions.assertNotNull(commit, "main resolves to a commit");
+
+        Path file = ModelStore.fetchIntoHub(ref, ModelStore.select(ref), commit, hub);
+        assertTrue(file.startsWith(hub));
+        assertEquals(39390272L, Files.size(file));
+        assertTrue(Files.isSymbolicLink(file), "a snapshot entry is a link into blobs/");
+        Path blob = file.getParent().resolve(Files.readSymbolicLink(file)).normalize();
+        assertEquals("blobs", blob.getParent().getFileName().toString());
+        assertEquals(blob.getFileName().toString(), sha256(file), "the blob is named by its hash");
+        assertEquals(
+                commit,
+                Files.readString(hub.resolve("models--ggml-org--stories15M_MOE/refs/main"))
+                        .strip());
+
+        // the read side sees what the write side did: resolve() from here is a cache hit
+        assertEquals(file.getParent(), ModelStore.huggingFaceSnapshot(ref, hub));
+        assertTrue(
+                ModelStore.huggingFaceCached(hub).stream()
+                        .anyMatch(
+                                m ->
+                                        m.ref()
+                                                        .equals(
+                                                                "hf.co/ggml-org/stories15M_MOE/stories15M_MOE-Q8_0.gguf")
+                                                && m.sizeBytes() == 39390272L));
+    }
+
     @Test
     void modelScopeServesTheSameBytes(@TempDir Path root) throws Exception {
         assumeReachable("modelscope.cn");
