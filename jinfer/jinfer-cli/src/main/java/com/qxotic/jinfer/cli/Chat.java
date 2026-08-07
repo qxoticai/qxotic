@@ -68,14 +68,9 @@ final class Chat {
                 }
                 Turn.Reply reply = Turn.generate(model, state, delta, stops, sampler, options);
                 conversation = conversation.append(reply.message());
-                // The KV holds the prompt plus every INGESTED reply token: all of them when a
-                // stop token ended the turn, all but the last otherwise (the decode loop never
-                // ingests the final sampled token).
-                IntSequence generated = reply.result().tokens();
-                if (reply.result().stopToken() < 0 && !generated.isEmpty()) {
-                    generated = generated.subSequence(0, generated.length() - 1);
-                }
-                ingested = prompt.concat(generated);
+                // the KV holds the prompt plus exactly what the turn reports it ingested - the
+                // plain loop and the speculative one disagree about that, so the reply says
+                ingested = prompt.concat(reply.kvTokens());
             }
         }
     }

@@ -23,6 +23,7 @@ final class OptionsTest {
                 Path.of("model.gguf"),
                 null,
                 null,
+                null,
                 "hi",
                 null,
                 false,
@@ -70,6 +71,7 @@ final class OptionsTest {
                                 null,
                                 null,
                                 null,
+                                null,
                                 false,
                                 false,
                                 "127.0.0.1",
@@ -100,6 +102,7 @@ final class OptionsTest {
                 () ->
                         new Options(
                                 Path.of("model.gguf"),
+                                null,
                                 null,
                                 null,
                                 "hi",
@@ -183,6 +186,21 @@ final class OptionsTest {
         assertEquals(m, options.modelPath(), "--with model= is -m by another spelling");
         assertEquals(t, options.tokenizerPath());
         assertEquals(0, options.companions().size(), "reserved roles are not companions");
+    }
+
+    /** Depth without a draft head would be a flag that does nothing - the --no-grammar rule. */
+    @Test
+    void speculationDepthNeedsTheCompanion(@TempDir Path dir) throws IOException {
+        String m = model(dir).toString();
+        var failure =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                Options.parse(
+                                        new String[] {
+                                            "-m", m, "-p", "hi", "--speculation-depth", "4"
+                                        }));
+        assertTrue(failure.getMessage().contains("--with speculation"), failure.getMessage());
     }
 
     @Test

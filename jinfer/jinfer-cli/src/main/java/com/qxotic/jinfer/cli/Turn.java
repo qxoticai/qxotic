@@ -12,7 +12,6 @@ import java.io.PrintStream;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Set;
-import java.util.function.BiConsumer;
 import java.util.function.IntConsumer;
 
 /**
@@ -30,10 +29,17 @@ final class Turn {
     private static final String ANSI_RESET = "\033[0m";
 
     /**
-     * A CLI generation outcome: the raw result, the display text the parser assembled, and the
-     * parser's structured reply message (verbatim ids - what a codec chat loop appends).
+     * A CLI generation outcome: the raw result, the display text the parser assembled, the parser's
+     * structured reply message (verbatim ids - what a codec chat loop appends), and {@code
+     * kvTokens} - the generated tokens the KV actually holds, which the chat loop must track
+     * exactly (plain decode never ingests the final sampled token; speculation commits verified
+     * tokens the emission may not include).
      */
-    record Reply(Generator.GenerationResult result, String text, Message message) {}
+    record Reply(
+            Generator.GenerationResult result,
+            String text,
+            Message message,
+            IntSequence kvTokens) {}
 
     static <S extends RuntimeState> Reply generate(
             LoadedModel<S> model,
@@ -49,6 +55,64 @@ final class Turn {
      * As {@link #generate(LoadedModel, RuntimeState, IntSequence, Set, Sampler, Options)} with a
      * per-token ingest callback, which the prompt-cache path uses to append the tail.
      */
+    /**
+     * The terminal-facing half of a turn, built once and shared by the plain and speculative paths:
+     * prompt echo, the streaming printer, the span parser, and the think-aware display text. {@link
+     * #sink()} is the one per-token entry both decode loops feed.
+     */
+    private static final class Rendering {
+        final ReplyParser parser;
+        final StringBuilder text = new StringBuilder();
+        private final IntConsumer sink;
+
+        Rendering(LoadedModel<?> model, IntSequence promptTokens, Options options) {
+            Tokenizer tokenizer = model.tokenizer();
+            if (options.echo()) {
+                echoPrompt(tokenizer, promptTokens);
+            }
+            IntConsumer printer = streamingPrinter(tokenizer, options);
+            IntConsumer onToken =
+                    !options.echo()
+                            ? printer
+                            : token -> {
+                                System.err.print(
+                                        replaceControlCharacters(
+                                                tokenizer.decode(new int[] {token})));
+                                printer.accept(token);
+                            };
+            this.parser = ReplyParser.spans(tokenizer);
+            Thinking.Inline inlineThink = new Thinking.Inline();
+            this.sink =
+                    token -> {
+                        onToken.accept(token);
+                        String fragment = parser.feed(token);
+                        if (fragment.isEmpty()) {
+                            return;
+                        }
+                        if (!parser.reasoning()) {
+                            text.append(
+                                    options.think()
+                                            ? inlineThink.project(fragment, false)
+                                            : fragment);
+                        } else if (options.think()) {
+                            // thinking shown: bracket it inline in the display text
+                            text.append(inlineThink.project(fragment, true));
+                        }
+                    };
+        }
+
+        IntConsumer sink() {
+            return sink;
+        }
+
+        /** The whole reply at once when nothing streamed - here, so no mode can forget. */
+        void printUnlessStreamed(Options options) {
+            if (!options.stream()) {
+                System.out.println(text);
+            }
+        }
+    }
+
     static <S extends RuntimeState> Reply generate(
             LoadedModel<S> model,
             S state,
@@ -57,37 +121,20 @@ final class Turn {
             Sampler sampler,
             Options options,
             IntConsumer afterIngest) {
-        Tokenizer tokenizer = model.tokenizer();
-        if (options.echo()) {
-            echoPrompt(tokenizer, promptTokens);
+        if (afterIngest == null
+                && model.model() instanceof SpeculativeDecoding<?> speculative
+                && speculative.speculationReady()) {
+            // the prompt-cache path (afterIngest) tracks per-token ingests, which speculation's
+            // batched commit-and-rollback does not produce - it keeps the plain loop
+            @SuppressWarnings("unchecked")
+            SpeculativeDecoding<S> capable = (SpeculativeDecoding<S>) speculative;
+            return speculate(model, state, promptTokens, stopTokens, sampler, options, capable);
         }
-        IntConsumer printer = streamingPrinter(tokenizer, options);
-        IntConsumer onToken =
-                !options.echo()
-                        ? printer
-                        : token -> {
-                            System.err.print(
-                                    replaceControlCharacters(tokenizer.decode(new int[] {token})));
-                            printer.accept(token);
-                        };
+        Rendering rendering = new Rendering(model, promptTokens, options);
         int startPosition = state.position();
         // GENERATED tokens; the state was sized for prompt + budget, so nothing is subtracted
         int budget = options.maxOutputTokens();
         int totalPrompt = promptTokens.length();
-        ReplyParser parser = ReplyParser.spans(tokenizer);
-        StringBuilder text = new StringBuilder();
-        Thinking.Inline inlineThink = new Thinking.Inline();
-        BiConsumer<String, Boolean> collect =
-                (fragment, reasoning) -> {
-                    if (!reasoning) {
-                        text.append(
-                                options.think() ? inlineThink.project(fragment, false) : fragment);
-                    } else if (options.think()) {
-                        // thinking shown: bracket it inline in the display text (the old
-                        // visible-tokens rendering kept think spans when --think is on)
-                        text.append(inlineThink.project(fragment, true));
-                    }
-                };
         Generator.GenerationResult result =
                 Generator.generate(
                         model.model(),
@@ -100,13 +147,11 @@ final class Turn {
                         0 /* CLI: no deadline */,
                         stopTokens,
                         token -> {
-                            onToken.accept(token);
-                            String fragment = parser.feed(token);
-                            if (!fragment.isEmpty()) collect.accept(fragment, parser.reasoning());
+                            rendering.sink().accept(token);
                             return true;
                         },
                         afterIngest);
-        Message message = parser.finish();
+        Message message = rendering.parser.finish();
         int generated = result.tokens().length() + (result.stopToken() >= 0 ? 1 : 0);
         String timingPrefix = options.colors() ? ANSI_CYAN : "";
         String timingSuffix = options.colors() ? ANSI_RESET : "";
@@ -120,11 +165,81 @@ final class Turn {
                 generated / (result.predictedNanos() / 1e9),
                 generated,
                 timingSuffix);
-        if (!options.stream()) {
-            // nothing streamed, so the reply prints once, whole - here, so no mode can forget
-            System.out.println(text);
+        rendering.printUnlessStreamed(options);
+        // the plain loop never ingests the final sampled token: on a stop that token was the
+        // stop itself (not in tokens), otherwise it is tokens' last element
+        IntSequence kv = result.tokens();
+        if (result.stopToken() < 0 && !kv.isEmpty()) {
+            kv = kv.subSequence(0, kv.length() - 1);
         }
-        return new Reply(result, text.toString(), message);
+        return new Reply(result, rendering.text.toString(), message, kv);
+    }
+
+    /**
+     * The speculative turn: same prompt echo, streaming, parsing and timing as the plain path, with
+     * the decode loop replaced by the model's own draft-and-verify ({@link
+     * SpeculativeDecoding#speculate}) and one extra stderr line reporting whether it paid.
+     */
+    private static <S extends RuntimeState> Reply speculate(
+            LoadedModel<S> model,
+            S state,
+            IntSequence promptTokens,
+            Set<Integer> stopTokens,
+            Sampler sampler,
+            Options options,
+            SpeculativeDecoding<S> speculative) {
+        Rendering rendering = new Rendering(model, promptTokens, options);
+        int totalPrompt = promptTokens.length();
+        // prompt ingest through the ordinary path (budget 0 = prefill only, logits retained)
+        Generator.GenerationResult prefill =
+                Generator.generate(
+                        model.model(),
+                        state,
+                        promptTokens.isEmpty()
+                                ? List.of()
+                                : List.of(Batch.prefill(promptTokens.toArray())),
+                        sampler,
+                        0,
+                        0,
+                        stopTokens,
+                        token -> true);
+        long decodeStart = System.nanoTime();
+        SpeculativeDecoding.Speculation spec =
+                speculative.speculate(
+                        state,
+                        options.maxOutputTokens(),
+                        stopTokens,
+                        sampler,
+                        options.specDepth(),
+                        rendering.sink());
+        long decodeNanos = System.nanoTime() - decodeStart;
+        Message message = rendering.parser.finish();
+        Generator.GenerationResult result =
+                new Generator.GenerationResult(
+                        spec.emitted(),
+                        spec.stopToken(),
+                        spec.stopToken() >= 0 ? "stop" : "length",
+                        prefill.promptNanos(),
+                        decodeNanos);
+        int generated = spec.emitted().length() + (spec.stopToken() >= 0 ? 1 : 0);
+        String timingPrefix = options.colors() ? ANSI_CYAN : "";
+        String timingSuffix = options.colors() ? ANSI_RESET : "";
+        System.err.printf(
+                "%n%scontext: %d/%d prompt: %.2f tokens/s (%d) generation: %.2f tokens/s (%d)"
+                        + " speculation: depth %d, %.2f tokens/forward, %d%% drafts accepted%s%n",
+                timingPrefix,
+                state.position(),
+                state.contextCapacity(),
+                totalPrompt / (prefill.promptNanos() / 1e9),
+                totalPrompt,
+                generated / (decodeNanos / 1e9),
+                generated,
+                options.specDepth(),
+                spec.forwards() == 0 ? 0.0 : (double) spec.committed().length() / spec.forwards(),
+                spec.drafted() == 0 ? 0 : Math.round(100.0 * spec.accepted() / spec.drafted()),
+                timingSuffix);
+        rendering.printUnlessStreamed(options);
+        return new Reply(result, rendering.text.toString(), message, spec.committed());
     }
 
     private static IntConsumer streamingPrinter(Tokenizer tokenizer, Options options) {

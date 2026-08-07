@@ -34,7 +34,9 @@ import java.util.Optional;
 import java.util.Set;
 
 public final class Gemma4
-        implements LanguageModel<Gemma4.Configuration, Gemma4.Weights, Gemma4.State>, MultiModal {
+        implements LanguageModel<Gemma4.Configuration, Gemma4.Weights, Gemma4.State>,
+                MultiModal,
+                SpeculativeDecoding<Gemma4.State> {
 
     private final Configuration configuration;
     private final Tokenizer tokenizer;
@@ -472,6 +474,10 @@ public final class Gemma4
     // === State ===
 
     public static final class State extends com.qxotic.jinfer.BaseState {
+
+        // speculation scratch, lazily allocated from this state's arena and reused per
+        // generation; freed with the state (see Gemma4Speculative.Scratch)
+        Gemma4Speculative.Scratch specScratch;
         // Batched scratch (batchCapacity rows): the residual stream and projections hold one row
         // per
         // token in the current chunk; KV cache is the cross-row source of truth. (MoE buffers and
@@ -1257,9 +1263,63 @@ public final class Gemma4
      */
     public static Gemma4 loadWithMtp(Path textGguf, Path mtpSidecar, Arena arena)
             throws IOException {
-        Gemma4 model = loadModel(textGguf, arena);
-        model.mtp = Gemma4Mtp.loadSidecar(mtpSidecar, model.config().vocabularySize(), arena);
-        return model;
+        return loadModel(textGguf, arena).attachMtp(mtpSidecar, arena);
+    }
+
+    /**
+     * Attaches the {@code speculation} companion: the MTP draft sidecar, into {@code arena}. The
+     * PAIRING is enforced here, like the mmproj's: the sidecar consumes this backbone's hidden
+     * state, so its {@code embedding_length_out} must equal this model's embedding width - an E2B
+     * head on an E4B backbone refuses with both numbers rather than failing in a GEMM later. (A
+     * same-width wrong head cannot be detected from headers; it is still SAFE - verification keeps
+     * only tokens the backbone confirms - just slow, visible as near-zero acceptance.)
+     */
+    public Gemma4 attachMtp(Path mtpSidecar, Arena arena) throws IOException {
+        Gemma4Mtp sidecar = Gemma4Mtp.loadSidecar(mtpSidecar, config().vocabularySize(), arena);
+        if (sidecar.config().backboneDim() != config().embeddingLength()) {
+            throw new IllegalArgumentException(
+                    mtpSidecar.getFileName()
+                            + " drafts for a backbone with hidden width "
+                            + sidecar.config().backboneDim()
+                            + ", but this model's is "
+                            + config().embeddingLength()
+                            + " - it is the MTP head of a different gemma-4 size; use the sidecar"
+                            + " published for this exact model");
+        }
+        this.mtp = sidecar;
+        return this;
+    }
+
+    @Override
+    public boolean speculationReady() {
+        return mtp != null;
+    }
+
+    @Override
+    public SpeculativeDecoding.Speculation speculate(
+            State state,
+            int maxTokens,
+            Set<Integer> stops,
+            Sampler sampler,
+            int depth,
+            java.util.function.IntConsumer onToken) {
+        int capacity = state.contextCapacity();
+        int budget =
+                maxTokens < 0
+                        ? capacity - state.position()
+                        : Math.min(maxTokens, capacity - state.position());
+        Gemma4Speculative.Result r =
+                Gemma4Speculative.generate(
+                        this, state, budget, stops, depth, sampler, onToken, null);
+        return new SpeculativeDecoding.Speculation(
+                com.qxotic.toknroll.IntSequence.wrap(
+                        r.tokens().stream().mapToInt(Integer::intValue).toArray()),
+                com.qxotic.toknroll.IntSequence.wrap(
+                        r.committed().stream().mapToInt(Integer::intValue).toArray()),
+                r.stopToken(),
+                r.drafted(),
+                r.accepted(),
+                r.forwards());
     }
 
     /**

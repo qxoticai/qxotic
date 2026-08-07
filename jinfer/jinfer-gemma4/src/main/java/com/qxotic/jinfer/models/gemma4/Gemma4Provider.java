@@ -20,10 +20,13 @@ public final class Gemma4Provider implements ModelProvider {
         return java.util.Set.of("gemma4");
     }
 
-    /** Gemma 4's vision and audio encoders ship as a separate mmproj GGUF. */
+    /**
+     * Gemma 4's companions: the vision/audio encoders (a separate mmproj GGUF) and the MTP draft
+     * sidecar that enables self-speculative decoding.
+     */
     @Override
     public java.util.Map<String, String> companionFiles() {
-        return java.util.Map.of("media", "mmproj");
+        return java.util.Map.of("media", "mmproj", "speculation", "mtp");
     }
 
     @Override
@@ -36,6 +39,9 @@ public final class Gemma4Provider implements ModelProvider {
             throws IOException {
         var model = Gemma4.loadModel(fileChannel, gguf, arena, tokenizer);
         java.nio.file.Path media = companions.get("media");
-        return (media == null ? model : model.attachMediaEncoders(media, arena)).loaded();
+        if (media != null) model.attachMediaEncoders(media, arena);
+        java.nio.file.Path speculation = companions.get("speculation");
+        if (speculation != null) model.attachMtp(speculation, arena);
+        return model.loaded();
     }
 }
