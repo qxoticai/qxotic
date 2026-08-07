@@ -12,6 +12,7 @@ import java.io.PrintStream;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Set;
+import java.util.function.BiConsumer;
 import java.util.function.IntConsumer;
 
 /**
@@ -76,7 +77,7 @@ final class Turn {
         ReplyParser parser = ReplyParser.spans(tokenizer);
         StringBuilder text = new StringBuilder();
         Thinking.Inline inlineThink = new Thinking.Inline();
-        java.util.function.BiConsumer<String, Boolean> collect =
+        BiConsumer<String, Boolean> collect =
                 (fragment, reasoning) -> {
                     if (!reasoning) {
                         text.append(
@@ -119,6 +120,10 @@ final class Turn {
                 generated / (result.predictedNanos() / 1e9),
                 generated,
                 timingSuffix);
+        if (!options.stream()) {
+            // nothing streamed, so the reply prints once, whole - here, so no mode can forget
+            System.out.println(text);
+        }
         return new Reply(result, text.toString(), message);
     }
 

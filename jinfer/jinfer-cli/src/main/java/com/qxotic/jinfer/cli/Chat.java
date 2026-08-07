@@ -66,9 +66,6 @@ final class Chat {
                     delta = prompt.subSequence(lcp, prompt.length());
                 }
                 Turn.Reply reply = Turn.generate(model, state, delta, stops, sampler, options);
-                if (!options.stream()) {
-                    System.out.println(reply.text());
-                }
                 conversation = conversation.append(reply.message());
                 // The KV holds the prompt plus every INGESTED reply token: all of them when a
                 // stop token ended the turn, all but the last otherwise (the decode loop never
@@ -115,9 +112,6 @@ final class Chat {
                                 stops,
                                 sampler,
                                 options);
-                if (!options.stream()) {
-                    System.out.println(reply.text());
-                }
                 history.add(Map.of("role", "assistant", "content", reply.text()));
             }
         }

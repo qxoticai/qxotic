@@ -24,8 +24,10 @@ import java.io.FileDescriptor;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
+import java.lang.foreign.Arena;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 
@@ -54,7 +56,7 @@ public class Main {
                 System.exit(2);
                 return;
             }
-            pull(java.util.Arrays.copyOfRange(args, 1, args.length));
+            pull(Arrays.copyOfRange(args, 1, args.length));
             return;
         }
         Options options;
@@ -75,15 +77,11 @@ public class Main {
         try {
             if (!options.companions().isEmpty()) {
                 // a model with companions is never AOT-preloaded: load the set fresh
-                model =
-                        Models.load(
-                                options.modelPath(),
-                                java.lang.foreign.Arena.global(),
-                                options.companions());
+                model = Models.load(options.modelPath(), Arena.global(), options.companions());
             } else {
                 model = AOT.tryUsePreLoaded(options.modelPath());
                 if (model == null) {
-                    model = Models.load(options.modelPath(), java.lang.foreign.Arena.global());
+                    model = Models.load(options.modelPath(), Arena.global());
                 }
             }
         } catch (IllegalArgumentException
@@ -177,7 +175,7 @@ public class Main {
      * {@code --model} or {@code --with}, which is the point: the cache path IS the ref.
      */
     private static void list() {
-        java.util.List<ModelStore.Cached> models = ModelStore.cached();
+        List<ModelStore.Cached> models = ModelStore.cached();
         if (models.isEmpty()) {
             System.out.println("no models cached in " + ModelStore.root());
             return;

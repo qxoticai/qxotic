@@ -82,28 +82,21 @@ final class Instruct {
                     }
                 }
                 long t0 = System.nanoTime();
-                Turn.Reply reply =
-                        cache.serve(
-                                prompt,
-                                (state, serving) -> {
-                                    System.err.printf(
-                                            "cache: %d/%d positions restored, prompt ready in"
-                                                    + " %.1f ms%n",
-                                            serving.restored(),
-                                            total,
-                                            (System.nanoTime() - t0) / 1e6);
-                                    return Turn.generate(
-                                            model,
-                                            state,
-                                            IntSequence.empty(),
-                                            stops,
-                                            sampler,
-                                            options,
-                                            serving::tail);
-                                });
-                if (!options.stream()) {
-                    System.out.println(reply.text());
-                }
+                cache.serve(
+                        prompt,
+                        (state, serving) -> {
+                            System.err.printf(
+                                    "cache: %d/%d positions restored, prompt ready in %.1f ms%n",
+                                    serving.restored(), total, (System.nanoTime() - t0) / 1e6);
+                            return Turn.generate(
+                                    model,
+                                    state,
+                                    IntSequence.empty(),
+                                    stops,
+                                    sampler,
+                                    options,
+                                    serving::tail);
+                        });
             }
             return;
         }
@@ -113,9 +106,6 @@ final class Instruct {
                         model.model(),
                         promptTokens.length(),
                         options.oneShotCapacity(promptTokens.length()));
-        Turn.Reply reply = Turn.generate(model, state, promptTokens, stops, sampler, options);
-        if (!options.stream()) {
-            System.out.println(reply.text());
-        }
+        Turn.generate(model, state, promptTokens, stops, sampler, options);
     }
 }
