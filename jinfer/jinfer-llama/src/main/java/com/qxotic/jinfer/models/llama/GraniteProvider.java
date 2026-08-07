@@ -25,7 +25,7 @@ public final class GraniteProvider implements ModelProvider {
             FileChannel fileChannel,
             GGUF gguf,
             Arena arena,
-            java.util.Map<String, java.nio.file.Path> companions,
+            java.util.Map<String, ModelProvider.Companion> companions,
             com.qxotic.toknroll.Tokenizer tokenizer)
             throws IOException {
         return Granite.loadModel(fileChannel, gguf, arena, tokenizer).loaded();
