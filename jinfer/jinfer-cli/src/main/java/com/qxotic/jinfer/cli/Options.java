@@ -2,7 +2,6 @@ package com.qxotic.jinfer.cli;
 
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.LoadedModel;
-import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.hub.ModelStore;
 import com.qxotic.jinfer.llm.Sampling;
 import com.qxotic.jinfer.server.Server;
@@ -390,11 +389,12 @@ public record Options(
         try {
             modelPath = modelRef == null ? null : ModelStore.resolve(modelRef);
             if (!companionRefs.isEmpty()) {
-                // ONE header read for all of them, and the capability is checked before any file
-                // is fetched: a wrong knob should fail on the knob, not on a missing download
+                // ONE header read at most (none when the model is preloaded - AOT answers from
+                // its baked header), and the capability is checked before any file is fetched: a
+                // wrong knob should fail on the knob, not on a missing download
                 Map<String, String> offered;
                 try {
-                    offered = Models.companionFiles(modelPath);
+                    offered = AOT.companionFiles(modelPath);
                 } catch (IOException e) {
                     throw new UncheckedIOException(e);
                 }
