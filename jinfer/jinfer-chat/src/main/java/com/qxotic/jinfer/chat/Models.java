@@ -126,11 +126,7 @@ public final class Models {
     public static LoadedModel<?> load(
             Path path, Arena arena, Map<String, Path> companions, Tokenizer tokenizer)
             throws IOException {
-        // copyOf: immutable for the port's lifetime, and it rejects a null capability or path at
-        // the boundary rather than inside a loader that cannot say which entry was wrong
-        Map<String, ModelProvider.Companion> sources = new java.util.LinkedHashMap<>();
-        Map.copyOf(companions).forEach((k, v) -> sources.put(k, ModelProvider.Companion.of(v)));
-        return open(path, (fc, gguf) -> load(fc, gguf, arena, sources, tokenizer));
+        return open(path, (fc, gguf) -> load(fc, gguf, arena, companions, tokenizer));
     }
 
     /**
@@ -234,28 +230,29 @@ public final class Models {
     }
 
     /**
-     * As {@link #load(FileChannel, GGUF, Arena, Tokenizer)} with COMPANIONS, each optionally
-     * carrying its already-parsed header - the multi-file preload's entry: a baked main model keeps
-     * its baked mmproj, and a companion the preload has not seen is parsed fresh by the port.
-     * Companion FILES still join the cache seed exactly as on the path entry.
+     * As {@link #load(FileChannel, GGUF, Arena, Tokenizer)} with COMPANIONS - the preload's entry
+     * when a parsed header and companions are both in hand. Companion files join the cache seed
+     * exactly as on the path entry; each port parses its own companion's header (~10 ms), which is
+     * the port's business and nobody else's.
      */
     public static LoadedModel<?> load(
             FileChannel fileChannel,
             GGUF gguf,
             Arena arena,
-            Map<String, ModelProvider.Companion> companions,
+            Map<String, Path> companions,
             Tokenizer tokenizer)
             throws IOException {
-        Map<String, ModelProvider.Companion> sources = Map.copyOf(companions);
+        // copyOf: immutable for the port's lifetime, and it rejects a null capability or path at
+        // the boundary rather than inside a loader that cannot say which entry was wrong
+        Map<String, Path> attached = Map.copyOf(companions);
         ModelProvider provider = provider(gguf);
-        requireAccepted(provider, gguf, sources.keySet());
+        requireAccepted(provider, gguf, attached.keySet());
         if (tokenizer != null) {
             Tokenizers.requireSameIdSpace(gguf, tokenizer);
         }
-        Map<String, Path> files = new java.util.LinkedHashMap<>();
-        sources.forEach((k, v) -> files.put(k, v.path()));
         return companionSeeded(
-                sampled(provider.load(fileChannel, gguf, arena, sources, tokenizer), gguf), files);
+                sampled(provider.load(fileChannel, gguf, arena, attached, tokenizer), gguf),
+                attached);
     }
 
     /**

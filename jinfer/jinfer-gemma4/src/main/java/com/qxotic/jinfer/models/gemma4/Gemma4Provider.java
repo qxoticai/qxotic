@@ -31,11 +31,11 @@ public final class Gemma4Provider implements ModelProvider {
             FileChannel fileChannel,
             GGUF gguf,
             Arena arena,
-            java.util.Map<String, ModelProvider.Companion> companions,
+            java.util.Map<String, java.nio.file.Path> companions,
             com.qxotic.toknroll.Tokenizer tokenizer)
             throws IOException {
         var model = Gemma4.loadModel(fileChannel, gguf, arena, tokenizer);
-        ModelProvider.Companion media = companions.get("media");
-        return (media == null ? model : model.withMediaEncoders(media, arena)).loaded();
+        java.nio.file.Path media = companions.get("media");
+        return (media == null ? model : model.attachMediaEncoders(media, arena)).loaded();
     }
 }
