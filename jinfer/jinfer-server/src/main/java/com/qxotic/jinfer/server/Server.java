@@ -41,7 +41,7 @@ public final class Server {
     private Server(LoadedModel<?> model, ServerConfig config) {
         this.generation = new Generation(model, config, metrics);
         this.servedModel = config.modelName();
-        this.worker = new Worker(config.limits().queueDepth());
+        this.worker = new Worker(config.limits().queueCapacity());
         this.config = config;
     }
 
@@ -159,13 +159,7 @@ public final class Server {
                 "/health",
                 null,
                 request ->
-                        Map.of(
-                                "status",
-                                "ok",
-                                "busy",
-                                worker.busy(),
-                                "queued",
-                                worker.queueDepth()));
+                        Map.of("status", "ok", "busy", worker.busy(), "queued", worker.queued()));
         jsonRoute(
                 server,
                 "/props",
@@ -675,7 +669,7 @@ public final class Server {
             Http.sendError(
                     exchange,
                     503,
-                    "Server busy: " + config.limits().queueDepth() + " requests already queued");
+                    "Server busy: " + config.limits().queueCapacity() + " requests already queued");
             return;
         }
         // a job that finished without ever answering (escaped exception) must not hang the client

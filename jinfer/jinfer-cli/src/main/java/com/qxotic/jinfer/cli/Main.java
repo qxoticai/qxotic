@@ -286,7 +286,7 @@ public class Main {
         out.println("  --port <int>                  server bind port, default 17325");
         out.println("  --threads <int>               server handler threads, default 16");
         out.println(
-                "  --queue-depth <int>           generation requests queued, default 4 (0 ="
+                "  --queue-capacity <int>        generation requests that may WAIT, default 4 (0 ="
                         + " reject unless idle)");
         out.println("  --max-body-mb <int>           request body limit, default 32");
         out.println("  --write-timeout <seconds>     streaming write stall limit, default 30");
@@ -438,8 +438,8 @@ public class Main {
                         // which meant a flag and a -D could not both exist for one knob without
                         // one of them being a lie about precedence
                         case "--threads" -> limits = limits.withThreads(Integer.parseInt(nextArg));
-                        case "--queue-depth" ->
-                                limits = limits.withQueueDepth(Integer.parseInt(nextArg));
+                        case "--queue-capacity" ->
+                                limits = limits.withQueueCapacity(Integer.parseInt(nextArg));
                         case "--max-body-mb" ->
                                 limits =
                                         limits.withMaxBodyBytes(

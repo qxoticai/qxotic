@@ -20,7 +20,7 @@ import org.junit.jupiter.api.Test;
 class WorkerTest {
 
     /** Small on purpose: the point is that the bound is REACHED, not what it is. */
-    private static final int QUEUE_DEPTH = 4;
+    private static final int QUEUE_CAPACITY = 4;
 
     /** A job that parks until released, so the queue can be filled deterministically. */
     private record Blocker(CountDownLatch release, CountDownLatch started) implements Runnable {
@@ -37,7 +37,7 @@ class WorkerTest {
 
     @Test
     void jobsRunInSubmissionOrderOnOneThread() throws Exception {
-        Worker worker = new Worker(QUEUE_DEPTH);
+        Worker worker = new Worker(QUEUE_CAPACITY);
         worker.start();
         ConcurrentLinkedQueue<Integer> order = new ConcurrentLinkedQueue<>();
         ConcurrentLinkedQueue<String> threads = new ConcurrentLinkedQueue<>();
@@ -60,7 +60,7 @@ class WorkerTest {
 
     @Test
     void aFullQueueIsRejectedRatherThanQueuedForever() throws Exception {
-        Worker worker = new Worker(QUEUE_DEPTH);
+        Worker worker = new Worker(QUEUE_CAPACITY);
         worker.start();
         CountDownLatch release = new CountDownLatch(1);
         CountDownLatch running = new CountDownLatch(1);
@@ -74,7 +74,7 @@ class WorkerTest {
             submitters.add(first);
             assertTrue(running.await(5, TimeUnit.SECONDS), "the worker never picked up the job");
 
-            for (int i = 0; i < QUEUE_DEPTH + 2; i++) {
+            for (int i = 0; i < QUEUE_CAPACITY + 2; i++) {
                 Thread t =
                         Thread.ofPlatform()
                                 .start(
@@ -98,9 +98,9 @@ class WorkerTest {
 
     @Test
     void anIdleWorkerReportsItself() {
-        Worker worker = new Worker(QUEUE_DEPTH);
+        Worker worker = new Worker(QUEUE_CAPACITY);
         worker.start();
-        assertEquals(0, worker.queueDepth());
+        assertEquals(0, worker.queued());
         assertFalse(worker.busy());
         assertTrue(
                 ServerConfig.Limits.DEFAULTS.retryAfterSeconds() > 0,

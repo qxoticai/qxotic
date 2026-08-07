@@ -8,8 +8,8 @@ import java.util.concurrent.SynchronousQueue;
 
 /**
  * The single generation worker. Generation runs one request at a time on a dedicated thread fed by
- * a bounded FIFO queue ({@code queueDepth}; 0 = reject unless idle): a fixed serialization point so
- * the inference state is never shared across requests, with backpressure instead of unbounded
+ * a bounded FIFO queue ({@code queueCapacity}; 0 = reject unless idle): a fixed serialization point
+ * so the inference state is never shared across requests, with backpressure instead of unbounded
  * pile-up. Handlers parse/validate on their own thread and only block here, so a fixed HTTP pool
  * also caps the threads a slow client can pin.
  */
@@ -18,9 +18,11 @@ final class Worker {
     private final BlockingQueue<Runnable> queue;
     private volatile boolean busy;
 
-    Worker(int queueDepth) {
+    Worker(int queueCapacity) {
         this.queue =
-                queueDepth == 0 ? new SynchronousQueue<>() : new ArrayBlockingQueue<>(queueDepth);
+                queueCapacity == 0
+                        ? new SynchronousQueue<>()
+                        : new ArrayBlockingQueue<>(queueCapacity);
     }
 
     void start() {
@@ -79,7 +81,8 @@ final class Worker {
         }
     }
 
-    int queueDepth() {
+    /** How many are waiting RIGHT NOW - not the capacity. */
+    int queued() {
         return queue.size();
     }
 
