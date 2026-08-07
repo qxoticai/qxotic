@@ -40,6 +40,7 @@ public record Options(
         Path modelPath,
         Map<String, Path> companions,
         Path tokenizerPath,
+        Integer speculationDepth,
         String prompt,
         String systemPrompt,
         boolean interactive,
@@ -94,6 +95,14 @@ public record Options(
                 maxOutputTokens >= -1,
                 "Invalid argument: --max-output-tokens must be -1 (fill the context) or"
                         + " non-negative");
+        // depth without the draft head would be a flag that does nothing (the --no-grammar rule)
+        require(
+                speculationDepth == null || companions.containsKey("speculation"),
+                "Invalid argument: --speculation-depth needs --with speculation=<mtp file> - there"
+                        + " is no draft head to run at any depth");
+        require(
+                speculationDepth == null || (1 <= speculationDepth && speculationDepth <= 8),
+                "Invalid argument: --speculation-depth must be within [1, 8]");
         // the only thing --no-grammar does is refuse requests that ask for a grammar, and only
         // the HTTP API has requests. Accepting it elsewhere made it a flag that did nothing.
         require(
@@ -101,6 +110,11 @@ public record Options(
                 "Invalid argument: --no-grammar applies to --server (it refuses requests carrying"
                         + " grammar or response_format); there is nothing to refuse in chat or"
                         + " instruct mode");
+    }
+
+    /** The draft depth to speculate at: the flag, else 4 - the measured list/code sweet spot. */
+    public int specDepth() {
+        return speculationDepth == null ? 4 : speculationDepth;
     }
 
     /**
@@ -269,6 +283,7 @@ public record Options(
         // paths or hub refs; resolved (and downloaded, if needed) once parsing has succeeded
         String modelRef = null;
         String tokenizerRef = null;
+        Integer speculationDepth = null;
         // capability -> path or ref; resolved once parsing has succeeded
         Map<String, String> companionRefs = new LinkedHashMap<>();
         Long seed = null; // unset = a fresh random seed per request
@@ -363,6 +378,8 @@ public record Options(
                                 maxOutputTokens = parseInt(optionName, nextArg);
                         case "--context-capacity", "-c" ->
                                 contextCapacity = parseInt(optionName, nextArg);
+                        case "--speculation-depth" ->
+                                speculationDepth = parseInt(optionName, nextArg);
                         case "--stream" -> stream = parseBooleanOption(optionName, nextArg);
                         case "--echo" -> echo = parseBooleanOption(optionName, nextArg);
                         case "--color" -> colorMode = nextArg.toLowerCase(Locale.ROOT);
@@ -427,6 +444,7 @@ public record Options(
                 modelPath,
                 Map.copyOf(companions),
                 tokenizerPath,
+                speculationDepth,
                 prompt,
                 systemPrompt,
                 interactive,
@@ -537,6 +555,10 @@ public record Options(
                         + " default "
                         + DEFAULT_CONTEXT_CAPACITY
                         + ", refused above the model's own context length");
+        out.println(
+                "  --speculation-depth <int>     draft tokens per verify with --with speculation="
+                        + " (gemma4 + its mtp sidecar); default 4. ~1.7x on code/lists with Q8_0;"
+                        + " can slow prose, and k-quants (Q4_K_M) verify slowly today");
         out.println(
                 "  --max-output-tokens <int>     how much it may produce in one turn; -1 (the"
                         + " default) = whatever the remaining context allows. A one-shot --prompt"
