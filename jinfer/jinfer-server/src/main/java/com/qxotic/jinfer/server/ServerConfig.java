@@ -44,17 +44,19 @@ public record ServerConfig(
     /**
      * What a request MAY override, and the value it gets when it says nothing.
      *
-     * @param maxTokens the completion budget for a request without {@code max_tokens}; -1 = the
-     *     model's own maximum. Not a ceiling - see {@link Limits#maxTokens}
+     * @param maxOutputTokens tokens GENERATED for a request that omits {@code max_tokens}; -1 = as
+     *     many as the remaining context allows
      * @param think whether reasoning runs when a request does not say
      * @param rawPrompt {@code /v1/completions} encodes the prompt special-token aware, so a caller
      *     can place markers itself
      */
-    public record Defaults(Sampling sampling, int maxTokens, boolean think, boolean rawPrompt) {
+    public record Defaults(
+            Sampling sampling, int maxOutputTokens, boolean think, boolean rawPrompt) {
 
         public Defaults {
             if (sampling == null) throw new IllegalArgumentException("sampling is required");
-            if (maxTokens < -1) throw new IllegalArgumentException("maxTokens " + maxTokens);
+            if (maxOutputTokens < -1)
+                throw new IllegalArgumentException("maxOutputTokens " + maxOutputTokens);
         }
     }
 
@@ -67,8 +69,6 @@ public record ServerConfig(
      * @param threads the HTTP handler pool; handlers only parse and block on the worker, so a fixed
      *     pool caps what slow-loris connections can pin
      * @param queueDepth generation requests queued behind the one worker; 0 = reject unless idle
-     * @param maxTokens the most any single request may generate, whatever it asks for; 0 = no
-     *     ceiling
      * @param grammar whether grammar and {@code response_format} requests are ACCEPTED. False
      *     refuses them with a 400; it must never mean "quietly generate unconstrained"
      * @param writeTimeout how long a streaming write may block before the client is disconnected
@@ -79,28 +79,19 @@ public record ServerConfig(
             int threads,
             int queueDepth,
             long maxBodyBytes,
-            int maxTokens,
             boolean grammar,
             Duration writeTimeout,
             Duration requestTimeout) {
 
         /** What the {@code jinfer.server*} properties defaulted to. */
         public static final Limits DEFAULTS =
-                new Limits(
-                        16,
-                        4,
-                        32L << 20,
-                        4096,
-                        true,
-                        Duration.ofSeconds(30),
-                        Duration.ofSeconds(300));
+                new Limits(16, 4, 32L << 20, true, Duration.ofSeconds(30), Duration.ofSeconds(300));
 
         public Limits {
             if (threads < 1) throw new IllegalArgumentException("threads " + threads);
             if (queueDepth < 0) throw new IllegalArgumentException("queueDepth " + queueDepth);
             if (maxBodyBytes < 1)
                 throw new IllegalArgumentException("maxBodyBytes " + maxBodyBytes);
-            if (maxTokens < 0) throw new IllegalArgumentException("maxTokens " + maxTokens);
             if (writeTimeout == null || writeTimeout.isNegative() || writeTimeout.isZero()) {
                 throw new IllegalArgumentException("writeTimeout " + writeTimeout);
             }
@@ -118,80 +109,33 @@ public record ServerConfig(
         // constructor at each -> a transposed threads/queueDepth pair that still compiles
         public Limits withThreads(int threads) {
             return new Limits(
-                    threads,
-                    queueDepth,
-                    maxBodyBytes,
-                    maxTokens,
-                    grammar,
-                    writeTimeout,
-                    requestTimeout);
+                    threads, queueDepth, maxBodyBytes, grammar, writeTimeout, requestTimeout);
         }
 
         public Limits withQueueDepth(int queueDepth) {
             return new Limits(
-                    threads,
-                    queueDepth,
-                    maxBodyBytes,
-                    maxTokens,
-                    grammar,
-                    writeTimeout,
-                    requestTimeout);
+                    threads, queueDepth, maxBodyBytes, grammar, writeTimeout, requestTimeout);
         }
 
         public Limits withMaxBodyBytes(long maxBodyBytes) {
             return new Limits(
-                    threads,
-                    queueDepth,
-                    maxBodyBytes,
-                    maxTokens,
-                    grammar,
-                    writeTimeout,
-                    requestTimeout);
-        }
-
-        public Limits withMaxTokens(int maxTokens) {
-            return new Limits(
-                    threads,
-                    queueDepth,
-                    maxBodyBytes,
-                    maxTokens,
-                    grammar,
-                    writeTimeout,
-                    requestTimeout);
+                    threads, queueDepth, maxBodyBytes, grammar, writeTimeout, requestTimeout);
         }
 
         /** These limits with grammar requests allowed or refused. */
         public Limits withGrammar(boolean grammar) {
             return new Limits(
-                    threads,
-                    queueDepth,
-                    maxBodyBytes,
-                    maxTokens,
-                    grammar,
-                    writeTimeout,
-                    requestTimeout);
+                    threads, queueDepth, maxBodyBytes, grammar, writeTimeout, requestTimeout);
         }
 
         public Limits withWriteTimeout(Duration writeTimeout) {
             return new Limits(
-                    threads,
-                    queueDepth,
-                    maxBodyBytes,
-                    maxTokens,
-                    grammar,
-                    writeTimeout,
-                    requestTimeout);
+                    threads, queueDepth, maxBodyBytes, grammar, writeTimeout, requestTimeout);
         }
 
         public Limits withRequestTimeout(Duration requestTimeout) {
             return new Limits(
-                    threads,
-                    queueDepth,
-                    maxBodyBytes,
-                    maxTokens,
-                    grammar,
-                    writeTimeout,
-                    requestTimeout);
+                    threads, queueDepth, maxBodyBytes, grammar, writeTimeout, requestTimeout);
         }
     }
 }

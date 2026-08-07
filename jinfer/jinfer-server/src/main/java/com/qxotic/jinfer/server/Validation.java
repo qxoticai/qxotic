@@ -154,7 +154,7 @@ final class Validation {
                         <= Values.intValue(
                                 request.getOrDefault(
                                         "max_tokens", request.get("max_completion_tokens")),
-                                config.defaults().maxTokens()),
+                                config.defaults().maxOutputTokens()),
                 "Invalid argument: max_tokens must be non-negative");
         require(
                 -1 <= Values.intValue(request.get("reasoning_max_tokens"), -1),

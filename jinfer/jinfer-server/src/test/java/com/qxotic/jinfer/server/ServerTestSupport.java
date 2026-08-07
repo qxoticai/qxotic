@@ -47,7 +47,7 @@ final class ServerTestSupport {
                 base.bind(),
                 new ServerConfig.Defaults(
                         new Sampling(s.temperature(), s.topP(), s.topK(), s.minP(), null),
-                        base.defaults().maxTokens(),
+                        base.defaults().maxOutputTokens(),
                         base.defaults().think(),
                         base.defaults().rawPrompt()),
                 base.limits(),

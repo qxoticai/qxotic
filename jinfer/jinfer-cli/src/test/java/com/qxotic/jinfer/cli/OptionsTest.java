@@ -127,7 +127,7 @@ final class OptionsTest {
                 options(true, false).toServerConfig(LoadedModel.SamplingDefaults.NONE);
         assertEquals("model.gguf", config.modelName());
         assertEquals(0.8f, config.defaults().sampling().temperature());
-        assertEquals(128, config.defaults().maxTokens());
+        assertEquals(128, config.defaults().maxOutputTokens());
         assertEquals(ServerConfig.Limits.DEFAULTS.threads(), config.limits().threads());
     }
 

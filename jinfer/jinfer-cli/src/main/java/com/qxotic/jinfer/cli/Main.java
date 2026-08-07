@@ -249,7 +249,7 @@ public class Main {
     }
 
     /** llama.cpp's default too: big enough for real work, small enough to allocate blind. */
-    static final int DEFAULT_CTX_SIZE = 4096;
+    static final int DEFAULT_CONTEXT_CAPACITY = 4096;
 
     static void printUsage(PrintStream out) {
         out.println("Usage:  java -jar jinfer.jar [options]");
@@ -286,12 +286,9 @@ public class Main {
         out.println("  --port <int>                  server bind port, default 17325");
         out.println("  --threads <int>               server handler threads, default 16");
         out.println(
-                "  --queue <int>                 generation requests queued, default 4 (0 ="
+                "  --queue-depth <int>           generation requests queued, default 4 (0 ="
                         + " reject unless idle)");
         out.println("  --max-body-mb <int>           request body limit, default 32");
-        out.println(
-                "  --max-tokens-cap <int>        ceiling on any request's completion, default"
-                        + " 4096 (0 = none)");
         out.println("  --write-timeout <seconds>     streaming write stall limit, default 30");
         out.println("  --request-timeout <seconds>   generation deadline, default 300 (0 = none)");
         out.println("  --prompt, -p <string>         input prompt");
@@ -312,13 +309,14 @@ public class Main {
                 "  --seed <long>                 pins the sampling seed; default: a fresh random"
                         + " seed per request");
         out.println(
-                "  --max-tokens, -n <int>        tokens to GENERATE per turn; -1 = as many as the"
-                        + " context allows, the default");
+                "  --context-capacity, -c <int>  how much the model can remember, in tokens;"
+                        + " default "
+                        + DEFAULT_CONTEXT_CAPACITY
+                        + ", refused above the model's own context length");
         out.println(
-                "  --ctx-size, -c <int>          conversation size in tokens, default "
-                        + DEFAULT_CTX_SIZE
-                        + "; refused above the model's own context length. A one-shot --prompt"
-                        + " allocates only prompt + --max-tokens");
+                "  --max-output-tokens <int>     how much it may produce in one turn; -1 (the"
+                        + " default) = whatever the remaining context allows. A one-shot --prompt"
+                        + " allocates only what it needs: prompt + this");
         out.println(
                 "  --stream <boolean>            print tokens during generation; accepts"
                         + " true|false|on|off, default true");
@@ -376,7 +374,7 @@ public class Main {
         java.util.Map<String, String> companionRefs = new java.util.LinkedHashMap<>();
         Long seed = null; // unset = a fresh random seed per request
         int maxOutputTokens = -1;
-        int ctxSize = DEFAULT_CTX_SIZE;
+        int contextCapacity = DEFAULT_CONTEXT_CAPACITY;
         boolean interactive = false;
         boolean server = false;
         String host = "127.0.0.1";
@@ -440,13 +438,12 @@ public class Main {
                         // which meant a flag and a -D could not both exist for one knob without
                         // one of them being a lie about precedence
                         case "--threads" -> limits = limits.withThreads(Integer.parseInt(nextArg));
-                        case "--queue" -> limits = limits.withQueueDepth(Integer.parseInt(nextArg));
+                        case "--queue-depth" ->
+                                limits = limits.withQueueDepth(Integer.parseInt(nextArg));
                         case "--max-body-mb" ->
                                 limits =
                                         limits.withMaxBodyBytes(
                                                 (long) Integer.parseInt(nextArg) << 20);
-                        case "--max-tokens-cap" ->
-                                limits = limits.withMaxTokens(Integer.parseInt(nextArg));
                         case "--write-timeout" ->
                                 limits =
                                         limits.withWriteTimeout(
@@ -456,8 +453,9 @@ public class Main {
                                         limits.withRequestTimeout(
                                                 Options.seconds(optionName, nextArg));
                         case "--seed", "-s" -> seed = Long.parseLong(nextArg);
-                        case "--max-tokens", "-n" -> maxOutputTokens = Integer.parseInt(nextArg);
-                        case "--ctx-size", "-c" -> ctxSize = Integer.parseInt(nextArg);
+                        case "--max-output-tokens" -> maxOutputTokens = Integer.parseInt(nextArg);
+                        case "--context-capacity", "-c" ->
+                                contextCapacity = Integer.parseInt(nextArg);
                         case "--stream" -> stream = Options.parseBooleanOption(optionName, nextArg);
                         case "--echo" -> echo = Options.parseBooleanOption(optionName, nextArg);
                         case "--color" -> colorMode = nextArg.toLowerCase(Locale.ROOT);
@@ -530,7 +528,7 @@ public class Main {
                 minp,
                 seed,
                 maxOutputTokens,
-                ctxSize,
+                contextCapacity,
                 stream,
                 echo,
                 think,
@@ -762,7 +760,7 @@ public class Main {
             return;
         }
         try {
-            options.contextCapacity(model); // --ctx-size against what the model was trained for
+            options.requireFitsModel(model); // --context-capacity against the model's own
         } catch (IllegalArgumentException e) {
             System.err.println("ERROR " + e.getMessage());
             System.exit(1);
@@ -792,7 +790,7 @@ public class Main {
                 "model       %s  (%s, ctx %d of %d)%n",
                 options.modelPath().getFileName(),
                 model.model().getClass().getSimpleName(),
-                options.contextCapacity(model),
+                options.contextCapacity(),
                 model.model().config().contextLength());
         options.companions()
                 .forEach(
@@ -897,7 +895,7 @@ public class Main {
                             model.seed(),
                             new PromptCache.Options(
                                     0,
-                                    options.contextCapacity(model),
+                                    options.contextCapacity(),
                                     Long.MAX_VALUE,
                                     options.promptCache(),
                                     options.promptCacheReadOnly()))) {
@@ -943,7 +941,7 @@ public class Main {
                 Generator.stateFor(
                         model.model(),
                         promptTokens.length(),
-                        options.oneShotCapacity(model, promptTokens.length()));
+                        options.oneShotCapacity(promptTokens.length()));
         CliReply reply = generateCli(model, state, promptTokens, stops, sampler, options);
         if (!options.stream()) {
             System.out.println(reply.text());
@@ -963,7 +961,7 @@ public class Main {
             LoadedModel<S> model, ChatTemplate template, Sampler sampler, Options options)
             throws IOException {
         Set<Integer> stops = model.stopTokens();
-        int capacity = options.contextCapacity(model);
+        int capacity = options.contextCapacity();
         S state = model.model().newState(capacity, RuntimeFlags.BATCH_CAPACITY);
         List<Message> opening = new ArrayList<>();
         if (options.systemPrompt() != null) {
@@ -1045,7 +1043,7 @@ public class Main {
                                 Generator.stateFor(
                                         model.model(),
                                         promptTokens.length(),
-                                        options.contextCapacity(model)),
+                                        options.contextCapacity()),
                                 promptTokens,
                                 stops,
                                 sampler,
