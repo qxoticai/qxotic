@@ -34,6 +34,13 @@ import java.util.zip.CRC32C;
  * port at load in ~10 ms - nothing worth a bake, so listing one is refused with the reason rather
  * than baked into dead image bytes.
  *
+ * <p>TO ITS CALLERS THIS CLASS IS A TRANSPARENT CACHE IN FRONT OF {@link Models}: each method
+ * mirrors a path-based Models entry, forwards to it, and adds no behaviour - same validation, same
+ * errors, same results, observably different only in speed. The CLI's rule is that path-based
+ * Models entries the preload can serve are called through here; nothing else in the CLI knows the
+ * preload exists. The one policy this class owns is precedence: a runtime {@code
+ * -Djinfer.preTokenizer.*} override outranks the baked tokenizer.
+ *
  * <p>A preloaded header is used only when PROVEN to describe the candidate file's bytes, through
  * three layers of trust: the file SIZE gates for free - the only layer that saves work - then one
  * read of the header region ({@code [0, tensorDataOffset)} - exactly the bytes the parse consumed)
@@ -190,6 +197,16 @@ final class AOT {
             return null;
         }
         return found;
+    }
+
+    /**
+     * The capabilities {@code modelPath}'s architecture offers - from the preloaded header when the
+     * match proves one, else one fresh header read. The CLI's {@code --with} validation asks here
+     * so a preloaded model is not re-parsed just to check a flag.
+     */
+    static Map<String, String> companionFiles(Path modelPath) throws IOException {
+        PreloadedFile main = match(PRELOADED, modelPath);
+        return main != null ? Models.companionFiles(main.gguf()) : Models.companionFiles(modelPath);
     }
 
     /**

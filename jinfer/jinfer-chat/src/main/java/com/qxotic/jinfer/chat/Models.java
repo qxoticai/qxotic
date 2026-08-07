@@ -136,7 +136,12 @@ public final class Models {
      * usually called when it does.
      */
     public static Map<String, String> companionFiles(Path path) throws IOException {
-        return open(path, (fc, gguf) -> provider(gguf).companionFiles());
+        return open(path, (fc, gguf) -> companionFiles(gguf));
+    }
+
+    /** As {@link #companionFiles(Path)} for an already-parsed header: no file is read. */
+    public static Map<String, String> companionFiles(GGUF gguf) {
+        return provider(gguf).companionFiles();
     }
 
     /** A companion this architecture does not have is a mistake, not something to ignore. */
