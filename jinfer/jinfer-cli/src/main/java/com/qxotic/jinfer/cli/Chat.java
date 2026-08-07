@@ -60,6 +60,7 @@ final class Chat {
                 int lcp = commonPrefix(ingested, prompt);
                 IntSequence delta;
                 if (lcp < ingested.length()) {
+                    close(state); // a dropped state frees NOW, not when GC notices gigabytes
                     state = model.model().newState(capacity, RuntimeFlags.BATCH_CAPACITY);
                     delta = prompt;
                 } else {
@@ -101,19 +102,26 @@ final class Chat {
                 if (userText == null || "/quit".equals(userText) || "/exit".equals(userText)) break;
                 history.add(Map.of("role", "user", "content", userText));
                 IntSequence promptTokens = jinja.render(history, null, true, options.think(), null);
-                Turn.Reply reply =
-                        Turn.generate(
-                                model,
-                                Generator.stateFor(
-                                        model.model(),
-                                        promptTokens.length(),
-                                        options.contextCapacity()),
-                                promptTokens,
-                                stops,
-                                sampler,
-                                options);
-                history.add(Map.of("role", "assistant", "content", reply.text()));
+                S state =
+                        Generator.stateFor(
+                                model.model(), promptTokens.length(), options.contextCapacity());
+                try {
+                    Turn.Reply reply =
+                            Turn.generate(model, state, promptTokens, stops, sampler, options);
+                    history.add(Map.of("role", "assistant", "content", reply.text()));
+                } finally {
+                    // a fresh KV state per turn: without this close, every turn parks a
+                    // context-sized allocation on the Cleaner until GC notices
+                    close(state);
+                }
             }
+        }
+    }
+
+    /** Frees a state's memory deterministically; states own a shared arena behind BaseState. */
+    private static void close(RuntimeState state) {
+        if (state instanceof BaseState base) {
+            base.close();
         }
     }
 
