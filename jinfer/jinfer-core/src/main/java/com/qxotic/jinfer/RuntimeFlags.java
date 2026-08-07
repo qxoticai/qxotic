@@ -18,7 +18,7 @@ import java.nio.file.Path;
  *   <li>jinfer.Q8_0GemmTile — register-tile shape (Java tiled gemm)
  *   <li>jinfer.staticGemm / llama.nativeGemmLib / llama.nativeGemv — backend binding (removed — see
  *       MatMul)
- *   <li>jinfer.PreloadGGUF — model baked into the image heap (AOT)
+ *   <li>jinfer.preload — model files baked into the image heap (AOT)
  *   <li>jinfer.convTile — Convolutions' register tile, which must fold to a constant
  *   <li>jinfer.trace — Trace.ENABLED guards per-layer loops, so it must fold too
  *   <li>jinfer.convProfile — the shape census, which exists to be run on the JVM
@@ -26,7 +26,7 @@ import java.nio.file.Path;
  * </ul>
  *
  * <p>All of those are passed to the IMAGE BUILD (see the jinfer.* pom properties beside
- * jinfer.PreloadGGUF), never to the binary, where they are silently ignored. A flag that must be
+ * jinfer.preload), never to the binary, where they are silently ignored. A flag that must be
  * settable on the binary belongs here, or its class belongs in the builder's {@code
  * --initialize-at-run-time} list — the two ways to keep a run-time flag actually run-time.
  */

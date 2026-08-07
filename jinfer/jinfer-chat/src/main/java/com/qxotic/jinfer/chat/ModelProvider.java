@@ -21,6 +21,12 @@ public interface ModelProvider {
      * non-GGUF companion (a lexicon) simply never has one.
      */
     record Companion(Path path, GGUF header) {
+        public Companion {
+            if (path == null) {
+                throw new IllegalArgumentException("a companion needs its file's path");
+            }
+        }
+
         public static Companion of(Path path) {
             return new Companion(path, null);
         }

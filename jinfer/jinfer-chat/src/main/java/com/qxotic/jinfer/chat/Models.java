@@ -128,21 +128,9 @@ public final class Models {
             throws IOException {
         // copyOf: immutable for the port's lifetime, and it rejects a null capability or path at
         // the boundary rather than inside a loader that cannot say which entry was wrong
-        Map<String, Path> attached = Map.copyOf(companions);
-        return open(
-                path,
-                (fc, gguf) -> {
-                    ModelProvider provider = provider(gguf);
-                    requireAccepted(provider, gguf, attached.keySet());
-                    if (tokenizer != null) {
-                        Tokenizers.requireSameIdSpace(gguf, tokenizer);
-                    }
-                    Map<String, ModelProvider.Companion> sources = new java.util.LinkedHashMap<>();
-                    attached.forEach((k, v) -> sources.put(k, ModelProvider.Companion.of(v)));
-                    return companionSeeded(
-                            sampled(provider.load(fc, gguf, arena, sources, tokenizer), gguf),
-                            attached);
-                });
+        Map<String, ModelProvider.Companion> sources = new java.util.LinkedHashMap<>();
+        Map.copyOf(companions).forEach((k, v) -> sources.put(k, ModelProvider.Companion.of(v)));
+        return open(path, (fc, gguf) -> load(fc, gguf, arena, sources, tokenizer));
     }
 
     /**

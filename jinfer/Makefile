@@ -58,8 +58,9 @@ test-golden: jar
 	@diff /tmp/jinfer-golden-1.txt /tmp/jinfer-golden-2.txt && echo "test-golden: deterministic"
 
 # GraalVM Native Image, via the poms' -Pnative profile (single source of the image flags).
-#   make native                            self-contained ./jinfer
-#   PRELOAD_GGUF=model.gguf make native    embed the model, instant TTFT
+#   make native                                     self-contained ./jinfer
+#   PRELOAD_GGUF=model.gguf make native             embed the model's header+tokenizer
+#   PRELOAD_GGUF="model.gguf:mmproj.gguf" make native   several files (File.pathSeparator-joined)
 NATIVE_IMAGE ?= $(if $(JAVA_HOME),$(JAVA_HOME)/bin/native-image,native-image)
 
 check-native-image:
@@ -72,7 +73,7 @@ check-native-image:
 	esac
 
 native: check-native-image
-	mvn -o -Pnative -pl jinfer-cli -am package -DskipTests -Djinfer.PreloadGGUF=$(PRELOAD_GGUF)
+	mvn -o -Pnative -pl jinfer-cli -am package -DskipTests -Djinfer.preload=$(PRELOAD_GGUF)
 	cp jinfer-cli/target/jinfer$(EXE) $(NATIVE_FILE)
 
 .PHONY: default compile test-compile test jar clean run-jar-command test-golden check-native-image native
