@@ -79,7 +79,7 @@ public class Main {
                 // a model with companions is never AOT-preloaded: load the set fresh
                 model = Models.load(options.modelPath(), Arena.global(), options.companions());
             } else {
-                model = AOT.tryUsePreLoaded(options.modelPath());
+                model = AOT.tryUsePreloaded(options.modelPath());
                 if (model == null) {
                     model = Models.load(options.modelPath(), Arena.global());
                 }

@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.chat;
 
 import com.qxotic.format.gguf.GGUF;
+import com.qxotic.toknroll.Tokenizer;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
@@ -47,8 +48,18 @@ public interface ModelProvider {
      * <p>Every capability here is optional and {@link #supports} is the only requirement: a port
      * overrides the loads its architecture actually has, and a speech-only or embedding-only port
      * keeps the rest of these defaults.
+     *
+     * <p>{@code companions} arrive already validated against {@link #companionFiles()} by {@code
+     * Models.load}; a port that takes none may ignore the map. {@code tokenizer} is a
+     * caller-supplied override - null means build the GGUF's own - and a supplied one must keep the
+     * GGUF's token-id space (checked by {@code Models.load} before this is called).
      */
-    default LoadedModel<?> load(FileChannel fileChannel, GGUF gguf, Arena arena)
+    default LoadedModel<?> load(
+            FileChannel fileChannel,
+            GGUF gguf,
+            Arena arena,
+            Map<String, Path> companions,
+            Tokenizer tokenizer)
             throws IOException {
         throw new UnsupportedOperationException(
                 "'"
@@ -77,27 +88,6 @@ public interface ModelProvider {
      */
     default Map<String, String> companionFiles() {
         return Map.of();
-    }
-
-    /**
-     * As {@link #load(FileChannel, GGUF, int, Arena)} plus the companions the caller attached,
-     * keyed by the capability names this port {@link #companions() declares}.
-     *
-     * <p>The default serves every port that takes none: an empty map is the plain load, and a
-     * non-empty one is a caller asking for something this architecture does not have.
-     */
-    default LoadedModel<?> load(
-            FileChannel fileChannel, GGUF gguf, Arena arena, Map<String, Path> companions)
-            throws IOException {
-        if (companions.isEmpty()) {
-            return load(fileChannel, gguf, arena);
-        }
-        throw new UnsupportedOperationException(
-                "'"
-                        + gguf.getString("general.architecture")
-                        + "' takes no companions, but "
-                        + companions.keySet()
-                        + " were attached");
     }
 
     /**

@@ -34,43 +34,50 @@ public final class Tokenizers {
                     + " =regex:<pattern> to supply one, or =file:<path> with one regex per line"
                     + " (multiple lines = staged split)";
 
+    private static final String OVERRIDE_PREFIX = "jinfer.preTokenizer.";
+
     private Tokenizers() {}
 
-    /**
-     * Tokenizers built ahead of time, keyed by GGUF INSTANCE - the hand-off from whoever baked one
-     * (the CLI's AOT preload, which owns the baked artifacts) to the port that will ask for it
-     * through {@link #fromGGUF(GGUF)}. Identity is the exact key because the baker passes the very
-     * same parsed-header object back at load time. Ports that pass their own registrations use the
-     * two-argument overload and never consult this.
-     */
-    private static final Map<GGUF, Tokenizer> BAKED = new java.util.IdentityHashMap<>();
-
-    /**
-     * Registers a tokenizer built ahead of time - by {@link #fromGGUF(GGUF)} over this same {@code
-     * gguf}, or the next load mis-tokenizes - so the coming {@code fromGGUF(gguf)} returns it
-     * instead of rebuilding vocab, merges and pre-tokenizer regexes.
-     */
-    public static void preBaked(GGUF gguf, Tokenizer tokenizer) {
-        BAKED.put(gguf, tokenizer);
-    }
-
     public static Tokenizer fromGGUF(GGUF gguf) {
-        Tokenizer baked = BAKED.get(gguf);
-        // a runtime -Djinfer.preTokenizer.* override outranks the bake: the escape hatch exists
-        // for exactly the moment a shipped tokenizer turns out wrong
-        if (baked != null && !overridesPresent()) {
-            return baked;
-        }
         return fromGGUF(gguf, b -> b);
     }
 
-    private static boolean overridesPresent() {
+    /**
+     * Whether any {@code -Djinfer.preTokenizer.*} override is configured - the FACT, for callers
+     * whose policy depends on it (the AOT preload rebuilds instead of using its preloaded
+     * tokenizer, so the escape hatch keeps outranking it). What the overrides do lives in {@link
+     * #fromGGUF}.
+     */
+    public static boolean hasPropertyOverrides() {
         for (String key : System.getProperties().stringPropertyNames()) {
-            if (key.startsWith("jinfer.preTokenizer.")) {
+            if (key.startsWith(OVERRIDE_PREFIX)) {
                 return true;
             }
         }
         return false;
+    }
+
+    /**
+     * Refuses a caller-SUPPLIED tokenizer whose id space cannot match this GGUF: the model's
+     * embedding rows and the header's stop-token ids are indexed by token id, so a supplied
+     * tokenizer may change surface behaviour (regexes, merges, normalization) but never the ids.
+     * Same SIZE is the checkable half of that contract; same-ids-for-same-tokens is the caller's
+     * oath.
+     */
+    public static void requireSameIdSpace(GGUF gguf, Tokenizer tokenizer) {
+        if (!gguf.containsKey("tokenizer.ggml.tokens")) {
+            return; // no vocabulary in the header: nothing checkable
+        }
+        String[] tokens = gguf.getValue(String[].class, "tokenizer.ggml.tokens");
+        if (tokenizer.vocabulary().size() != tokens.length) {
+            throw new IllegalArgumentException(
+                    "the supplied tokenizer has "
+                            + tokenizer.vocabulary().size()
+                            + " tokens but this GGUF's vocabulary has "
+                            + tokens.length
+                            + " - token ids index the embedding table, so this tokenizer cannot"
+                            + " serve this model");
+        }
     }
 
     /**
@@ -115,11 +122,10 @@ public final class Tokenizers {
      * validated eagerly - a typo'd flag fails the load even when the GGUF never selects it.
      */
     private static void applyPropertyOverrides(GGUFTokenizerLoader.Builder builder) {
-        String prefix = "jinfer.preTokenizer.";
         Map<String, String> aliases = new TreeMap<>();
         for (String key : System.getProperties().stringPropertyNames()) {
-            if (!key.startsWith(prefix)) continue;
-            String name = key.substring(prefix.length());
+            if (!key.startsWith(OVERRIDE_PREFIX)) continue;
+            String name = key.substring(OVERRIDE_PREFIX.length());
             String value = System.getProperty(key);
             if (value.startsWith("regex:")) {
                 registerSupplied(builder, name, List.of(value.substring("regex:".length())));

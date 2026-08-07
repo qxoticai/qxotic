@@ -29,7 +29,13 @@ public final class Qwen3Provider implements ModelProvider {
     }
 
     @Override
-    public LoadedModel<?> load(FileChannel fileChannel, GGUF gguf, Arena arena) throws IOException {
+    public LoadedModel<?> load(
+            FileChannel fileChannel,
+            GGUF gguf,
+            Arena arena,
+            java.util.Map<String, java.nio.file.Path> companions,
+            com.qxotic.toknroll.Tokenizer tokenizer)
+            throws IOException {
         throw new UnsupportedOperationException(
                 "'qwen3' is the Qwen3 RETRIEVAL family (Qwen3-Embedding, Qwen3-Reranker), not a"
                         + " generative model - load it with Models.loadEmbedder or"

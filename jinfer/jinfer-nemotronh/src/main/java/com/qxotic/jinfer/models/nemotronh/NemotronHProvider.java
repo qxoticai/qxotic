@@ -21,7 +21,13 @@ public final class NemotronHProvider implements ModelProvider {
     }
 
     @Override
-    public LoadedModel<?> load(FileChannel fileChannel, GGUF gguf, Arena arena) throws IOException {
-        return NemotronH.loadModel(fileChannel, gguf, arena).loaded();
+    public LoadedModel<?> load(
+            FileChannel fileChannel,
+            GGUF gguf,
+            Arena arena,
+            java.util.Map<String, java.nio.file.Path> companions,
+            com.qxotic.toknroll.Tokenizer tokenizer)
+            throws IOException {
+        return NemotronH.loadModel(fileChannel, gguf, arena, tokenizer).loaded();
     }
 }
