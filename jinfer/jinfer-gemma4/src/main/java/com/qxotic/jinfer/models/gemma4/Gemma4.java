@@ -1175,11 +1175,17 @@ public final class Gemma4
      * validated first: a sidecar from another family or another Gemma 4 size fails HERE with the
      * remedy, not at the first media request with a shape error.
      */
-    public Gemma4 withMediaEncoders(Path mmprojGguf, Arena arena) throws IOException {
+    public Gemma4 withMediaEncoders(
+            com.qxotic.jinfer.chat.ModelProvider.Companion media, Arena arena) throws IOException {
         // ONE open, ONE header parse, ONE tensor mapping - a sidecar carrying both towers used to
-        // pay for three of each (validate, then vision, then audio, all by path)
+        // pay for three of each (validate, then vision, then audio, all by path). A preloaded
+        // companion arrives with its header already parsed and skips even the one.
+        Path mmprojGguf = media.path();
         try (FileChannel fc = FileChannel.open(mmprojGguf, StandardOpenOption.READ)) {
-            var gguf = ModelLoader.readGguf(fc, mmprojGguf.toString());
+            var gguf =
+                    media.header() != null
+                            ? media.header()
+                            : ModelLoader.readGguf(fc, mmprojGguf.toString());
             MmprojInfo info = validatePairing(gguf, mmprojGguf, configuration.embeddingLength());
             Map<String, GGMLTensorEntry> tensors = ModelLoader.loadTensors(fc, gguf, arena);
             this.vision = loadVision(mmprojGguf, gguf, tensors, info.visionType(), arena);

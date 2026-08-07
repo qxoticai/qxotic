@@ -133,12 +133,14 @@ public final class Models {
                 path,
                 (fc, gguf) -> {
                     ModelProvider provider = provider(gguf);
-                    requireAccepted(provider, gguf, attached);
+                    requireAccepted(provider, gguf, attached.keySet());
                     if (tokenizer != null) {
                         Tokenizers.requireSameIdSpace(gguf, tokenizer);
                     }
+                    Map<String, ModelProvider.Companion> sources = new java.util.LinkedHashMap<>();
+                    attached.forEach((k, v) -> sources.put(k, ModelProvider.Companion.of(v)));
                     return companionSeeded(
-                            sampled(provider.load(fc, gguf, arena, attached, tokenizer), gguf),
+                            sampled(provider.load(fc, gguf, arena, sources, tokenizer), gguf),
                             attached);
                 });
     }
@@ -155,9 +157,9 @@ public final class Models {
 
     /** A companion this architecture does not have is a mistake, not something to ignore. */
     private static void requireAccepted(
-            ModelProvider provider, GGUF gguf, Map<String, Path> companions) {
+            ModelProvider provider, GGUF gguf, java.util.Set<String> capabilities) {
         Map<String, String> accepted = provider.companionFiles();
-        for (String capability : companions.keySet()) {
+        for (String capability : capabilities) {
             if (!accepted.containsKey(capability)) {
                 throw new IllegalArgumentException(
                         "'"
@@ -240,10 +242,32 @@ public final class Models {
     public static LoadedModel<?> load(
             FileChannel fileChannel, GGUF gguf, Arena arena, Tokenizer tokenizer)
             throws IOException {
+        return load(fileChannel, gguf, arena, Map.of(), tokenizer);
+    }
+
+    /**
+     * As {@link #load(FileChannel, GGUF, Arena, Tokenizer)} with COMPANIONS, each optionally
+     * carrying its already-parsed header - the multi-file preload's entry: a baked main model keeps
+     * its baked mmproj, and a companion the preload has not seen is parsed fresh by the port.
+     * Companion FILES still join the cache seed exactly as on the path entry.
+     */
+    public static LoadedModel<?> load(
+            FileChannel fileChannel,
+            GGUF gguf,
+            Arena arena,
+            Map<String, ModelProvider.Companion> companions,
+            Tokenizer tokenizer)
+            throws IOException {
+        Map<String, ModelProvider.Companion> sources = Map.copyOf(companions);
+        ModelProvider provider = provider(gguf);
+        requireAccepted(provider, gguf, sources.keySet());
         if (tokenizer != null) {
             Tokenizers.requireSameIdSpace(gguf, tokenizer);
         }
-        return sampled(provider(gguf).load(fileChannel, gguf, arena, Map.of(), tokenizer), gguf);
+        Map<String, Path> files = new java.util.LinkedHashMap<>();
+        sources.forEach((k, v) -> files.put(k, v.path()));
+        return companionSeeded(
+                sampled(provider.load(fileChannel, gguf, arena, sources, tokenizer), gguf), files);
     }
 
     /**
@@ -293,7 +317,7 @@ public final class Models {
                 path,
                 (fc, gguf) -> {
                     ModelProvider provider = provider(gguf);
-                    requireAccepted(provider, gguf, attached);
+                    requireAccepted(provider, gguf, attached.keySet());
                     return provider.loadSpeech(fc, gguf, path, arena, attached);
                 });
     }

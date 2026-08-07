@@ -14,7 +14,6 @@ package com.qxotic.jinfer.cli;
 import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.LoadedModel;
-import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.chat.Thinking;
 import com.qxotic.jinfer.hub.ModelStore;
 import com.qxotic.jinfer.llm.Sampler;
@@ -24,7 +23,6 @@ import java.io.FileDescriptor;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
-import java.lang.foreign.Arena;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -75,15 +73,9 @@ public class Main {
         }
         LoadedModel<?> model;
         try {
-            if (!options.companions().isEmpty()) {
-                // a model with companions is never AOT-preloaded: load the set fresh
-                model = Models.load(options.modelPath(), Arena.global(), options.companions());
-            } else {
-                model = AOT.tryUsePreloaded(options.modelPath());
-                if (model == null) {
-                    model = Models.load(options.modelPath(), Arena.global());
-                }
-            }
+            // ONE load path: every file - model and companions - uses its preload when it has
+            // one, parses fresh when it does not; any mix composes
+            model = AOT.load(options.modelPath(), options.companions());
         } catch (IllegalArgumentException
                 | IllegalStateException
                 | UnsupportedOperationException
