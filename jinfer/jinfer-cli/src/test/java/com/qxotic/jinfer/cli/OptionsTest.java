@@ -2,11 +2,15 @@ package com.qxotic.jinfer.cli;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.server.ServerConfig;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * The command line's own rules - the ones whose failure prints usage and exits 1, as opposed to
@@ -129,6 +133,48 @@ final class OptionsTest {
         assertEquals(0.8f, config.defaults().sampling().temperature());
         assertEquals(128, config.defaults().maxOutputTokens());
         assertEquals(ServerConfig.Limits.DEFAULTS.threads(), config.limits().threads());
+    }
+
+    // ---- parse: argv to Options ----
+
+    private static Path model(Path dir) throws IOException {
+        return Files.writeString(dir.resolve("model.gguf"), "not really a model");
+    }
+
+    @Test
+    void parseReadsFlagsInBothSpellings(@TempDir Path dir) throws IOException {
+        String m = model(dir).toString();
+        Options options =
+                Options.parse(
+                        new String[] {
+                            "-m", m, "-p", "hi", "--temp", "0.5", "--context-capacity=512"
+                        });
+        assertEquals(0.5f, options.temperature());
+        assertEquals(512, options.contextCapacity(), "--flag=value works like --flag value");
+    }
+
+    /**
+     * A bad number names its flag; 'For input string: \"x\"' named neither flag nor expectation.
+     */
+    @Test
+    void aBadNumberNamesItsFlag(@TempDir Path dir) throws IOException {
+        String m = model(dir).toString();
+        var failure =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> Options.parse(new String[] {"-m", m, "-p", "hi", "--top-k", "many"}));
+        assertTrue(failure.getMessage().contains("--top-k"), failure.getMessage());
+        assertTrue(failure.getMessage().contains("many"), failure.getMessage());
+    }
+
+    @Test
+    void anUnknownFlagIsRefusedByName(@TempDir Path dir) throws IOException {
+        String m = model(dir).toString();
+        var failure =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> Options.parse(new String[] {"-m", m, "--frobnicate", "on"}));
+        assertTrue(failure.getMessage().contains("--frobnicate"), failure.getMessage());
     }
 
     /** --no-grammar is the one flag that lands in Limits, because a request cannot lift it. */

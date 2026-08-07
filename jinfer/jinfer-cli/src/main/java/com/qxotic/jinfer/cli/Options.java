@@ -9,11 +9,15 @@ import com.qxotic.jinfer.server.Server;
 import com.qxotic.jinfer.server.ServerConfig;
 import java.io.IOException;
 import java.io.PrintStream;
+import java.io.UncheckedIOException;
 import java.net.InetSocketAddress;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.TreeSet;
 
 /**
  * The parsed command line: every flag, exactly as typed, with the four sampling knobs still
@@ -35,7 +39,7 @@ import java.util.Locale;
  */
 public record Options(
         Path modelPath,
-        java.util.Map<String, Path> companions,
+        Map<String, Path> companions,
         String prompt,
         String systemPrompt,
         boolean interactive,
@@ -63,7 +67,7 @@ public record Options(
     public Options {
         // never null and never the caller's copy: every reader can iterate it without a guard, and
         // "no companions" and "an empty map" stop being two states that behave differently
-        companions = companions == null ? java.util.Map.of() : java.util.Map.copyOf(companions);
+        companions = companions == null ? Map.of() : Map.copyOf(companions);
         limits = limits == null ? ServerConfig.Limits.DEFAULTS : limits;
         require(modelPath != null, "Missing argument: --model <path> is required");
         require(
@@ -100,10 +104,6 @@ public record Options(
     }
 
     /**
-     * The sampling stack these flags describe, over the model's own recommendations: an explicit
-     * flag wins, then the container's {@code general.sampling.*}, then the engine baseline.
-     */
-    /**
      * Refuses a capacity larger than the model was trained for - which needs the model, so it is
      * checked once, right after the load, rather than in the compact constructor with the flags
      * that stand on their own.
@@ -129,6 +129,10 @@ public record Options(
                 : Math.max(16, Math.min(contextCapacity, promptLen + maxOutputTokens));
     }
 
+    /**
+     * The sampling stack these flags describe, over the model's own recommendations: an explicit
+     * flag wins, then the container's {@code general.sampling.*}, then the engine baseline.
+     */
     public Sampling sampling(LoadedModel.SamplingDefaults defaults) {
         return defaults.resolve(temperature, topp, topk, minp, seed);
     }
@@ -178,15 +182,41 @@ public record Options(
 
     /** Seconds on the command line, a {@link Duration} everywhere after it. */
     public static Duration seconds(String optionName, String value) {
-        long seconds;
-        try {
-            seconds = Long.parseLong(value);
-        } catch (NumberFormatException e) {
-            require(false, "Invalid argument for %s: expected seconds, got %s", optionName, value);
-            return Duration.ZERO;
-        }
+        long seconds = parseLong(optionName, value);
         require(seconds >= 0, "Invalid argument for %s: must be non-negative", optionName);
         return Duration.ofSeconds(seconds);
+    }
+
+    // number parsing that names the flag: a raw NumberFormatException surfaces as
+    // 'For input string: "abc"', which tells the user neither which flag nor what it expected
+    private static int parseInt(String optionName, String value) {
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(
+                    "Invalid argument for %s: expected an integer, got %s"
+                            .formatted(optionName, value));
+        }
+    }
+
+    private static long parseLong(String optionName, String value) {
+        try {
+            return Long.parseLong(value);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(
+                    "Invalid argument for %s: expected an integer, got %s"
+                            .formatted(optionName, value));
+        }
+    }
+
+    private static float parseFloat(String optionName, String value) {
+        try {
+            return Float.parseFloat(value);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(
+                    "Invalid argument for %s: expected a number, got %s"
+                            .formatted(optionName, value));
+        }
     }
 
     public static boolean supportsAnsiColors(String colorMode) {
@@ -237,7 +267,7 @@ public record Options(
         // paths or hub refs; resolved (and downloaded, if needed) once parsing has succeeded
         String modelRef = null;
         // capability -> path or ref; resolved once parsing has succeeded
-        java.util.Map<String, String> companionRefs = new java.util.LinkedHashMap<>();
+        Map<String, String> companionRefs = new LinkedHashMap<>();
         Long seed = null; // unset = a fresh random seed per request
         int maxOutputTokens = -1;
         int contextCapacity = DEFAULT_CONTEXT_CAPACITY;
@@ -283,10 +313,11 @@ public record Options(
                     switch (optionName) {
                         case "--prompt", "-p" -> prompt = nextArg;
                         case "--system-prompt", "-sp" -> systemPrompt = nextArg;
-                        case "--temperature", "--temp" -> temperature = Float.parseFloat(nextArg);
-                        case "--top-p" -> topp = Float.parseFloat(nextArg);
-                        case "--top-k" -> topk = Integer.parseInt(nextArg);
-                        case "--min-p" -> minp = Float.parseFloat(nextArg);
+                        case "--temperature", "--temp" ->
+                                temperature = parseFloat(optionName, nextArg);
+                        case "--top-p" -> topp = parseFloat(optionName, nextArg);
+                        case "--top-k" -> topk = parseInt(optionName, nextArg);
+                        case "--min-p" -> minp = parseFloat(optionName, nextArg);
                         case "--model", "-m" -> modelRef = nextArg;
                         case "--mmproj" -> companionRefs.put("media", nextArg);
                         case "--with" -> {
@@ -298,25 +329,27 @@ public record Options(
                             companionRefs.put(nextArg.substring(0, eq), nextArg.substring(eq + 1));
                         }
                         case "--host" -> host = nextArg;
-                        case "--port" -> port = Integer.parseInt(nextArg);
+                        case "--port" -> port = parseInt(optionName, nextArg);
                         // the server's ceilings. These were jinfer.server* system properties,
                         // which meant a flag and a -D could not both exist for one knob without
                         // one of them being a lie about precedence
-                        case "--threads" -> limits = limits.withThreads(Integer.parseInt(nextArg));
+                        case "--threads" ->
+                                limits = limits.withThreads(parseInt(optionName, nextArg));
                         case "--queue-capacity" ->
-                                limits = limits.withQueueCapacity(Integer.parseInt(nextArg));
+                                limits = limits.withQueueCapacity(parseInt(optionName, nextArg));
                         case "--max-body-mb" ->
                                 limits =
                                         limits.withMaxBodyBytes(
-                                                (long) Integer.parseInt(nextArg) << 20);
+                                                (long) parseInt(optionName, nextArg) << 20);
                         case "--write-timeout" ->
                                 limits = limits.withWriteTimeout(seconds(optionName, nextArg));
                         case "--request-timeout" ->
                                 limits = limits.withRequestTimeout(seconds(optionName, nextArg));
-                        case "--seed", "-s" -> seed = Long.parseLong(nextArg);
-                        case "--max-output-tokens" -> maxOutputTokens = Integer.parseInt(nextArg);
+                        case "--seed", "-s" -> seed = parseLong(optionName, nextArg);
+                        case "--max-output-tokens" ->
+                                maxOutputTokens = parseInt(optionName, nextArg);
                         case "--context-capacity", "-c" ->
-                                contextCapacity = Integer.parseInt(nextArg);
+                                contextCapacity = parseInt(optionName, nextArg);
                         case "--stream" -> stream = parseBooleanOption(optionName, nextArg);
                         case "--echo" -> echo = parseBooleanOption(optionName, nextArg);
                         case "--color" -> colorMode = nextArg.toLowerCase(Locale.ROOT);
@@ -351,17 +384,17 @@ public record Options(
         boolean color = supportsAnsiColors(colorMode);
         // AFTER the loop, so --help and a bad flag never trigger a download first
         Path modelPath;
-        java.util.Map<String, Path> companions = new java.util.LinkedHashMap<>();
+        Map<String, Path> companions = new LinkedHashMap<>();
         try {
             modelPath = modelRef == null ? null : ModelStore.resolve(modelRef);
             if (!companionRefs.isEmpty()) {
                 // ONE header read for all of them, and the capability is checked before any file
                 // is fetched: a wrong knob should fail on the knob, not on a missing download
-                java.util.Map<String, String> offered;
+                Map<String, String> offered;
                 try {
                     offered = Models.companionFiles(modelPath);
                 } catch (IOException e) {
-                    throw new java.io.UncheckedIOException(e);
+                    throw new UncheckedIOException(e);
                 }
                 for (var wanted : companionRefs.entrySet()) {
                     companions.put(
@@ -376,7 +409,7 @@ public record Options(
         }
         return new Options(
                 modelPath,
-                java.util.Map.copyOf(companions),
+                Map.copyOf(companions),
                 prompt,
                 systemPrompt,
                 interactive,
@@ -408,13 +441,13 @@ public record Options(
      * command line where it can be read, reproduced and pinned.
      */
     private static Path resolveCompanion(
-            java.util.Map<String, String> offered, String capability, String value) {
+            Map<String, String> offered, String capability, String value) {
         String fileName = offered.get(capability);
         require(
                 fileName != null,
                 "this model has no '%s' capability. It offers: %s",
                 capability,
-                offered.isEmpty() ? "none" : new java.util.TreeSet<>(offered.keySet()));
+                offered.isEmpty() ? "none" : new TreeSet<>(offered.keySet()));
         require(
                 !"auto".equals(value),
                 "name the '%s' file rather than 'auto' - it is usually called %s*, and browsing"
@@ -467,7 +500,7 @@ public record Options(
         out.println("  --prompt, -p <string>         input prompt");
         out.println("  --system-prompt, -sp <string> system prompt for chat/instruct mode");
         out.println(
-                "  --temperature, -temp <float>  temperature in [0,inf]; default: the model's"
+                "  --temperature, --temp <float> temperature in [0,inf]; default: the model's"
                         + " recommended value, else 0.8");
         out.println(
                 "  --top-p <float>               top-p (nucleus) mass in [0,1]; default: the"
@@ -479,7 +512,7 @@ public record Options(
                 "  --min-p <float>               min-p cutoff relative to the top token, in"
                         + " [0,1]; default: the model's recommended value, else 0.05");
         out.println(
-                "  --seed <long>                 pins the sampling seed; default: a fresh random"
+                "  --seed, -s <long>             pins the sampling seed; default: a fresh random"
                         + " seed per request");
         out.println(
                 "  --context-capacity, -c <int>  how much the model can remember, in tokens;"
