@@ -22,6 +22,8 @@ import java.util.ServiceLoader;
  */
 public final class Models {
 
+    private static final System.Logger LOG = System.getLogger("jinfer.models");
+
     private Models() {}
 
     // The in-repo provider classes, for the SHADING fallback below and its drift test. Absent
@@ -61,13 +63,14 @@ public final class Models {
             }
         }
         if (!recovered.isEmpty()) {
-            System.err.println(
-                    "jinfer: ServiceLoader found no model providers but "
-                            + recovered.size()
-                            + " provider class(es) are present - your build likely shades jinfer"
-                            + " without merging META-INF/services (Maven Shade:"
-                            + " ServicesResourceTransformer). Recovered them reflectively; fix"
-                            + " the build, this fallback cannot see third-party providers.");
+            LOG.log(
+                    System.Logger.Level.WARNING,
+                    "ServiceLoader found no model providers but {0} provider class(es) are"
+                            + " present - your build likely shades jinfer without merging"
+                            + " META-INF/services (Maven Shade: ServicesResourceTransformer)."
+                            + " Recovered them reflectively; fix the build, this fallback cannot"
+                            + " see third-party providers.",
+                    recovered.size());
         }
         return List.copyOf(recovered);
     }
@@ -386,15 +389,14 @@ public final class Models {
             }
         }
         if (contender != null) {
-            System.err.println(
-                    "jinfer: architecture '"
-                            + arch
-                            + "' is claimed by both "
-                            + best.getClass().getName()
-                            + " (selected, deterministic by class name) and "
-                            + contender.getClass().getName()
-                            + " at equal priority - override ModelProvider.priority() on the one"
-                            + " that should win");
+            LOG.log(
+                    System.Logger.Level.WARNING,
+                    "architecture ''{0}'' is claimed by both {1} (selected, deterministic by"
+                            + " class name) and {2} at equal priority - override"
+                            + " ModelProvider.priority() on the one that should win",
+                    arch,
+                    best.getClass().getName(),
+                    contender.getClass().getName());
         }
         return best;
     }

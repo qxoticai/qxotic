@@ -23,6 +23,8 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 final class Dispatch implements MatMul {
 
+    private static final System.Logger LOG = System.getLogger("jinfer.jam");
+
     private final MatMul jam; // native jam,     or null if libjam couldn't load
     private final MatMul vector; // Vector API jam,  or null if jdk.incubator.vector is absent
     private final MatMul scalar; // universal floor (jinfer-native dot)
@@ -64,7 +66,7 @@ final class Dispatch implements MatMul {
             try {
                 return provider.create();
             } catch (Throwable t) {
-                System.err.println("jam " + id + " backend unavailable (" + t + ").");
+                LOG.log(System.Logger.Level.WARNING, "jam {0} backend unavailable ({1})", id, t);
                 return null;
             }
         }
@@ -81,7 +83,11 @@ final class Dispatch implements MatMul {
         if (v == null) return false;
         if (v.equalsIgnoreCase("true")) return true;
         if (v.equalsIgnoreCase("false")) return false;
-        System.err.println("[jinfer] ignoring -D" + name + "=" + v + " (expected true or false)");
+        LOG.log(
+                System.Logger.Level.WARNING,
+                "ignoring -D{0}={1} (expected true or false)",
+                name,
+                v);
         return false;
     }
 
