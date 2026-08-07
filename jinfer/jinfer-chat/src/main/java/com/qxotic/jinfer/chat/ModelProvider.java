@@ -15,23 +15,6 @@ import java.util.Map;
  */
 public interface ModelProvider {
 
-    /**
-     * A companion FILE as it reaches a port: its path, and - when a preload already parsed it - its
-     * header, so the port skips re-reading it. A null {@code header} means "parse it yourself"; a
-     * non-GGUF companion (a lexicon) simply never has one.
-     */
-    record Companion(Path path, GGUF header) {
-        public Companion {
-            if (path == null) {
-                throw new IllegalArgumentException("a companion needs its file's path");
-            }
-        }
-
-        public static Companion of(Path path) {
-            return new Companion(path, null);
-        }
-    }
-
     /** Whether this port loads GGUFs with the given {@code general.architecture}. */
     boolean supports(String architecture);
 
@@ -75,7 +58,7 @@ public interface ModelProvider {
             FileChannel fileChannel,
             GGUF gguf,
             Arena arena,
-            Map<String, Companion> companions,
+            Map<String, Path> companions,
             Tokenizer tokenizer)
             throws IOException {
         throw new UnsupportedOperationException(

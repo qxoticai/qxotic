@@ -25,7 +25,7 @@ public final class GptOssProvider implements ModelProvider {
             FileChannel fileChannel,
             GGUF gguf,
             Arena arena,
-            java.util.Map<String, ModelProvider.Companion> companions,
+            java.util.Map<String, java.nio.file.Path> companions,
             com.qxotic.toknroll.Tokenizer tokenizer)
             throws IOException {
         return GptOss.loadModel(fileChannel, gguf, arena, tokenizer).loaded();

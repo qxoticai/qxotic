@@ -2,7 +2,6 @@ package com.qxotic.jinfer.cli;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.chat.LoadedModel;
-import com.qxotic.jinfer.chat.ModelProvider;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.kernels.ModelLoader;
 import com.qxotic.jinfer.kernels.Timer;
@@ -22,18 +21,18 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.HexFormat;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.zip.CRC32C;
 
 /**
- * The native image's model preload ({@code -Djinfer.preload=<file>[<pathSeparator><file>...]} at
- * BUILD time): for each listed GGUF, everything derivable from its header - the parsed GGUF, and
- * the tokenizer where the header carries a vocabulary - is constructed at class-init and, since
- * {@code com.qxotic.*} initializes at image build, snapshots into the image heap. Both pieces are
- * pure heap; tensor data is still mmap'd at run time. Companions preload too: an mmproj or a
- * sidecar is just another header, without a vocabulary.
+ * The native image's model preload ({@code -Djinfer.preload=<model>[<pathSeparator><model>...]} at
+ * BUILD time): for each listed MODEL, everything derivable from its header - the parsed GGUF and
+ * the tokenizer built from it - is constructed at class-init and, since {@code com.qxotic.*}
+ * initializes at image build, snapshots into the image heap. Both pieces are pure heap; tensor data
+ * is still mmap'd at run time. MODELS only: a companion (mmproj, sidecar, lexicon) is parsed by its
+ * port at load in ~10 ms - nothing worth a bake, so listing one is refused with the reason rather
+ * than baked into dead image bytes.
  *
  * <p>A preloaded header is used only when PROVEN to describe the candidate file's bytes, through
  * three layers of trust: the file SIZE gates for free - the only layer that saves work - then one
@@ -79,12 +78,15 @@ final class AOT {
             }
             try (FileChannel fileChannel = FileChannel.open(path, StandardOpenOption.READ)) {
                 GGUF gguf = ModelLoader.readGguf(fileChannel, path.toString());
+                if (!gguf.containsKey("tokenizer.ggml.tokens")) {
+                    throw new IllegalArgumentException(
+                            path
+                                    + " has no vocabulary - it is a companion (mmproj, sidecar),"
+                                    + " not a model. Companions are parsed by their ports at load"
+                                    + " (~10 ms); preload lists models only.");
+                }
                 long headerLength = gguf.getTensorDataOffset();
                 HeaderDigests digests = digestHeader(fileChannel, headerLength);
-                Tokenizer tokenizer =
-                        gguf.containsKey("tokenizer.ggml.tokens")
-                                ? Tokenizers.fromGGUF(gguf)
-                                : null; // an mmproj or a sidecar has no vocabulary
                 baked.add(
                         new PreloadedFile(
                                 path.getFileName().toString(),
@@ -93,7 +95,7 @@ final class AOT {
                                 digests.crc32c(),
                                 digests.sha256(),
                                 gguf,
-                                tokenizer));
+                                Tokenizers.fromGGUF(gguf)));
             } catch (IOException e) {
                 throw new UncheckedIOException("cannot pre-load model: " + path, e);
             }
@@ -191,32 +193,23 @@ final class AOT {
     }
 
     /**
-     * The CLI's one load path. EVERY file consults its own preload independently - the main model
-     * and each companion - so any subset of them being preloaded works, and a miss on one file
-     * degrades only that file to a fresh parse: a preloaded mmproj keeps its baked header even
-     * under a model the image has never seen. A runtime {@code -Djinfer.preTokenizer.*} override
-     * makes the tokenizer rebuild so the override applies: the escape hatch outranks the preload,
-     * and that precedence is this caller's policy, not the library's.
+     * The CLI's one load path: the model consults the preload, companions pass through untouched
+     * (their ports parse them). A miss loads fresh through the same call. A runtime {@code
+     * -Djinfer.preTokenizer.*} override makes the tokenizer rebuild so the override applies: the
+     * escape hatch outranks the preload, and that precedence is this caller's policy, not the
+     * library's.
      */
     static LoadedModel<?> load(Path modelPath, Map<String, Path> companions) throws IOException {
         PreloadedFile main = match(PRELOADED, modelPath);
         Tokenizer tokenizer =
                 main == null || Tokenizers.hasPropertyOverrides() ? null : main.tokenizer();
-        Map<String, ModelProvider.Companion> attached = new LinkedHashMap<>();
-        companions.forEach(
-                (capability, path) -> {
-                    PreloadedFile baked = match(PRELOADED, path);
-                    attached.put(
-                            capability,
-                            new ModelProvider.Companion(path, baked == null ? null : baked.gguf()));
-                });
         try (var timer = Timer.log("Load model");
                 FileChannel fileChannel = FileChannel.open(modelPath, StandardOpenOption.READ)) {
             GGUF gguf =
                     main != null
                             ? main.gguf()
                             : ModelLoader.readGguf(fileChannel, modelPath.toString());
-            return Models.load(fileChannel, gguf, Arena.global(), attached, tokenizer);
+            return Models.load(fileChannel, gguf, Arena.global(), companions, tokenizer);
         }
     }
 }
