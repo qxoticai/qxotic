@@ -68,7 +68,9 @@ public record ServerConfig(
      *
      * @param threads the HTTP handler pool; handlers only parse and block on the worker, so a fixed
      *     pool caps what slow-loris connections can pin
-     * @param queueDepth generation requests queued behind the one worker; 0 = reject unless idle
+     * @param queueCapacity generation requests that may WAIT behind the one worker; 0 = reject
+     *     unless idle. The live occupancy is Worker.queued(), which is a different number and now
+     *     has a different name
      * @param grammar whether grammar and {@code response_format} requests are ACCEPTED. False
      *     refuses them with a 400; it must never mean "quietly generate unconstrained"
      * @param writeTimeout how long a streaming write may block before the client is disconnected
@@ -77,7 +79,7 @@ public record ServerConfig(
      */
     public record Limits(
             int threads,
-            int queueDepth,
+            int queueCapacity,
             long maxBodyBytes,
             boolean grammar,
             Duration writeTimeout,
@@ -89,7 +91,8 @@ public record ServerConfig(
 
         public Limits {
             if (threads < 1) throw new IllegalArgumentException("threads " + threads);
-            if (queueDepth < 0) throw new IllegalArgumentException("queueDepth " + queueDepth);
+            if (queueCapacity < 0)
+                throw new IllegalArgumentException("queueCapacity " + queueCapacity);
             if (maxBodyBytes < 1)
                 throw new IllegalArgumentException("maxBodyBytes " + maxBodyBytes);
             if (writeTimeout == null || writeTimeout.isNegative() || writeTimeout.isZero()) {
@@ -102,40 +105,40 @@ public record ServerConfig(
 
         /** Retry-After seconds suggested when the queue is full. */
         int retryAfterSeconds() {
-            return Math.max(1, 2 * (queueDepth + 1));
+            return Math.max(1, 2 * (queueCapacity + 1));
         }
 
         // one wither per knob: the CLI sets these one flag at a time, and a 7-argument positional
-        // constructor at each -> a transposed threads/queueDepth pair that still compiles
+        // constructor at each -> a transposed threads/queueCapacity pair that still compiles
         public Limits withThreads(int threads) {
             return new Limits(
-                    threads, queueDepth, maxBodyBytes, grammar, writeTimeout, requestTimeout);
+                    threads, queueCapacity, maxBodyBytes, grammar, writeTimeout, requestTimeout);
         }
 
-        public Limits withQueueDepth(int queueDepth) {
+        public Limits withQueueCapacity(int queueCapacity) {
             return new Limits(
-                    threads, queueDepth, maxBodyBytes, grammar, writeTimeout, requestTimeout);
+                    threads, queueCapacity, maxBodyBytes, grammar, writeTimeout, requestTimeout);
         }
 
         public Limits withMaxBodyBytes(long maxBodyBytes) {
             return new Limits(
-                    threads, queueDepth, maxBodyBytes, grammar, writeTimeout, requestTimeout);
+                    threads, queueCapacity, maxBodyBytes, grammar, writeTimeout, requestTimeout);
         }
 
         /** These limits with grammar requests allowed or refused. */
         public Limits withGrammar(boolean grammar) {
             return new Limits(
-                    threads, queueDepth, maxBodyBytes, grammar, writeTimeout, requestTimeout);
+                    threads, queueCapacity, maxBodyBytes, grammar, writeTimeout, requestTimeout);
         }
 
         public Limits withWriteTimeout(Duration writeTimeout) {
             return new Limits(
-                    threads, queueDepth, maxBodyBytes, grammar, writeTimeout, requestTimeout);
+                    threads, queueCapacity, maxBodyBytes, grammar, writeTimeout, requestTimeout);
         }
 
         public Limits withRequestTimeout(Duration requestTimeout) {
             return new Limits(
-                    threads, queueDepth, maxBodyBytes, grammar, writeTimeout, requestTimeout);
+                    threads, queueCapacity, maxBodyBytes, grammar, writeTimeout, requestTimeout);
         }
     }
 }

@@ -51,7 +51,7 @@ final class Metrics {
         metric(sb, "jinfer_completion_tokens_total", "counter", completionTokens);
         metric(sb, "jinfer_session_pool_hits_total", "counter", sessionPoolHits);
         metric(sb, "jinfer_cached_tokens_total", "counter", cachedTokens);
-        metric(sb, "jinfer_queue_depth", "gauge", worker.queueDepth());
+        metric(sb, "jinfer_queue_depth", "gauge", worker.queued());
         metric(sb, "jinfer_worker_busy", "gauge", worker.busy() ? 1 : 0);
         return sb.toString();
     }
