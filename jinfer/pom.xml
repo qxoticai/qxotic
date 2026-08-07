@@ -83,7 +83,7 @@
          bench       = measurement harnesses (run by name: mvn test -Dtest=GemvBench -Dsurefire.excludedGroups=)
          driver      = hand tools (run by name, args via -Djinfer.args="...") -->
     <surefire.excludedGroups>integration,bench,driver</surefire.excludedGroups>
-    <jinfer.PreloadGGUF />
+    <jinfer.preload />
 
     <!-- the Spring AI backend modules (jinfer-spring-ai*) -->
     <spring-ai.version>2.0.0</spring-ai.version>
@@ -352,7 +352,7 @@
                    would freeze the BUILD machine's environment into the binary. -->
               <buildArg>-H:IncludeResources=com/qxotic/jam/native/.*</buildArg>
               <buildArg>-Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0</buildArg>
-              <buildArg>-Djinfer.PreloadGGUF=${jinfer.PreloadGGUF}</buildArg>
+              <buildArg>-Djinfer.preload=${jinfer.preload}</buildArg>
               <buildArg>-Djinfer.convTile=${jinfer.convTile}</buildArg>
               <buildArg>-Djinfer.trace=${jinfer.trace}</buildArg>
             </buildArgs>
