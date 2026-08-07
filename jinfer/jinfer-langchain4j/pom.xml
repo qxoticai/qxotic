@@ -70,47 +70,16 @@
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-chat</artifactId>
     </dependency>
+    <!-- every architecture port, as ServiceLoader cargo: ONE list to maintain, in
+         jinfer-models-all. A shaded consumer needs the ServicesResourceTransformer. -->
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-models-all</artifactId>
+      <type>pom</type>
+      <scope>runtime</scope>
+    </dependency>
     <!-- architecture ports, resolved via ServiceLoader (Models.load); runtime-only.
          A shaded consumer needs the ServicesResourceTransformer to merge their descriptors. -->
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-gemma4</artifactId>
-      <scope>runtime</scope>
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-llama</artifactId>
-      <scope>runtime</scope>
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-qwen35</artifactId>
-      <scope>runtime</scope>
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-qwen3</artifactId>
-      <scope>runtime</scope>
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-gptoss</artifactId>
-      <scope>runtime</scope>
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-nemotronh</artifactId>
-      <scope>runtime</scope>
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-inflect2</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-lfm2</artifactId>
-      <scope>runtime</scope>
-    </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-kernels</artifactId>
