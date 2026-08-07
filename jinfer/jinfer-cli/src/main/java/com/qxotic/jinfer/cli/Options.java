@@ -24,8 +24,8 @@ import java.util.Locale;
  * @param maxOutputTokens tokens GENERATED per turn, -1 = as many as the context allows. The same
  *     meaning in every mode; in server mode it is the default for a request that omits {@code
  *     max_tokens}
- * @param ctxSize the size of a session's state, and the ceiling on every one-shot. Refused above
- *     the model's own context length
+ * @param contextCapacity the size of a session's state, and the ceiling on every one-shot. Refused
+ *     above the model's own context length
  */
 public record Options(
         Path modelPath,
@@ -42,7 +42,7 @@ public record Options(
         Float minp,
         Long seed,
         int maxOutputTokens,
-        int ctxSize,
+        int contextCapacity,
         boolean stream,
         boolean echo,
         boolean think,
@@ -79,10 +79,11 @@ public record Options(
         // checked here, before InetSocketAddress can say "port out of range" without saying which
         // flag or how to fix it
         require(0 <= port && port <= 65535, "Invalid argument: --port must be within [0, 65535]");
-        require(ctxSize >= 1, "Invalid argument: --ctx-size must be at least 1");
+        require(contextCapacity >= 1, "Invalid argument: --context-capacity must be at least 1");
         require(
                 maxOutputTokens >= -1,
-                "Invalid argument: --max-tokens must be -1 (fill the context) or non-negative");
+                "Invalid argument: --max-output-tokens must be -1 (fill the context) or"
+                        + " non-negative");
         // the only thing --no-grammar does is refuse requests that ask for a grammar, and only
         // the HTTP API has requests. Accepting it elsewhere made it a flag that did nothing.
         require(
@@ -97,18 +98,18 @@ public record Options(
      * flag wins, then the container's {@code general.sampling.*}, then the engine baseline.
      */
     /**
-     * The state size for a SESSION - a conversation grows across turns and a KV ring cannot grow
-     * with it, so it is pre-sized. Refused above what the model was trained for.
+     * Refuses a capacity larger than the model was trained for - which needs the model, so it is
+     * checked once, right after the load, rather than in the compact constructor with the flags
+     * that stand on their own.
      */
-    public int contextCapacity(LoadedModel<?> model) {
+    public void requireFitsModel(LoadedModel<?> model) {
         int trained = model.model().config().contextLength();
         require(
-                ctxSize <= trained,
-                "Invalid argument: --ctx-size %d exceeds what %s was trained for (%d)",
-                ctxSize,
+                contextCapacity <= trained,
+                "Invalid argument: --context-capacity %d exceeds what %s was trained for (%d)",
+                contextCapacity,
                 modelPath.getFileName(),
                 trained);
-        return ctxSize;
     }
 
     /**
@@ -116,11 +117,10 @@ public record Options(
      * prompt plus its budget and not one position beyond, which is why instruct mode needs no size
      * flag of its own - and why the banner stopped carrying an arbitrary number.
      */
-    public int oneShotCapacity(LoadedModel<?> model, int promptLen) {
-        int session = contextCapacity(model);
+    public int oneShotCapacity(int promptLen) {
         return maxOutputTokens < 0
-                ? session
-                : Math.max(16, Math.min(session, promptLen + maxOutputTokens));
+                ? contextCapacity
+                : Math.max(16, Math.min(contextCapacity, promptLen + maxOutputTokens));
     }
 
     public Sampling sampling(LoadedModel.SamplingDefaults defaults) {
@@ -138,7 +138,7 @@ public record Options(
                 new ServerConfig.Defaults(sampling(defaults), maxOutputTokens, think, rawPrompt),
                 limits.withGrammar(!noGrammar),
                 PromptCache.Options.DEFAULTS
-                        .withContextCapacity(ctxSize)
+                        .withContextCapacity(contextCapacity)
                         .withCatalog(promptCache, promptCacheReadOnly));
     }
 

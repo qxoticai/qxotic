@@ -987,12 +987,12 @@ public final class ServerIntegrationTest {
     }
 
     /**
-     * Server-side completion ceiling: an oversized request is clamped to the configured
-     * --max-tokens-cap, reporting finish_reason "length".
+     * An oversized request is clamped by the CONTEXT - there is no separate ceiling any more. The
+     * state's ring bounds every generation, so max_tokens 100000 comes back as finish_reason
+     * "length".
      */
     private static void tokenCeiling() throws Exception {
-        int ceiling = ServerConfig.Limits.DEFAULTS.maxTokens();
-        check(ceiling > 0, "ceiling mode needs a non-zero --max-tokens-cap (" + ceiling + ")");
+        int ceiling = com.qxotic.jinfer.cache.PromptCache.Options.DEFAULTS.contextCapacity();
         HttpResponse<String> response =
                 post(
                         "/v1/chat/completions",
@@ -1003,7 +1003,11 @@ public final class ServerIntegrationTest {
         long completion = ((Number) path(chat, "usage").get("completion_tokens")).longValue();
         check(
                 completion <= ceiling,
-                "completion clamped to serverMaxTokens (" + completion + " <= " + ceiling + ")");
+                "completion clamped to the context capacity ("
+                        + completion
+                        + " <= "
+                        + ceiling
+                        + ")");
         check(
                 "length".equals(path(chat, "choices", 0).get("finish_reason")),
                 "ceiling -> finish_reason length");
