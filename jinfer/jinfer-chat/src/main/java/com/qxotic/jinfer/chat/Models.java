@@ -103,9 +103,10 @@ public final class Models {
     }
 
     /**
-     * Load with COMPANIONS: auxiliary files that give the model a capability it does not have on
-     * its own, keyed by capability name - {@code "media"} for a projector, {@code "speculation"}
-     * for a draft head. What each architecture accepts is {@link #companionFiles(Path)}.
+     * Load with COMPANIONS, keyed by capability name - {@code "media"} for a projector, {@code
+     * "phonemes"} for a lexicon. What a companion IS - the four laws - lives on {@link
+     * ModelProvider#companionFiles()}; what this architecture accepts is {@link
+     * #companionFiles(Path)}.
      *
      * <p>Values are PATHS to single FILES, never references: resolving a reference is a
      * downloader's job, done before this call, so no library load ever touches the network.
