@@ -1,19 +1,25 @@
 package com.qxotic.jinfer.cli;
 
-import com.qxotic.jinfer.*;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.LoadedModel;
+import com.qxotic.jinfer.chat.Models;
+import com.qxotic.jinfer.hub.ModelStore;
 import com.qxotic.jinfer.llm.Sampling;
 import com.qxotic.jinfer.server.Server;
 import com.qxotic.jinfer.server.ServerConfig;
+import java.io.IOException;
+import java.io.PrintStream;
 import java.net.InetSocketAddress;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.List;
 import java.util.Locale;
 
 /**
  * The parsed command line: every flag, exactly as typed, with the four sampling knobs still
  * nullable because "the user said nothing" is information the model's own recommendations need.
+ * {@link #parse} is the only way argv becomes one of these, and {@link #printUsage} documents the
+ * same flags, so a new flag and its help line are added in the same file or noticed missing.
  *
  * <p>This is a CLI type, not a server one. It is wide because a command line is wide; what the
  * server needs is the narrow projection {@link #toServerConfig} builds, and nothing downstream of
@@ -200,5 +206,331 @@ public record Options(
             }
             default -> false;
         };
+    }
+
+    /** llama.cpp's default too: big enough for real work, small enough to allocate blind. */
+    static final int DEFAULT_CONTEXT_CAPACITY = 4096;
+
+    /** A model ref that could not be resolved: the cause already says what to do about it. */
+    static final class ResolveFailure extends RuntimeException {
+        ResolveFailure(RuntimeException cause) {
+            super(cause.getMessage(), cause); // the cause's own words, not its class name
+        }
+    }
+
+    /** The remedy a failure carries, unwrapping the plumbing around it. */
+    static String rootMessage(Throwable failure) {
+        Throwable root = failure;
+        while (root.getMessage() == null && root.getCause() != null) {
+            root = root.getCause();
+        }
+        return root.getMessage();
+    }
+
+    static Options parse(String[] args) {
+        String prompt = null;
+        String systemPrompt = null;
+        Float temperature = null; // unset = the model's recommended value, else 0.8
+        Float topp = null; // unset = the model's recommended value, else 0.95
+        Integer topk = null; // unset = the model's recommended value, else 40
+        Float minp = null; // unset = the model's recommended value, else 0.05
+        // paths or hub refs; resolved (and downloaded, if needed) once parsing has succeeded
+        String modelRef = null;
+        // capability -> path or ref; resolved once parsing has succeeded
+        java.util.Map<String, String> companionRefs = new java.util.LinkedHashMap<>();
+        Long seed = null; // unset = a fresh random seed per request
+        int maxOutputTokens = -1;
+        int contextCapacity = DEFAULT_CONTEXT_CAPACITY;
+        boolean interactive = false;
+        boolean server = false;
+        String host = "127.0.0.1";
+        int port = 17325;
+        boolean stream = true;
+        boolean echo = false;
+        boolean think = true;
+        boolean thinkInline = false;
+        String colorMode = "auto";
+        boolean rawPrompt = false;
+        boolean noGrammar = false;
+        Path promptCache = null;
+        boolean promptCacheReadOnly = false;
+        ServerConfig.Limits limits = ServerConfig.Limits.DEFAULTS;
+
+        for (int i = 0; i < args.length; i++) {
+            String optionName = args[i];
+            require(optionName.startsWith("-"), "Invalid option %s", optionName);
+            switch (optionName) {
+                case "--interactive", "--chat", "-i" -> interactive = true;
+                case "--instruct" -> interactive = false;
+                case "--server" -> server = true;
+                case "--raw-prompt" -> rawPrompt = true;
+                case "--no-grammar" -> noGrammar = true;
+                case "--help", "-h" -> {
+                    printUsage(System.out);
+                    System.exit(0);
+                }
+                default -> {
+                    String nextArg;
+                    if (optionName.contains("=")) {
+                        String[] parts = optionName.split("=", 2);
+                        optionName = parts[0];
+                        nextArg = parts[1];
+                    } else {
+                        require(i + 1 < args.length, "Missing argument for option %s", optionName);
+                        nextArg = args[i + 1];
+                        i += 1;
+                    }
+                    switch (optionName) {
+                        case "--prompt", "-p" -> prompt = nextArg;
+                        case "--system-prompt", "-sp" -> systemPrompt = nextArg;
+                        case "--temperature", "--temp" -> temperature = Float.parseFloat(nextArg);
+                        case "--top-p" -> topp = Float.parseFloat(nextArg);
+                        case "--top-k" -> topk = Integer.parseInt(nextArg);
+                        case "--min-p" -> minp = Float.parseFloat(nextArg);
+                        case "--model", "-m" -> modelRef = nextArg;
+                        case "--mmproj" -> companionRefs.put("media", nextArg);
+                        case "--with" -> {
+                            int eq = nextArg.indexOf('=');
+                            require(
+                                    eq > 0 && eq < nextArg.length() - 1,
+                                    "--with takes <capability>=<path|ref>, got %s",
+                                    nextArg);
+                            companionRefs.put(nextArg.substring(0, eq), nextArg.substring(eq + 1));
+                        }
+                        case "--host" -> host = nextArg;
+                        case "--port" -> port = Integer.parseInt(nextArg);
+                        // the server's ceilings. These were jinfer.server* system properties,
+                        // which meant a flag and a -D could not both exist for one knob without
+                        // one of them being a lie about precedence
+                        case "--threads" -> limits = limits.withThreads(Integer.parseInt(nextArg));
+                        case "--queue-capacity" ->
+                                limits = limits.withQueueCapacity(Integer.parseInt(nextArg));
+                        case "--max-body-mb" ->
+                                limits =
+                                        limits.withMaxBodyBytes(
+                                                (long) Integer.parseInt(nextArg) << 20);
+                        case "--write-timeout" ->
+                                limits = limits.withWriteTimeout(seconds(optionName, nextArg));
+                        case "--request-timeout" ->
+                                limits = limits.withRequestTimeout(seconds(optionName, nextArg));
+                        case "--seed", "-s" -> seed = Long.parseLong(nextArg);
+                        case "--max-output-tokens" -> maxOutputTokens = Integer.parseInt(nextArg);
+                        case "--context-capacity", "-c" ->
+                                contextCapacity = Integer.parseInt(nextArg);
+                        case "--stream" -> stream = parseBooleanOption(optionName, nextArg);
+                        case "--echo" -> echo = parseBooleanOption(optionName, nextArg);
+                        case "--color" -> colorMode = nextArg.toLowerCase(Locale.ROOT);
+                        case "--cache" -> promptCache = Path.of(nextArg);
+                        case "--cache-ro" -> {
+                            promptCache = Path.of(nextArg);
+                            promptCacheReadOnly = true;
+                        }
+                        case "--think" -> {
+                            String thinkMode = nextArg.toLowerCase(Locale.ROOT);
+                            thinkInline = List.of("inline", "stdout").contains(thinkMode);
+                            switch (thinkMode) {
+                                case "on", "true", "inline", "stdout" -> think = true;
+                                case "off", "false" -> think = false;
+                                default ->
+                                        require(
+                                                false,
+                                                "Invalid argument for %s: expected off|on|inline"
+                                                        + " (or false|true|stdout), got %s",
+                                                optionName,
+                                                nextArg);
+                            }
+                        }
+                        default -> require(false, "Unknown option: %s", optionName);
+                    }
+                }
+            }
+        }
+        require(
+                List.of("on", "off", "auto").contains(colorMode),
+                "Invalid argument: --color must be one of on|off|auto");
+        boolean color = supportsAnsiColors(colorMode);
+        // AFTER the loop, so --help and a bad flag never trigger a download first
+        Path modelPath;
+        java.util.Map<String, Path> companions = new java.util.LinkedHashMap<>();
+        try {
+            modelPath = modelRef == null ? null : ModelStore.resolve(modelRef);
+            if (!companionRefs.isEmpty()) {
+                // ONE header read for all of them, and the capability is checked before any file
+                // is fetched: a wrong knob should fail on the knob, not on a missing download
+                java.util.Map<String, String> offered;
+                try {
+                    offered = Models.companionFiles(modelPath);
+                } catch (IOException e) {
+                    throw new java.io.UncheckedIOException(e);
+                }
+                for (var wanted : companionRefs.entrySet()) {
+                    companions.put(
+                            wanted.getKey(),
+                            resolveCompanion(offered, wanted.getKey(), wanted.getValue()));
+                }
+            }
+        } catch (RuntimeException e) {
+            // a ref that cannot be resolved carries its own remedy (gated repo, unknown quant,
+            // no such repository); the usage block would only bury it
+            throw new ResolveFailure(e);
+        }
+        return new Options(
+                modelPath,
+                java.util.Map.copyOf(companions),
+                prompt,
+                systemPrompt,
+                interactive,
+                server,
+                host,
+                port,
+                temperature,
+                topp,
+                topk,
+                minp,
+                seed,
+                maxOutputTokens,
+                contextCapacity,
+                stream,
+                echo,
+                think,
+                thinkInline,
+                color,
+                rawPrompt,
+                noGrammar,
+                promptCache,
+                promptCacheReadOnly,
+                limits);
+    }
+
+    /**
+     * One companion, named EXPLICITLY. There is no "find it for me": a companion changes what the
+     * model produces - a projector is in the media cache key - so which file it is belongs in the
+     * command line where it can be read, reproduced and pinned.
+     */
+    private static Path resolveCompanion(
+            java.util.Map<String, String> offered, String capability, String value) {
+        String fileName = offered.get(capability);
+        require(
+                fileName != null,
+                "this model has no '%s' capability. It offers: %s",
+                capability,
+                offered.isEmpty() ? "none" : new java.util.TreeSet<>(offered.keySet()));
+        require(
+                !"auto".equals(value),
+                "name the '%s' file rather than 'auto' - it is usually called %s*, and browsing"
+                        + " the model's repository shows which precisions it ships",
+                capability,
+                fileName);
+        return ModelStore.resolve(value);
+    }
+
+    static void printUsage(PrintStream out) {
+        out.println("Usage:  java -jar jinfer.jar [options]");
+        out.println(
+                "        java -jar jinfer.jar pull [--force] <ref>...  download models, print"
+                        + " paths");
+        out.println();
+        out.println(
+                "A remote model is a URL without the scheme: "
+                        + " <host>/<owner>/<repo>[@rev][/path][:quant]");
+        out.println(
+                "  hf.co/unsloth/gemma-4-E2B-it-GGUF:Q4_K_M     "
+                        + " modelscope.cn/Qwen/Qwen3-0.6B-GGUF:Q8_0");
+        out.println(
+                "Hosts: hf.co, modelscope.cn. Quant defaults to Q4_K_M. Anything else is a local"
+                        + " file path.");
+        out.println(
+                "Cache: $JINFER_MODELS, else the platform cache dir. HF_TOKEN for gated repos,"
+                        + " JINFER_OFFLINE=1 to never fetch.");
+        out.println();
+        out.println("Options:");
+        out.println(
+                "  --model, -m <path|ref>        required, a .gguf file or a remote model -"
+                        + " downloaded on first use");
+        out.println("  --mmproj <path|ref>           shorthand for --with media=<...>");
+        out.println(
+                "  --with <capability>=<file>    attach a COMPANION that gives the model a"
+                        + " capability: a path or a ref, named explicitly. gemma4: media"
+                        + " (vision/audio encoders)");
+        out.println("  --interactive, --chat, -i     run in chat mode");
+        out.println("  --instruct                    run in instruct (once) mode, default mode");
+        out.println("  --server                      run an OpenAI-compatible HTTP server");
+        out.println("  --host <host>                 server bind host, default 127.0.0.1");
+        out.println("  --port <int>                  server bind port, default 17325");
+        out.println("  --threads <int>               server handler threads, default 16");
+        out.println(
+                "  --queue-capacity <int>        generation requests that may WAIT, default 4 (0 ="
+                        + " reject unless idle)");
+        out.println("  --max-body-mb <int>           request body limit, default 32");
+        out.println("  --write-timeout <seconds>     streaming write stall limit, default 30");
+        out.println("  --request-timeout <seconds>   generation deadline, default 300 (0 = none)");
+        out.println("  --prompt, -p <string>         input prompt");
+        out.println("  --system-prompt, -sp <string> system prompt for chat/instruct mode");
+        out.println(
+                "  --temperature, -temp <float>  temperature in [0,inf]; default: the model's"
+                        + " recommended value, else 0.8");
+        out.println(
+                "  --top-p <float>               top-p (nucleus) mass in [0,1]; default: the"
+                        + " model's recommended value, else 0.95");
+        out.println(
+                "  --top-k <int>                 top-k cutoff, 0 disables; default: the model's"
+                        + " recommended value, else 40");
+        out.println(
+                "  --min-p <float>               min-p cutoff relative to the top token, in"
+                        + " [0,1]; default: the model's recommended value, else 0.05");
+        out.println(
+                "  --seed <long>                 pins the sampling seed; default: a fresh random"
+                        + " seed per request");
+        out.println(
+                "  --context-capacity, -c <int>  how much the model can remember, in tokens;"
+                        + " default "
+                        + DEFAULT_CONTEXT_CAPACITY
+                        + ", refused above the model's own context length");
+        out.println(
+                "  --max-output-tokens <int>     how much it may produce in one turn; -1 (the"
+                        + " default) = whatever the remaining context allows. A one-shot --prompt"
+                        + " allocates only what it needs: prompt + this");
+        out.println(
+                "  --stream <boolean>            print tokens during generation; accepts"
+                        + " true|false|on|off, default true");
+        out.println(
+                "  --echo <boolean>              print ALL tokens to stderr; accepts"
+                        + " true|false|on|off, default false");
+        out.println(
+                "  --color <on|off|auto>         colorize thinking output in terminal (default:"
+                        + " auto)");
+        out.println(
+                "  --think <off|on|inline>       on: show thinking (default), off: hide thinking"
+                        + " from output (model still generates it), inline: thoughts to stdout");
+        out.println(
+                "  --raw-prompt                  bypass chat template and tokenize --prompt"
+                        + " directly");
+        out.println(
+                "  --cache <file>                persistent prompt cache (instruct + server) -"
+                        + " serves matching prefixes, appends new prompts");
+        out.println(
+                "  --cache-ro <file>             like --cache but read-only - serves matching"
+                        + " prefixes, never writes");
+        out.println();
+        out.println("Interactive commands:");
+        out.println("  /quit, /exit                  exit the chat");
+        out.println("  /context                      show context token usage");
+        out.println();
+        out.println("Examples:");
+        out.println("  java -jar jinfer.jar --model hf.co/unsloth/gemma-4-E2B-it-GGUF --chat");
+        out.println(
+                "  java -jar jinfer.jar --model hf.co/unsloth/gemma-4-E2B-it-GGUF --mmproj"
+                        + " hf.co/unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf --server");
+        out.println("  java -jar jinfer.jar pull hf.co/ggml-org/stories15M_MOE:Q8_0");
+        out.println("  java -jar jinfer.jar --model LFM2.5-1.2B-Instruct-Q8_0.gguf --chat");
+        out.println(
+                "  java -jar jinfer.jar --model LFM2.5-1.2B-Instruct-Q8_0.gguf --prompt \"Tell me a"
+                        + " joke\"");
+        out.println(
+                "  java -jar jinfer.jar --model LFM2.5-1.2B-Instruct-Q8_0.gguf --chat"
+                        + " --system-prompt \"You are a helpful assistant\"");
+        out.println(
+                "  java -jar jinfer.jar --model LFM2.5-1.2B-Instruct-Q8_0.gguf --server --port"
+                        + " 17325");
     }
 }
