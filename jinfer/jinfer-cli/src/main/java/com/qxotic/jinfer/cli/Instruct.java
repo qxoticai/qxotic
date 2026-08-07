@@ -64,12 +64,13 @@ final class Instruct {
                     PromptCache.of(
                             model.model(),
                             model.seed(),
-                            new PromptCache.Options(
-                                    0,
-                                    options.contextCapacity(),
-                                    Long.MAX_VALUE,
-                                    options.promptCache(),
-                                    options.promptCacheReadOnly()))) {
+                            PromptCache.Options.DEFAULTS
+                                    .withHotSessions(0) // one shot: nothing to keep warm
+                                    .withContextCapacity(options.contextCapacity())
+                                    .withBlockBudget(Long.MAX_VALUE)
+                                    .withCatalog(
+                                            options.promptCache(),
+                                            options.promptCacheReadOnly()))) {
                 if (!options.promptCacheReadOnly() && cache.blockCaching()) {
                     int before = cache.sample().blocks();
                     cache.define(prompt);

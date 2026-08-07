@@ -224,7 +224,9 @@ public record Options(
             case "on" -> true;
             case "off" -> false;
             case "auto" -> {
-                if (System.console() == null) {
+                // isTerminal(), NOT console() != null: since JDK 22 a Console is handed out even
+                // when output is redirected, and ANSI escapes in a piped file are corruption
+                if (System.console() == null || !System.console().isTerminal()) {
                     yield false;
                 }
                 String noColor = System.getenv("NO_COLOR");
