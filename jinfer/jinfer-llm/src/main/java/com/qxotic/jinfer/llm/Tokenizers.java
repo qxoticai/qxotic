@@ -36,8 +36,41 @@ public final class Tokenizers {
 
     private Tokenizers() {}
 
+    /**
+     * Tokenizers built ahead of time, keyed by GGUF INSTANCE - the hand-off from whoever baked one
+     * (the CLI's AOT preload, which owns the baked artifacts) to the port that will ask for it
+     * through {@link #fromGGUF(GGUF)}. Identity is the exact key because the baker passes the very
+     * same parsed-header object back at load time. Ports that pass their own registrations use the
+     * two-argument overload and never consult this.
+     */
+    private static final Map<GGUF, Tokenizer> BAKED = new java.util.IdentityHashMap<>();
+
+    /**
+     * Registers a tokenizer built ahead of time - by {@link #fromGGUF(GGUF)} over this same {@code
+     * gguf}, or the next load mis-tokenizes - so the coming {@code fromGGUF(gguf)} returns it
+     * instead of rebuilding vocab, merges and pre-tokenizer regexes.
+     */
+    public static void preBaked(GGUF gguf, Tokenizer tokenizer) {
+        BAKED.put(gguf, tokenizer);
+    }
+
     public static Tokenizer fromGGUF(GGUF gguf) {
+        Tokenizer baked = BAKED.get(gguf);
+        // a runtime -Djinfer.preTokenizer.* override outranks the bake: the escape hatch exists
+        // for exactly the moment a shipped tokenizer turns out wrong
+        if (baked != null && !overridesPresent()) {
+            return baked;
+        }
         return fromGGUF(gguf, b -> b);
+    }
+
+    private static boolean overridesPresent() {
+        for (String key : System.getProperties().stringPropertyNames()) {
+            if (key.startsWith("jinfer.preTokenizer.")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
