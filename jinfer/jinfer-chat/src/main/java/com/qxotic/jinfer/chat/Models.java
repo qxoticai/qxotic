@@ -1,8 +1,10 @@
 package com.qxotic.jinfer.chat;
 
 import com.qxotic.format.gguf.GGUF;
+import com.qxotic.jinfer.llm.Tokenizers;
 import com.qxotic.jinfer.telemetry.ModelLoadEvent;
 import com.qxotic.jinfer.telemetry.Telemetry;
+import com.qxotic.toknroll.Tokenizer;
 import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.lang.foreign.Arena;
@@ -88,7 +90,7 @@ public final class Models {
      * and closing it while any computation runs is a crash, not an exception).
      */
     public static LoadedModel<?> load(Path path, Arena arena) throws IOException {
-        return open(path, (fc, gguf) -> sampled(provider(gguf).load(fc, gguf, arena), gguf));
+        return load(path, arena, Map.of());
     }
 
     /**
@@ -110,6 +112,20 @@ public final class Models {
      */
     public static LoadedModel<?> load(Path path, Arena arena, Map<String, Path> companions)
             throws IOException {
+        return load(path, arena, companions, null);
+    }
+
+    /**
+     * As {@link #load(Path, Arena, Map)} with the caller's OWN tokenizer instead of the one the
+     * GGUF describes - a patched pre-tokenizer, a custom implementation, or one built ahead of time
+     * so the load skips the vocab/merges/regex build (the AOT preload). Null means the GGUF's own,
+     * which is the norm; a supplied tokenizer must keep the GGUF's token-id space ({@link
+     * Tokenizers#requireSameIdSpace}), because the embedding table and the stop-token ids are
+     * indexed by id.
+     */
+    public static LoadedModel<?> load(
+            Path path, Arena arena, Map<String, Path> companions, Tokenizer tokenizer)
+            throws IOException {
         // copyOf: immutable for the port's lifetime, and it rejects a null capability or path at
         // the boundary rather than inside a loader that cannot say which entry was wrong
         Map<String, Path> attached = Map.copyOf(companions);
@@ -118,8 +134,12 @@ public final class Models {
                 (fc, gguf) -> {
                     ModelProvider provider = provider(gguf);
                     requireAccepted(provider, gguf, attached);
+                    if (tokenizer != null) {
+                        Tokenizers.requireSameIdSpace(gguf, tokenizer);
+                    }
                     return companionSeeded(
-                            sampled(provider.load(fc, gguf, arena, attached), gguf), attached);
+                            sampled(provider.load(fc, gguf, arena, attached, tokenizer), gguf),
+                            attached);
                 });
     }
 
@@ -209,7 +229,21 @@ public final class Models {
      */
     public static LoadedModel<?> load(FileChannel fileChannel, GGUF gguf, Arena arena)
             throws IOException {
-        return sampled(provider(gguf).load(fileChannel, gguf, arena), gguf);
+        return load(fileChannel, gguf, arena, null);
+    }
+
+    /**
+     * As {@link #load(FileChannel, GGUF, Arena)} with the caller's own tokenizer - see {@link
+     * #load(Path, Arena, Map, Tokenizer)} for the contract. The AOT preload's entry: header and
+     * tokenizer come baked, only the tensor data is read.
+     */
+    public static LoadedModel<?> load(
+            FileChannel fileChannel, GGUF gguf, Arena arena, Tokenizer tokenizer)
+            throws IOException {
+        if (tokenizer != null) {
+            Tokenizers.requireSameIdSpace(gguf, tokenizer);
+        }
+        return sampled(provider(gguf).load(fileChannel, gguf, arena, Map.of(), tokenizer), gguf);
     }
 
     /**

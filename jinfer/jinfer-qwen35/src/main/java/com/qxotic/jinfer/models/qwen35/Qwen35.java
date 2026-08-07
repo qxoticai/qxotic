@@ -1121,8 +1121,20 @@ public final class Qwen35
 
     public static Qwen35 loadModel(FileChannel fileChannel, GGUF gguf, Arena arena)
             throws IOException {
+        return loadModel(fileChannel, gguf, arena, null);
+    }
+
+    /**
+     * As above with a caller-supplied tokenizer; null = the GGUF's own (see Models for the
+     * contract).
+     */
+    public static Qwen35 loadModel(
+            FileChannel fileChannel, GGUF gguf, Arena arena, Tokenizer tokenizer)
+            throws IOException {
         byte[] seed = com.qxotic.jinfer.cache.PromptCache.modelSeed(fileChannel);
-        Tokenizer tokenizer = Tokenizers.fromGGUF(gguf);
+        if (tokenizer == null) {
+            tokenizer = Tokenizers.fromGGUF(gguf);
+        }
         String arch = gguf.getString("general.architecture");
 
         int contextLength = gguf.getValue(int.class, arch + ".context_length");

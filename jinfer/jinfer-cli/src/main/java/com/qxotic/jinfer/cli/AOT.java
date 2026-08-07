@@ -8,64 +8,64 @@ import com.qxotic.jinfer.kernels.Timer;
 import com.qxotic.jinfer.llm.Tokenizers;
 import com.qxotic.toknroll.Tokenizer;
 import java.io.IOException;
+import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Objects;
 
+/**
+ * The native image's model preload ({@code -Djinfer.PreloadGGUF} at BUILD time): everything
+ * derivable from the file's header - the parsed GGUF and the tokenizer built from it - is
+ * constructed at class-init and, since {@code com.qxotic.*} initializes at image build, snapshots
+ * into the image heap as one {@link PreloadedModel} record. Both pieces are pure heap; the tensor
+ * data is still mmap'd at run time. What is NOT preloaded is the model object itself (config +
+ * weight wiring): that would need a per-port "attach weights to a preloaded model" method;
+ * deferred.
+ */
 final class AOT {
-    // The preloaded model's baked artifacts: the parsed GGUF (metadata + tensor descriptors) and
-    // the tokenizer built from it - everything derivable from the file's header, and nothing
-    // else. Built at class-init, so in a native image (com.qxotic.* initializes at build time)
-    // the whole record snapshots into the image heap: both pieces are pure heap, the tokenizer
-    // because toknroll holds no segments, channels or arenas. The tensor data is still mmap'd at
-    // runtime.
-    //
-    // What is NOT baked is the model object itself (config + weight wiring): that would need a
-    // per-port "attach weights to a preloaded model" method across all ports; deferred.
-    record PartialModel(String modelFileName, GGUF gguf, Tokenizer tokenizer) {}
 
-    private static final PartialModel PRELOADED_GGUF =
-            preLoadGGUF(System.getProperty("jinfer.PreloadGGUF"));
+    /** Matched at run time by FILENAME - the one identity a path carries. */
+    record PreloadedModel(String fileName, GGUF gguf, Tokenizer tokenizer) {}
 
-    private static PartialModel preLoadGGUF(String modelPath) {
+    private static final PreloadedModel PRELOADED =
+            preload(System.getProperty("jinfer.PreloadGGUF"));
+
+    private static PreloadedModel preload(String modelPath) {
         if (modelPath == null || modelPath.isEmpty()) {
             return null;
         }
-        try {
-            Path path = Path.of(modelPath);
-            if (!Files.exists(path) || !Files.isRegularFile(path)) {
-                throw new IllegalArgumentException("Cannot pre-load model: " + path);
-            }
-            try (FileChannel fileChannel = FileChannel.open(path, StandardOpenOption.READ)) {
-                GGUF gguf = ModelLoader.readGguf(fileChannel, path.toString());
-                return new PartialModel(
-                        path.getFileName().toString(), gguf, Tokenizers.fromGGUF(gguf));
-            }
+        Path path = Path.of(modelPath);
+        if (!Files.isRegularFile(path)) {
+            throw new IllegalArgumentException("cannot pre-load model: " + path);
+        }
+        try (FileChannel fileChannel = FileChannel.open(path, StandardOpenOption.READ)) {
+            GGUF gguf = ModelLoader.readGguf(fileChannel, path.toString());
+            return new PreloadedModel(
+                    path.getFileName().toString(), gguf, Tokenizers.fromGGUF(gguf));
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            throw new java.io.UncheckedIOException("cannot pre-load model: " + path, e);
         }
     }
 
     /**
-     * The preloaded model when {@code modelPath} matches the baked one, else null (the caller falls
-     * back to {@link Models#load(Path)}). Hands the baked tokenizer to {@link Tokenizers} first, so
-     * the port's own {@code fromGGUF(gguf)} finds it by instance identity and only the tensor data
-     * is read.
+     * The preloaded model when {@code modelPath} names it, else null (the caller falls back to
+     * {@link Models#load(Path)}). The preloaded header and tokenizer are plain arguments, so only
+     * the tensor data is read - unless a runtime {@code -Djinfer.preTokenizer.*} override is
+     * present, in which case the tokenizer rebuilds so the override applies: the escape hatch
+     * outranks the preload, and that precedence is this caller's policy, not the library's.
      */
-    static LoadedModel<?> tryUsePreLoaded(Path modelPath) throws IOException {
-        PartialModel preLoaded = PRELOADED_GGUF;
-        if (preLoaded == null) {
+    static LoadedModel<?> tryUsePreloaded(Path modelPath) throws IOException {
+        PreloadedModel preloaded = PRELOADED;
+        if (preloaded == null
+                || !Objects.equals(modelPath.getFileName().toString(), preloaded.fileName())) {
             return null;
         }
-        if (!Objects.equals(modelPath.getFileName().toString(), preLoaded.modelFileName())) {
-            return null;
-        }
-        Tokenizers.preBaked(preLoaded.gguf(), preLoaded.tokenizer());
+        Tokenizer tokenizer = Tokenizers.hasPropertyOverrides() ? null : preloaded.tokenizer();
         try (var timer = Timer.log("Load tensors from pre-loaded model");
                 FileChannel fileChannel = FileChannel.open(modelPath, StandardOpenOption.READ)) {
-            return Models.load(fileChannel, preLoaded.gguf(), java.lang.foreign.Arena.global());
+            return Models.load(fileChannel, preloaded.gguf(), Arena.global(), tokenizer);
         }
     }
 }
