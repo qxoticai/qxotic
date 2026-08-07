@@ -88,9 +88,10 @@ final class AOT {
                 if (!gguf.containsKey("tokenizer.ggml.tokens")) {
                     throw new IllegalArgumentException(
                             path
-                                    + " has no vocabulary - it is a companion (mmproj, sidecar),"
-                                    + " not a model. Companions are parsed by their ports at load"
-                                    + " (~10 ms); preload lists models only.");
+                                    + " has no vocabulary, so there is nothing worth baking: the"
+                                    + " preload serves text models, whose cost is the vocabulary"
+                                    + " build. Companions (mmproj, sidecars) and vocabulary-less"
+                                    + " models are parsed at load, cheaply.");
                 }
                 long headerLength = gguf.getTensorDataOffset();
                 HeaderDigests digests = digestHeader(fileChannel, headerLength);
