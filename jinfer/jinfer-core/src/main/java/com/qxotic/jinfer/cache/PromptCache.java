@@ -243,6 +243,15 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
          */
         void tail(int token);
 
+        /**
+         * Bulk adoption of tokens a pass ingested directly on the state - the SPECULATIVE shape,
+         * where verified tokens land in a batch and control returns once: pass exactly what the
+         * state now holds beyond the prompt. One block at the frontier for a per-token codec; joins
+         * the one-block reply commit for a residue codec. Same lifetime rule as {@link #tail}:
+         * valid only until the pass returns.
+         */
+        void adopt(int[] tokens);
+
         /** Positions served from cache instead of prefill. */
         int restored();
 
@@ -338,6 +347,19 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
                 session.adopt(token);
             } else {
                 reply.add(token); // committed as one block when the pass ends
+            }
+        }
+
+        @Override
+        public void adopt(int[] tokens) {
+            if (!live) {
+                throw new IllegalStateException(
+                        "the serving is over: adopt() is valid only until the pass returns");
+            }
+            if (tailPerToken) {
+                session.adopt(tokens); // one block at the frontier - the speculative shape
+            } else {
+                for (int token : tokens) reply.add(token); // joins the one-block reply commit
             }
         }
 

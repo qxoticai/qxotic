@@ -60,7 +60,12 @@ final class Generation {
         // borrowed weights: the server loaded the model and keeps its arena. The engine's cache
         // owns the whole catalog policy - a codec-less model warns and ignores the file,
         // read-only problems degrade, read-write fail loudly.
-        this.engine = new ChatEngine(chatModel, config.modelName(), config.cache());
+        this.engine =
+                new ChatEngine(
+                        chatModel,
+                        config.modelName(),
+                        config.cache(),
+                        config.limits().speculationDepth());
         boolean usable = catalog != null && engine.blockCaching();
         this.saveCatalog = usable && !config.cache().readOnly();
         if (usable) {

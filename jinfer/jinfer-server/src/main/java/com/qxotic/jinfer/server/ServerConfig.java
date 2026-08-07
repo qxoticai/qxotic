@@ -83,11 +83,13 @@ public record ServerConfig(
             long maxBodyBytes,
             boolean grammar,
             Duration writeTimeout,
-            Duration requestTimeout) {
+            Duration requestTimeout,
+            int speculationDepth) {
 
         /** What the {@code jinfer.server*} properties defaulted to. */
         public static final Limits DEFAULTS =
-                new Limits(16, 4, 32L << 20, true, Duration.ofSeconds(30), Duration.ofSeconds(300));
+                new Limits(
+                        16, 4, 32L << 20, true, Duration.ofSeconds(30), Duration.ofSeconds(300), 4);
 
         public Limits {
             if (threads < 1) throw new IllegalArgumentException("threads " + threads);
@@ -101,6 +103,9 @@ public record ServerConfig(
             if (requestTimeout == null || requestTimeout.isNegative()) {
                 throw new IllegalArgumentException("requestTimeout " + requestTimeout);
             }
+            if (speculationDepth < 1 || speculationDepth > 8) {
+                throw new IllegalArgumentException("speculationDepth " + speculationDepth);
+            }
         }
 
         /** Retry-After seconds suggested when the queue is full. */
@@ -112,33 +117,85 @@ public record ServerConfig(
         // constructor at each -> a transposed threads/queueCapacity pair that still compiles
         public Limits withThreads(int threads) {
             return new Limits(
-                    threads, queueCapacity, maxBodyBytes, grammar, writeTimeout, requestTimeout);
+                    threads,
+                    queueCapacity,
+                    maxBodyBytes,
+                    grammar,
+                    writeTimeout,
+                    requestTimeout,
+                    speculationDepth);
         }
 
         public Limits withQueueCapacity(int queueCapacity) {
             return new Limits(
-                    threads, queueCapacity, maxBodyBytes, grammar, writeTimeout, requestTimeout);
+                    threads,
+                    queueCapacity,
+                    maxBodyBytes,
+                    grammar,
+                    writeTimeout,
+                    requestTimeout,
+                    speculationDepth);
         }
 
         public Limits withMaxBodyBytes(long maxBodyBytes) {
             return new Limits(
-                    threads, queueCapacity, maxBodyBytes, grammar, writeTimeout, requestTimeout);
+                    threads,
+                    queueCapacity,
+                    maxBodyBytes,
+                    grammar,
+                    writeTimeout,
+                    requestTimeout,
+                    speculationDepth);
         }
 
         /** These limits with grammar requests allowed or refused. */
         public Limits withGrammar(boolean grammar) {
             return new Limits(
-                    threads, queueCapacity, maxBodyBytes, grammar, writeTimeout, requestTimeout);
+                    threads,
+                    queueCapacity,
+                    maxBodyBytes,
+                    grammar,
+                    writeTimeout,
+                    requestTimeout,
+                    speculationDepth);
         }
 
         public Limits withWriteTimeout(Duration writeTimeout) {
             return new Limits(
-                    threads, queueCapacity, maxBodyBytes, grammar, writeTimeout, requestTimeout);
+                    threads,
+                    queueCapacity,
+                    maxBodyBytes,
+                    grammar,
+                    writeTimeout,
+                    requestTimeout,
+                    speculationDepth);
         }
 
         public Limits withRequestTimeout(Duration requestTimeout) {
             return new Limits(
-                    threads, queueCapacity, maxBodyBytes, grammar, writeTimeout, requestTimeout);
+                    threads,
+                    queueCapacity,
+                    maxBodyBytes,
+                    grammar,
+                    writeTimeout,
+                    requestTimeout,
+                    speculationDepth);
+        }
+
+        /**
+         * Draft tokens per verify when the model carries a speculation companion; inert otherwise.
+         * A ceiling, not a default: requests do not choose it, because it never changes what a
+         * request receives - only how fast (verification keeps the sampler's own distribution).
+         */
+        public Limits withSpeculationDepth(int speculationDepth) {
+            return new Limits(
+                    threads,
+                    queueCapacity,
+                    maxBodyBytes,
+                    grammar,
+                    writeTimeout,
+                    requestTimeout,
+                    speculationDepth);
         }
     }
 }

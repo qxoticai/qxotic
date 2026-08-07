@@ -3,7 +3,7 @@ package com.qxotic.jinfer.llm;
 import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.toknroll.IntSequence;
 import java.util.Set;
-import java.util.function.IntConsumer;
+import java.util.function.IntPredicate;
 
 /**
  * A model that can decode with its OWN draft-and-verify loop - self-speculation via an attached
@@ -26,11 +26,12 @@ public interface SpeculativeDecoding<S extends RuntimeState> {
 
     /**
      * Decodes from the state's frontier (the prompt is already ingested) until a stop token, the
-     * {@code maxTokens} budget (negative = as much as the context allows), or a verify block that
-     * no longer fits the context. {@code sampler} samples the TARGET distribution at every verified
-     * row and the draft is kept only while it agrees - distribution-correct without draft
-     * probabilities (llama.cpp's sample-and-accept). {@code onToken} fires per EMITTED token, for
-     * streaming.
+     * {@code maxTokens} budget (negative = as much as the context allows), the {@code timeoutNanos}
+     * deadline (a duration; 0 = none; checked per verify iteration), a verify block that no longer
+     * fits the context, or {@code onToken} returning false (the caller's abort - a disconnected
+     * client). {@code sampler} samples the TARGET distribution at every verified row and the draft
+     * is kept only while it agrees - distribution-correct without draft probabilities (llama.cpp's
+     * sample-and-accept). {@code onToken} fires per EMITTED token, for streaming.
      *
      * <p>Sampled output is not RNG-identical to the plain loop (rejected drafts consume draws), and
      * even greedy output can differ from plain greedy on near-ties: verify rows are computed in a
@@ -40,10 +41,11 @@ public interface SpeculativeDecoding<S extends RuntimeState> {
     Speculation speculate(
             S state,
             int maxTokens,
+            long timeoutNanos,
             Set<Integer> stops,
             Sampler sampler,
             int depth,
-            IntConsumer onToken);
+            IntPredicate onToken);
 
     /**
      * What a speculative pass produced. {@code emitted} excludes the stop token ({@code stopToken}

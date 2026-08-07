@@ -1299,10 +1299,11 @@ public final class Gemma4
     public SpeculativeDecoding.Speculation speculate(
             State state,
             int maxTokens,
+            long timeoutNanos,
             Set<Integer> stops,
             Sampler sampler,
             int depth,
-            java.util.function.IntConsumer onToken) {
+            java.util.function.IntPredicate onToken) {
         int capacity = state.contextCapacity();
         int budget =
                 maxTokens < 0
@@ -1310,7 +1311,7 @@ public final class Gemma4
                         : Math.min(maxTokens, capacity - state.position());
         Gemma4Speculative.Result r =
                 Gemma4Speculative.generate(
-                        this, state, budget, stops, depth, sampler, onToken, null);
+                        this, state, budget, timeoutNanos, stops, depth, sampler, onToken, null);
         return new SpeculativeDecoding.Speculation(
                 com.qxotic.toknroll.IntSequence.wrap(
                         r.tokens().stream().mapToInt(Integer::intValue).toArray()),
