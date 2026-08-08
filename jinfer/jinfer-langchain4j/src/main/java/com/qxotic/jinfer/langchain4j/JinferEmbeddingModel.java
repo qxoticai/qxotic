@@ -81,8 +81,9 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
 
     /**
      * Token counting over THIS model's tokenizer: exact on text - for sizing splitter chunks
-     * against {@code contextLength}. The embedder adds {@code sequenceSuffix} tokens per embedded
-     * segment (one EOS on Qwen3) on top of the text count.
+     * against {@code contextLength}. The embedder adds its framing tokens per embedded segment
+     * (sequencePrefix + sequenceSuffix: one trailing EOS on Qwen3, one leading BOS on
+     * LFM2.5-Embedding) on top of the text count.
      */
     public dev.langchain4j.model.TokenCountEstimator tokenCountEstimator() {
         return new Estimators(loaded.tokenizer(), null);

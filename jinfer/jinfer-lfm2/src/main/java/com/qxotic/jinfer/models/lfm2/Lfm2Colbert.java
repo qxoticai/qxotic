@@ -1,10 +1,8 @@
 package com.qxotic.jinfer.models.lfm2;
 
-import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.Model;
 import com.qxotic.jinfer.chat.Reranker;
 import com.qxotic.toknroll.Tokenizer;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -94,75 +92,28 @@ final class Lfm2Colbert implements Reranker<Lfm2.State> {
                     "ColBERT scores by MaxSim over token embeddings and has no instruction slot -"
                             + " drop instruction(...), or use a judge reranker (Qwen3-Reranker)");
         }
-        int outDim = model.config().embeddingLengthOut();
         int[][] seqs = new int[1 + documents.size()][];
         seqs[0] = querySequence(query);
         for (int i = 0; i < documents.size(); i++) {
             seqs[i + 1] = documentSequence(documents.get(i));
         }
-
-        // group whole sequences up to the batch cap (the bidirectional forward's law), embed,
-        // and score each document the moment its rows are read - the query is sequence 0, so its
-        // matrix exists before any document needs it
-        int cap = Math.min(state.batchCapacity(), state.contextCapacity());
-        float[][] queryRows = null;
-        int total = 0, seq = 0;
+        // the query is sequence 0, so its matrix exists before any document is visited; each
+        // document scores the moment its rows are read, keeping sink order = input order
+        int outDim = model.config().embeddingLengthOut();
         float[] row = new float[outDim];
-        state.enter();
-        try {
-            while (seq < seqs.length) {
-                int end = seq, tokens = 0;
-                while (end < seqs.length && tokens + seqs[end].length <= cap) {
-                    tokens += seqs[end].length;
-                    end++;
-                }
-                if (end == seq) {
-                    throw new IllegalArgumentException(
-                            "document "
-                                    + (seq - 1)
-                                    + " is "
-                                    + seqs[seq].length
-                                    + " tokens and bidirectional attention forwards a sequence"
-                                    + " whole (the cap here is "
-                                    + cap
-                                    + ") - raise -Djinfer.batchCapacity/contextLength, or chunk"
-                                    + " the document smaller");
-                }
-                total += tokens;
-                int[] ids = new int[tokens];
-                int[] len = new int[end - seq];
-                int at = 0;
-                for (int i = seq; i < end; i++) {
-                    System.arraycopy(seqs[i], 0, ids, at, seqs[i].length);
-                    at += seqs[i].length;
-                    len[i - seq] = seqs[i].length;
-                }
-                state.reset();
-                model.ingest(
-                        state,
-                        new Batch(
-                                new Batch.Input.Sequences(new Batch.Input.Tokens(ids), len),
-                                Batch.Outputs.ALL));
-                int rowStart = 0;
-                for (int i = 0; i < len.length; i++) {
-                    float[][] rows = new float[len[i]][];
-                    for (int r = 0; r < len[i]; r++) {
+        float[][][] queryRows = new float[1][][];
+        return model.forEachSequence(
+                state,
+                seqs,
+                (index, rowStart) -> {
+                    float[][] rows = new float[seqs[index].length][];
+                    for (int r = 0; r < rows.length; r++) {
                         model.colbertRow(state, rowStart + r, row);
                         rows[r] = row.clone();
                     }
-                    if (seq + i == 0) {
-                        queryRows = rows; // every query row counts, pads included
-                    } else {
-                        sink.accept(maxSim(queryRows, rows, seqs[seq + i]));
-                    }
-                    rowStart += len[i];
-                }
-                seq = end;
-            }
-        } finally {
-            state.exit();
-        }
-        return total;
+                    if (index == 0) queryRows[0] = rows; // every query row counts, pads included
+                    else sink.accept(maxSim(queryRows[0], rows, seqs[index]));
+                });
     }
 
     /** {@code Σ_q max_d (q·d)} over L2-normalized rows; skiplisted DOCUMENT tokens drop out. */
@@ -203,13 +154,5 @@ final class Lfm2Colbert implements Reranker<Lfm2.State> {
         seq[1] = documentMarker;
         System.arraycopy(ids, 0, seq, 2, n - 2);
         return seq;
-    }
-
-    /** For tests: the tokenized shapes are part of the recipe. */
-    List<int[]> frame(String query, List<String> documents) {
-        List<int[]> seqs = new ArrayList<>();
-        seqs.add(querySequence(query));
-        for (String d : documents) seqs.add(documentSequence(d));
-        return seqs;
     }
 }
