@@ -701,19 +701,17 @@ final class Generation {
     }
 
     /**
-     * The request's generation budget. There is no server-side ceiling on it: the state's ring
-     * already bounds it (the generator clamps to capacity minus the prompt) and --request-timeout
-     * bounds the time, so a third fence around the same field was a knob nobody had to reason
-     * about.
+     * The request's generation budget, RESOLUTION ONLY - range checking is {@code
+     * Validation.validateGenerationParams}'s job, which every endpoint runs before this class sees
+     * the request (and {@code ChatEngine.Request} re-checks at the library boundary). There is no
+     * server-side ceiling on it: the state's ring already bounds it (the generator clamps to
+     * capacity minus the prompt) and --request-timeout bounds the time, so a third fence around the
+     * same field was a knob nobody had to reason about.
      */
     private int maxOutputTokens(Map<String, Object> request) {
-        int maxTokens =
-                Values.intValue(
-                        request.getOrDefault("max_tokens", request.get("max_completion_tokens")),
-                        config.defaults().maxOutputTokens());
-        Validation.require(Values.intValue(request.get("n"), 1) == 1, "Only n=1 is supported");
-        Validation.require(0 <= maxTokens, "Invalid argument: max_tokens must be non-negative");
-        return maxTokens;
+        return Values.intValue(
+                request.getOrDefault("max_tokens", request.get("max_completion_tokens")),
+                config.defaults().maxOutputTokens());
     }
 
     /**

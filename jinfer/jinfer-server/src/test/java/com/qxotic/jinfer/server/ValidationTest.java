@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -83,6 +85,40 @@ class ValidationTest {
                         "response_format",
                         Map.of("type", "json_schema"));
         assertTrue(rejects(request).contains("json_schema"));
+    }
+
+    /**
+     * -1 means context-bounded everywhere in jinfer (ChatEngine.Request, the CLI's -n), and it is
+     * the CLI's default when -n is not given - so it must pass here too, sent explicitly OR as the
+     * fallback for an omitted max_tokens. This guard once required {@code 0 <=} of the RESOLVED
+     * value, which made a stock {@code --server} reject every request that did not name a budget.
+     */
+    @Test
+    void contextBoundedMaxTokensIsAccepted() {
+        ServerConfig config = ServerTestSupport.config(Path.of("model.gguf"));
+        Map<String, Object> request = new HashMap<>(user("hi"));
+        request.put("model", config.modelName());
+        request.put("max_tokens", -1);
+        Validation.validateGenerationParams(request, config);
+
+        // omitted max_tokens resolves to the server's own default, which may itself be -1
+        ServerConfig unbounded =
+                new ServerConfig(
+                        config.modelName(),
+                        config.bind(),
+                        new ServerConfig.Defaults(config.defaults().sampling(), -1, true, false),
+                        config.limits(),
+                        config.cache());
+        Map<String, Object> omitted = new HashMap<>(user("hi"));
+        omitted.put("model", config.modelName());
+        Validation.validateGenerationParams(omitted, unbounded);
+
+        request.put("max_tokens", -2); // below the sentinel stays malformed
+        IllegalArgumentException e =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> Validation.validateGenerationParams(request, config));
+        assertTrue(e.getMessage().contains("max_tokens"), e.getMessage());
     }
 
     @Test
