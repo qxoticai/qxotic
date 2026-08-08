@@ -139,7 +139,7 @@ ChatResponse seen = gemma.call(new Prompt(UserMessage.builder()
 
 ## Embeddings
 
-`JinferEmbeddingModel` runs an embedding GGUF (the Qwen3-Embedding family) in-process, so the whole RAG stack - vectors, store, chat - stays in one JVM with zero egress.
+`JinferEmbeddingModel` runs an embedding GGUF (Qwen3-Embedding, LFM2.5-Embedding) in-process, so the whole RAG stack - vectors, store, chat - stays in one JVM with zero egress.
 Inputs are packed into context-sized ragged batches: one forward pass embeds many segments, so ingesting hundreds of chunks costs a handful of prefills, not hundreds.
 Usage reports exact token counts; `EmbeddingOptions.getDimensions()` truncates vectors.
 

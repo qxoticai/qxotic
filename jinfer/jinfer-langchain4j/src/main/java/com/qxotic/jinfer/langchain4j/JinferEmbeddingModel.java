@@ -21,10 +21,10 @@ import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * langchain4j {@link EmbeddingModel} backed by jinfer: in-process CPU embeddings over a local GGUF
- * (the Qwen3-Embedding family; any embedding port on the classpath loads via the same architecture
- * dispatch as the chat models). {@link #embedAll} packs segments into ragged batches bounded by the
- * context - one forward pass embeds many segments under segmented attention - so RAG ingestion of
- * hundreds of chunks costs a handful of prefills, not hundreds.
+ * (Qwen3-Embedding, LFM2.5-Embedding; any embedding port on the classpath loads via the same
+ * architecture dispatch as the chat models). {@link #embedAll} packs segments into ragged batches
+ * bounded by the context - one forward pass embeds many segments under segmented attention - so RAG
+ * ingestion of hundreds of chunks costs a handful of prefills, not hundreds.
  *
  * <p>Token counts in the returned usage are exact (the real tokenizer, not an estimate). Run with
  * jinfer's JVM flags: {@code --enable-preview --add-modules jdk.incubator.vector

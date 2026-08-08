@@ -32,7 +32,7 @@ public class JinferEmbeddingAutoConfiguration {
         if (!StringUtils.hasText(properties.model())) {
             throw new IllegalStateException(
                     "spring.ai.jinfer.embedding.model is required: an embedding GGUF (e.g."
-                            + " Qwen3-Embedding) as a local path or a hub ref");
+                            + " Qwen3-Embedding or LFM2.5-Embedding) as a local path or a hub ref");
         }
         JinferEmbeddingModel.Builder builder =
                 JinferEmbeddingModel.builder()

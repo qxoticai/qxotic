@@ -31,7 +31,12 @@ import java.util.Arrays;
 import java.util.Map;
 import java.util.Set;
 
-public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weights, Lfm2.State> {
+public final class Lfm2
+        implements LanguageModel<Lfm2.Configuration, Lfm2.Weights, Lfm2.State>,
+                EmbeddingModel<Lfm2.Configuration, Lfm2.Weights, Lfm2.State> {
+
+    /** llama.cpp's pooling_type enum value for CLS - pool the sequence's FIRST row (its BOS). */
+    static final int POOLING_CLS = 2;
 
     private final Configuration configuration;
     private final Tokenizer tokenizer;
@@ -99,10 +104,14 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
                             });
                 else forward(s, ids, 0, from, n);
             }
-            case com.qxotic.jinfer.Batch.Input.Sequences seq ->
+            case com.qxotic.jinfer.Batch.Input.Sequences seq -> {
+                if (configuration.causalAttention)
                     throw new UnsupportedOperationException(
-                            "LFM2.5 is generative: packed sequences (batched embedding) not"
-                                    + " supported");
+                            "this LFM2.5 checkpoint is generative: batched embedding needs the"
+                                    + " embedding checkpoint (LFM2.5-Embedding, attention.causal ="
+                                    + " false)");
+                forwardSegmented(s, seq.tokens().ids(), seq.seqLen(), n);
+            }
             case com.qxotic.jinfer.Batch.Input.Embeddings e ->
                     throw new UnsupportedOperationException(
                             "LFM2.5 is text-only: embedding input is not supported");
@@ -614,6 +623,286 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
         }
     }
 
+    // === Bidirectional embedding (the LFM2.5-Embedding checkpoints) ===
+
+    /**
+     * Segmented NON-causal forward for packed sequences: RoPE positions restart per sequence, every
+     * token attends to its WHOLE sequence (and never a neighbour), the short-conv history zeroes at
+     * each sequence start. Each sequence is entirely inside this chunk - {@link #embed} groups on
+     * sequence boundaries - so no KV cache is read or written.
+     */
+    private void forwardSegmented(State state, int[] tokens, int[] seqLen, int n) {
+        int[] posOf = new int[n];
+        int[] segRow0 = new int[seqLen.length];
+        int at = 0;
+        for (int g = 0; g < seqLen.length; g++) {
+            segRow0[g] = at;
+            for (int p = 0; p < seqLen[g]; p++) posOf[at++] = p;
+        }
+        if (at != n)
+            throw new IllegalArgumentException("seqLen sums to " + at + ", batch has " + n);
+        RoPE.fill(
+                state.ropeCos,
+                state.ropeSin,
+                posOf,
+                n,
+                configuration.headSizeFull / 2,
+                weights.rope());
+        embed(state, tokens, 0, n);
+        for (int l = 0; l < configuration.numberOfLayers; l++) {
+            if (configuration.isRecurrentLayer(l))
+                shortConvMixerCentered(state, l, n, segRow0, seqLen);
+            else attentionBidirectional(state, l, n, segRow0, seqLen);
+            feedForward(state, l, n);
+        }
+    }
+
+    /**
+     * The NON-causal short-conv mixer: llama.cpp pads symmetrically for a CENTERED window when
+     * {@code attention.causal=false} ("causal prepends the state, non-causal pads symmetrically"),
+     * so with {@code dConv} taps the window is {@code [s-pad .. s-pad+dConv-1]}, {@code pad =
+     * (dConv-1)/2}, zeros beyond the sequence's own edges. Same pre-norm/in-proj/out-proj as {@link
+     * #shortConvMixer}; only the scan differs, and no rolling state is read or written.
+     */
+    private void shortConvMixerCentered(
+            State state, int l, int seqLen, int[] segRow0, int[] segLen) {
+        int dim = configuration.embeddingLength;
+        float eps = configuration.rmsNormEps;
+        ShortConvWeights sc = weights.layers[l].shortConv();
+        F32FloatTensor preNorm = weights.layers[l].attnNorm();
+        Parallel.forRows(
+                seqLen,
+                s ->
+                        rmsnorm(
+                                state.xb,
+                                (long) s * dim,
+                                state.residual,
+                                (long) s * dim,
+                                preNorm,
+                                dim,
+                                eps));
+        sc.inProj().gemm(state.xb, dim, state.shortConvTmp, 3 * dim, seqLen, 3 * dim, dim);
+
+        int dConv = configuration.shortConvLCache, pad = (dConv - 1) / 2;
+        F32FloatTensor kernel = sc.kernel(); // per channel: dConv taps at c*dConv + k
+        FloatTensor tmp = state.shortConvTmp, out = state.xb2;
+        // materialize bx = B*x in place over the B block first: the centered window reads
+        // NEIGHBOUR rows, so every bx must exist before any output row is computed
+        for (int s = 0; s < seqLen; s++) {
+            int tmpOff = s * 3 * dim;
+            for (int c = 0; c < dim; c++) {
+                tmp.setFloat(
+                        tmpOff + c, tmp.getFloat(tmpOff + c) * tmp.getFloat(tmpOff + 2 * dim + c));
+            }
+        }
+        for (int g = 0; g < segRow0.length; g++) {
+            int r0 = segRow0[g], rEnd = r0 + segLen[g];
+            for (int s = r0; s < rEnd; s++) {
+                int tmpOff = s * 3 * dim, outOff = s * dim;
+                for (int c = 0; c < dim; c++) {
+                    float cg = tmp.getFloat(tmpOff + dim + c);
+                    int kBase = c * dConv;
+                    float sum = 0f;
+                    for (int k = 0; k < dConv; k++) {
+                        int row = s - pad + k; // zero beyond this sequence's own edges
+                        if (row >= r0 && row < rEnd) {
+                            sum += tmp.getFloat(row * 3 * dim + c) * kernel.getFloat(kBase + k);
+                        }
+                    }
+                    out.setFloat(outOff + c, cg * sum);
+                }
+            }
+        }
+        sc.outProj().gemm(state.xb2, dim, state.shortConvOut, dim, seqLen, dim, dim);
+        state.residual.addInPlace(0, state.shortConvOut, 0, seqLen * dim);
+    }
+
+    /**
+     * As {@link #attention} up to the flash call, then one NON-causal prefill per sequence over its
+     * own rows (gathered to scratch, like Qwen3's segmented attention). No cache writes: nothing
+     * ever reads them - each sequence is complete in this chunk.
+     */
+    private void attentionBidirectional(
+            State state, int l, int seqLen, int[] segRow0, int[] segLen) {
+        Configuration config = configuration;
+        int dim = config.embeddingLength;
+        float eps = config.rmsNormEps;
+        int headSize = config.headSizeFull, halfHead = headSize / 2;
+        int queryDim = config.queryDim(), kvDim = config.kvDim(l);
+        int nKvHeads = config.numberOfKeyValueHeadsPerLayer[l],
+                kvMul = config.numberOfHeads / nKvHeads;
+        AttentionWeights attn = weights.layers[l].attention();
+
+        F32FloatTensor attNormW = weights.layers[l].attnNorm();
+        Parallel.forRows(
+                seqLen,
+                s ->
+                        rmsnorm(
+                                state.xb,
+                                (long) s * dim,
+                                state.residual,
+                                (long) s * dim,
+                                attNormW,
+                                dim,
+                                eps));
+        attn.wq().gemm(state.xb, dim, state.query, queryDim, seqLen, queryDim, dim);
+        headNormRope(
+                state.query,
+                queryDim,
+                config.numberOfHeads,
+                headSize,
+                halfHead,
+                attn.qNorm(),
+                seqLen,
+                state.ropeCos,
+                state.ropeSin);
+        FloatTensor bK = state.batchK[l], bV = state.batchV[l];
+        attn.wk().gemm(state.xb, dim, bK, kvDim, seqLen, kvDim, dim);
+        if (attn.wv() != null) attn.wv().gemm(state.xb, dim, bV, kvDim, seqLen, kvDim, dim);
+        else bK.copyTo(0, bV, 0, seqLen * kvDim);
+        headNormRope(
+                bK,
+                kvDim,
+                nKvHeads,
+                headSize,
+                halfHead,
+                attn.kNorm(),
+                seqLen,
+                state.ropeCos,
+                state.ropeSin);
+
+        float scale = 1.0f / (float) Math.sqrt(headSize);
+        EmbedScratch es = state.embedScratch(config);
+        for (int g = 0; g < segRow0.length; g++) {
+            int r0 = segRow0[g], sl = segLen[g];
+            state.query.copyTo((long) r0 * queryDim, es.segQ, 0, sl * queryDim);
+            bK.copyTo((long) r0 * kvDim, es.segK, 0, sl * kvDim);
+            bV.copyTo((long) r0 * kvDim, es.segV, 0, sl * kvDim);
+            FlashAttention.bidirectionalPrefill(
+                    es.segQ,
+                    es.segOut,
+                    es.segK,
+                    es.segV,
+                    config.numberOfHeads,
+                    sl,
+                    headSize,
+                    kvDim,
+                    queryDim,
+                    kvMul,
+                    scale);
+            es.segOut.copyTo(0, state.xbK, (long) r0 * queryDim, sl * queryDim);
+        }
+
+        attn.wo().gemm(state.xbK, queryDim, state.xb2, dim, seqLen, dim, queryDim);
+        F32FloatTensor postAttW = weights.layers[l].postAttnNorm();
+        if (postAttW != null)
+            Parallel.forRows(
+                    seqLen,
+                    s ->
+                            rmsnorm(
+                                    state.xb2,
+                                    (long) s * dim,
+                                    state.xb2,
+                                    (long) s * dim,
+                                    postAttW,
+                                    dim,
+                                    eps));
+        state.residual.addInPlace(0, state.xb2, 0, seqLen * dim);
+    }
+
+    /**
+     * The sentence embedding: final-norm the pooled row, L2-normalize - CLS pooling reads the
+     * sequence's FIRST retained row (its BOS). {@code index} addresses retained rows exactly as
+     * {@code logits}' output does. The returned tensor is a REUSED per-state buffer.
+     */
+    @Override
+    public FloatTensor pool(State s, int index) {
+        int dim = configuration.embeddingLength;
+        int row = s.lastChunkLen - s.outputCount + index;
+        FloatTensor out = s.embedScratch(configuration).embOut;
+        rmsnorm(
+                out,
+                0,
+                s.residual,
+                (long) row * dim,
+                weights.finalNorm,
+                dim,
+                configuration.rmsNormEps);
+        double ss = 0;
+        for (int i = 0; i < dim; i++) {
+            float v = out.getFloat(i);
+            ss += (double) v * v;
+        }
+        float inv = ss > 0 ? (float) (1.0 / Math.sqrt(ss)) : 0f;
+        out.mapInPlace(0, dim, v -> v * inv);
+        return out;
+    }
+
+    /**
+     * Bidirectional embedding overrides the generic chunk-streaming default: a sequence attends to
+     * ALL of its tokens, so it must be forwarded WHOLE - groups re-cut on sequence boundaries,
+     * capped by the batch. Emits each sequence's CLS (first-row) embedding, in input order.
+     */
+    @Override
+    public void embed(
+            State state,
+            com.qxotic.jinfer.Batch.Input.Sequences seqs,
+            java.util.function.Consumer<FloatTensor> sink) {
+        if (configuration.causalAttention || configuration.poolingType != POOLING_CLS)
+            throw new UnsupportedOperationException(
+                    "this LFM2.5 checkpoint is generative, not an embedder - load"
+                            + " LFM2.5-Embedding (pooling_type=CLS, attention.causal=false)");
+        state.enter(); // one claim across all groups, like the interface default
+        try {
+            embedGroups(state, seqs, sink);
+        } finally {
+            state.exit();
+        }
+    }
+
+    private void embedGroups(
+            State state,
+            com.qxotic.jinfer.Batch.Input.Sequences seqs,
+            java.util.function.Consumer<FloatTensor> sink) {
+        int[] len = seqs.seqLen();
+        int[] ids = seqs.tokens().ids();
+        int cap = Math.min(state.batchCapacity, state.contextCapacity);
+        int seq = 0, at = 0;
+        while (seq < len.length) {
+            int end = seq, tokens = 0;
+            while (end < len.length && tokens + len[end] <= cap) {
+                tokens += len[end];
+                end++;
+            }
+            if (end == seq)
+                throw new IllegalArgumentException(
+                        "sequence "
+                                + seq
+                                + " is "
+                                + len[seq]
+                                + " tokens and bidirectional attention forwards a sequence whole"
+                                + " (the cap here is "
+                                + cap
+                                + ") - raise -Djinfer.batchCapacity/contextLength above it, or"
+                                + " chunk the text smaller");
+            state.reset(); // groups are independent: positions and conv history restart
+            int[] groupLen = Arrays.copyOfRange(len, seq, end);
+            int[] groupIds = Arrays.copyOfRange(ids, at, at + tokens);
+            ingest(
+                    state,
+                    new Batch(
+                            new Batch.Input.Sequences(new Batch.Input.Tokens(groupIds), groupLen),
+                            Batch.Outputs.ALL));
+            int row = 0;
+            for (int i = 0; i < groupLen.length; i++) {
+                sink.accept(embedding(state, row)); // CLS: the sequence FIRST row (its BOS)
+                row += groupLen[i];
+            }
+            seq = end;
+            at += tokens;
+        }
+    }
+
     // === Configuration ===
 
     public record Configuration(
@@ -633,8 +922,18 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
             int expertUsedCount,
             int expertFeedForwardLength,
             int leadingDenseBlockCount,
-            int expertGatingFunc)
+            int expertGatingFunc,
+            boolean causalAttention,
+            int poolingType)
             implements Config {
+
+        /** The widest attention kvDim, for scratch that must fit any layer. */
+        public int maxKvDim() {
+            int max = 0;
+            for (int l = 0; l < numberOfLayers; l++) max = Math.max(max, kvDim(l));
+            return max;
+        }
+
         public int headSize() {
             return headSizeFull;
         }
@@ -725,6 +1024,13 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
         final int[] moeExpertCounts, moeRowTopE;
         final float[] moeRowTopP;
         final Moe.Routing moeRouting;
+
+        EmbedScratch embedScratch; // lazy: only the embedding checkpoints ever pay for it
+
+        EmbedScratch embedScratch(Configuration config) {
+            if (embedScratch == null) embedScratch = new EmbedScratch(config, batchCapacity, arena);
+            return embedScratch;
+        }
 
         /**
          * Recycles this allocation for a fresh sequence: cursor to 0 and the RECURRENT buffers
@@ -817,6 +1123,23 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
         }
     }
 
+    /**
+     * Per-state scratch for the bidirectional embedding path, from the state's own arena (freed
+     * with the state): per-sequence Q/K/V/out gathers plus the pooled-output row.
+     */
+    static final class EmbedScratch {
+        final FloatTensor segQ, segK, segV, segOut, embOut;
+
+        EmbedScratch(Configuration config, int batchCapacity, Arena arena) {
+            int queryDim = config.queryDim(), kvDim = config.maxKvDim();
+            this.segQ = FloatTensor.allocateF32(arena, batchCapacity * queryDim);
+            this.segOut = FloatTensor.allocateF32(arena, batchCapacity * queryDim);
+            this.segK = FloatTensor.allocateF32(arena, batchCapacity * kvDim);
+            this.segV = FloatTensor.allocateF32(arena, batchCapacity * kvDim);
+            this.embOut = FloatTensor.allocateF32(arena, config.embeddingLength());
+        }
+    }
+
     // === Loading ===
 
     public static Lfm2 loadModel(Path ggufPath, Arena arena) throws IOException {
@@ -865,6 +1188,11 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
                 gguf.getValueOrDefault(
                         int.class, arch + ".leading_dense_block_count", numberOfLayers);
         int expertGatingFunc = gguf.getValueOrDefault(int.class, arch + ".expert_gating_func", 1);
+        // the embedding checkpoints (LFM2.5-Embedding) declare non-causal attention + CLS pooling;
+        // generative GGUFs carry neither key
+        boolean causalAttention =
+                gguf.getValueOrDefault(boolean.class, arch + ".attention.causal", true);
+        int poolingType = gguf.getValueOrDefault(int.class, arch + ".pooling_type", 0);
 
         int[] feedForwardLength;
         Object ffnRaw = gguf.getValue(Object.class, arch + ".feed_forward_length");
@@ -902,7 +1230,9 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
                         expertUsedCount,
                         expertFeedForwardLength,
                         leadingDenseBlockCount,
-                        expertGatingFunc);
+                        expertGatingFunc,
+                        causalAttention,
+                        poolingType);
 
         Map<String, GGMLTensorEntry> tensors = ModelLoader.loadTensors(fileChannel, gguf, arena);
         return new Lfm2(
