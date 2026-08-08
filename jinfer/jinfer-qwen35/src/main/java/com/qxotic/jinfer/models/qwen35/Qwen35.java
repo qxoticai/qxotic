@@ -23,7 +23,11 @@ import static com.qxotic.jinfer.Norms.rmsnorm;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.*;
+import com.qxotic.jinfer.cache.PromptCache;
+import com.qxotic.jinfer.cache.StateCodec;
+import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.LoadedModel;
+import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
 import com.qxotic.toknroll.Tokenizer;
@@ -32,7 +36,9 @@ import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.Arrays;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 public final class Qwen35
@@ -145,7 +151,7 @@ public final class Qwen35
                 });
     }
 
-    private com.qxotic.jinfer.chat.TurnTemplate turnTemplate; // memoized: stateless, model-lifetime
+    private TurnTemplate turnTemplate; // memoized: stateless, model-lifetime
 
     /**
      * This model bundled with the three text facts its GGUF carries - what an
@@ -158,24 +164,24 @@ public final class Qwen35
                 chatTemplateSource,
                 stopTokens(),
                 modelSeed,
-                turnTemplate().map(t -> (com.qxotic.jinfer.chat.ChatTemplate) t),
-                com.qxotic.jinfer.chat.LoadedModel.SamplingDefaults.NONE);
+                turnTemplate().map(t -> (ChatTemplate) t),
+                LoadedModel.SamplingDefaults.NONE);
     }
 
-    public java.util.Optional<com.qxotic.jinfer.chat.TurnTemplate> turnTemplate() {
+    public Optional<TurnTemplate> turnTemplate() {
         if (turnTemplate == null) turnTemplate = new Qwen35TurnTemplate(tokenizer());
-        return java.util.Optional.of(turnTemplate);
+        return Optional.of(turnTemplate);
     }
 
     private Qwen35StateCodec stateCodec; // memoized: config-driven, model-lifetime
 
     @Override
-    public java.util.Optional<com.qxotic.jinfer.cache.StateCodec<Qwen35.State>> stateCodec() {
+    public Optional<StateCodec<Qwen35.State>> stateCodec() {
         // The gated-delta-net S matrices are a LARGE true recurrence (~2.1MB per linear layer),
         // so blocks are COARSE: define() commits one residue per prompt; serving restores defined
         // prefixes and never writes. Live sessions (the hot layer) still give append-only reuse.
         if (stateCodec == null) stateCodec = new Qwen35StateCodec(configuration);
-        return java.util.Optional.of(stateCodec);
+        return Optional.of(stateCodec);
     }
 
     /** The turn-delimiter / eos ids that terminate generation (convenience for callers/tests). */
@@ -592,7 +598,7 @@ public final class Qwen35
         w.moeRouter[layer].gemm(
                 state.moeInputB, dim, state.moeRouterB, numExperts, seqLen, numExperts, dim);
         int[] counts = state.moeExpertCounts;
-        java.util.Arrays.fill(counts, 0);
+        Arrays.fill(counts, 0);
         for (int s = 0; s < seqLen; s++) {
             state.moeRouterB.softmaxInPlace(s * numExperts, numExperts);
             int[] topE = state.moeTopExperts;
@@ -892,7 +898,7 @@ public final class Qwen35
     // === State (single-token scratch; KV cache + conv ring + delta-net state carry across ingests)
     // ===
 
-    public static final class State extends com.qxotic.jinfer.BaseState {
+    public static final class State extends BaseState {
         final int contextCapacity, batchCapacity;
         int lastRowOffset;
 
@@ -913,7 +919,7 @@ public final class Qwen35
             }
             for (float[] recurrent : ssmState) {
                 if (recurrent != null) {
-                    java.util.Arrays.fill(recurrent, 0f);
+                    Arrays.fill(recurrent, 0f);
                 }
             }
         }
@@ -1131,7 +1137,7 @@ public final class Qwen35
     public static Qwen35 loadModel(
             FileChannel fileChannel, GGUF gguf, Arena arena, Tokenizer tokenizer)
             throws IOException {
-        byte[] seed = com.qxotic.jinfer.cache.PromptCache.modelSeed(fileChannel);
+        byte[] seed = PromptCache.modelSeed(fileChannel);
         if (tokenizer == null) {
             tokenizer = Tokenizers.fromGGUF(gguf);
         }

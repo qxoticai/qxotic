@@ -11,6 +11,7 @@ import com.qxotic.jinfer.testkit.CodecOracleScenario;
 import com.qxotic.jinfer.testkit.ModelFixture;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Assumptions;
@@ -104,7 +105,7 @@ public final class Lfm2ToolOracle {
                         assistantCall("get_weather", Map.of("city", "Paris")),
                         toolResult("18C, sunny")));
 
-        var searchArgs = new java.util.LinkedHashMap<String, Object>();
+        var searchArgs = new LinkedHashMap<String, Object>();
         searchArgs.put("q", "rivers");
         searchArgs.put("top_k", 3L);
         o.compareToolsExpected(

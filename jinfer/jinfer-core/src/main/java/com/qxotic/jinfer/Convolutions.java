@@ -1,6 +1,8 @@
 package com.qxotic.jinfer;
 
 import java.nio.ByteOrder;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.VectorSpecies;
 
@@ -35,8 +37,8 @@ public final class Convolutions {
      */
     private static final boolean PROFILE = Boolean.getBoolean("jinfer.convProfile");
 
-    private static final java.util.Map<String, long[]> CENSUS =
-            PROFILE ? new java.util.concurrent.ConcurrentHashMap<>() : java.util.Map.of();
+    private static final Map<String, long[]> CENSUS =
+            PROFILE ? new ConcurrentHashMap<>() : Map.of();
 
     static {
         if (PROFILE) Runtime.getRuntime().addShutdownHook(new Thread(Convolutions::dumpCensus));

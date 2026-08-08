@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import jdk.jfr.Recording;
@@ -66,7 +67,7 @@ class InferenceVocabularyTest {
 
         List<RecordedEvent> events;
         try (RecordingFile file = new RecordingFile(jfr)) {
-            events = new java.util.ArrayList<>();
+            events = new ArrayList<>();
             while (file.hasMoreEvents()) events.add(file.readEvent());
         }
         assertEquals(2, events.size());

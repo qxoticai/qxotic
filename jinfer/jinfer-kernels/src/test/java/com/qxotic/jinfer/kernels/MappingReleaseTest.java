@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.qxotic.format.gguf.GGMLType;
 import com.qxotic.format.gguf.TensorEntry;
 import java.io.IOException;
+import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -51,7 +52,7 @@ class MappingReleaseTest {
                     ch,
                     0,
                     List.of(TensorEntry.create("t", new long[] {256}, GGMLType.F32, 0)),
-                    java.lang.foreign.Arena.ofAuto());
+                    Arena.ofAuto());
         }
     }
 

@@ -18,6 +18,7 @@ import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 import dev.langchain4j.model.chat.request.json.JsonStringSchema;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.chat.response.CompleteToolCall;
+import dev.langchain4j.model.chat.response.PartialThinking;
 import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
 import dev.langchain4j.model.output.FinishReason;
 import java.nio.file.Files;
@@ -217,8 +218,7 @@ abstract class AbstractToolIT {
                             }
 
                             @Override
-                            public void onPartialThinking(
-                                    dev.langchain4j.model.chat.response.PartialThinking partial) {
+                            public void onPartialThinking(PartialThinking partial) {
                                 thinking.append(partial.text());
                             }
 

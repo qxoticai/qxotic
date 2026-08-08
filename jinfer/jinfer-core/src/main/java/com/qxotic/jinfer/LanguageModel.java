@@ -1,6 +1,7 @@
 package com.qxotic.jinfer;
 
 import com.qxotic.jinfer.cache.StateCodec;
+import java.lang.ref.Reference;
 import java.util.Optional;
 
 /**
@@ -39,7 +40,7 @@ public interface LanguageModel<C extends Config, W, S extends RuntimeState> exte
         } finally {
             base.exit();
         }
-        java.lang.ref.Reference.reachabilityFence(this);
+        Reference.reachabilityFence(this);
         return logits;
     }
 

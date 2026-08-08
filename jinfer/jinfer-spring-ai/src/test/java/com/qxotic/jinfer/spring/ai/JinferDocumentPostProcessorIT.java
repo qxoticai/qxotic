@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.testkit.ModelFixture;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -15,6 +16,7 @@ import org.junit.jupiter.api.TestInstance;
 import org.springframework.ai.content.Media;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.rag.Query;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.util.MimeTypeUtils;
 
 /**
@@ -128,9 +130,8 @@ class JinferDocumentPostProcessorIT {
                 new Document(
                         new Media(
                                 MimeTypeUtils.IMAGE_PNG,
-                                new org.springframework.core.io.ByteArrayResource(
-                                        new byte[] {1, 2, 3})),
-                        java.util.Map.of());
+                                new ByteArrayResource(new byte[] {1, 2, 3})),
+                        Map.of());
         IllegalArgumentException e =
                 assertThrows(
                         IllegalArgumentException.class,

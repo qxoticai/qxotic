@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
+import jdk.jfr.Event;
 import jdk.jfr.EventType;
 import jdk.jfr.ValueDescriptor;
 import org.junit.jupiter.api.Test;
@@ -94,14 +95,14 @@ class EventSchemaTest {
      */
     @Test
     void everyLabelFollowsTheJdkConvention() {
-        List<Class<? extends jdk.jfr.Event>> events =
+        List<Class<? extends Event>> events =
                 List.of(
                         InferenceEvent.class,
                         ModelLoadEvent.class,
                         RuntimeEvent.class,
                         SpeculationEvent.class,
                         DecodeEvent.class);
-        for (Class<? extends jdk.jfr.Event> event : events) {
+        for (Class<? extends Event> event : events) {
             EventType type = EventType.getEventType(event);
             check(type.getLabel(), type.getName());
             for (ValueDescriptor field : type.getFields()) {

@@ -1,6 +1,10 @@
 package com.qxotic.jinfer.server;
 
+import com.qxotic.jinfer.cache.PromptCache;
+import com.qxotic.jinfer.chat.JsonCodec;
+import com.qxotic.jinfer.chat.Values;
 import com.qxotic.jinfer.llm.Sampling;
+import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -26,12 +30,11 @@ final class ServerTestSupport {
     static ServerConfig config(Path gguf, Path promptCache, boolean readOnly) {
         return new ServerConfig(
                 gguf.getFileName().toString(),
-                new java.net.InetSocketAddress("127.0.0.1", 0),
+                new InetSocketAddress("127.0.0.1", 0),
                 new ServerConfig.Defaults(
                         new Sampling(1f, 0.95f, 40, 0.05f, 42L), 2048, true, false),
                 ServerConfig.Limits.DEFAULTS,
-                com.qxotic.jinfer.cache.PromptCache.Options.DEFAULTS.withCatalog(
-                        promptCache, readOnly));
+                PromptCache.Options.DEFAULTS.withCatalog(promptCache, readOnly));
     }
 
     /**
@@ -97,18 +100,12 @@ final class ServerTestSupport {
 
     /** The assistant message content of a chat-completions response. */
     static String messageContent(String body) {
-        Object parsed = com.qxotic.jinfer.chat.JsonCodec.parse(body);
+        Object parsed = JsonCodec.parse(body);
         Object choice =
-                com.qxotic.jinfer.chat.Values.asArray(
-                                com.qxotic.jinfer.chat.Values.asObject(parsed, "response")
-                                        .get("choices"),
-                                "choices")
+                Values.asArray(Values.asObject(parsed, "response").get("choices"), "choices")
                         .get(0);
-        return com.qxotic.jinfer.chat.Values.stringValue(
-                com.qxotic.jinfer.chat.Values.asObject(
-                                com.qxotic.jinfer.chat.Values.asObject(choice, "choice")
-                                        .get("message"),
-                                "message")
+        return Values.stringValue(
+                Values.asObject(Values.asObject(choice, "choice").get("message"), "message")
                         .get("content"),
                 "");
     }

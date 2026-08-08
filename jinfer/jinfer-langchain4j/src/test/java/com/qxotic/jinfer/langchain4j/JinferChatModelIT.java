@@ -9,15 +9,21 @@ import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.model.chat.listener.ChatModelListener;
+import dev.langchain4j.model.chat.listener.ChatModelResponseContext;
 import dev.langchain4j.model.chat.request.ChatRequest;
+import dev.langchain4j.model.chat.request.ToolChoice;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
 import dev.langchain4j.model.output.FinishReason;
+import dev.langchain4j.service.AiServices;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
@@ -151,7 +157,7 @@ class JinferChatModelIT {
                                         UserMessage.from(
                                                 "What is the weather in Paris? Use the tool."))
                                 .toolSpecifications(weather)
-                                .toolChoice(dev.langchain4j.model.chat.request.ToolChoice.NONE)
+                                .toolChoice(ToolChoice.NONE)
                                 .build());
         assertTrue(
                 !none.aiMessage().hasToolExecutionRequests(),
@@ -168,8 +174,7 @@ class JinferChatModelIT {
     void aiServicesStructuredExtraction() {
         // supportedCapabilities() advertises RESPONSE_FORMAT_JSON_SCHEMA, so AiServices uses the
         // grammar-constrained schema path for the POJO - not prompt-based JSON begging
-        PersonExtractor extractor =
-                dev.langchain4j.service.AiServices.create(PersonExtractor.class, model);
+        PersonExtractor extractor = AiServices.create(PersonExtractor.class, model);
         Person p = extractor.extract("Johann is 42 years old and lives in Munich.");
         assertEquals("Johann", p.name());
         assertEquals(42, p.age());
@@ -198,7 +203,7 @@ class JinferChatModelIT {
                                         UserMessage.from(
                                                 "Count from 1 to 20 as plain digits separated by"
                                                         + " spaces."))
-                                .stopSequences(java.util.List.of("5"))
+                                .stopSequences(List.of("5"))
                                 .build());
         assertEquals(FinishReason.STOP, r.finishReason());
         assertTrue(!r.aiMessage().text().contains("5"), r.aiMessage().text());
@@ -227,12 +232,11 @@ class JinferChatModelIT {
 
     @Test
     void chatModelListenerReceivesRequestAndResponse() {
-        var seen = new java.util.concurrent.atomic.AtomicReference<ChatResponse>();
+        var seen = new AtomicReference<ChatResponse>();
         var listener =
-                new dev.langchain4j.model.chat.listener.ChatModelListener() {
+                new ChatModelListener() {
                     @Override
-                    public void onResponse(
-                            dev.langchain4j.model.chat.listener.ChatModelResponseContext ctx) {
+                    public void onResponse(ChatModelResponseContext ctx) {
                         seen.set(ctx.chatResponse());
                     }
                 };
@@ -241,7 +245,7 @@ class JinferChatModelIT {
                         .modelPath(ModelFixture.LFM25_350M_Q8.require())
                         .contextLength(1024)
                         .maxOutputTokens(32)
-                        .listeners(java.util.List.of(listener))
+                        .listeners(List.of(listener))
                         .build()) {
             listened.chat(UserMessage.from("Say hi."));
             assertNotNull(seen.get(), "listener saw the response");

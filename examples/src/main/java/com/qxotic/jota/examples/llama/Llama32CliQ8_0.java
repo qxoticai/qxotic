@@ -687,7 +687,7 @@ public final class Llama32CliQ8_0 {
             Tensor[] wDown,
             Tensor[] wUp,
             RopeTables rope,
-            java.util.Set<Tensor> q8_0Tensors) {}
+            Set<Tensor> q8_0Tensors) {}
 
     private static final class Llama32Model {
         private static final String GEMV_KERNEL_NAME = "llama.gemv.fp32";
@@ -884,8 +884,8 @@ public final class Llama32CliQ8_0 {
                                     Integer.getInteger(
                                             "com.qxotic.llama.kernel.threads",
                                             Runtime.getRuntime().availableProcessors()));
-                    private static final java.util.concurrent.ExecutorService EXEC =
-                            java.util.concurrent.Executors.newFixedThreadPool(
+                    private static final ExecutorService EXEC =
+                            Executors.newFixedThreadPool(
                                     THREADS,
                                     r -> {
                                         Thread t = new Thread(r, "llama-gemv-q8_0");
@@ -1122,7 +1122,7 @@ public final class Llama32CliQ8_0 {
                         return result;
                     }
 
-                    private static void parallelForRows(int rows, java.util.function.IntConsumer body) {
+                    private static void parallelForRows(int rows, IntConsumer body) {
                         int workers = Math.min(THREADS, rows);
                         if (workers <= 1) {
                             for (int row = 0; row < rows; row++) {
@@ -1131,8 +1131,8 @@ public final class Llama32CliQ8_0 {
                             return;
                         }
                         int chunk = (rows + workers - 1) / workers;
-                        java.util.List<java.util.concurrent.Future<?>> futures =
-                                new java.util.ArrayList<>(workers);
+                        List<Future<?>> futures =
+                                new ArrayList<>(workers);
                         for (int w = 0; w < workers; w++) {
                             int start = w * chunk;
                             int end = Math.min(rows, start + chunk);
@@ -1147,13 +1147,13 @@ public final class Llama32CliQ8_0 {
                                                 }
                                             }));
                         }
-                        for (java.util.concurrent.Future<?> future : futures) {
+                        for (Future<?> future : futures) {
                             try {
                                 future.get();
                             } catch (InterruptedException ex) {
                                 Thread.currentThread().interrupt();
                                 throw new RuntimeException("GEMV Q8_0 worker interrupted", ex);
-                            } catch (java.util.concurrent.ExecutionException ex) {
+                            } catch (ExecutionException ex) {
                                 throw new RuntimeException("GEMV Q8_0 worker failed", ex.getCause());
                             }
                         }
@@ -1578,8 +1578,8 @@ public final class Llama32CliQ8_0 {
                                     Integer.getInteger(
                                             "com.qxotic.llama.kernel.threads",
                                             Runtime.getRuntime().availableProcessors()));
-                    private static final java.util.concurrent.ExecutorService EXEC =
-                            java.util.concurrent.Executors.newFixedThreadPool(
+                    private static final ExecutorService EXEC =
+                            Executors.newFixedThreadPool(
                                     THREADS,
                                     r -> {
                                         Thread t = new Thread(r, "llama-gemv-down");
@@ -1604,7 +1604,7 @@ public final class Llama32CliQ8_0 {
                         long yBase = y.byteOffset();
                         int lanes = SPECIES.length();
 
-                        java.util.function.IntConsumer body = row -> {
+                        IntConsumer body = row -> {
                             long rowBase = aBase + (long) row * n * Float.BYTES;
                             int col = 0;
                             FloatVector acc0 = FloatVector.zero(SPECIES);
@@ -1650,7 +1650,7 @@ public final class Llama32CliQ8_0 {
                         parallelForRows(m, body);
                     }
 
-                    private static void parallelForRows(int rows, java.util.function.IntConsumer body) {
+                    private static void parallelForRows(int rows, IntConsumer body) {
                         int workers = Math.min(THREADS, rows);
                         if (workers <= 1) {
                             for (int row = 0; row < rows; row++) {
@@ -1659,8 +1659,8 @@ public final class Llama32CliQ8_0 {
                             return;
                         }
                         int chunk = (rows + workers - 1) / workers;
-                        java.util.List<java.util.concurrent.Future<?>> futures =
-                                new java.util.ArrayList<>(workers);
+                        List<Future<?>> futures =
+                                new ArrayList<>(workers);
                         for (int w = 0; w < workers; w++) {
                             int start = w * chunk;
                             int end = Math.min(rows, start + chunk);
@@ -1675,13 +1675,13 @@ public final class Llama32CliQ8_0 {
                                                 }
                                             }));
                         }
-                        for (java.util.concurrent.Future<?> future : futures) {
+                        for (Future<?> future : futures) {
                             try {
                                 future.get();
                             } catch (InterruptedException ex) {
                                 Thread.currentThread().interrupt();
                                 throw new RuntimeException("GEMV-down worker interrupted", ex);
-                            } catch (java.util.concurrent.ExecutionException ex) {
+                            } catch (ExecutionException ex) {
                                 throw new RuntimeException(
                                         "GEMV-down worker failed", ex.getCause());
                             }
@@ -1691,7 +1691,7 @@ public final class Llama32CliQ8_0 {
                 """;
         // language=java
         private static final String SWIGLU_KERNEL_SOURCE =
-                """
+"""
                 package com.qxotic.jota.tensor.jit;
 
                 import java.util.stream.IntStream;
@@ -1704,6 +1704,11 @@ public final class Llama32CliQ8_0 {
                 import java.nio.ByteOrder;
                 import jdk.incubator.vector.FloatVector;
                 import jdk.incubator.vector.VectorSpecies;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.function.IntConsumer;
 
                 public final class LlamaSwigluKernel implements JavaKernel {
                     private static final VectorSpecies<Float> SPECIES = FloatVector.SPECIES_PREFERRED;
@@ -1763,7 +1768,7 @@ public final class Llama32CliQ8_0 {
                         });
                     }
                 }
-                """;
+""";
         private static final int C_GEMV_OMP_MIN_ROWS_DOWN =
                 Integer.getInteger("com.qxotic.llama.cgemv.omp.minRows.down", 64);
         private static final int C_GEMV_OMP_MIN_ROWS_LOGITS =

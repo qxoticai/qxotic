@@ -12,6 +12,7 @@ import com.qxotic.toknroll.Tokenizer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * The Harmony reply grammar as a {@link ReplyParser} - the one model family whose reply is not
@@ -140,9 +141,9 @@ final class HarmonyReplyParser implements ReplyParser {
     }
 
     @Override
-    public java.util.Set<String> outputChannels() {
+    public Set<String> outputChannels() {
         // the display-routing identity: everything that reaches the reply's content text
-        return java.util.Set.of("final", "commentary");
+        return Set.of("final", "commentary");
     }
 
     @Override

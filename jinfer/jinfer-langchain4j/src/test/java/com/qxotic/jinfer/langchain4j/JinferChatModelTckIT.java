@@ -3,9 +3,16 @@ package com.qxotic.jinfer.langchain4j;
 import com.qxotic.jinfer.testkit.ModelFixture;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.common.AbstractChatModelIT;
+import dev.langchain4j.model.chat.request.ChatRequest;
+import dev.langchain4j.model.chat.request.ChatRequestParameters;
+import dev.langchain4j.model.chat.request.DefaultChatRequestParameters;
+import dev.langchain4j.model.chat.response.ChatResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.condition.EnabledIf;
 
@@ -30,7 +37,7 @@ class JinferChatModelTckIT extends AbstractChatModelIT {
 
     private static JinferChatModel model;
 
-    @org.junit.jupiter.api.AfterAll
+    @AfterAll
     static void unload() {
         if (model != null) model.close();
     }
@@ -55,20 +62,17 @@ class JinferChatModelTckIT extends AbstractChatModelIT {
         return List.of(
                 new ChatModel() {
                     @Override
-                    public dev.langchain4j.model.chat.response.ChatResponse chat(
-                            dev.langchain4j.model.chat.request.ChatRequest request) {
+                    public ChatResponse chat(ChatRequest request) {
                         return m.chat(request);
                     }
 
                     @Override
-                    public dev.langchain4j.model.chat.response.ChatResponse doChat(
-                            dev.langchain4j.model.chat.request.ChatRequest request) {
+                    public ChatResponse doChat(ChatRequest request) {
                         return m.chat(request);
                     }
 
                     @Override
-                    public dev.langchain4j.model.chat.request.ChatRequestParameters
-                            defaultRequestParameters() {
+                    public ChatRequestParameters defaultRequestParameters() {
                         return m.defaultRequestParameters();
                     }
                 });
@@ -78,17 +82,16 @@ class JinferChatModelTckIT extends AbstractChatModelIT {
     // arguments, so JUnit's autoCloseArguments never touches them; without tracking, each one's
     // states wait for a GC that never comes (the 30+GB TCK fork ballooning)
     private static final List<JinferChatModel> created =
-            java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+            Collections.synchronizedList(new ArrayList<>());
 
-    @org.junit.jupiter.api.AfterAll
+    @AfterAll
     static void unloadCreated() {
         created.forEach(JinferChatModel::close);
         created.clear();
     }
 
     @Override
-    protected ChatModel createModelWith(
-            dev.langchain4j.model.chat.request.ChatRequestParameters parameters) {
+    protected ChatModel createModelWith(ChatRequestParameters parameters) {
         JinferChatModel m =
                 JinferChatModel.builder()
                         .modelPath(MODEL)
@@ -100,12 +103,9 @@ class JinferChatModelTckIT extends AbstractChatModelIT {
     }
 
     @Override
-    protected dev.langchain4j.model.chat.request.ChatRequestParameters
-            createIntegrationSpecificParameters(int maxOutputTokens) {
+    protected ChatRequestParameters createIntegrationSpecificParameters(int maxOutputTokens) {
         // no provider-specific parameters class: the plain defaults are the integration's shape
-        return dev.langchain4j.model.chat.request.DefaultChatRequestParameters.builder()
-                .maxOutputTokens(maxOutputTokens)
-                .build();
+        return DefaultChatRequestParameters.builder().maxOutputTokens(maxOutputTokens).build();
     }
 
     // ---- capabilities this provider rejects by design ----

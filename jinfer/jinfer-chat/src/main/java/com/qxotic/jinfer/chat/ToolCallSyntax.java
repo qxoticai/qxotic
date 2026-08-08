@@ -53,7 +53,7 @@ public final class ToolCallSyntax {
             case null -> false;
             case Boolean b -> b;
             case String str -> !str.isEmpty();
-            case java.util.Map<?, ?> m -> !m.isEmpty();
+            case Map<?, ?> m -> !m.isEmpty();
             case List<?> l -> !l.isEmpty();
             case Number n -> n.doubleValue() != 0;
             default -> true;

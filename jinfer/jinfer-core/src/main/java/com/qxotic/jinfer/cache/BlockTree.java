@@ -1,11 +1,18 @@
 package com.qxotic.jinfer.cache;
 
 import com.qxotic.jinfer.RuntimeState;
+import java.io.IOException;
+import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.channels.FileChannel;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -151,17 +158,16 @@ public final class BlockTree<S extends RuntimeState> {
      * GGUF (full-content hashing of multi-GB weights is not worth it — length + head/tail covers
      * metadata, tensor table and data edges).
      */
-    public static byte[] modelSeed(java.nio.file.Path gguf) {
-        try (var ch =
-                java.nio.channels.FileChannel.open(gguf, java.nio.file.StandardOpenOption.READ)) {
+    public static byte[] modelSeed(Path gguf) {
+        try (var ch = FileChannel.open(gguf, StandardOpenOption.READ)) {
             return modelSeed(ch);
-        } catch (java.io.IOException e) {
+        } catch (IOException e) {
             throw new IllegalStateException("modelSeed(" + gguf + ")", e);
         }
     }
 
     /** As {@link #modelSeed(java.nio.file.Path)} on an already-open channel (positional reads). */
-    public static byte[] modelSeed(java.nio.channels.FileChannel ch) {
+    public static byte[] modelSeed(FileChannel ch) {
         try {
             MessageDigest d = MessageDigest.getInstance("SHA-256");
             long size = ch.size();
@@ -178,7 +184,7 @@ public final class BlockTree<S extends RuntimeState> {
                 d.update(buf);
             }
             return d.digest();
-        } catch (java.io.IOException | NoSuchAlgorithmException e) {
+        } catch (IOException | NoSuchAlgorithmException e) {
             throw new IllegalStateException("modelSeed(channel)", e);
         }
     }
@@ -338,17 +344,15 @@ public final class BlockTree<S extends RuntimeState> {
      * {@link FrozenBlocks} artifact holding any number of prompts, shared prefixes stored once. A
      * cache layered over a frozen base re-freezes base and growth into one merged artifact.
      */
-    public void freeze(java.nio.file.Path out) throws java.io.IOException {
-        if (base != null
-                && java.nio.file.Files.exists(out)
-                && java.nio.file.Files.isSameFile(base.file(), out)) {
+    public void freeze(Path out) throws IOException {
+        if (base != null && Files.exists(out) && Files.isSameFile(base.file(), out)) {
             // frozen blocks' mem are slices of that very file's mapping: TRUNCATE_EXISTING would
             // pull the bytes out from under the copy loop (SIGBUS / corrupt artifact)
             throw new IllegalStateException(
                     "freeze(" + out + ") would rewrite the mounted artifact; use appendTo");
         }
         List<Block> order = new ArrayList<>(blocks.size());
-        java.util.ArrayDeque<Block> queue = new java.util.ArrayDeque<>();
+        ArrayDeque<Block> queue = new ArrayDeque<>();
         queue.add(sentinel);
         while (!queue.isEmpty()) { // BFS: parents before children
             Block b = queue.poll();
@@ -363,16 +367,15 @@ public final class BlockTree<S extends RuntimeState> {
         }
         long indexOffset = off;
         long total = indexOffset + (long) order.size() * FrozenBlocks.INDEX_ENTRY_BYTES;
-        try (java.nio.channels.FileChannel ch =
-                        java.nio.channels.FileChannel.open(
+        try (FileChannel ch =
+                        FileChannel.open(
                                 out,
-                                java.nio.file.StandardOpenOption.CREATE,
-                                java.nio.file.StandardOpenOption.TRUNCATE_EXISTING,
-                                java.nio.file.StandardOpenOption.READ,
-                                java.nio.file.StandardOpenOption.WRITE);
-                java.lang.foreign.Arena arena = java.lang.foreign.Arena.ofConfined()) {
-            MemorySegment map =
-                    ch.map(java.nio.channels.FileChannel.MapMode.READ_WRITE, 0, total, arena);
+                                StandardOpenOption.CREATE,
+                                StandardOpenOption.TRUNCATE_EXISTING,
+                                StandardOpenOption.READ,
+                                StandardOpenOption.WRITE);
+                Arena arena = Arena.ofConfined()) {
+            MemorySegment map = ch.map(FileChannel.MapMode.READ_WRITE, 0, total, arena);
             ByteBuffer h =
                     map.asSlice(0, FrozenBlocks.HEADER_BYTES)
                             .asByteBuffer()
@@ -410,8 +413,8 @@ public final class BlockTree<S extends RuntimeState> {
      * {@code out}, so keys line up and grafted blocks are already on disk. Partial state (an
      * uncommitted span, the live session tail) never touches disk - blocks only exist complete.
      */
-    public void appendTo(java.nio.file.Path out) throws java.io.IOException {
-        if (!java.nio.file.Files.exists(out)) {
+    public void appendTo(Path out) throws IOException {
+        if (!Files.exists(out)) {
             // recovery path (the catalog was deleted mid-run): the whole tree re-freezes - and
             // the parsed base view must follow, or the NEXT append would compare offsets against
             // the old file's layout and refuse with a misleading "another writer" error
@@ -420,7 +423,7 @@ public final class BlockTree<S extends RuntimeState> {
             base = FrozenBlocks.open(out, modelSeed);
             return;
         }
-        if (base == null || !java.nio.file.Files.isSameFile(base.file(), out)) {
+        if (base == null || !Files.isSameFile(base.file(), out)) {
             throw new IllegalStateException(
                     "appendTo(" + out + ") needs this cache layered over that artifact");
         }

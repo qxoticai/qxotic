@@ -12,11 +12,13 @@ import com.qxotic.jinfer.jinja.CompiledTemplate;
 import com.qxotic.jinfer.jinja.JinjaRenderer;
 import com.qxotic.jinfer.llm.*;
 import com.qxotic.toknroll.IntSequence;
+import com.qxotic.toknroll.Specials;
 import com.qxotic.toknroll.Tokenizer;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalInt;
 
 /**
  * Renders a chat request to prompt tokens through the model's Jinja chat_template - the one place a
@@ -29,7 +31,7 @@ public final class JinjaChatTemplate {
 
     private final Tokenizer tokenizer;
     private final CompiledTemplate template; // null: GGUF carries none or it failed to parse
-    private final com.qxotic.toknroll.Specials specials; // compiled once per model
+    private final Specials specials; // compiled once per model
     private final List<String> specialNames; // longest-first, for the content scrub
 
     public JinjaChatTemplate(Tokenizer tokenizer, String source) {
@@ -214,7 +216,7 @@ public final class JinjaChatTemplate {
     }
 
     /** The text of a resolved special token, or "" when this vocabulary has none. */
-    private String specialString(java.util.OptionalInt id) {
+    private String specialString(OptionalInt id) {
         return id.isPresent() ? tokenizer.decode(new int[] {id.getAsInt()}) : "";
     }
 

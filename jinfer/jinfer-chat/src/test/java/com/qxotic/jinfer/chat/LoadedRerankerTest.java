@@ -10,6 +10,7 @@ import com.qxotic.jinfer.Config;
 import com.qxotic.jinfer.Model;
 import java.lang.foreign.Arena;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -78,7 +79,7 @@ class LoadedRerankerTest {
         final FakeModel model = new FakeModel();
 
         @Override
-        public com.qxotic.jinfer.Model<?, ?, FakeState> model() {
+        public Model<?, ?, FakeState> model() {
             return model;
         }
 
@@ -107,7 +108,7 @@ class LoadedRerankerTest {
 
         private static int[] fill(int n, int value) {
             int[] ids = new int[n];
-            java.util.Arrays.fill(ids, value);
+            Arrays.fill(ids, value);
             return ids;
         }
     }

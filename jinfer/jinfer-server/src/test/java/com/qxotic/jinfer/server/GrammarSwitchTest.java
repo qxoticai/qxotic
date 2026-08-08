@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.chat.JsonCodec;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.testkit.ModelFixture;
@@ -68,7 +69,7 @@ class GrammarSwitchTest {
         // any RFC 8259 document, not just an object: the grammar is full JSON, so a bare string
         // like "apples" is a correct constrained answer. What it cannot be is prose
         assertDoesNotThrow(
-                () -> com.qxotic.jinfer.chat.JsonCodec.parse(content),
+                () -> JsonCodec.parse(content),
                 "grammar-constrained output must be JSON, got: " + content);
     }
 

@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.foreign.Arena;
+import java.util.Random;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -73,7 +74,7 @@ final class SigmoidAccuracyTest {
 
     @Test
     void vectorGateMatchesTheScalarMirrorBitForBit() {
-        java.util.Random rnd = new java.util.Random(7);
+        Random rnd = new Random(7);
         int n = 300; // odd tail on purpose
         try (Arena arena = Arena.ofConfined()) {
             F32FloatTensor out = F32FloatTensor.allocate(arena, n);

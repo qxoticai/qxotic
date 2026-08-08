@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.llm.Sampling;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
@@ -178,10 +179,7 @@ class ValidationTest {
                         base.modelName(),
                         base.bind(),
                         new ServerConfig.Defaults(
-                                new com.qxotic.jinfer.llm.Sampling(9f, 1f, 0, 0f, 42L),
-                                -1,
-                                true,
-                                false),
+                                new Sampling(9f, 1f, 0, 0f, 42L), -1, true, false),
                         base.limits(),
                         base.cache());
         // says nothing about sampling: the request is well formed whatever the server's defaults

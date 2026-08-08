@@ -11,7 +11,11 @@ import com.qxotic.jinfer.Config;
 import com.qxotic.jinfer.FloatTensor;
 import com.qxotic.jinfer.LanguageModel;
 import com.qxotic.jinfer.RuntimeState;
+import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
+import com.qxotic.toknroll.Vocabulary;
+import java.lang.foreign.Arena;
+import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -108,8 +112,7 @@ final class LoadedModelTemplateTest {
         }
 
         @Override
-        public RuntimeState newState(
-                int contextCapacity, int batchCapacity, java.lang.foreign.Arena arena) {
+        public RuntimeState newState(int contextCapacity, int batchCapacity, Arena arena) {
             throw new UnsupportedOperationException();
         }
 
@@ -129,19 +132,17 @@ final class LoadedModelTemplateTest {
         INSTANCE;
 
         @Override
-        public com.qxotic.toknroll.Vocabulary vocabulary() {
+        public Vocabulary vocabulary() {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        public void encodeInto(
-                CharSequence text, int from, int to, com.qxotic.toknroll.IntSequence.Builder out) {
+        public void encodeInto(CharSequence text, int from, int to, IntSequence.Builder out) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        public int decodeBytesInto(
-                com.qxotic.toknroll.IntSequence ids, int from, java.nio.ByteBuffer out) {
+        public int decodeBytesInto(IntSequence ids, int from, ByteBuffer out) {
             throw new UnsupportedOperationException();
         }
 

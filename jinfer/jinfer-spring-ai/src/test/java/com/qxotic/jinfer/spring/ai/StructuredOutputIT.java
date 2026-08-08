@@ -10,6 +10,7 @@ import com.qxotic.jinfer.chat.JsonCodec;
 import com.qxotic.jinfer.testkit.ModelFixture;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.AfterAll;
@@ -91,7 +92,7 @@ class StructuredOutputIT {
                                 text.append(out.getText());
                             }
                         })
-                .blockLast(java.time.Duration.ofMinutes(2));
+                .blockLast(Duration.ofMinutes(2));
         Map<String, Object> json = parseJson(text.toString());
         assertTrue(json.get("answer").toString().contains("Paris"), text.toString());
         assertInstanceOf(Number.class, json.get("confidence"), text.toString());
@@ -177,8 +178,7 @@ class StructuredOutputIT {
                         .call()
                         .entity(
                                 Capital.class,
-                                org.springframework.ai.chat.client.ChatClient.EntityParamSpec
-                                        ::useProviderStructuredOutput);
+                                ChatClient.EntityParamSpec::useProviderStructuredOutput);
         assertNotNull(capital);
         assertEquals("Paris", capital.city());
         assertTrue(!capital.country().isBlank());

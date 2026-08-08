@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.toknroll.MergeRule;
+import com.qxotic.toknroll.StandardTokenType;
 import com.qxotic.toknroll.Vocabulary;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -279,7 +280,7 @@ class TiktokenReconstructionTest {
     private static int[] normalTypes(int length) {
         int[] types = new int[length];
         for (int i = 0; i < length; i++) {
-            types[i] = com.qxotic.toknroll.StandardTokenType.NORMAL.getId();
+            types[i] = StandardTokenType.NORMAL.getId();
         }
         return types;
     }

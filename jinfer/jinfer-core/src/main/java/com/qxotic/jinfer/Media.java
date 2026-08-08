@@ -1,5 +1,8 @@
 package com.qxotic.jinfer;
 
+import java.time.Duration;
+import java.util.List;
+
 /**
  * The universal decoded-signal formats for non-text input. Each is the canonical raw a decoder
  * produces — codec-free, at native parameters — and is universal over the LLM-input signal domain
@@ -36,7 +39,7 @@ public sealed interface Media permits Media.Image, Media.Audio, Media.Video {
          * a mismatch is a resampling job, not a concatenation, and silently picking one of the two
          * would play back at the wrong pitch. An empty list is not a waveform.
          */
-        public static Audio concat(java.util.List<Audio> clips) {
+        public static Audio concat(List<Audio> clips) {
             if (clips.isEmpty()) throw new IllegalArgumentException("no clips to join");
             Audio first = clips.get(0);
             int total = 0;
@@ -74,13 +77,13 @@ public sealed interface Media permits Media.Image, Media.Audio, Media.Video {
      * misalignment unconstructible. (No audio track: no consumer reads one; add it back when a
      * model ingests synchronized audio.)
      */
-    record Video(java.util.List<Frame> frames) implements Media {
+    record Video(List<Frame> frames) implements Media {
 
         /** One sampled frame at {@code timestamp} from the source's start. */
-        public record Frame(Image image, java.time.Duration timestamp) {}
+        public record Frame(Image image, Duration timestamp) {}
 
         public Video {
-            frames = java.util.List.copyOf(frames); // immutable: the ascending check holds forever
+            frames = List.copyOf(frames); // immutable: the ascending check holds forever
             for (int i = 1; i < frames.size(); i++) {
                 if (frames.get(i).timestamp().compareTo(frames.get(i - 1).timestamp()) < 0)
                     throw new IllegalArgumentException("frame timestamps must ascend");

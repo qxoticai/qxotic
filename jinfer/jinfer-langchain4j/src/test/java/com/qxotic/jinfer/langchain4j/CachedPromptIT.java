@@ -16,6 +16,7 @@ import dev.langchain4j.model.chat.response.ChatResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.Executors;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
@@ -163,7 +164,7 @@ class CachedPromptIT {
         // would reject shared-state misuse; here each owns its state) and answer coherently.
         JinferChatModel twin =
                 JinferChatModel.builder().modelPath(MODEL).contextLength(2048).build();
-        var pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        var pool = Executors.newFixedThreadPool(2);
         try {
             var a =
                     pool.submit(

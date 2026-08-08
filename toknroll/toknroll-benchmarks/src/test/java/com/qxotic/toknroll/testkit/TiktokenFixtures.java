@@ -13,6 +13,7 @@ import com.qxotic.toknroll.Toknroll;
 import com.qxotic.toknroll.Vocabulary;
 import com.qxotic.toknroll.loaders.TiktokenLoaders;
 import java.net.URISyntaxException;
+import java.net.URL;
 import java.nio.ByteBuffer;
 import java.nio.file.Path;
 import java.util.Collections;
@@ -222,8 +223,7 @@ public final class TiktokenFixtures {
     }
 
     private static Path resourcePath(String fileName) {
-        java.net.URL resource =
-                TiktokenFixtures.class.getClassLoader().getResource("tiktoken/" + fileName);
+        URL resource = TiktokenFixtures.class.getClassLoader().getResource("tiktoken/" + fileName);
         if (resource == null) {
             throw new IllegalStateException("Missing tiktoken fixture: " + fileName);
         }

@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.cache.PromptCache;
 import java.time.Duration;
+import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -50,7 +51,7 @@ class CacheGaugeRegistryTest {
     }
 
     /** GC is not synchronous; poll rather than assert once. */
-    private static boolean await(java.util.function.BooleanSupplier condition) {
+    private static boolean await(BooleanSupplier condition) {
         long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
         while (System.nanoTime() < deadline) {
             System.gc();

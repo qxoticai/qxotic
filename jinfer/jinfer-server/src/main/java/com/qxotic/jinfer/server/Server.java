@@ -8,13 +8,16 @@ import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
 import com.qxotic.jinfer.llm.Sampling;
 import com.qxotic.jinfer.telemetry.InferenceEvent;
+import com.qxotic.toknroll.IntSequence;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -70,7 +73,7 @@ public final class Server {
             http.stop(1);
             // the fixed handler pool is non-daemon and stop() does not touch it - without this an
             // embedder's JVM never exits
-            if (http.getExecutor() instanceof java.util.concurrent.ExecutorService pool) {
+            if (http.getExecutor() instanceof ExecutorService pool) {
                 pool.shutdownNow();
             }
             generation.close();
@@ -104,7 +107,7 @@ public final class Server {
      */
     private Map<String, Object> promptCacheProps() {
         var sample = generation.cacheSample();
-        Map<String, Object> props = new java.util.LinkedHashMap<>();
+        Map<String, Object> props = new LinkedHashMap<>();
         props.put("enabled", generation.blockCaching());
         props.put("hot_sessions", sample.hotSessions());
         props.put("hot_hits", sample.hotHits());
@@ -227,9 +230,7 @@ public final class Server {
                                 vocabularySize);
                         tokens[i] = (int) id;
                     }
-                    return Map.of(
-                            "content",
-                            model.tokenizer().decode(com.qxotic.toknroll.IntSequence.wrap(tokens)));
+                    return Map.of("content", model.tokenizer().decode(IntSequence.wrap(tokens)));
                 };
         jsonRoute(server, "/tokenize", "POST", tokenize); // llama.cpp paths and the
         jsonRoute(server, "/v1/tokenize", "POST", tokenize); // /v1-prefixed aliases

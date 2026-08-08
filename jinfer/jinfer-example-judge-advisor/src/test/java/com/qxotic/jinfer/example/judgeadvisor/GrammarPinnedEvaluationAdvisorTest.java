@@ -13,6 +13,7 @@ import org.springframework.ai.chat.client.ChatClientResponse;
 import org.springframework.ai.chat.client.advisor.api.CallAdvisor;
 import org.springframework.ai.chat.client.advisor.api.CallAdvisorChain;
 import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.metadata.ChatGenerationMetadata;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
@@ -39,8 +40,7 @@ class GrammarPinnedEvaluationAdvisorTest {
                                         AssistantMessage.builder()
                                                 .content(next.substring(7))
                                                 .build(),
-                                        org.springframework.ai.chat.metadata.ChatGenerationMetadata
-                                                .builder()
+                                        ChatGenerationMetadata.builder()
                                                 .finishReason("length")
                                                 .build())));
             }

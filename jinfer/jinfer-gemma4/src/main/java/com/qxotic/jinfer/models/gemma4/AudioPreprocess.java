@@ -14,6 +14,7 @@
 package com.qxotic.jinfer.models.gemma4;
 
 import com.qxotic.jinfer.Media;
+import com.qxotic.jinfer.Parallel;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -98,7 +99,7 @@ public final class AudioPreprocess {
         System.arraycopy(pcm, from, padded, padLeft, len);
 
         float[] out = new float[frames * nMel];
-        com.qxotic.jinfer.Parallel.parallelFor(
+        Parallel.parallelFor(
                 0,
                 frames,
                 t -> {

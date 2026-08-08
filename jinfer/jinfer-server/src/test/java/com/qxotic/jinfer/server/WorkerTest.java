@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -67,7 +68,7 @@ class WorkerTest {
         AtomicBoolean rejected = new AtomicBoolean();
         try {
             // one job occupies the worker, then fill the bounded queue behind it
-            List<Thread> submitters = new java.util.ArrayList<>();
+            List<Thread> submitters = new ArrayList<>();
             Thread first =
                     Thread.ofPlatform()
                             .start(() -> worker.submitAndWait(new Blocker(release, running)));

@@ -1,5 +1,9 @@
 package com.qxotic.jinfer;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+
 /**
  * One forward call's worth of work: what to feed ({@link Input}) and which final hidden states to
  * retain ({@link Outputs}). Position-agnostic: a batch is always ingested at the state's cursor
@@ -53,7 +57,7 @@ public record Batch(Input input, Outputs outputs) {
      * Prefill from a boxed id list — the prompt-construction convenience (templates build turns as
      * lists of special ids and encoded runs).
      */
-    public static Batch prefill(java.util.List<Integer> ids) {
+    public static Batch prefill(List<Integer> ids) {
         int[] a = new int[ids.size()];
         for (int i = 0; i < a.length; i++) a[i] = ids.get(i);
         return prefill(a);
@@ -125,11 +129,11 @@ public record Batch(Input input, Outputs outputs) {
      * and must never be split (throws if it exceeds the capacity). Only LAST-output token batches
      * are fused; anything else passes through unchanged.
      */
-    public static java.util.List<Batch> prepare(java.util.List<Batch> batches, int batchCapacity) {
+    public static List<Batch> prepare(List<Batch> batches, int batchCapacity) {
         if (batchCapacity <= 0)
             throw new IllegalArgumentException("batchCapacity " + batchCapacity);
-        var out = new java.util.ArrayList<Batch>(batches.size());
-        var run = new java.util.ArrayList<int[]>();
+        var out = new ArrayList<Batch>(batches.size());
+        var run = new ArrayList<int[]>();
         for (Batch b : batches) {
             if (b.input instanceof Input.Tokens t && b.outputs == Outputs.LAST) {
                 run.add(t.ids());
@@ -151,8 +155,7 @@ public record Batch(Input input, Outputs outputs) {
         return out;
     }
 
-    private static void flushRun(
-            java.util.List<int[]> run, int batchCapacity, java.util.List<Batch> out) {
+    private static void flushRun(List<int[]> run, int batchCapacity, List<Batch> out) {
         if (run.isEmpty()) return;
         int total = 0;
         for (int[] part : run) total += part.length;
@@ -166,7 +169,7 @@ public record Batch(Input input, Outputs outputs) {
         for (int from = 0; from < ids.length; from += batchCapacity) {
             out.add(
                     prefill(
-                            java.util.Arrays.copyOfRange(
+                            Arrays.copyOfRange(
                                     ids, from, Math.min(from + batchCapacity, ids.length))));
         }
     }
@@ -176,7 +179,7 @@ public record Batch(Input input, Outputs outputs) {
      * currency between chat encoding, cache fingerprints and the test harnesses, so the server and
      * the testkit stay byte-compatible.
      */
-    public static int[] tokenIds(java.util.List<Batch> batches) {
+    public static int[] tokenIds(List<Batch> batches) {
         int n = 0;
         for (Batch b : batches) n += ((Input.Tokens) b.input()).ids().length;
         int[] ids = new int[n];
@@ -190,7 +193,7 @@ public record Batch(Input input, Outputs outputs) {
     }
 
     /** Total positions a batch list ingests - {@link #count} summed, any modality. */
-    public static int positions(java.util.List<Batch> batches) {
+    public static int positions(List<Batch> batches) {
         int total = 0;
         for (Batch b : batches) total += b.count();
         return total;

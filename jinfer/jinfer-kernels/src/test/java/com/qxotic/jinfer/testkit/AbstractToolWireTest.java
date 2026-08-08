@@ -4,17 +4,20 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.format.gguf.GGUF;
+import com.qxotic.jinfer.F32FloatTensor;
 import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.TokenRuns;
+import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.kernels.ModelLoader;
 import com.qxotic.jinfer.llm.Grammar;
 import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.jinfer.llm.Tokenizers;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
+import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -22,6 +25,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -257,7 +261,7 @@ public abstract class AbstractToolWireTest {
         // output channels; content is. Fed segment by segment so the wire builders' boundaries
         // give us the ground truth for free.
         ReplyParser parser = template.parser();
-        java.util.Set<String> out = parser.outputChannels();
+        Set<String> out = parser.outputChannels();
         assertTrue(!out.isEmpty(), "every parser declares its output channels");
         for (int t : template.replySeed(hasThinkWire())) parser.feed(t);
         if (hasThinkWire()) {
@@ -323,8 +327,8 @@ public abstract class AbstractToolWireTest {
         var pin =
                 template.callGrammar(
                         List.of(
-                                new com.qxotic.jinfer.chat.Tool("get_weather", "{\"x\":1}"),
-                                new com.qxotic.jinfer.chat.Tool("get_time", "{\"x\":1}")));
+                                new Tool("get_weather", "{\"x\":1}"),
+                                new Tool("get_time", "{\"x\":1}")));
         Assumptions.assumeTrue(pin.isPresent(), "family declares no call grammar");
         TokenRuns reply = runs();
         call(reply, "get_weather", Map.of("city", "Paris"));
@@ -333,9 +337,7 @@ public abstract class AbstractToolWireTest {
         // walk the generated wire from just after the seed; every token must keep the matcher
         // alive (something still admissible) until the pin is fully matched - the released
         // region after that is the model's own
-        var probe =
-                com.qxotic.jinfer.F32FloatTensor.allocate(
-                        java.lang.foreign.Arena.ofAuto(), tokenizer.vocabulary().size());
+        var probe = F32FloatTensor.allocate(Arena.ofAuto(), tokenizer.vocabulary().size());
         int i = seed.length;
         while (!cursor.exhausted()) {
             assertTrue(i < wire.length, "wire ended before the pin was satisfied");

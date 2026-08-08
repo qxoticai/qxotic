@@ -8,6 +8,7 @@ import com.qxotic.jinfer.FloatTensor;
 import com.qxotic.jinfer.llm.SpecialTokens;
 import java.lang.foreign.Arena;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.Assumptions;
@@ -50,7 +51,7 @@ public final class Qwen3EmbedRun {
         } else {
             String text =
                     args.length > 1 ? args[1] : "The quick brown fox jumps over the lazy dog.";
-            List<Integer> t = new java.util.ArrayList<>(tk.encode(text).toList());
+            List<Integer> t = new ArrayList<>(tk.encode(text).toList());
             t.add(
                     SpecialTokens.find(tk, "<|endoftext|>")
                             .orElse(151643)); // last-token pooling: append EOS, like llama.cpp

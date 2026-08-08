@@ -9,6 +9,7 @@
 // edges, with a punctuation-dependent pause between them (as in the reference implementation).
 package com.qxotic.jinfer.models.inflect2;
 
+import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.Media;
 import com.qxotic.jinfer.SpeechModel;
 import com.qxotic.jinfer.SpeechOptions;
@@ -17,6 +18,7 @@ import com.qxotic.jinfer.models.inflect2.frontend.TextNormalizer;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.Arena;
+import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -84,11 +86,7 @@ public final class InflectTTS
      * entry ({@code Models.loadSpeech}). {@code path} is where that GGUF lives, so the lexicon
      * beside it is still found.
      */
-    public static InflectTTS load(
-            java.nio.channels.FileChannel channel,
-            com.qxotic.format.gguf.GGUF gguf,
-            Path path,
-            Arena arena)
+    public static InflectTTS load(FileChannel channel, GGUF gguf, Path path, Arena arena)
             throws IOException {
         return wrap(Inflect2.load(channel, gguf, arena), path, null);
     }
@@ -99,11 +97,7 @@ public final class InflectTTS
      * falling back to another would be the same lie as ignoring it. Unreadable throws.
      */
     public static InflectTTS load(
-            java.nio.channels.FileChannel channel,
-            com.qxotic.format.gguf.GGUF gguf,
-            Path path,
-            Arena arena,
-            Path lexicon)
+            FileChannel channel, GGUF gguf, Path path, Arena arena, Path lexicon)
             throws IOException {
         if (lexicon == null) throw new IllegalArgumentException("null lexicon");
         return wrap(Inflect2.load(channel, gguf, arena), path, lexicon);

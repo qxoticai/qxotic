@@ -9,9 +9,11 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Server-Sent-Events transport: the per-response {@link Stream} (frame encoding, flush, and the
@@ -30,7 +32,7 @@ final class Sse {
      * Opens an SSE response: sets the event-stream headers, registers it with the reaper, and wraps
      * the body so each write is timed.
      */
-    static Stream begin(HttpExchange exchange, java.time.Duration writeTimeout) throws IOException {
+    static Stream begin(HttpExchange exchange, Duration writeTimeout) throws IOException {
         Headers headers = exchange.getResponseHeaders();
         headers.set("Content-Type", "text/event-stream; charset=utf-8");
         headers.set("Cache-Control", "no-cache");
@@ -63,8 +65,7 @@ final class Sse {
      * reaper serves the process, but the threshold rides on each stream - two servers with
      * different timeouts would otherwise both get whichever started first.
      */
-    private static final java.util.concurrent.atomic.AtomicBoolean REAPER_STARTED =
-            new java.util.concurrent.atomic.AtomicBoolean();
+    private static final AtomicBoolean REAPER_STARTED = new AtomicBoolean();
 
     static void startReaper() {
         if (!REAPER_STARTED.compareAndSet(false, true)) return;

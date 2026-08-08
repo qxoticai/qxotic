@@ -4,8 +4,10 @@
 package com.qxotic.jinfer.models.gemma4;
 
 import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.Embedder;
 import com.qxotic.jinfer.FloatTensor;
 import com.qxotic.jinfer.Media;
+import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.jinfer.media.FfmpegImageDecoder;
 import com.qxotic.jinfer.media.ImageCodec;
 import com.qxotic.jinfer.media.ImageIoDecoder;
@@ -14,6 +16,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.function.ToIntBiFunction;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -133,8 +136,7 @@ public final class Gemma4VisionRun {
             throws Exception {
         Gemma4 model = Gemma4.loadModel(Path.of(textGguf), Path.of(mmproj), Arena.ofAuto());
         var tk = model.tokenizer();
-        java.util.function.ToIntBiFunction<String, Integer> spFind =
-                (n, d) -> com.qxotic.jinfer.llm.SpecialTokens.find(tk, n).orElse(d);
+        ToIntBiFunction<String, Integer> spFind = (n, d) -> SpecialTokens.find(tk, n).orElse(d);
         int bos = spFind.applyAsInt("<bos>", 2),
                 sot = spFind.applyAsInt("<|turn>", -1),
                 eot = spFind.applyAsInt("<turn|>", -1); // gemma4 turn markers (NOT <start_of_turn>)
@@ -145,9 +147,7 @@ public final class Gemma4VisionRun {
                 model.modalities(), bos, sot, eot, soi, eoi);
 
         @SuppressWarnings("unchecked")
-        var embedder =
-                (com.qxotic.jinfer.Embedder<Media.Image>)
-                        model.embedder(Media.Image.class).orElseThrow();
+        var embedder = (Embedder<Media.Image>) model.embedder(Media.Image.class).orElseThrow();
         Media.Image img = loadImage(imagePath);
         FloatTensor imgRows =
                 embedder instanceof Gemma4Vision gv

@@ -12,6 +12,7 @@ import com.qxotic.jinfer.chat.ToolCallSyntax;
 import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.media.AudioCodec;
 import com.qxotic.jinfer.media.ImageCodec;
+import com.qxotic.jinfer.media.VideoSampler;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.AiMessage;
@@ -45,6 +46,8 @@ import java.io.UncheckedIOException;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.LinkedHashMap;
@@ -64,11 +67,10 @@ final class Mappings {
     // ---- langchain4j -> jinfer (typed, for the native codec) ----
 
     static List<Message> toMessages(List<ChatMessage> messages) {
-        return toMessages(messages, com.qxotic.jinfer.media.VideoSampler.UNIFORM);
+        return toMessages(messages, VideoSampler.UNIFORM);
     }
 
-    static List<Message> toMessages(
-            List<ChatMessage> messages, com.qxotic.jinfer.media.VideoSampler videoSampler) {
+    static List<Message> toMessages(List<ChatMessage> messages, VideoSampler videoSampler) {
         List<Message> out = new ArrayList<>(messages.size());
         for (ChatMessage m : messages) {
             switch (m) {
@@ -88,8 +90,7 @@ final class Mappings {
     }
 
     /** User content, media included: text stays text, image/audio/video decode to media parts. */
-    private static List<Part> userParts(
-            UserMessage u, com.qxotic.jinfer.media.VideoSampler videoSampler) {
+    private static List<Part> userParts(UserMessage u, VideoSampler videoSampler) {
         List<Part> parts = new ArrayList<>();
         for (Content c : u.contents()) {
             switch (c) {
@@ -133,8 +134,8 @@ final class Mappings {
      */
     private static byte[] sha256(byte[] source) {
         try {
-            return java.security.MessageDigest.getInstance("SHA-256").digest(source);
-        } catch (java.security.NoSuchAlgorithmException e) {
+            return MessageDigest.getInstance("SHA-256").digest(source);
+        } catch (NoSuchAlgorithmException e) {
             throw new AssertionError(e);
         }
     }
@@ -144,13 +145,13 @@ final class Mappings {
      */
     private static byte[] sha256(Path file) {
         try (var in = Files.newInputStream(file)) {
-            var md = java.security.MessageDigest.getInstance("SHA-256");
+            var md = MessageDigest.getInstance("SHA-256");
             byte[] buf = new byte[1 << 16];
             for (int n; (n = in.read(buf)) > 0; ) md.update(buf, 0, n);
             return md.digest();
         } catch (IOException e) {
             throw new UncheckedIOException("failed to read " + file, e);
-        } catch (java.security.NoSuchAlgorithmException e) {
+        } catch (NoSuchAlgorithmException e) {
             throw new AssertionError(e);
         }
     }

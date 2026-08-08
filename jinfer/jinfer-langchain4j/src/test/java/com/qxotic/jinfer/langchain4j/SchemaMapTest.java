@@ -20,6 +20,7 @@ import dev.langchain4j.model.chat.request.json.JsonRawSchema;
 import dev.langchain4j.model.chat.request.json.JsonReferenceSchema;
 import dev.langchain4j.model.chat.request.json.JsonSchemaElement;
 import dev.langchain4j.model.chat.request.json.JsonStringSchema;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
@@ -183,7 +184,7 @@ class SchemaMapTest {
                                     "right",
                                     JsonReferenceSchema.builder().reference("Leaf").build())
                             .definitions(
-                                    new java.util.LinkedHashMap<>(
+                                    new LinkedHashMap<>(
                                             Map.of(
                                                     "Node",
                                                     JsonObjectSchema.builder()

@@ -8,6 +8,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.qxotic.jinfer.F32FloatTensor;
 import java.lang.foreign.Arena;
+import java.util.ArrayList;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -89,10 +91,10 @@ final class SamplingTest {
         assertSame(Sampler.ARGMAX, new Sampling(0f, 0.95f, 40, 0.05f, null).sampler(64));
     }
 
-    private static java.util.List<Integer> draws(Sampling sampling) {
+    private static List<Integer> draws(Sampling sampling) {
         Sampler sampler = sampling.sampler(64);
         F32FloatTensor logits = F32FloatTensor.allocate(Arena.ofAuto(), 64);
-        java.util.List<Integer> tokens = new java.util.ArrayList<>();
+        List<Integer> tokens = new ArrayList<>();
         for (int i = 0; i < 4096; i++) {
             tokens.add(sampler.sampleToken(logits));
         }

@@ -14,6 +14,7 @@ import com.qxotic.jinfer.chat.ToolCallSyntax;
 import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.toknroll.Tokenizer;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -94,7 +95,7 @@ public final class MiniCpm5ChatTemplate implements ChatTemplate {
         // cache-boundary law (ChatTemplate): preamble, turns, scaffold-last are separate
         // batches. Every boundary sits at an <|im_start|> special, so the split is token-exact
         // with the whole render (BPE cannot merge across a special).
-        List<Batch> out = new java.util.ArrayList<>();
+        List<Batch> out = new ArrayList<>();
         TokenRuns runs = proto.fresh();
         runs.id(bos);
         if (!tools.isEmpty()) {

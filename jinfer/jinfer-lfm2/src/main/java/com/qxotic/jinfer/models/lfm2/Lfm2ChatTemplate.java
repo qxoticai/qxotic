@@ -16,6 +16,7 @@ import com.qxotic.toknroll.Tokenizer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalInt;
 
 /**
  * Hand-written LFM2.5 chat codec (ChatML dialect), byte-exact with the GGUF's Jinja {@code
@@ -84,8 +85,8 @@ public final class Lfm2ChatTemplate implements TurnTemplate {
         this.imEnd = SpecialTokens.require(tokenizer, "<|im_end|>");
         this.tcStart = SpecialTokens.require(tokenizer, "<|tool_call_start|>");
         this.tcEnd = SpecialTokens.require(tokenizer, "<|tool_call_end|>");
-        java.util.OptionalInt open = SpecialTokens.find(tokenizer, "<think>");
-        java.util.OptionalInt close = SpecialTokens.find(tokenizer, "</think>");
+        OptionalInt open = SpecialTokens.find(tokenizer, "<think>");
+        OptionalInt close = SpecialTokens.find(tokenizer, "</think>");
         this.thinkOpen = open.isPresent() ? open.getAsInt() : null;
         this.thinkClose = close.isPresent() ? close.getAsInt() : null;
         this.newline = tokenizer.encode("\n").toArray();

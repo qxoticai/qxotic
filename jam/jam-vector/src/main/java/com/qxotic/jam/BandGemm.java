@@ -3,6 +3,7 @@ package com.qxotic.jam;
 import static com.qxotic.jam.VectorSupport.F_SPECIES;
 import static java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED;
 
+import com.oracle.svm.shared.AlwaysInline;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteOrder;
 import jdk.incubator.vector.FloatVector;
@@ -306,13 +307,13 @@ final class BandGemm {
     }
 
     /** Scratch weight-row load at absolute byte offset (pinned route: checks fold). */
-    @com.oracle.svm.shared.AlwaysInline(
+    @AlwaysInline(
             "hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compiler)")
     private static FloatVector wv(MemorySegment w, long byteOff) {
         return FloatVector.fromMemorySegment(F_SPECIES, w, byteOff, ByteOrder.LITTLE_ENDIAN);
     }
 
-    @com.oracle.svm.shared.AlwaysInline(
+    @AlwaysInline(
             "hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compiler)")
     private static FloatVector av(MemorySegment a, long aBase, long elem) {
         return FloatVector.fromMemorySegment(

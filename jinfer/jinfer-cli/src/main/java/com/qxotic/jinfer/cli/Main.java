@@ -23,7 +23,9 @@ import java.io.FileDescriptor;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.NoSuchFileException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -79,8 +81,8 @@ public class Main {
         } catch (IllegalArgumentException
                 | IllegalStateException
                 | UnsupportedOperationException
-                | java.io.UncheckedIOException
-                | java.nio.file.NoSuchFileException e) {
+                | UncheckedIOException
+                | NoSuchFileException e) {
             // load errors carry their remedy in the message (wrong mmproj, unknown architecture,
             // split GGUF, bad pre-tokenizer flag, ...) - print it, don't bury it in a stack
             // trace; anything else is a bug and still traces

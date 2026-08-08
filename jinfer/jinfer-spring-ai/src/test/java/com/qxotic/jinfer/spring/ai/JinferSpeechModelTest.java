@@ -12,11 +12,15 @@ import com.qxotic.jinfer.SpeechOptions;
 import com.qxotic.jinfer.SpeechState;
 import com.qxotic.jinfer.testkit.ModelFixture;
 import java.lang.foreign.Arena;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Predicate;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.audio.tts.TextToSpeechOptions;
@@ -76,7 +80,7 @@ final class JinferSpeechModelTest {
             byte[] wav = speech.call("hello");
             // 44-byte RIFF header + one 16-bit sample per PCM float, over every clip
             assertEquals(44 + 2 * ToyModel.SAMPLES * ToyModel.CLIPS, wav.length);
-            assertEquals("RIFF", new String(wav, 0, 4, java.nio.charset.StandardCharsets.US_ASCII));
+            assertEquals("RIFF", new String(wav, 0, 4, StandardCharsets.US_ASCII));
 
             byte[] viaPrompt = speech.call(new TextToSpeechPrompt("hello")).getResult().getOutput();
             assertEquals(wav.length, viaPrompt.length);
@@ -315,7 +319,7 @@ final class JinferSpeechModelTest {
         Path gguf = ModelFixture.INFLECT_NANO_V2_Q8.require();
         try (var speech = JinferSpeechModel.builder().modelPath(gguf).build()) {
             byte[] wav = speech.call("Speech from a real model.");
-            assertEquals("RIFF", new String(wav, 0, 4, java.nio.charset.StandardCharsets.US_ASCII));
+            assertEquals("RIFF", new String(wav, 0, 4, StandardCharsets.US_ASCII));
             assertTrue(wav.length > 44 + 2 * 8000, "at least a third of a second: " + wav.length);
         }
     }
@@ -329,10 +333,8 @@ final class JinferSpeechModelTest {
         static final int CLIPS = 3;
 
         ToyState state; // the most recent one
-        final java.util.concurrent.atomic.AtomicInteger minted =
-                new java.util.concurrent.atomic.AtomicInteger();
-        final java.util.List<ToyState> all =
-                java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+        final AtomicInteger minted = new AtomicInteger();
+        final List<ToyState> all = Collections.synchronizedList(new ArrayList<>());
         SpeechOptions lastOptions;
         int clipsProduced;
 

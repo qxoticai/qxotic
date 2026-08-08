@@ -3,7 +3,12 @@ package com.qxotic.toknroll.gguf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import com.qxotic.toknroll.IntSequence;
+import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.TokenizationModel;
+import com.qxotic.toknroll.Toknroll;
+import com.qxotic.toknroll.Vocabulary;
+import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
@@ -57,8 +62,8 @@ class GGUFTokenizerLoaderEdgeCaseTest {
                                 gguf ->
                                         new TokenizationModel() {
                                             @Override
-                                            public com.qxotic.toknroll.Vocabulary vocabulary() {
-                                                return com.qxotic.toknroll.Toknroll.vocabulary("a");
+                                            public Vocabulary vocabulary() {
+                                                return Toknroll.vocabulary("a");
                                             }
 
                                             @Override
@@ -66,7 +71,7 @@ class GGUFTokenizerLoaderEdgeCaseTest {
                                                     CharSequence text,
                                                     int start,
                                                     int end,
-                                                    com.qxotic.toknroll.IntSequence.Builder out) {
+                                                    IntSequence.Builder out) {
                                                 out.add(0);
                                             }
 
@@ -78,9 +83,7 @@ class GGUFTokenizerLoaderEdgeCaseTest {
 
                                             @Override
                                             public int decodeBytesInto(
-                                                    com.qxotic.toknroll.IntSequence tokens,
-                                                    int idx,
-                                                    java.nio.ByteBuffer out) {
+                                                    IntSequence tokens, int idx, ByteBuffer out) {
                                                 return 0;
                                             }
 
@@ -97,8 +100,7 @@ class GGUFTokenizerLoaderEdgeCaseTest {
     void builderRegisterCustomPreTokenizer() {
         GGUFTokenizerLoader loader =
                 GGUFTokenizerLoader.createEmptyBuilder()
-                        .registerPreTokenizer(
-                                "default", gguf -> com.qxotic.toknroll.Splitter.identity())
+                        .registerPreTokenizer("default", gguf -> Splitter.identity())
                         .build();
         assertNotNull(loader);
     }

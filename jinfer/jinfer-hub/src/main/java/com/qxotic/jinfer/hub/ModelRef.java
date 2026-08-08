@@ -1,8 +1,10 @@
 package com.qxotic.jinfer.hub;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.stream.Collectors;
 
 /**
  * A model reference: a URL with the scheme left off.
@@ -133,9 +135,7 @@ record ModelRef(
 
     /** The canonical host names, for a message that has to list what jinfer knows. */
     static String knownHosts() {
-        return java.util.Arrays.stream(Host.values())
-                .map(h -> h.name)
-                .collect(java.util.stream.Collectors.joining(", "));
+        return Arrays.stream(Host.values()).map(h -> h.name).collect(Collectors.joining(", "));
     }
 
     /** The host part of an explicit {@code scheme://host/...}, or null when there is no scheme. */

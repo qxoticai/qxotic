@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -55,7 +56,7 @@ public final class ToolCallSyntaxTest {
         assertEquals("Zurich", call.arguments().get("origin"));
         assertEquals(3L, call.arguments().get("passengers"));
         assertEquals(Boolean.TRUE, call.arguments().get("flexible"));
-        assertEquals(java.util.Map.of("stars", 4L), call.arguments().get("filters"));
+        assertEquals(Map.of("stars", 4L), call.arguments().get("filters"));
 
         // a multi-line raw value spans newlines up to its closing tag
         List<Part.ToolCall> multi =

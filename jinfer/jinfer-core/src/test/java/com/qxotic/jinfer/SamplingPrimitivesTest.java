@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.foreign.Arena;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Random;
 import org.junit.jupiter.api.Test;
@@ -103,7 +104,7 @@ class SamplingPrimitivesTest {
         float[] a = logits(n, n + 3);
         float threshold = a[(2 * n) / 3];
         // scalar reference: surviving indices in order, everything else masked
-        var expectedIds = new java.util.ArrayList<Integer>();
+        var expectedIds = new ArrayList<Integer>();
         float[] expected = a.clone();
         for (int i = 0; i < n; i++) {
             if (a[i] >= threshold) expectedIds.add(i);

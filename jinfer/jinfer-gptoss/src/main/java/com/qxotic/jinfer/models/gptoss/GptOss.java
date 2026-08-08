@@ -19,7 +19,11 @@ import static com.qxotic.jinfer.Norms.rmsnorm;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.*;
+import com.qxotic.jinfer.cache.PromptCache;
+import com.qxotic.jinfer.cache.StateCodec;
+import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.LoadedModel;
+import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
 import com.qxotic.toknroll.Tokenizer;
@@ -30,6 +34,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 public final class GptOss
@@ -75,7 +80,7 @@ public final class GptOss
     }
 
     @Override
-    public void forward(State s, com.qxotic.jinfer.Batch batch) {
+    public void forward(State s, Batch batch) {
         int n = batch.count();
         if (n > s.batchCapacity)
             throw new IllegalArgumentException(
@@ -91,7 +96,7 @@ public final class GptOss
                             + s.contextCapacity);
         }
         switch (batch.input()) {
-            case com.qxotic.jinfer.Batch.Input.Tokens t -> {
+            case Batch.Input.Tokens t -> {
                 int[] ids = t.ids();
                 if (n == 1)
                     Parallel.onDecodePool(
@@ -101,11 +106,11 @@ public final class GptOss
                             });
                 else forward(s, ids, 0, from, n);
             }
-            case com.qxotic.jinfer.Batch.Input.Sequences seq ->
+            case Batch.Input.Sequences seq ->
                     throw new UnsupportedOperationException(
                             "gpt-oss is generative: packed sequences (batched embedding) not"
                                     + " supported");
-            case com.qxotic.jinfer.Batch.Input.Embeddings e ->
+            case Batch.Input.Embeddings e ->
                     throw new UnsupportedOperationException(
                             "gpt-oss is text-only: embedding input is not supported");
         }
@@ -145,7 +150,7 @@ public final class GptOss
         return SpecialTokens.stops(tokenizer, -1, "<|return|>", "<|call|>", "<|endoftext|>");
     }
 
-    private com.qxotic.jinfer.chat.TurnTemplate
+    private TurnTemplate
             turnTemplate; // memoized: stateless, model-lifetime (pins any construction-time state)
 
     /**
@@ -159,20 +164,20 @@ public final class GptOss
                 chatTemplateSource,
                 stopTokens(),
                 modelSeed,
-                turnTemplate().map(t -> (com.qxotic.jinfer.chat.ChatTemplate) t),
+                turnTemplate().map(t -> (ChatTemplate) t),
                 // OpenAI's recommended sampling for gpt-oss (temperature 1.0, top_p 1.0);
                 // container general.sampling.* values override these
-                new com.qxotic.jinfer.chat.LoadedModel.SamplingDefaults(1.0f, 1.0f, null, null));
+                new LoadedModel.SamplingDefaults(1.0f, 1.0f, null, null));
     }
 
-    public java.util.Optional<com.qxotic.jinfer.chat.TurnTemplate> turnTemplate() {
+    public Optional<TurnTemplate> turnTemplate() {
         if (turnTemplate == null) turnTemplate = new GptOssTurnTemplate(tokenizer());
-        return java.util.Optional.of(turnTemplate);
+        return Optional.of(turnTemplate);
     }
 
     @Override
-    public java.util.Optional<com.qxotic.jinfer.cache.StateCodec<GptOss.State>> stateCodec() {
-        return java.util.Optional.of(new GptOssStateCodec(config()));
+    public Optional<StateCodec<GptOss.State>> stateCodec() {
+        return Optional.of(new GptOssStateCodec(config()));
     }
 
     // === Math helpers (ported from the production GptOss) ===
@@ -676,7 +681,7 @@ public final class GptOss
 
     // === State ===
 
-    public static final class State extends com.qxotic.jinfer.BaseState {
+    public static final class State extends BaseState {
         final int contextCapacity, batchCapacity;
         final FloatTensor residual, xb, xb2, xbK, q, logits, th, tscratch;
         // rotary values for the batch about to be ingested: sized by BATCH, never context
@@ -777,7 +782,7 @@ public final class GptOss
     public static GptOss loadModel(
             FileChannel fileChannel, GGUF gguf, Arena arena, Tokenizer tokenizer)
             throws IOException {
-        byte[] seed = com.qxotic.jinfer.cache.PromptCache.modelSeed(fileChannel);
+        byte[] seed = PromptCache.modelSeed(fileChannel);
         if (tokenizer == null) {
             tokenizer = Tokenizers.fromGGUF(gguf);
         }

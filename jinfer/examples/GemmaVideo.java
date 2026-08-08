@@ -33,6 +33,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.lang.foreign.Arena;
 
 public class GemmaVideo {
 
@@ -56,7 +57,7 @@ public class GemmaVideo {
         System.err.printf("sampled %d frames uniformly (%dx%d)%n",
                 vid.frames().size(), first.width(), first.height());
 
-        Gemma4 model = Gemma4.loadModel(textGguf, mmproj, java.lang.foreign.Arena.ofAuto());   // frame tokens need headroom
+        Gemma4 model = Gemma4.loadModel(textGguf, mmproj, Arena.ofAuto());   // frame tokens need headroom
         TurnTemplate template = model.turnTemplate().orElseThrow();
         Set<Integer> stops = model.stopTokens();
 

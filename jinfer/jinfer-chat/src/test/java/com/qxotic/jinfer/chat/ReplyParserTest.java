@@ -8,6 +8,7 @@ import com.qxotic.toknroll.Vocabulary;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -204,7 +205,7 @@ public final class ReplyParserTest {
         }
 
         @Override
-        public java.util.Iterator<Map.Entry<String, Integer>> iterator() {
+        public Iterator<Map.Entry<String, Integer>> iterator() {
             List<Map.Entry<String, Integer>> entries = new ArrayList<>();
             for (int i = 0; i < W.length; i++) entries.add(Map.entry(W[i], i));
             return entries.iterator();

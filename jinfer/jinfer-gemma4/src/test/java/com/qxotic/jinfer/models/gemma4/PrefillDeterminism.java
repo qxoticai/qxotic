@@ -1,9 +1,11 @@
 package com.qxotic.jinfer.models.gemma4;
 
+import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.FloatTensor;
 import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.jinfer.testkit.ModelFixture;
 import java.lang.foreign.Arena;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -29,7 +31,7 @@ public final class PrefillDeterminism {
     @Tag("integration")
     void run() throws Exception {
         Assumptions.assumeTrue(
-                java.nio.file.Files.exists(ModelFixture.GEMMA4_26B_MOE_Q8.path()),
+                Files.exists(ModelFixture.GEMMA4_26B_MOE_Q8.path()),
                 "model not found:" + " " + ModelFixture.GEMMA4_26B_MOE_Q8.path());
         main(testArgs());
     }
@@ -72,7 +74,7 @@ public final class PrefillDeterminism {
                     model.newState(
                             Math.min(c.contextLength(), ids.length + 256),
                             Math.max(16, ids.length));
-            model.ingest(s, com.qxotic.jinfer.Batch.prefill(ids));
+            model.ingest(s, Batch.prefill(ids));
             FloatTensor logits = model.logits(s);
             float[] snap = new float[vocab];
             for (int i = 0; i < vocab; i++) snap[i] = logits.getFloat(i);

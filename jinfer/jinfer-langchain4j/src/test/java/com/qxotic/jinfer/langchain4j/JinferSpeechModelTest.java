@@ -13,9 +13,13 @@ import com.qxotic.jinfer.testkit.ModelFixture;
 import dev.langchain4j.model.audio.TextToSpeechRequest;
 import java.lang.foreign.Arena;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Predicate;
 import org.junit.jupiter.api.Test;
 
@@ -291,10 +295,8 @@ final class JinferSpeechModelTest {
         static final int SAMPLES = 8;
 
         ToyState state; // the most recent one
-        final java.util.concurrent.atomic.AtomicInteger minted =
-                new java.util.concurrent.atomic.AtomicInteger();
-        final java.util.List<ToyState> all =
-                java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+        final AtomicInteger minted = new AtomicInteger();
+        final List<ToyState> all = Collections.synchronizedList(new ArrayList<>());
 
         @Override
         public Config config() {

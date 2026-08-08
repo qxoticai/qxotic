@@ -7,6 +7,7 @@ import com.qxotic.jinfer.F32FloatTensor;
 import com.qxotic.jinfer.FloatTensor;
 import com.qxotic.jinfer.llm.Grammar;
 import com.qxotic.jinfer.llm.Sampler;
+import java.lang.foreign.Arena;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -53,8 +54,7 @@ class ChannelConstrainedSamplerTest {
             };
 
     static FloatTensor favoring(int... ids) {
-        F32FloatTensor logits =
-                F32FloatTensor.allocate(java.lang.foreign.Arena.ofAuto(), BV.size());
+        F32FloatTensor logits = F32FloatTensor.allocate(Arena.ofAuto(), BV.size());
         for (int i = 0; i < BV.size(); i++) logits.setFloat(i, -100f);
         float v = 10f;
         for (int id : ids) logits.setFloat(id, v -= 1f);

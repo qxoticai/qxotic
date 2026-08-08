@@ -9,9 +9,12 @@ import com.qxotic.jinfer.testkit.ModelFixture;
 import java.awt.Color;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Locale;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
@@ -76,9 +79,7 @@ class Gemma4MediaIT {
                                         .build()));
         String text = r.getResult().getOutput().getText();
         assertNotNull(text);
-        assertTrue(
-                text.toLowerCase(java.util.Locale.ROOT).contains("red"),
-                "expected 'red' in: " + text);
+        assertTrue(text.toLowerCase(Locale.ROOT).contains("red"), "expected 'red' in: " + text);
     }
 
     @Test
@@ -125,11 +126,7 @@ class Gemma4MediaIT {
                                 new UserMessage(
                                         "What single color fills the reference scene? One word.")));
         assertTrue(
-                first.getResult()
-                        .getOutput()
-                        .getText()
-                        .toLowerCase(java.util.Locale.ROOT)
-                        .contains("blue"),
+                first.getResult().getOutput().getText().toLowerCase(Locale.ROOT).contains("blue"),
                 first.getResult().getOutput().getText());
         // second request through the view: the image's prefill positions restore from blocks
         ChatResponse second =
@@ -140,7 +137,7 @@ class Gemma4MediaIT {
     }
 
     /** A solid 224x224 PNG (the shared image fixture). */
-    private static byte[] solidPng(Color color) throws java.io.IOException {
+    private static byte[] solidPng(Color color) throws IOException {
         var img = new BufferedImage(224, 224, BufferedImage.TYPE_INT_RGB);
         var g = img.createGraphics();
         g.setColor(color);
@@ -162,7 +159,7 @@ class Gemma4MediaIT {
         }
         var out = new ByteArrayOutputStream();
         try {
-            var data = new java.io.DataOutputStream(out);
+            var data = new DataOutputStream(out);
             data.writeBytes("RIFF");
             data.writeInt(Integer.reverseBytes(36 + pcm.length));
             data.writeBytes("WAVEfmt ");
@@ -176,7 +173,7 @@ class Gemma4MediaIT {
             data.writeBytes("data");
             data.writeInt(Integer.reverseBytes(pcm.length));
             data.write(pcm);
-        } catch (java.io.IOException impossible) {
+        } catch (IOException impossible) {
             throw new AssertionError(impossible);
         }
         return out.toByteArray();

@@ -9,6 +9,7 @@ import com.qxotic.jinfer.testkit.CacheScenario;
 import com.qxotic.jinfer.testkit.Harness;
 import com.qxotic.jinfer.testkit.ModelFixture;
 import com.qxotic.jinfer.testkit.Stories;
+import java.lang.foreign.Arena;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -28,7 +29,7 @@ public final class GptOssCacheRun {
     private static void main(String[] args) throws Exception {
         Path path =
                 Path.of(args.length > 0 ? args[0] : ModelFixture.GPTOSS_20B_Q8.path().toString());
-        GptOss m = GptOss.loadModel(path, java.lang.foreign.Arena.ofAuto());
+        GptOss m = GptOss.loadModel(path, Arena.ofAuto());
         Harness<GptOss.State> h =
                 new Harness<>(
                         m.loaded(),

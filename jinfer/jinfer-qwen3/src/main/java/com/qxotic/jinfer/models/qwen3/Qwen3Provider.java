@@ -6,10 +6,12 @@ import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.LoadedReranker;
 import com.qxotic.jinfer.chat.ModelProvider;
 import com.qxotic.jinfer.llm.SpecialTokens;
+import com.qxotic.toknroll.Tokenizer;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
+import java.util.Map;
 
 /**
  * {@link ModelProvider} service for {@code general.architecture} "qwen3" - the RETRIEVAL family:
@@ -33,8 +35,8 @@ public final class Qwen3Provider implements ModelProvider {
             FileChannel fileChannel,
             GGUF gguf,
             Arena arena,
-            java.util.Map<String, java.nio.file.Path> companions,
-            com.qxotic.toknroll.Tokenizer tokenizer)
+            Map<String, Path> companions,
+            Tokenizer tokenizer)
             throws IOException {
         throw new UnsupportedOperationException(
                 "'qwen3' is the Qwen3 RETRIEVAL family (Qwen3-Embedding, Qwen3-Reranker), not a"

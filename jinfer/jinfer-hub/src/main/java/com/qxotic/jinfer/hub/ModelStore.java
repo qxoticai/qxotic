@@ -3,15 +3,21 @@ package com.qxotic.jinfer.hub;
 import com.qxotic.format.json.Json;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.regex.Pattern;
 
 /**
@@ -178,16 +184,15 @@ public final class ModelStore {
         // ponytail: at most 4 files in flight (x up to 8 chunk connections each, see
         // JINFER_DOWNLOAD_THREADS). A fixed constant, not a knob - add the env var when a real
         // pull is throttled by it.
-        try (var pool =
-                java.util.concurrent.Executors.newFixedThreadPool(Math.min(4, pathOrRefs.size()))) {
-            List<java.util.concurrent.Future<Path>> futures =
+        try (var pool = Executors.newFixedThreadPool(Math.min(4, pathOrRefs.size()))) {
+            List<Future<Path>> futures =
                     pathOrRefs.stream().map(r -> pool.submit(() -> resolve(r))).toList();
             List<Path> paths = new ArrayList<>(futures.size());
             try {
                 for (var future : futures) {
                     paths.add(future.get());
                 }
-            } catch (java.util.concurrent.ExecutionException e) {
+            } catch (ExecutionException e) {
                 futures.forEach(f -> f.cancel(true)); // siblings leave resumable .part files
                 switch (e.getCause()) {
                     case RuntimeException runtime -> throw runtime;
@@ -215,9 +220,9 @@ public final class ModelStore {
      * from the path portion alone.
      */
     private static Path url(String url) {
-        java.net.URI uri;
+        URI uri;
         try {
-            uri = java.net.URI.create(url);
+            uri = URI.create(url);
         } catch (IllegalArgumentException malformed) {
             throw new IllegalArgumentException(
                     "not a URL: '" + url + "': " + malformed.getMessage());
@@ -520,7 +525,7 @@ public final class ModelStore {
                         "'" + path + "' is a directory; a model or companion is a single file");
             }
             return Files.isRegularFile(candidate) ? candidate : null;
-        } catch (java.nio.file.InvalidPathException notAPath) {
+        } catch (InvalidPathException notAPath) {
             return null;
         }
     }
@@ -884,10 +889,7 @@ public final class ModelStore {
         Path tmp = refFile.resolveSibling(refFile.getFileName() + ".tmp");
         Files.writeString(tmp, commit, StandardCharsets.UTF_8);
         Files.move(
-                tmp,
-                refFile,
-                java.nio.file.StandardCopyOption.REPLACE_EXISTING,
-                java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+                tmp, refFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
     }
 
     /** A git commit hash, fit to be a snapshot directory name. */

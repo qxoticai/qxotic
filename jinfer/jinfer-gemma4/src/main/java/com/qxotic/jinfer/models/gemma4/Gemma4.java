@@ -19,9 +19,14 @@ import static com.qxotic.jinfer.Norms.sumOfSquares;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.format.gguf.TensorEntry;
 import com.qxotic.jinfer.*;
+import com.qxotic.jinfer.cache.PromptCache;
+import com.qxotic.jinfer.cache.StateCodec;
+import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.LoadedModel;
+import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
+import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import java.io.IOException;
 import java.lang.foreign.Arena;
@@ -29,9 +34,11 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.IntPredicate;
 
 public final class Gemma4
         implements LanguageModel<Gemma4.Configuration, Gemma4.Weights, Gemma4.State>,
@@ -85,7 +92,7 @@ public final class Gemma4
     }
 
     @Override
-    public void forward(State s, com.qxotic.jinfer.Batch batch) {
+    public void forward(State s, Batch batch) {
         int n = batch.count();
         if (n > s.batchCapacity) {
             throw new IllegalArgumentException(
@@ -102,7 +109,7 @@ public final class Gemma4
                             + s.contextCapacity);
         }
         switch (batch.input()) {
-            case com.qxotic.jinfer.Batch.Input.Tokens t -> {
+            case Batch.Input.Tokens t -> {
                 int[] ids = t.ids();
                 s.lastTokens = ids; // row->token map for the MTP draft seam (logits(s,out,head))
                 // decode step (one token): bandwidth-bound, so run at physical-core width on the
@@ -116,14 +123,14 @@ public final class Gemma4
                             });
                 else forward(s, ids, 0, from, n);
             }
-            case com.qxotic.jinfer.Batch.Input.Embeddings e -> {
+            case Batch.Input.Embeddings e -> {
                 if (vision == null && audio == null)
                     throw new UnsupportedOperationException(
                             "no media encoder loaded — use loadModel(text, ctx)");
                 int pad = SpecialTokens.find(tokenizer, "<pad>").orElse(0);
                 forwardEmbeddings(s, e.rows(), pad, from, n, e.bidirectional());
             }
-            case com.qxotic.jinfer.Batch.Input.Sequences seq ->
+            case Batch.Input.Sequences seq ->
                     throw new UnsupportedOperationException(
                             "Gemma4 is generative: packed sequences (batched embedding) not"
                                     + " supported");
@@ -198,7 +205,7 @@ public final class Gemma4
     @Override
     public Set<Class<? extends Media>> modalities() {
         Set<Class<? extends Media>> m =
-                new java.util.HashSet<>(); // adapters loaded iff an mmproj carried them
+                new HashSet<>(); // adapters loaded iff an mmproj carried them
         if (vision != null) m.add(Media.Image.class);
         if (audio != null) m.add(Media.Audio.class);
         return m;
@@ -231,8 +238,8 @@ public final class Gemma4
      * forced tool calls). Including it is safe - the plain encoder tokenizes the text {@code
      * "<eos>"} as its literal pieces, never id 1, so conversation content cannot mint a stop.
      */
-    public java.util.Set<Integer> stopTokens() {
-        java.util.Set<Integer> stops = new java.util.HashSet<>();
+    public Set<Integer> stopTokens() {
+        Set<Integer> stops = new HashSet<>();
         // <|tool_response> is the HANDOFF: results are runtime-provided by definition, so a
         // model-emitted response marker always means "stop, my call awaits its result". Without
         // it, the open-turn format leaves room to keep generating past the call - observed on
@@ -250,7 +257,7 @@ public final class Gemma4
         return stops;
     }
 
-    private com.qxotic.jinfer.chat.TurnTemplate
+    private TurnTemplate
             turnTemplate; // memoized: stateless, model-lifetime (pins any construction-time state)
 
     /**
@@ -264,13 +271,13 @@ public final class Gemma4
                 chatTemplateSource,
                 stopTokens(),
                 modelSeed,
-                turnTemplate().map(t -> (com.qxotic.jinfer.chat.ChatTemplate) t),
+                turnTemplate().map(t -> (ChatTemplate) t),
                 // Google's recommended sampling for Gemma - GGUFs converted before the
                 // general.sampling.* convention lack it; container values override these
-                new com.qxotic.jinfer.chat.LoadedModel.SamplingDefaults(1.0f, 0.95f, 64, null));
+                new LoadedModel.SamplingDefaults(1.0f, 0.95f, 64, null));
     }
 
-    public java.util.Optional<com.qxotic.jinfer.chat.TurnTemplate> turnTemplate() {
+    public Optional<TurnTemplate> turnTemplate() {
         if (turnTemplate == null) {
             // "{%- if not enable_thinking -%}{{- '<|channel>thought\n<channel|>' -}}" in the
             // add_generation_prompt tail: 12B and 26B carry that branch, E2B does not.
@@ -281,12 +288,12 @@ public final class Gemma4
                     new Gemma4TurnTemplate(
                             tokenizer(), this, config().embeddingLength(), scaffoldsNonThinking);
         }
-        return java.util.Optional.of(turnTemplate);
+        return Optional.of(turnTemplate);
     }
 
     @Override
-    public java.util.Optional<com.qxotic.jinfer.cache.StateCodec<Gemma4.State>> stateCodec() {
-        return java.util.Optional.of(new Gemma4StateCodec(config()));
+    public Optional<StateCodec<Gemma4.State>> stateCodec() {
+        return Optional.of(new Gemma4StateCodec(config()));
     }
 
     // -Dgemma.trace: per-layer residual checkpoints matching llama.cpp's eval-callback node names.
@@ -473,7 +480,7 @@ public final class Gemma4
 
     // === State ===
 
-    public static final class State extends com.qxotic.jinfer.BaseState {
+    public static final class State extends BaseState {
 
         // speculation scratch, lazily allocated from this state's arena and reused per
         // generation; freed with the state (see Gemma4Speculative.Scratch)
@@ -643,7 +650,7 @@ public final class Gemma4
         int dim = configuration.embeddingLength();
         rows.copyTo(0, state.residual, 0, seqLen * dim);
         int[] ple = new int[seqLen];
-        java.util.Arrays.fill(ple, pleToken);
+        Arrays.fill(ple, pleToken);
         buildPerLayerInputs(state, ple, 0, seqLen);
         // Image soft tokens attend bidirectionally (mtmd_decode_use_non_causal is true for
         // GEMMA4V/GEMMA4UV):
@@ -1214,8 +1221,7 @@ public final class Gemma4
     }
 
     /** The same contract over an already-parsed header - no I/O, so the attach path reuses it. */
-    static MmprojInfo validatePairing(
-            com.qxotic.format.gguf.GGUF gguf, Path mmprojGguf, int textEmbeddingLength) {
+    static MmprojInfo validatePairing(GGUF gguf, Path mmprojGguf, int textEmbeddingLength) {
         {
             String visionType = gguf.getStringOrDefault("clip.vision.projector_type", "");
             String audioType = gguf.getStringOrDefault("clip.audio.projector_type", "");
@@ -1303,7 +1309,7 @@ public final class Gemma4
             Set<Integer> stops,
             Sampler sampler,
             int depth,
-            java.util.function.IntPredicate onToken) {
+            IntPredicate onToken) {
         int capacity = state.contextCapacity();
         int budget =
                 maxTokens < 0
@@ -1313,10 +1319,8 @@ public final class Gemma4
                 Gemma4Speculative.generate(
                         this, state, budget, timeoutNanos, stops, depth, sampler, onToken, null);
         return new SpeculativeDecoding.Speculation(
-                com.qxotic.toknroll.IntSequence.wrap(
-                        r.tokens().stream().mapToInt(Integer::intValue).toArray()),
-                com.qxotic.toknroll.IntSequence.wrap(
-                        r.committed().stream().mapToInt(Integer::intValue).toArray()),
+                IntSequence.wrap(r.tokens().stream().mapToInt(Integer::intValue).toArray()),
+                IntSequence.wrap(r.committed().stream().mapToInt(Integer::intValue).toArray()),
                 r.stopToken(),
                 r.drafted(),
                 r.accepted(),
@@ -1340,7 +1344,7 @@ public final class Gemma4
      */
     private static Embedder<Media.Image> loadVision(
             Path mmprojGguf,
-            com.qxotic.format.gguf.GGUF gguf,
+            GGUF gguf,
             Map<String, GGMLTensorEntry> tensors,
             String type,
             Arena arena)
@@ -1368,7 +1372,7 @@ public final class Gemma4
      */
     private static Embedder<Media.Audio> loadAudio(
             Path mmprojGguf,
-            com.qxotic.format.gguf.GGUF gguf,
+            GGUF gguf,
             Map<String, GGMLTensorEntry> tensors,
             String type,
             Arena arena)
@@ -1401,7 +1405,7 @@ public final class Gemma4
     public static Gemma4 loadModel(
             FileChannel fileChannel, GGUF gguf, Arena arena, Tokenizer tokenizer)
             throws IOException {
-        byte[] seed = com.qxotic.jinfer.cache.PromptCache.modelSeed(fileChannel);
+        byte[] seed = PromptCache.modelSeed(fileChannel);
         if (tokenizer == null) {
             tokenizer = Tokenizers.fromGGUF(gguf);
         }

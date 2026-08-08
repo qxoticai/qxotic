@@ -4,6 +4,7 @@ import com.qxotic.jinfer.testkit.ModelFixture;
 import dev.langchain4j.data.message.UserMessage;
 import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.Linker;
+import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -31,9 +32,7 @@ class NmtProbe {
             Linker.nativeLinker()
                     .downcallHandle(
                             Linker.nativeLinker().defaultLookup().find("malloc_trim").orElseThrow(),
-                            FunctionDescriptor.of(
-                                    java.lang.foreign.ValueLayout.JAVA_INT,
-                                    java.lang.foreign.ValueLayout.JAVA_INT));
+                            FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_INT));
 
     record Cycle(String name, Path path) {}
 

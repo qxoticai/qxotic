@@ -8,6 +8,7 @@ import com.qxotic.jinfer.SpeechModel;
 import com.qxotic.jinfer.SpeechOptions;
 import com.qxotic.jinfer.SpeechState;
 import com.qxotic.jinfer.chat.Models;
+import com.qxotic.jinfer.hub.ModelStore;
 import com.qxotic.jinfer.media.AudioCodec;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -273,7 +274,7 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
             model = null;
             modelPath = null;
             switch (source) {
-                case String ref -> modelPath = com.qxotic.jinfer.hub.ModelStore.resolve(ref);
+                case String ref -> modelPath = ModelStore.resolve(ref);
                 case Path path -> modelPath = path;
                 case SpeechModel<?, ?, ?> m -> model = m;
                 case null, default ->

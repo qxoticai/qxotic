@@ -2,11 +2,15 @@ package com.qxotic.jinfer.bench;
 
 import com.qxotic.jinfer.*;
 import com.qxotic.jinfer.chat.LoadedModel;
+import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
 import java.io.PrintStream;
+import java.lang.foreign.Arena;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.ForkJoinPool;
 
@@ -146,8 +150,7 @@ public final class JinferBench {
             boolean smt =
                     !"0"
                             .equals(
-                                    java.nio.file.Files.readString(
-                                                    Path.of("/sys/devices/system/cpu/smt/active"))
+                                    Files.readString(Path.of("/sys/devices/system/cpu/smt/active"))
                                             .trim());
             return smt ? Math.max(1, logical / 2) : logical;
         } catch (Exception notLinux) {
@@ -160,7 +163,7 @@ public final class JinferBench {
 
     /** Arch dispatch via the shared ModelProvider services. */
     private static LoadedModel<?> loadAny(Path path, int ctx) throws Exception {
-        return com.qxotic.jinfer.chat.Models.load(path, java.lang.foreign.Arena.ofAuto());
+        return Models.load(path, Arena.ofAuto());
     }
 
     /**
@@ -288,7 +291,7 @@ public final class JinferBench {
     }
 
     private static double mean(double[] a) {
-        return java.util.Arrays.stream(a).average().orElse(0);
+        return Arrays.stream(a).average().orElse(0);
     }
 
     private static double stddev(double[] a) {

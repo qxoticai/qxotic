@@ -2,16 +2,23 @@ package com.qxotic.jinfer.models.nemotronh;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.Tool;
+import com.qxotic.jinfer.kernels.ModelLoader;
 import com.qxotic.jinfer.llm.Tokenizers;
 import com.qxotic.jinfer.testkit.ModelFixture;
 import com.qxotic.toknroll.Tokenizer;
+import java.nio.channels.FileChannel;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
@@ -28,12 +35,11 @@ final class NemotronToolResponseShapeTest {
 
     @Test
     void bothToolResultShapesRenderTheResultText() throws Exception {
-        java.nio.file.Path model = ModelFixture.NEMOTRON_30B_Q8.path();
-        Assumptions.assumeTrue(java.nio.file.Files.exists(model));
-        com.qxotic.format.gguf.GGUF gguf;
-        try (var ch =
-                java.nio.channels.FileChannel.open(model, java.nio.file.StandardOpenOption.READ)) {
-            gguf = com.qxotic.jinfer.kernels.ModelLoader.readGguf(ch, model.toString());
+        Path model = ModelFixture.NEMOTRON_30B_Q8.path();
+        Assumptions.assumeTrue(Files.exists(model));
+        GGUF gguf;
+        try (var ch = FileChannel.open(model, StandardOpenOption.READ)) {
+            gguf = ModelLoader.readGguf(ch, model.toString());
         }
         Tokenizer tokenizer = Tokenizers.fromGGUF(gguf);
         NemotronHTurnTemplate template = new NemotronHTurnTemplate(tokenizer);
@@ -55,8 +61,7 @@ final class NemotronToolResponseShapeTest {
                                                             new Part.ToolCall(
                                                                     "call_0",
                                                                     "get_weather",
-                                                                    java.util.Map.of(
-                                                                            "city", "Zurich")))),
+                                                                    Map.of("city", "Zurich")))),
                                             new Message(Role.TOOL, List.of(resultPart))),
                                     List.of(tool),
                                     false,

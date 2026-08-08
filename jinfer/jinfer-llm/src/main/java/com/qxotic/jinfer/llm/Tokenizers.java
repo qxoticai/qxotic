@@ -12,6 +12,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.function.UnaryOperator;
 import java.util.regex.Pattern;
 
 /**
@@ -95,8 +96,7 @@ public final class Tokenizers {
      * mis-tokenizes.
      */
     public static Tokenizer fromGGUF(
-            GGUF gguf,
-            java.util.function.UnaryOperator<GGUFTokenizerLoader.Builder> registrations) {
+            GGUF gguf, UnaryOperator<GGUFTokenizerLoader.Builder> registrations) {
         GGUFTokenizerLoader.Builder builder =
                 registrations.apply(GGUFTokenizerLoader.createBuilderWithBuiltins());
         applyPropertyOverrides(builder);

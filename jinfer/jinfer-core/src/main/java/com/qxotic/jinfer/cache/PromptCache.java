@@ -7,6 +7,7 @@ import com.qxotic.jinfer.RuntimeFlags;
 import com.qxotic.jinfer.RuntimeState;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
@@ -690,7 +691,7 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
     }
 
     /** As {@link #modelSeed(Path)} over an open channel. */
-    public static byte[] modelSeed(java.nio.channels.FileChannel ch) {
+    public static byte[] modelSeed(FileChannel ch) {
         return BlockTree.modelSeed(ch);
     }
 }

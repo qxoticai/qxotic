@@ -4,6 +4,7 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.lang.ref.Cleaner;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 
 /**
  * Opt-in leak detector ({@code -Djinfer.leakDetection}), CloseGuard-style: owned native resources
@@ -23,7 +24,7 @@ public final class LeakWatch {
     static volatile boolean enabled = Boolean.getBoolean("jinfer.leakDetection");
 
     /** Test seam; production sink is the {@code jinfer.leaks} platform logger. */
-    static volatile java.util.function.Consumer<String> sink =
+    static volatile Consumer<String> sink =
             msg -> System.getLogger("jinfer.leaks").log(System.Logger.Level.WARNING, msg);
 
     private static final Runnable NOOP = () -> {};

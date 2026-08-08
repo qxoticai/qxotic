@@ -4,6 +4,7 @@ import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.llm.TextStops;
 import dev.langchain4j.data.message.AiMessage;
+import dev.langchain4j.model.chat.Capability;
 import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.chat.listener.ChatModelListener;
 import dev.langchain4j.model.chat.request.ChatRequest;
@@ -16,6 +17,7 @@ import dev.langchain4j.model.chat.response.PartialThinking;
 import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
 import dev.langchain4j.model.chat.response.StreamingHandle;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -55,7 +57,7 @@ public final class JinferStreamingChatModel implements StreamingChatModel, AutoC
     }
 
     @Override
-    public java.util.Set<dev.langchain4j.model.chat.Capability> supportedCapabilities() {
+    public Set<Capability> supportedCapabilities() {
         return model.supportedCapabilities();
     }
 

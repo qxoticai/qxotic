@@ -3,6 +3,7 @@ package com.qxotic.jinfer;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.Random;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -67,7 +68,7 @@ final class ExpAccuracyTest {
 
     @Test
     void vectorLanesMatchTheScalarMirrorBitForBit() {
-        java.util.Random rnd = new java.util.Random(42);
+        Random rnd = new Random(42);
         float[] row = new float[256];
         float[] expected = new float[row.length];
         for (int trial = 0; trial < 200; trial++) {

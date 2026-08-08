@@ -10,6 +10,7 @@ package com.qxotic.jinfer.models.qwen35;
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.FloatTensor;
 import com.qxotic.jinfer.testkit.ModelFixture;
+import com.qxotic.toknroll.IntSequence;
 import java.lang.foreign.Arena;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -23,7 +24,7 @@ public final class Qwen35PrefillCheck {
     @Tag("integration")
     void run() throws Exception {
         Assumptions.assumeTrue(
-                java.nio.file.Files.exists(ModelFixture.QWEN35_2B_Q8.path()),
+                Files.exists(ModelFixture.QWEN35_2B_Q8.path()),
                 "model not found:" + " " + ModelFixture.QWEN35_2B_Q8.path());
         main(testArgs());
     }
@@ -42,7 +43,7 @@ public final class Qwen35PrefillCheck {
         }
         Qwen35 model = Qwen35.loadModel(path, Arena.ofAuto());
         int vocab = model.config().vocabularySize();
-        com.qxotic.toknroll.IntSequence prompt =
+        IntSequence prompt =
                 model.tokenizer()
                         .encode(
                                 "The expedition logged river depth, canopy density and soil acidity"

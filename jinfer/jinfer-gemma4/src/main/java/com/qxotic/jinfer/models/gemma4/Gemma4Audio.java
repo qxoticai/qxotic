@@ -20,6 +20,7 @@
 // <|audio> / <audio|>. Backs Gemma4's MultiModal Embedder<Media.Audio> when the mmproj is gemma4ua.
 package com.qxotic.jinfer.models.gemma4;
 
+import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.Embedder;
 import com.qxotic.jinfer.FloatTensor;
 import com.qxotic.jinfer.Media;
@@ -146,10 +147,7 @@ public final class Gemma4Audio implements Embedder<Media.Audio> {
      * is a label for messages here - nothing is read from it.
      */
     public static Gemma4Audio loadModel(
-            Path mmprojPath,
-            com.qxotic.format.gguf.GGUF gguf,
-            Map<String, GGMLTensorEntry> t,
-            Arena arena)
+            Path mmprojPath, GGUF gguf, Map<String, GGMLTensorEntry> t, Arena arena)
             throws IOException {
         {
             int modelDim = gguf.getValueOrDefault(int.class, "clip.audio.projection_dim", 3840);

@@ -7,7 +7,9 @@ import com.qxotic.jinfer.testkit.AbstractToolWireTest;
 import com.qxotic.jinfer.testkit.ModelFixture;
 import com.qxotic.toknroll.Tokenizer;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.TreeMap;
 
 /**
  * Gemma 4's generated call wire: {@code <|tool_call>call:name{k:<|"|>v<|"|>}<tool_call|>} - the
@@ -55,8 +57,8 @@ class Gemma4ToolWireTest extends AbstractToolWireTest {
     /** Gemma renders call arguments dictsorted; expected maps must sort the same way. */
     @Override
     protected Map<String, Object> expected(Map<String, Object> args) {
-        var sorted = new java.util.TreeMap<String, Object>(String.CASE_INSENSITIVE_ORDER);
+        var sorted = new TreeMap<String, Object>(String.CASE_INSENSITIVE_ORDER);
         sorted.putAll(super.expected(args));
-        return new java.util.LinkedHashMap<>(sorted);
+        return new LinkedHashMap<>(sorted);
     }
 }

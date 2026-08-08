@@ -3,8 +3,10 @@ package com.qxotic.jinfer.llm;
 import com.qxotic.jinfer.*;
 import com.qxotic.jinfer.telemetry.DecodeEvent;
 import com.qxotic.toknroll.IntSequence;
+import java.lang.ref.Reference;
 import java.util.List;
 import java.util.Set;
+import java.util.function.IntConsumer;
 
 /**
  * The generation loop: prefill, then sample and decode until a stop token, the completion budget or
@@ -109,7 +111,7 @@ public final class Generator {
             long timeoutNanos,
             Set<Integer> stopTokens,
             TokenSink sink,
-            java.util.function.IntConsumer afterIngest) {
+            IntConsumer afterIngest) {
         // the STATE's ring is the bound: it may be smaller than what the model was trained for,
         // and it is what the generation actually runs in
         int capacity = state.contextCapacity();
@@ -143,7 +145,7 @@ public final class Generator {
             // (FloatTensor.GLOBAL_SEGMENT), which the GC cannot see: this fence pins the model -
             // and through it the mapping - for the whole pass, so the Cleaner can never unmap
             // under a running kernel even if the caller drops its reference mid-call.
-            java.lang.ref.Reference.reachabilityFence(model);
+            Reference.reachabilityFence(model);
         }
     }
 
@@ -154,7 +156,7 @@ public final class Generator {
             Sampler sampler,
             Set<Integer> stopTokens,
             TokenSink sink,
-            java.util.function.IntConsumer afterIngest,
+            IntConsumer afterIngest,
             int actualMaxTokens,
             long deadlineNanos) {
         BaseState base = (BaseState) state;
@@ -182,7 +184,7 @@ public final class Generator {
             Sampler sampler,
             Set<Integer> stopTokens,
             TokenSink sink,
-            java.util.function.IntConsumer afterIngest,
+            IntConsumer afterIngest,
             int actualMaxTokens,
             long deadlineNanos) {
         boolean hasDeadline = deadlineNanos != Long.MAX_VALUE;
@@ -250,7 +252,7 @@ public final class Generator {
             int maxNewTokens,
             Sampler sampler,
             TokenSink onTokenGenerated,
-            java.util.function.IntConsumer afterIngest,
+            IntConsumer afterIngest,
             long[] prefillDoneNanos) {
         int vocab = model.config().vocabularySize();
         int contextLength = state.contextCapacity();

@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintStream;
+import java.io.RandomAccessFile;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -26,6 +27,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -114,7 +116,7 @@ final class Fetch {
      * </ul>
      */
     static final class Board {
-        private static final List<Progress> rows = new java.util.ArrayList<>();
+        private static final List<Progress> rows = new ArrayList<>();
         private static final int PREFIX = 3; // " " + spinner + " ", before the name column
         private static int painted; // lines the live region occupies on screen right now
         private static int stickyLabel; // the name column, monotonic while the region lives
@@ -258,7 +260,7 @@ final class Fetch {
      * surfaces as an IOException to the retry machinery, and a retry RESUMES.
      */
     private static final class Stall {
-        private static final java.util.Set<Stall> WATCHED = ConcurrentHashMap.newKeySet();
+        private static final Set<Stall> WATCHED = ConcurrentHashMap.newKeySet();
         private static Thread scanner;
 
         private final InputStream stream;
@@ -536,8 +538,7 @@ final class Fetch {
         // file as short as its highest written byte. The chunk map is only trusted when the file
         // beside it is already full length, so without a real pre-allocation every resume would
         // throw the map away and start over.
-        try (java.io.RandomAccessFile allocated =
-                        new java.io.RandomAccessFile(part.toFile(), "rw");
+        try (RandomAccessFile allocated = new RandomAccessFile(part.toFile(), "rw");
                 FileChannel map =
                         FileChannel.open(
                                 mapFile, StandardOpenOption.WRITE, StandardOpenOption.CREATE);

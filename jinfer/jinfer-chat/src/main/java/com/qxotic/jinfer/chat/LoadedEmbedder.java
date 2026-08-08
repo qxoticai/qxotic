@@ -1,9 +1,13 @@
 package com.qxotic.jinfer.chat;
 
+import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.EmbeddingModel;
+import com.qxotic.jinfer.FloatTensor;
 import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.jinfer.telemetry.InferenceEvent;
 import com.qxotic.toknroll.Tokenizer;
+import java.util.List;
+import java.util.function.Consumer;
 
 /**
  * An embedding port's loaded bundle - the {@link Models#loadEmbedder} counterpart of {@link
@@ -42,10 +46,7 @@ public record LoadedEmbedder<S extends RuntimeState>(
      * (the state is one pipeline); {@code state} must come from {@link #model()}.
      */
     public int embedAll(
-            RuntimeState state,
-            int contextLength,
-            java.util.List<String> texts,
-            java.util.function.Consumer<com.qxotic.jinfer.FloatTensor> sink) {
+            RuntimeState state, int contextLength, List<String> texts, Consumer<FloatTensor> sink) {
         int[][] seqs = new int[texts.size()][];
         int total = 0;
         for (int i = 0; i < texts.size(); i++) {
@@ -95,7 +96,7 @@ public record LoadedEmbedder<S extends RuntimeState>(
             int contextLength,
             int[][] seqs,
             int total,
-            java.util.function.Consumer<com.qxotic.jinfer.FloatTensor> sink) {
+            Consumer<FloatTensor> sink) {
         @SuppressWarnings("unchecked") // states of this embedder's model ARE S, by construction
         S s = (S) state;
         // greedy packing: each group fills the context, one forward pass per group
@@ -114,11 +115,7 @@ public record LoadedEmbedder<S extends RuntimeState>(
                 at += seqs[i].length;
                 len[i - start] = seqs[i].length;
             }
-            model.embed(
-                    s,
-                    new com.qxotic.jinfer.Batch.Input.Sequences(
-                            new com.qxotic.jinfer.Batch.Input.Tokens(ids), len),
-                    sink);
+            model.embed(s, new Batch.Input.Sequences(new Batch.Input.Tokens(ids), len), sink);
             start = end;
         }
         return total;

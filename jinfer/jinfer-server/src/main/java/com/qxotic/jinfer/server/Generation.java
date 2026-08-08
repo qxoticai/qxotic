@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.server;
 
 import com.qxotic.jinfer.*;
+import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.JsonCodec;
@@ -15,12 +16,24 @@ import com.qxotic.jinfer.chat.ToolCallSyntax;
 import com.qxotic.jinfer.chat.Values;
 import com.qxotic.jinfer.llm.*;
 import com.qxotic.jinfer.llm.Generator.GenerationResult;
+import com.qxotic.jinfer.media.AudioCodec;
+import com.qxotic.jinfer.media.ImageCodec;
+import com.qxotic.jinfer.media.VideoCodec;
 import com.qxotic.toknroll.IntSequence;
+import com.qxotic.toknroll.Specials;
 import com.qxotic.toknroll.Tokenizer;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalInt;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 /**
@@ -37,7 +50,7 @@ final class Generation {
     private final ServerConfig config;
     private final ChatTemplate template; // memoized model framing, null when the model has none
     // raw-prompt mode encodes text special-token-aware; nothing renders a template for it
-    private final com.qxotic.toknroll.Specials specials;
+    private final Specials specials;
     // The shared runtime: template stack, sampling policy, and the one PromptCache. This
     // class predates all of it and had its own of each; what remains here is the OpenAI wire.
     private final ChatEngine engine;
@@ -55,8 +68,8 @@ final class Generation {
         this.defaultSampling = config.defaults().sampling();
         this.template = chatModel.template().orElse(null);
         this.specials = SpecialTokens.encoder(model.tokenizer());
-        java.nio.file.Path catalog = config.cache().catalog();
-        boolean mounted = catalog != null && java.nio.file.Files.exists(catalog);
+        Path catalog = config.cache().catalog();
+        boolean mounted = catalog != null && Files.exists(catalog);
         // borrowed weights: the server loaded the model and keeps its arena. The engine's cache
         // owns the whole catalog policy - a codec-less model warns and ignores the file,
         // read-only problems degrade, read-write fail loudly.
@@ -83,7 +96,7 @@ final class Generation {
     }
 
     /** The block tree's health reading for {@code /props}; null = no tree behind this model. */
-    com.qxotic.jinfer.cache.PromptCache.Sample cacheSample() {
+    PromptCache.Sample cacheSample() {
         return engine.cacheSample();
     }
 
@@ -91,8 +104,7 @@ final class Generation {
         return engine.blockCaching();
     }
 
-    private final java.util.concurrent.atomic.AtomicBoolean closed =
-            new java.util.concurrent.atomic.AtomicBoolean();
+    private final AtomicBoolean closed = new AtomicBoolean();
 
     /**
      * Frees the engine's states and blocks; the weights arena stays the server's. Idempotent: the
@@ -208,9 +220,7 @@ final class Generation {
                             }
                         });
         router.flush();
-        metrics.recordPromptCache(
-                done.tier() == com.qxotic.jinfer.cache.PromptCache.Tier.SESSION,
-                done.restoredTokens());
+        metrics.recordPromptCache(done.tier() == PromptCache.Tier.SESSION, done.restoredTokens());
         return router.reply(
                 done.result(), done.reply(), billed, done.restoredTokens(), prepared.stops());
     }
@@ -339,17 +349,17 @@ final class Generation {
      */
     private Part imagePart(Object imageUrl) {
         Validation.require(
-                model.model() instanceof com.qxotic.jinfer.MultiModal mm
-                        && mm.modalities().contains(com.qxotic.jinfer.Media.Image.class),
+                model.model() instanceof MultiModal mm
+                        && mm.modalities().contains(Media.Image.class),
                 "this model cannot read images: no vision encoder is loaded. Start the server with"
                         + " a projector that carries one, e.g. --with media=<mmproj.gguf>");
         byte[] encoded = dataUriBytes(urlOf(imageUrl), "image_url");
         try {
-            byte[] key = java.security.MessageDigest.getInstance("SHA-256").digest(encoded);
-            return new Part.Blob(com.qxotic.jinfer.media.ImageCodec.decode(encoded), key);
-        } catch (java.security.NoSuchAlgorithmException e) {
+            byte[] key = MessageDigest.getInstance("SHA-256").digest(encoded);
+            return new Part.Blob(ImageCodec.decode(encoded), key);
+        } catch (NoSuchAlgorithmException e) {
             throw new AssertionError(e);
-        } catch (java.io.IOException e) {
+        } catch (IOException e) {
             throw new IllegalArgumentException("image could not be decoded: " + e.getMessage());
         }
     }
@@ -361,24 +371,23 @@ final class Generation {
      */
     private Part audioPart(Object inputAudio) {
         Validation.require(
-                model.model() instanceof com.qxotic.jinfer.MultiModal mm
-                        && mm.modalities().contains(com.qxotic.jinfer.Media.Audio.class),
+                model.model() instanceof MultiModal mm
+                        && mm.modalities().contains(Media.Audio.class),
                 "this model cannot read audio: no audio encoder is loaded. Start the server with a"
                         + " projector that carries one, e.g. --with media=<mmproj.gguf>");
         Map<String, Object> audio = Values.asObject(inputAudio, "input_audio");
         byte[] encoded;
         try {
-            encoded =
-                    java.util.Base64.getDecoder().decode(Values.stringValue(audio.get("data"), ""));
+            encoded = Base64.getDecoder().decode(Values.stringValue(audio.get("data"), ""));
         } catch (IllegalArgumentException e) {
             throw new IllegalArgumentException("input_audio data is not valid base64");
         }
         try {
-            byte[] key = java.security.MessageDigest.getInstance("SHA-256").digest(encoded);
-            return new Part.Blob(com.qxotic.jinfer.media.AudioCodec.decode(encoded), key);
-        } catch (java.security.NoSuchAlgorithmException e) {
+            byte[] key = MessageDigest.getInstance("SHA-256").digest(encoded);
+            return new Part.Blob(AudioCodec.decode(encoded), key);
+        } catch (NoSuchAlgorithmException e) {
             throw new AssertionError(e);
-        } catch (java.io.IOException e) {
+        } catch (IOException e) {
             throw new IllegalArgumentException("audio could not be decoded: " + e.getMessage());
         }
     }
@@ -394,29 +403,29 @@ final class Generation {
      */
     private Part videoPart(Object videoUrl) {
         Validation.require(
-                model.model() instanceof com.qxotic.jinfer.MultiModal mm
-                        && mm.modalities().contains(com.qxotic.jinfer.Media.Image.class),
+                model.model() instanceof MultiModal mm
+                        && mm.modalities().contains(Media.Image.class),
                 "this model cannot read video: no vision encoder is loaded (video decomposes into"
                         + " image frames). Start the server with a projector that carries one,"
                         + " e.g. --with media=<mmproj.gguf>");
         byte[] encoded = dataUriBytes(urlOf(videoUrl), "video_url");
         try {
-            byte[] key = java.security.MessageDigest.getInstance("SHA-256").digest(encoded);
+            byte[] key = MessageDigest.getInstance("SHA-256").digest(encoded);
             if (template != null && template.mediaEncodingCached(key)) {
                 // full skip: no temp file, no ffmpeg, no encoder - the template replays its
                 // cached rows for this digest (a frameless keyed blob is that contract)
-                return new Part.Blob(new com.qxotic.jinfer.Media.Video(java.util.List.of()), key);
+                return new Part.Blob(new Media.Video(List.of()), key);
             }
-            java.nio.file.Path tmp = java.nio.file.Files.createTempFile("jinfer-video", ".bin");
+            Path tmp = Files.createTempFile("jinfer-video", ".bin");
             try {
-                java.nio.file.Files.write(tmp, encoded);
-                return new Part.Blob(com.qxotic.jinfer.media.VideoCodec.ffmpeg().uniform(tmp), key);
+                Files.write(tmp, encoded);
+                return new Part.Blob(VideoCodec.ffmpeg().uniform(tmp), key);
             } finally {
-                java.nio.file.Files.deleteIfExists(tmp);
+                Files.deleteIfExists(tmp);
             }
-        } catch (java.security.NoSuchAlgorithmException e) {
+        } catch (NoSuchAlgorithmException e) {
             throw new AssertionError(e);
-        } catch (java.io.IOException e) {
+        } catch (IOException e) {
             throw new IllegalArgumentException("video could not be decoded: " + e.getMessage());
         }
     }
@@ -444,7 +453,7 @@ final class Generation {
                 "%s data: URI must be base64-encoded (data:<mime>;base64,<payload>)",
                 what);
         try {
-            return java.util.Base64.getDecoder().decode(url.substring(comma + 1));
+            return Base64.getDecoder().decode(url.substring(comma + 1));
         } catch (IllegalArgumentException e) {
             throw new IllegalArgumentException(what + " base64 payload is malformed");
         }
@@ -570,7 +579,7 @@ final class Generation {
 
     /** Prompt size as billed to the client: a leading BOS is template overhead, not user input. */
     private static int consumedPromptTokens(Tokenizer tokenizer, IntSequence promptTokens) {
-        java.util.OptionalInt bos = SpecialTokens.bos(tokenizer);
+        OptionalInt bos = SpecialTokens.bos(tokenizer);
         // orElse(1) used to stand in for "no BOS", which is not a neutral guess: it is a real
         // token id in every vocabulary, so a prompt that happened to start with id 1 was billed
         // one token short. A vocabulary with no BOS now subtracts nothing.
@@ -758,7 +767,7 @@ final class Generation {
         if (!prompt.isEmpty()
                 && prompt.get(0).input() instanceof Batch.Input.Tokens first
                 && first.ids().length > 0) {
-            java.util.OptionalInt bos = SpecialTokens.bos(tokenizer);
+            OptionalInt bos = SpecialTokens.bos(tokenizer);
             if (bos.isPresent() && first.ids()[0] == bos.getAsInt()) {
                 return prepared.promptTokens() - 1;
             }

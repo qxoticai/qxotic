@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.nio.ByteBuffer;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
@@ -199,8 +200,7 @@ class ToknrollApiComponentsTest {
                     }
 
                     @Override
-                    public int decodeBytesInto(
-                            IntSequence tokens, int idx, java.nio.ByteBuffer out) {
+                    public int decodeBytesInto(IntSequence tokens, int idx, ByteBuffer out) {
                         return 0;
                     }
                 };
@@ -236,8 +236,7 @@ class ToknrollApiComponentsTest {
                     }
 
                     @Override
-                    public int decodeBytesInto(
-                            IntSequence tokens, int idx, java.nio.ByteBuffer out) {
+                    public int decodeBytesInto(IntSequence tokens, int idx, ByteBuffer out) {
                         return 0;
                     }
                 };

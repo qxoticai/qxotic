@@ -17,7 +17,12 @@ import static com.qxotic.jinfer.Norms.rmsnorm;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.*;
+import com.qxotic.jinfer.cache.DenseStateCodec;
+import com.qxotic.jinfer.cache.PromptCache;
+import com.qxotic.jinfer.cache.StateCodec;
+import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.LoadedModel;
+import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
 import com.qxotic.toknroll.Tokenizer;
@@ -27,6 +32,7 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 public final class Llama implements LanguageModel<Llama.Configuration, Llama.Weights, Llama.State> {
@@ -71,7 +77,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
     }
 
     @Override
-    public void forward(State s, com.qxotic.jinfer.Batch batch) {
+    public void forward(State s, Batch batch) {
         int n = batch.count();
         if (n > s.batchCapacity)
             throw new IllegalArgumentException(
@@ -87,7 +93,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                             + s.contextCapacity);
         }
         switch (batch.input()) {
-            case com.qxotic.jinfer.Batch.Input.Tokens t -> {
+            case Batch.Input.Tokens t -> {
                 int[] ids = t.ids();
                 if (n == 1)
                     Parallel.onDecodePool(
@@ -97,11 +103,11 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                             });
                 else forward(s, ids, 0, from, n);
             }
-            case com.qxotic.jinfer.Batch.Input.Sequences seq ->
+            case Batch.Input.Sequences seq ->
                     throw new UnsupportedOperationException(
                             "Llama is generative: packed sequences (batched embedding) not"
                                     + " supported");
-            case com.qxotic.jinfer.Batch.Input.Embeddings e ->
+            case Batch.Input.Embeddings e ->
                     throw new UnsupportedOperationException(
                             "Llama is text-only: embedding input is not supported");
         }
@@ -143,7 +149,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                 "<|end_of_text|>");
     }
 
-    private com.qxotic.jinfer.chat.TurnTemplate
+    private TurnTemplate
             turnTemplate; // memoized: stateless, model-lifetime (pins any construction-time state)
 
     /**
@@ -158,10 +164,10 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                 stopTokens(),
                 modelSeed,
                 chatTemplate(),
-                com.qxotic.jinfer.chat.LoadedModel.SamplingDefaults.NONE);
+                LoadedModel.SamplingDefaults.NONE);
     }
 
-    private com.qxotic.jinfer.chat.ChatTemplate chatTemplate; // memoized, like turnTemplate
+    private ChatTemplate chatTemplate; // memoized, like turnTemplate
 
     /**
      * The native codec for this GGUF, selected by the CHAT TEMPLATE SOURCE first: SmolLM3 reuses
@@ -170,48 +176,40 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
      * codec when the source names it, else the Llama 3 per-turn port when its scaffold specials
      * exist, else the whole-render Jinja fallback.
      */
-    public java.util.Optional<com.qxotic.jinfer.chat.ChatTemplate> chatTemplate() {
+    public Optional<ChatTemplate> chatTemplate() {
         if (chatTemplate == null) {
             if (chatTemplateSource.contains("named SmolLM")
-                    && com.qxotic.jinfer.llm.SpecialTokens.find(tokenizer(), "<|im_start|>")
-                            .isPresent()) {
+                    && SpecialTokens.find(tokenizer(), "<|im_start|>").isPresent()) {
                 chatTemplate = new SmolLm3ChatTemplate(tokenizer());
             } else if (chatTemplateSource.contains("<tool_def_sep>")
-                    && com.qxotic.jinfer.llm.SpecialTokens.find(tokenizer(), "<function")
-                            .isPresent()) {
+                    && SpecialTokens.find(tokenizer(), "<function").isPresent()) {
                 chatTemplate = new MiniCpm5ChatTemplate(tokenizer()); // MiniCPM5's XML wire
             } else if (chatTemplateSource.contains("[SYSTEM_PROMPT]")
-                    && com.qxotic.jinfer.llm.SpecialTokens.find(tokenizer(), "[INST]")
-                            .isPresent()) {
+                    && SpecialTokens.find(tokenizer(), "[INST]").isPresent()) {
                 chatTemplate = new MistralChatTemplate(tokenizer()); // Mistral v13 wire
             } else {
-                chatTemplate =
-                        turnTemplate()
-                                .map(t -> (com.qxotic.jinfer.chat.ChatTemplate) t)
-                                .orElse(null);
+                chatTemplate = turnTemplate().map(t -> (ChatTemplate) t).orElse(null);
             }
         }
-        return java.util.Optional.ofNullable(chatTemplate);
+        return Optional.ofNullable(chatTemplate);
     }
 
-    public java.util.Optional<com.qxotic.jinfer.chat.TurnTemplate> turnTemplate() {
+    public Optional<TurnTemplate> turnTemplate() {
         // same-graph variants (minicpm et al.) lack the Llama 3 scaffold specials: no native
         // framing for that GGUF - chat falls back to the whole-render Jinja path
         if (turnTemplate == null
-                && com.qxotic.jinfer.llm.SpecialTokens.find(tokenizer(), "<|begin_of_text|>")
-                        .isPresent()
-                && com.qxotic.jinfer.llm.SpecialTokens.find(tokenizer(), "<|start_header_id|>")
-                        .isPresent()) {
+                && SpecialTokens.find(tokenizer(), "<|begin_of_text|>").isPresent()
+                && SpecialTokens.find(tokenizer(), "<|start_header_id|>").isPresent()) {
             turnTemplate = new LlamaTurnTemplate(tokenizer());
         }
-        return java.util.Optional.ofNullable(turnTemplate);
+        return Optional.ofNullable(turnTemplate);
     }
 
     @Override
-    public java.util.Optional<com.qxotic.jinfer.cache.StateCodec<Llama.State>> stateCodec() {
+    public Optional<StateCodec<Llama.State>> stateCodec() {
         // uniform full attention: the shared dense codec over this State's KV arrays
-        return java.util.Optional.of(
-                new com.qxotic.jinfer.cache.DenseStateCodec<>(
+        return Optional.of(
+                new DenseStateCodec<>(
                         config().numberOfLayers(),
                         config().kvDim(),
                         s -> s.keyCache,
@@ -617,7 +615,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
 
     // === State ===
 
-    public static final class State extends com.qxotic.jinfer.BaseState {
+    public static final class State extends BaseState {
         final int contextCapacity, batchCapacity;
         final FloatTensor x, xb, k, v, attnQ, attnOut, hb, hb2, logits;
         final FloatTensor ropeCos, ropeSin;
@@ -704,7 +702,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
     public static Llama loadModel(
             FileChannel fileChannel, GGUF gguf, Arena arena, Tokenizer tokenizer)
             throws IOException {
-        byte[] seed = com.qxotic.jinfer.cache.PromptCache.modelSeed(fileChannel);
+        byte[] seed = PromptCache.modelSeed(fileChannel);
         if (tokenizer == null) {
             tokenizer = Tokenizers.fromGGUF(gguf);
         }

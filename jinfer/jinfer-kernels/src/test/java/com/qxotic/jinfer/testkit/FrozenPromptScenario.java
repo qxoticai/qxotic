@@ -7,6 +7,8 @@ package com.qxotic.jinfer.testkit;
 
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.RuntimeState;
+import com.qxotic.jinfer.cache.BlockTree;
+import com.qxotic.jinfer.cache.CacheStore;
 import com.qxotic.jinfer.cache.CachedSession;
 import com.qxotic.jinfer.cache.FrozenBlocks;
 import com.qxotic.jinfer.chat.Message;
@@ -34,12 +36,8 @@ public final class FrozenPromptScenario<S extends RuntimeState> {
         // artifact must be chunked exactly like the reference ingest below (uniform batch-capacity
         // chunks). The facade's define() commits turn-aligned blocks - production semantics, but a
         // different chunk shape, and KV bytes are chunk-shape-sensitive (the knife-edge law).
-        com.qxotic.jinfer.cache.BlockTree<S> build =
-                new com.qxotic.jinfer.cache.BlockTree<>(
-                        h.codec,
-                        com.qxotic.jinfer.cache.CacheStore.inMemory(),
-                        Long.MAX_VALUE,
-                        h.seed);
+        BlockTree<S> build =
+                new BlockTree<>(h.codec, CacheStore.inMemory(), Long.MAX_VALUE, h.seed);
         CachedSession<S> compile = CachedSession.start(h.model.model(), build, h.newState());
         compile.ingest(staticPrompt);
         build.freeze(artifact);
@@ -110,9 +108,8 @@ public final class FrozenPromptScenario<S extends RuntimeState> {
     }
 
     /** A serve-only tree grafted over the artifact (budget 0: restores, never keeps writes). */
-    private com.qxotic.jinfer.cache.BlockTree<S> graftOn(FrozenBlocks frozen) {
-        return new com.qxotic.jinfer.cache.BlockTree<>(
-                h.codec, com.qxotic.jinfer.cache.CacheStore.inMemory(), 0, h.seed, frozen);
+    private BlockTree<S> graftOn(FrozenBlocks frozen) {
+        return new BlockTree<>(h.codec, CacheStore.inMemory(), 0, h.seed, frozen);
     }
 
     /**

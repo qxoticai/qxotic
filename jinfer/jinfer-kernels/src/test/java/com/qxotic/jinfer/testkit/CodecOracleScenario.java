@@ -5,23 +5,26 @@
 // never the weights.
 package com.qxotic.jinfer.testkit;
 
+import com.qxotic.format.json.Json;
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.llm.SpecialTokens;
+import com.qxotic.toknroll.Specials;
 import com.qxotic.toknroll.Tokenizer;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 
 public final class CodecOracleScenario {
 
     public final Tokenizer tokenizer;
-    private final com.qxotic.toknroll.Specials specials;
+    private final Specials specials;
     public final ChatTemplate template;
     private final OracleSupport support;
     private final Map<String, Object> renderVars;
@@ -32,9 +35,7 @@ public final class CodecOracleScenario {
      * template variables (bos/eos/date) that pin the render deterministic.
      */
     public CodecOracleScenario(
-            Path gguf,
-            java.util.function.Function<Tokenizer, ChatTemplate> template,
-            Map<String, Object> renderVars)
+            Path gguf, Function<Tokenizer, ChatTemplate> template, Map<String, Object> renderVars)
             throws Exception {
         this.support = new OracleSupport(gguf);
         this.tokenizer = support.tokenizer;
@@ -88,7 +89,7 @@ public final class CodecOracleScenario {
         List<Object> maps = new ArrayList<>();
         for (Message m : conversation) maps.add(OracleSupport.oracleMessage(m));
         List<Object> toolVars = new ArrayList<>();
-        for (Tool t : tools) toolVars.add(com.qxotic.format.json.Json.parse(t.rawJson()));
+        for (Tool t : tools) toolVars.add(Json.parse(t.rawJson()));
         Map<String, Object> vars = new HashMap<>(renderVars);
         vars.putAll(extraVars);
         vars.put("messages", maps);

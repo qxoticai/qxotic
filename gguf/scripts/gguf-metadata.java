@@ -7,6 +7,7 @@ import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.FileOutputStream;
 import java.net.URL;
+import java.nio.ByteBuffer;
 import java.nio.channels.Channels;
 import java.util.concurrent.Callable;
 import picocli.CommandLine;
@@ -55,7 +56,7 @@ class ggufMetadata implements Callable<Integer> {
              var out = new BufferedOutputStream(new FileOutputStream(outputPath))) {
             
             byte[] buffer = new byte[(int) tensorDataOffset];
-            var bb = java.nio.ByteBuffer.wrap(buffer);
+            var bb = ByteBuffer.wrap(buffer);
             in.read(bb);
             out.write(buffer);
         }

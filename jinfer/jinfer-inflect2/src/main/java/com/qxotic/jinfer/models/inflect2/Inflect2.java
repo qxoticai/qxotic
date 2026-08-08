@@ -14,13 +14,17 @@ package com.qxotic.jinfer.models.inflect2;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.Activations;
+import com.qxotic.jinfer.Arenas;
 import com.qxotic.jinfer.Config;
 import com.qxotic.jinfer.Convolutions;
 import com.qxotic.jinfer.F32FloatTensor;
+import com.qxotic.jinfer.FastMath;
 import com.qxotic.jinfer.FloatTensor;
+import com.qxotic.jinfer.LeakWatch;
 import com.qxotic.jinfer.Media;
 import com.qxotic.jinfer.Norms;
 import com.qxotic.jinfer.Parallel;
+import com.qxotic.jinfer.SpeechState;
 import com.qxotic.jinfer.kernels.GGMLTensorEntry;
 import com.qxotic.jinfer.kernels.ModelLoader;
 import java.io.ByteArrayInputStream;
@@ -32,8 +36,11 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
+import java.util.ConcurrentModificationException;
 import java.util.Map;
 import java.util.Random;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.ReentrantLock;
 
 public final class Inflect2 {
 
@@ -436,7 +443,7 @@ public final class Inflect2 {
 
     /** A state that owns its scratch: an internal shared arena freed by {@code close()}. */
     public State newState() {
-        Arena arena = com.qxotic.jinfer.Arenas.newShared(); // ofAuto in a native image
+        Arena arena = Arenas.newShared(); // ofAuto in a native image
         try {
             return newState(arena, true);
         } catch (RuntimeException | Error e) {
@@ -784,7 +791,7 @@ public final class Inflect2 {
         // one tanh per audio sample: scalar Math.tanh costs ~15ns each in the native image;
         // the fused FastMath pass is ~0.4ns (contract in TanhAccuracyTest - abs error ~6e-8,
         // below 24-bit audio's LSB)
-        com.qxotic.jinfer.FastMath.tanhInPlace(waveform, 0, time);
+        FastMath.tanhInPlace(waveform, 0, time);
         return waveform;
     }
 
@@ -1053,23 +1060,21 @@ public final class Inflect2 {
      * — which is also why this state can live in a native image heap. A dropped unclosed state
      * leaks its arena until exit; {@code -Djinfer.leakDetection} names the line that dropped it.
      */
-    public static final class State implements com.qxotic.jinfer.SpeechState {
+    public static final class State implements SpeechState {
 
         private final Arena arena;
         private final Arena owned; // null when borrowed: closing this state must not free it
         private final Runnable disarm;
         // One lock, three laws - the same contract BaseState carries for generative states:
         // concurrent synthesis fails fast, close BLOCKS to quiescence, entry after close throws.
-        private final java.util.concurrent.locks.ReentrantLock lock =
-                new java.util.concurrent.locks.ReentrantLock();
-        private final java.util.concurrent.atomic.AtomicBoolean closed =
-                new java.util.concurrent.atomic.AtomicBoolean();
+        private final ReentrantLock lock = new ReentrantLock();
+        private final AtomicBoolean closed = new AtomicBoolean();
 
         State(Arena arena, Arena owned) {
             this.arena = arena;
             this.owned = owned;
             // armed last: nothing above can throw, and a ctor throw must not read as a leak
-            this.disarm = com.qxotic.jinfer.LeakWatch.arm(this, "Inflect2.State");
+            this.disarm = LeakWatch.arm(this, "Inflect2.State");
         }
 
         /**
@@ -1083,7 +1088,7 @@ public final class Inflect2 {
                 // the holder is either another synthesis (a contract violation) or the winning
                 // closer draining us; `closed` says which
                 if (closed.get()) throw new IllegalStateException("speech state is closed");
-                throw new java.util.ConcurrentModificationException(
+                throw new ConcurrentModificationException(
                         "a speech state is a single serial pipeline (one synthesis at a time) -"
                                 + " for parallel pipelines create one state each");
             }

@@ -5,6 +5,7 @@ import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 /**
  * The built-in {@link ReplyParser}: routes each generated token to the content or reasoning channel
@@ -94,8 +95,8 @@ final class SpansReplyParser implements ReplyParser {
     }
 
     @Override
-    public java.util.Set<String> outputChannels() {
-        return java.util.Set.of("content");
+    public Set<String> outputChannels() {
+        return Set.of("content");
     }
 
     @Override

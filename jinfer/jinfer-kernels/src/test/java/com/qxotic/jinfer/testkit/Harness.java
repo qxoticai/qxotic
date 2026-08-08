@@ -18,6 +18,7 @@ import java.lang.foreign.MemorySegment;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Set;
+import java.util.function.IntConsumer;
 
 public final class Harness<S extends RuntimeState> {
 
@@ -86,7 +87,7 @@ public final class Harness<S extends RuntimeState> {
      * The shared greedy loop: argmax, feed each token through {@code step}, stop on the model's
      * stop set or the budget.
      */
-    private Reply greedy(S state, java.util.function.IntConsumer step, int maxTokens) {
+    private Reply greedy(S state, IntConsumer step, int maxTokens) {
         StringBuilder out = new StringBuilder();
         int tok = model.model().logits(state).argmax();
         int n = 0;

@@ -4,6 +4,7 @@ import com.qxotic.jinfer.testkit.ModelFixture;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Arrays;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
@@ -20,9 +21,9 @@ class PrefillBench {
 
     @Test
     void prefillTtft() {
-        java.nio.file.Path model =
+        Path model =
                 System.getProperty("jinfer.benchModel") != null
-                        ? java.nio.file.Path.of(System.getProperty("jinfer.benchModel"))
+                        ? Path.of(System.getProperty("jinfer.benchModel"))
                         : ModelFixture.LFM25_8B_Q8.path();
         Assumptions.assumeTrue(Files.exists(model));
         String para =

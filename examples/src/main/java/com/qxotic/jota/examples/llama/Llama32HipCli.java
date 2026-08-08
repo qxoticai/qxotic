@@ -771,8 +771,8 @@ public final class Llama32HipCli {
                                     Integer.getInteger(
                                             "com.qxotic.llama.kernel.threads",
                                             Runtime.getRuntime().availableProcessors()));
-                    private static final java.util.concurrent.ExecutorService EXEC =
-                            java.util.concurrent.Executors.newFixedThreadPool(
+                    private static final ExecutorService EXEC =
+                            Executors.newFixedThreadPool(
                                     THREADS,
                                     r -> {
                                         Thread t = new Thread(r, "llama-gemv2");
@@ -894,7 +894,7 @@ public final class Llama32HipCli {
                         });
                     }
 
-                    private static void parallelForRows(int rows, java.util.function.IntConsumer body) {
+                    private static void parallelForRows(int rows, IntConsumer body) {
                         int workers = Math.min(THREADS, rows);
                         if (workers <= 1) {
                             for (int row = 0; row < rows; row++) {
@@ -903,8 +903,8 @@ public final class Llama32HipCli {
                             return;
                         }
                         int chunk = (rows + workers - 1) / workers;
-                        java.util.List<java.util.concurrent.Future<?>> futures =
-                                new java.util.ArrayList<>(workers);
+                        List<Future<?>> futures =
+                                new ArrayList<>(workers);
                         for (int w = 0; w < workers; w++) {
                             int start = w * chunk;
                             int end = Math.min(rows, start + chunk);
@@ -919,13 +919,13 @@ public final class Llama32HipCli {
                                                 }
                                             }));
                         }
-                        for (java.util.concurrent.Future<?> future : futures) {
+                        for (Future<?> future : futures) {
                             try {
                                 future.get();
                             } catch (InterruptedException ex) {
                                 Thread.currentThread().interrupt();
                                 throw new RuntimeException("GEMV2 worker interrupted", ex);
-                            } catch (java.util.concurrent.ExecutionException ex) {
+                            } catch (ExecutionException ex) {
                                 throw new RuntimeException("GEMV2 worker failed", ex.getCause());
                             }
                         }
@@ -1276,7 +1276,7 @@ public final class Llama32HipCli {
                 """;
         // language=java
         private static final String SWIGLU_KERNEL_SOURCE =
-                """
+"""
                 package com.qxotic.jota.tensor.jit;
 
                 import java.util.stream.IntStream;
@@ -1289,6 +1289,11 @@ public final class Llama32HipCli {
                 import java.nio.ByteOrder;
                 import jdk.incubator.vector.FloatVector;
                 import jdk.incubator.vector.VectorSpecies;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.function.IntConsumer;
 
                 public final class LlamaSwigluKernel implements JavaKernel {
                     private static final VectorSpecies<Float> SPECIES = FloatVector.SPECIES_PREFERRED;
@@ -1348,7 +1353,7 @@ public final class Llama32HipCli {
                         });
                     }
                 }
-                """;
+""";
         private static final int C_GEMV_OMP_MIN_ROWS_DOWN =
                 Integer.getInteger("com.qxotic.llama.cgemv.omp.minRows.down", 64);
         private static final int C_GEMV_OMP_MIN_ROWS_LOGITS =

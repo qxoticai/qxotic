@@ -1,5 +1,7 @@
 package com.qxotic.jinfer;
 
+import java.lang.ref.Reference;
+import java.util.Arrays;
 import java.util.function.Consumer;
 
 /**
@@ -28,7 +30,7 @@ public interface EmbeddingModel<C extends Config, W, S extends RuntimeState>
         } finally {
             base.exit();
         }
-        java.lang.ref.Reference.reachabilityFence(this);
+        Reference.reachabilityFence(this);
         return embedding;
     }
 
@@ -78,7 +80,7 @@ public interface EmbeddingModel<C extends Config, W, S extends RuntimeState>
         int j = 0, seqStart = 0;
         for (int cs = 0; cs < n; cs += bc) {
             int ce = Math.min(cs + bc, n);
-            int[] chunkIds = java.util.Arrays.copyOfRange(ids, cs, ce);
+            int[] chunkIds = Arrays.copyOfRange(ids, cs, ce);
             ingest(
                     state,
                     new Batch(

@@ -9,6 +9,7 @@ package com.qxotic.jinfer.models.llama;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.testkit.ModelFixture;
 import com.qxotic.jinfer.testkit.OracleScenario;
+import com.qxotic.toknroll.IntSequence;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -82,7 +83,7 @@ public final class LlamaTurnTemplateOracle {
                         && ids.get(ids.size() - 1) == eot
                         && o.tokenizer
                                 .decode(
-                                        com.qxotic.toknroll.IntSequence.wrap(
+                                        IntSequence.wrap(
                                                 ids.subList(ids.indexOf(eh) + 1, ids.size() - 1)))
                                 .equals("\n\n" + hostile.text().strip());
         o.check(inert, "special-token text is inert (content cannot mint control tokens)");

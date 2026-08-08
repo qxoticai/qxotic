@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.spring.ai.autoconfigure;
 
+import com.qxotic.jinfer.media.VideoSampler;
 import com.qxotic.jinfer.spring.ai.JinferChatModel;
 import io.micrometer.observation.ObservationRegistry;
 import java.nio.file.Path;
@@ -26,7 +27,7 @@ public class JinferChatAutoConfiguration {
             JinferChatProperties properties,
             ObjectProvider<ObservationRegistry> observationRegistry,
             ObjectProvider<ChatModelObservationConvention> observationConvention,
-            ObjectProvider<com.qxotic.jinfer.media.VideoSampler> videoSampler) {
+            ObjectProvider<VideoSampler> videoSampler) {
         if (!StringUtils.hasText(properties.model())) {
             throw new IllegalStateException(
                     "spring.ai.jinfer.chat.model is required: a local GGUF path or a hub ref like"

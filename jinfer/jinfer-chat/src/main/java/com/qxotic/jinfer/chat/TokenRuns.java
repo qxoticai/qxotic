@@ -4,6 +4,8 @@ import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -28,7 +30,7 @@ public final class TokenRuns {
     private final Set<String> spellings; // the rescan's kept special spellings
     private IntSequence.Builder ids = IntSequence.newBuilder(); // replaced at cuts
     private final StringBuilder run = new StringBuilder();
-    private final java.util.List<Batch> out = new java.util.ArrayList<>(); // atomic-block streams
+    private final List<Batch> out = new ArrayList<>(); // atomic-block streams
 
     public TokenRuns(Tokenizer tokenizer) {
         this.tokenizer = tokenizer;
@@ -117,9 +119,9 @@ public final class TokenRuns {
     }
 
     /** The full stream as batches: token runs cut around every atomic block, final flush owned. */
-    public java.util.List<Batch> batches() {
+    public List<Batch> batches() {
         cut();
-        return java.util.List.copyOf(out);
+        return List.copyOf(out);
     }
 
     private void cut() {

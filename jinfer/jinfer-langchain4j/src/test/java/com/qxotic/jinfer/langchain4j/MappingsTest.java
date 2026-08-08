@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.Media;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.Role;
@@ -13,14 +14,21 @@ import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.data.message.ImageContent;
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.exception.UnsupportedFeatureException;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 import dev.langchain4j.model.output.FinishReason;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
+import java.io.UncheckedIOException;
+import java.net.URI;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import javax.imageio.ImageIO;
 import org.junit.jupiter.api.Test;
 
 /** The mapping seam, model-free: typed messages, fallback maps, tools, replies, finish reasons. */
@@ -135,20 +143,17 @@ class MappingsTest {
 
     @Test
     void imageContentDecodesToMediaBlob() throws Exception {
-        var img = new java.awt.image.BufferedImage(4, 3, java.awt.image.BufferedImage.TYPE_INT_RGB);
-        var png = new java.io.ByteArrayOutputStream();
-        javax.imageio.ImageIO.write(img, "png", png);
-        String base64 = java.util.Base64.getEncoder().encodeToString(png.toByteArray());
+        var img = new BufferedImage(4, 3, BufferedImage.TYPE_INT_RGB);
+        var png = new ByteArrayOutputStream();
+        ImageIO.write(img, "png", png);
+        String base64 = Base64.getEncoder().encodeToString(png.toByteArray());
 
         Message m =
                 Mappings.toMessages(
-                                List.of(
-                                        UserMessage.from(
-                                                dev.langchain4j.data.message.ImageContent.from(
-                                                        base64, "image/png"))))
+                                List.of(UserMessage.from(ImageContent.from(base64, "image/png"))))
                         .get(0);
         Part.Blob blob = assertInstanceOf(Part.Blob.class, m.content().get(0));
-        var decoded = assertInstanceOf(com.qxotic.jinfer.Media.Image.class, blob.media());
+        var decoded = assertInstanceOf(Media.Image.class, blob.media());
         assertEquals(4, decoded.width());
         assertEquals(3, decoded.height());
     }
@@ -156,21 +161,18 @@ class MappingsTest {
     @Test
     void badMediaRejectedLoudly() {
         assertThrows(
-                java.io.UncheckedIOException.class,
+                UncheckedIOException.class,
                 () ->
                         Mappings.toMessages(
-                                List.of(
-                                        UserMessage.from(
-                                                dev.langchain4j.data.message.ImageContent.from(
-                                                        "aGk=", "image/png")))));
+                                List.of(UserMessage.from(ImageContent.from("aGk=", "image/png")))));
         assertThrows(
                 UnsupportedFeatureException.class,
                 () ->
                         Mappings.toMessages(
                                 List.of(
                                         UserMessage.from(
-                                                dev.langchain4j.data.message.ImageContent.from(
-                                                        java.net.URI.create(
+                                                ImageContent.from(
+                                                        URI.create(
                                                                 "https://example.com/a.png"))))));
     }
 }

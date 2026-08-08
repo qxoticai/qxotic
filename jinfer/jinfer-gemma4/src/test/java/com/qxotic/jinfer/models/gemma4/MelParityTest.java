@@ -6,7 +6,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.Assumptions;
@@ -32,7 +36,7 @@ class MelParityTest {
                     pcm[i] = (float) Math.sin(2 * pi * 440.0f * i / 16000.0f);
                 }
             }
-            case "half" -> java.util.Arrays.fill(pcm, 0.5f);
+            case "half" -> Arrays.fill(pcm, 0.5f);
             case "zero" -> {}
             default -> throw new IllegalArgumentException(kind);
         }
@@ -43,8 +47,8 @@ class MelParityTest {
     private static List<AudioPreprocess.MelChunk> parseDump(Path file) throws IOException {
         Pattern val = Pattern.compile("mel\\[(\\d+)\\]\\[m=(\\d+)\\]\\[t=(\\d+)\\] = (-?[0-9.]+)");
         Pattern dims = Pattern.compile("chunk (\\d+) has n_len=(\\d+), n_mel=(\\d+)");
-        java.util.Map<Integer, int[]> shapes = new java.util.HashMap<>();
-        java.util.Map<Integer, float[]> data = new java.util.HashMap<>();
+        Map<Integer, int[]> shapes = new HashMap<>();
+        Map<Integer, float[]> data = new HashMap<>();
         for (String line : Files.readAllLines(file)) {
             Matcher d = dims.matcher(line);
             if (d.find()) {
@@ -63,7 +67,7 @@ class MelParityTest {
                 cell[t * shape[1] + mel] = Float.parseFloat(m.group(4));
             }
         }
-        List<AudioPreprocess.MelChunk> out = new java.util.ArrayList<>();
+        List<AudioPreprocess.MelChunk> out = new ArrayList<>();
         for (int c = 0; c < shapes.size(); c++) {
             out.add(new AudioPreprocess.MelChunk(data.get(c), shapes.get(c)[0]));
         }

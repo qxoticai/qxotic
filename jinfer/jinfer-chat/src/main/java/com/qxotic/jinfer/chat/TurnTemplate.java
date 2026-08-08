@@ -1,6 +1,9 @@
 package com.qxotic.jinfer.chat;
 
 import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.llm.SpecialTokens;
+import com.qxotic.toknroll.IntSequence;
+import com.qxotic.toknroll.Tokenizer;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -61,14 +64,14 @@ public interface TurnTemplate extends ChatTemplate {
      * thinking, the closed empty pair {@code <think>\n\n</think>\n\n} when not - the exact ids the
      * template appends after the role header, and therefore the {@code replySeed}.
      */
-    static int[] reasonSeed(com.qxotic.toknroll.Tokenizer tokenizer, boolean thinking) {
-        com.qxotic.toknroll.IntSequence.Builder ids = com.qxotic.toknroll.IntSequence.newBuilder();
-        ids.add(com.qxotic.jinfer.llm.SpecialTokens.require(tokenizer, Thinking.OPEN));
+    static int[] reasonSeed(Tokenizer tokenizer, boolean thinking) {
+        IntSequence.Builder ids = IntSequence.newBuilder();
+        ids.add(SpecialTokens.require(tokenizer, Thinking.OPEN));
         if (thinking) {
             ids.addAll(tokenizer.encode("\n"));
         } else {
             ids.addAll(tokenizer.encode("\n\n"));
-            ids.add(com.qxotic.jinfer.llm.SpecialTokens.require(tokenizer, Thinking.CLOSE));
+            ids.add(SpecialTokens.require(tokenizer, Thinking.CLOSE));
             ids.addAll(tokenizer.encode("\n\n"));
         }
         return ids.build().toArray();
