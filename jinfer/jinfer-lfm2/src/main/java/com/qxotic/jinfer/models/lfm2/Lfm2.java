@@ -199,13 +199,13 @@ public final class Lfm2
                 seqLen,
                 configuration.headSizeFull / 2,
                 weights.rope());
-        embed(state, tokens, tokenOffset, seqLen);
+        embedTokens(state, tokens, tokenOffset, seqLen);
         for (int l = 0; l < configuration.numberOfLayers; l++) layer(state, l, startPos, seqLen);
         commitKv(state, startPos, seqLen);
     }
 
     /** Token-embedding lookup into the residual stream (no scaling, unlike Gemma4). */
-    private void embed(State state, int[] tokens, int tokenOffset, int seqLen) {
+    private void embedTokens(State state, int[] tokens, int tokenOffset, int seqLen) {
         int dim = configuration.embeddingLength;
         for (int s = 0; s < seqLen; s++) {
             weights.tokenEmbeddings.copyTo(
@@ -293,54 +293,11 @@ public final class Lfm2
      */
     private void attention(State state, int l, int startPos, int seqLen) {
         Configuration config = configuration;
-        int dim = config.embeddingLength;
-        float eps = config.rmsNormEps;
-        int headSize = config.headSizeFull, halfHead = headSize / 2;
+        int headSize = config.headSizeFull;
         int queryDim = config.queryDim(), kvDim = config.kvDim(l);
-        int nKvHeads = config.numberOfKeyValueHeadsPerLayer[l],
-                kvMul = config.numberOfHeads / nKvHeads;
-        AttentionWeights attn = weights.layers[l].attention();
-
-        F32FloatTensor attNormW = weights.layers[l].attnNorm();
-        Parallel.forRows(
-                seqLen,
-                s ->
-                        rmsnorm(
-                                state.xb,
-                                (long) s * dim,
-                                state.residual,
-                                (long) s * dim,
-                                attNormW,
-                                dim,
-                                eps));
-
-        attn.wq().gemm(state.xb, dim, state.query, queryDim, seqLen, queryDim, dim);
-        headNormRope(
-                state.query,
-                queryDim,
-                config.numberOfHeads,
-                headSize,
-                halfHead,
-                attn.qNorm(),
-                seqLen,
-                state.ropeCos,
-                state.ropeSin);
-
+        int kvMul = config.numberOfHeads / config.numberOfKeyValueHeadsPerLayer[l];
+        attentionProject(state, l, seqLen);
         FloatTensor bK = state.batchK[l], bV = state.batchV[l];
-        attn.wk().gemm(state.xb, dim, bK, kvDim, seqLen, kvDim, dim);
-        if (attn.wv() != null) attn.wv().gemm(state.xb, dim, bV, kvDim, seqLen, kvDim, dim);
-        else bK.copyTo(0, bV, 0, seqLen * kvDim);
-        headNormRope(
-                bK,
-                kvDim,
-                nKvHeads,
-                headSize,
-                halfHead,
-                attn.kNorm(),
-                seqLen,
-                state.ropeCos,
-                state.ropeSin);
-
         float scale = 1.0f / (float) Math.sqrt(headSize);
         if (seqLen > 1) {
             FlashAttention.slidingWindowPrefill(
@@ -382,7 +339,77 @@ public final class Lfm2
                     state.decodeScratch);
         }
 
-        attn.wo().gemm(state.xbK, queryDim, state.xb2, dim, seqLen, dim, queryDim);
+        attentionFinish(state, l, seqLen);
+    }
+
+    /**
+     * The shared head of both attention paths: pre-norm, Q/K/V projections into {@code
+     * query}/{@code batchK}/{@code batchV}, per-head QK RMS-norm + NeoX RoPE (positions are
+     * whatever {@code ropeCos}/{@code ropeSin} were filled with - a range causally, per-sequence
+     * restarts bidirectionally).
+     */
+    private void attentionProject(State state, int l, int seqLen) {
+        Configuration config = configuration;
+        int dim = config.embeddingLength;
+        float eps = config.rmsNormEps;
+        int headSize = config.headSizeFull, halfHead = headSize / 2;
+        int queryDim = config.queryDim(), kvDim = config.kvDim(l);
+        int nKvHeads = config.numberOfKeyValueHeadsPerLayer[l];
+        AttentionWeights attn = weights.layers[l].attention();
+
+        F32FloatTensor attNormW = weights.layers[l].attnNorm();
+        Parallel.forRows(
+                seqLen,
+                s ->
+                        rmsnorm(
+                                state.xb,
+                                (long) s * dim,
+                                state.residual,
+                                (long) s * dim,
+                                attNormW,
+                                dim,
+                                eps));
+        attn.wq().gemm(state.xb, dim, state.query, queryDim, seqLen, queryDim, dim);
+        headNormRope(
+                state.query,
+                queryDim,
+                config.numberOfHeads,
+                headSize,
+                halfHead,
+                attn.qNorm(),
+                seqLen,
+                state.ropeCos,
+                state.ropeSin);
+        FloatTensor bK = state.batchK[l], bV = state.batchV[l];
+        attn.wk().gemm(state.xb, dim, bK, kvDim, seqLen, kvDim, dim);
+        if (attn.wv() != null) attn.wv().gemm(state.xb, dim, bV, kvDim, seqLen, kvDim, dim);
+        else bK.copyTo(0, bV, 0, seqLen * kvDim);
+        headNormRope(
+                bK,
+                kvDim,
+                nKvHeads,
+                headSize,
+                halfHead,
+                attn.kNorm(),
+                seqLen,
+                state.ropeCos,
+                state.ropeSin);
+    }
+
+    /** The shared tail: output projection, optional post-norm, added to the residual. */
+    private void attentionFinish(State state, int l, int seqLen) {
+        int dim = configuration.embeddingLength;
+        float eps = configuration.rmsNormEps;
+        AttentionWeights attn = weights.layers[l].attention();
+        attn.wo()
+                .gemm(
+                        state.xbK,
+                        configuration.queryDim(),
+                        state.xb2,
+                        dim,
+                        seqLen,
+                        dim,
+                        configuration.queryDim());
         F32FloatTensor postAttW = weights.layers[l].postAttnNorm();
         if (postAttW != null)
             Parallel.forRows(
@@ -648,7 +675,7 @@ public final class Lfm2
                 n,
                 configuration.headSizeFull / 2,
                 weights.rope());
-        embed(state, tokens, 0, n);
+        embedTokens(state, tokens, 0, n);
         for (int l = 0; l < configuration.numberOfLayers; l++) {
             if (configuration.isRecurrentLayer(l))
                 shortConvMixerCentered(state, l, n, segRow0, seqLen);
@@ -725,52 +752,11 @@ public final class Lfm2
     private void attentionBidirectional(
             State state, int l, int seqLen, int[] segRow0, int[] segLen) {
         Configuration config = configuration;
-        int dim = config.embeddingLength;
-        float eps = config.rmsNormEps;
-        int headSize = config.headSizeFull, halfHead = headSize / 2;
+        int headSize = config.headSizeFull;
         int queryDim = config.queryDim(), kvDim = config.kvDim(l);
-        int nKvHeads = config.numberOfKeyValueHeadsPerLayer[l],
-                kvMul = config.numberOfHeads / nKvHeads;
-        AttentionWeights attn = weights.layers[l].attention();
-
-        F32FloatTensor attNormW = weights.layers[l].attnNorm();
-        Parallel.forRows(
-                seqLen,
-                s ->
-                        rmsnorm(
-                                state.xb,
-                                (long) s * dim,
-                                state.residual,
-                                (long) s * dim,
-                                attNormW,
-                                dim,
-                                eps));
-        attn.wq().gemm(state.xb, dim, state.query, queryDim, seqLen, queryDim, dim);
-        headNormRope(
-                state.query,
-                queryDim,
-                config.numberOfHeads,
-                headSize,
-                halfHead,
-                attn.qNorm(),
-                seqLen,
-                state.ropeCos,
-                state.ropeSin);
+        int kvMul = config.numberOfHeads / config.numberOfKeyValueHeadsPerLayer[l];
+        attentionProject(state, l, seqLen);
         FloatTensor bK = state.batchK[l], bV = state.batchV[l];
-        attn.wk().gemm(state.xb, dim, bK, kvDim, seqLen, kvDim, dim);
-        if (attn.wv() != null) attn.wv().gemm(state.xb, dim, bV, kvDim, seqLen, kvDim, dim);
-        else bK.copyTo(0, bV, 0, seqLen * kvDim);
-        headNormRope(
-                bK,
-                kvDim,
-                nKvHeads,
-                headSize,
-                halfHead,
-                attn.kNorm(),
-                seqLen,
-                state.ropeCos,
-                state.ropeSin);
-
         float scale = 1.0f / (float) Math.sqrt(headSize);
         EmbedScratch es = state.embedScratch(config);
         for (int g = 0; g < segRow0.length; g++) {
@@ -792,22 +778,7 @@ public final class Lfm2
                     scale);
             es.segOut.copyTo(0, state.xbK, (long) r0 * queryDim, sl * queryDim);
         }
-
-        attn.wo().gemm(state.xbK, queryDim, state.xb2, dim, seqLen, dim, queryDim);
-        F32FloatTensor postAttW = weights.layers[l].postAttnNorm();
-        if (postAttW != null)
-            Parallel.forRows(
-                    seqLen,
-                    s ->
-                            rmsnorm(
-                                    state.xb2,
-                                    (long) s * dim,
-                                    state.xb2,
-                                    (long) s * dim,
-                                    postAttW,
-                                    dim,
-                                    eps));
-        state.residual.addInPlace(0, state.xb2, 0, seqLen * dim);
+        attentionFinish(state, l, seqLen);
     }
 
     /**
@@ -828,14 +799,19 @@ public final class Lfm2
                 weights.finalNorm,
                 dim,
                 configuration.rmsNormEps);
-        double ss = 0;
-        for (int i = 0; i < dim; i++) {
-            float v = out.getFloat(i);
-            ss += (double) v * v;
-        }
-        float inv = ss > 0 ? (float) (1.0 / Math.sqrt(ss)) : 0f;
+        float inv = l2Inv(out, dim);
         out.mapInPlace(0, dim, v -> v * inv);
         return out;
+    }
+
+    /** {@code 1/||t[0..n)||}, or 0 for a zero vector - the shared L2-normalization factor. */
+    private static float l2Inv(FloatTensor t, int n) {
+        double ss = 0;
+        for (int i = 0; i < n; i++) {
+            float v = t.getFloat(i);
+            ss += (double) v * v;
+        }
+        return ss > 0 ? (float) (1.0 / Math.sqrt(ss)) : 0f;
     }
 
     /**
@@ -858,19 +834,14 @@ public final class Lfm2
                 configuration.rmsNormEps);
         FloatTensor projected = s.embedScratch(configuration).colbertOut;
         weights.dense2().matmul(normed, projected, outDim, dim);
-        double ss = 0;
-        for (int i = 0; i < outDim; i++) {
-            float v = projected.getFloat(i);
-            ss += (double) v * v;
-        }
-        float inv = ss > 0 ? (float) (1.0 / Math.sqrt(ss)) : 0f;
+        float inv = l2Inv(projected, outDim);
         for (int i = 0; i < outDim; i++) out[i] = projected.getFloat(i) * inv;
     }
 
     /**
      * Bidirectional embedding overrides the generic chunk-streaming default: a sequence attends to
-     * ALL of its tokens, so it must be forwarded WHOLE - groups re-cut on sequence boundaries,
-     * capped by the batch. Emits each sequence's CLS (first-row) embedding, in input order.
+     * ALL of its tokens, so it must be forwarded WHOLE - {@link #forEachSequence} re-cuts groups on
+     * sequence boundaries. Emits each sequence's CLS (first-row) embedding, in input order.
      */
     @Override
     public void embed(
@@ -881,55 +852,74 @@ public final class Lfm2
             throw new UnsupportedOperationException(
                     "this LFM2.5 checkpoint is generative, not an embedder - load"
                             + " LFM2.5-Embedding (pooling_type=CLS, attention.causal=false)");
-        state.enter(); // one claim across all groups, like the interface default
+        int[] len = seqs.seqLen();
+        int[] ids = seqs.tokens().ids();
+        int[][] sequences = new int[len.length][];
+        for (int i = 0, at = 0; i < len.length; at += len[i], i++) {
+            sequences[i] = Arrays.copyOfRange(ids, at, at + len[i]);
+        }
+        // CLS: the sequence's FIRST row (its BOS)
+        forEachSequence(
+                state, sequences, (index, rowStart) -> sink.accept(embedding(state, rowStart)));
+    }
+
+    /** Visits each sequence right after its group's forward, while its rows are still retained. */
+    interface SequenceVisitor {
+        void sequence(int index, int rowStart);
+    }
+
+    /**
+     * The bidirectional ingest loop both retrieval faces share (CLS embedding, ColBERT): packs
+     * whole sequences greedily into groups capped by {@code min(batch, context)} - a sequence must
+     * be forwarded WHOLE, so one over the cap refuses by name - resets the state per group (groups
+     * are independent: positions and conv history restart), ingests with ALL outputs, and hands
+     * each sequence to {@code visitor} with its first retained row. Returns the total token count.
+     * Claims the state once across all groups; the per-ingest claims nest inside.
+     */
+    int forEachSequence(State state, int[][] seqs, SequenceVisitor visitor) {
+        int cap = Math.min(state.batchCapacity, state.contextCapacity);
+        int total = 0, seq = 0;
+        state.enter();
         try {
-            embedGroups(state, seqs, sink);
+            while (seq < seqs.length) {
+                int end = seq, tokens = 0;
+                while (end < seqs.length && tokens + seqs[end].length <= cap) {
+                    tokens += seqs[end].length;
+                    end++;
+                }
+                if (end == seq)
+                    throw new IllegalArgumentException(
+                            "sequence "
+                                    + seq
+                                    + " is "
+                                    + seqs[seq].length
+                                    + " tokens and bidirectional attention forwards a sequence"
+                                    + " whole (the cap here is "
+                                    + cap
+                                    + ") - raise -Djinfer.batchCapacity/contextLength above it,"
+                                    + " or chunk the text smaller");
+                total += tokens;
+                int[] ids = new int[tokens];
+                int[] len = new int[end - seq];
+                for (int i = seq, at = 0; i < end; at += seqs[i].length, i++) {
+                    System.arraycopy(seqs[i], 0, ids, at, seqs[i].length);
+                    len[i - seq] = seqs[i].length;
+                }
+                state.reset();
+                ingest(
+                        state,
+                        new Batch(
+                                new Batch.Input.Sequences(new Batch.Input.Tokens(ids), len),
+                                Batch.Outputs.ALL));
+                for (int i = 0, row = 0; i < len.length; row += len[i], i++) {
+                    visitor.sequence(seq + i, row);
+                }
+                seq = end;
+            }
         } finally {
             state.exit();
         }
-    }
-
-    private void embedGroups(
-            State state,
-            com.qxotic.jinfer.Batch.Input.Sequences seqs,
-            java.util.function.Consumer<FloatTensor> sink) {
-        int[] len = seqs.seqLen();
-        int[] ids = seqs.tokens().ids();
-        int cap = Math.min(state.batchCapacity, state.contextCapacity);
-        int seq = 0, at = 0;
-        while (seq < len.length) {
-            int end = seq, tokens = 0;
-            while (end < len.length && tokens + len[end] <= cap) {
-                tokens += len[end];
-                end++;
-            }
-            if (end == seq)
-                throw new IllegalArgumentException(
-                        "sequence "
-                                + seq
-                                + " is "
-                                + len[seq]
-                                + " tokens and bidirectional attention forwards a sequence whole"
-                                + " (the cap here is "
-                                + cap
-                                + ") - raise -Djinfer.batchCapacity/contextLength above it, or"
-                                + " chunk the text smaller");
-            state.reset(); // groups are independent: positions and conv history restart
-            int[] groupLen = Arrays.copyOfRange(len, seq, end);
-            int[] groupIds = Arrays.copyOfRange(ids, at, at + tokens);
-            ingest(
-                    state,
-                    new Batch(
-                            new Batch.Input.Sequences(new Batch.Input.Tokens(groupIds), groupLen),
-                            Batch.Outputs.ALL));
-            int row = 0;
-            for (int i = 0; i < groupLen.length; i++) {
-                sink.accept(embedding(state, row)); // CLS: the sequence FIRST row (its BOS)
-                row += groupLen[i];
-            }
-            seq = end;
-            at += tokens;
-        }
+        return total;
     }
 
     // === Configuration ===
