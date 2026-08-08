@@ -121,6 +121,48 @@ class ValidationTest {
         assertTrue(e.getMessage().contains("max_tokens"), e.getMessage());
     }
 
+    /**
+     * This server has ONE model, so an absent "model" can only mean that one - the field is
+     * optional and {@link Requests#modelId} resolves it. Naming the wrong model is still refused:
+     * that is a client pointed at the wrong server, which is worth saying out loud.
+     */
+    @Test
+    void theModelFieldIsOptionalButNeverWrong() {
+        ServerConfig config = ServerTestSupport.config(Path.of("model.gguf"));
+        Validation.validateGenerationParams(new HashMap<>(user("hi")), config);
+        assertEquals(
+                config.modelName(),
+                Requests.modelId(new HashMap<>(user("hi")), config),
+                "an absent model resolves to the served one");
+
+        Map<String, Object> blank = new HashMap<>(user("hi"));
+        blank.put("model", "");
+        Validation.validateGenerationParams(blank, config);
+        assertEquals(
+                config.modelName(),
+                Requests.modelId(blank, config),
+                "blank resolves too - echoing \"model\": \"\" back helps nobody");
+
+        Map<String, Object> wrong = new HashMap<>(user("hi"));
+        wrong.put("model", "some-other-model");
+        String message =
+                assertThrows(
+                                IllegalArgumentException.class,
+                                () -> Validation.validateGenerationParams(wrong, config))
+                        .getMessage();
+        assertTrue(message.contains("some-other-model"), message);
+        assertTrue(
+                message.contains(config.modelName()),
+                "the refusal names what IS served: " + message);
+
+        Map<String, Object> typed = new HashMap<>(user("hi"));
+        typed.put("model", 42);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> Validation.validateGenerationParams(typed, config),
+                "a non-string model is a malformed request, not a missing one");
+    }
+
     @Test
     void everyRejectionIsTheTypeTheHandlerMapsTo400() {
         // the contract in one place: if this list grows a case that throws something else, the

@@ -131,6 +131,13 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                 tokenizer,
                 configuration.eosTokenId,
                 "<|eot_id|>",
+                // Llama 3.1+ ends a TOOL-CALL turn with <|eom_id|> (end of message, "I expect a
+                // tool result next") instead of <|eot_id|>. Without it the turn never ends: the
+                // model emitted its call, ran on into a fresh assistant header, and repeated the
+                // call until the budget ran out - so the reply finished on "length" and the
+                // trailing garbage kept the call from parsing at all. Absent names are skipped,
+                // so pre-3.1 checkpoints are unaffected.
+                "<|eom_id|>",
                 "<|im_end|>",
                 "<|endoftext|>",
                 "<|end_of_text|>");

@@ -33,7 +33,15 @@ public final class Values {
     }
 
     public static int intValue(Object value, int defaultValue) {
-        return Math.toIntExact(longValue(value, defaultValue));
+        long wide = longValue(value, defaultValue);
+        // toIntExact throws ArithmeticException, which is NOT one of the two types a server maps
+        // to 400 - so an out-of-range number in a request came back as "Internal server error",
+        // blaming the server for the client's 99999999999
+        if (wide < Integer.MIN_VALUE || wide > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException(
+                    "Invalid argument: " + wide + " is out of range for a 32-bit integer");
+        }
+        return (int) wide;
     }
 
     public static long longValue(Object value, long defaultValue) {

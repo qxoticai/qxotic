@@ -1053,6 +1053,20 @@ public final class Grammar {
         }
         Map<String, Integer> nameToId = new LinkedHashMap<>();
         List<Rule> rules = new ArrayList<>();
+        // "root" is THE start symbol (llama.cpp's contract), so it takes id 0 - which is the id
+        // the compiler starts from. Deriving the start symbol from declaration order instead
+        // silently miscompiled every grammar whose helpers come first: `value ::= "a" | "b"` above
+        // `root ::= "[" value "]"` matched `a`, not `[a]`, with no error anywhere.
+        boolean declaresRoot = false;
+        for (String line : logical) {
+            int eq = line.indexOf("::=");
+            if (eq >= 0 && line.substring(0, eq).trim().equals("root")) {
+                declaresRoot = true;
+                nameToId.put("root", 0);
+                rules.add(null);
+                break;
+            }
+        }
         for (String line : logical) {
             int eq = line.indexOf("::=");
             if (eq < 0) continue;
@@ -1061,6 +1075,12 @@ public final class Grammar {
                 nameToId.put(name, rules.size());
                 rules.add(null);
             }
+        }
+        if (!rules.isEmpty() && !declaresRoot) {
+            throw new IllegalArgumentException(
+                    "grammar has no 'root' rule - it is the start symbol, so there is nothing to"
+                            + " match from; declared rules: "
+                            + nameToId.keySet());
         }
         for (String line : logical) {
             int eq = line.indexOf("::=");

@@ -173,10 +173,52 @@ public final class GrammarSpecTest {
         testDeepNesting();
         testChoice();
         testSchema();
+        testRootIsTheStartSymbol();
         testFuzzRoundtrip();
 
         System.out.println("\nGrammarSpecTest: " + checks + " checks, " + failures + " failures");
         if (failures > 0) throw new AssertionError("GrammarSpecTest: " + failures + " failures");
+    }
+
+    /**
+     * The start symbol is the rule NAMED root - not whichever rule happened to be declared first.
+     * The compiler used to start from rule id 0, which meant the perfectly ordinary llama.cpp habit
+     * of declaring helpers above root silently produced a DIFFERENT LANGUAGE: this exact pair
+     * matched "apple" instead of "[apple]", with no error at compile or generation time.
+     */
+    static void testRootIsTheStartSymbol() {
+        String rootFirst =
+                """
+                root ::= "[" value "]"
+                value ::= "apple" | "banana"
+                """;
+        String helperFirst =
+                """
+                value ::= "apple" | "banana"
+                root ::= "[" value "]"
+                """;
+        for (String gbnf : new String[] {rootFirst, helperFirst}) {
+            Grammar.Spec s = g(gbnf);
+            acc("root-start ✓[apple]", s, "[apple]");
+            acc("root-start ✓[banana]", s, "[banana]");
+            rej("root-start ✗bare apple", s, "apple");
+            rej("root-start ✗bare banana", s, "banana");
+        }
+        // declaration order must not change the language at all
+        check(
+                "root-start: order-independent",
+                accepts(g(rootFirst), BV, "[apple]") == accepts(g(helperFirst), BV, "[apple]"));
+
+        // a grammar with no root has no start symbol - saying so beats picking one at random
+        boolean refused = false;
+        try {
+            g("foo ::= \"a\"\nbar ::= \"b\"");
+        } catch (IllegalArgumentException e) {
+            refused = e.getMessage().contains("root") && e.getMessage().contains("foo");
+        }
+        check("root-start: a rootless grammar is refused, naming what it did declare", refused);
+        // an EMPTY source is not a malformed grammar, it is the absence of one
+        check("root-start: empty source still disables", !Grammar.of("", BV).isValid());
     }
 
     // ========================================================================
@@ -719,10 +761,11 @@ public final class GrammarSpecTest {
         rej("reclist", list, "[1");
         rej("reclist", list, "1]");
 
+        // the start symbol is the rule NAMED root, never "whichever was declared first"
         Grammar.Spec expr =
                 g(
                         """
-                        expr ::= term ("+" term)*
+                        root ::= term ("+" term)*
                         term ::= [0-9]+
                         """);
         acc("recexpr", expr, "1");

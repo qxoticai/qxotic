@@ -140,11 +140,18 @@ public final class Server {
                     } else if (path.equals("/v1/models/" + servedId)) {
                         Http.sendJson(exchange, 200, modelCard);
                     } else {
+                        // contexts match by PREFIX, so this also catches /v1/modelsXYZ - which
+                        // substring("/v1/models/".length()) mangled into "YZ" (or "", or an
+                        // exception) because it assumed a separator that is not there
+                        String requested =
+                                path.startsWith("/v1/models/")
+                                        ? path.substring("/v1/models/".length())
+                                        : path.substring("/v1/models".length());
                         Http.sendError(
                                 exchange,
                                 404,
                                 "Unknown model: "
-                                        + path.substring("/v1/models/".length())
+                                        + requested
                                         + " (this server serves "
                                         + servedId
                                         + ")");
@@ -157,13 +164,13 @@ public final class Server {
         jsonRoute(
                 server,
                 "/health",
-                null,
+                "GET",
                 request ->
                         Map.of("status", "ok", "busy", worker.busy(), "queued", worker.queued()));
         jsonRoute(
                 server,
                 "/props",
-                null,
+                "GET",
                 request ->
                         Map.of(
                                 "model", config.modelName(),
@@ -181,19 +188,47 @@ public final class Server {
                                                 "min_p", trim(sampling.minP())),
                                 "prompt_cache", promptCacheProps()));
         Function<Map<String, Object>, Object> tokenize =
-                request ->
-                        Map.of(
-                                "tokens",
-                                model.tokenizer()
-                                        .encode(
-                                                String.valueOf(
-                                                        request.getOrDefault("content", ""))));
+                request -> {
+                    // present-but-empty is a legitimate question (the answer is []); ABSENT is a
+                    // mistake, and so is a non-string - both used to return [] with a 200, so a
+                    // client that sent {"text": ...} or a null got a confident wrong answer
+                    Validation.require(
+                            request.containsKey("content"),
+                            "Invalid argument: content is required");
+                    Validation.require(
+                            request.get("content") instanceof String,
+                            "Invalid argument: content must be a string");
+                    return Map.of(
+                            "tokens", model.tokenizer().encode((String) request.get("content")));
+                };
+        int vocabularySize = model.tokenizer().vocabulary().size();
         Function<Map<String, Object>, Object> detokenize =
                 request -> {
-                    List<Integer> tokens =
-                            request.get("tokens") instanceof List<?> list
-                                    ? list.stream().map(v -> ((Number) v).intValue()).toList()
-                                    : List.<Integer>of();
+                    Validation.require(
+                            request.containsKey("tokens"), "Invalid argument: tokens is required");
+                    List<Object> values = Values.asArray(request.get("tokens"), "tokens");
+                    int[] tokens = new int[values.size()];
+                    for (int i = 0; i < tokens.length; i++) {
+                        Object value = values.get(i);
+                        // every element checked by hand: the stream cast this used to do turned a
+                        // string element into a ClassCastException, which the route reported as a
+                        // 400 quoting raw JVM text ("class java.lang.String cannot be cast to..."),
+                        // and a float element into a SILENT truncation
+                        Validation.require(
+                                value instanceof Number number
+                                        && number.doubleValue() == Math.rint(number.doubleValue()),
+                                "Invalid argument: tokens[%d] must be an integer",
+                                i);
+                        long id = ((Number) value).longValue();
+                        Validation.require(
+                                0 <= id && id < vocabularySize,
+                                "Invalid argument: tokens[%d] is %d, outside this model's"
+                                        + " vocabulary [0, %d)",
+                                i,
+                                id,
+                                vocabularySize);
+                        tokens[i] = (int) id;
+                    }
                     return Map.of(
                             "content",
                             model.tokenizer().decode(com.qxotic.toknroll.IntSequence.wrap(tokens)));
@@ -258,8 +293,16 @@ public final class Server {
                     }
                     try {
                         Http.sendJson(exchange, 200, body.apply(request));
-                    } catch (RuntimeException e) {
+                    } catch (IllegalArgumentException | UnsupportedOperationException e) {
+                        // the SAME rule the generation endpoints use: only the two types a
+                        // validator throws are the client's fault. A blanket RuntimeException ->
+                        // 400 here told clients their request was malformed whenever this server
+                        // had a defect, and echoed the JVM's own text while doing it
                         Http.sendError(exchange, 400, Http.errorMessage(e));
+                    } catch (RuntimeException e) {
+                        Log.LOG.log(
+                                System.Logger.Level.ERROR, "unhandled fault serving " + path, e);
+                        Http.sendErrorQuietly(exchange, 500, "Internal server error");
                     }
                 });
     }
@@ -276,11 +319,19 @@ public final class Server {
      */
     private void handleGenerationPost(
             HttpExchange exchange,
+            String path,
             String idPrefix,
             Consumer<Map<String, Object>> validator,
             RequestJob job)
             throws IOException {
         if (Http.preamble(exchange)) return;
+        // contexts match by PREFIX: without this, POST /v1/chat/completionsXYZ and
+        // /v1/completions/foo were served as if they were the canonical endpoint. jsonRoute and
+        // /metrics already checked; these three did not.
+        if (!exchange.getRequestURI().getPath().equals(path)) {
+            Http.sendError(exchange, 404, "Not found");
+            return;
+        }
         if (Http.requireMethod(exchange, "POST")) return;
         // read on the handler thread: a stalled upload must not block the generation worker
         byte[] body = Http.readBody(exchange, config.limits().maxBodyBytes());
@@ -321,6 +372,7 @@ public final class Server {
             throws IOException {
         handleGenerationPost(
                 exchange,
+                "/v1/chat/completions",
                 "chatcmpl-",
                 request -> {
                     Validation.validateChatRequest(request);
@@ -346,6 +398,7 @@ public final class Server {
     private void handleCompletion(HttpExchange exchange, ServerConfig config) throws IOException {
         handleGenerationPost(
                 exchange,
+                "/v1/completions",
                 "cmpl-",
                 request -> {
                     Validation.validateGenerationParams(request, config);
@@ -372,6 +425,7 @@ public final class Server {
     private void handleResponse(HttpExchange exchange, ServerConfig config) throws IOException {
         handleGenerationPost(
                 exchange,
+                "/v1/responses",
                 "resp-",
                 request -> {
                     Requests.normalizeResponse(request);
@@ -414,9 +468,12 @@ public final class Server {
                         // A forced tool call streams no live channels (the turn is seeded
                         // straight into the tool-call block; the calls are parsed from the result
                         // and emitted once below); otherwise content and reasoning stream live.
+                        // Ask GENERATION whether forcing really happens - a model with no call
+                        // seed ignores tool_choice and generates ordinary prose, which silently
+                        // went nowhere while this asked ToolUse.forced(request) on its own.
                         OpenAiSchema.Usage usage = new OpenAiSchema.Usage();
                         Sinks sinks =
-                                ToolUse.forced(request) != null
+                                generation.forcedTool(request) != null
                                         ? Sinks.NONE
                                         : new Sinks(
                                                 deltaSink(
