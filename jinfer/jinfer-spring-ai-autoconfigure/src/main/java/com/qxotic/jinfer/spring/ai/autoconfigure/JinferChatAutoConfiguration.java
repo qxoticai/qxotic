@@ -27,13 +27,14 @@ public class JinferChatAutoConfiguration {
             ObjectProvider<ObservationRegistry> observationRegistry,
             ObjectProvider<ChatModelObservationConvention> observationConvention,
             ObjectProvider<com.qxotic.jinfer.media.VideoSampler> videoSampler) {
-        if (!StringUtils.hasText(properties.modelPath())) {
+        if (!StringUtils.hasText(properties.model())) {
             throw new IllegalStateException(
-                    "spring.ai.jinfer.chat.model-path is required: point it at a local GGUF file");
+                    "spring.ai.jinfer.chat.model is required: a local GGUF path or a hub ref like"
+                            + " hf.co/unsloth/gemma-4-E2B-it-GGUF:Q4_K_M");
         }
         JinferChatModel.Builder builder =
                 JinferChatModel.builder()
-                        .modelPath(Path.of(properties.modelPath()))
+                        .model(properties.model())
                         .contextLength(properties.contextLength())
                         .cachedSessions(properties.cachedSessions())
                         .temperature(properties.temperature())
@@ -46,9 +47,7 @@ public class JinferChatAutoConfiguration {
         observationConvention.ifAvailable(builder::observationConvention);
         videoSampler.ifAvailable(builder::videoSampler); // a VideoSampler bean overrides UNIFORM
         if (properties.companions() != null) {
-            properties
-                    .companions()
-                    .forEach((capability, file) -> builder.companion(capability, Path.of(file)));
+            properties.companions().forEach(builder::companion); // path-or-ref, like model
         }
         if (StringUtils.hasText(properties.cachedPrompts())) {
             builder.loadCachedPrompts(Path.of(properties.cachedPrompts()));

@@ -27,13 +27,13 @@ class JinferEmbeddingAutoConfigurationTest {
     }
 
     @Test
-    void modelPathIsRequiredWhenSelected() {
+    void modelIsRequiredWhenSelected() {
         runner.withPropertyValues("spring.ai.model.embedding=jinfer")
                 .run(
                         context -> {
                             assertThat(context).hasFailed();
                             assertThat(context.getStartupFailure())
-                                    .hasMessageContaining("spring.ai.jinfer.embedding.model-path");
+                                    .hasMessageContaining("spring.ai.jinfer.embedding.model");
                         });
     }
 
@@ -41,7 +41,7 @@ class JinferEmbeddingAutoConfigurationTest {
     void backsOffWhenAnotherProviderIsSelected() {
         runner.withPropertyValues(
                         "spring.ai.model.embedding=ollama",
-                        "spring.ai.jinfer.embedding.model-path=/x.gguf")
+                        "spring.ai.jinfer.embedding.model=/x.gguf")
                 .run(
                         context -> {
                             assertThat(context).hasNotFailed();
@@ -54,13 +54,13 @@ class JinferEmbeddingAutoConfigurationTest {
         new ApplicationContextRunner()
                 .withUserConfiguration(PropsOnly.class)
                 .withPropertyValues(
-                        "spring.ai.jinfer.embedding.model-path=/emb.gguf",
+                        "spring.ai.jinfer.embedding.model=/emb.gguf",
                         "spring.ai.jinfer.embedding.context-length=1024")
                 .run(
                         context -> {
                             JinferEmbeddingProperties p =
                                     context.getBean(JinferEmbeddingProperties.class);
-                            assertThat(p.modelPath()).isEqualTo("/emb.gguf");
+                            assertThat(p.model()).isEqualTo("/emb.gguf");
                             assertThat(p.contextLength()).isEqualTo(1024);
                         });
     }

@@ -2,7 +2,6 @@ package com.qxotic.jinfer.spring.ai.autoconfigure;
 
 import com.qxotic.jinfer.spring.ai.JinferEmbeddingModel;
 import io.micrometer.observation.ObservationRegistry;
-import java.nio.file.Path;
 import org.springframework.ai.embedding.observation.EmbeddingModelObservationConvention;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -30,14 +29,14 @@ public class JinferEmbeddingAutoConfiguration {
             JinferEmbeddingProperties properties,
             ObjectProvider<ObservationRegistry> observationRegistry,
             ObjectProvider<EmbeddingModelObservationConvention> observationConvention) {
-        if (!StringUtils.hasText(properties.modelPath())) {
+        if (!StringUtils.hasText(properties.model())) {
             throw new IllegalStateException(
-                    "spring.ai.jinfer.embedding.model-path is required: point it at a local"
-                            + " embedding GGUF (e.g. Qwen3-Embedding)");
+                    "spring.ai.jinfer.embedding.model is required: an embedding GGUF (e.g."
+                            + " Qwen3-Embedding) as a local path or a hub ref");
         }
         JinferEmbeddingModel.Builder builder =
                 JinferEmbeddingModel.builder()
-                        .modelPath(Path.of(properties.modelPath()))
+                        .model(properties.model())
                         .contextLength(properties.contextLength());
         observationRegistry.ifAvailable(builder::observationRegistry);
         observationConvention.ifAvailable(builder::observationConvention);

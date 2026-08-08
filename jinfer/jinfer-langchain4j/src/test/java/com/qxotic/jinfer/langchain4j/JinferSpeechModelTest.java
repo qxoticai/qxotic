@@ -27,7 +27,10 @@ final class JinferSpeechModelTest {
         IllegalArgumentException e =
                 assertThrows(
                         IllegalArgumentException.class, () -> JinferSpeechModel.builder().build());
-        assertEquals("exactly one of model(...) or modelPath(...) is required", e.getMessage());
+        assertEquals(
+                "a model is required: model(\"hf.co/owner/repo:Q4_K_M\"), modelPath(...) or"
+                        + " model(SpeechModel)",
+                e.getMessage());
     }
 
     @Test
@@ -45,14 +48,14 @@ final class JinferSpeechModelTest {
     }
 
     @Test
-    void bothAModelAndAPathIsAmbiguous() {
-        assertThrows(
-                IllegalArgumentException.class,
-                () ->
-                        JinferSpeechModel.builder()
-                                .model(new ToyModel())
-                                .modelPath(Path.of("/nonexistent.gguf"))
-                                .build());
+    void theLastModelSetterWins() {
+        // the setters clear one another: the toy model set LAST wins over the bogus path, which
+        // is therefore never opened - a successful build IS the assertion
+        JinferSpeechModel.builder()
+                .modelPath(Path.of("/nonexistent.gguf"))
+                .model(new ToyModel())
+                .build()
+                .close();
     }
 
     @Test

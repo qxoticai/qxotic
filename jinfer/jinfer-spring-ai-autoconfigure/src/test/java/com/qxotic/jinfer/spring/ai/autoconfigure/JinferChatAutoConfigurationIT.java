@@ -31,7 +31,7 @@ class JinferChatAutoConfigurationIT {
         new ApplicationContextRunner()
                 .withConfiguration(AutoConfigurations.of(JinferChatAutoConfiguration.class))
                 .withPropertyValues(
-                        "spring.ai.jinfer.chat.model-path=" + MODEL,
+                        "spring.ai.jinfer.chat.model=" + MODEL,
                         "spring.ai.jinfer.chat.context-length=4096",
                         "spring.ai.jinfer.chat.max-tokens=256")
                 .run(

@@ -16,19 +16,19 @@ class JinferChatAutoConfigurationTest {
                     .withConfiguration(AutoConfigurations.of(JinferChatAutoConfiguration.class));
 
     @Test
-    void modelPathIsRequired() {
+    void modelIsRequired() {
         runner.run(
                 context -> {
                     assertThat(context).hasFailed();
                     assertThat(context.getStartupFailure())
-                            .hasMessageContaining("spring.ai.jinfer.chat.model-path");
+                            .hasMessageContaining("spring.ai.jinfer.chat.model");
                 });
     }
 
     @Test
     void backsOffWhenAnotherProviderIsSelected() {
         runner.withPropertyValues(
-                        "spring.ai.model.chat=ollama", "spring.ai.jinfer.chat.model-path=/x.gguf")
+                        "spring.ai.model.chat=ollama", "spring.ai.jinfer.chat.model=/x.gguf")
                 .run(
                         context -> {
                             assertThat(context).hasNotFailed();
@@ -42,7 +42,7 @@ class JinferChatAutoConfigurationTest {
         new ApplicationContextRunner()
                 .withUserConfiguration(PropsOnly.class)
                 .withPropertyValues(
-                        "spring.ai.jinfer.chat.model-path=/x.gguf",
+                        "spring.ai.jinfer.chat.model=/x.gguf",
                         "spring.ai.jinfer.chat.companions.media=/mmproj.gguf",
                         "spring.ai.jinfer.chat.cached-prompts=/personas.jkv",
                         "spring.ai.jinfer.chat.context-length=8192",
@@ -55,7 +55,7 @@ class JinferChatAutoConfigurationTest {
                 .run(
                         context -> {
                             JinferChatProperties p = context.getBean(JinferChatProperties.class);
-                            assertThat(p.modelPath()).isEqualTo("/x.gguf");
+                            assertThat(p.model()).isEqualTo("/x.gguf");
                             assertThat(p.companions()).containsEntry("media", "/mmproj.gguf");
                             assertThat(p.cachedPrompts()).isEqualTo("/personas.jkv");
                             assertThat(p.contextLength()).isEqualTo(8192);

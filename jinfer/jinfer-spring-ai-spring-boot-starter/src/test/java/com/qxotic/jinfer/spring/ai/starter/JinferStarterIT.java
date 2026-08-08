@@ -53,7 +53,7 @@ class JinferStarterIT {
                                 ToolCallingAutoConfiguration.class,
                                 ChatClientAutoConfiguration.class))
                 .withPropertyValues(
-                        "spring.ai.jinfer.chat.model-path=" + MODEL,
+                        "spring.ai.jinfer.chat.model=" + MODEL,
                         "spring.ai.jinfer.chat.context-length=4096",
                         "spring.ai.jinfer.chat.max-tokens=512")
                 .run(
@@ -81,7 +81,7 @@ class JinferStarterIT {
                 .withConfiguration(AutoConfigurations.of(JinferChatAutoConfiguration.class))
                 .withBean(TestObservationRegistry.class, TestObservationRegistry::create)
                 .withPropertyValues(
-                        "spring.ai.jinfer.chat.model-path=" + MODEL,
+                        "spring.ai.jinfer.chat.model=" + MODEL,
                         "spring.ai.jinfer.chat.context-length=4096",
                         "spring.ai.jinfer.chat.max-tokens=32")
                 .run(
@@ -105,7 +105,7 @@ class JinferStarterIT {
         new ApplicationContextRunner()
                 .withConfiguration(AutoConfigurations.of(JinferChatAutoConfiguration.class))
                 .withPropertyValues(
-                        "spring.ai.jinfer.chat.model-path=" + MODEL,
+                        "spring.ai.jinfer.chat.model=" + MODEL,
                         "spring.ai.jinfer.chat.context-length=4096",
                         "spring.ai.jinfer.chat.max-tokens=32")
                 .run(

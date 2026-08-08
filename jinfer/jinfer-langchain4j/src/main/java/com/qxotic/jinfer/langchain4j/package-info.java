@@ -6,6 +6,11 @@
  * segments (a {@code ScoringModel}, so langchain4j's {@code ReRankingContentAggregator} takes it
  * as-is).
  *
+ * <p>Every builder takes the model as ONE string - {@code .model("hf.co/unsloth/x-GGUF:Q4_K_M")} -
+ * a local path, a hub ref, or a pasted browser URL, downloaded into the shared model cache when
+ * absent (resumable, checksum-verified; {@code JINFER_OFFLINE=1} forbids the network). {@code
+ * .modelPath(Path)} stays the never-network form.
+ *
  * <p>One model instance is ONE serial inference pipeline: concurrent calls queue fairly on it, and
  * a second pipeline means a second model over the same GGUF (the weight pages are shared by the OS
  * page cache, so the added cost is one context plus one load).

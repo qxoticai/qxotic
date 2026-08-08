@@ -30,7 +30,7 @@ class JinferRerankAutoConfigurationTest {
         new ApplicationContextRunner()
                 .withUserConfiguration(PropsOnly.class)
                 .withPropertyValues(
-                        "spring.ai.jinfer.rerank.model-path=/rerank.gguf",
+                        "spring.ai.jinfer.rerank.model=/rerank.gguf",
                         "spring.ai.jinfer.rerank.context-length=1024",
                         "spring.ai.jinfer.rerank.instruction=Judge legal relevance",
                         "spring.ai.jinfer.rerank.top-k=3",
@@ -39,7 +39,7 @@ class JinferRerankAutoConfigurationTest {
                         context -> {
                             JinferRerankProperties p =
                                     context.getBean(JinferRerankProperties.class);
-                            assertThat(p.modelPath()).isEqualTo("/rerank.gguf");
+                            assertThat(p.model()).isEqualTo("/rerank.gguf");
                             assertThat(p.contextLength()).isEqualTo(1024);
                             assertThat(p.instruction()).isEqualTo("Judge legal relevance");
                             assertThat(p.topK()).isEqualTo(3);
@@ -51,7 +51,7 @@ class JinferRerankAutoConfigurationTest {
     void defaultsMatchTheAdapter() {
         new ApplicationContextRunner()
                 .withUserConfiguration(PropsOnly.class)
-                .withPropertyValues("spring.ai.jinfer.rerank.model-path=/rerank.gguf")
+                .withPropertyValues("spring.ai.jinfer.rerank.model=/rerank.gguf")
                 .run(
                         context -> {
                             JinferRerankProperties p =
