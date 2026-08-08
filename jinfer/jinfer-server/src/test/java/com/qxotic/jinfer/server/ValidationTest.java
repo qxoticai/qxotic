@@ -163,6 +163,52 @@ class ValidationTest {
                 "a non-string model is a malformed request, not a missing one");
     }
 
+    /**
+     * A range rule here is a rule about what a CLIENT may ask for. Checking the RESOLVED value
+     * instead turned the operator's configuration into the client's error: a server started with
+     * {@code --temp 9} (legal for the engine - Sampling caps only at 0) answered "temperature must
+     * be within [0, 2]" to every request that did not override it. Same shape as the max_tokens
+     * default that made a stock --server refuse everything.
+     */
+    @Test
+    void serverDefaultsAreNeverTheClientsFault() {
+        ServerConfig base = ServerTestSupport.config(Path.of("model.gguf"));
+        ServerConfig odd =
+                new ServerConfig(
+                        base.modelName(),
+                        base.bind(),
+                        new ServerConfig.Defaults(
+                                new com.qxotic.jinfer.llm.Sampling(9f, 1f, 0, 0f, 42L),
+                                -1,
+                                true,
+                                false),
+                        base.limits(),
+                        base.cache());
+        // says nothing about sampling: the request is well formed whatever the server's defaults
+        Validation.validateGenerationParams(new HashMap<>(user("hi")), odd);
+
+        // ... and the caps still bind what the request DOES carry
+        for (Map.Entry<String, Object> bad :
+                Map.of("temperature", (Object) 2.5, "top_p", 1.5, "top_k", -1, "min_p", 1.5)
+                        .entrySet()) {
+            Map<String, Object> request = new HashMap<>(user("hi"));
+            request.put(bad.getKey(), bad.getValue());
+            String message =
+                    assertThrows(
+                                    IllegalArgumentException.class,
+                                    () -> Validation.validateGenerationParams(request, odd),
+                                    bad.getKey() + " out of range must still be refused")
+                            .getMessage();
+            assertTrue(message.contains(bad.getKey()), message);
+        }
+
+        // an explicit null is "unset", which is how the OpenAI SDKs serialise an omitted field
+        Map<String, Object> nulled = new HashMap<>(user("hi"));
+        nulled.put("temperature", null);
+        nulled.put("max_tokens", null);
+        Validation.validateGenerationParams(nulled, odd);
+    }
+
     @Test
     void everyRejectionIsTheTypeTheHandlerMapsTo400() {
         // the contract in one place: if this list grows a case that throws something else, the

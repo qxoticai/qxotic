@@ -5,7 +5,6 @@ package com.qxotic.jinfer.server;
 import com.qxotic.jinfer.*;
 import com.qxotic.jinfer.chat.Values;
 import com.qxotic.jinfer.llm.*;
-import com.qxotic.jinfer.llm.Sampling;
 import java.util.List;
 import java.util.Map;
 
@@ -122,11 +121,17 @@ final class Validation {
     }
 
     /**
+     * A field the request actually carries: an explicit null means "unset", as in OpenAI's SDKs.
+     */
+    private static boolean present(Map<String, Object> request, String field) {
+        return request.get(field) != null;
+    }
+
+    /**
      * Sampling-parameter validation shared by all endpoints; called on the HTTP handler thread
      * (before queueing, and before any SSE headers) so invalid requests fail fast with a 400.
      */
     static void validateGenerationParams(Map<String, Object> request, ServerConfig config) {
-        Sampling sampling = config.defaults().sampling();
         // OPTIONAL, because this server has exactly one model: an absent (or blank) "model" is
         // unambiguous - it can only mean the served one, which is what Requests.modelId already
         // returned. Naming the WRONG model is still a real mistake and still refused. Requiring
@@ -145,28 +150,45 @@ final class Validation {
             require(false, "Grammar constraints disabled (--no-grammar)");
         }
         require(Values.intValue(request.get("n"), 1) == 1, "Only n=1 is supported");
-        float temperature = Values.floatValue(request.get("temperature"), sampling.temperature());
-        require(
-                Float.isFinite(temperature) && 0 <= temperature && temperature <= 2,
-                "Invalid argument: temperature must be within [0, 2]");
-        float topp = Values.floatValue(request.get("top_p"), sampling.topP());
-        require(
-                Float.isFinite(topp) && 0 <= topp && topp <= 1,
-                "Invalid argument: top_p must be within [0, 1]");
-        require(
-                Values.intValue(request.get("top_k"), sampling.topK()) >= 0,
-                "Invalid argument: top_k must be non-negative (0 disables it)");
-        float minp = Values.floatValue(request.get("min_p"), sampling.minP());
-        require(
-                Float.isFinite(minp) && 0 <= minp && minp <= 1,
-                "Invalid argument: min_p must be within [0, 1]");
-        require(
-                -1
-                        <= Values.intValue(
-                                request.getOrDefault(
-                                        "max_tokens", request.get("max_completion_tokens")),
-                                config.defaults().maxOutputTokens()),
-                "Invalid argument: max_tokens must be -1 (context-bounded) or non-negative");
+        // Every range below is checked ONLY when the request carries the field. These are rules
+        // about what a CLIENT may ask for (OpenAI's caps); the server's own defaults are the
+        // operator's business and are validated where they are built - Sampling's constructor and
+        // Options. Checking the RESOLVED value instead meant a server started with `--temp 9`
+        // answered "Invalid argument: temperature must be within [0, 2]" to every request that did
+        // not override it: the client blamed for the operator's flag, and the same shape of bug
+        // that made a stock `--server` refuse every request omitting max_tokens.
+        if (present(request, "temperature")) {
+            float temperature = Values.floatValue(request.get("temperature"), 1f);
+            require(
+                    Float.isFinite(temperature) && 0 <= temperature && temperature <= 2,
+                    "Invalid argument: temperature must be within [0, 2]");
+        }
+        if (present(request, "top_p")) {
+            float topp = Values.floatValue(request.get("top_p"), 1f);
+            require(
+                    Float.isFinite(topp) && 0 <= topp && topp <= 1,
+                    "Invalid argument: top_p must be within [0, 1]");
+        }
+        if (present(request, "top_k")) {
+            require(
+                    Values.intValue(request.get("top_k"), 0) >= 0,
+                    "Invalid argument: top_k must be non-negative (0 disables it)");
+        }
+        if (present(request, "min_p")) {
+            float minp = Values.floatValue(request.get("min_p"), 0f);
+            require(
+                    Float.isFinite(minp) && 0 <= minp && minp <= 1,
+                    "Invalid argument: min_p must be within [0, 1]");
+        }
+        if (present(request, "max_tokens") || present(request, "max_completion_tokens")) {
+            require(
+                    -1
+                            <= Values.intValue(
+                                    request.getOrDefault(
+                                            "max_tokens", request.get("max_completion_tokens")),
+                                    -1),
+                    "Invalid argument: max_tokens must be -1 (context-bounded) or non-negative");
+        }
         require(
                 -1 <= Values.intValue(request.get("reasoning_max_tokens"), -1),
                 "Invalid argument: reasoning_max_tokens must be -1 (uncapped) or non-negative");

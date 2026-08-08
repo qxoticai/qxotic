@@ -374,7 +374,9 @@ public record Options(
                         case "--request-timeout" ->
                                 limits = limits.withRequestTimeout(seconds(optionName, nextArg));
                         case "--seed", "-s" -> seed = parseLong(optionName, nextArg);
-                        case "--max-output-tokens" ->
+                        // -n is llama.cpp's spelling for the same knob, and this CLI already
+                        // honours its muscle memory for -m/-p/-c/-s/--temp
+                        case "--max-output-tokens", "-n" ->
                                 maxOutputTokens = parseInt(optionName, nextArg);
                         case "--context-capacity", "-c" ->
                                 contextCapacity = parseInt(optionName, nextArg);
@@ -560,7 +562,7 @@ public record Options(
                         + " (gemma4 + its mtp sidecar); default 4. ~1.7x on code/lists with Q8_0;"
                         + " can slow prose, and k-quants (Q4_K_M) verify slowly today");
         out.println(
-                "  --max-output-tokens <int>     how much it may produce in one turn; -1 (the"
+                "  --max-output-tokens, -n <int> how much it may produce in one turn; -1 (the"
                         + " default) = whatever the remaining context allows. A one-shot --prompt"
                         + " allocates only what it needs: prompt + this");
         out.println(
