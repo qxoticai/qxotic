@@ -669,7 +669,7 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
                             + positions
                             + " tokens, "
                             + contextCapacity
-                            + " available - raise --ctx-size)");
+                            + " available - raise --context-capacity)");
         }
     }
 

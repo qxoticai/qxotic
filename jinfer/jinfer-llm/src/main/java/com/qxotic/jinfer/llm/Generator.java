@@ -117,7 +117,8 @@ public final class Generator {
         int promptPositions = state.position() + promptCount;
         require(
                 promptPositions <= capacity,
-                "Prompt exceeds context capacity (%d tokens used, %d available - raise --ctx-size)",
+                "Prompt exceeds context capacity (%d tokens used, %d available - raise"
+                        + " --context-capacity)",
                 promptPositions,
                 capacity);
         int actualMaxTokens =
