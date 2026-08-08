@@ -208,12 +208,6 @@ final class Generation {
                             }
                         });
         router.flush();
-        OpenAiSchema.Usage usage = sinks.usage();
-        if (usage != null) {
-            usage.promptTokens = billed;
-            usage.cachedTokens = done.restoredTokens();
-            usage.completionTokens = done.result().completionTokens();
-        }
         metrics.recordPromptCache(
                 done.tier() == com.qxotic.jinfer.cache.PromptCache.Tier.SESSION,
                 done.restoredTokens());

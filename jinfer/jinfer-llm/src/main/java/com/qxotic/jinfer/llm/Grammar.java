@@ -30,11 +30,12 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <h2>The GBNF dialect (llama.cpp compatible)</h2>
  *
- * <p>A grammar is a list of rules, one {@code name ::= body} per line. <b>The first-declared rule
- * is the start rule</b> — conventionally named {@code root}, but position decides, not the name. A
- * line without {@code ::=} continues the previous rule (alternatives may sit on their own lines);
- * {@code #} starts a comment to end of line (except inside a literal or class). Rule names are Java
- * identifiers plus hyphens ({@code kebab-case} works). Bodies compose:
+ * <p>A grammar is a list of rules, one {@code name ::= body} per line. <b>The rule named {@code
+ * root} is the start rule</b>, wherever it is declared (llama.cpp's contract); a grammar that
+ * declares no {@code root} is refused. A line without {@code ::=} continues the previous rule
+ * (alternatives may sit on their own lines); {@code #} starts a comment to end of line (except
+ * inside a literal or class). Rule names are Java identifiers plus hyphens ({@code kebab-case}
+ * works). Bodies compose:
  *
  * <ul>
  *   <li>{@code "literal"} — exact bytes; escapes {@code \" \\ \n \r \t \xNN}.
@@ -1178,8 +1179,11 @@ public final class Grammar {
             } else if (c == '(') {
                 int end = findMatchingParen(body, i);
                 if (end < 0) {
-                    i++;
-                    continue;
+                    // skipping the '(' and carrying on made `root ::= (((` compile to a rule
+                    // matching ONLY the empty string - so a typo produced a model that could say
+                    // nothing at all, with no error. Its neighbours (unterminated string,
+                    // undefined reference) already throw; this is the same kind of mistake.
+                    throw new IllegalArgumentException("unbalanced '(' in rule body: " + body);
                 }
                 List<Rule.Element> inner = parseBody(body.substring(i + 1, end - 1), rules);
                 res.add(new Rule.Element.Group(inner));
