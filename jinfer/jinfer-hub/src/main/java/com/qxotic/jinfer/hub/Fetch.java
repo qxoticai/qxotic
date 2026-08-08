@@ -250,6 +250,74 @@ final class Fetch {
         Board.announce(message);
     }
 
+    /**
+     * Notices a stream whose bytes stopped MOVING and closes it. Downloads carry no request timeout
+     * on purpose - a fixed timeout kills legitimately slow links - but a peer that vanishes without
+     * a RST would otherwise hold a read parked until the kernel's TCP timeout, which is minutes.
+     * Zero bytes for {@code jinfer.downloadStallSeconds} (default 60) closes the stream; that
+     * surfaces as an IOException to the retry machinery, and a retry RESUMES.
+     */
+    private static final class Stall {
+        private static final java.util.Set<Stall> WATCHED = ConcurrentHashMap.newKeySet();
+        private static Thread scanner;
+
+        private final InputStream stream;
+        private final AtomicLong bytes = new AtomicLong();
+        private long seenBytes = -1; // scanner-local bookkeeping
+        private long seenNanos;
+
+        Stall(InputStream stream) {
+            this.stream = stream;
+            synchronized (Stall.class) {
+                if (scanner == null) {
+                    scanner = new Thread(Stall::scan, "jinfer-stall-guard");
+                    scanner.setDaemon(true);
+                    scanner.start();
+                }
+            }
+            WATCHED.add(this);
+        }
+
+        void advance(int n) {
+            bytes.addAndGet(n);
+        }
+
+        void done() {
+            WATCHED.remove(this);
+        }
+
+        private static void scan() {
+            while (true) {
+                long limitNanos = Long.getLong("jinfer.downloadStallSeconds", 60) * 1_000_000_000L;
+                try {
+                    Thread.sleep(Math.max(500, limitNanos / 4_000_000L));
+                } catch (InterruptedException e) {
+                    return;
+                }
+                long now = System.nanoTime();
+                for (Stall stall : WATCHED) {
+                    long moved = stall.bytes.get();
+                    if (moved != stall.seenBytes) {
+                        stall.seenBytes = moved;
+                        stall.seenNanos = now;
+                    } else if (stall.seenNanos > 0 && now - stall.seenNanos > limitNanos) {
+                        WATCHED.remove(stall);
+                        try {
+                            stall.stream.close(); // the parked read surfaces as an IOException
+                        } catch (IOException ignored) {
+                            // the stream is dying either way; the retry owns what happens next
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /** {@code downloadThreads=1} plainly means ONE connection at a time - files included. */
+    static boolean oneAtATime() {
+        return threads() <= 1;
+    }
+
     private static int threads() {
         // -Djinfer.downloadThreads > JINFER_DOWNLOAD_THREADS > the default: the house precedence
         // (property > env > built-in), same as jinfer.models and jinfer.offline
@@ -312,7 +380,9 @@ final class Fetch {
         try {
             HttpResponse<InputStream> response = send(URI.create(url), ranged, LISTING_TIMEOUT);
             try (InputStream drain = response.body()) {
-                drain.readAllBytes();
+                // NEVER readAllBytes here: a server that ignores Range answers 200 with the
+                // WHOLE file, and draining it would stream gigabytes into nothing
+                drain.readNBytes(8 * 1024);
             }
             String contentRange = response.headers().firstValue("content-range").orElse("");
             int slash = contentRange.lastIndexOf('/');
@@ -331,7 +401,8 @@ final class Fetch {
     static String getString(String url, Map<String, String> headers) throws IOException {
         HttpResponse<InputStream> response = send(URI.create(url), headers, LISTING_TIMEOUT);
         try (InputStream in = response.body()) {
-            byte[] body = in.readAllBytes();
+            // capped: a listing is megabytes at the wildest; an endless body must not be our OOM
+            byte[] body = in.readNBytes(64 << 20);
             if (response.statusCode() != 200) {
                 throw new HttpStatusException(
                         response.statusCode(), url, new String(body, StandardCharsets.UTF_8));
@@ -409,6 +480,16 @@ final class Fetch {
                 Files.deleteIfExists(sibling(part, ".map"));
                 return;
             } catch (IOException e) {
+                if (diskFull(e)) {
+                    // retrying cannot conjure disk space; say the remedy instead of stalling
+                    throw new IOException(
+                            label
+                                    + ": "
+                                    + e.getMessage()
+                                    + " - free some space, or point JINFER_MODELS at another"
+                                    + " disk",
+                            e);
+                }
                 last = e;
                 // the .part and its chunk map survive on purpose: the next attempt resumes
                 if (attempt < MAX_ATTEMPTS) {
@@ -417,6 +498,11 @@ final class Fetch {
             }
         }
         throw last;
+    }
+
+    private static boolean diskFull(IOException e) {
+        String message = String.valueOf(e.getMessage()).toLowerCase(Locale.ROOT);
+        return message.contains("no space left") || message.contains("not enough space");
     }
 
     // ---- parallel path ----
@@ -501,7 +587,9 @@ final class Fetch {
             Map<String, String> ranged = new LinkedHashMap<>(headers);
             ranged.put("Range", "bytes=" + start + "-" + (start + length - 1));
             long at = start;
+            Stall stall = null;
             try (InputStream in = body(send(URI.create(url), ranged, null), url, true)) {
+                stall = new Stall(in);
                 byte[] buffer = new byte[BUFFER];
                 long remaining = length;
                 while (remaining > 0) {
@@ -509,6 +597,7 @@ final class Fetch {
                     if (n < 0) {
                         throw new IOException("short chunk " + index + " of " + url);
                     }
+                    stall.advance(n);
                     ByteBuffer slice = ByteBuffer.wrap(buffer, 0, n);
                     while (slice.hasRemaining()) {
                         at += file.write(slice, at);
@@ -520,6 +609,10 @@ final class Fetch {
             } catch (IOException e) {
                 last = e;
                 written.addAndGet(start - at); // un-count what this failed attempt had reported
+            } finally {
+                if (stall != null) {
+                    stall.done();
+                }
             }
         }
         throw last;
@@ -650,6 +743,7 @@ final class Fetch {
         }
         progress.start(have);
         long written = have;
+        Stall stall = null;
         try (InputStream in = body(response, url, true);
                 OutputStream out =
                         Files.newOutputStream(
@@ -657,14 +751,20 @@ final class Fetch {
                                 StandardOpenOption.CREATE,
                                 StandardOpenOption.WRITE,
                                 StandardOpenOption.APPEND)) {
+            stall = new Stall(in);
             byte[] buffer = new byte[BUFFER];
             for (int n; (n = in.read(buffer)) > 0; ) {
+                stall.advance(n);
                 out.write(buffer, 0, n);
                 if (digest != null) {
                     digest.update(buffer, 0, n);
                 }
                 written += n;
                 progress.at(written);
+            }
+        } finally {
+            if (stall != null) {
+                stall.done();
             }
         }
         if (expectedSize > 0 && written != expectedSize) {
@@ -701,7 +801,7 @@ final class Fetch {
             }
             String location = response.headers().firstValue("location").orElse(null);
             try (InputStream drain = response.body()) {
-                drain.readAllBytes();
+                drain.readNBytes(64 * 1024); // redirect bodies are small; hostile ones are not
             }
             if (location == null || redirect == MAX_REDIRECTS) {
                 throw new IOException("redirect loop or missing Location for " + uri);
@@ -725,8 +825,9 @@ final class Fetch {
             return response.body();
         }
         try (InputStream in = response.body()) {
+            // capped: the interesting part of an error body is its first line, not its size
             throw new HttpStatusException(
-                    status, url, new String(in.readAllBytes(), StandardCharsets.UTF_8));
+                    status, url, new String(in.readNBytes(64 * 1024), StandardCharsets.UTF_8));
         }
     }
 
