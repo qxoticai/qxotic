@@ -1,6 +1,6 @@
 // Text-to-speech over Inflect2: normalize, phonemize, synthesize sentence by sentence.
 //
-//   InflectTTS tts = InflectTTS.load(Path.of("model.gguf"));
+//   InflectTTS tts = InflectTTS.load(Path.of("model.gguf"), arena); // the arena owns the weights
 //   try (Inflect2.State state = tts.newState()) {
 //       Media.Audio audio = tts.speak(state, "Hello world.", SpeechOptions.NONE);
 //   }
@@ -61,15 +61,6 @@ public final class InflectTTS
     // ── loading ───────────────────────────────────────────────────────────
 
     /**
-     * Weights map into an {@code ofAuto} arena. Correct here and only here: this port MAPS its
-     * tensors READ_ONLY and materializes nothing at load, so the pages are kernel-reclaimable and
-     * GC scheduling is irrelevant. There is nothing to close.
-     */
-    public static InflectTTS load(Path gguf) throws IOException {
-        return wrap(Inflect2.load(gguf), gguf, null);
-    }
-
-    /**
      * Weights map into {@code arena}, whose owner is whoever provided it — see {@link
      * Inflect2#load(Path, Arena)} for the lifetime rules. Synthesis states are separate and own
      * their own scratch unless you say otherwise.
@@ -118,12 +109,10 @@ public final class InflectTTS
         return wrap(Inflect2.load(channel, gguf, arena), path, lexicon);
     }
 
-    /** Load from a ZIP overlay appended to the running executable, e.g. {@code "default.gguf"}. */
-    public static InflectTTS loadSelfArchive(String entryName) throws IOException {
-        return wrap(Inflect2.loadSelfArchive(entryName), null, null);
-    }
-
-    /** As {@link #loadSelfArchive(String)}, with the weights mapped into {@code arena}. */
+    /**
+     * Load from a ZIP overlay appended to the running executable, e.g. {@code "default.gguf"}, with
+     * the weights mapped into {@code arena}.
+     */
     public static InflectTTS loadSelfArchive(String entryName, Arena arena) throws IOException {
         return wrap(Inflect2.loadSelfArchive(entryName, arena), null, null);
     }

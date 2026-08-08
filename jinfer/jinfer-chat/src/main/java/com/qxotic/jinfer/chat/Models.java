@@ -94,15 +94,6 @@ public final class Models {
     }
 
     /**
-     * The one-argument bliss form: GC-managed weights ({@code Arena.ofAuto()} - freed when the
-     * model becomes unreachable). Reach for the explicit overload when you need a deterministic
-     * weight lifetime.
-     */
-    public static LoadedModel<?> load(Path path) throws IOException {
-        return load(path, Arena.ofAuto());
-    }
-
-    /**
      * Load with COMPANIONS, keyed by capability name - {@code "media"} for a projector, {@code
      * "phonemes"} for a lexicon. What a companion IS - the four laws - lives on {@link
      * ModelProvider#companionFiles()}; what this architecture accepts is {@link

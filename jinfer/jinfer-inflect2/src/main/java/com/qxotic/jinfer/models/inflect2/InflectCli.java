@@ -9,6 +9,7 @@ import com.qxotic.jinfer.SpeechOptions;
 import com.qxotic.jinfer.media.AudioCodec;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.lang.foreign.Arena;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
@@ -56,12 +57,14 @@ public final class InflectCli {
 
     /** Resolve a model: a {@code z://} entry, a file path, or the embedded default. */
     private static InflectTTS open(String model) throws IOException {
-        if (model == null) return InflectTTS.loadSelfArchive(DEFAULT_ENTRY);
+        // a CLI's weights live exactly as long as the process: the global arena owns them
+        Arena weights = Arena.global();
+        if (model == null) return InflectTTS.loadSelfArchive(DEFAULT_ENTRY, weights);
         if (model.startsWith(SELF_ARCHIVE))
-            return InflectTTS.loadSelfArchive(model.substring(SELF_ARCHIVE.length()));
+            return InflectTTS.loadSelfArchive(model.substring(SELF_ARCHIVE.length()), weights);
         Path path = Path.of(model);
         if (!Files.isReadable(path)) throw new IOException("cannot read model: " + path);
-        return InflectTTS.load(path);
+        return InflectTTS.load(path, weights);
     }
 
     private static void write(InflectTTS tts, Inflect2.State state, Options options)

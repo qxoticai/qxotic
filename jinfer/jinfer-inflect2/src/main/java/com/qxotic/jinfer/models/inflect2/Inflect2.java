@@ -171,10 +171,6 @@ public final class Inflect2 {
 
     // ── loading ───────────────────────────────────────────────────────────
 
-    public static Inflect2 load(Path path) throws IOException {
-        return load(path, Arena.ofAuto());
-    }
-
     /**
      * Weights map into {@code arena}, and whoever provides it owns its lifetime — the same contract
      * as {@link com.qxotic.jinfer.Model}: {@code ofAuto} is GC-managed, {@code global} lasts the
@@ -199,13 +195,8 @@ public final class Inflect2 {
 
     /**
      * Load from a GGUF stored in a ZIP overlay appended to the running executable — the tensor data
-     * is mapped straight out of the executable, with no temp file and no copy.
+     * is mapped straight out of the executable into {@code arena}, with no temp file and no copy.
      */
-    public static Inflect2 loadSelfArchive(String entryName) throws IOException {
-        return loadSelfArchive(entryName, Arena.ofAuto());
-    }
-
-    /** As {@link #loadSelfArchive(String)}, with the weights mapped into {@code arena}. */
     public static Inflect2 loadSelfArchive(String entryName, Arena arena) throws IOException {
         try (SelfArchive archive = SelfArchive.open()) {
             SelfArchive.Entry entry = archive.entry(entryName);
