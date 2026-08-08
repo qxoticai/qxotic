@@ -211,6 +211,7 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
 
         private SpeechModel<?, ?, ?> model;
         private Path modelPath;
+        private String modelRef; // model(String): resolved at build(), never in the setter
         private Arena arena;
         private Double speed;
         private int maxInputChars = DEFAULT_MAX_INPUT_CHARS;
@@ -222,12 +223,29 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
          */
         public Builder model(SpeechModel<?, ?, ?> model) {
             this.model = model;
+            this.modelPath = null;
+            this.modelRef = null;
             return this;
         }
 
         /** The GGUF to load, at the port's own defaults, through architecture dispatch. */
         public Builder modelPath(Path modelPath) {
             this.modelPath = modelPath;
+            this.model = null;
+            this.modelRef = null;
+            return this;
+        }
+
+        /**
+         * The model as ONE string: a local GGUF path, a hub ref ({@code hf.co/owner/repo:Q4_K_M})
+         * or a pasted browser URL. Recorded here and resolved by {@link #build()} with the rest of
+         * the load - a remote ref downloads there, only what is missing. The model setters
+         * overwrite one another: the last one called wins.
+         */
+        public Builder model(String pathOrRef) {
+            this.modelRef = pathOrRef;
+            this.model = null;
+            this.modelPath = null;
             return this;
         }
 
@@ -259,9 +277,12 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
         }
 
         public JinferSpeechModel build() {
-            if ((model == null) == (modelPath == null))
+            // the setters clear one another (last one wins), so at most one source is set here
+            if (modelRef != null) modelPath = com.qxotic.jinfer.hub.ModelStore.resolve(modelRef);
+            if (model == null && modelPath == null)
                 throw new IllegalArgumentException(
-                        "exactly one of model(...) or modelPath(...) is required");
+                        "a model is required: model(\"hf.co/owner/repo:Q4_K_M\"),"
+                                + " modelPath(...) or model(SpeechModel)");
             if (model != null && arena != null)
                 throw new IllegalArgumentException(
                         "arena(...) is where modelPath(...) loads the weights; a model you built"

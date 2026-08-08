@@ -30,14 +30,14 @@ class JinferSpeechAutoConfigurationTest {
         new ApplicationContextRunner()
                 .withUserConfiguration(PropsOnly.class)
                 .withPropertyValues(
-                        "spring.ai.jinfer.speech.model-path=/speech.gguf",
+                        "spring.ai.jinfer.speech.model=/speech.gguf",
                         "spring.ai.jinfer.speech.speed=1.25",
                         "spring.ai.jinfer.speech.max-input-chars=500")
                 .run(
                         context -> {
                             JinferSpeechProperties p =
                                     context.getBean(JinferSpeechProperties.class);
-                            assertThat(p.modelPath()).isEqualTo("/speech.gguf");
+                            assertThat(p.model()).isEqualTo("/speech.gguf");
                             assertThat(p.speed()).isEqualTo(1.25);
                             assertThat(p.maxInputChars()).isEqualTo(500);
                         });
@@ -47,7 +47,7 @@ class JinferSpeechAutoConfigurationTest {
     void defaultsLeaveTheAdaptersOwnChoices() {
         new ApplicationContextRunner()
                 .withUserConfiguration(PropsOnly.class)
-                .withPropertyValues("spring.ai.jinfer.speech.model-path=/speech.gguf")
+                .withPropertyValues("spring.ai.jinfer.speech.model=/speech.gguf")
                 .run(
                         context -> {
                             JinferSpeechProperties p =

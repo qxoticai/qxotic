@@ -107,12 +107,26 @@ public final class JinferScoringModel implements ScoringModel, AutoCloseable {
 
     public static final class Builder {
         private Path modelPath;
+        private String modelRef; // model(String): resolved at build(), never in the setter
         private int contextLength;
         private String instruction;
 
         /** The reranker GGUF to load. Required. */
         public Builder modelPath(Path modelPath) {
             this.modelPath = modelPath;
+            this.modelRef = null;
+            return this;
+        }
+
+        /**
+         * The model as ONE string: a local GGUF path, a hub ref ({@code hf.co/owner/repo:Q4_K_M})
+         * or a pasted browser URL. Recorded here and resolved by {@link #build()} with the rest of
+         * the load - a remote ref downloads there, only what is missing. The model setters
+         * overwrite one another: the last one called wins.
+         */
+        public Builder model(String pathOrRef) {
+            this.modelRef = pathOrRef;
+            this.modelPath = null;
             return this;
         }
 
@@ -132,7 +146,12 @@ public final class JinferScoringModel implements ScoringModel, AutoCloseable {
         }
 
         public JinferScoringModel build() {
-            if (modelPath == null) throw new IllegalArgumentException("modelPath is required");
+            // the setters clear one another (last one wins), so at most one source is set here
+            if (modelRef != null) modelPath = com.qxotic.jinfer.hub.ModelStore.resolve(modelRef);
+            if (modelPath == null)
+                throw new IllegalArgumentException(
+                        "a model is required: model(\"hf.co/owner/repo:Q4_K_M\") or"
+                                + " modelPath(...)");
             return new JinferScoringModel(this);
         }
     }

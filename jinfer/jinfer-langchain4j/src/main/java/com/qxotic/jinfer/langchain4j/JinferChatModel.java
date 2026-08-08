@@ -80,7 +80,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                 b.loaded == null
                         ? new ChatEngine(
                                 b.modelPath,
-                                java.util.Map.copyOf(b.companions),
+                                resolvedCompanions(b.companions),
                                 cacheOptions(b.cachedPrompts, b.cachedSessions, b.contextLength))
                         : new ChatEngine(
                                 b.loaded,
@@ -376,15 +376,31 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         return f == null ? null : f.doubleValue();
     }
 
+    /** Companion values as given: Paths pass through, ref/URL strings resolve (build-time). */
+    private static java.util.Map<String, Path> resolvedCompanions(
+            java.util.Map<String, Object> companions) {
+        var resolved = new java.util.LinkedHashMap<String, Path>();
+        companions.forEach(
+                (capability, value) ->
+                        resolved.put(
+                                capability,
+                                value instanceof Path p
+                                        ? p
+                                        : com.qxotic.jinfer.hub.ModelStore.resolve(
+                                                (String) value)));
+        return java.util.Collections.unmodifiableMap(resolved);
+    }
+
     public static Builder builder() {
         return new Builder();
     }
 
     public static final class Builder {
         private Path modelPath;
+        private String modelRef; // model(String): resolved at build(), never in the setter
         private LoadedModel<?> loaded;
         private String modelName;
-        private final java.util.Map<String, Path> companions = new java.util.LinkedHashMap<>();
+        private final java.util.Map<String, Object> companions = new java.util.LinkedHashMap<>();
         private com.qxotic.jinfer.media.VideoSampler videoSampler =
                 com.qxotic.jinfer.media.VideoSampler.UNIFORM;
         private Path cachedPrompts;
@@ -404,6 +420,23 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         /** The GGUF to load. Required unless {@link #model}. */
         public Builder modelPath(Path modelPath) {
             this.modelPath = modelPath;
+            this.modelRef = null;
+            this.loaded = null;
+            return this;
+        }
+
+        /**
+         * The model as ONE string: a local GGUF path, a hub ref ({@code
+         * hf.co/unsloth/gemma-4-E2B-it-GGUF:Q4_K_M}), or a pasted browser URL - paste whatever you
+         * have. Recorded here and resolved by {@link #build()} with the rest of the load - a remote
+         * ref downloads there (only what is missing), and the chain itself never blocks; {@link
+         * #modelPath} stays the never-network form. The model setters overwrite one another: the
+         * last one called wins.
+         */
+        public Builder model(String pathOrRef) {
+            this.modelRef = pathOrRef;
+            this.modelPath = null;
+            this.loaded = null;
             return this;
         }
 
@@ -417,6 +450,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
          */
         public Builder model(LoadedModel<?> loaded) {
             this.loaded = loaded;
+            this.modelPath = null;
+            this.modelRef = null;
             return this;
         }
 
@@ -456,6 +491,15 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
          */
         public Builder companion(String capability, Path file) {
             this.companions.put(capability, file);
+            return this;
+        }
+
+        /**
+         * As {@link #companion(String, Path)}, taking a path, hub ref or URL like {@link
+         * #model(String)} - resolved at {@link #build()}.
+         */
+        public Builder companion(String capability, String pathOrRef) {
+            this.companions.put(capability, pathOrRef);
             return this;
         }
 
@@ -574,9 +618,12 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         }
 
         public JinferChatModel build() {
-            if ((modelPath == null) == (loaded == null))
+            // the setters clear one another (last one wins), so at most one source is set here
+            if (modelRef != null) modelPath = com.qxotic.jinfer.hub.ModelStore.resolve(modelRef);
+            if (modelPath == null && loaded == null)
                 throw new IllegalArgumentException(
-                        "exactly one of modelPath(...) or model(...) is required");
+                        "a model is required: model(\"hf.co/owner/repo:Q4_K_M\"),"
+                                + " modelPath(...) or model(LoadedModel)");
             if (loaded != null && (!companions.isEmpty() || contextLength != 0))
                 throw new IllegalArgumentException(
                         "companions/contextLength are load-time settings; apply them when you"

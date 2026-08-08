@@ -50,6 +50,12 @@
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-chat</artifactId>
     </dependency>
+    <!-- the model cache behind .model(String): path, hub ref or URL, one resolver. Only the
+         builders touch it - nothing on an inference path ever resolves or downloads. -->
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-hub</artifactId>
+    </dependency>
     <!-- every architecture port, as ServiceLoader cargo: ONE list to maintain, in
          jinfer-models-all. A shaded consumer needs the ServicesResourceTransformer. -->
     <dependency>
