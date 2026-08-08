@@ -1,47 +1,105 @@
 package com.qxotic.jinfer.chat;
 
 import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.Model;
 import com.qxotic.jinfer.RuntimeState;
+import java.util.List;
+import java.util.function.DoubleConsumer;
 
 /**
- * A reranker recipe: how one model family frames a (query, document) pair into tokens and reads the
- * verdict back out. Implemented by the port that owns the model card - the frame and the verdict
- * are two halves of ONE convention (the judge prompt says "answer yes or no", the verdict reads
- * exactly those two tokens), so they live together in the port and never leak into a provider
- * integration.
+ * A reranker recipe: how one model family turns (query, documents) into scores. Implemented by the
+ * port that owns the model card, because the framing and the scoring are two halves of ONE
+ * convention - they never leak into a provider integration, which only sees numbers.
  *
- * <p>The document goes LAST by construction. That is what lets {@link LoadedReranker} prefill the
- * frame once per query and re-ingest only the candidate; a family that framed the document before
- * the query would forfeit the reuse, and a bidirectional cross-encoder forfeits it structurally
- * (every token's state depends on the document).
- *
- * <p>Two tokenization domains, as everywhere: scaffolding is emitted as trusted ids, the
- * instruction, query and document go through the plain path and can never mint control tokens.
- *
- * <p>The verdict is one number however the family produces it - a {yes, no} softmax, a lone
- * affirmative logit through a sigmoid, an expectation over grade digits, or a real classification
- * head. Only the port knows which; callers see a score.
- *
- * <p>Requires a state whose rewind is a cursor move, i.e. a pure-attention port: {@link
- * LoadedReranker#scoreAll} rewinds to the frame between candidates, and short-conv or SSM layers
- * carry state that is not addressable by position (those need a checkpoint restore instead).
+ * <p>Two shapes exist today. A {@link CrossEncoder} judges each pair in a causal forward and reads
+ * a verdict (Qwen3-Reranker) - it implements three template methods and inherits the
+ * frame-once-rewind-per-candidate loop. A late-interaction recipe (LFM2.5-ColBERT) embeds query and
+ * documents separately and scores by MaxSim - it owns {@link #scoreAll} outright, because frame
+ * reuse is structurally impossible for it: the forward is bidirectional, and short-conv state is
+ * not addressable by position.
  */
 public interface Reranker<S extends RuntimeState> {
 
-    /** The task instruction this family's card ships as its default. */
+    /** The task instruction this family's card ships as its default ("" when it has no slot). */
     String defaultInstruction();
 
-    /** Scaffold + instruction + query, up to and including the document opener. */
-    Batch head(String instruction, String query);
-
-    /** The candidate, plus the scaffold that closes the judge turn. */
-    Batch document(String document);
+    /**
+     * Scores every document against {@code query}, one score to {@code sink} per document in input
+     * order; returns the exact total token count. {@code state} belongs to this call (reset it) and
+     * comes from {@code model}; the recipe claims it as it works - through {@code ingest}, or
+     * explicitly when it also reads rows between forwards.
+     */
+    int scoreAll(
+            Model<?, ?, S> model,
+            S state,
+            String instruction,
+            String query,
+            List<String> documents,
+            DoubleConsumer sink);
 
     /**
-     * The verdict for the pair just ingested (the last retained row): [0,1], higher is more
-     * relevant. Only the last row is addressable because {@link LoadedReranker#scoreAll} ingests
-     * one pair at a time; scoring several packed pairs in one forward pass would want an indexed
-     * variant, and can add one then.
+     * The cross-encoder shape: scaffold + instruction + query framed ONCE, then each candidate
+     * ingested after a cursor rewind and judged from its last row - K documents cost {@code |frame|
+     * + sum|document|} tokens instead of {@code K * |frame + document|}. Sound because the frame is
+     * a strict prefix and rows past the cursor are masked, then overwritten (the law {@link
+     * RuntimeState#resumeAt} rests on). Requires a pure-attention port: rewind is a cursor move.
+     *
+     * <p>Two tokenization domains, as everywhere: scaffolding is emitted as trusted ids; the
+     * instruction, query and document go through the plain path and can never mint control tokens.
      */
-    double score(S state);
+    interface CrossEncoder<S extends RuntimeState> extends Reranker<S> {
+
+        /** Scaffold + instruction + query, up to and including the document opener. */
+        Batch head(String instruction, String query);
+
+        /** The candidate, plus the scaffold that closes the judge turn. */
+        Batch document(String document);
+
+        /**
+         * The verdict for the pair just ingested (the last retained row): [0,1], higher is more
+         * relevant - a {yes, no} softmax, a lone affirmative logit through a sigmoid, an
+         * expectation over grade digits; only the port knows which.
+         */
+        double score(S state);
+
+        @Override
+        default int scoreAll(
+                Model<?, ?, S> model,
+                S state,
+                String instruction,
+                String query,
+                List<String> documents,
+                DoubleConsumer sink) {
+            Batch head = head(instruction, query);
+            int total = head.count();
+            state.reset();
+            ingest(model, state, head);
+            int framePositions = state.position();
+            for (int i = 0; i < documents.size(); i++) {
+                Batch document = document(documents.get(i));
+                if (framePositions + document.count() > state.contextCapacity()) {
+                    throw new IllegalArgumentException(
+                            "document "
+                                    + i
+                                    + " frames to "
+                                    + (framePositions + document.count())
+                                    + " tokens, over the "
+                                    + state.contextCapacity()
+                                    + "-token context - raise contextLength(...) or chunk"
+                                    + " smaller");
+                }
+                total += document.count();
+                state.resumeAt(framePositions);
+                ingest(model, state, document);
+                sink.accept(score(state));
+            }
+            return total;
+        }
+
+        private void ingest(Model<?, ?, S> model, S state, Batch batch) {
+            for (Batch chunk : Batch.prepare(List.of(batch), state.batchCapacity())) {
+                model.ingest(state, chunk);
+            }
+        }
+    }
 }

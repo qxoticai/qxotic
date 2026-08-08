@@ -19,10 +19,10 @@ import org.springframework.ai.rag.postretrieval.document.DocumentPostProcessor;
 
 /**
  * Spring AI {@link DocumentPostProcessor} backed by jinfer: in-process CPU reranking over a local
- * reranker GGUF (the Qwen3-Reranker family; any reranker port on the classpath loads via the same
- * architecture dispatch as the chat models). Wire it into a {@code RetrievalAugmentationAdvisor}'s
- * post-retrieval stage to reorder what the vector store returned by whether each document actually
- * ANSWERS the query, rather than by embedding similarity.
+ * reranker GGUF (Qwen3-Reranker's judge, LFM2.5-ColBERT's MaxSim; any reranker port on the
+ * classpath loads via the same architecture dispatch as the chat models). Wire it into a {@code
+ * RetrievalAugmentationAdvisor}'s post-retrieval stage to reorder what the vector store returned by
+ * whether each document actually ANSWERS the query, rather than by embedding similarity.
  *
  * <p>Every document of one call shares the judge frame up to the document slot: it is prefilled
  * ONCE and each candidate re-ingests only its own tokens, so K documents cost {@code |frame| +

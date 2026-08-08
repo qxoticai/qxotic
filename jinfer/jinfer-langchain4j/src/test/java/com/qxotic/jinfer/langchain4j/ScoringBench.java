@@ -113,7 +113,7 @@ public final class ScoringBench {
     }
 
     static <S extends RuntimeState> void phases(LoadedReranker<S> loaded) {
-        Reranker<S> reranker = loaded.reranker();
+        Reranker.CrossEncoder<S> reranker = (Reranker.CrossEncoder<S>) loaded.reranker();
         S state = newState(loaded);
         String query = QUERIES[0];
         TextSegment doc = corpus(1).get(0);
@@ -202,7 +202,7 @@ public final class ScoringBench {
 
     static <S extends RuntimeState> void naiveScoreAll(
             LoadedReranker<S> loaded, List<TextSegment> docs, String query) {
-        Reranker<S> reranker = loaded.reranker();
+        Reranker.CrossEncoder<S> reranker = (Reranker.CrossEncoder<S>) loaded.reranker();
         String instruction = reranker.defaultInstruction();
         S state = newState(loaded);
         for (TextSegment doc : docs) {
@@ -253,12 +253,12 @@ public final class ScoringBench {
     }
 
     static int frameTokens(LoadedReranker<?> loaded, String query) {
-        Reranker<?> reranker = loaded.reranker();
+        Reranker.CrossEncoder<?> reranker = (Reranker.CrossEncoder<?>) loaded.reranker();
         return reranker.head(reranker.defaultInstruction(), query).count();
     }
 
     static int tailTokens(LoadedReranker<?> loaded, TextSegment doc) {
-        return loaded.reranker().document(doc.text()).count();
+        return ((Reranker.CrossEncoder<?>) loaded.reranker()).document(doc.text()).count();
     }
 
     // ---- harness ----

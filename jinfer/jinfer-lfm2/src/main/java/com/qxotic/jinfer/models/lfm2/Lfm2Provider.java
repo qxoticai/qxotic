@@ -28,7 +28,39 @@ public final class Lfm2Provider implements ModelProvider {
             java.util.Map<String, java.nio.file.Path> companions,
             com.qxotic.toknroll.Tokenizer tokenizer)
             throws IOException {
-        return Lfm2.loadModel(fileChannel, gguf, arena, tokenizer).loaded();
+        Lfm2 m = Lfm2.loadModel(fileChannel, gguf, arena, tokenizer);
+        // a retrieval checkpoint "loads" as a chat model and then generates noise - refuse by name
+        if (!m.config().causalAttention())
+            throw new IllegalArgumentException(
+                    "this LFM2 checkpoint is a RETRIEVAL model (non-causal attention), not a"
+                            + " generative one - load it with Models.loadEmbedder"
+                            + " (LFM2.5-Embedding) or Models.loadReranker (LFM2.5-ColBERT)");
+        return m.loaded();
+    }
+
+    /**
+     * The family's reranker is LFM2.5-ColBERT: late interaction (MaxSim over per-token {@code
+     * dense_2} embeddings), not a cross-encoder judge. Detected by its own metadata, so a wrong
+     * file refuses by name instead of producing numbers.
+     */
+    @Override
+    public com.qxotic.jinfer.chat.LoadedReranker<?> loadReranker(
+            FileChannel fileChannel, GGUF gguf, java.nio.file.Path path, Arena arena)
+            throws IOException {
+        Lfm2 m = Lfm2.loadModel(fileChannel, gguf, arena);
+        if (m.config().causalAttention()
+                || m.config().embeddingLengthOut() <= 0
+                || m.weights().dense2() == null)
+            throw new IllegalArgumentException(
+                    path.getFileName()
+                            + " is not the family's reranker - LFM2 reranking is"
+                            + " LFM2.5-ColBERT-350M-GGUF (per-token dense_2 embeddings, MaxSim);"
+                            + " a generative checkpoint chats via Models.load, the embedding"
+                            + " checkpoint embeds via Models.loadEmbedder");
+        int bos = gguf.getValue(int.class, "tokenizer.ggml.bos_token_id");
+        int pad = gguf.getValue(int.class, "tokenizer.ggml.padding_token_id");
+        return new com.qxotic.jinfer.chat.LoadedReranker<>(
+                m, new Lfm2Colbert(m, bos, pad), path.getFileName().toString());
     }
 
     /**
