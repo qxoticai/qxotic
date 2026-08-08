@@ -35,6 +35,12 @@ final class Qwen3Reranker implements Reranker.CrossEncoder<Qwen3.State> {
             "Given a web search query, retrieve relevant passages that answer the query";
 
     private final Qwen3 model;
+
+    @Override
+    public com.qxotic.jinfer.Model<?, ?, Qwen3.State> model() {
+        return model;
+    }
+
     private final TokenRuns runs; // prototype: fresh() per frame, one compiled spelling table
     private final int yes;
     private final int no;

@@ -35,7 +35,7 @@ class JudgeAdvisorKimiIT {
                                 ToolCallingAutoConfiguration.class,
                                 OpenAiChatAutoConfiguration.class))
                 .withPropertyValues(
-                        "spring.ai.jinfer.chat.model-path=" + judgeModel,
+                        "spring.ai.jinfer.chat.model=" + judgeModel,
                         "spring.ai.jinfer.chat.context-length=8192",
                         "spring.ai.jinfer.chat.max-tokens=512",
                         "spring.ai.openai.base-url=https://api.kimi.com/coding/v1",

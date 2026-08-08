@@ -121,25 +121,22 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
     }
 
     public static final class Builder {
-        private Path modelPath;
-        private String modelRef; // model(String): resolved at build(), never in the setter
+        private Object source; // Path | ref/URL String: the last model setter wins
+        private Path modelPath; // derived from source at build()
         private int contextLength = 2048;
 
         public Builder modelPath(Path modelPath) {
-            this.modelPath = modelPath;
-            this.modelRef = null;
+            this.source = modelPath;
             return this;
         }
 
         /**
          * The model as ONE string: a local GGUF path, a hub ref ({@code hf.co/owner/repo:Q4_K_M})
-         * or a pasted browser URL. Recorded here and resolved by {@link #build()} with the rest of
-         * the load - a remote ref downloads there, only what is missing. The model setters
-         * overwrite one another: the last one called wins.
+         * or a pasted browser URL - resolved by {@link #build()} with the rest of the load, so a
+         * remote ref downloads there (see the package doc) and the chain never blocks.
          */
         public Builder model(String pathOrRef) {
-            this.modelRef = pathOrRef;
-            this.modelPath = null;
+            this.source = pathOrRef;
             return this;
         }
 
@@ -154,12 +151,16 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
         }
 
         public JinferEmbeddingModel build() {
-            // the setters clear one another (last one wins), so at most one source is set here
-            if (modelRef != null) modelPath = com.qxotic.jinfer.hub.ModelStore.resolve(modelRef);
-            if (modelPath == null)
-                throw new IllegalArgumentException(
-                        "a model is required: model(\"hf.co/owner/repo:Q4_K_M\") or"
-                                + " modelPath(...)");
+            modelPath =
+                    switch (source) {
+                        case String ref -> com.qxotic.jinfer.hub.ModelStore.resolve(ref);
+                        case Path path -> path;
+                        case null, default ->
+                                throw new IllegalArgumentException(
+                                        "a model is required:"
+                                                + " model(\"hf.co/owner/repo:Q4_K_M\") or"
+                                                + " modelPath(...)");
+                    };
             return new JinferEmbeddingModel(this);
         }
     }

@@ -11,11 +11,9 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.lang.foreign.Arena;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -43,14 +41,11 @@ class Lfm2EmbedParityIT {
 
     @Test
     void matchesLlamaCppEmbeddings() throws Exception {
-        Assumptions.assumeTrue(
-                Files.exists(ModelFixture.LFM25_EMBEDDING_350M_Q8.path()),
-                "model not found: " + ModelFixture.LFM25_EMBEDDING_350M_Q8.path());
         List<double[]> golden = golden();
         assertEquals(TEXTS.size(), golden.size(), "golden CSV rows");
         try (Arena arena = Arena.ofShared()) {
             LoadedEmbedder<?> embedder =
-                    Models.loadEmbedder(ModelFixture.LFM25_EMBEDDING_350M_Q8.path(), arena);
+                    Models.loadEmbedder(ModelFixture.LFM25_EMBEDDING_350M_Q8.require(), arena);
             assertEquals(1024, embedder.dimension());
 
             // a TINY batch capacity forces multi-group embedding, so the group-boundary and
@@ -80,12 +75,9 @@ class Lfm2EmbedParityIT {
 
     @Test
     void aSequenceOverTheBatchIsRefusedByName() throws Exception {
-        Assumptions.assumeTrue(
-                Files.exists(ModelFixture.LFM25_EMBEDDING_350M_Q8.path()),
-                "model not found: " + ModelFixture.LFM25_EMBEDDING_350M_Q8.path());
         try (Arena arena = Arena.ofShared()) {
             LoadedEmbedder<?> embedder =
-                    Models.loadEmbedder(ModelFixture.LFM25_EMBEDDING_350M_Q8.path(), arena);
+                    Models.loadEmbedder(ModelFixture.LFM25_EMBEDDING_350M_Q8.require(), arena);
             var state = embedder.model().newState(2048, 16, arena);
             // bidirectional attention forwards a sequence whole, so one over the cap is a clear
             // refusal, never a silently-truncated embedding
@@ -100,14 +92,11 @@ class Lfm2EmbedParityIT {
 
     @Test
     void aGenerativeCheckpointIsRefusedAsAnEmbedder() {
-        Assumptions.assumeTrue(
-                Files.exists(ModelFixture.LFM25_350M_Q8.path()),
-                "model not found: " + ModelFixture.LFM25_350M_Q8.path());
         try (Arena arena = Arena.ofShared()) {
             IllegalArgumentException e =
                     assertThrows(
                             IllegalArgumentException.class,
-                            () -> Models.loadEmbedder(ModelFixture.LFM25_350M_Q8.path(), arena));
+                            () -> Models.loadEmbedder(ModelFixture.LFM25_350M_Q8.require(), arena));
             assertTrue(e.getMessage().contains("generative"), e.getMessage());
             assertTrue(e.getMessage().contains("LFM2.5-Embedding"), e.getMessage());
         }

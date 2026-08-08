@@ -75,6 +75,13 @@ class LoadedRerankerTest {
 
     /** Frame = 5 tokens of 1s; each document = its own length of 2s; score = the cursor it saw. */
     static final class FakeReranker implements Reranker.CrossEncoder<FakeState> {
+        final FakeModel model = new FakeModel();
+
+        @Override
+        public com.qxotic.jinfer.Model<?, ?, FakeState> model() {
+            return model;
+        }
+
         final List<Integer> scoredAt = new ArrayList<>();
 
         @Override
@@ -106,7 +113,7 @@ class LoadedRerankerTest {
     }
 
     private static LoadedReranker<FakeState> loaded(FakeReranker reranker) {
-        return new LoadedReranker<>(new FakeModel(), reranker, "fake.gguf");
+        return new LoadedReranker<>(reranker.model, reranker, "fake.gguf");
     }
 
     private static List<Double> scoreAll(

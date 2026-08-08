@@ -48,9 +48,7 @@ public final class Lfm2Provider implements ModelProvider {
             FileChannel fileChannel, GGUF gguf, java.nio.file.Path path, Arena arena)
             throws IOException {
         Lfm2 m = Lfm2.loadModel(fileChannel, gguf, arena);
-        if (m.config().causalAttention()
-                || m.config().embeddingLengthOut() <= 0
-                || m.weights().dense2() == null)
+        if (!m.config().isColbert() || m.weights().dense2() == null)
             throw new IllegalArgumentException(
                     path.getFileName()
                             + " is not the family's reranker - LFM2 reranking is"
@@ -73,7 +71,7 @@ public final class Lfm2Provider implements ModelProvider {
             FileChannel fileChannel, GGUF gguf, java.nio.file.Path path, Arena arena)
             throws IOException {
         Lfm2 m = Lfm2.loadModel(fileChannel, gguf, arena);
-        if (m.config().causalAttention() || m.config().poolingType() != Lfm2.POOLING_CLS)
+        if (!m.config().isEmbedder())
             throw new IllegalArgumentException(
                     path.getFileName()
                             + " is a generative LFM2 checkpoint, not an embedder (embedders"
