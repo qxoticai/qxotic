@@ -23,7 +23,7 @@ import com.qxotic.toknroll.Tokenizer;
  * <p>Scoring reads two rows of the TIED token-embedding head (reranker GGUFs carry no separate
  * {@code output.weight}), so a pair costs two dot products, not a full-vocabulary matmul.
  */
-final class Qwen3Reranker implements Reranker<Qwen3.State> {
+final class Qwen3Reranker implements Reranker.CrossEncoder<Qwen3.State> {
 
     private static final String PREFIX =
             "<|im_start|>system\nJudge whether the Document meets the requirements based on the"

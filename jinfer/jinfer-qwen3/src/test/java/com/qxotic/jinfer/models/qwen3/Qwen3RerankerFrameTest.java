@@ -46,7 +46,7 @@ class Qwen3RerankerFrameTest {
     void frameIsTokenExact() throws IOException {
         LoadedReranker<?> loaded =
                 Models.loadReranker(ModelFixture.QWEN3_RERANKER_06B_Q8.require(), Arena.ofAuto());
-        Reranker<?> reranker = loaded.reranker();
+        Reranker.CrossEncoder<?> reranker = (Reranker.CrossEncoder<?>) loaded.reranker();
         Batch head = reranker.head(reranker.defaultInstruction(), QUERY);
         Batch document = reranker.document(DOCUMENT);
         // the reuse law rides in these two arrays: the frame ends AT the document opener (id 26818,

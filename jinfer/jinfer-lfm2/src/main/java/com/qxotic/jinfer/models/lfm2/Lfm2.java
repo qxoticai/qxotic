@@ -839,6 +839,35 @@ public final class Lfm2
     }
 
     /**
+     * The ColBERT per-token read for one retained row: final-norm, {@code dense_2} projection to
+     * {@code embeddingLengthOut}, L2-normalized - what llama.cpp's {@code build_dense_out} does to
+     * {@code t_embd}, plus the client-side normalize the reference stack applies before MaxSim.
+     * Package-private for {@link Lfm2Colbert}; {@code out} is the caller's buffer.
+     */
+    void colbertRow(State s, int row, float[] out) {
+        int dim = configuration.embeddingLength;
+        int outDim = configuration.embeddingLengthOut;
+        FloatTensor normed = s.embedScratch(configuration).embOut;
+        rmsnorm(
+                normed,
+                0,
+                s.residual,
+                (long) row * dim,
+                weights.finalNorm,
+                dim,
+                configuration.rmsNormEps);
+        FloatTensor projected = s.embedScratch(configuration).colbertOut;
+        weights.dense2().matmul(normed, projected, outDim, dim);
+        double ss = 0;
+        for (int i = 0; i < outDim; i++) {
+            float v = projected.getFloat(i);
+            ss += (double) v * v;
+        }
+        float inv = ss > 0 ? (float) (1.0 / Math.sqrt(ss)) : 0f;
+        for (int i = 0; i < outDim; i++) out[i] = projected.getFloat(i) * inv;
+    }
+
+    /**
      * Bidirectional embedding overrides the generic chunk-streaming default: a sequence attends to
      * ALL of its tokens, so it must be forwarded WHOLE - groups re-cut on sequence boundaries,
      * capped by the batch. Emits each sequence's CLS (first-row) embedding, in input order.
@@ -924,7 +953,8 @@ public final class Lfm2
             int leadingDenseBlockCount,
             int expertGatingFunc,
             boolean causalAttention,
-            int poolingType)
+            int poolingType,
+            int embeddingLengthOut)
             implements Config {
 
         /** The widest attention kvDim, for scratch that must fit any layer. */
@@ -1003,7 +1033,8 @@ public final class Lfm2
             LayerWeights[] layers,
             F32FloatTensor finalNorm,
             RoPE.Schedule rope,
-            FloatTensor wcls) {}
+            FloatTensor wcls,
+            FloatTensor dense2) {} // ColBERT's per-token projection; null elsewhere
 
     // === State ===
 
@@ -1128,7 +1159,7 @@ public final class Lfm2
      * with the state): per-sequence Q/K/V/out gathers plus the pooled-output row.
      */
     static final class EmbedScratch {
-        final FloatTensor segQ, segK, segV, segOut, embOut;
+        final FloatTensor segQ, segK, segV, segOut, embOut, colbertOut;
 
         EmbedScratch(Configuration config, int batchCapacity, Arena arena) {
             int queryDim = config.queryDim(), kvDim = config.maxKvDim();
@@ -1137,6 +1168,8 @@ public final class Lfm2
             this.segK = FloatTensor.allocateF32(arena, batchCapacity * kvDim);
             this.segV = FloatTensor.allocateF32(arena, batchCapacity * kvDim);
             this.embOut = FloatTensor.allocateF32(arena, config.embeddingLength());
+            this.colbertOut =
+                    FloatTensor.allocateF32(arena, Math.max(1, config.embeddingLengthOut()));
         }
     }
 
@@ -1193,6 +1226,9 @@ public final class Lfm2
         boolean causalAttention =
                 gguf.getValueOrDefault(boolean.class, arch + ".attention.causal", true);
         int poolingType = gguf.getValueOrDefault(int.class, arch + ".pooling_type", 0);
+        // ColBERT checkpoints project per-token hiddens to this width through dense_2
+        int embeddingLengthOut =
+                gguf.getValueOrDefault(int.class, arch + ".embedding_length_out", 0);
 
         int[] feedForwardLength;
         Object ffnRaw = gguf.getValue(Object.class, arch + ".feed_forward_length");
@@ -1232,7 +1268,8 @@ public final class Lfm2
                         leadingDenseBlockCount,
                         expertGatingFunc,
                         causalAttention,
-                        poolingType);
+                        poolingType,
+                        embeddingLengthOut);
 
         Map<String, GGMLTensorEntry> tensors = ModelLoader.loadTensors(fileChannel, gguf, arena);
         return new Lfm2(
@@ -1319,6 +1356,10 @@ public final class Lfm2
                             dense,
                             moe);
         }
-        return new Weights(tokenEmbeddings, layers, finalNorm, rope, wcls);
+        FloatTensor dense2 =
+                tensors.containsKey("dense_2.weight")
+                        ? ModelLoader.loadQuantized(tensors.get("dense_2.weight"))
+                        : null;
+        return new Weights(tokenEmbeddings, layers, finalNorm, rope, wcls, dense2);
     }
 }

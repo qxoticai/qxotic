@@ -57,6 +57,8 @@ public final class ModelFixture {
             hf("LiquidAI", "LFM2.5-350M-GGUF", "LFM2.5-350M-Q8_0.gguf");
     public static final Gguf LFM25_EMBEDDING_350M_Q8 =
             hf("LiquidAI", "LFM2.5-Embedding-350M-GGUF", "LFM2.5-Embedding-350M-Q8_0.gguf");
+    public static final Gguf LFM25_COLBERT_350M_Q8 =
+            hf("LiquidAI", "LFM2.5-ColBERT-350M-GGUF", "LFM2.5-ColBERT-350M-Q8_0.gguf");
 
     public static final Gguf GEMMA4_E2B_Q8 =
             hf("unsloth", "gemma-4-E2B-it-GGUF", "gemma-4-E2B-it-Q8_0.gguf");

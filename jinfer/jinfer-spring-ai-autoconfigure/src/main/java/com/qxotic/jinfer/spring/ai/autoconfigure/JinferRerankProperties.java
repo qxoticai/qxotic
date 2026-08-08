@@ -7,14 +7,15 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * Configuration properties for jinfer reranking, bound under {@code spring.ai.jinfer.rerank}
  * (constructor binding).
  *
- * @param model the reranker GGUF (e.g. a Qwen3-Reranker model) as a local path, hub ref or URL;
- *     configuring it is what activates the post-processor
+ * @param model the reranker GGUF (e.g. Qwen3-Reranker or LFM2.5-ColBERT) as a local path, hub ref
+ *     or URL; configuring it is what activates the post-processor
  * @param contextLength bounds query+document length (default 2048); {@code <= 0} = the model's own
  *     maximum
  * @param instruction the task instruction in the judge frame; empty = the model card's own wording
  * @param topK keep only the best {@code topK} documents; 0 (default) keeps all of them
- * @param minScore drop documents scoring below this; 0 (default) keeps all. The verdict is a
- *     probability, so 0.5 reads as "the model would have answered yes"
+ * @param minScore drop documents scoring below this; 0 (default) keeps all. Qwen3-Reranker scores
+ *     are probabilities (0.5 reads as "the model would have answered yes"); LFM2.5-ColBERT scores
+ *     are MaxSim SUMS (unbounded - rank and relative thresholds only)
  */
 @ConfigurationProperties("spring.ai.jinfer.rerank")
 public record JinferRerankProperties(

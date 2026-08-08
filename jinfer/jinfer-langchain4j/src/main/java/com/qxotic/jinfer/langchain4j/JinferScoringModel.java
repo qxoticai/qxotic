@@ -19,9 +19,9 @@ import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * langchain4j {@link ScoringModel} backed by jinfer: in-process CPU reranking over a local reranker
- * GGUF (the Qwen3-Reranker family; any reranker port on the classpath loads via the same
- * architecture dispatch as the chat models). The family's judge prompt and verdict read live in its
- * port - this class maps types and owns the pipeline.
+ * GGUF (Qwen3-Reranker's judge, LFM2.5-ColBERT's MaxSim; any reranker port on the classpath loads
+ * via the same architecture dispatch as the chat models). The family's judge prompt and verdict
+ * read live in its port - this class maps types and owns the pipeline.
  *
  * <p>Every candidate of one call shares the frame up to the document (the card's format puts the
  * document LAST): it is prefilled ONCE and each document re-ingests only its own tokens, so K

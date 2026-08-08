@@ -74,7 +74,7 @@ class LoadedRerankerTest {
     }
 
     /** Frame = 5 tokens of 1s; each document = its own length of 2s; score = the cursor it saw. */
-    static final class FakeReranker implements Reranker<FakeState> {
+    static final class FakeReranker implements Reranker.CrossEncoder<FakeState> {
         final List<Integer> scoredAt = new ArrayList<>();
 
         @Override
