@@ -292,7 +292,7 @@ public record Options(
         boolean interactive = false;
         boolean server = false;
         String host = "127.0.0.1";
-        int port = 17325;
+        int port = 17341;
         boolean stream = true;
         boolean echo = false;
         boolean think = true;
@@ -525,7 +525,7 @@ public record Options(
         out.println("  --instruct                    run in instruct (once) mode, default mode");
         out.println("  --server                      run an OpenAI-compatible HTTP server");
         out.println("  --host <host>                 server bind host, default 127.0.0.1");
-        out.println("  --port <int>                  server bind port, default 17325");
+        out.println("  --port <int>                  server bind port, default 17341");
         out.println("  --threads <int>               server handler threads, default 16");
         out.println(
                 "  --queue-capacity <int>        generation requests that may WAIT, default 4 (0 ="
@@ -604,6 +604,6 @@ public record Options(
                         + " --system-prompt \"You are a helpful assistant\"");
         out.println(
                 "  java -jar jinfer.jar --model LFM2.5-1.2B-Instruct-Q8_0.gguf --server --port"
-                        + " 17325");
+                        + " 17341");
     }
 }
