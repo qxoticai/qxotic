@@ -150,12 +150,12 @@ final class Validation {
                 Float.isFinite(minp) && 0 <= minp && minp <= 1,
                 "Invalid argument: min_p must be within [0, 1]");
         require(
-                0
+                -1
                         <= Values.intValue(
                                 request.getOrDefault(
                                         "max_tokens", request.get("max_completion_tokens")),
                                 config.defaults().maxOutputTokens()),
-                "Invalid argument: max_tokens must be non-negative");
+                "Invalid argument: max_tokens must be -1 (context-bounded) or non-negative");
         require(
                 -1 <= Values.intValue(request.get("reasoning_max_tokens"), -1),
                 "Invalid argument: reasoning_max_tokens must be -1 (uncapped) or non-negative");
