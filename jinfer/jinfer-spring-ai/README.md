@@ -23,11 +23,30 @@ Run your JVM with jinfer's flags:
 
 ```java
 ChatModel model = JinferChatModel.builder()
-        .modelPath(Path.of("models/LFM2.5-8B-A1B-Q8_0.gguf"))
+        .model("hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF:Q8_0")
         .build();
 
 String answer = model.call("What is the capital of France?");
 ```
+
+`.model(String)` takes whatever you have: a local GGUF path, a hub ref, or a pasted browser URL.
+A remote ref downloads at `build()` into the shared model cache (resumable, sha256-verified; warm builds cost zero requests, `JINFER_OFFLINE=1` forbids the network - see [models from the hub](../README.md#models-from-the-hub)).
+`.modelPath(Path)` stays the never-network form.
+
+## Zero-config with the Boot starter
+
+With `jinfer-spring-ai-spring-boot-starter` on the classpath, one property and zero Java wires the bean:
+
+```yaml
+spring:
+  ai:
+    jinfer:
+      chat:
+        model: hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF:Q8_0   # a local path works too
+```
+
+The property takes the same one string as `.model(String)` and resolves at context startup, so a typo, a wrong quant, or a gated repo fails the boot with the hub's own message - never the first request at 2 p.m. under load.
+Embeddings (`spring.ai.jinfer.embedding.model` + `spring.ai.model.embedding: jinfer`), reranking (`spring.ai.jinfer.rerank.model`), and speech (`spring.ai.jinfer.speech.model`) wire the same way; chat companions ride `spring.ai.jinfer.chat.companions.media`.
 
 ## Parameters
 
@@ -54,7 +73,7 @@ System.out.println(response.getResult().getMetadata().getFinishReason()); // sto
 ```
 
 String stop sequences are supported.
-Unsupported knobs (`topK`, penalties, per-request `model` switching) throw `IllegalArgumentException` instead of being silently ignored.
+Unsupported knobs (penalties, per-request `model` switching) throw `IllegalArgumentException` instead of being silently ignored.
 
 ## Streaming
 
@@ -108,8 +127,8 @@ Media is decoded locally (bytes or a local file - this library never fetches ove
 
 ```java
 ChatModel gemma = JinferChatModel.builder()
-        .modelPath(Path.of("models/gemma-4-12B-it-qat-UD-Q4_K_XL.gguf"))
-        .mediaProjector(Path.of("models/mmproj-F32.gguf"))   // vision + audio encoders
+        .model("hf.co/unsloth/gemma-4-12b-it-qat-GGUF:Q4_K_XL")
+        .companion("media", "hf.co/unsloth/gemma-4-12b-it-qat-GGUF/mmproj-F32.gguf")
         .build();
 
 ChatResponse seen = gemma.call(new Prompt(UserMessage.builder()
@@ -134,7 +153,7 @@ EmbeddingResponse r = embeddings.call(
         new EmbeddingRequest(List.of("first chunk", "second chunk"), null));
 ```
 
-With the starter, `spring.ai.jinfer.embedding.model-path` (+ `context-length`) wires the bean; `spring.ai.model.embedding` selects the provider.
+With the starter, `spring.ai.jinfer.embedding.model` (+ `context-length`) wires the bean; `spring.ai.model.embedding` selects the provider.
 
 ## Cached prompts
 
