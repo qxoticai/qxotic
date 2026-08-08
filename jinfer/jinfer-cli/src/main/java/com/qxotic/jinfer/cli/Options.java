@@ -419,15 +419,25 @@ public record Options(
         Path tokenizerPath;
         Map<String, Path> companions = new LinkedHashMap<>();
         try {
-            // the model first (a tokenizer GGUF is megabytes - batching it buys nothing),
-            // then the companions as ONE concurrent batch: their capability check reads the
-            // MODEL's header, so a wrong --with still fails on the knob before any download
-            modelPath = modelRef == null ? null : ModelStore.resolve(modelRef);
-            tokenizerPath = tokenizerRef == null ? null : ModelStore.resolve(tokenizerRef);
+            // EVERYTHING in one concurrent batch - a cold start pays the slowest download,
+            // not the sum. The --with capability check needs the MODEL's header, so it runs the
+            // moment the model lands; the trade is honest: a mistyped knob now costs a cached
+            // extra file (almost always the very file the fixed knob would use), not gigabytes
+            // of wasted WAITING. "auto" never reaches the resolver - its curated refusal below
+            // beats "no such model file: 'auto'".
+            List<String> wanted = new java.util.ArrayList<>();
+            if (modelRef != null) wanted.add(modelRef);
+            if (tokenizerRef != null) wanted.add(tokenizerRef);
+            for (String value : companionRefs.values()) {
+                if (!"auto".equals(value)) wanted.add(value);
+            }
+            List<Path> resolved = ModelStore.resolveAll(wanted);
+            int at = 0;
+            modelPath = modelRef == null ? null : resolved.get(at++);
+            tokenizerPath = tokenizerRef == null ? null : resolved.get(at++);
             if (!companionRefs.isEmpty()) {
                 // ONE header read at most (none when the model is preloaded - AOT answers from
-                // its baked header), and the capability is checked before any file is fetched: a
-                // wrong knob should fail on the knob, not on a missing download
+                // its baked header)
                 Map<String, String> offered;
                 try {
                     offered = AOT.companionFiles(modelPath);
@@ -437,10 +447,8 @@ public record Options(
                 for (var w : companionRefs.entrySet()) {
                     requireCompanion(offered, w.getKey(), w.getValue());
                 }
-                List<Path> resolved = ModelStore.resolveAll(List.copyOf(companionRefs.values()));
-                int i = 0;
                 for (String capability : companionRefs.keySet()) {
-                    companions.put(capability, resolved.get(i++));
+                    companions.put(capability, resolved.get(at++));
                 }
             }
         } catch (RuntimeException e) {
