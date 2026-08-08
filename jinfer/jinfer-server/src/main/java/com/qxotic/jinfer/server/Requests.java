@@ -19,9 +19,14 @@ final class Requests {
 
     private Requests() {}
 
-    /** The model id to echo back: the request's {@code model}, else the served file name. */
+    /**
+     * The model id to echo back: the request's {@code model}, else the served file name. Blank
+     * counts as absent - echoing {@code "model": ""} back at a client is never the useful answer,
+     * and {@link Validation#validateGenerationParams} lets blank through for that reason.
+     */
     static String modelId(Map<String, Object> request, ServerConfig config) {
-        return Values.stringValue(request.get("model"), config.modelName());
+        String requested = Values.stringValue(request.get("model"), "");
+        return requested.isBlank() ? config.modelName() : requested;
     }
 
     /** The /v1/completions prompt: a string, or a string array joined by newlines. */
@@ -74,7 +79,10 @@ final class Requests {
         }
         Object input = request.get("input");
         if (input instanceof String s) {
-            messages.add(Map.of("role", "user", "content", s));
+            // blank is not input: an all-whitespace string used to become a user turn, which made
+            // the endpoint's "input must not be empty" check pass and the model generate from
+            // nothing - the very thing the chat endpoint's substance rule exists to prevent
+            if (!s.isBlank()) messages.add(Map.of("role", "user", "content", s));
         } else if (input instanceof List<?> list) {
             for (Object item : list) addResponseInputMessage(messages, item);
         } else if (input != null) {

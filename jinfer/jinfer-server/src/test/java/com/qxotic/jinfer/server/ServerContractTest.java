@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.server;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.chat.JsonCodec;
@@ -157,6 +158,108 @@ class ServerContractTest {
         String ids = JsonCodec.stringify(tokens.get("tokens"));
         Map<String, Object> text = json(post("/detokenize", "{\"tokens\":" + ids + "}").body());
         assertEquals("Hello, world!", text.get("content"));
+    }
+
+    /**
+     * These two helpers took whatever arrived and answered 200. A typo'd field, a null, a float id
+     * and a string id each produced a confident wrong answer - {@code {"content": null}} tokenized
+     * the literal four characters "null", {@code [1.5]} silently truncated to token 1 - and the one
+     * input that did fail answered 400 quoting the JVM ("class java.lang.String cannot be cast to
+     * class java.lang.Number..."). Every case below is a REQUEST-shaped mistake and must be named
+     * as one.
+     */
+    @Test
+    void tokenizeHelpersRefuseMalformedInputByName() throws Exception {
+        record Case(String path, String body, String mustName) {}
+        List<Case> cases =
+                List.of(
+                        new Case("/tokenize", "{}", "content"),
+                        new Case("/tokenize", "{\"text\":\"hello\"}", "content"),
+                        new Case("/tokenize", "{\"content\":null}", "content"),
+                        new Case("/tokenize", "{\"content\":42}", "content"),
+                        new Case("/detokenize", "{}", "tokens"),
+                        new Case("/detokenize", "{\"tokens\":\"nope\"}", "tokens"),
+                        new Case("/detokenize", "{\"tokens\":[\"a\"]}", "tokens[0]"),
+                        new Case("/detokenize", "{\"tokens\":[1.5]}", "tokens[0]"),
+                        new Case("/detokenize", "{\"tokens\":[-1]}", "tokens[0]"),
+                        new Case("/detokenize", "{\"tokens\":[999999999]}", "vocabulary"));
+        for (Case c : cases) {
+            HttpResponse<String> response = post(c.path(), c.body());
+            assertEquals(
+                    400,
+                    response.statusCode(),
+                    c.path() + " " + c.body() + " -> " + response.body());
+            assertTrue(
+                    response.body().contains(c.mustName()),
+                    c.body() + " must name " + c.mustName() + ", said: " + response.body());
+            assertFalse(
+                    response.body().contains("java.lang"),
+                    "a client error must not quote the JVM: " + response.body());
+        }
+        // present-but-empty is a legitimate question with a legitimate answer
+        assertEquals(200, post("/tokenize", "{\"content\":\"\"}").statusCode());
+        assertEquals(200, post("/detokenize", "{\"tokens\":[]}").statusCode());
+    }
+
+    /**
+     * A streaming request that FORCES a tool call installs no live sinks - the turn is seeded into
+     * the call block and the calls are emitted once at the end. But whether forcing actually
+     * happens is the model's business: a model whose template has no call seed ignores tool_choice
+     * and generates ordinary prose. The transport used to decide that separately from the
+     * generation ({@code ToolUse.forced(request) != null} vs {@code nativeForcedOk() && ...}) and
+     * the two disagreed on exactly those models: the stream installed no sinks, the pass ran
+     * unforced, and the client received a role chunk, an empty terminal chunk, and NONE of the text
+     * the model produced. Llama 3.2 is seedless, which is why this fixture is the right one.
+     */
+    @Test
+    void aForcedToolStreamOnASeedlessModelStillDeliversItsReply() throws Exception {
+        String body =
+                """
+                {"model":"%s","stream":true,"max_tokens":48,"temperature":0,
+                 "tool_choice":"required",
+                 "tools":[{"type":"function","function":{"name":"get_weather",
+                   "description":"Get weather for a city",
+                   "parameters":{"type":"object","properties":{"city":{"type":"string"}},
+                     "required":["city"]}}}],
+                 "messages":[{"role":"user","content":"What is the weather in Paris?"}]}
+                """
+                        .formatted(modelId);
+        HttpResponse<String> response = post("/v1/chat/completions", body);
+        assertEquals(200, response.statusCode(), response.body());
+
+        StringBuilder streamed = new StringBuilder();
+        int chunks = 0;
+        for (String line : response.body().split("\n")) {
+            if (!line.startsWith("data:")) continue;
+            String payload = line.substring(5).trim();
+            if ("[DONE]".equals(payload)) continue;
+            chunks++;
+            Map<String, Object> chunk = json(payload);
+            List<?> choices = (List<?>) chunk.get("choices");
+            if (choices.isEmpty()) continue;
+            Object delta = ((Map<?, ?>) choices.get(0)).get("delta");
+            Object content = ((Map<?, ?>) delta).get("content");
+            Object calls = ((Map<?, ?>) delta).get("tool_calls");
+            if (content != null) streamed.append(content);
+            if (calls != null) streamed.append("<tool_calls>");
+        }
+        assertTrue(chunks >= 2, "expected a real stream, got " + chunks + " chunks");
+        assertFalse(
+                streamed.isEmpty(),
+                "the pass ran unforced and produced tokens, so the stream must carry them - it"
+                        + " delivered nothing at all");
+    }
+
+    /** One model served, so naming it is optional - naming the WRONG one is not. */
+    @Test
+    void theModelFieldIsOptionalOverTheWire() throws Exception {
+        HttpResponse<String> response =
+                post(
+                        "/v1/chat/completions",
+                        "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":4}");
+        assertEquals(200, response.statusCode(), response.body());
+        assertEquals(
+                modelId, json(response.body()).get("model"), "the reply names the served model");
     }
 
     @Test

@@ -156,7 +156,7 @@ final class Generation {
                         config.limits().requestTimeout().toNanos(),
                         sampling(request),
                         grammarSpec(request),
-                        nativeForcedOk() ? ToolUse.forced(request) : null,
+                        forcedTool(request),
                         false,
                         textStops(request.get("stop")),
                         kwargs);
@@ -229,6 +229,18 @@ final class Generation {
      */
     private boolean nativeForcedOk() {
         return template != null && template.callSeed().length != 0;
+    }
+
+    /**
+     * The tool this request ACTUALLY forces, or null - the request's {@code tool_choice} filtered
+     * by whether this model can honour forcing at all. The one answer both the lowering here and
+     * the streaming handler must use: they used to ask separately ({@code ToolUse.forced(request)
+     * != null} there, this expression here) and disagreed on exactly the models that cannot force.
+     * The stream then installed no sinks for a generation that ran unforced, so the client got a
+     * role chunk, an empty terminal chunk, and none of the text the model actually produced.
+     */
+    String forcedTool(Map<String, Object> request) {
+        return nativeForcedOk() ? ToolUse.forced(request) : null;
     }
 
     /**
@@ -670,13 +682,39 @@ final class Generation {
         Tokenizer tokenizer = model.tokenizer();
         Object gbnf = request.get("grammar");
         if (gbnf instanceof String g && !g.isBlank()) {
-            return Grammar.of(g, tokenizer);
+            // a source that compiles to NO rules yields Grammar.Spec.DISABLED, which masks
+            // nothing - so a typo'd grammar used to return free-form text with a 200, and the
+            // caller had no way to tell constrained output from unconstrained
+            return compiled(Grammar.of(g, tokenizer), "grammar");
         }
         Object fmt = request.get("response_format");
-        if (fmt instanceof Map<?, ?> f && "json_object".equals(f.get("type"))) {
-            return Grammar.json(tokenizer);
+        if (fmt instanceof Map<?, ?> f) {
+            if ("json_object".equals(f.get("type"))) {
+                return Grammar.json(tokenizer);
+            }
+            if ("json_schema".equals(f.get("type"))) {
+                // shape already checked by Validation, on the handler thread
+                Map<String, Object> wrapper =
+                        Values.asObject(f.get("json_schema"), "response_format.json_schema");
+                Map<String, Object> schema =
+                        Values.asObject(
+                                wrapper.get("schema"), "response_format.json_schema.schema");
+                return compiled(
+                        Grammar.fromSchema(schema, tokenizer),
+                        "response_format.json_schema.schema");
+            }
         }
         return null;
+    }
+
+    /** A spec that masks nothing would silently serve unconstrained text; say so instead. */
+    private static Grammar.Spec compiled(Grammar.Spec spec, String what) {
+        Validation.require(
+                spec.isValid(),
+                "Invalid argument: %s defines no usable rules, so it would not constrain the"
+                        + " output at all",
+                what);
+        return spec;
     }
 
     /**

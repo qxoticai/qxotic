@@ -69,9 +69,13 @@ final class Http {
      * the body exceeds the limit (callers must return immediately on null).
      */
     static byte[] readBody(HttpExchange exchange, long maxBodyBytes) throws IOException {
-        byte[] body = exchange.getRequestBody().readNBytes((int) maxBodyBytes + 1);
+        // clamp before narrowing: (int) of a limit >= 2 GiB wrapped negative, and readNBytes then
+        // threw IllegalArgumentException instead of reading anything
+        int probe = (int) Math.min(maxBodyBytes + 1, Integer.MAX_VALUE);
+        byte[] body = exchange.getRequestBody().readNBytes(probe);
         if (body.length > maxBodyBytes) {
-            sendError(exchange, 413, "Request body exceeds " + (maxBodyBytes >> 20) + " MB");
+            // bytes, not ">> 20": a sub-megabyte limit reported "exceeds 0 MB"
+            sendError(exchange, 413, "Request body exceeds the " + maxBodyBytes + "-byte limit");
             return null;
         }
         return body;

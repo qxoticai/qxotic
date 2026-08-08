@@ -49,10 +49,18 @@ final class Validation {
         if (fmt instanceof Map<?, ?> m) {
             String type = Values.stringValue(m.get("type"), "");
             require(
-                    "json_object".equals(type) || "text".equals(type),
-                    "Unsupported response_format type: %s (only json_object and text are"
-                            + " supported)",
+                    "json_object".equals(type) || "json_schema".equals(type) || "text".equals(type),
+                    "Unsupported response_format type: %s (only json_object, json_schema and text"
+                            + " are supported)",
                     type);
+            if ("json_schema".equals(type)) {
+                // OpenAI's shape: {type, json_schema: {name, schema, strict?}}. The schema is the
+                // whole point of the request, so a missing or non-object one is refused here
+                // rather than silently degrading to unconstrained text.
+                Map<String, Object> wrapper =
+                        Values.asObject(m.get("json_schema"), "response_format.json_schema");
+                Values.asObject(wrapper.get("schema"), "response_format.json_schema.schema");
+            }
             if ("json_object".equals(type)) {
                 boolean hasJsonHint = false;
                 for (Object message : messages) {
@@ -119,12 +127,15 @@ final class Validation {
      */
     static void validateGenerationParams(Map<String, Object> request, ServerConfig config) {
         Sampling sampling = config.defaults().sampling();
-        require(
-                request.get("model") instanceof String name && !name.isBlank(),
-                "model is required");
-        if (request.get("model") instanceof String name) {
+        // OPTIONAL, because this server has exactly one model: an absent (or blank) "model" is
+        // unambiguous - it can only mean the served one, which is what Requests.modelId already
+        // returned. Naming the WRONG model is still a real mistake and still refused. Requiring
+        // the field bought no safety and cost every curl and every client that omits it a 400.
+        if (request.containsKey("model") && request.get("model") != null) {
+            require(request.get("model") instanceof String, "model must be a string");
+            String name = (String) request.get("model");
             require(
-                    name.equalsIgnoreCase(config.modelName()),
+                    name.isBlank() || name.equalsIgnoreCase(config.modelName()),
                     "Unknown model: %s (this server serves %s)",
                     name,
                     config.modelName());
