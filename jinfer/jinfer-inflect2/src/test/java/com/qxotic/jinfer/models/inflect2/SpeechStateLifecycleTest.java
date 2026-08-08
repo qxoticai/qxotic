@@ -33,7 +33,7 @@ final class SpeechStateLifecycleTest {
                     + "Teams often underestimate this, repeatedly, and at some length.";
 
     private static InflectTTS tts() throws Exception {
-        return InflectTTS.load(ModelFixture.INFLECT_NANO_V2_Q8.require());
+        return InflectTTS.load(ModelFixture.INFLECT_NANO_V2_Q8.require(), Arena.ofAuto());
     }
 
     // ── ownership ─────────────────────────────────────────────────────────

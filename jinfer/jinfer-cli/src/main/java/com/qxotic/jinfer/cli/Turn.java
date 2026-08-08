@@ -52,10 +52,6 @@ final class Turn {
     }
 
     /**
-     * As {@link #generate(LoadedModel, RuntimeState, IntSequence, Set, Sampler, Options)} with a
-     * per-token ingest callback, which the prompt-cache path uses to append the tail.
-     */
-    /**
      * The terminal-facing half of a turn, built once and shared by the plain and speculative paths:
      * prompt echo, the streaming printer, the span parser, and the think-aware display text. {@link
      * #sink()} is the one per-token entry both decode loops feed.
@@ -113,6 +109,10 @@ final class Turn {
         }
     }
 
+    /**
+     * As {@link #generate(LoadedModel, RuntimeState, IntSequence, Set, Sampler, Options)} with a
+     * per-token ingest callback, which the prompt-cache path uses to append the tail.
+     */
     static <S extends RuntimeState> Reply generate(
             LoadedModel<S> model,
             S state,

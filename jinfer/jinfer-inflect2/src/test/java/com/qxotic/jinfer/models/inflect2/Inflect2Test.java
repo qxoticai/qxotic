@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.qxotic.jinfer.models.inflect2.frontend.TextNormalizer;
 import com.qxotic.jinfer.testkit.ModelFixture;
 import java.io.IOException;
+import java.lang.foreign.Arena;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -107,7 +108,7 @@ class Inflect2Test {
     private static final int[] HELLO = Symbols.toTokens("həloʊ wɜːld");
 
     private static Inflect2 model() throws IOException {
-        return Inflect2.load(ModelFixture.INFLECT_NANO_V2_Q8.require());
+        return Inflect2.load(ModelFixture.INFLECT_NANO_V2_Q8.require(), Arena.ofAuto());
     }
 
     /** One state per call: these tests are about the model, not about state reuse. */
