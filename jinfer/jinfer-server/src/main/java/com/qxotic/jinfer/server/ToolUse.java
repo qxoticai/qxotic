@@ -3,8 +3,6 @@ package com.qxotic.jinfer.server;
 import com.qxotic.jinfer.*;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.llm.*;
-import com.qxotic.toknroll.IntSequence;
-import com.qxotic.toknroll.Tokenizer;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -45,34 +43,15 @@ final class ToolUse {
     }
 
     /**
-     * The assistant-turn text seeded by {@link #seedForced}; re-attached to the reply before
-     * parsing so the seeded call parses whole.
+     * The call-marker text a FORCED turn was seeded with, re-attached to the reply before parsing
+     * so the seeded call parses whole. The engine does the seeding now ({@code
+     * RequestPolicy.forceCall}, from the template's own callSeed), which is why nothing here builds
+     * the seed - only this prefix, to reconstruct what the model was completing.
      */
     static String forcedPrefix(Map<String, Object> request) {
         String choice = forced(request);
         if (choice == null) return "";
         return choice.isEmpty() ? ToolCalls.TC_START : ToolCalls.TC_START + "[" + choice;
-    }
-
-    /**
-     * tool_choice "required"/named function: seed the assistant turn with {@code
-     * <|tool_call_start|>} (plus "[name" for a named choice) so the model can only complete a tool
-     * call instead of merely being asked to make one. The open paren is deliberately NOT seeded: a
-     * bare trailing "(" lands on a tokenization boundary the model never saw (it merges with the
-     * first argument in training data) and greedy decoding stops dead. No-op when the vocabulary
-     * lacks the marker (the prompted fallback keeps its text hint). Pure: returns the (possibly
-     * extended) prompt.
-     */
-    static IntSequence seedForced(
-            Tokenizer tokenizer, Map<String, Object> request, IntSequence promptTokens) {
-        String choice = forced(request);
-        if (choice == null) return promptTokens;
-        java.util.OptionalInt markerId = SpecialTokens.find(tokenizer, "<|tool_call_start|>");
-        Integer marker = markerId.isPresent() ? markerId.getAsInt() : null;
-        if (marker == null) return promptTokens;
-        IntSequence seeded = promptTokens.concat(IntSequence.of(marker));
-        if (!choice.isEmpty()) seeded = seeded.concat(tokenizer.encode("[" + choice));
-        return seeded;
     }
 
     /**
