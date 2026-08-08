@@ -217,6 +217,16 @@ public final class GrammarSpecTest {
             refused = e.getMessage().contains("root") && e.getMessage().contains("foo");
         }
         check("root-start: a rootless grammar is refused, naming what it did declare", refused);
+
+        // malformed SYNTAX is refused too, rather than compiling to something that matches almost
+        // nothing: an unbalanced '(' used to be skipped, leaving a rule that admitted only ""
+        boolean unbalanced = false;
+        try {
+            g("root ::= (((");
+        } catch (IllegalArgumentException e) {
+            unbalanced = e.getMessage().contains("(");
+        }
+        check("root-start: an unbalanced '(' is refused, not silently emptied", unbalanced);
         // an EMPTY source is not a malformed grammar, it is the absence of one
         check("root-start: empty source still disables", !Grammar.of("", BV).isValid());
     }

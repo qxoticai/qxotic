@@ -4,19 +4,23 @@ import com.qxotic.jinfer.*;
 import java.util.function.Consumer;
 
 /**
- * The live output channels of a streaming generation: the text / reasoning / tool-call sinks and
- * the running usage counter. They always travel together — bundling them keeps {@link Generation}'s
- * API at three parameters and stops the transport layer from passing four loose nulls for the
- * common non-streaming case ({@link #NONE}). Any channel may be null (e.g. completions have no
- * reasoning or tool-call sink); {@code usage} is null when running usage is not tracked.
+ * The live output channels of a streaming generation: the text and reasoning sinks. They travel
+ * together so {@link Generation} takes one parameter instead of loose nulls for the common
+ * non-streaming case ({@link #NONE}). Either channel may be null (completions have no reasoning
+ * lane).
+ *
+ * <p>There is deliberately no running token counter here. One existed, and the pipeline only filled
+ * it AFTER the pass completed - so every delta chunk carried a {@code usage} object reading all
+ * zeros, a non-standard field that was also never true. Real usage rides the terminal chunk, built
+ * from the finished {@link Reply}.
  */
-record Sinks(Consumer<String> onText, Consumer<String> onReasoning, OpenAiSchema.Usage usage) {
+record Sinks(Consumer<String> onText, Consumer<String> onReasoning) {
 
-    /** No streaming: the result carries the full text/usage, so every channel is absent. */
-    static final Sinks NONE = new Sinks(null, null, null);
+    /** No streaming: the result carries the full text and usage, so both channels are absent. */
+    static final Sinks NONE = new Sinks(null, null);
 
-    /** A single text channel with usage tracking (completions and the Responses API). */
-    static Sinks text(Consumer<String> onText, OpenAiSchema.Usage usage) {
-        return new Sinks(onText, null, usage);
+    /** A single text channel (completions and the Responses API). */
+    static Sinks text(Consumer<String> onText) {
+        return new Sinks(onText, null);
     }
 }

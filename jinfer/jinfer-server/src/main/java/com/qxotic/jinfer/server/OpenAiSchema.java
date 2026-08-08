@@ -1,6 +1,6 @@
 // OpenAI-compatible wire shapes: the JSON envelopes for chat/completions/responses (full and
 // streaming chunks), usage, and llama.cpp-style timings. Pure builders from a Reply
-// or running Usage counters — no transport, no generation logic.
+// no transport, no generation logic.
 package com.qxotic.jinfer.server;
 
 import com.qxotic.jinfer.*;
@@ -13,28 +13,6 @@ import java.util.Map;
 
 final class OpenAiSchema {
     private OpenAiSchema() {}
-
-    /**
-     * Mutable per-request token counters, updated by the generation pipeline and read by the
-     * streaming sinks to attach running usage to delta chunks.
-     */
-    static final class Usage {
-        int promptTokens;
-        int completionTokens;
-        int cachedTokens;
-    }
-
-    static Map<String, Object> chunkUsage(Usage usage) {
-        return Map.of(
-                "prompt_tokens",
-                usage.promptTokens,
-                "completion_tokens",
-                usage.completionTokens,
-                "total_tokens",
-                usage.promptTokens + usage.completionTokens,
-                "prompt_tokens_details",
-                Map.of("cached_tokens", usage.cachedTokens));
-    }
 
     static Map<String, Object> usage(Reply result) {
         return Map.of(

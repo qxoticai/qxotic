@@ -430,9 +430,15 @@ public final class Server {
                 request -> {
                     Requests.normalizeResponse(request);
                     Validation.validateGenerationParams(request, config);
-                    Validation.require(
-                            !Requests.responseInputMessages(request).isEmpty(),
-                            "input must not be empty");
+                    List<Object> folded = Requests.responseInputMessages(request);
+                    Validation.require(!folded.isEmpty(), "input must not be empty");
+                    // the SAME shape rules as chat, over the folded turns: roles, substance,
+                    // response_format and tool declarations. This endpoint used to skip them
+                    // entirely, so a bad role or a malformed tool reached the engine here and
+                    // was refused there - or not at all.
+                    Map<String, Object> asChat = new java.util.HashMap<>(request);
+                    asChat.put("messages", folded);
+                    Validation.validateChatRequest(asChat);
                 },
                 (request, id) -> {
                     List<Object> messages = Requests.responseInputMessages(request);
@@ -471,14 +477,12 @@ public final class Server {
                         // Ask GENERATION whether forcing really happens - a model with no call
                         // seed ignores tool_choice and generates ordinary prose, which silently
                         // went nowhere while this asked ToolUse.forced(request) on its own.
-                        OpenAiSchema.Usage usage = new OpenAiSchema.Usage();
                         Sinks sinks =
                                 generation.forcedTool(request) != null
                                         ? Sinks.NONE
                                         : new Sinks(
                                                 deltaSink(
                                                         sse,
-                                                        usage,
                                                         t ->
                                                                 OpenAiSchema.chatCompletionChunk(
                                                                         id,
@@ -487,7 +491,6 @@ public final class Server {
                                                                         null)),
                                                 deltaSink(
                                                         sse,
-                                                        usage,
                                                         t ->
                                                                 OpenAiSchema.chatCompletionChunk(
                                                                         id,
@@ -495,8 +498,7 @@ public final class Server {
                                                                         Map.of(
                                                                                 "reasoning_content",
                                                                                 t),
-                                                                        null)),
-                                                usage);
+                                                                        null)));
                         Reply result = generation.chat(request, messages, sinks);
                         if (!result.toolCalls().isEmpty()) {
                             sse.emit(
@@ -562,14 +564,11 @@ public final class Server {
             Sse.guarded(
                     sse,
                     () -> {
-                        OpenAiSchema.Usage usage = new OpenAiSchema.Usage();
                         Consumer<String> sink =
                                 deltaSink(
                                         sse,
-                                        usage,
                                         t -> OpenAiSchema.completionChunk(id, modelId, t, null));
-                        Reply result =
-                                generation.completion(request, prompt, Sinks.text(sink, usage));
+                        Reply result = generation.completion(request, prompt, Sinks.text(sink));
                         endStream(
                                 sse,
                                 request,
@@ -611,14 +610,12 @@ public final class Server {
                                         "item",
                                         OpenAiSchema.responseMessageItem(
                                                 itemId, "in_progress", "")));
-                        OpenAiSchema.Usage usage = new OpenAiSchema.Usage();
                         Consumer<String> sink =
                                 deltaSink(
                                         sse,
-                                        usage,
                                         "response.output_text.delta",
                                         t -> OpenAiSchema.responseTextDelta(itemId, t));
-                        Reply result = generation.chat(request, messages, Sinks.text(sink, usage));
+                        Reply result = generation.chat(request, messages, Sinks.text(sink));
                         sse.emit(
                                 "response.output_text.done",
                                 Map.of(
@@ -659,24 +656,18 @@ public final class Server {
      * by {@code chunkOf}, with running usage attached when tracked.
      */
     private static Consumer<String> deltaSink(
-            Sse.Stream sse,
-            OpenAiSchema.Usage usage,
-            Function<String, Map<String, Object>> chunkOf) {
-        return deltaSink(sse, usage, null, chunkOf);
+            Sse.Stream sse, Function<String, Map<String, Object>> chunkOf) {
+        return deltaSink(sse, null, chunkOf);
     }
 
     /**
-     * As {@link #deltaSink(Sse.Stream, OpenAiSchema.Usage, Function)}, but emitted as a named SSE
-     * event (the Responses API) when {@code event} is non-null.
+     * As {@link #deltaSink(Sse.Stream, Function)}, but emitted as a named SSE event (the Responses
+     * API) when {@code event} is non-null.
      */
     private static Consumer<String> deltaSink(
-            Sse.Stream sse,
-            OpenAiSchema.Usage usage,
-            String event,
-            Function<String, Map<String, Object>> chunkOf) {
+            Sse.Stream sse, String event, Function<String, Map<String, Object>> chunkOf) {
         return text -> {
             Map<String, Object> chunk = chunkOf.apply(text);
-            if (usage != null) chunk.put("usage", OpenAiSchema.chunkUsage(usage));
             if (event == null) sse.emit(chunk);
             else sse.emit(event, chunk);
         };

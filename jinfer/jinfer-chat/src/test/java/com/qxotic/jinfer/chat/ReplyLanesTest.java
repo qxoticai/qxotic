@@ -105,4 +105,33 @@ final class ReplyLanesTest {
             assertEquals("Hello", answer);
         }
     }
+
+    /**
+     * A byte-level BPE routinely splits one character across two tokens. On the CODEC-LESS lane -
+     * which is what /v1/completions always uses - the first half made {@code PendingUtf8.add}
+     * return null ("not yet"), and feed dereferenced it: NullPointerException out of the decode
+     * loop, and a 500 "Internal server error" for a perfectly good request. Ids 8 and 9 are the two
+     * halves of é.
+     */
+    @Test
+    void aCharacterSplitAcrossTokensIsBufferedNotFatal() {
+        ReplyLanes lanes = new ReplyLanes(Optional.empty(), ReplyParserTest.TOK, new int[0], false);
+        assertEquals("Hello", lanes.feed(HELLO));
+        assertEquals("", lanes.feed(8), "the first half of é completes nothing yet");
+        assertEquals("é", lanes.feed(9), "the second half completes the character");
+        assertEquals("Helloé", lanes.finish().text());
+    }
+
+    /** A reply that ENDS mid-character must not silently lose the bytes it buffered. */
+    @Test
+    void aReplyEndingMidCharacterKeepsWhatItHad() {
+        ReplyLanes lanes = new ReplyLanes(Optional.empty(), ReplyParserTest.TOK, new int[0], false);
+        lanes.feed(HELLO);
+        assertEquals("", lanes.feed(8)); // ends here: the trailing half never completes
+        String text = lanes.finish().text();
+        assertTrue(text.startsWith("Hello"), "the complete prefix survives: " + text);
+        assertTrue(
+                text.length() > "Hello".length(),
+                "the truncated tail is drained as U+FFFD, not dropped: " + text);
+    }
 }

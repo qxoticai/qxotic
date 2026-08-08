@@ -50,7 +50,7 @@ public final class ReplyLanes {
     /** The text this token adds ("" while pending); {@link #reasoning()} tells its lane. */
     public String feed(int token) {
         if (parser == null) {
-            String fragment = pending.add(tokenizer.decodeBytes(new int[] {token}), token).text();
+            String fragment = added(token);
             rawText.append(fragment);
             return fragment;
         }
@@ -62,9 +62,26 @@ public final class ReplyLanes {
             // markers themselves stay silent): surface the raw text the parser withheld. It joins
             // the surrounding span's lane, and it matches finish()'s downgraded call byte-exactly
             // (a claimed call's verbatim is the payload ids, markers excluded).
-            return pending.add(tokenizer.decodeBytes(new int[] {token}), token).text();
+            return added(token);
         }
         return fragment;
+    }
+
+    /**
+     * The text {@code token} completes, or "" while a multi-byte sequence is still arriving.
+     *
+     * <p>{@link PendingUtf8#add} returns null for exactly that "not yet" case - a token carrying
+     * the first half of a multi-byte character, which is ordinary for byte-level BPE. Both call
+     * sites used to dereference it, so such a token crashed the pass with a NullPointerException
+     * and the client got 500 "Internal server error" for a perfectly good request. It went
+     * unnoticed because the native-codec path routes through the parser, which handles pending
+     * itself: only the codec-less lane - which is what /v1/completions always uses - could reach
+     * it, and only on a model that splits a character across tokens.
+     */
+    private String added(int token) {
+        PendingUtf8.Fragment fragment =
+                pending.add(tokenizer.decodeBytes(new int[] {token}), token);
+        return fragment == null ? "" : fragment.text();
     }
 
     /** The lane of the LAST {@link #feed}ed fragment. */
@@ -74,7 +91,14 @@ public final class ReplyLanes {
 
     /** The finished structured reply, from the same parse that streamed. */
     public Message finish() {
-        if (parser == null) return new Message(Role.ASSISTANT, rawText.toString());
+        if (parser == null) {
+            // a reply that ENDS mid-sequence leaves bytes buffered; without this drain they were
+            // simply lost from the finished message (flush decodes permissively, so a genuinely
+            // truncated character becomes U+FFFD rather than vanishing)
+            PendingUtf8.Fragment tail = pending.flush();
+            if (tail != null) rawText.append(tail.text());
+            return new Message(Role.ASSISTANT, rawText.toString());
+        }
         Message reply = parser.finish();
         return claimToolCalls ? reply : declaimed(reply);
     }
