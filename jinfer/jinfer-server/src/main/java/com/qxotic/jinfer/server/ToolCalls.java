@@ -268,16 +268,34 @@ final class ToolCalls {
         return end >= start ? text.substring(start, end + 1).strip() : "";
     }
 
+    /**
+     * The first key present, for the two spellings of a call's argument object. {@code arguments}
+     * is OpenAI's; {@code parameters} is what Meta's Llama 3.x prompt ASKS the model for verbatim
+     * ("Respond in the format {"name": function name, "parameters": dictionary of argument name and
+     * its value}"), so it is what those models emit.
+     *
+     * <p>{@link #jsonCallList} already accepted either spelling when deciding that a blob IS a tool
+     * call - this only ever read {@code arguments}, so a Llama 3.x call was recognised, named
+     * correctly, and handed to the client with its arguments silently replaced by {}.
+     */
+    private static Object firstPresent(Map<?, ?> map, String... keys) {
+        for (String key : keys) {
+            Object value = map.get(key);
+            if (value != null) return value;
+        }
+        return null;
+    }
+
     private static Map<String, Object> normalizeToolCall(Map<String, Object> call, int index) {
         Object functionValue = call.get("function");
         String name;
         Object arguments;
         if (functionValue instanceof Map<?, ?> function) {
             name = Values.stringValue(function.get("name"), null);
-            arguments = function.get("arguments");
+            arguments = firstPresent(function, "arguments", "parameters");
         } else {
             name = Values.stringValue(call.get("name"), null);
-            arguments = call.get("arguments");
+            arguments = firstPresent(call, "arguments", "parameters");
         }
         if (name == null || name.isBlank()) return null;
         String argumentString =

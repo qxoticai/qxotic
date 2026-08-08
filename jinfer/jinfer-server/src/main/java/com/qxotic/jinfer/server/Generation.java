@@ -570,8 +570,13 @@ final class Generation {
 
     /** Prompt size as billed to the client: a leading BOS is template overhead, not user input. */
     private static int consumedPromptTokens(Tokenizer tokenizer, IntSequence promptTokens) {
-        int bos = SpecialTokens.findFirst(tokenizer, "<bos>", "<|startoftext|>").orElse(1);
-        if (!promptTokens.isEmpty() && promptTokens.getFirst() == bos) {
+        java.util.OptionalInt bos = SpecialTokens.bos(tokenizer);
+        // orElse(1) used to stand in for "no BOS", which is not a neutral guess: it is a real
+        // token id in every vocabulary, so a prompt that happened to start with id 1 was billed
+        // one token short. A vocabulary with no BOS now subtracts nothing.
+        if (bos.isPresent()
+                && !promptTokens.isEmpty()
+                && promptTokens.getFirst() == bos.getAsInt()) {
             return promptTokens.length() - 1;
         }
         return promptTokens.length();
@@ -755,8 +760,10 @@ final class Generation {
         if (!prompt.isEmpty()
                 && prompt.get(0).input() instanceof Batch.Input.Tokens first
                 && first.ids().length > 0) {
-            int bos = SpecialTokens.findFirst(tokenizer, "<bos>", "<|startoftext|>").orElse(1);
-            if (first.ids()[0] == bos) return prepared.promptTokens() - 1;
+            java.util.OptionalInt bos = SpecialTokens.bos(tokenizer);
+            if (bos.isPresent() && first.ids()[0] == bos.getAsInt()) {
+                return prepared.promptTokens() - 1;
+            }
         }
         return prepared.promptTokens();
     }
