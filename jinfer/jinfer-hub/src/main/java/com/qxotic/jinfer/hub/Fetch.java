@@ -31,6 +31,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -95,6 +96,9 @@ final class Fetch {
 
     /** Two threads of one JVM cannot both hold a {@link FileLock}, so they queue here first. */
     private static final Map<Path, ReentrantLock> IN_PROCESS = new ConcurrentHashMap<>();
+
+    /** Live transfers right now - what tells a Progress it must not own the terminal line. */
+    private static final AtomicInteger ACTIVE = new AtomicInteger();
 
     private static int threads() {
         String configured = System.getenv("JINFER_DOWNLOAD_THREADS");
@@ -189,6 +193,21 @@ final class Fetch {
     static void download(
             String url, Path dest, long expectedSize, String sha256, Map<String, String> headers)
             throws IOException {
+        download(url, dest, dest.getFileName().toString(), expectedSize, sha256, headers);
+    }
+
+    /**
+     * As above with an explicit progress label - for destinations whose file name is NOT the human
+     * name (the shared hub cache's content-addressed {@code blobs/<sha256>}).
+     */
+    static void download(
+            String url,
+            Path dest,
+            String label,
+            long expectedSize,
+            String sha256,
+            Map<String, String> headers)
+            throws IOException {
         Files.createDirectories(dest.getParent());
         ReentrantLock local =
                 IN_PROCESS.computeIfAbsent(dest.toAbsolutePath(), p -> new ReentrantLock());
@@ -204,7 +223,7 @@ final class Fetch {
                 if (Files.exists(dest)) {
                     return; // whoever held the lock finished it
                 }
-                transfer(url, dest, expectedSize, sha256, headers);
+                transfer(url, dest, label, expectedSize, sha256, headers);
             }
         } finally {
             local.unlock();
@@ -212,16 +231,37 @@ final class Fetch {
     }
 
     private static void transfer(
-            String url, Path dest, long expectedSize, String sha256, Map<String, String> headers)
+            String url,
+            Path dest,
+            String label,
+            long expectedSize,
+            String sha256,
+            Map<String, String> headers)
+            throws IOException {
+        ACTIVE.incrementAndGet();
+        try {
+            transfer0(url, dest, label, expectedSize, sha256, headers);
+        } finally {
+            ACTIVE.decrementAndGet();
+        }
+    }
+
+    private static void transfer0(
+            String url,
+            Path dest,
+            String label,
+            long expectedSize,
+            String sha256,
+            Map<String, String> headers)
             throws IOException {
         Path part = sibling(dest, ".part");
-        Progress progress = new Progress(dest.getFileName().toString(), expectedSize);
+        Progress progress = new Progress(label, expectedSize);
         IOException last = null;
         for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
             try {
                 if (expectedSize >= PARALLEL_FLOOR) {
                     parallel(url, part, expectedSize, headers, progress);
-                    verify(part, sha256, dest.getFileName().toString());
+                    verify(part, sha256, label);
                 } else {
                     sequential(url, part, expectedSize, sha256, headers, progress);
                 }
@@ -615,6 +655,18 @@ final class Fetch {
         private long startNanos = System.nanoTime();
         private long lastPrint;
         private int lastDecile = -1;
+        // Latched the first time a sibling transfer is live: two \r bars would shred the line,
+        // so concurrent downloads all print the NAMED per-decile lines a CI log gets - and never
+        // flap back, which would rewrite over lines already printed.
+        private boolean lines;
+
+        private boolean bar() {
+            if (!lines && tty && ACTIVE.get() > 1) {
+                lines = true;
+                if (lastPrint != 0) progress().println(); // abandon the half-drawn bar line
+            }
+            return !lines && tty;
+        }
 
         Progress(String label, long total) {
             this.label = label;
@@ -625,20 +677,22 @@ final class Fetch {
         void start(long already) {
             startBytes = already;
             startNanos = System.nanoTime();
-            if (!tty) {
+            if (!bar()) {
                 progress()
                         .println(
                                 "  "
+                                        + label
+                                        + "  "
                                         + size(total)
                                         + (already > 0 ? ", resuming at " + size(already) : ""));
             }
         }
 
         void note(String message) {
-            if (tty) {
+            if (bar()) {
                 progress().println();
             }
-            progress().println("  " + message);
+            progress().println("  " + label + ": " + message);
         }
 
         /** Renders while {@code futures} run - the parallel path has no single stream to hook. */
@@ -657,7 +711,7 @@ final class Fetch {
 
         void at(long written) {
             long now = System.nanoTime();
-            if (tty) {
+            if (bar()) {
                 if (now - lastPrint < TICK_NANOS) {
                     return;
                 }
@@ -669,12 +723,12 @@ final class Fetch {
             int decile = total > 0 ? (int) (10 * written / total) : -1;
             if (decile > lastDecile) {
                 lastDecile = decile;
-                progress().println("  " + render(written, now));
+                progress().println("  " + label + "  " + render(written, now));
             }
         }
 
         void finish() {
-            if (tty) {
+            if (bar()) {
                 progress().print("\r" + render(total, System.nanoTime()));
                 progress().println();
             }

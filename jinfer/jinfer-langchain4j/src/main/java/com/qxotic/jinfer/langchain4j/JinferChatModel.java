@@ -80,7 +80,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                 b.loaded == null
                         ? new ChatEngine(
                                 b.modelPath,
-                                resolvedCompanions(b.companions),
+                                b.companionPaths,
                                 cacheOptions(b.cachedPrompts, b.cachedSessions, b.contextLength))
                         : new ChatEngine(
                                 b.loaded,
@@ -376,16 +376,6 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         return f == null ? null : f.doubleValue();
     }
 
-    /** Companion values (paths or refs, as one string) through the one resolver, at build. */
-    private static java.util.Map<String, Path> resolvedCompanions(
-            java.util.Map<String, String> companions) {
-        var resolved = new java.util.LinkedHashMap<String, Path>();
-        companions.forEach(
-                (capability, value) ->
-                        resolved.put(capability, com.qxotic.jinfer.hub.ModelStore.resolve(value)));
-        return java.util.Collections.unmodifiableMap(resolved);
-    }
-
     public static Builder builder() {
         return new Builder();
     }
@@ -394,6 +384,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         private Object source; // Path | ref/URL String | LoadedModel: the last setter wins
         private Path modelPath; // derived from source at build()
         private LoadedModel<?> loaded; // derived from source at build()
+        private java.util.Map<String, Path> companionPaths; // resolved at build()
         private String modelName;
         private final java.util.Map<String, String> companions = new java.util.LinkedHashMap<>();
         private com.qxotic.jinfer.media.VideoSampler videoSampler =
@@ -604,19 +595,34 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         }
 
         public JinferChatModel build() {
-            switch (source) {
-                case String ref -> modelPath = com.qxotic.jinfer.hub.ModelStore.resolve(ref);
-                case Path path -> modelPath = path;
-                case LoadedModel<?> l -> loaded = l;
-                case null, default ->
-                        throw new IllegalArgumentException(
-                                "a model is required: model(\"hf.co/owner/repo:Q4_K_M\"),"
-                                        + " modelPath(...) or model(LoadedModel)");
-            }
-            if (loaded != null && (!companions.isEmpty() || contextLength != 0))
+            modelPath = null;
+            loaded = null;
+            if (source == null)
                 throw new IllegalArgumentException(
-                        "companions/contextLength are load-time settings; apply them when you"
-                                + " build the LoadedModel passed to model(...)");
+                        "a model is required: model(\"hf.co/owner/repo:Q4_K_M\"),"
+                                + " modelPath(...) or model(LoadedModel)");
+            if (source instanceof LoadedModel<?> l) {
+                if (!companions.isEmpty() || contextLength != 0)
+                    throw new IllegalArgumentException(
+                            "companions/contextLength are load-time settings; apply them when you"
+                                    + " build the LoadedModel passed to model(...)");
+                loaded = l;
+                companionPaths = java.util.Map.of();
+                return new JinferChatModel(this);
+            }
+            // the model (when it is a string) and the companions resolve in ONE batch, so a cold
+            // start pays the slowest download, not the sum
+            java.util.List<String> wanted = new java.util.ArrayList<>();
+            if (source instanceof String ref) wanted.add(ref);
+            wanted.addAll(companions.values());
+            java.util.List<Path> resolved = com.qxotic.jinfer.hub.ModelStore.resolveAll(wanted);
+            int at = 0;
+            modelPath = source instanceof Path path ? path : resolved.get(at++);
+            var resolvedCompanions = new java.util.LinkedHashMap<String, Path>();
+            for (String capability : companions.keySet()) {
+                resolvedCompanions.put(capability, resolved.get(at++));
+            }
+            companionPaths = java.util.Collections.unmodifiableMap(resolvedCompanions);
             return new JinferChatModel(this);
         }
     }

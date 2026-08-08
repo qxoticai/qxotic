@@ -419,6 +419,9 @@ public record Options(
         Path tokenizerPath;
         Map<String, Path> companions = new LinkedHashMap<>();
         try {
+            // the model first (a tokenizer GGUF is megabytes - batching it buys nothing),
+            // then the companions as ONE concurrent batch: their capability check reads the
+            // MODEL's header, so a wrong --with still fails on the knob before any download
             modelPath = modelRef == null ? null : ModelStore.resolve(modelRef);
             tokenizerPath = tokenizerRef == null ? null : ModelStore.resolve(tokenizerRef);
             if (!companionRefs.isEmpty()) {
@@ -431,10 +434,13 @@ public record Options(
                 } catch (IOException e) {
                     throw new UncheckedIOException(e);
                 }
-                for (var wanted : companionRefs.entrySet()) {
-                    companions.put(
-                            wanted.getKey(),
-                            resolveCompanion(offered, wanted.getKey(), wanted.getValue()));
+                for (var w : companionRefs.entrySet()) {
+                    requireCompanion(offered, w.getKey(), w.getValue());
+                }
+                List<Path> resolved = ModelStore.resolveAll(List.copyOf(companionRefs.values()));
+                int i = 0;
+                for (String capability : companionRefs.keySet()) {
+                    companions.put(capability, resolved.get(i++));
                 }
             }
         } catch (RuntimeException e) {
@@ -477,7 +483,7 @@ public record Options(
      * model produces - a projector is in the media cache key - so which file it is belongs in the
      * command line where it can be read, reproduced and pinned.
      */
-    private static Path resolveCompanion(
+    private static void requireCompanion(
             Map<String, String> offered, String capability, String value) {
         String fileName = offered.get(capability);
         require(
@@ -491,7 +497,6 @@ public record Options(
                         + " the model's repository shows which precisions it ships",
                 capability,
                 fileName);
-        return ModelStore.resolve(value);
     }
 
     static void printUsage(PrintStream out) {

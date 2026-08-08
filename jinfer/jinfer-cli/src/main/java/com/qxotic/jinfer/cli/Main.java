@@ -148,17 +148,15 @@ public class Main {
             System.exit(2);
             return;
         }
-        for (String ref : refs) {
-            try {
-                if (force) {
-                    ModelStore.evict(ref);
-                }
-                System.out.println(ModelStore.resolve(ref));
-            } catch (RuntimeException e) {
-                System.err.println("ERROR " + Options.rootMessage(e));
-                System.exit(1);
-                return;
+        try {
+            if (force) {
+                refs.forEach(ModelStore::evict);
             }
+            // several refs download concurrently; paths print in argument order, so it pipes
+            ModelStore.resolveAll(refs).forEach(System.out::println);
+        } catch (RuntimeException e) {
+            System.err.println("ERROR " + Options.rootMessage(e));
+            System.exit(1);
         }
     }
 
