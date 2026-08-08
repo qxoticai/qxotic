@@ -100,8 +100,67 @@ final class Fetch {
     /** Live transfers right now - what tells a Progress it must not own the terminal line. */
     private static final AtomicInteger ACTIVE = new AtomicInteger();
 
+    /** True while a \r bar sits unterminated - what Ctrl-C would glue the shell prompt onto. */
+    private static volatile boolean barMidLine;
+
+    /**
+     * The Progress that owns the terminal bar right now, repainted by a clock ticker so the spinner
+     * keeps turning through a network stall - the bar itself is DATA-driven and freezes exactly
+     * when the user most needs proof the process is alive. Null when no bar is live.
+     */
+    private static volatile Progress barOwner;
+
+    private static volatile Thread ticker;
+
+    private static void ensureTicker() {
+        if (ticker != null) {
+            return;
+        }
+        synchronized (Fetch.class) {
+            if (ticker != null) {
+                return;
+            }
+            Thread t =
+                    new Thread(
+                            () -> {
+                                while (true) {
+                                    try {
+                                        Thread.sleep(100);
+                                    } catch (InterruptedException e) {
+                                        return;
+                                    }
+                                    Progress owner = barOwner;
+                                    if (owner != null) {
+                                        owner.repaint();
+                                    }
+                                }
+                            },
+                            "jinfer-progress-spinner");
+            t.setDaemon(true);
+            t.start();
+            ticker = t;
+        }
+    }
+
+    static {
+        // close the bar's line on ANY exit, so an interrupted download never leaves the prompt
+        // appended to a half-drawn bar; a no-op when the line was finished or never drawn
+        Runtime.getRuntime()
+                .addShutdownHook(
+                        new Thread(
+                                () -> {
+                                    if (barMidLine) progress().println();
+                                },
+                                "jinfer-progress-eol"));
+    }
+
     private static int threads() {
-        String configured = System.getenv("JINFER_DOWNLOAD_THREADS");
+        // -Djinfer.downloadThreads > JINFER_DOWNLOAD_THREADS > the default: the house precedence
+        // (property > env > built-in), same as jinfer.models and jinfer.offline
+        String configured = System.getProperty("jinfer.downloadThreads");
+        if (configured == null || configured.isBlank()) {
+            configured = System.getenv("JINFER_DOWNLOAD_THREADS");
+        }
         if (configured != null && !configured.isBlank()) {
             try {
                 return Math.max(1, Integer.parseInt(configured.strip()));
@@ -261,7 +320,7 @@ final class Fetch {
             try {
                 if (expectedSize >= PARALLEL_FLOOR) {
                     parallel(url, part, expectedSize, headers, progress);
-                    verify(part, sha256, label);
+                    verify(part, sha256, label, progress);
                 } else {
                     sequential(url, part, expectedSize, sha256, headers, progress);
                 }
@@ -426,16 +485,25 @@ final class Fetch {
         }
     }
 
-    /** Reads the finished file once to check it. The price of writing chunks out of order. */
-    private static void verify(Path part, String sha256, String label) throws IOException {
+    /**
+     * Reads the finished file once to check it - the price of writing chunks out of order. The
+     * read-back takes SECONDS on a large file, so it reports through the same row: a bar frozen at
+     * 100% reads as a hang, and this is precisely when the download is not done yet.
+     */
+    private static void verify(Path part, String sha256, String label, Progress progress)
+            throws IOException {
         if (sha256 == null) {
             return;
         }
+        progress.verifying();
         MessageDigest digest = sha256Digest();
         try (InputStream in = Files.newInputStream(part)) {
             byte[] buffer = new byte[BUFFER];
+            long hashed = 0;
             for (int n; (n = in.read(buffer)) > 0; ) {
                 digest.update(buffer, 0, n);
+                hashed += n;
+                progress.at(hashed);
             }
         }
         String actual = HexFormat.of().formatHex(digest.digest());
@@ -659,11 +727,32 @@ final class Fetch {
         // so concurrent downloads all print the NAMED per-decile lines a CI log gets - and never
         // flap back, which would rewrite over lines already printed.
         private boolean lines;
+        private String phase = ""; // "" while downloading, the check's name during the read-back
+
+        private long downloadRate; // the average the DOWNLOAD achieved, frozen at verify time
+
+        /**
+         * The row becomes the sha256 read-back: same line, restarted bar, named phase. The rate
+         * field freezes at the download's average from here on - hash throughput answers a question
+         * nobody asked, and the final line should immortalize the number that matters.
+         */
+        void verifying() {
+            double seconds = (System.nanoTime() - startNanos) / 1e9;
+            downloadRate = seconds > 0 ? (long) ((total - startBytes) / seconds) : 0;
+            phase = "  sha256";
+            startBytes = 0;
+            startNanos = System.nanoTime();
+            lastPrint = 0;
+            lastDecile = -1;
+        }
 
         private boolean bar() {
             if (!lines && tty && ACTIVE.get() > 1) {
                 lines = true;
-                if (lastPrint != 0) progress().println(); // abandon the half-drawn bar line
+                if (lastPrint != 0) {
+                    progress().println(); // abandon the half-drawn bar line
+                    barMidLine = false;
+                }
             }
             return !lines && tty;
         }
@@ -675,6 +764,7 @@ final class Fetch {
 
         /** Called once the resume point is known, so the rate is measured over new bytes only. */
         void start(long already) {
+            phase = "";
             startBytes = already;
             startNanos = System.nanoTime();
             if (!bar()) {
@@ -691,6 +781,7 @@ final class Fetch {
         void note(String message) {
             if (bar()) {
                 progress().println();
+                barMidLine = false;
             }
             progress().println("  " + label + ": " + message);
         }
@@ -709,16 +800,66 @@ final class Fetch {
             at(written.get());
         }
 
+        /** The classic braille ring; ASCII consoles get the four-spoke wheel. */
+        private static final String SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
+
+        private static final String SPIN_ASCII = "|/-\\";
+
+        private volatile long lastWritten;
+
+        /** The live-ness mark: clock-driven, so it turns even when no byte arrives. */
+        private String spinner(boolean done) {
+            if (done) {
+                return unicode ? "✓" : "*";
+            }
+            String frames = unicode ? SPIN : SPIN_ASCII;
+            return String.valueOf(
+                    frames.charAt((int) ((System.nanoTime() / TICK_NANOS) % frames.length())));
+        }
+
+        /** The ticker's stall repaint: last-known bytes, fresh clock, fresh spinner frame. */
+        void repaint() {
+            long now = System.nanoTime();
+            if (barOwner == this && !lines && tty && now - lastPrint >= TICK_NANOS) {
+                lastPrint = now; // shares the data path's throttle: ~10 fps total, never 20
+                printBar(" " + spinner(false) + render(lastWritten, now));
+            }
+        }
+
+        private int lastLength;
+
+        /**
+         * The ONE place a bar frame reaches the terminal. A carriage return only OVERWRITES, so a
+         * frame shorter than its predecessor (an eta that vanished, a rate that changed width)
+         * would leave the old tail standing - every frame therefore pads out to the longest line it
+         * is replacing.
+         */
+        private void printBar(String line) {
+            StringBuilder out = new StringBuilder("\r").append(line);
+            for (int i = line.length(); i < lastLength; i++) {
+                out.append(' ');
+            }
+            lastLength = line.length();
+            progress().print(out);
+            progress().flush();
+            barMidLine = true;
+        }
+
         void at(long written) {
             long now = System.nanoTime();
+            lastWritten = written;
             if (bar()) {
+                barOwner = this;
+                ensureTicker();
                 if (now - lastPrint < TICK_NANOS) {
                     return;
                 }
                 lastPrint = now;
-                progress().print("\r" + render(written, now));
-                progress().flush();
+                printBar(" " + spinner(false) + render(written, now));
                 return;
+            }
+            if (barOwner == this) {
+                barOwner = null; // latched into line mode: the ticker must stop repainting
             }
             int decile = total > 0 ? (int) (10 * written / total) : -1;
             if (decile > lastDecile) {
@@ -729,29 +870,56 @@ final class Fetch {
 
         void finish() {
             if (bar()) {
-                progress().print("\r" + render(total, System.nanoTime()));
+                barOwner = null;
+                printBar(" " + spinner(true) + render(total, System.nanoTime()));
                 progress().println();
+                barMidLine = false;
             }
         }
 
         private String render(long written, long now) {
             double seconds = (now - startNanos) / 1e9;
-            long rate = seconds > 0 ? (long) ((written - startBytes) / seconds) : 0;
+            long rate =
+                    phase.isEmpty()
+                            ? (seconds > 0 ? (long) ((written - startBytes) / seconds) : 0)
+                            : downloadRate;
             StringBuilder line = new StringBuilder(" ");
             if (total > 0) {
-                int filled = (int) (WIDTH * Math.min(written, total) / total);
-                line.append(String.valueOf(unicode ? '█' : '#').repeat(filled));
-                line.append(String.valueOf(unicode ? '░' : '-').repeat(WIDTH - filled));
+                line.append(unicode ? '\u2595' : '[');
+                line.append(bar(written, total, WIDTH, unicode));
+                line.append(unicode ? '\u258f' : ']');
                 line.append(String.format(Locale.ROOT, " %3d%%", 100 * written / total));
                 line.append("  ").append(size(written)).append('/').append(size(total));
             } else {
                 line.append(label).append("  ").append(size(written));
             }
             line.append("  ").append(size(rate)).append("/s");
-            if (total > 0 && rate > 0 && written < total) {
-                line.append("  ").append(eta((total - written) / rate));
+            if (phase.isEmpty() && total > 0 && rate > 0 && written < total) {
+                line.append("  eta ").append(eta((total - written) / rate));
             }
-            return line.toString();
+            return line.append(phase).toString();
+        }
+
+        /** The eighth-blocks a sub-cell leading edge is built from, 1/8 first. */
+        private static final String EIGHTHS = "▏▎▍▌▋▊▉";
+
+        /**
+         * The bar cells, {@code width} wide, worn between thin caps by the caller: full blocks, ONE
+         * partial block at the leading edge (eighth-cell resolution, so the bar glides instead of
+         * chunking), then a SILENT track - the caps give the bar its shape, so the empty side needs
+         * no texture. ASCII consoles keep whole cells over a dashed track - there are no partial
+         * ASCII blocks worth pretending with.
+         */
+        static String bar(long written, long total, int width, boolean unicode) {
+            long eighths = 8L * width * Math.min(written, total) / total;
+            int full = (int) (eighths / 8), part = (int) (eighths % 8);
+            StringBuilder bar = new StringBuilder(width);
+            bar.append(String.valueOf(unicode ? '█' : '#').repeat(full));
+            if (unicode && part > 0) {
+                bar.append(EIGHTHS.charAt(part - 1));
+            }
+            bar.append(String.valueOf(unicode ? ' ' : '-').repeat(width - bar.length()));
+            return bar.toString();
         }
 
         private static boolean utf8Console() {
