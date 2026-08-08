@@ -5,8 +5,11 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.testkit.ModelFixture;
+import dev.langchain4j.data.segment.TextSegment;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import jdk.jfr.Recording;
 import jdk.jfr.consumer.RecordedEvent;
@@ -94,8 +97,8 @@ class TelemetryEmissionTest {
                 recording.start();
                 embedder.embedAll(
                         List.of(
-                                dev.langchain4j.data.segment.TextSegment.from("grind the beans"),
-                                dev.langchain4j.data.segment.TextSegment.from("steep the tea")));
+                                TextSegment.from("grind the beans"),
+                                TextSegment.from("steep the tea")));
                 recording.stop();
                 recording.dump(jfr);
             }
@@ -164,7 +167,7 @@ class TelemetryEmissionTest {
         Path jfr = Files.createTempFile("jinfer-gauge", ".jfr");
         try (var model = JinferChatModel.builder().modelPath(gguf).maxOutputTokens(8).build()) {
             try (Recording recording = new Recording()) {
-                recording.enable("jinfer.PromptCache").withPeriod(java.time.Duration.ofMillis(200));
+                recording.enable("jinfer.PromptCache").withPeriod(Duration.ofMillis(200));
                 recording.start();
                 model.chat(PROMPT);
                 Thread.sleep(700); // let the sampler tick
@@ -183,7 +186,7 @@ class TelemetryEmissionTest {
     /** Every event of {@code name} in the recording - the package's one JFR extraction. */
     static List<RecordedEvent> eventsOf(Path jfr, String name) throws Exception {
         try (RecordingFile file = new RecordingFile(jfr)) {
-            List<RecordedEvent> found = new java.util.ArrayList<>();
+            List<RecordedEvent> found = new ArrayList<>();
             while (file.hasMoreEvents()) {
                 RecordedEvent event = file.readEvent();
                 if (event.getEventType().getName().equals(name)) found.add(event);

@@ -3,6 +3,7 @@ package com.qxotic.jinfer.chat;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import java.util.List;
+import java.util.Set;
 import java.util.function.Function;
 
 /**
@@ -44,7 +45,7 @@ public interface ReplyParser {
      * The channels whose text lands in the final output (what reaches the reply's content) - the
      * default target of an output grammar.
      */
-    java.util.Set<String> outputChannels();
+    Set<String> outputChannels();
 
     /**
      * Flush and close open spans (an unterminated think span is still reasoning), then the
@@ -122,7 +123,7 @@ public interface ReplyParser {
             }
 
             @Override
-            public java.util.Set<String> outputChannels() {
+            public Set<String> outputChannels() {
                 return inner.outputChannels();
             }
 

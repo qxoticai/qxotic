@@ -9,6 +9,7 @@ import com.qxotic.jinfer.llm.*;
 import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -76,7 +77,7 @@ public final class LlamaTurnTemplate implements TurnTemplate {
         if (!conversation.isEmpty() && conversation.get(0).role().equals(Role.SYSTEM)) {
             return conversation;
         }
-        List<Message> out = new java.util.ArrayList<>(conversation.size() + 1);
+        List<Message> out = new ArrayList<>(conversation.size() + 1);
         out.add(Message.system(""));
         out.addAll(conversation);
         return out;

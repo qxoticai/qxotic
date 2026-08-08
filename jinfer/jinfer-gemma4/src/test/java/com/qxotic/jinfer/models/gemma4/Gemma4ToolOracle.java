@@ -10,6 +10,7 @@ import com.qxotic.jinfer.testkit.CodecOracleScenario;
 import com.qxotic.jinfer.testkit.ModelFixture;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Assumptions;
@@ -112,7 +113,7 @@ public final class Gemma4ToolOracle {
 
         // numeric + dictsorted args: template dictsorts call arguments (b before top_k? no:
         // case-insensitive key order), numbers render bare
-        var args = new java.util.LinkedHashMap<String, Object>();
+        var args = new LinkedHashMap<String, Object>();
         args.put("top_k", 3L);
         args.put("q", "rivers"); // insertion order q AFTER top_k: dictsort must emit q first
         o.compareToolsExpected(

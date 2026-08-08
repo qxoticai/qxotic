@@ -11,17 +11,19 @@ import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
 import com.qxotic.jinfer.llm.SpecialTokens;
+import com.qxotic.toknroll.Specials;
 import com.qxotic.toknroll.Tokenizer;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 
 public final class OracleScenario {
 
     public final Tokenizer tokenizer;
-    private final com.qxotic.toknroll.Specials specials;
+    private final Specials specials;
     private final OracleSupport support;
     private final TurnTemplate mine;
     private final Map<String, Object> renderVars;
@@ -32,9 +34,7 @@ public final class OracleScenario {
      * template variables (bos/eos/date) that pin the render deterministic.
      */
     public OracleScenario(
-            Path gguf,
-            java.util.function.Function<Tokenizer, TurnTemplate> template,
-            Map<String, Object> renderVars)
+            Path gguf, Function<Tokenizer, TurnTemplate> template, Map<String, Object> renderVars)
             throws Exception {
         this.support = new OracleSupport(gguf);
         this.tokenizer = support.tokenizer;

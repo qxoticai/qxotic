@@ -8,6 +8,7 @@ import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.FloatTensor;
 import com.qxotic.jinfer.llm.SpecialTokens;
 import java.lang.foreign.Arena;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -48,7 +49,7 @@ public final class Qwen3BatchRun {
         if (promptsFile
                 != null) { // batched-embed each line, print vectors (space-separated) for llama.cpp
             // cross-check
-            List<String> lines = java.nio.file.Files.readAllLines(Path.of(promptsFile));
+            List<String> lines = Files.readAllLines(Path.of(promptsFile));
             int[][] qs = new int[lines.size()][];
             for (int i = 0; i < lines.size(); i++) {
                 List<Integer> t = new ArrayList<>(tk.encode(lines.get(i)).toList());

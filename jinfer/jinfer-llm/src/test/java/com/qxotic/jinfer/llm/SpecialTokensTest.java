@@ -7,9 +7,11 @@ import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Vocabulary;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -136,8 +138,8 @@ public final class SpecialTokensTest {
         }
 
         @Override
-        public java.util.Iterator<Map.Entry<String, Integer>> iterator() {
-            return java.util.stream.IntStream.range(0, TOKENS.size())
+        public Iterator<Map.Entry<String, Integer>> iterator() {
+            return IntStream.range(0, TOKENS.size())
                     .<Map.Entry<String, Integer>>mapToObj(i -> Map.entry(TOKENS.get(i), i))
                     .iterator();
         }

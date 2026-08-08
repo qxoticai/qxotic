@@ -13,6 +13,7 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -291,7 +292,7 @@ class ModelRefTest {
         Files.createDirectories(hub.resolve("models--who--else/snapshots"));
 
         assertEquals(
-                java.util.List.of(
+                List.of(
                         "hf.co/ggml-org/stories15M_MOE/model-Q8_0.gguf",
                         "hf.co/ggml-org/stories15M_MOE/sub/mmproj-f16.gguf"),
                 ModelStore.huggingFaceCached(hub).stream().map(ModelStore.Cached::ref).toList());

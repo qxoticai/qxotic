@@ -11,10 +11,16 @@ import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.chat.ToolCallSyntax;
 import com.qxotic.jinfer.media.AudioCodec;
 import com.qxotic.jinfer.media.ImageCodec;
+import com.qxotic.jinfer.media.VideoSampler;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -38,12 +44,12 @@ final class JinferMappings {
     // ---- Spring AI -> jinfer (typed, for the native codec) ----
 
     static List<Message> toMessages(List<org.springframework.ai.chat.messages.Message> messages) {
-        return toMessages(messages, com.qxotic.jinfer.media.VideoSampler.UNIFORM);
+        return toMessages(messages, VideoSampler.UNIFORM);
     }
 
     static List<Message> toMessages(
             List<org.springframework.ai.chat.messages.Message> messages,
-            com.qxotic.jinfer.media.VideoSampler videoSampler) {
+            VideoSampler videoSampler) {
         List<Message> out = new ArrayList<>(messages.size());
         for (org.springframework.ai.chat.messages.Message m : messages) {
             switch (m) {
@@ -66,8 +72,7 @@ final class JinferMappings {
     }
 
     /** User content, media included: text stays text, image/audio/video decode to media parts. */
-    private static List<Part> userParts(
-            UserMessage u, com.qxotic.jinfer.media.VideoSampler videoSampler) {
+    private static List<Part> userParts(UserMessage u, VideoSampler videoSampler) {
         List<Part> parts = new ArrayList<>();
         if (u.getText() != null && !u.getText().isEmpty()) {
             parts.add(new Part.Text(u.getText(), null));
@@ -84,7 +89,7 @@ final class JinferMappings {
                     parts.add(blob(kind, sha256(src), () -> AudioCodec.decode(src)));
                 }
                 case "video" -> {
-                    java.nio.file.Path src = localPath(media);
+                    Path src = localPath(media);
                     parts.add(blob(kind, sha256(src), () -> videoSampler.sample(src)));
                 }
                 default ->
@@ -114,8 +119,8 @@ final class JinferMappings {
      */
     private static byte[] sha256(byte[] source) {
         try {
-            return java.security.MessageDigest.getInstance("SHA-256").digest(source);
-        } catch (java.security.NoSuchAlgorithmException e) {
+            return MessageDigest.getInstance("SHA-256").digest(source);
+        } catch (NoSuchAlgorithmException e) {
             throw new AssertionError(e);
         }
     }
@@ -123,15 +128,15 @@ final class JinferMappings {
     /**
      * Streaming digest of a local file - videos should not be pulled onto the heap to be hashed.
      */
-    private static byte[] sha256(java.nio.file.Path file) {
-        try (var in = java.nio.file.Files.newInputStream(file)) {
-            var md = java.security.MessageDigest.getInstance("SHA-256");
+    private static byte[] sha256(Path file) {
+        try (var in = Files.newInputStream(file)) {
+            var md = MessageDigest.getInstance("SHA-256");
             byte[] buf = new byte[1 << 16];
             for (int n; (n = in.read(buf)) > 0; ) md.update(buf, 0, n);
             return md.digest();
         } catch (IOException e) {
             throw new UncheckedIOException("failed to read " + file, e);
-        } catch (java.security.NoSuchAlgorithmException e) {
+        } catch (NoSuchAlgorithmException e) {
             throw new AssertionError(e);
         }
     }
@@ -142,7 +147,7 @@ final class JinferMappings {
         return media.getDataAsByteArray();
     }
 
-    private static java.nio.file.Path localPath(org.springframework.ai.content.Media media) {
+    private static Path localPath(org.springframework.ai.content.Media media) {
         Object data = rejectRemote(media.getData());
         if (data instanceof Resource r) {
             try {
@@ -153,10 +158,10 @@ final class JinferMappings {
             }
         }
         if (data instanceof URI u && "file".equals(u.getScheme())) {
-            return java.nio.file.Path.of(u);
+            return Path.of(u);
         }
         if (data instanceof String s && s.startsWith("file:")) {
-            return java.nio.file.Path.of(URI.create(s));
+            return Path.of(URI.create(s));
         }
         throw new UnsupportedOperationException(
                 "video needs a local file Resource or file:// URI, got " + data);
@@ -301,7 +306,7 @@ final class JinferMappings {
         // Blank-only reasoning (a prompt-opened span's scaffold newlines, e.g. the closed empty
         // pair when thinking is off) is no reasoning at all. The parsed reply rides along whole,
         // so an unmodified echo restores verbatim ids instead of re-tokenizing.
-        Map<String, Object> properties = new java.util.HashMap<>();
+        Map<String, Object> properties = new HashMap<>();
         properties.put(REPLY_KEY, reply);
         if (!parts.thinking().isBlank()) {
             properties.put(THINKING_KEY, parts.thinking());

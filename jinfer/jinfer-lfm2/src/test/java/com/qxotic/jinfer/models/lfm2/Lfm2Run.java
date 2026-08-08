@@ -4,6 +4,9 @@
 // [nTokens]
 package com.qxotic.jinfer.models.lfm2;
 
+import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.llm.SpecialTokens;
+import java.lang.foreign.Arena;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -32,7 +35,7 @@ public final class Lfm2Run {
         String promptStr = args.length > 1 ? args[1] : "The capital of France is";
         int nTokens = args.length > 2 ? Integer.parseInt(args[2]) : 32;
 
-        Lfm2 model = Lfm2.loadModel(Path.of(path), java.lang.foreign.Arena.ofAuto());
+        Lfm2 model = Lfm2.loadModel(Path.of(path), Arena.ofAuto());
         var c = model.config();
         System.err.printf(
                 "config: dim=%d layers=%d heads=%d vocab=%d ctx=%d dConv=%d experts=%d%n",
@@ -45,13 +48,13 @@ public final class Lfm2Run {
                 c.expertCount());
 
         var tk = model.tokenizer();
-        int bos = com.qxotic.jinfer.llm.SpecialTokens.find(tk, "<bos>").orElse(1);
+        int bos = SpecialTokens.find(tk, "<bos>").orElse(1);
         List<Integer> promptTokens = new ArrayList<>();
         promptTokens.add(bos);
         if (System.getenv("CHAT") != null) { // LFM2 ChatML:
             // <|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n
-            int imStart = com.qxotic.jinfer.llm.SpecialTokens.find(tk, "<|im_start|>").orElse(bos);
-            int imEnd = com.qxotic.jinfer.llm.SpecialTokens.find(tk, "<|im_end|>").orElse(-1);
+            int imStart = SpecialTokens.find(tk, "<|im_start|>").orElse(bos);
+            int imEnd = SpecialTokens.find(tk, "<|im_end|>").orElse(-1);
             promptTokens.add(imStart);
             promptTokens.addAll(tk.encode("user\n" + promptStr.strip()).toList());
             if (imEnd >= 0) promptTokens.add(imEnd);
@@ -67,7 +70,7 @@ public final class Lfm2Run {
         Lfm2.State s =
                 model.newState(
                         Math.min(c.contextLength(), ids.length + 256), Math.max(16, ids.length));
-        model.ingest(s, com.qxotic.jinfer.Batch.prefill(ids));
+        model.ingest(s, Batch.prefill(ids));
 
         Set<Integer> stops = model.stopTokens();
         StringBuilder out = new StringBuilder();
@@ -76,7 +79,7 @@ public final class Lfm2Run {
         long t0 = System.nanoTime();
         for (; n < nTokens && !stops.contains(tok); n++) {
             out.append(tk.decode(new int[] {tok}));
-            model.ingest(s, com.qxotic.jinfer.Batch.step(tok));
+            model.ingest(s, Batch.step(tok));
             tok = model.logits(s).argmax();
         }
         double secs = (System.nanoTime() - t0) / 1e9;

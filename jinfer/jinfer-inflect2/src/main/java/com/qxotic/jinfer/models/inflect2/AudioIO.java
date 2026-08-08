@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -33,9 +34,9 @@ public final class AudioIO {
         int dataBytes = waveform.length * 2;
         int byteRate = sampleRate * MONO * BITS_PER_SAMPLE / 8;
         ByteBuffer header = ByteBuffer.allocate(HEADER_BYTES).order(ByteOrder.LITTLE_ENDIAN);
-        header.put("RIFF".getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+        header.put("RIFF".getBytes(StandardCharsets.US_ASCII));
         header.putInt(HEADER_BYTES - 8 + dataBytes); // size of everything after this field
-        header.put("WAVEfmt ".getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+        header.put("WAVEfmt ".getBytes(StandardCharsets.US_ASCII));
         header.putInt(16); // fmt chunk size
         header.putShort(PCM_FORMAT);
         header.putShort(MONO);
@@ -43,7 +44,7 @@ public final class AudioIO {
         header.putInt(byteRate);
         header.putShort((short) (MONO * BITS_PER_SAMPLE / 8)); // block align
         header.putShort(BITS_PER_SAMPLE);
-        header.put("data".getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+        header.put("data".getBytes(StandardCharsets.US_ASCII));
         header.putInt(dataBytes);
 
         try (OutputStream out = Files.newOutputStream(path)) {

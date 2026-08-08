@@ -2,6 +2,7 @@ package com.qxotic.jinfer.llm;
 
 import com.qxotic.jinfer.*;
 import java.io.ByteArrayOutputStream;
+import java.lang.foreign.Arena;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -77,7 +78,7 @@ public final class GrammarSpecTest {
      */
     static int[] probe(Grammar.Spec spec, Grammar.Vocab v, byte[] bytes) {
         Grammar.Cursor c = spec.cursor();
-        F32FloatTensor logits = F32FloatTensor.allocate(java.lang.foreign.Arena.ofAuto(), v.size());
+        F32FloatTensor logits = F32FloatTensor.allocate(Arena.ofAuto(), v.size());
         int eos = eosId(v);
         for (int i = 0; i < bytes.length; i++) {
             mask(c, logits, v.size());

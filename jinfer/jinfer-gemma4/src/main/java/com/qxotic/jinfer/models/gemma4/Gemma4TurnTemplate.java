@@ -20,7 +20,13 @@ import com.qxotic.jinfer.chat.UnsupportedConversation;
 import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.toknroll.Tokenizer;
 import java.lang.foreign.Arena;
+import java.nio.ByteBuffer;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -200,14 +206,14 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
             byte[] blockKey) {}
 
     /** Access-ordered, so {@code get} refreshes LRU position. Keys print as {@code sha256:…}. */
-    private final java.util.LinkedHashMap<String, List<CachedBlock>> mediaCache =
-            new java.util.LinkedHashMap<>(16, 0.75f, true);
+    private final LinkedHashMap<String, List<CachedBlock>> mediaCache =
+            new LinkedHashMap<>(16, 0.75f, true);
 
     private long mediaCacheBytes;
 
     /** A digest as a map key: a String has value equality, which a {@code byte[]} does not. */
     private static String cacheKey(byte[] digest) {
-        return "sha256:" + java.util.HexFormat.of().formatHex(digest);
+        return "sha256:" + HexFormat.of().formatHex(digest);
     }
 
     private static long rowsBytes(List<CachedBlock> blocks) {
@@ -303,7 +309,7 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
                 // collide across frames).
                 boolean first = true;
                 for (Media.Video.Frame frame : vid.frames()) {
-                    java.time.Duration t = frame.timestamp();
+                    Duration t = frame.timestamp();
                     String ts =
                             String.format(
                                     first ? "%02d:%02d " : " %02d:%02d ",
@@ -375,14 +381,14 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
      * or frame count changes. No frame shares the raw video key (same key + same in-batch positions
      * would collide across frames).
      */
-    private static byte[] frameKey(byte[] videoKey, java.time.Duration t) {
+    private static byte[] frameKey(byte[] videoKey, Duration t) {
         if (videoKey == null) return null;
         try {
-            var md = java.security.MessageDigest.getInstance("SHA-256");
+            var md = MessageDigest.getInstance("SHA-256");
             md.update(videoKey);
-            md.update(java.nio.ByteBuffer.allocate(Long.BYTES).putLong(t.toNanos()).array());
+            md.update(ByteBuffer.allocate(Long.BYTES).putLong(t.toNanos()).array());
             return md.digest();
-        } catch (java.security.NoSuchAlgorithmException e) {
+        } catch (NoSuchAlgorithmException e) {
             throw new AssertionError(e);
         }
     }

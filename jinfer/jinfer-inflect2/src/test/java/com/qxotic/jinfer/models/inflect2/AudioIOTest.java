@@ -9,6 +9,7 @@ import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -57,6 +58,6 @@ class AudioIOTest {
 
         // the samples themselves survive the round trip
         byte[] expected = AudioIO.toS16LE(pcm);
-        assertArrayEquals(expected, java.util.Arrays.copyOfRange(written, 44, written.length));
+        assertArrayEquals(expected, Arrays.copyOfRange(written, 44, written.length));
     }
 }

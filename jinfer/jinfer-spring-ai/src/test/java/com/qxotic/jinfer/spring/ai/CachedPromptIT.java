@@ -10,11 +10,13 @@ import com.qxotic.jinfer.testkit.ModelFixture;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.Executors;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatResponse;
@@ -36,7 +38,7 @@ class CachedPromptIT {
                     System.getProperty(
                             "jinfer.testModel", ModelFixture.LFM25_8B_Q8.path().toString()));
 
-    static final List<org.springframework.ai.chat.messages.Message> SUPPORT =
+    static final List<Message> SUPPORT =
             List.of(
                     new SystemMessage(
                             "You are a terse support assistant for AcmeCloud. Answer in one"
@@ -74,7 +76,7 @@ class CachedPromptIT {
                         .contextLength(2048)
                         .maxTokens(32)
                         .build();
-        var pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        var pool = Executors.newFixedThreadPool(2);
         try {
             var a =
                     pool.submit(

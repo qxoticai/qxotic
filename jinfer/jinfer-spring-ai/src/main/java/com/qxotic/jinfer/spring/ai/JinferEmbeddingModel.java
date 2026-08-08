@@ -6,6 +6,7 @@ import com.qxotic.jinfer.RuntimeFlags;
 import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.jinfer.chat.LoadedEmbedder;
 import com.qxotic.jinfer.chat.Models;
+import com.qxotic.jinfer.hub.ModelStore;
 import io.micrometer.observation.ObservationRegistry;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -227,7 +228,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
         public JinferEmbeddingModel build() {
             modelPath =
                     switch (source) {
-                        case String ref -> com.qxotic.jinfer.hub.ModelStore.resolve(ref);
+                        case String ref -> ModelStore.resolve(ref);
                         case Path path -> path;
                         case null, default ->
                                 throw new IllegalArgumentException(

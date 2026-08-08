@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.spring.ai.autoconfigure;
 
 import java.time.Duration;
+import java.util.Map;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
@@ -27,7 +28,7 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
 @ConfigurationProperties("spring.ai.jinfer.chat")
 public record JinferChatProperties(
         String model,
-        java.util.Map<String, String> companions,
+        Map<String, String> companions,
         String cachedPrompts,
         @DefaultValue("0") int cachedSessions,
         @DefaultValue("0") int contextLength,

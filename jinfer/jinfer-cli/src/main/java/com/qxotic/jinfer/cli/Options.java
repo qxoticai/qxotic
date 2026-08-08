@@ -12,6 +12,7 @@ import java.io.UncheckedIOException;
 import java.net.InetSocketAddress;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -425,7 +426,7 @@ public record Options(
             // extra file (almost always the very file the fixed knob would use), not gigabytes
             // of wasted WAITING. "auto" never reaches the resolver - its curated refusal below
             // beats "no such model file: 'auto'".
-            List<String> wanted = new java.util.ArrayList<>();
+            List<String> wanted = new ArrayList<>();
             if (modelRef != null) wanted.add(modelRef);
             if (tokenizerRef != null) wanted.add(tokenizerRef);
             for (String value : companionRefs.values()) {

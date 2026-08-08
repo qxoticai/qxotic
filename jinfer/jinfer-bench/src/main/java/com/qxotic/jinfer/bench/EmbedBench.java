@@ -3,7 +3,9 @@ package com.qxotic.jinfer.bench;
 import com.qxotic.jinfer.*;
 import com.qxotic.jinfer.models.qwen3.Qwen3;
 import java.io.PrintStream;
+import java.lang.foreign.Arena;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.concurrent.ForkJoinPool;
 
 /**
@@ -63,7 +65,7 @@ public final class EmbedBench {
         System.err.printf(
                 "loading %s (ctx=%d; %d packed tokens across %d seqs, avg %.1f, batchCap=%d) ...%n",
                 modelPath, ctx, total, nSeq, (double) total / nSeq, batchCap);
-        Qwen3 model = Qwen3.loadModel(Path.of(modelPath), java.lang.foreign.Arena.ofAuto());
+        Qwen3 model = Qwen3.loadModel(Path.of(modelPath), Arena.ofAuto());
         int vocab = model.config().vocabularySize();
         int[] ids = new int[total];
         for (int i = 0; i < total; i++) ids[i] = (i * 17 + 1) % vocab;
@@ -135,7 +137,7 @@ public final class EmbedBench {
     }
 
     private static double mean(double[] a) {
-        return java.util.Arrays.stream(a).average().orElse(0);
+        return Arrays.stream(a).average().orElse(0);
     }
 
     private static double stddev(double[] a) {

@@ -2,6 +2,9 @@ package com.qxotic.jinfer.media;
 
 import com.qxotic.jinfer.Media;
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.Locale;
 
@@ -48,10 +51,10 @@ public final class AudioCodec {
     public static byte[] wav(Media.Audio audio) {
         byte[] samples = pcm16(audio);
         int byteRate = audio.sampleRate() * audio.channels() * BITS_PER_SAMPLE / 8;
-        java.nio.ByteBuffer out =
-                java.nio.ByteBuffer.allocate(WAV_HEADER_BYTES + samples.length)
-                        .order(java.nio.ByteOrder.LITTLE_ENDIAN);
-        var ascii = java.nio.charset.StandardCharsets.US_ASCII;
+        ByteBuffer out =
+                ByteBuffer.allocate(WAV_HEADER_BYTES + samples.length)
+                        .order(ByteOrder.LITTLE_ENDIAN);
+        var ascii = StandardCharsets.US_ASCII;
         out.put("RIFF".getBytes(ascii));
         out.putInt(WAV_HEADER_BYTES - 8 + samples.length); // everything after this field
         out.put("WAVEfmt ".getBytes(ascii));

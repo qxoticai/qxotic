@@ -6,8 +6,10 @@ import com.qxotic.jinfer.RuntimeFlags;
 import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.jinfer.chat.LoadedEmbedder;
 import com.qxotic.jinfer.chat.Models;
+import com.qxotic.jinfer.hub.ModelStore;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
+import dev.langchain4j.model.TokenCountEstimator;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.output.Response;
 import dev.langchain4j.model.output.TokenUsage;
@@ -85,7 +87,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
      * (sequencePrefix + sequenceSuffix: one trailing EOS on Qwen3, one leading BOS on
      * LFM2.5-Embedding) on top of the text count.
      */
-    public dev.langchain4j.model.TokenCountEstimator tokenCountEstimator() {
+    public TokenCountEstimator tokenCountEstimator() {
         return new Estimators(loaded.tokenizer(), null);
     }
 
@@ -153,7 +155,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
         public JinferEmbeddingModel build() {
             modelPath =
                     switch (source) {
-                        case String ref -> com.qxotic.jinfer.hub.ModelStore.resolve(ref);
+                        case String ref -> ModelStore.resolve(ref);
                         case Path path -> path;
                         case null, default ->
                                 throw new IllegalArgumentException(

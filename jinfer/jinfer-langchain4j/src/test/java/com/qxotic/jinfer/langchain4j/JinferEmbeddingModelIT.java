@@ -6,6 +6,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.testkit.ModelFixture;
 import dev.langchain4j.data.embedding.Embedding;
+import dev.langchain4j.data.message.AiMessage;
+import dev.langchain4j.data.message.SystemMessage;
+import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.output.Response;
 import java.util.ArrayList;
@@ -116,9 +119,7 @@ class JinferEmbeddingModelIT {
         String text = "The quick brown fox jumps over the lazy dog, twice.";
         // the law: the estimator's text count IS the tokenizer's encoding length
         assertEquals(
-                dev.langchain4j.data.segment.TextSegment.from(text).text().length() > 0
-                        ? countViaEmbedderUsage(text)
-                        : 0,
+                TextSegment.from(text).text().length() > 0 ? countViaEmbedderUsage(text) : 0,
                 estimator.estimateTokenCountInText(text) + 1); // usage includes the EOS suffix
         assertTrue(estimator.estimateTokenCountInText("") == 0);
     }
@@ -128,10 +129,9 @@ class JinferEmbeddingModelIT {
         var estimator = model.tokenCountEstimator();
         var messages =
                 List.of(
-                        dev.langchain4j.data.message.SystemMessage.from("Be brief."),
-                        dev.langchain4j.data.message.UserMessage.from(
-                                "What is the capital of" + " France?"),
-                        dev.langchain4j.data.message.AiMessage.from("Paris."));
+                        SystemMessage.from("Be brief."),
+                        UserMessage.from("What is the capital of" + " France?"),
+                        AiMessage.from("Paris."));
         int sum =
                 estimator.estimateTokenCountInText("Be brief.")
                         + estimator.estimateTokenCountInText("What is the capital of France?")

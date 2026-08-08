@@ -1,21 +1,27 @@
 package com.qxotic.jinfer.spring.ai;
 
+import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.CachedPrompt;
 import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.JsonCodec;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.hub.ModelStore;
 import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.Grammar;
 import com.qxotic.jinfer.llm.TextStops;
+import com.qxotic.jinfer.media.VideoSampler;
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationRegistry;
 import io.micrometer.observation.contextpropagation.ObservationThreadLocalAccessor;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -80,7 +86,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     // cached-prompt view state: EMPTY for the base model. Converted to jinfer types ONCE at view
     // creation (media decoded once, not per request); a view's conversations all start with this
     // prefix, its KV restored from the engine's block tree instead of re-prefilled.
-    final com.qxotic.jinfer.media.VideoSampler videoSampler;
+    final VideoSampler videoSampler;
     final CachedPrompt prefix;
 
     /**
@@ -88,9 +94,9 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
      * SERVE, never to write - a provider embedded in an application must not append to a file the
      * application did not ask it to write.
      */
-    private static com.qxotic.jinfer.cache.PromptCache.Options cacheOptions(
-            java.nio.file.Path cachedPrompts, int cachedSessions, int contextLength) {
-        var defaults = com.qxotic.jinfer.cache.PromptCache.Options.DEFAULTS;
+    private static PromptCache.Options cacheOptions(
+            Path cachedPrompts, int cachedSessions, int contextLength) {
+        var defaults = PromptCache.Options.DEFAULTS;
         return defaults.withHotSessions(cachedSessions)
                 .withContextCapacity(
                         contextLength <= 0 ? defaults.contextCapacity() : contextLength)
@@ -530,11 +536,10 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         private Object source; // Path | ref/URL String | LoadedModel: the last setter wins
         private Path modelPath; // derived from source at build()
         private LoadedModel<?> loaded; // derived from source at build()
-        private java.util.Map<String, Path> companionPaths; // resolved at build()
+        private Map<String, Path> companionPaths; // resolved at build()
         private String modelName;
-        private final java.util.Map<String, String> companions = new java.util.LinkedHashMap<>();
-        private com.qxotic.jinfer.media.VideoSampler videoSampler =
-                com.qxotic.jinfer.media.VideoSampler.UNIFORM;
+        private final Map<String, String> companions = new LinkedHashMap<>();
+        private VideoSampler videoSampler = VideoSampler.UNIFORM;
         private Path cachedPrompts;
         private int cachedSessions;
         private int contextLength;
@@ -593,8 +598,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
          * across the whole duration). Any policy composes: {@code v -> VideoCodec.ffmpeg().span(v,
          * 8)}, a window of a long source, caller-curated timestamps.
          */
-        public Builder videoSampler(com.qxotic.jinfer.media.VideoSampler videoSampler) {
-            this.videoSampler = java.util.Objects.requireNonNull(videoSampler);
+        public Builder videoSampler(VideoSampler videoSampler) {
+            this.videoSampler = Objects.requireNonNull(videoSampler);
             return this;
         }
 
@@ -755,22 +760,22 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                             "companions/contextLength are load-time settings; apply them when you"
                                     + " build the LoadedModel passed to model(...)");
                 loaded = l;
-                companionPaths = java.util.Map.of();
+                companionPaths = Map.of();
                 return new JinferChatModel(this);
             }
             // the model (when it is a string) and the companions resolve in ONE batch, so a cold
             // start pays the slowest download, not the sum
-            java.util.List<String> wanted = new java.util.ArrayList<>();
+            List<String> wanted = new ArrayList<>();
             if (source instanceof String ref) wanted.add(ref);
             wanted.addAll(companions.values());
-            java.util.List<Path> resolved = com.qxotic.jinfer.hub.ModelStore.resolveAll(wanted);
+            List<Path> resolved = ModelStore.resolveAll(wanted);
             int at = 0;
             modelPath = source instanceof Path path ? path : resolved.get(at++);
-            var resolvedCompanions = new java.util.LinkedHashMap<String, Path>();
+            var resolvedCompanions = new LinkedHashMap<String, Path>();
             for (String capability : companions.keySet()) {
                 resolvedCompanions.put(capability, resolved.get(at++));
             }
-            companionPaths = java.util.Collections.unmodifiableMap(resolvedCompanions);
+            companionPaths = Collections.unmodifiableMap(resolvedCompanions);
             return new JinferChatModel(this);
         }
     }

@@ -6,6 +6,7 @@ package com.qxotic.jinfer.models.nemotronh;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.testkit.ModelFixture;
 import com.qxotic.jinfer.testkit.OracleScenario;
+import com.qxotic.toknroll.IntSequence;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -94,9 +95,7 @@ public final class NemotronHTurnTemplateOracle {
                         && ids.get(0) == imStart
                         && ids.get(ids.size() - 2) == imEnd
                         && o.tokenizer
-                                .decode(
-                                        com.qxotic.toknroll.IntSequence.wrap(
-                                                ids.subList(1, ids.size() - 2)))
+                                .decode(IntSequence.wrap(ids.subList(1, ids.size() - 2)))
                                 .equals("user\n" + hostile.text());
         o.check(inert, "special-token text is inert (content cannot mint control tokens)");
 

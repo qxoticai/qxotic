@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.function.Consumer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -19,7 +20,7 @@ class LeakWatchTest {
 
     final List<String> reports = Collections.synchronizedList(new ArrayList<>());
     boolean wasEnabled;
-    java.util.function.Consumer<String> oldSink;
+    Consumer<String> oldSink;
 
     @BeforeEach
     void arm() {

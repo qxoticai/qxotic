@@ -1,7 +1,13 @@
 package com.qxotic.jinfer.chat;
 
 import com.qxotic.format.gguf.GGUF;
+import com.qxotic.format.gguf.GGUFFormatException;
+import com.qxotic.jinfer.MultiModal;
+import com.qxotic.jinfer.RuntimeState;
+import com.qxotic.jinfer.SpeechModel;
+import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.llm.Tokenizers;
+import com.qxotic.jinfer.media.ImageCodec;
 import com.qxotic.jinfer.telemetry.ModelLoadEvent;
 import com.qxotic.jinfer.telemetry.Telemetry;
 import com.qxotic.toknroll.Tokenizer;
@@ -10,12 +16,21 @@ import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.nio.channels.Channels;
 import java.nio.channels.FileChannel;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.ServiceLoader;
+import java.util.Set;
+import java.util.SortedSet;
+import java.util.TreeMap;
+import java.util.TreeSet;
 
 /**
  * Loads any generative model, dispatching on {@code general.architecture} to the matching port via
@@ -55,7 +70,7 @@ public final class Models {
                         .map(ServiceLoader.Provider::get)
                         .toList();
         if (!loaded.isEmpty()) return loaded;
-        List<ModelProvider> recovered = new java.util.ArrayList<>();
+        List<ModelProvider> recovered = new ArrayList<>();
         for (String name : KNOWN_PROVIDER_CLASSES) {
             try {
                 recovered.add(
@@ -138,7 +153,7 @@ public final class Models {
 
     /** A companion this architecture does not have is a mistake, not something to ignore. */
     private static void requireAccepted(
-            ModelProvider provider, GGUF gguf, java.util.Set<String> capabilities) {
+            ModelProvider provider, GGUF gguf, Set<String> capabilities) {
         Map<String, String> accepted = provider.companionFiles();
         for (String capability : capabilities) {
             if (!accepted.containsKey(capability)) {
@@ -148,9 +163,7 @@ public final class Models {
                                 + "' has no '"
                                 + capability
                                 + "' capability. It offers: "
-                                + (accepted.isEmpty()
-                                        ? "none"
-                                        : new java.util.TreeSet<>(accepted.keySet())));
+                                + (accepted.isEmpty() ? "none" : new TreeSet<>(accepted.keySet())));
             }
         }
     }
@@ -166,32 +179,29 @@ public final class Models {
      * Attaches the effective sampling recommendations: the GGUF's {@code general.sampling.*} where
      * present, falling back to the port's model-author recommendation, if it declared one.
      */
-    private static <S extends com.qxotic.jinfer.RuntimeState> LoadedModel<S> sampled(
+    private static <S extends RuntimeState> LoadedModel<S> sampled(
             LoadedModel<S> loaded, GGUF gguf) {
         return loaded.withSamplingDefaults(
                 LoadedModel.SamplingDefaults.fromGGUF(gguf)
                         .withFallback(loaded.samplingDefaults()));
     }
 
-    static <S extends com.qxotic.jinfer.RuntimeState> LoadedModel<S> companionSeeded(
+    static <S extends RuntimeState> LoadedModel<S> companionSeeded(
             LoadedModel<S> loaded, Map<String, Path> companions) {
         if (companions.isEmpty()) {
             return loaded;
         }
         try {
-            java.security.MessageDigest sha = java.security.MessageDigest.getInstance("SHA-256");
+            MessageDigest sha = MessageDigest.getInstance("SHA-256");
             sha.update(loaded.seed());
             // sorted, so the seed does not depend on the order a caller listed them in
-            for (var companion : new java.util.TreeMap<>(companions).entrySet()) {
-                sha.update(companion.getKey().getBytes(java.nio.charset.StandardCharsets.UTF_8));
-                sha.update(com.qxotic.jinfer.cache.PromptCache.modelSeed(companion.getValue()));
+            for (var companion : new TreeMap<>(companions).entrySet()) {
+                sha.update(companion.getKey().getBytes(StandardCharsets.UTF_8));
+                sha.update(PromptCache.modelSeed(companion.getValue()));
             }
-            sha.update(
-                    com.qxotic.jinfer.media.ImageCodec.decoder()
-                            .name()
-                            .getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            if (loaded.model() instanceof com.qxotic.jinfer.MultiModal mm) {
-                sha.update(mm.encodePlanId().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            sha.update(ImageCodec.decoder().name().getBytes(StandardCharsets.UTF_8));
+            if (loaded.model() instanceof MultiModal mm) {
+                sha.update(mm.encodePlanId().getBytes(StandardCharsets.UTF_8));
             }
             return new LoadedModel<>(
                     loaded.model(),
@@ -201,7 +211,7 @@ public final class Models {
                     sha.digest(),
                     loaded.template(),
                     loaded.samplingDefaults());
-        } catch (java.security.NoSuchAlgorithmException e) {
+        } catch (NoSuchAlgorithmException e) {
             throw new AssertionError(e);
         }
     }
@@ -281,8 +291,7 @@ public final class Models {
      * - lives on that port's own loader, typed; this is the entry for a caller that must not name
      * the port.
      */
-    public static com.qxotic.jinfer.SpeechModel<?, ?, ?> loadSpeech(Path path, Arena arena)
-            throws IOException {
+    public static SpeechModel<?, ?, ?> loadSpeech(Path path, Arena arena) throws IOException {
         return loadSpeech(path, arena, Map.of());
     }
 
@@ -292,7 +301,7 @@ public final class Models {
      * external tool) remains the DEFAULT; naming one here overrides that ladder rather than
      * extending it.
      */
-    public static com.qxotic.jinfer.SpeechModel<?, ?, ?> loadSpeech(
+    public static SpeechModel<?, ?, ?> loadSpeech(
             Path path, Arena arena, Map<String, Path> companions) throws IOException {
         Map<String, Path> attached = Map.copyOf(companions);
         return open(
@@ -317,8 +326,7 @@ public final class Models {
     private static <T> T open(Path path, Load<T> load) throws IOException {
         Telemetry.install();
         if (!Files.exists(path)) {
-            throw new java.nio.file.NoSuchFileException(
-                    path.toString(), null, "model file not found");
+            throw new NoSuchFileException(path.toString(), null, "model file not found");
         }
         ModelLoadEvent event = new ModelLoadEvent();
         event.begin();
@@ -331,7 +339,7 @@ public final class Models {
                                 Channels.newChannel(
                                         new BufferedInputStream(
                                                 Channels.newInputStream(fc), 1 << 20)));
-            } catch (com.qxotic.format.gguf.GGUFFormatException e) {
+            } catch (GGUFFormatException e) {
                 throw new IllegalArgumentException(
                         path
                                 + " is not a GGUF model file ("
@@ -377,8 +385,8 @@ public final class Models {
      * tooling and startup banners; a port that does not enumerate (default {@link
      * ModelProvider#architectures()}) dispatches fine but is absent here.
      */
-    public static java.util.SortedSet<String> supportedArchitectures() {
-        java.util.TreeSet<String> archs = new java.util.TreeSet<>();
+    public static SortedSet<String> supportedArchitectures() {
+        TreeSet<String> archs = new TreeSet<>();
         for (ModelProvider p : PROVIDERS) archs.addAll(p.architectures());
         return archs;
     }
@@ -387,19 +395,19 @@ public final class Models {
     // DIAGNOSTICS ONLY - dispatch never reads this; it exists so "unsupported architecture"
     // can name the jar to add. Kept in sync with the in-repo ports by hand; an entry for a
     // port the user has is harmless (dispatch already succeeded).
-    private static final java.util.Map<String, String> PORT_ARTIFACTS =
-            java.util.Map.ofEntries(
-                    java.util.Map.entry("gemma4", "com.qxotic:jinfer-gemma4"),
-                    java.util.Map.entry("gpt-oss", "com.qxotic:jinfer-gptoss"),
-                    java.util.Map.entry("lfm", "com.qxotic:jinfer-lfm2"),
-                    java.util.Map.entry("llama", "com.qxotic:jinfer-llama"),
-                    java.util.Map.entry("granite", "com.qxotic:jinfer-llama"),
-                    java.util.Map.entry("minicpm", "com.qxotic:jinfer-llama"),
-                    java.util.Map.entry("mistral3", "com.qxotic:jinfer-llama"),
-                    java.util.Map.entry("smollm3", "com.qxotic:jinfer-llama"),
-                    java.util.Map.entry("nemotron_h", "com.qxotic:jinfer-nemotronh"),
-                    java.util.Map.entry("qwen35", "com.qxotic:jinfer-qwen35"),
-                    java.util.Map.entry("inflect", "com.qxotic:jinfer-inflect2"));
+    private static final Map<String, String> PORT_ARTIFACTS =
+            Map.ofEntries(
+                    Map.entry("gemma4", "com.qxotic:jinfer-gemma4"),
+                    Map.entry("gpt-oss", "com.qxotic:jinfer-gptoss"),
+                    Map.entry("lfm", "com.qxotic:jinfer-lfm2"),
+                    Map.entry("llama", "com.qxotic:jinfer-llama"),
+                    Map.entry("granite", "com.qxotic:jinfer-llama"),
+                    Map.entry("minicpm", "com.qxotic:jinfer-llama"),
+                    Map.entry("mistral3", "com.qxotic:jinfer-llama"),
+                    Map.entry("smollm3", "com.qxotic:jinfer-llama"),
+                    Map.entry("nemotron_h", "com.qxotic:jinfer-nemotronh"),
+                    Map.entry("qwen35", "com.qxotic:jinfer-qwen35"),
+                    Map.entry("inflect", "com.qxotic:jinfer-inflect2"));
 
     /**
      * The provider for {@code arch} among {@code providers}, or null: highest {@link
@@ -479,7 +487,7 @@ public final class Models {
                             + " into one jar? merge META-INF/services - Maven Shade's"
                             + " ServicesResourceTransformer - or ServiceLoader finds nothing.)");
         }
-        java.util.SortedSet<String> here = supportedArchitectures();
+        SortedSet<String> here = supportedArchitectures();
         throw new IllegalArgumentException(
                 "no provider for architecture '"
                         + arch

@@ -1,8 +1,10 @@
 package com.qxotic.jinfer.cache;
 
+import com.qxotic.jinfer.Arenas;
 import com.qxotic.jinfer.LeakWatch;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.lang.ref.Cleaner;
 import java.util.IdentityHashMap;
 
 /**
@@ -19,7 +21,7 @@ import java.util.IdentityHashMap;
  */
 public final class CacheStore implements AutoCloseable {
 
-    private static final java.lang.ref.Cleaner CLEANER = java.lang.ref.Cleaner.create();
+    private static final Cleaner CLEANER = Cleaner.create();
 
     private static void closeArena(Arena arena) {
         try {
@@ -30,7 +32,7 @@ public final class CacheStore implements AutoCloseable {
     }
 
     private final IdentityHashMap<MemorySegment, Arena> blobs = new IdentityHashMap<>();
-    private final java.lang.ref.Cleaner.Cleanable backstop = CLEANER.register(this, sweepOf(blobs));
+    private final Cleaner.Cleanable backstop = CLEANER.register(this, sweepOf(blobs));
     private final Runnable leakWatch = LeakWatch.arm(this, "in-memory CacheStore");
     private volatile long used;
 
@@ -52,7 +54,7 @@ public final class CacheStore implements AutoCloseable {
 
     /** Allocates a zero-filled writable blob of {@code bytes}. */
     public MemorySegment allocate(long bytes) {
-        Arena arena = com.qxotic.jinfer.Arenas.newShared();
+        Arena arena = Arenas.newShared();
         MemorySegment blob;
         try {
             blob = arena.allocate(bytes, 64);

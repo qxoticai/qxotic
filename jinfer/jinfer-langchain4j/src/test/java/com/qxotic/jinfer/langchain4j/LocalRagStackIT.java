@@ -9,6 +9,7 @@ import com.qxotic.jinfer.testkit.ModelFixture;
 import dev.langchain4j.data.document.Document;
 import dev.langchain4j.data.document.splitter.DocumentSplitters;
 import dev.langchain4j.data.embedding.Embedding;
+import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
@@ -21,10 +22,12 @@ import dev.langchain4j.model.chat.request.json.JsonSchema;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.rag.content.retriever.ContentRetriever;
 import dev.langchain4j.rag.content.retriever.EmbeddingStoreContentRetriever;
+import dev.langchain4j.rag.query.Query;
 import dev.langchain4j.service.AiServices;
 import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
 import dev.langchain4j.store.embedding.EmbeddingStoreIngestor;
 import dev.langchain4j.store.embedding.inmemory.InMemoryEmbeddingStore;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.AfterAll;
@@ -161,9 +164,7 @@ class LocalRagStackIT {
         Embedding incoming = embedder.embed("my parcel still has not arrived").content();
         String route =
                 routes.entrySet().stream()
-                        .max(
-                                java.util.Comparator.comparingDouble(
-                                        e -> cosine(incoming, e.getValue())))
+                        .max(Comparator.comparingDouble(e -> cosine(incoming, e.getValue())))
                         .orElseThrow()
                         .getKey();
         assertEquals("shipping", route); // the embedding decision is exact
@@ -171,7 +172,7 @@ class LocalRagStackIT {
                 chat.chat(
                         ChatRequest.builder()
                                 .messages(
-                                        dev.langchain4j.data.message.SystemMessage.from(
+                                        SystemMessage.from(
                                                 "You are the "
                                                         + route
                                                         + " desk. Answer in one sentence."),
@@ -237,16 +238,12 @@ class LocalRagStackIT {
         JinferChatModel support =
                 chat.withCachedPrompt(
                         List.of(
-                                dev.langchain4j.data.message.SystemMessage.from(
+                                SystemMessage.from(
                                         "You are a support agent. Answer strictly from the provided"
                                                 + " policy excerpts, in one short sentence.")),
                         List.of());
         String context =
-                retriever
-                        .retrieve(dev.langchain4j.rag.query.Query.from("warranty length"))
-                        .get(0)
-                        .textSegment()
-                        .text();
+                retriever.retrieve(Query.from("warranty length")).get(0).textSegment().text();
         ChatResponse r =
                 support.chat(
                         ChatRequest.builder()

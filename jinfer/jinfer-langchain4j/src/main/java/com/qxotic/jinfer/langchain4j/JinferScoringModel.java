@@ -5,6 +5,7 @@ import com.qxotic.jinfer.RuntimeFlags;
 import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.jinfer.chat.LoadedReranker;
 import com.qxotic.jinfer.chat.Models;
+import com.qxotic.jinfer.hub.ModelStore;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.output.Response;
 import dev.langchain4j.model.output.TokenUsage;
@@ -149,7 +150,7 @@ public final class JinferScoringModel implements ScoringModel, AutoCloseable {
         public JinferScoringModel build() {
             modelPath =
                     switch (source) {
-                        case String ref -> com.qxotic.jinfer.hub.ModelStore.resolve(ref);
+                        case String ref -> ModelStore.resolve(ref);
                         case Path path -> path;
                         case null, default ->
                                 throw new IllegalArgumentException(

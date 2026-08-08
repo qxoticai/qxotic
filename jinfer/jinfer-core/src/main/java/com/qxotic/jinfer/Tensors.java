@@ -6,6 +6,7 @@ import com.oracle.svm.shared.AlwaysInline;
 import com.qxotic.format.gguf.GGMLType;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.nio.ByteOrder;
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.FloatVector;
@@ -277,8 +278,8 @@ final class Q4_1FloatTensor extends SegmentFloatTensor {
         return FloatTensor.scalarDot(this, thisOffset, that, thatOffset, size);
     }
 
-    private static final java.lang.foreign.ValueLayout.OfLong LONG_LE =
-            java.lang.foreign.ValueLayout.JAVA_LONG_UNALIGNED.withOrder(ByteOrder.LITTLE_ENDIAN);
+    private static final ValueLayout.OfLong LONG_LE =
+            ValueLayout.JAVA_LONG_UNALIGNED.withOrder(ByteOrder.LITTLE_ENDIAN);
 
     private static float vectorDot(
             Q4_1FloatTensor thiz, long thisOffset, F32FloatTensor that, long thatOffset, int size) {
@@ -464,8 +465,8 @@ final class Q5_1FloatTensor extends SegmentFloatTensor {
         return FloatTensor.scalarDot(this, thisOffset, that, thatOffset, size);
     }
 
-    private static final java.lang.foreign.ValueLayout.OfLong LONG_LE =
-            java.lang.foreign.ValueLayout.JAVA_LONG_UNALIGNED.withOrder(ByteOrder.LITTLE_ENDIAN);
+    private static final ValueLayout.OfLong LONG_LE =
+            ValueLayout.JAVA_LONG_UNALIGNED.withOrder(ByteOrder.LITTLE_ENDIAN);
 
     private static float vectorDot(
             Q5_1FloatTensor thiz, long thisOffset, F32FloatTensor that, long thatOffset, int size) {
@@ -654,8 +655,8 @@ final class Q4_KFloatTensor extends SegmentFloatTensor {
         return FloatTensor.scalarDot(this, thisOffset, that, thatOffset, size);
     }
 
-    private static final java.lang.foreign.ValueLayout.OfLong LONG_LE =
-            java.lang.foreign.ValueLayout.JAVA_LONG_UNALIGNED.withOrder(ByteOrder.LITTLE_ENDIAN);
+    private static final ValueLayout.OfLong LONG_LE =
+            ValueLayout.JAVA_LONG_UNALIGNED.withOrder(ByteOrder.LITTLE_ENDIAN);
 
     private static float vectorDot(
             Q4_KFloatTensor thiz, long thisOffset, F32FloatTensor that, long thatOffset, int size) {
@@ -852,8 +853,8 @@ final class Q5_KFloatTensor extends SegmentFloatTensor {
         return FloatTensor.scalarDot(this, thisOffset, that, thatOffset, size);
     }
 
-    private static final java.lang.foreign.ValueLayout.OfLong LONG_LE =
-            java.lang.foreign.ValueLayout.JAVA_LONG_UNALIGNED.withOrder(ByteOrder.LITTLE_ENDIAN);
+    private static final ValueLayout.OfLong LONG_LE =
+            ValueLayout.JAVA_LONG_UNALIGNED.withOrder(ByteOrder.LITTLE_ENDIAN);
 
     private static float vectorDot(
             Q5_KFloatTensor thiz, long thisOffset, F32FloatTensor that, long thatOffset, int size) {
@@ -1345,8 +1346,8 @@ final class Q1_0FloatTensor extends SegmentFloatTensor {
         return FloatTensor.scalarDot(this, thisOffset, that, thatOffset, size);
     }
 
-    private static final java.lang.foreign.ValueLayout.OfLong LONG_LE =
-            java.lang.foreign.ValueLayout.JAVA_LONG_UNALIGNED.withOrder(ByteOrder.LITTLE_ENDIAN);
+    private static final ValueLayout.OfLong LONG_LE =
+            ValueLayout.JAVA_LONG_UNALIGNED.withOrder(ByteOrder.LITTLE_ENDIAN);
 
     private static final VectorSpecies<Integer> I_SPECIES =
             VectorSpecies.of(int.class, F_SPECIES.vectorShape());
@@ -1686,7 +1687,7 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
         return result;
     }
 
-    @com.oracle.svm.shared.AlwaysInline(
+    @AlwaysInline(
             "hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compiler)")
     static FloatVector q8BlockFma(
             Q8_0FloatTensor thiz,
@@ -1823,8 +1824,8 @@ final class MXFP4FloatTensor extends SegmentFloatTensor {
         return FloatTensor.scalarDot(this, thisOffset, that, thatOffset, size);
     }
 
-    private static final java.lang.foreign.ValueLayout.OfLong LONG_LE =
-            java.lang.foreign.ValueLayout.JAVA_LONG_UNALIGNED.withOrder(ByteOrder.LITTLE_ENDIAN);
+    private static final ValueLayout.OfLong LONG_LE =
+            ValueLayout.JAVA_LONG_UNALIGNED.withOrder(ByteOrder.LITTLE_ENDIAN);
 
     private static float vectorDot(
             MXFP4FloatTensor thiz,
@@ -2131,8 +2132,8 @@ final class BF16FloatTensor extends SegmentFloatTensor {
         return FloatTensor.scalarDot(this, thisOffset, that, thatOffset, size);
     }
 
-    private static final java.lang.foreign.ValueLayout.OfLong LONG_LE =
-            java.lang.foreign.ValueLayout.JAVA_LONG_UNALIGNED.withOrder(ByteOrder.LITTLE_ENDIAN);
+    private static final ValueLayout.OfLong LONG_LE =
+            ValueLayout.JAVA_LONG_UNALIGNED.withOrder(ByteOrder.LITTLE_ENDIAN);
 
     private static float vectorDot(
             BF16FloatTensor thiz, long thisOffset, F32FloatTensor that, long thatOffset, int size) {

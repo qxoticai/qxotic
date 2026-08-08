@@ -7,6 +7,8 @@ import com.qxotic.jinfer.llm.Sampling;
 import com.qxotic.jinfer.llm.SpecialTokens;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalInt;
+import java.util.Set;
 
 /**
  * The shared request policy: the standard sampling stack, channel-scoped grammar constraint and the
@@ -51,7 +53,7 @@ public final class RequestPolicy {
         // shape, which is why the caller supplies it instead of this method querying the
         // template's static answer.
         boolean startInThink = false;
-        java.util.OptionalInt open = SpecialTokens.find(m.tokenizer(), Thinking.OPEN);
+        OptionalInt open = SpecialTokens.find(m.tokenizer(), Thinking.OPEN);
         if (open.isPresent()) {
             for (int t : replySeed) {
                 if (t == open.getAsInt()) {
@@ -83,7 +85,7 @@ public final class RequestPolicy {
         for (int t : replySeed) {
             parser.feed(t);
         }
-        java.util.Set<String> output = parser.outputChannels();
+        Set<String> output = parser.outputChannels();
         var tokenizer = m.tokenizer();
         // the pre-start escape: only the span-OPENING marker (the model's right to reason) -
         // never stop/turn specials, which would let the model end the turn instead of complying

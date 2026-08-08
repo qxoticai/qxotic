@@ -2,7 +2,9 @@ package com.qxotic.jinfer.chat;
 
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.FloatTensor;
+import java.lang.foreign.Arena;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
@@ -27,7 +29,7 @@ public final class ChatApiTest {
         List<Batch> out = Batch.prepare(List.of(toks(1, 2), toks(3), toks(4, 5)), 16);
         check(out.size() == 1, "merge: single fused batch");
         check(
-                java.util.Arrays.equals(ids(out.get(0)), new int[] {1, 2, 3, 4, 5}),
+                Arrays.equals(ids(out.get(0)), new int[] {1, 2, 3, 4, 5}),
                 "merge: fused ids in order");
     }
 
@@ -45,22 +47,18 @@ public final class ChatApiTest {
 
     @Test
     void prepareIsolatesEmbeddings() {
-        FloatTensor rows = FloatTensor.allocateF32(java.lang.foreign.Arena.ofAuto(), 4 * 8);
+        FloatTensor rows = FloatTensor.allocateF32(Arena.ofAuto(), 4 * 8);
         Batch media = Batch.embeddings(rows, 4, true);
         List<Batch> out = Batch.prepare(List.of(toks(1, 2), toks(3), media, toks(4), toks(5)), 16);
         check(out.size() == 3, "isolate: [tokens][media][tokens]");
-        check(
-                java.util.Arrays.equals(ids(out.get(0)), new int[] {1, 2, 3}),
-                "isolate: pre-media run fused");
+        check(Arrays.equals(ids(out.get(0)), new int[] {1, 2, 3}), "isolate: pre-media run fused");
         check(out.get(1) == media, "isolate: media passes through untouched");
-        check(
-                java.util.Arrays.equals(ids(out.get(2)), new int[] {4, 5}),
-                "isolate: post-media run fused");
+        check(Arrays.equals(ids(out.get(2)), new int[] {4, 5}), "isolate: post-media run fused");
     }
 
     @Test
     void prepareRejectsOversizedBidirectional() {
-        FloatTensor rows = FloatTensor.allocateF32(java.lang.foreign.Arena.ofAuto(), 8 * 4);
+        FloatTensor rows = FloatTensor.allocateF32(Arena.ofAuto(), 8 * 4);
         boolean threw = false;
         try {
             Batch.prepare(List.of(Batch.embeddings(rows, 8, true)), 4);

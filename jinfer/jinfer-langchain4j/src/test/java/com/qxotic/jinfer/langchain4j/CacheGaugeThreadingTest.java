@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.testkit.ModelFixture;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicReference;
@@ -68,7 +69,7 @@ class CacheGaugeThreadingTest {
     @Test
     void theSnapshotTracksGenerations() throws Exception {
         Path gguf = ModelFixture.LLAMA32_1B_Q8.require();
-        Path jfr = java.nio.file.Files.createTempFile("jinfer-track", ".jfr");
+        Path jfr = Files.createTempFile("jinfer-track", ".jfr");
         try (var model = JinferChatModel.builder().modelPath(gguf).maxOutputTokens(8).build()) {
             try (Recording recording = new Recording()) {
                 recording.enable("jinfer.PromptCache").withPeriod(Duration.ofMillis(100));

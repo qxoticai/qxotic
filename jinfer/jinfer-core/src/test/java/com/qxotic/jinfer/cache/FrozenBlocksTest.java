@@ -4,8 +4,16 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
+import java.util.Arrays;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -71,7 +79,7 @@ public final class FrozenBlocksTest {
             BlockTree<BlockResumeTest.FakeState>.Block tip = live.resume(a, 16, s);
             assertEquals(16, s.position, "frozen prefix hit on round " + round);
             s.ingestTo(30);
-            long[] grown = java.util.Arrays.copyOf(a, 30);
+            long[] grown = Arrays.copyOf(a, 30);
             for (int i = 16; i < 30; i++) grown[i] = 5000 + round * 100 + i; // diverging tails
             live.commit(tip, grown, 16, 14, s);
         }
@@ -84,13 +92,9 @@ public final class FrozenBlocksTest {
         // never a wrong restore (open a separate copy so the mmap above stays pristine)
         Path corrupt = Files.createTempFile("frozen-corrupt", ".jkv");
         corrupt.toFile().deleteOnExit();
-        Files.copy(file, corrupt, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-        try (java.nio.channels.FileChannel ch =
-                java.nio.channels.FileChannel.open(
-                        corrupt, java.nio.file.StandardOpenOption.WRITE)) {
-            ch.write(
-                    java.nio.ByteBuffer.wrap(new byte[] {(byte) 0xAA}),
-                    FrozenBlocks.HEADER_BYTES + 3);
+        Files.copy(file, corrupt, StandardCopyOption.REPLACE_EXISTING);
+        try (FileChannel ch = FileChannel.open(corrupt, StandardOpenOption.WRITE)) {
+            ch.write(ByteBuffer.wrap(new byte[] {(byte) 0xAA}), FrozenBlocks.HEADER_BYTES + 3);
         }
         BlockTree<BlockResumeTest.FakeState> corrupted =
                 new BlockTree<>(
@@ -135,12 +139,12 @@ public final class FrozenBlocksTest {
         first.appendTo(file);
         long size1 = Files.size(file);
         byte[] blobA = new byte[(int) codec.blockBytes(12)];
-        try (var ch = java.nio.channels.FileChannel.open(file)) {
-            ch.read(java.nio.ByteBuffer.wrap(blobA), FrozenBlocks.HEADER_BYTES);
+        try (var ch = FileChannel.open(file)) {
+            ch.read(ByteBuffer.wrap(blobA), FrozenBlocks.HEADER_BYTES);
         }
 
         // append prompt B (shares the first 12 as prefix, adds an 8-position tail)
-        long[] b = java.util.Arrays.copyOf(a, 20);
+        long[] b = Arrays.copyOf(a, 20);
         for (int i = 12; i < 20; i++) b[i] = 700 + i;
         BlockTree<BlockResumeTest.FakeState> grow =
                 new BlockTree<>(
@@ -159,11 +163,11 @@ public final class FrozenBlocksTest {
                         + (size2 - size1)
                         + " bytes)");
         byte[] blobAAfter = new byte[blobA.length];
-        try (var ch = java.nio.channels.FileChannel.open(file)) {
-            ch.read(java.nio.ByteBuffer.wrap(blobAAfter), FrozenBlocks.HEADER_BYTES);
+        try (var ch = FileChannel.open(file)) {
+            ch.read(ByteBuffer.wrap(blobAAfter), FrozenBlocks.HEADER_BYTES);
         }
         assertTrue(
-                java.util.Arrays.equals(blobA, blobAAfter),
+                Arrays.equals(blobA, blobAAfter),
                 "existing blob bytes are byte-identical after append (no rewrite)");
 
         // reopen: both prompts serve, content-exact
@@ -181,7 +185,7 @@ public final class FrozenBlocksTest {
 
         // THIRD boot: mount the twice-grown catalog, append again - the accumulating loop that
         // a server's repeated restarts drive (a stale indexOffset/count bug surfaces exactly here)
-        long[] c = java.util.Arrays.copyOf(a, 15);
+        long[] c = Arrays.copyOf(a, 15);
         for (int i = 12; i < 15; i++) c[i] = 900 + i;
         BlockTree<BlockResumeTest.FakeState> third =
                 new BlockTree<>(
@@ -200,7 +204,7 @@ public final class FrozenBlocksTest {
                 new BlockTree<>(
                         codec, CacheStore.inMemory(), 1 << 20, seed, FrozenBlocks.open(file, seed));
         BlockResumeTest.FakeState st = new BlockResumeTest.FakeState();
-        long[] d = java.util.Arrays.copyOf(a, 13);
+        long[] d = Arrays.copyOf(a, 13);
         d[12] = 4242;
         BlockTree<BlockResumeTest.FakeState>.Block sTip = stale.resume(d, 13, st);
         st.ingestTo(13);
@@ -210,15 +214,13 @@ public final class FrozenBlocksTest {
                 new BlockTree<>(
                         codec, CacheStore.inMemory(), 1 << 20, seed, FrozenBlocks.open(file, seed));
         BlockResumeTest.FakeState rv = new BlockResumeTest.FakeState();
-        long[] e = java.util.Arrays.copyOf(a, 13);
+        long[] e = Arrays.copyOf(a, 13);
         e[12] = 5353;
         BlockTree<BlockResumeTest.FakeState>.Block rTip = rival.resume(e, 13, rv);
         rv.ingestTo(13);
         rival.commit(rTip, e, 12, 1, rv);
         rival.appendTo(file);
-        var refused =
-                org.junit.jupiter.api.Assertions.assertThrows(
-                        java.io.IOException.class, () -> stale.appendTo(file));
+        var refused = Assertions.assertThrows(IOException.class, () -> stale.appendTo(file));
         assertTrue(
                 refused.getMessage().contains("another writer"),
                 "stale append must refuse, not overwrite: " + refused.getMessage());
@@ -230,12 +232,10 @@ public final class FrozenBlocksTest {
         // crash simulation: old header + torn tail (append written, header flip lost)
         Path torn = Files.createTempFile("append-torn", ".jkv");
         torn.toFile().deleteOnExit();
-        Files.copy(file, torn, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-        try (java.nio.channels.FileChannel ch =
-                java.nio.channels.FileChannel.open(torn, java.nio.file.StandardOpenOption.WRITE)) {
+        Files.copy(file, torn, StandardCopyOption.REPLACE_EXISTING);
+        try (FileChannel ch = FileChannel.open(torn, StandardOpenOption.WRITE)) {
             // restore the PRE-append header (count=1, indexOffset as after the first appendTo)
-            java.nio.ByteBuffer flip =
-                    java.nio.ByteBuffer.allocate(12).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+            ByteBuffer flip = ByteBuffer.allocate(12).order(ByteOrder.LITTLE_ENDIAN);
             long firstIndexOffset =
                     FrozenBlocks.align(FrozenBlocks.HEADER_BYTES + codec.blockBytes(12));
             flip.putInt(1).putLong(firstIndexOffset).flip();

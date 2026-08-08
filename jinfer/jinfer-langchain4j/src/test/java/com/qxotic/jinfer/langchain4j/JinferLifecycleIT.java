@@ -7,9 +7,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.qxotic.jinfer.testkit.ModelFixture;
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.model.chat.response.ChatResponse;
+import dev.langchain4j.model.chat.response.PartialThinking;
+import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -54,9 +61,7 @@ class JinferLifecycleIT {
                                             public void onPartialResponse(String partial) {}
 
                                             @Override
-                                            public void onCompleteResponse(
-                                                    dev.langchain4j.model.chat.response.ChatResponse
-                                                            response) {}
+                                            public void onCompleteResponse(ChatResponse response) {}
 
                                             @Override
                                             public void onError(Throwable error) {}
@@ -76,27 +81,25 @@ class JinferLifecycleIT {
         // or fails cleanly, and only then the pooled states' arenas die
         Assumptions.assumeTrue(Files.exists(SMALL), "model not found: " + SMALL);
         JinferChatModel m = load();
-        var done = new java.util.concurrent.CountDownLatch(1);
-        var failure = new java.util.concurrent.atomic.AtomicReference<Throwable>();
-        var sawToken = new java.util.concurrent.CountDownLatch(1);
+        var done = new CountDownLatch(1);
+        var failure = new AtomicReference<Throwable>();
+        var sawToken = new CountDownLatch(1);
         m.streaming()
                 .chat(
                         "Count from 1 to 30.",
-                        new dev.langchain4j.model.chat.response.StreamingChatResponseHandler() {
+                        new StreamingChatResponseHandler() {
                             @Override
                             public void onPartialResponse(String partial) {
                                 sawToken.countDown();
                             }
 
                             @Override
-                            public void onPartialThinking(
-                                    dev.langchain4j.model.chat.response.PartialThinking partial) {
+                            public void onPartialThinking(PartialThinking partial) {
                                 sawToken.countDown(); // thinking families stream these first
                             }
 
                             @Override
-                            public void onCompleteResponse(
-                                    dev.langchain4j.model.chat.response.ChatResponse response) {
+                            public void onCompleteResponse(ChatResponse response) {
                                 done.countDown();
                             }
 
@@ -107,13 +110,13 @@ class JinferLifecycleIT {
                             }
                         });
         // provably mid-generation (any delta); a capped wait so a silent family can't hang us
-        sawToken.await(60, java.util.concurrent.TimeUnit.SECONDS);
+        sawToken.await(60, TimeUnit.SECONDS);
         m.close(); // must BLOCK until the generation completed - never a crash
-        org.junit.jupiter.api.Assertions.assertTrue(
-                done.await(30, java.util.concurrent.TimeUnit.SECONDS),
+        Assertions.assertTrue(
+                done.await(30, TimeUnit.SECONDS),
                 "stream neither completed nor failed after close returned");
         if (failure.get() != null) {
-            org.junit.jupiter.api.Assertions.assertInstanceOf(
+            Assertions.assertInstanceOf(
                     IllegalStateException.class, failure.get(), String.valueOf(failure.get()));
         }
     }
@@ -168,7 +171,7 @@ class JinferLifecycleIT {
         }
         long grownMb = (rssKb() - before) / 1024;
         // one 350M state is ~hundreds of MB; 6 leaked cycles would blow far past this bound
-        org.junit.jupiter.api.Assertions.assertTrue(
+        Assertions.assertTrue(
                 grownMb < 1500, "RSS grew " + grownMb + " MB over 6 load/chat/close cycles");
     }
 

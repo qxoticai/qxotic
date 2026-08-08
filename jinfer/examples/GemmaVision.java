@@ -36,6 +36,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.lang.foreign.Arena;
 
 public class GemmaVision {
 
@@ -52,7 +53,7 @@ public class GemmaVision {
         Path mmproj   = Path.of(args.length > 3 ? args[3] : MODELS + "gemma-4-E2B-it-GGUF/mmproj-F32.gguf");
 
         // 1. Load the text model WITH its vision projector. This is the whole multimodal setup.
-        Gemma4 model = Gemma4.loadModel(textGguf, mmproj, java.lang.foreign.Arena.ofAuto());
+        Gemma4 model = Gemma4.loadModel(textGguf, mmproj, Arena.ofAuto());
         TurnTemplate template = model.turnTemplate().orElseThrow();
         Set<Integer> stops = model.stopTokens();
 

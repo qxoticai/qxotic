@@ -3,9 +3,13 @@ package com.qxotic.jinfer.models.gemma4;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.ModelProvider;
+import com.qxotic.toknroll.Tokenizer;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
+import java.nio.file.Path;
+import java.util.Map;
+import java.util.Set;
 
 /** {@link ModelProvider} service: the Gemma4 port's arch-dispatch entry. */
 public final class Gemma4Provider implements ModelProvider {
@@ -16,8 +20,8 @@ public final class Gemma4Provider implements ModelProvider {
     }
 
     @Override
-    public java.util.Set<String> architectures() {
-        return java.util.Set.of("gemma4");
+    public Set<String> architectures() {
+        return Set.of("gemma4");
     }
 
     /**
@@ -25,8 +29,8 @@ public final class Gemma4Provider implements ModelProvider {
      * sidecar that enables self-speculative decoding.
      */
     @Override
-    public java.util.Map<String, String> companionFiles() {
-        return java.util.Map.of("media", "mmproj", "speculation", "mtp");
+    public Map<String, String> companionFiles() {
+        return Map.of("media", "mmproj", "speculation", "mtp");
     }
 
     @Override
@@ -34,13 +38,13 @@ public final class Gemma4Provider implements ModelProvider {
             FileChannel fileChannel,
             GGUF gguf,
             Arena arena,
-            java.util.Map<String, java.nio.file.Path> companions,
-            com.qxotic.toknroll.Tokenizer tokenizer)
+            Map<String, Path> companions,
+            Tokenizer tokenizer)
             throws IOException {
         var model = Gemma4.loadModel(fileChannel, gguf, arena, tokenizer);
-        java.nio.file.Path media = companions.get("media");
+        Path media = companions.get("media");
         if (media != null) model.attachMediaEncoders(media, arena);
-        java.nio.file.Path speculation = companions.get("speculation");
+        Path speculation = companions.get("speculation");
         if (speculation != null) model.attachMtp(speculation, arena);
         return model.loaded();
     }

@@ -11,6 +11,8 @@
 // src/test/resources/gemma4-chat-template-fixed.jinja (jinfer-jinja cannot execute its macros).
 package com.qxotic.jinfer.models.gemma4;
 
+import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.Role;
@@ -19,6 +21,7 @@ import com.qxotic.jinfer.testkit.CodecOracleScenario;
 import com.qxotic.jinfer.testkit.ModelFixture;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -48,7 +51,7 @@ public final class Gemma4FixedTemplateOracle {
     }
 
     static Message reasoningAssistant(String reasoning, Part... rest) {
-        List<Part> parts = new java.util.ArrayList<>();
+        List<Part> parts = new ArrayList<>();
         parts.add(new Part.Reasoning(List.of(new Part.Text(reasoning)), null));
         parts.addAll(List.of(rest));
         return new Message(Role.ASSISTANT, parts);
@@ -102,7 +105,7 @@ public final class Gemma4FixedTemplateOracle {
         // turn-tag balance: a folded-responses turn with no answer CLOSES when a next turn
         // follows (previously it stayed open and swallowed the following user turn)
         List<Message> loopThenUser =
-                new java.util.ArrayList<>(parisLoop(new Part.ToolResult("", "18C, sunny")));
+                new ArrayList<>(parisLoop(new Part.ToolResult("", "18C, sunny")));
         loopThenUser.add(Message.user("And Berlin?"));
         o.compareToolsExpected(
                 "responses turn closes before a following user turn",
@@ -161,12 +164,12 @@ public final class Gemma4FixedTemplateOracle {
                 loop);
 
         // co-production: the reply seed equals the ids the encoded prompt actually ends with
-        var thinkingOn = new com.qxotic.jinfer.chat.Conversation(loop, List.of(WEATHER), true, "");
+        var thinkingOn = new Conversation(loop, List.of(WEATHER), true, "");
         var prompt = o.template.encodePrompt(thinkingOn);
         int[] seed = prompt.replySeed();
         o.check(seed.length > 0, "thinking tail produces a reply seed");
-        List<Integer> ids = new java.util.ArrayList<>();
-        for (int id : com.qxotic.jinfer.Batch.tokenIds(prompt.batches())) ids.add(id);
+        List<Integer> ids = new ArrayList<>();
+        for (int id : Batch.tokenIds(prompt.batches())) ids.add(id);
         boolean endsWithSeed = ids.size() >= seed.length;
         for (int k = 0; endsWithSeed && k < seed.length; k++) {
             endsWithSeed = ids.get(ids.size() - seed.length + k) == seed[k];
@@ -174,12 +177,11 @@ public final class Gemma4FixedTemplateOracle {
         o.check(endsWithSeed, "the prompt ends with exactly the reply seed");
 
         // thinking off: no tail, no seed - the model answers in the open turn
-        var thinkingOff =
-                new com.qxotic.jinfer.chat.Conversation(loop, List.of(WEATHER), false, "");
+        var thinkingOff = new Conversation(loop, List.of(WEATHER), false, "");
         var offPrompt = o.template.encodePrompt(thinkingOff);
         o.check(offPrompt.replySeed().length == 0, "thinking off has no reply seed");
-        List<Integer> offIds = new java.util.ArrayList<>();
-        for (int id : com.qxotic.jinfer.Batch.tokenIds(offPrompt.batches())) offIds.add(id);
+        List<Integer> offIds = new ArrayList<>();
+        for (int id : Batch.tokenIds(offPrompt.batches())) offIds.add(id);
         o.check(
                 offIds.get(offIds.size() - 1) == o.special("<tool_response|>"),
                 "thinking off ends at the folded response");

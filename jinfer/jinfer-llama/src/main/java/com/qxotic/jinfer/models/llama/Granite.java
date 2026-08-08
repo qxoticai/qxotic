@@ -15,7 +15,12 @@ import static com.qxotic.jinfer.Norms.rmsnorm;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.*;
+import com.qxotic.jinfer.cache.DenseStateCodec;
+import com.qxotic.jinfer.cache.PromptCache;
+import com.qxotic.jinfer.cache.StateCodec;
+import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.LoadedModel;
+import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
 import com.qxotic.toknroll.Tokenizer;
@@ -25,6 +30,7 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 public final class Granite
@@ -70,7 +76,7 @@ public final class Granite
     }
 
     @Override
-    public void forward(State s, com.qxotic.jinfer.Batch batch) {
+    public void forward(State s, Batch batch) {
         int n = batch.count();
         if (n > s.batchCapacity)
             throw new IllegalArgumentException(
@@ -86,7 +92,7 @@ public final class Granite
                             + s.contextCapacity);
         }
         switch (batch.input()) {
-            case com.qxotic.jinfer.Batch.Input.Tokens t -> {
+            case Batch.Input.Tokens t -> {
                 int[] ids = t.ids();
                 if (n == 1)
                     Parallel.onDecodePool(
@@ -96,11 +102,11 @@ public final class Granite
                             });
                 else forward(s, ids, 0, from, n);
             }
-            case com.qxotic.jinfer.Batch.Input.Sequences seq ->
+            case Batch.Input.Sequences seq ->
                     throw new UnsupportedOperationException(
                             "Granite is generative: packed sequences (batched embedding) not"
                                     + " supported");
-            case com.qxotic.jinfer.Batch.Input.Embeddings e ->
+            case Batch.Input.Embeddings e ->
                     throw new UnsupportedOperationException(
                             "Granite is text-only: embedding input is not supported");
         }
@@ -140,7 +146,7 @@ public final class Granite
                 "<|endoftext|>");
     }
 
-    private com.qxotic.jinfer.chat.TurnTemplate turnTemplate; // memoized: stateless, model-lifetime
+    private TurnTemplate turnTemplate; // memoized: stateless, model-lifetime
 
     /**
      * This model bundled with the three text facts its GGUF carries - what an
@@ -153,20 +159,20 @@ public final class Granite
                 chatTemplateSource,
                 stopTokens(),
                 modelSeed,
-                turnTemplate().map(t -> (com.qxotic.jinfer.chat.ChatTemplate) t),
-                com.qxotic.jinfer.chat.LoadedModel.SamplingDefaults.NONE);
+                turnTemplate().map(t -> (ChatTemplate) t),
+                LoadedModel.SamplingDefaults.NONE);
     }
 
-    public java.util.Optional<com.qxotic.jinfer.chat.TurnTemplate> turnTemplate() {
+    public Optional<TurnTemplate> turnTemplate() {
         if (turnTemplate == null) turnTemplate = new GraniteTurnTemplate(tokenizer());
-        return java.util.Optional.of(turnTemplate);
+        return Optional.of(turnTemplate);
     }
 
     @Override
-    public java.util.Optional<com.qxotic.jinfer.cache.StateCodec<Granite.State>> stateCodec() {
+    public Optional<StateCodec<Granite.State>> stateCodec() {
         // uniform full attention: the shared dense codec over this State's KV arrays
-        return java.util.Optional.of(
-                new com.qxotic.jinfer.cache.DenseStateCodec<>(
+        return Optional.of(
+                new DenseStateCodec<>(
                         config().numberOfLayers(),
                         config().kvDim(),
                         s -> s.keyCache,
@@ -402,7 +408,7 @@ public final class Granite
 
     // === State ===
 
-    public static final class State extends com.qxotic.jinfer.BaseState {
+    public static final class State extends BaseState {
         final int contextCapacity, batchCapacity;
         final FloatTensor x, xb, k, v, attnQ, attnOut, hb, hb2, logits;
         // rotary values for the batch about to be ingested: sized by BATCH, never context
@@ -483,7 +489,7 @@ public final class Granite
     public static Granite loadModel(
             FileChannel fileChannel, GGUF gguf, Arena arena, Tokenizer tokenizer)
             throws IOException {
-        byte[] seed = com.qxotic.jinfer.cache.PromptCache.modelSeed(fileChannel);
+        byte[] seed = PromptCache.modelSeed(fileChannel);
         if (tokenizer == null) {
             tokenizer = Tokenizers.fromGGUF(gguf);
         }

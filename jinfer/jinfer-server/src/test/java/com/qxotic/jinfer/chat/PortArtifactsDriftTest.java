@@ -3,6 +3,8 @@ package com.qxotic.jinfer.chat;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
+import java.util.ServiceLoader;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -17,10 +19,10 @@ final class PortArtifactsDriftTest {
     void everyClasspathProviderIsInTheShadingFallback() {
         var known = Models.knownProviderClasses();
         for (var provider :
-                java.util.ServiceLoader.load(ModelProvider.class).stream()
-                        .map(java.util.ServiceLoader.Provider::get)
+                ServiceLoader.load(ModelProvider.class).stream()
+                        .map(ServiceLoader.Provider::get)
                         .toList()) {
-            org.junit.jupiter.api.Assertions.assertTrue(
+            Assertions.assertTrue(
                     known.contains(provider.getClass().getName()),
                     provider.getClass().getName()
                             + " is not in Models.KNOWN_PROVIDER_CLASSES - add it so shading"

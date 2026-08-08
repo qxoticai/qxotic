@@ -14,6 +14,7 @@ import com.qxotic.jota.ir.lir.LIRExprNode;
 import com.qxotic.jota.ir.lir.LIRGraph;
 import com.qxotic.jota.ir.lir.LIRInput;
 import com.qxotic.jota.ir.lir.LoopIterArg;
+import com.qxotic.jota.ir.lir.ScalarInput;
 import com.qxotic.jota.ir.lir.Store;
 import com.qxotic.jota.ir.lir.Yield;
 import com.qxotic.jota.ir.tir.BinaryOp;
@@ -49,8 +50,7 @@ import java.util.function.Supplier;
 public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
 
     private final Map<TIRNode, BufferRef> inputBuffers = new IdentityHashMap<>();
-    private final Map<TIRNode, com.qxotic.jota.ir.lir.ScalarInput> inputScalars =
-            new IdentityHashMap<>();
+    private final Map<TIRNode, ScalarInput> inputScalars = new IdentityHashMap<>();
     private final Map<TIRNode, BufferRef> outputBuffers = new IdentityHashMap<>();
     private final Map<TensorInput, Layout> inputLayoutOverrides = new IdentityHashMap<>();
     private final List<LIRInput> allInputs = new ArrayList<>();
@@ -118,8 +118,7 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
             }
 
             if (input instanceof com.qxotic.jota.ir.tir.ScalarInput scalarInput) {
-                com.qxotic.jota.ir.lir.ScalarInput lirInput =
-                        new com.qxotic.jota.ir.lir.ScalarInput(nextId++, scalarInput.dataType());
+                ScalarInput lirInput = new ScalarInput(nextId++, scalarInput.dataType());
                 inputScalars.put(input, lirInput);
                 allInputs.add(lirInput);
                 continue;
@@ -129,9 +128,7 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
             ScalarConstant underlyingScalar = extractUnderlyingScalarConstant(input);
             if (underlyingScalar != null) {
                 // Scalar inputs become scalar parameters (passed by value)
-                com.qxotic.jota.ir.lir.ScalarInput scalarInput =
-                        new com.qxotic.jota.ir.lir.ScalarInput(
-                                nextId++, underlyingScalar.dataType());
+                ScalarInput scalarInput = new ScalarInput(nextId++, underlyingScalar.dataType());
                 // Map both the input node and the underlying scalar to this ScalarInput
                 inputScalars.put(input, scalarInput);
                 inputScalars.put(underlyingScalar, scalarInput);
@@ -480,7 +477,7 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
                             "Post-ops after reductions must be element-wise on the reduction"
                                     + " result");
             case com.qxotic.jota.ir.tir.ScalarInput si -> {
-                com.qxotic.jota.ir.lir.ScalarInput scalar = inputScalars.get(si);
+                ScalarInput scalar = inputScalars.get(si);
                 if (scalar == null) {
                     throw new IllegalStateException("Unknown ScalarInput: " + si.id());
                 }
@@ -700,7 +697,7 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
 
     @Override
     public LIRExprNode visitScalarInput(com.qxotic.jota.ir.tir.ScalarInput node) {
-        com.qxotic.jota.ir.lir.ScalarInput scalar = inputScalars.get(node);
+        ScalarInput scalar = inputScalars.get(node);
         if (scalar == null) {
             throw new IllegalStateException("Unknown ScalarInput: " + node.id());
         }
@@ -710,7 +707,7 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
     @Override
     public LIRExprNode visitScalarConstant(ScalarConstant node) {
         // Check if this scalar is an explicit input (dynamic parameter)
-        com.qxotic.jota.ir.lir.ScalarInput scalarInput = inputScalars.get(node);
+        ScalarInput scalarInput = inputScalars.get(node);
         if (scalarInput != null) {
             // Scalar input - reference the scalar parameter directly (passed by value)
             return exprGraph.scalarInput(scalarInput.id(), scalarInput.dataType());
@@ -853,7 +850,7 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
                     if (baseNode instanceof TensorInput tensorInput) {
                         result = lowerTensorInputWithViewChain(tensorInput, chain, node);
                     } else if (baseNode instanceof com.qxotic.jota.ir.tir.ScalarInput scalarInput) {
-                        com.qxotic.jota.ir.lir.ScalarInput scalar = inputScalars.get(scalarInput);
+                        ScalarInput scalar = inputScalars.get(scalarInput);
                         if (scalar == null) {
                             throw new IllegalStateException(
                                     "Unknown ScalarInput: " + scalarInput.id());

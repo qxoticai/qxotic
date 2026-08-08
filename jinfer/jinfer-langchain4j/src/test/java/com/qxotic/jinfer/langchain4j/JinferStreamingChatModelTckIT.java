@@ -6,10 +6,19 @@ import static org.mockito.ArgumentMatchers.argThat;
 import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.chat.common.AbstractStreamingChatModelIT;
 import dev.langchain4j.model.chat.listener.ChatModelListener;
+import dev.langchain4j.model.chat.request.ChatRequest;
+import dev.langchain4j.model.chat.request.ChatRequestParameters;
+import dev.langchain4j.model.chat.request.DefaultChatRequestParameters;
+import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
 import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.condition.EnabledIf;
+import org.mockito.InOrder;
+import org.mockito.Mockito;
 
 /**
  * The langchain4j streaming compliance kit against {@link JinferStreamingChatModel} on LFM2.5-8B.
@@ -26,7 +35,7 @@ class JinferStreamingChatModelTckIT extends AbstractStreamingChatModelIT {
 
     private static JinferChatModel shared;
 
-    @org.junit.jupiter.api.AfterAll
+    @AfterAll
     static void unloadShared() {
         if (shared != null) shared.close();
     }
@@ -42,24 +51,17 @@ class JinferStreamingChatModelTckIT extends AbstractStreamingChatModelIT {
         return List.of(
                 new StreamingChatModel() {
                     @Override
-                    public void chat(
-                            dev.langchain4j.model.chat.request.ChatRequest request,
-                            dev.langchain4j.model.chat.response.StreamingChatResponseHandler
-                                    handler) {
+                    public void chat(ChatRequest request, StreamingChatResponseHandler handler) {
                         m.chat(request, handler);
                     }
 
                     @Override
-                    public void doChat(
-                            dev.langchain4j.model.chat.request.ChatRequest request,
-                            dev.langchain4j.model.chat.response.StreamingChatResponseHandler
-                                    handler) {
+                    public void doChat(ChatRequest request, StreamingChatResponseHandler handler) {
                         m.chat(request, handler);
                     }
 
                     @Override
-                    public dev.langchain4j.model.chat.request.ChatRequestParameters
-                            defaultRequestParameters() {
+                    public ChatRequestParameters defaultRequestParameters() {
                         return m.defaultRequestParameters();
                     }
                 });
@@ -68,9 +70,9 @@ class JinferStreamingChatModelTckIT extends AbstractStreamingChatModelIT {
     // see the blocking TCK: createModelWith products are not parameterized arguments, so
     // nothing closes them unless we track them ourselves
     private static final List<JinferChatModel> created =
-            java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+            Collections.synchronizedList(new ArrayList<>());
 
-    @org.junit.jupiter.api.AfterAll
+    @AfterAll
     static void unloadCreated() {
         created.forEach(JinferChatModel::close);
         created.clear();
@@ -87,8 +89,7 @@ class JinferStreamingChatModelTckIT extends AbstractStreamingChatModelIT {
     }
 
     @Override
-    protected StreamingChatModel createModelWith(
-            dev.langchain4j.model.chat.request.ChatRequestParameters parameters) {
+    protected StreamingChatModel createModelWith(ChatRequestParameters parameters) {
         return track(
                         JinferChatModel.builder()
                                 .modelPath(JinferChatModelTckIT.MODEL)
@@ -99,11 +100,8 @@ class JinferStreamingChatModelTckIT extends AbstractStreamingChatModelIT {
     }
 
     @Override
-    protected dev.langchain4j.model.chat.request.ChatRequestParameters
-            createIntegrationSpecificParameters(int maxOutputTokens) {
-        return dev.langchain4j.model.chat.request.DefaultChatRequestParameters.builder()
-                .maxOutputTokens(maxOutputTokens)
-                .build();
+    protected ChatRequestParameters createIntegrationSpecificParameters(int maxOutputTokens) {
+        return DefaultChatRequestParameters.builder().maxOutputTokens(maxOutputTokens).build();
     }
 
     private static JinferChatModel blocking(List<ChatModelListener> listeners) {
@@ -127,11 +125,9 @@ class JinferStreamingChatModelTckIT extends AbstractStreamingChatModelIT {
 
     @Override
     protected void verifyToolCallbacks(
-            dev.langchain4j.model.chat.response.StreamingChatResponseHandler handler,
-            org.mockito.InOrder io,
-            String id) {
-        io.verify(handler, org.mockito.Mockito.atLeast(0)).onPartialThinking(any());
-        io.verify(handler, org.mockito.Mockito.atLeast(0)).onPartialResponse(any(), any());
+            StreamingChatResponseHandler handler, InOrder io, String id) {
+        io.verify(handler, Mockito.atLeast(0)).onPartialThinking(any());
+        io.verify(handler, Mockito.atLeast(0)).onPartialResponse(any(), any());
         io.verify(handler)
                 .onCompleteToolCall(
                         argThat(
@@ -144,22 +140,17 @@ class JinferStreamingChatModelTckIT extends AbstractStreamingChatModelIT {
 
     @Override
     protected void verifyToolCallbacks(
-            dev.langchain4j.model.chat.response.StreamingChatResponseHandler handler,
-            org.mockito.InOrder io,
-            StreamingChatModel model) {
-        io.verify(handler, org.mockito.Mockito.atLeast(0)).onPartialThinking(any());
-        io.verify(handler, org.mockito.Mockito.atLeast(0)).onPartialResponse(any(), any());
+            StreamingChatResponseHandler handler, InOrder io, StreamingChatModel model) {
+        io.verify(handler, Mockito.atLeast(0)).onPartialThinking(any());
+        io.verify(handler, Mockito.atLeast(0)).onPartialResponse(any(), any());
         io.verify(handler).onCompleteToolCall(any());
     }
 
     @Override
     protected void verifyToolCallbacks(
-            dev.langchain4j.model.chat.response.StreamingChatResponseHandler handler,
-            org.mockito.InOrder io,
-            String id1,
-            String id2) {
-        io.verify(handler, org.mockito.Mockito.atLeast(0)).onPartialThinking(any());
-        io.verify(handler, org.mockito.Mockito.atLeast(0)).onPartialResponse(any(), any());
+            StreamingChatResponseHandler handler, InOrder io, String id1, String id2) {
+        io.verify(handler, Mockito.atLeast(0)).onPartialThinking(any());
+        io.verify(handler, Mockito.atLeast(0)).onPartialResponse(any(), any());
         io.verify(handler)
                 .onCompleteToolCall(
                         argThat(

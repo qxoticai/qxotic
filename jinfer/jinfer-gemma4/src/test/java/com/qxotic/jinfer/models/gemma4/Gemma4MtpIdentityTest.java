@@ -24,6 +24,8 @@ import com.qxotic.jinfer.cache.CachedSession;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.llm.*;
 import com.qxotic.jinfer.testkit.ModelFixture;
+import com.qxotic.toknroll.IntSequence;
+import com.qxotic.toknroll.Tokenizer;
 import java.lang.foreign.Arena;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -50,7 +52,7 @@ public final class Gemma4MtpIdentityTest {
     @Tag("driver")
     void run() throws Exception {
         Assumptions.assumeTrue(
-                java.nio.file.Files.exists(ModelFixture.GEMMA4_E2B_Q8.path()),
+                Files.exists(ModelFixture.GEMMA4_E2B_Q8.path()),
                 "model not found:" + " " + ModelFixture.GEMMA4_E2B_Q8.path());
         main();
     }
@@ -158,7 +160,7 @@ public final class Gemma4MtpIdentityTest {
         return ids;
     }
 
-    static void diff(List<Integer> a, List<Integer> b, com.qxotic.toknroll.Tokenizer tk) {
+    static void diff(List<Integer> a, List<Integer> b, Tokenizer tk) {
         int i = 0;
         while (i < Math.min(a.size(), b.size()) && a.get(i).equals(b.get(i))) i++;
         System.out.println(
@@ -172,15 +174,11 @@ public final class Gemma4MtpIdentityTest {
                         + (i < b.size() ? b.get(i) : -1));
         System.out.println(
                 "  plain: "
-                        + tk.decode(
-                                        com.qxotic.toknroll.IntSequence.wrap(
-                                                a.subList(0, Math.min(a.size(), i + 3))))
+                        + tk.decode(IntSequence.wrap(a.subList(0, Math.min(a.size(), i + 3))))
                                 .replace("\n", "\\n"));
         System.out.println(
                 "  spec:  "
-                        + tk.decode(
-                                        com.qxotic.toknroll.IntSequence.wrap(
-                                                b.subList(0, Math.min(b.size(), i + 3))))
+                        + tk.decode(IntSequence.wrap(b.subList(0, Math.min(b.size(), i + 3))))
                                 .replace("\n", "\\n"));
     }
 

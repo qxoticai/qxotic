@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.foreign.Arena;
+import java.util.Random;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -69,7 +70,7 @@ final class TanhAccuracyTest {
         assertEquals(-1f, FastMath.tanh(-50f), "negative saturation");
         assertEquals(1f, FastMath.tanh(Float.POSITIVE_INFINITY));
         assertEquals(-1f, FastMath.tanh(Float.NEGATIVE_INFINITY));
-        java.util.Random rnd = new java.util.Random(11);
+        Random rnd = new Random(11);
         for (int i = 0; i < 100_000; i++) {
             float x = (rnd.nextFloat() - 0.5f) * 20f;
             assertEquals(
@@ -81,7 +82,7 @@ final class TanhAccuracyTest {
 
     @Test
     void vectorPassMatchesTheScalarMirrorBitForBit() {
-        java.util.Random rnd = new java.util.Random(23);
+        Random rnd = new Random(23);
         int n = 300; // odd tail on purpose
         try (Arena arena = Arena.ofConfined()) {
             F32FloatTensor t = F32FloatTensor.allocate(arena, n);

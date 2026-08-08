@@ -6,6 +6,9 @@ import com.qxotic.jinfer.chat.ModelProvider;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
+import java.nio.file.Path;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * {@link ModelProvider} service: the Inflect2 port's arch-dispatch entry, so {@code
@@ -24,20 +27,19 @@ public final class Inflect2Provider implements ModelProvider {
     }
 
     @Override
-    public java.util.Set<String> architectures() {
-        return java.util.Set.of("inflect2"); // representative: supports() matches inflect*
+    public Set<String> architectures() {
+        return Set.of("inflect2"); // representative: supports() matches inflect*
     }
 
     /** The pronunciation lexicon: what turns text into phonemes without an external process. */
     @Override
-    public java.util.Map<String, String> companionFiles() {
-        return java.util.Map.of("phonemes", "lexicon");
+    public Map<String, String> companionFiles() {
+        return Map.of("phonemes", "lexicon");
     }
 
     @Override
     public SpeechModel<?, ?, ?> loadSpeech(
-            FileChannel fileChannel, GGUF gguf, java.nio.file.Path path, Arena arena)
-            throws IOException {
+            FileChannel fileChannel, GGUF gguf, Path path, Arena arena) throws IOException {
         return InflectTTS.load(fileChannel, gguf, path, arena);
     }
 
@@ -45,11 +47,11 @@ public final class Inflect2Provider implements ModelProvider {
     public SpeechModel<?, ?, ?> loadSpeech(
             FileChannel fileChannel,
             GGUF gguf,
-            java.nio.file.Path path,
+            Path path,
             Arena arena,
-            java.util.Map<String, java.nio.file.Path> companions)
+            Map<String, Path> companions)
             throws IOException {
-        java.nio.file.Path lexicon = companions.get("phonemes");
+        Path lexicon = companions.get("phonemes");
         return lexicon == null
                 ? InflectTTS.load(fileChannel, gguf, path, arena)
                 : InflectTTS.load(fileChannel, gguf, path, arena, lexicon);

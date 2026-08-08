@@ -11,6 +11,7 @@ import com.qxotic.jinfer.*;
 import com.qxotic.jinfer.cache.BlockTree;
 import com.qxotic.jinfer.cache.CacheStore;
 import com.qxotic.jinfer.cache.CachedSession;
+import com.qxotic.jinfer.cache.FrozenBlocks;
 import com.qxotic.jinfer.cache.StateCodec;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.Message;
@@ -18,9 +19,11 @@ import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.llm.*;
 import com.qxotic.jinfer.models.gemma4.Gemma4;
 import com.qxotic.jinfer.models.lfm2.Lfm2;
+import java.lang.foreign.Arena;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.Assumptions;
@@ -87,7 +90,7 @@ public final class TtftBench {
     /** A loaded model paired with its per-turn template (the cache benches drive turns). */
     /** A serve-only tree grafted over the artifact (budget 0: restores, never keeps writes). */
     static <S extends RuntimeState> BlockTree<S> graft(
-            StateCodec<S> codec, byte[] seed, com.qxotic.jinfer.cache.FrozenBlocks frozen) {
+            StateCodec<S> codec, byte[] seed, FrozenBlocks frozen) {
         return new BlockTree<>(codec, CacheStore.inMemory(), 0, seed, frozen);
     }
 
@@ -98,10 +101,10 @@ public final class TtftBench {
         String lower = path.toLowerCase();
         Bench<?> b;
         if (lower.contains("gemma")) {
-            var m = Gemma4.loadModel(Path.of(path), java.lang.foreign.Arena.ofAuto());
+            var m = Gemma4.loadModel(Path.of(path), Arena.ofAuto());
             b = new Bench<>(m.loaded(), m.turnTemplate().orElseThrow());
         } else {
-            var m = Lfm2.loadModel(Path.of(path), java.lang.foreign.Arena.ofAuto());
+            var m = Lfm2.loadModel(Path.of(path), Arena.ofAuto());
             b = new Bench<>(m.loaded(), m.turnTemplate().orElseThrow());
         }
         System.err.printf("model load: %.0f ms%n", (System.nanoTime() - t0) / 1e6);
@@ -234,7 +237,7 @@ public final class TtftBench {
         // this the first forward pays ~2.5s of compilation, which is JVM startup, not cache cost)
         S w = model.model().newState(4096, 512);
         int[] warmIds = new int[256];
-        java.util.Arrays.fill(warmIds, 5);
+        Arrays.fill(warmIds, 5);
         for (int i = 0; i < 2; i++) {
             S ws = model.model().newState(4096, 512);
             model.model().ingest(ws, Batch.prefill(warmIds));
@@ -242,8 +245,7 @@ public final class TtftBench {
         }
 
         long t0 = System.nanoTime();
-        com.qxotic.jinfer.cache.FrozenBlocks frozen =
-                com.qxotic.jinfer.cache.FrozenBlocks.open(file, model.seed());
+        FrozenBlocks frozen = FrozenBlocks.open(file, model.seed());
         double openMs = (System.nanoTime() - t0) / 1e6;
 
         // request prompt: re-encoded from the same static text (deterministic template)
@@ -265,8 +267,7 @@ public final class TtftBench {
         for (int r = 0; r < 3; r++) {
             S s2 = model.model().newState(4096, 512);
             long t2 = System.nanoTime();
-            com.qxotic.jinfer.cache.FrozenBlocks f2 =
-                    com.qxotic.jinfer.cache.FrozenBlocks.open(file, model.seed());
+            FrozenBlocks f2 = FrozenBlocks.open(file, model.seed());
             int n2 =
                     CachedSession.resume(model.model(), graft(codec, model.seed(), f2), s2, prefix)
                             .position();

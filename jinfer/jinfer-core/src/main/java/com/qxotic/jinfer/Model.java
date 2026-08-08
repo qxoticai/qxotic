@@ -2,6 +2,9 @@
 // from com.qxotic.jinfer — never on that package's internals. See Gemma4 for a LanguageModel impl.
 package com.qxotic.jinfer;
 
+import java.lang.foreign.Arena;
+import java.lang.ref.Reference;
+
 /**
  * The headless backbone: ingest input into a runtime state and advance it. It has no opinion on the
  * output — a {@link com.qxotic.jinfer.LanguageModel} adds a vocab-logits head, an {@code
@@ -37,7 +40,7 @@ public interface Model<C extends Config, W, S extends RuntimeState> {
      * config.maxContextLength()}. Use {@code Arena.ofShared()} when another thread may compute on
      * the state (a streaming driver); a confined arena fails loudly there.
      */
-    S newState(int contextCapacity, int batchCapacity, java.lang.foreign.Arena arena);
+    S newState(int contextCapacity, int batchCapacity, Arena arena);
 
     /**
      * Allocate a state that OWNS its memory: an internal shared arena freed deterministically by
@@ -45,7 +48,7 @@ public interface Model<C extends Config, W, S extends RuntimeState> {
      * backstop so a dropped unclosed state degrades to GC-eventually rather than leaking.
      */
     default S newState(int contextCapacity, int batchCapacity) {
-        java.lang.foreign.Arena arena = Arenas.newShared();
+        Arena arena = Arenas.newShared();
         try {
             return newState(contextCapacity, batchCapacity, arena, true);
         } catch (RuntimeException | Error e) {
@@ -66,8 +69,7 @@ public interface Model<C extends Config, W, S extends RuntimeState> {
      * arena outlives the state. A non-closeable arena ({@code ofAuto}, {@code global}) may be
      * adopted: it manages itself, and close stays a valid no-op on the memory.
      */
-    default S newState(
-            int contextCapacity, int batchCapacity, java.lang.foreign.Arena arena, boolean adopt) {
+    default S newState(int contextCapacity, int batchCapacity, Arena arena, boolean adopt) {
         S state = newState(contextCapacity, batchCapacity, arena);
         if (adopt) ((BaseState) state).adoptArena();
         return state;
@@ -84,7 +86,7 @@ public interface Model<C extends Config, W, S extends RuntimeState> {
     }
 
     /** As {@link #newState(int)} over a caller-owned (borrowed) arena. */
-    default S newState(int contextCapacity, java.lang.foreign.Arena arena) {
+    default S newState(int contextCapacity, Arena arena) {
         return newState(contextCapacity, RuntimeFlags.BATCH_CAPACITY, arena);
     }
 
@@ -101,7 +103,7 @@ public interface Model<C extends Config, W, S extends RuntimeState> {
         } finally {
             base.exit();
         }
-        java.lang.ref.Reference.reachabilityFence(this);
+        Reference.reachabilityFence(this);
     }
 
     /** The forward pass behind {@link #ingest} - the implementation seam, never called directly. */

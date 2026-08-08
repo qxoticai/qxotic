@@ -9,6 +9,8 @@ import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.llm.*;
 import com.qxotic.jinfer.testkit.ModelFixture;
+import com.qxotic.toknroll.Tokenizer;
+import java.lang.foreign.Arena;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -31,7 +33,7 @@ public final class Lfm2ChatRun {
 
     private static void main(String[] args) throws Exception {
         Path path = Path.of(args.length > 0 ? args[0] : ModelFixture.LFM25_8B_Q8.path().toString());
-        Lfm2 model = Lfm2.loadModel(path, java.lang.foreign.Arena.ofAuto());
+        Lfm2 model = Lfm2.loadModel(path, Arena.ofAuto());
         var c = model.config();
         var tk = model.tokenizer();
         TurnTemplate template = model.turnTemplate().orElseThrow();
@@ -88,7 +90,7 @@ public final class Lfm2ChatRun {
             Lfm2.State s,
             TurnTemplate template,
             List<Batch> turn,
-            com.qxotic.toknroll.Tokenizer tk,
+            Tokenizer tk,
             Set<Integer> stops,
             int maxTokens) {
         List<Batch> ready = new ArrayList<>(turn);
@@ -96,7 +98,7 @@ public final class Lfm2ChatRun {
         for (Batch b : Batch.prepare(ready, 512)) model.ingest(s, b);
 
         StringBuilder out = new StringBuilder();
-        int imEnd = com.qxotic.jinfer.llm.SpecialTokens.require(tk, "<|im_end|>");
+        int imEnd = SpecialTokens.require(tk, "<|im_end|>");
         int tok = model.logits(s).argmax();
         int n = 0;
         long t0 = System.nanoTime();

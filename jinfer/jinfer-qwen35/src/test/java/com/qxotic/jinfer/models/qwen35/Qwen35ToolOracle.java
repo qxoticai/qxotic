@@ -14,6 +14,7 @@ import com.qxotic.jinfer.testkit.CodecOracleScenario;
 import com.qxotic.jinfer.testkit.ModelFixture;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -197,7 +198,7 @@ public final class Qwen35ToolOracle {
     }
 
     private static List<Message> concat(List<Message> head, Message tail) {
-        List<Message> out = new java.util.ArrayList<>(head);
+        List<Message> out = new ArrayList<>(head);
         out.add(tail);
         return out;
     }

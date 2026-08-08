@@ -1,11 +1,14 @@
 package com.qxotic.jinfer;
 
 import com.oracle.svm.shared.AlwaysInline;
+import java.lang.foreign.Arena;
 import java.nio.ByteOrder;
+import java.util.Arrays;
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.IntVector;
 import jdk.incubator.vector.ShortVector;
 import jdk.incubator.vector.VectorOperators;
+import jdk.incubator.vector.VectorSpecies;
 
 /**
  * Online-softmax accumulate and normalize over a head vector, plus the per-thread tile scratch.
@@ -50,13 +53,13 @@ public final class FlashAttention {
 
         F32FloatTensor kDec(int capacity) {
             if (kDec == null || kDec.size() < capacity)
-                kDec = F32FloatTensor.allocate(java.lang.foreign.Arena.ofAuto(), capacity);
+                kDec = F32FloatTensor.allocate(Arena.ofAuto(), capacity);
             return kDec;
         }
 
         F32FloatTensor vDec(int capacity) {
             if (vDec == null || vDec.size() < capacity)
-                vDec = F32FloatTensor.allocate(java.lang.foreign.Arena.ofAuto(), capacity);
+                vDec = F32FloatTensor.allocate(Arena.ofAuto(), capacity);
             return vDec;
         }
     }
@@ -307,7 +310,7 @@ public final class FlashAttention {
             int runStart,
             int nKeys,
             float[] P,
-            jdk.incubator.vector.VectorSpecies<Float> sp,
+            VectorSpecies<Float> sp,
             int len,
             int bound,
             int ob0,
@@ -363,7 +366,7 @@ public final class FlashAttention {
             int runStart,
             int nKeys,
             float[] P,
-            jdk.incubator.vector.VectorSpecies<Float> sp,
+            VectorSpecies<Float> sp,
             int len,
             int bound,
             int ob0,
@@ -901,10 +904,10 @@ public final class FlashAttention {
                             // stays finite - which is what lets the exp pass vectorize
                             int live = Math.min(BcRows, globalQ - kvStart + 1);
                             if (live <= 0) {
-                                java.util.Arrays.fill(S, rowBase, rowBase + BcRows, 0f);
+                                Arrays.fill(S, rowBase, rowBase + BcRows, 0f);
                                 continue;
                             }
-                            java.util.Arrays.fill(S, rowBase + live, rowBase + BcRows, 0f);
+                            Arrays.fill(S, rowBase + live, rowBase + BcRows, 0f);
                             float blockMax = rowMax(S, rowBase, live);
                             float rowM = M[i];
                             double rowL = L[i];
@@ -1243,11 +1246,11 @@ public final class FlashAttention {
                             int lo = Math.min(BcRows, Math.max(0, qAttStart - kvStart));
                             int hi = bidir ? BcRows : Math.min(BcRows, globalQ - kvStart + 1);
                             if (hi <= lo) {
-                                java.util.Arrays.fill(S, rowBase, rowBase + BcRows, 0f);
+                                Arrays.fill(S, rowBase, rowBase + BcRows, 0f);
                                 continue;
                             }
-                            java.util.Arrays.fill(S, rowBase, rowBase + lo, 0f);
-                            java.util.Arrays.fill(S, rowBase + hi, rowBase + BcRows, 0f);
+                            Arrays.fill(S, rowBase, rowBase + lo, 0f);
+                            Arrays.fill(S, rowBase + hi, rowBase + BcRows, 0f);
                             float blockMax = rowMax(S, rowBase + lo, hi - lo);
                             float rowM = M[i];
                             double rowL = L[i];
@@ -1418,12 +1421,12 @@ public final class FlashAttention {
      * buffer here survived close() in every family (plus one orphaned copy per lazy regrowth).
      */
     public static final class DecodeScratch {
-        private final java.lang.foreign.Arena arena;
+        private final Arena arena;
         F32FloatTensor o;
         float[] m;
         double[] l;
 
-        public DecodeScratch(java.lang.foreign.Arena arena) {
+        public DecodeScratch(Arena arena) {
             this.arena = arena;
         }
 

@@ -4,12 +4,16 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.Tool;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
 import java.net.URI;
 import java.util.List;
 import java.util.Map;
+import javax.imageio.ImageIO;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.SystemMessage;
@@ -61,7 +65,7 @@ class JinferMappingsTest {
 
     @Test
     void messagesRoundTrip() {
-        List<com.qxotic.jinfer.chat.Message> out =
+        List<Message> out =
                 JinferMappings.toMessages(
                         List.of(
                                 new SystemMessage("be terse"),
@@ -99,8 +103,8 @@ class JinferMappingsTest {
 
     @Test
     void replyToAssistantMessage() {
-        com.qxotic.jinfer.chat.Message reply =
-                new com.qxotic.jinfer.chat.Message(
+        Message reply =
+                new Message(
                         Role.ASSISTANT,
                         List.of(
                                 new Part.Reasoning(List.of(new Part.Text("hmm", null)), null),
@@ -162,9 +166,9 @@ class JinferMappingsTest {
 
     @Test
     void imageBytesDecodeToBlob() throws Exception {
-        var img = new java.awt.image.BufferedImage(8, 8, java.awt.image.BufferedImage.TYPE_INT_RGB);
-        var png = new java.io.ByteArrayOutputStream();
-        javax.imageio.ImageIO.write(img, "png", png);
+        var img = new BufferedImage(8, 8, BufferedImage.TYPE_INT_RGB);
+        var png = new ByteArrayOutputStream();
+        ImageIO.write(img, "png", png);
         UserMessage u =
                 UserMessage.builder()
                         .text("look")
@@ -174,7 +178,7 @@ class JinferMappingsTest {
                                         .data(png.toByteArray())
                                         .build())
                         .build();
-        List<com.qxotic.jinfer.chat.Message> out = JinferMappings.toMessages(List.of(u));
+        List<Message> out = JinferMappings.toMessages(List.of(u));
         Part.Blob blob = (Part.Blob) out.get(0).content().get(1);
         assertTrue(blob.media() instanceof com.qxotic.jinfer.Media.Image);
     }
@@ -190,7 +194,7 @@ class JinferMappingsTest {
                                         .data(silenceWav())
                                         .build())
                         .build();
-        List<com.qxotic.jinfer.chat.Message> out = JinferMappings.toMessages(List.of(u));
+        List<Message> out = JinferMappings.toMessages(List.of(u));
         Part.Blob blob = (Part.Blob) out.get(0).content().get(1);
         assertTrue(blob.media() instanceof com.qxotic.jinfer.Media.Audio);
     }
@@ -226,7 +230,7 @@ class JinferMappingsTest {
 
     @Test
     void multipleToolResponsesShareOneMessage() {
-        List<com.qxotic.jinfer.chat.Message> out =
+        List<Message> out =
                 JinferMappings.toMessages(
                         List.of(
                                 ToolResponseMessage.builder()
@@ -245,7 +249,7 @@ class JinferMappingsTest {
 
     @Test
     void assistantWithOnlyToolCallsHasNoTextPart() {
-        List<com.qxotic.jinfer.chat.Message> out =
+        List<Message> out =
                 JinferMappings.toMessages(
                         List.of(
                                 AssistantMessage.builder()
@@ -286,8 +290,8 @@ class JinferMappingsTest {
 
     @Test
     void positionalIdsIncrementAcrossCalls() {
-        com.qxotic.jinfer.chat.Message reply =
-                new com.qxotic.jinfer.chat.Message(
+        Message reply =
+                new Message(
                         Role.ASSISTANT,
                         List.of(
                                 new Part.ToolCall("", "f", Map.of(), null),
@@ -321,8 +325,8 @@ class JinferMappingsTest {
     @Test
     void thinkingStoredInMetadataAndReplayedAsReasoningPart() {
         // reply side: reasoning lands in AssistantMessage metadata (Ollama/OpenAI convention)
-        com.qxotic.jinfer.chat.Message reply =
-                new com.qxotic.jinfer.chat.Message(
+        Message reply =
+                new Message(
                         Role.ASSISTANT,
                         List.of(
                                 new Part.Reasoning(
@@ -333,7 +337,7 @@ class JinferMappingsTest {
         assertEquals("hmm, let me think", ai.getMetadata().get("thinking"));
 
         // history side: the stored thinking renders back as a Reasoning part on the next turn
-        List<com.qxotic.jinfer.chat.Message> out = JinferMappings.toMessages(List.of(ai));
+        List<Message> out = JinferMappings.toMessages(List.of(ai));
         Part.Reasoning reasoning = (Part.Reasoning) out.get(0).content().get(0);
         assertEquals("hmm, let me think", ((Part.Text) reasoning.content().get(0)).text());
         assertEquals("42", ((Part.Text) out.get(0).content().get(1)).text());
@@ -341,9 +345,7 @@ class JinferMappingsTest {
 
     @Test
     void noThinkingKeyWhenReplyHasNoReasoning() {
-        com.qxotic.jinfer.chat.Message reply =
-                new com.qxotic.jinfer.chat.Message(
-                        Role.ASSISTANT, List.of(new Part.Text("just text", null)));
+        Message reply = new Message(Role.ASSISTANT, List.of(new Part.Text("just text", null)));
         AssistantMessage ai = JinferMappings.toAssistantMessage(reply);
         assertTrue(!ai.getMetadata().containsKey("thinking"));
     }

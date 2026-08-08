@@ -5,6 +5,7 @@ import static com.qxotic.jam.VectorSupport.readFloat16;
 import static java.lang.foreign.ValueLayout.JAVA_BYTE;
 import static java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED;
 
+import com.oracle.svm.shared.AlwaysInline;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteOrder;
 import jdk.incubator.vector.ByteVector;
@@ -281,7 +282,7 @@ public final class Q4Kernel {
         return (float) sum;
     }
 
-    @com.oracle.svm.shared.AlwaysInline(
+    @AlwaysInline(
             "hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compiler)")
     private static FloatVector av(MemorySegment a, long aBase, long elem) {
         return FloatVector.fromMemorySegment(

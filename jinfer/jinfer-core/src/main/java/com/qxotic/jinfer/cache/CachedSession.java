@@ -1,12 +1,15 @@
 package com.qxotic.jinfer.cache;
 
+import com.qxotic.jinfer.Arenas;
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.Model;
 import com.qxotic.jinfer.RuntimeState;
+import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.security.MessageDigest;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -52,8 +55,8 @@ public final class CachedSession<S extends RuntimeState> {
     // which un-does the reply's recurrent influence and lets a thinking-stripped echo (never a
     // strict extension of the generated stream) continue from the boundary instead of
     // re-prefilling the whole conversation.
-    private java.lang.foreign.MemorySegment snapshot; // residue blob, null = no snapshot
-    private java.lang.foreign.Arena snapshotArena;
+    private MemorySegment snapshot; // residue blob, null = no snapshot
+    private Arena snapshotArena;
     private int snapshotLen = -1;
 
     private CachedSession(
@@ -243,7 +246,7 @@ public final class CachedSession<S extends RuntimeState> {
      * from a block-aligned resume (media groups commit and restore whole) - it throws loudly.
      */
     private static List<Batch> tail(List<Batch> group, int skip) {
-        List<Batch> out = new java.util.ArrayList<>();
+        List<Batch> out = new ArrayList<>();
         for (Batch b : group) {
             int n = b.count();
             if (skip >= n) {
@@ -408,8 +411,8 @@ public final class CachedSession<S extends RuntimeState> {
     void snapshotTail(StateCodec<S> codec) {
         dropSnapshot();
         long bytes = codec.blockBytes(0); // an empty span = the residue trailer alone
-        java.lang.foreign.Arena arena = com.qxotic.jinfer.Arenas.newShared();
-        java.lang.foreign.MemorySegment blob = arena.allocate(Math.max(bytes, 1), 8);
+        Arena arena = Arenas.newShared();
+        MemorySegment blob = arena.allocate(Math.max(bytes, 1), 8);
         codec.save(state, state.position(), state.position(), blob);
         this.snapshotArena = arena;
         this.snapshot = blob;

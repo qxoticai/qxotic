@@ -5,6 +5,7 @@ import com.qxotic.jinfer.RuntimeFlags;
 import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.jinfer.chat.LoadedReranker;
 import com.qxotic.jinfer.chat.Models;
+import com.qxotic.jinfer.hub.ModelStore;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.Arena;
@@ -199,7 +200,7 @@ public final class JinferDocumentPostProcessor implements DocumentPostProcessor,
         public JinferDocumentPostProcessor build() {
             modelPath =
                     switch (source) {
-                        case String ref -> com.qxotic.jinfer.hub.ModelStore.resolve(ref);
+                        case String ref -> ModelStore.resolve(ref);
                         case Path path -> path;
                         case null, default ->
                                 throw new IllegalArgumentException(

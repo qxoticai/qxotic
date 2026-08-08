@@ -7,8 +7,10 @@ package com.qxotic.jinfer.models.inflect2;
 import com.qxotic.jinfer.Media;
 import com.qxotic.jinfer.SpeechOptions;
 import com.qxotic.jinfer.media.AudioCodec;
+import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.io.PrintStream;
 import java.lang.foreign.Arena;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -162,7 +164,7 @@ public final class InflectCli {
     private static boolean onPath(String command) {
         String path = System.getenv("PATH");
         if (path == null) return false;
-        for (String directory : path.split(java.io.File.pathSeparator))
+        for (String directory : path.split(File.pathSeparator))
             if (Files.isExecutable(Path.of(directory, command))) return true;
         return false;
     }
@@ -196,7 +198,7 @@ public final class InflectCli {
                 "tensors=%d parameters=%d%n", inflect.tensorCount(), inflect.parameterCount());
     }
 
-    private static void usage(java.io.PrintStream to) {
+    private static void usage(PrintStream to) {
         to.println(
                 """
                 usage: inflect [model.gguf] [options]

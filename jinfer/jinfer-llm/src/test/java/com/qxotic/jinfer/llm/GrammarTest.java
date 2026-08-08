@@ -1,9 +1,13 @@
 package com.qxotic.jinfer.llm;
 
 import com.qxotic.jinfer.*;
+import java.lang.foreign.Arena;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -139,7 +143,7 @@ public final class GrammarTest {
         // sized by the vocab: these are off-heap tensors with NO bounds checks - a too-small
         // scratch silently corrupts (maskLogits writes past the end, reads come back garbage)
         if (scratchTensor == null || scratchTensor.size() < v.size())
-            scratchTensor = F32FloatTensor.allocate(java.lang.foreign.Arena.ofAuto(), v.size());
+            scratchTensor = F32FloatTensor.allocate(Arena.ofAuto(), v.size());
         return scratchTensor;
     }
 
@@ -513,7 +517,7 @@ public final class GrammarTest {
 
     /** Properties maps need declaration order (grammar emits keys in map order). */
     static Map<String, Object> linked(Object... kv) {
-        var m = new java.util.LinkedHashMap<String, Object>();
+        var m = new LinkedHashMap<String, Object>();
         for (int i = 0; i < kv.length; i += 2) m.put((String) kv[i], kv[i + 1]);
         return m;
     }
@@ -678,9 +682,7 @@ public final class GrammarTest {
                 "const null literal",
                 acceptsDoc(Grammar.fromSchema(Map.of("const", Map.of()), v), v, "{}"));
 
-        Grammar.Spec e =
-                Grammar.fromSchema(
-                        Map.of("enum", java.util.Arrays.asList("red", 1, true, null)), v);
+        Grammar.Spec e = Grammar.fromSchema(Map.of("enum", Arrays.asList("red", 1, true, null)), v);
         check(
                 "enum each",
                 acceptsDoc(e, v, "\"red\"")
@@ -1124,7 +1126,7 @@ public final class GrammarTest {
 
         // maskLogits touches ONLY disallowed tokens; allowed logits pass through untouched
         Grammar.Cursor c4 = Grammar.of("root ::= \"a\" | \"b\"", v).cursor();
-        F32FloatTensor logits = F32FloatTensor.allocate(java.lang.foreign.Arena.ofAuto(), v.size());
+        F32FloatTensor logits = F32FloatTensor.allocate(Arena.ofAuto(), v.size());
         for (int i = 0; i < v.size(); i++) logits.setFloat(i, i + 0.5f);
         c4.maskLogits(logits);
         int ta = tidx(v, "a"), tb = tidx(v, "b"), tx = tidx(v, "x");
@@ -1206,7 +1208,7 @@ public final class GrammarTest {
         check("100KB doc linear (" + docMs + "ms)", docMs < 10_000 && jsonDone(c, v));
 
         // a big schema compiles fast (200-property object)
-        var props = new java.util.LinkedHashMap<String, Object>();
+        var props = new LinkedHashMap<String, Object>();
         for (int i = 0; i < 200; i++) props.put("p" + i, Map.of("type", "integer"));
         var big =
                 linked(
@@ -1533,8 +1535,7 @@ public final class GrammarTest {
                             () -> {
                                 // per-thread tensor: the shared scratch is NOT thread-safe
                                 F32FloatTensor logits =
-                                        F32FloatTensor.allocate(
-                                                java.lang.foreign.Arena.ofAuto(), v.size());
+                                        F32FloatTensor.allocate(Arena.ofAuto(), v.size());
                                 try {
                                     for (int i = 0; i < 50; i++) {
                                         Grammar.Cursor c = json.cursor();
@@ -2428,7 +2429,7 @@ public final class GrammarTest {
         s = Grammar.of(Grammar.JSON_GRAMMAR, v);
         check("json gbnf compiles", s.isValid() && allows(s.cursor(), v, "["));
 
-        String many = String.join(" | ", java.util.Collections.nCopies(8, "\"a\""));
+        String many = String.join(" | ", Collections.nCopies(8, "\"a\""));
         s = Grammar.of("root ::= " + many, v);
         check("many-alt compiles", s.isValid() && allows(s.cursor(), v, "a"));
     }

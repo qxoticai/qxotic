@@ -37,8 +37,8 @@ public final class GemvSeqBench {
 
         MemorySegment wseg = Arena.ofAuto().allocate(wbytes, 64);
         Q8_0FloatTensor w = new Q8_0FloatTensor((long) totalRows * dim1, wseg);
-        F32FloatTensor x = F32FloatTensor.allocate(java.lang.foreign.Arena.ofAuto(), dim1);
-        F32FloatTensor out = F32FloatTensor.allocate(java.lang.foreign.Arena.ofAuto(), totalRows);
+        F32FloatTensor x = F32FloatTensor.allocate(Arena.ofAuto(), dim1);
+        F32FloatTensor out = F32FloatTensor.allocate(Arena.ofAuto(), totalRows);
         for (int i = 0; i < dim1; i++) x.setFloat(i, 0.013f * (i % 11));
         int nGemv = totalRows / rowsPerGemv;
 

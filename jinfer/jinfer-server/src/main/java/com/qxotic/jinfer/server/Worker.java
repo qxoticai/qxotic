@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.server;
 
 import com.qxotic.jinfer.*;
+import com.qxotic.jinfer.telemetry.Telemetry;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
@@ -60,7 +61,7 @@ final class Worker {
                 () -> {
                     // published on the worker thread, which is also the thread the generation and
                     // its telemetry event run on - so the wait lands on the right request
-                    com.qxotic.jinfer.telemetry.Telemetry.queueWait(System.nanoTime() - queuedAt);
+                    Telemetry.queueWait(System.nanoTime() - queuedAt);
                     try {
                         job.run();
                     } finally {

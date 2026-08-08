@@ -2,14 +2,17 @@ package com.qxotic.jinfer;
 
 import com.oracle.svm.shared.AlwaysInline;
 import com.qxotic.format.gguf.GGMLType;
+import com.sun.management.HotSpotDiagnosticMXBean;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.lang.management.ManagementFactory;
 import java.lang.reflect.Field;
 import java.util.Arrays;
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.VectorShape;
 import jdk.incubator.vector.VectorSpecies;
+import sun.misc.Unsafe;
 
 /**
  * The read/write/dot/gemm seam every GGML quantization implements, and the only tensor type a port
@@ -88,13 +91,13 @@ public abstract class FloatTensor {
         }
     }
 
-    static final sun.misc.Unsafe UNSAFE;
+    static final Unsafe UNSAFE;
 
     static {
         try {
-            Field f = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
+            Field f = Unsafe.class.getDeclaredField("theUnsafe");
             f.setAccessible(true);
-            UNSAFE = (sun.misc.Unsafe) f.get(null);
+            UNSAFE = (Unsafe) f.get(null);
         } catch (NoSuchFieldException | IllegalAccessException e) {
             throw new RuntimeException(e);
         }
@@ -122,8 +125,7 @@ public abstract class FloatTensor {
         }
         try {
             return Boolean.parseBoolean(
-                    java.lang.management.ManagementFactory.getPlatformMXBean(
-                                    com.sun.management.HotSpotDiagnosticMXBean.class)
+                    ManagementFactory.getPlatformMXBean(HotSpotDiagnosticMXBean.class)
                             .getVMOption("UseJVMCICompiler")
                             .getValue());
         } catch (Throwable t) {
@@ -264,11 +266,7 @@ public abstract class FloatTensor {
      * at {@code dstByteOffset}; returns the bytes copied. Flat layouts (F32/F16) override with one
      * segment copy; block-quantized layouts don't support it.
      */
-    public long copyRawTo(
-            long elemOffset,
-            java.lang.foreign.MemorySegment dst,
-            long dstByteOffset,
-            long elemCount) {
+    public long copyRawTo(long elemOffset, MemorySegment dst, long dstByteOffset, long elemCount) {
         throw new UnsupportedOperationException("copyRawTo: " + getClass().getSimpleName());
     }
 
@@ -277,10 +275,7 @@ public abstract class FloatTensor {
      * returns the bytes consumed.
      */
     public long copyRawFrom(
-            java.lang.foreign.MemorySegment src,
-            long srcByteOffset,
-            long elemOffset,
-            long elemCount) {
+            MemorySegment src, long srcByteOffset, long elemOffset, long elemCount) {
         throw new UnsupportedOperationException("copyRawFrom: " + getClass().getSimpleName());
     }
 
@@ -487,7 +482,7 @@ public abstract class FloatTensor {
      * overwritten) - the top-k filter's threshold.
      */
     public float kthLargestThreshold(long thisOffset, int size, float[] minHeap) {
-        java.util.Arrays.fill(minHeap, Float.NEGATIVE_INFINITY);
+        Arrays.fill(minHeap, Float.NEGATIVE_INFINITY);
         for (int i = 0; i < size; i++) {
             float f = getFloat(thisOffset + i);
             if (f > minHeap[0]) heapReplaceMin(minHeap, f);

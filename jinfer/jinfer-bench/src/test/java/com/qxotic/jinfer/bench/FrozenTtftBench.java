@@ -11,10 +11,17 @@ import com.qxotic.jinfer.cache.CacheStore;
 import com.qxotic.jinfer.cache.CachedSession;
 import com.qxotic.jinfer.cache.FrozenBlocks;
 import com.qxotic.jinfer.chat.LoadedModel;
+import com.qxotic.jinfer.models.gemma4.Gemma4;
+import com.qxotic.jinfer.models.gptoss.GptOss;
+import com.qxotic.jinfer.models.lfm2.Lfm2;
+import com.qxotic.jinfer.models.llama.Granite;
+import com.qxotic.jinfer.models.llama.Llama;
 import com.qxotic.jinfer.testkit.ModelFixture;
 import com.qxotic.toknroll.IntSequence;
+import java.lang.foreign.Arena;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -31,38 +38,23 @@ public final class FrozenTtftBench {
         bench(
                 "LFM2.5-8B-A1B-Q8_0",
                 ModelFixture.LFM25_8B_Q8.path(),
-                p ->
-                        com.qxotic.jinfer.models.lfm2.Lfm2.loadModel(
-                                        p, java.lang.foreign.Arena.ofAuto())
-                                .loaded());
+                p -> Lfm2.loadModel(p, Arena.ofAuto()).loaded());
         bench(
                 "gemma-4-E2B-it-Q8_0",
                 ModelFixture.GEMMA4_E2B_Q8.path(),
-                p ->
-                        com.qxotic.jinfer.models.gemma4.Gemma4.loadModel(
-                                        p, java.lang.foreign.Arena.ofAuto())
-                                .loaded());
+                p -> Gemma4.loadModel(p, Arena.ofAuto()).loaded());
         bench(
                 "gpt-oss-20b-Q8_0",
                 ModelFixture.GPTOSS_20B_Q8.path(),
-                p ->
-                        com.qxotic.jinfer.models.gptoss.GptOss.loadModel(
-                                        p, java.lang.foreign.Arena.ofAuto())
-                                .loaded());
+                p -> GptOss.loadModel(p, Arena.ofAuto()).loaded());
         bench(
                 "Llama-3.2-1B-Instruct-Q8_0",
                 ModelFixture.LLAMA32_1B_Q8.path(),
-                p ->
-                        com.qxotic.jinfer.models.llama.Llama.loadModel(
-                                        p, java.lang.foreign.Arena.ofAuto())
-                                .loaded());
+                p -> Llama.loadModel(p, Arena.ofAuto()).loaded());
         bench(
                 "granite-4.1-3b-Q8_0",
                 ModelFixture.GRANITE_41_3B_Q8.path(),
-                p ->
-                        com.qxotic.jinfer.models.llama.Granite.loadModel(
-                                        p, java.lang.foreign.Arena.ofAuto())
-                                .loaded());
+                p -> Granite.loadModel(p, Arena.ofAuto()).loaded());
     }
 
     interface Loader {
@@ -114,7 +106,7 @@ public final class FrozenTtftBench {
         BlockTree<S> build = new BlockTree<>(m.codec(), CacheStore.inMemory(), BUDGET, seed);
         CachedSession<S> compile =
                 CachedSession.start(m.model(), build, m.model().newState(CTX, 512));
-        compile.ingest(List.of(Batch.prefill(java.util.Arrays.copyOf(prompt, prompt.length - 1))));
+        compile.ingest(List.of(Batch.prefill(Arrays.copyOf(prompt, prompt.length - 1))));
         compile.ingest(List.of(Batch.prefill(new int[] {prompt[prompt.length - 1]})));
         build.freeze(artifact);
         double freezeMs = (System.nanoTime() - tFreeze) / 1e6;
@@ -132,7 +124,7 @@ public final class FrozenTtftBench {
         double resumeMs = (System.nanoTime() - t2) / 1e6;
         int restored = w.position();
         long t3 = System.nanoTime();
-        int[] tail = java.util.Arrays.copyOfRange(prompt, restored, prompt.length);
+        int[] tail = Arrays.copyOfRange(prompt, restored, prompt.length);
         w.ingest(List.of(Batch.prefill(tail)));
         int frozenTok = m.model().logits(state).argmax();
         double tailMs = (System.nanoTime() - t3) / 1e6;

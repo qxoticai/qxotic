@@ -11,11 +11,13 @@ import com.qxotic.jinfer.jinja.JinjaRenderer;
 import com.qxotic.jinfer.kernels.ModelLoader;
 import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.jinfer.llm.Tokenizers;
+import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -94,11 +96,11 @@ final class OracleSupport {
     }
 
     long count(List<Integer> ids, int id) {
-        return java.util.Collections.frequency(ids, id);
+        return Collections.frequency(ids, id);
     }
 
     String decode(List<Integer> ids) {
-        return tokenizer.decode(com.qxotic.toknroll.IntSequence.wrap(ids)).replace("\n", "\\n");
+        return tokenizer.decode(IntSequence.wrap(ids)).replace("\n", "\\n");
     }
 
     private static List<Integer> window(List<Integer> ids, int at) {

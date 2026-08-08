@@ -28,6 +28,7 @@
 // same 130 tokens. Backs Gemma4's MultiModal Embedder<Media.Image> when the mmproj is gemma4uv.
 package com.qxotic.jinfer.models.gemma4;
 
+import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.Embedder;
 import com.qxotic.jinfer.F32FloatTensor;
 import com.qxotic.jinfer.FloatTensor;
@@ -231,10 +232,7 @@ public final class Gemma4VisionUnified implements Embedder<Media.Image>, VisionB
      * is a label for messages here - nothing is read from it.
      */
     public static Gemma4VisionUnified loadModel(
-            Path mmprojPath,
-            com.qxotic.format.gguf.GGUF gguf,
-            Map<String, GGMLTensorEntry> t,
-            Arena arena)
+            Path mmprojPath, GGUF gguf, Map<String, GGMLTensorEntry> t, Arena arena)
             throws IOException {
         {
             int basePatch = gguf.getValueOrDefault(int.class, "clip.vision.patch_size", 16);

@@ -28,6 +28,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.lang.foreign.Arena;
 
 public class GemmaVisionMulti {
 
@@ -50,7 +51,7 @@ public class GemmaVisionMulti {
             end -= 2;
         }
 
-        Gemma4 model = Gemma4.loadModel(textGguf, mmproj, java.lang.foreign.Arena.ofAuto());   // more context: many image tokens
+        Gemma4 model = Gemma4.loadModel(textGguf, mmproj, Arena.ofAuto());   // more context: many image tokens
         TurnTemplate template = model.turnTemplate().orElseThrow();
         Set<Integer> stops = model.stopTokens();
 

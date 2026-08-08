@@ -9,6 +9,7 @@ import com.qxotic.jinfer.testkit.ModelFixture;
 import io.micrometer.observation.tck.TestObservationRegistry;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -101,7 +102,7 @@ class JinferStarterIT {
     @Test
     void contextShutdownClosesTheModel() {
         Assumptions.assumeTrue(Files.exists(MODEL), "model not found: " + MODEL);
-        var bean = new java.util.concurrent.atomic.AtomicReference<JinferChatModel>();
+        var bean = new AtomicReference<JinferChatModel>();
         new ApplicationContextRunner()
                 .withConfiguration(AutoConfigurations.of(JinferChatAutoConfiguration.class))
                 .withPropertyValues(

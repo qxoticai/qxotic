@@ -2,6 +2,7 @@ package com.qxotic.jinfer.server;
 
 import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.llm.Generator;
+import com.qxotic.toknroll.IntSequence;
 import java.util.List;
 
 /**
@@ -31,7 +32,7 @@ record Reply(
 
     // Token-level delegates, so the wire layer reads one object.
 
-    com.qxotic.toknroll.IntSequence tokens() {
+    IntSequence tokens() {
         return result.tokens();
     }
 

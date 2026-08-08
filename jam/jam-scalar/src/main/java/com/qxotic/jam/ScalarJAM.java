@@ -6,6 +6,7 @@ import static java.lang.foreign.ValueLayout.JAVA_SHORT_UNALIGNED;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.ref.Reference;
+import java.util.stream.IntStream;
 
 /**
  * Pure-Java reference {@link JAM}: a {@code dot()}-based matmul that decodes the quantized weight
@@ -45,7 +46,7 @@ public final class ScalarJAM implements JAM {
         if (t == null || !decodable(t)) return EUNSUPPORTED;
 
         // C[token j][feature i] = Σ_l W[i][l] · A[j][l], written token-major: r[j·ldr + i].
-        java.util.stream.IntStream.range(0, n * m)
+        IntStream.range(0, n * m)
                 .parallel()
                 .forEach(
                         idx -> {

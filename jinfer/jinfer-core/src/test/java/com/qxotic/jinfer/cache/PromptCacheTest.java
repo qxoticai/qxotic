@@ -11,6 +11,7 @@ import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.Config;
 import com.qxotic.jinfer.FloatTensor;
 import com.qxotic.jinfer.LanguageModel;
+import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -48,7 +49,7 @@ public final class PromptCacheTest {
         final List<Integer> ingested = new ArrayList<>();
 
         FakeState() {
-            super(java.lang.foreign.Arena.ofAuto());
+            super(Arena.ofAuto());
         }
 
         @Override
@@ -103,7 +104,7 @@ public final class PromptCacheTest {
         }
 
         @Override
-        public FakeState newState(int ctx, int batch, java.lang.foreign.Arena arena) {
+        public FakeState newState(int ctx, int batch, Arena arena) {
             return new FakeState();
         }
 

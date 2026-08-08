@@ -11,6 +11,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
+import sun.misc.Unsafe;
 
 final class ChatEngineLifecycleTest {
 
@@ -41,9 +42,9 @@ final class ChatEngineLifecycleTest {
     }
 
     private static ChatEngine emptyEngine() throws Exception {
-        Field f = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
+        Field f = Unsafe.class.getDeclaredField("theUnsafe");
         f.setAccessible(true);
-        sun.misc.Unsafe unsafe = (sun.misc.Unsafe) f.get(null);
+        Unsafe unsafe = (Unsafe) f.get(null);
         ChatEngine engine = (ChatEngine) unsafe.allocateInstance(ChatEngine.class);
         set(engine, "streamDriver", newDriver());
         set(engine, "streamThread", new AtomicReference<Thread>());

@@ -6,6 +6,8 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.concurrent.TimeUnit;
 
 /**
  * The {@link VideoCodec} primitives via ffmpeg/ffprobe on PATH: {@code totalDuration} and {@code
@@ -67,7 +69,7 @@ public final class FfmpegVideoCodec implements VideoCodec {
         for (int k = 0; k < n; k++) {
             double seconds = timestamps[k].toNanos() / 1e9;
             cmd.add("-ss");
-            cmd.add(String.format(java.util.Locale.ROOT, "%.3f", seconds));
+            cmd.add(String.format(Locale.ROOT, "%.3f", seconds));
             cmd.add("-i");
             cmd.add(video.toString());
             fc.append('[').append(k).append(":v]trim=end_frame=1[f").append(k).append("];");
@@ -125,7 +127,7 @@ public final class FfmpegVideoCodec implements VideoCodec {
         try {
             Process p = pb.start();
             String out = new String(p.getInputStream().readAllBytes()).strip();
-            if (!p.waitFor(30, java.util.concurrent.TimeUnit.SECONDS) || p.exitValue() != 0) {
+            if (!p.waitFor(30, TimeUnit.SECONDS) || p.exitValue() != 0) {
                 throw new IOException("ffprobe failed for " + video + ": " + out);
             }
             return out;

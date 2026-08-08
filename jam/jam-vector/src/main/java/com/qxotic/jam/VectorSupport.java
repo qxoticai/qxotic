@@ -8,6 +8,7 @@ import static java.lang.foreign.ValueLayout.JAVA_SHORT_UNALIGNED;
 
 import com.oracle.svm.shared.AlwaysInline;
 import java.lang.foreign.MemorySegment;
+import java.nio.ByteOrder;
 import java.util.Locale;
 import java.util.function.IntConsumer;
 import java.util.stream.IntStream;
@@ -74,7 +75,7 @@ final class VectorSupport {
             ((FloatVector) q.castShape(F_SPECIES, p))
                     .fma(scale, neg)
                     .intoMemorySegment(
-                            dst, offBytes + (long) p * F_LEN * 4, java.nio.ByteOrder.LITTLE_ENDIAN);
+                            dst, offBytes + (long) p * F_LEN * 4, ByteOrder.LITTLE_ENDIAN);
     }
 
     /**
@@ -86,7 +87,7 @@ final class VectorSupport {
             ((FloatVector) q.castShape(F_SPECIES, p))
                     .mul(scale)
                     .intoMemorySegment(
-                            dst, offBytes + (long) p * F_LEN * 4, java.nio.ByteOrder.LITTLE_ENDIAN);
+                            dst, offBytes + (long) p * F_LEN * 4, ByteOrder.LITTLE_ENDIAN);
     }
 
     /**

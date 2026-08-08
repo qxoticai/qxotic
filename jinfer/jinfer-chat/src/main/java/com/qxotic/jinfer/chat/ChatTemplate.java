@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.chat;
 
 import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.Media;
 import com.qxotic.toknroll.IntSequence;
 import java.util.List;
 import java.util.Optional;
@@ -39,7 +40,7 @@ public interface ChatTemplate {
      * (image tier, audio frames), never an encoder run. Templates without media keep the default
      * throw; see {@code Embedder#positions}.
      */
-    default int mediaPositions(com.qxotic.jinfer.Media media) {
+    default int mediaPositions(Media media) {
         throw new UnsupportedOperationException("this model does not plan media positions");
     }
 

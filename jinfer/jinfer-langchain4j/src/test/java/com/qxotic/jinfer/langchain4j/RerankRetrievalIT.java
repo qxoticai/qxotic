@@ -24,6 +24,7 @@ import dev.langchain4j.store.embedding.inmemory.InMemoryEmbeddingStore;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
@@ -277,7 +278,7 @@ class RerankRetrievalIT {
     }
 
     private static int argmax(List<Double> scores) {
-        return java.util.stream.IntStream.range(0, scores.size())
+        return IntStream.range(0, scores.size())
                 .boxed()
                 .max(Comparator.comparingDouble(scores::get))
                 .orElseThrow();

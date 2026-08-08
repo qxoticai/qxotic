@@ -3,6 +3,7 @@ package com.qxotic.jinfer.langchain4j;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.qxotic.jinfer.testkit.ModelFixture;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import jdk.jfr.Recording;
 import org.junit.jupiter.api.Test;
@@ -17,7 +18,7 @@ class PromptCacheReuseTest {
     @Test
     void aSecondTurnReusesTheFirst() throws Exception {
         Path gguf = ModelFixture.LLAMA32_1B_Q8.require();
-        Path jfr = java.nio.file.Files.createTempFile("cacheproof", ".jfr");
+        Path jfr = Files.createTempFile("cacheproof", ".jfr");
         try (var m = JinferChatModel.builder().modelPath(gguf).maxOutputTokens(8).build()) {
             try (Recording r = new Recording()) {
                 r.enable("jinfer.Inference");

@@ -1,7 +1,9 @@
 package com.qxotic.jinfer.models.gemma4;
 
+import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.FloatTensor;
 import com.qxotic.jinfer.llm.SpecialTokens;
+import com.qxotic.toknroll.IntSequence;
 import java.lang.foreign.Arena;
 import java.nio.file.Path;
 import java.util.Arrays;
@@ -41,11 +43,11 @@ public final class SeqBisect {
             int[] toks = Arrays.copyOf(filler, seqLen);
 
             Gemma4.State sb = model.newState(256, Math.max(16, seqLen));
-            model.ingest(sb, com.qxotic.jinfer.Batch.prefill(toks));
+            model.ingest(sb, Batch.prefill(toks));
             float[] batched = snapshot(model.logits(sb), vocab);
 
             Gemma4.State ss = model.newState(256, 16);
-            for (int t : toks) model.ingest(ss, com.qxotic.jinfer.Batch.step(t));
+            for (int t : toks) model.ingest(ss, Batch.step(t));
             float[] step = snapshot(model.logits(ss), vocab);
 
             double maxAbs = 0;
@@ -72,7 +74,7 @@ public final class SeqBisect {
 
     private static int[] filler(Gemma4 model, int n) {
         StringBuilder sb = new StringBuilder();
-        com.qxotic.toknroll.IntSequence all;
+        IntSequence all;
         do {
             sb.append("The quick brown fox jumps over the lazy dog. ");
             all = SpecialTokens.encode(model.tokenizer(), sb.toString());

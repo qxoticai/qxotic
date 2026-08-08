@@ -10,10 +10,12 @@ import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.FloatTensor;
 import com.qxotic.jinfer.llm.*;
 import com.qxotic.jinfer.testkit.ModelFixture;
+import com.qxotic.toknroll.Tokenizer;
 import java.lang.foreign.Arena;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
@@ -29,7 +31,7 @@ public final class Gemma4MtpParityTest {
     @Tag("integration")
     void run() throws Exception {
         Assumptions.assumeTrue(
-                java.nio.file.Files.exists(ModelFixture.GEMMA4_E2B_Q8.path()),
+                Files.exists(ModelFixture.GEMMA4_E2B_Q8.path()),
                 "model not found:" + " " + ModelFixture.GEMMA4_E2B_Q8.path());
         main();
     }
@@ -60,7 +62,7 @@ public final class Gemma4MtpParityTest {
         ids.add(bos);
         ids.addAll(tk.encode("The capital of France is").toList());
         int[] prompt = ids.stream().mapToInt(Integer::intValue).toArray();
-        System.out.println("prompt ids (with bos): " + java.util.Arrays.toString(prompt));
+        System.out.println("prompt ids (with bos): " + Arrays.toString(prompt));
         Gemma4.State s = backbone.newState(4096, Math.max(16, prompt.length));
         backbone.ingest(s, Batch.prefill(prompt));
 
@@ -85,12 +87,12 @@ public final class Gemma4MtpParityTest {
                     tk.decode(new int[] {tok}).replace("\n", "\\n"),
                     top[0],
                     tk.decode(new int[] {top[0]}).replace("\n", "\\n"),
-                    java.util.Arrays.toString(top));
+                    Arrays.toString(top));
             if (top[0] == ANCHOR_TOP[0]) { // the "." step the anchor captured
                 int m = prefixMatch(top, ANCHOR_TOP);
                 System.out.println("  -> anchor step reached. leading match " + m + "/10");
-                System.out.println("     draft  " + java.util.Arrays.toString(top));
-                System.out.println("     anchor " + java.util.Arrays.toString(ANCHOR_TOP));
+                System.out.println("     draft  " + Arrays.toString(top));
+                System.out.println("     anchor " + Arrays.toString(ANCHOR_TOP));
                 System.out.println("     pieces " + pieces(tk, top));
                 matched = m >= 2; // top-1/top-2 identical = draft verified; the p~1e-4 tail is
                 // Q8_0 cross-impl noise
@@ -126,7 +128,7 @@ public final class Gemma4MtpParityTest {
     static int[] topK(FloatTensor t, int n, int k) {
         int[] idx = new int[k];
         float[] val = new float[k];
-        java.util.Arrays.fill(val, Float.NEGATIVE_INFINITY);
+        Arrays.fill(val, Float.NEGATIVE_INFINITY);
         for (int i = 0; i < n; i++) {
             float v = t.getFloat(i);
             if (v > val[k - 1]) {
@@ -149,7 +151,7 @@ public final class Gemma4MtpParityTest {
         return m;
     }
 
-    static String pieces(com.qxotic.toknroll.Tokenizer tk, int[] ids) {
+    static String pieces(Tokenizer tk, int[] ids) {
         var sb = new StringBuilder();
         for (int id : ids) sb.append('|').append(tk.decode(new int[] {id}).replace("\n", "\\n"));
         return sb.append('|').toString();

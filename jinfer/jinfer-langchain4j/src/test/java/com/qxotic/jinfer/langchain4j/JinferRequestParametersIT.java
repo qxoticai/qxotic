@@ -5,13 +5,19 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.chat.JsonCodec;
 import com.qxotic.jinfer.testkit.ModelFixture;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.exception.UnsupportedFeatureException;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.request.ResponseFormat;
+import dev.langchain4j.model.chat.response.ChatResponse;
+import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -197,9 +203,9 @@ class JinferRequestParametersIT {
                                         .build())
                         .aiMessage()
                         .text();
-        Object parsed = com.qxotic.jinfer.chat.JsonCodec.parse(text); // grammar guarantees JSON
-        assertTrue(parsed instanceof java.util.Map<?, ?>, text);
-        java.util.Map<?, ?> map = (java.util.Map<?, ?>) parsed;
+        Object parsed = JsonCodec.parse(text); // grammar guarantees JSON
+        assertTrue(parsed instanceof Map<?, ?>, text);
+        Map<?, ?> map = (Map<?, ?>) parsed;
         assertTrue(map.get("label") instanceof String, "label: " + text);
         assertTrue(map.get("confidence") instanceof Number, "confidence: " + text);
         assertTrue(
@@ -253,9 +259,7 @@ class JinferRequestParametersIT {
     @Test
     void streamingHonorsTheGrammar() throws Exception {
         var streaming = model.streaming();
-        var done =
-                new java.util.concurrent.CompletableFuture<
-                        dev.langchain4j.model.chat.response.ChatResponse>();
+        var done = new CompletableFuture<ChatResponse>();
         StringBuilder partials = new StringBuilder();
         streaming.chat(
                 ChatRequest.builder()
@@ -265,15 +269,14 @@ class JinferRequestParametersIT {
                                         .grammar("root ::= \"yes\" | \"no\"")
                                         .build())
                         .build(),
-                new dev.langchain4j.model.chat.response.StreamingChatResponseHandler() {
+                new StreamingChatResponseHandler() {
                     @Override
                     public void onPartialResponse(String partialResponse) {
                         partials.append(partialResponse);
                     }
 
                     @Override
-                    public void onCompleteResponse(
-                            dev.langchain4j.model.chat.response.ChatResponse response) {
+                    public void onCompleteResponse(ChatResponse response) {
                         done.complete(response);
                     }
 
@@ -282,7 +285,7 @@ class JinferRequestParametersIT {
                         done.completeExceptionally(error);
                     }
                 });
-        var response = done.get(60, java.util.concurrent.TimeUnit.SECONDS);
+        var response = done.get(60, TimeUnit.SECONDS);
         String text = response.aiMessage().text();
         assertTrue(text.equals("yes") || text.equals("no"), "streamed: '" + text + "'");
         assertEquals(text, partials.toString(), "partials must concatenate to the final text");
@@ -322,19 +325,16 @@ class JinferRequestParametersIT {
     }
 
     private String streamText(ChatRequest request) throws Exception {
-        var done =
-                new java.util.concurrent.CompletableFuture<
-                        dev.langchain4j.model.chat.response.ChatResponse>();
+        var done = new CompletableFuture<ChatResponse>();
         model.streaming()
                 .chat(
                         request,
-                        new dev.langchain4j.model.chat.response.StreamingChatResponseHandler() {
+                        new StreamingChatResponseHandler() {
                             @Override
                             public void onPartialResponse(String partialResponse) {}
 
                             @Override
-                            public void onCompleteResponse(
-                                    dev.langchain4j.model.chat.response.ChatResponse response) {
+                            public void onCompleteResponse(ChatResponse response) {
                                 done.complete(response);
                             }
 
@@ -343,7 +343,7 @@ class JinferRequestParametersIT {
                                 done.completeExceptionally(error);
                             }
                         });
-        return done.get(60, java.util.concurrent.TimeUnit.SECONDS).aiMessage().text();
+        return done.get(60, TimeUnit.SECONDS).aiMessage().text();
     }
 
     private static ChatRequest creative(long seed) {

@@ -6,6 +6,7 @@ import com.qxotic.jinfer.llm.*;
 import com.qxotic.jinfer.testkit.CacheScenario;
 import com.qxotic.jinfer.testkit.Harness;
 import com.qxotic.jinfer.testkit.ModelFixture;
+import java.lang.foreign.Arena;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -24,7 +25,7 @@ public final class Lfm2CacheRun {
 
     private static void main(String[] args) throws Exception {
         Path path = Path.of(args.length > 0 ? args[0] : ModelFixture.LFM25_8B_Q8.path().toString());
-        Lfm2 m = Lfm2.loadModel(path, java.lang.foreign.Arena.ofAuto());
+        Lfm2 m = Lfm2.loadModel(path, Arena.ofAuto());
         Harness<Lfm2.State> h =
                 new Harness<>(
                         m.loaded(),

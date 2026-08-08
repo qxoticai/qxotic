@@ -7,10 +7,12 @@
 package com.qxotic.jinfer.models.gemma4;
 
 import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.F32FloatTensor;
 import com.qxotic.jinfer.Media;
 import com.qxotic.jinfer.cache.BlockTree;
 import com.qxotic.jinfer.cache.CacheStore;
 import com.qxotic.jinfer.cache.CachedSession;
+import com.qxotic.jinfer.cache.FrozenBlocks;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.cache.StateCodec;
 import com.qxotic.jinfer.chat.Message;
@@ -18,8 +20,10 @@ import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.testkit.ModelFixture;
+import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -44,7 +48,7 @@ public final class Gemma4MultimodalCacheRun {
     static byte[] seed;
 
     /** A serve-only tree grafted over the artifact (budget 0: restores, never keeps writes). */
-    static BlockTree<Gemma4.State> graft(com.qxotic.jinfer.cache.FrozenBlocks fz) {
+    static BlockTree<Gemma4.State> graft(FrozenBlocks fz) {
         return new BlockTree<>(codec, CacheStore.inMemory(), 0, seed, fz);
     }
 
@@ -52,7 +56,7 @@ public final class Gemma4MultimodalCacheRun {
     @Tag("integration")
     void run() throws Exception {
         Assumptions.assumeTrue(
-                java.nio.file.Files.exists(ModelFixture.GEMMA4_E2B_Q8.path()),
+                Files.exists(ModelFixture.GEMMA4_E2B_Q8.path()),
                 "model not found:" + " " + ModelFixture.GEMMA4_E2B_Q8.path());
         main(testArgs());
     }
@@ -247,11 +251,10 @@ public final class Gemma4MultimodalCacheRun {
         // images), reopen from disk, and serve the catalog - image KV blocks travel as opaque
         // frozen blobs, content-hash fingerprints and all --
         try {
-            java.nio.file.Path artifact = java.nio.file.Files.createTempFile("mm-frozen", ".jkv");
+            Path artifact = Files.createTempFile("mm-frozen", ".jkv");
             artifact.toFile().deleteOnExit();
             cache.freeze(artifact);
-            com.qxotic.jinfer.cache.FrozenBlocks fz =
-                    com.qxotic.jinfer.cache.FrozenBlocks.open(artifact, seed);
+            FrozenBlocks fz = FrozenBlocks.open(artifact, seed);
             System.out.println("      frozen catalog: " + fz);
 
             // 1. the first image's turn serves fully from disk, and greedy decode from the
@@ -296,7 +299,7 @@ public final class Gemma4MultimodalCacheRun {
                             + "/"
                             + all
                             + ")");
-        } catch (java.io.IOException ioe) {
+        } catch (IOException ioe) {
             throw new RuntimeException(ioe);
         }
     }
@@ -358,9 +361,7 @@ public final class Gemma4MultimodalCacheRun {
         for (Batch b : batches) {
             if (!done && b.input() instanceof Batch.Input.Embeddings em) {
                 long size = em.rows().size();
-                com.qxotic.jinfer.F32FloatTensor copy =
-                        com.qxotic.jinfer.F32FloatTensor.allocate(
-                                java.lang.foreign.Arena.ofAuto(), (int) size);
+                F32FloatTensor copy = F32FloatTensor.allocate(Arena.ofAuto(), (int) size);
                 for (long i = 0; i < size; i++) copy.setFloat(i, em.rows().getFloat(i));
                 long mid = size / 2;
                 copy.setFloat(mid, copy.getFloat(mid) + 1f);

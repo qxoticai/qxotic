@@ -6,15 +6,21 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.qxotic.jinfer.Media;
 import com.qxotic.jinfer.MultiModal;
 import com.qxotic.jinfer.testkit.ModelFixture;
+import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.AudioContent;
 import dev.langchain4j.data.message.ImageContent;
 import dev.langchain4j.data.message.TextContent;
+import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.request.ChatRequest;
+import dev.langchain4j.model.chat.request.ToolChoice;
+import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import java.awt.Color;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Base64;
@@ -168,11 +174,11 @@ class Gemma4MediaIT {
     @Test
     void toolRoundTrip() {
         var weather =
-                dev.langchain4j.agent.tool.ToolSpecification.builder()
+                ToolSpecification.builder()
                         .name("get_weather")
                         .description("Get current weather for a city")
                         .parameters(
-                                dev.langchain4j.model.chat.request.json.JsonObjectSchema.builder()
+                                JsonObjectSchema.builder()
                                         .addStringProperty("city")
                                         .required("city")
                                         .build())
@@ -200,8 +206,8 @@ class Gemma4MediaIT {
                                                 "What is the weather in Paris? Use the"
                                                         + " get_weather tool."),
                                         first.aiMessage(),
-                                        dev.langchain4j.data.message.ToolExecutionResultMessage
-                                                .from(call.id(), call.name(), "18C, sunny"))
+                                        ToolExecutionResultMessage.from(
+                                                call.id(), call.name(), "18C, sunny"))
                                 .toolSpecifications(weather)
                                 .build());
         assertNotNull(second.aiMessage().text());
@@ -211,20 +217,18 @@ class Gemma4MediaIT {
         // grammar guarantees the called NAME is an offered tool - a statement, not even a
         // question, with a decoy tool in the mix
         var decoy =
-                dev.langchain4j.agent.tool.ToolSpecification.builder()
+                ToolSpecification.builder()
                         .name("get_time")
                         .description("Get the current time for a timezone")
                         .parameters(
-                                dev.langchain4j.model.chat.request.json.JsonObjectSchema.builder()
-                                        .addStringProperty("timezone")
-                                        .build())
+                                JsonObjectSchema.builder().addStringProperty("timezone").build())
                         .build();
         ChatResponse forced =
                 model.chat(
                         ChatRequest.builder()
                                 .messages(UserMessage.from("I live in Munich."))
                                 .toolSpecifications(weather, decoy)
-                                .toolChoice(dev.langchain4j.model.chat.request.ToolChoice.REQUIRED)
+                                .toolChoice(ToolChoice.REQUIRED)
                                 .build());
         assertTrue(
                 forced.aiMessage().hasToolExecutionRequests(),
@@ -236,7 +240,7 @@ class Gemma4MediaIT {
     }
 
     /** A solid 224x224 PNG as base64 (the shared image fixture). */
-    private static String solidPngB64(Color color) throws java.io.IOException {
+    private static String solidPngB64(Color color) throws IOException {
         var img = new BufferedImage(224, 224, BufferedImage.TYPE_INT_RGB);
         var g = img.createGraphics();
         g.setColor(color);
@@ -263,7 +267,7 @@ class Gemma4MediaIT {
         }
         var out = new ByteArrayOutputStream();
         try {
-            var data = new java.io.DataOutputStream(out);
+            var data = new DataOutputStream(out);
             data.writeBytes("RIFF");
             data.writeInt(Integer.reverseBytes(36 + pcm.length));
             data.writeBytes("WAVEfmt ");
@@ -277,7 +281,7 @@ class Gemma4MediaIT {
             data.writeBytes("data");
             data.writeInt(Integer.reverseBytes(pcm.length));
             data.write(pcm);
-        } catch (java.io.IOException impossible) {
+        } catch (IOException impossible) {
             throw new AssertionError(impossible);
         }
         return out.toByteArray();

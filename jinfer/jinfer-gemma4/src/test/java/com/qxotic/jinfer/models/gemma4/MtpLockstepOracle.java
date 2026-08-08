@@ -37,7 +37,7 @@ public final class MtpLockstepOracle {
     @Tag("driver")
     void run() throws Exception {
         Assumptions.assumeTrue(
-                java.nio.file.Files.exists(ModelFixture.GEMMA4_E2B_Q8.path()),
+                Files.exists(ModelFixture.GEMMA4_E2B_Q8.path()),
                 "model not found:" + " " + ModelFixture.GEMMA4_E2B_Q8.path());
         main(testArgs());
     }

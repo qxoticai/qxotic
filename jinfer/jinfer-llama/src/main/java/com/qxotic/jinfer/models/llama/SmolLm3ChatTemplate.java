@@ -17,6 +17,7 @@ import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
@@ -121,7 +122,7 @@ public final class SmolLm3ChatTemplate implements ChatTemplate {
         // cache-boundary law (ChatTemplate): preamble, turns, scaffold-last are separate
         // batches. Every boundary sits at an <|im_start|> special, so the split is token-exact
         // with the whole render.
-        List<Batch> out = new java.util.ArrayList<>();
+        List<Batch> out = new ArrayList<>();
         TokenRuns runs = proto.fresh();
         runs.id(imStart).text("system\n");
         if (sysContent != null && sysContent.contains("/system_override")) {

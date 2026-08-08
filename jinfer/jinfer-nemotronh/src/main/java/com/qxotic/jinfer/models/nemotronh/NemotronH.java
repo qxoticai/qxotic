@@ -29,7 +29,11 @@ import static com.qxotic.jinfer.Norms.rmsnorm;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.*;
+import com.qxotic.jinfer.cache.PromptCache;
+import com.qxotic.jinfer.cache.StateCodec;
+import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.LoadedModel;
+import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
 import com.qxotic.toknroll.Tokenizer;
@@ -38,7 +42,9 @@ import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.Arrays;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 public final class NemotronH
@@ -77,7 +83,7 @@ public final class NemotronH
         return tokenizer;
     }
 
-    private com.qxotic.jinfer.chat.TurnTemplate turnTemplate; // memoized: stateless, model-lifetime
+    private TurnTemplate turnTemplate; // memoized: stateless, model-lifetime
 
     /**
      * This model bundled with the three text facts its GGUF carries - what an
@@ -90,23 +96,23 @@ public final class NemotronH
                 chatTemplateSource,
                 stopTokens(),
                 modelSeed,
-                turnTemplate().map(t -> (com.qxotic.jinfer.chat.ChatTemplate) t),
-                com.qxotic.jinfer.chat.LoadedModel.SamplingDefaults.NONE);
+                turnTemplate().map(t -> (ChatTemplate) t),
+                LoadedModel.SamplingDefaults.NONE);
     }
 
-    public java.util.Optional<com.qxotic.jinfer.chat.TurnTemplate> turnTemplate() {
+    public Optional<TurnTemplate> turnTemplate() {
         if (turnTemplate == null) turnTemplate = new NemotronHTurnTemplate(tokenizer());
-        return java.util.Optional.of(turnTemplate);
+        return Optional.of(turnTemplate);
     }
 
     private NemotronHStateCodec stateCodec; // memoized: config-driven, model-lifetime
 
     @Override
-    public java.util.Optional<com.qxotic.jinfer.cache.StateCodec<State>> stateCodec() {
+    public Optional<StateCodec<State>> stateCodec() {
         // The SSM residue is MBs per block, so this codec is COARSE (one block per defined
         // prompt) - block caching works, but per-turn prefix sharing does not pay.
         if (stateCodec == null) stateCodec = new NemotronHStateCodec(configuration);
-        return java.util.Optional.of(stateCodec);
+        return Optional.of(stateCodec);
     }
 
     @Override
@@ -666,8 +672,7 @@ public final class NemotronH
                         state.moeRowTopP[s * fTopK + k] = coeff;
                     }
                 });
-        java.util.Arrays.fill(
-                counts, 0); // counts sequential (race-free) after the parallel per-row routing
+        Arrays.fill(counts, 0); // counts sequential (race-free) after the parallel per-row routing
         for (int s = 0; s < seqLen; s++)
             for (int k = 0; k < topK; k++) counts[state.moeRowTopE[s * topK + k]]++;
         Moe.Routing r = state.moeRouting;
@@ -802,7 +807,7 @@ public final class NemotronH
 
     // === State ===
 
-    public static final class State extends com.qxotic.jinfer.BaseState {
+    public static final class State extends BaseState {
         final int contextCapacity, batchCapacity;
         final FloatTensor x; // batchCapacity rows: residual per token
         final FloatTensor xb, k, v, attnQ, attnOut, logits; // chunk-wide scratch
@@ -848,7 +853,7 @@ public final class NemotronH
             }
             for (float[] recurrent : ssmState) {
                 if (recurrent != null) {
-                    java.util.Arrays.fill(recurrent, 0f);
+                    Arrays.fill(recurrent, 0f);
                 }
             }
         }
@@ -953,7 +958,7 @@ public final class NemotronH
     public static NemotronH loadModel(
             FileChannel fileChannel, GGUF gguf, Arena arena, Tokenizer tokenizer)
             throws IOException {
-        byte[] seed = com.qxotic.jinfer.cache.PromptCache.modelSeed(fileChannel);
+        byte[] seed = PromptCache.modelSeed(fileChannel);
         if (tokenizer == null) {
             tokenizer = Tokenizers.fromGGUF(gguf);
         }

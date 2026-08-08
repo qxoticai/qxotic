@@ -5,10 +5,16 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
+import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.HexFormat;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -35,9 +41,9 @@ class ModelHubIT {
      */
     private static void assumeReachable(String host) {
         try {
-            java.net.InetAddress.getByName(host);
-        } catch (java.net.UnknownHostException offline) {
-            org.junit.jupiter.api.Assumptions.abort(host + " is unreachable: " + offline);
+            InetAddress.getByName(host);
+        } catch (UnknownHostException offline) {
+            Assumptions.abort(host + " is unreachable: " + offline);
         }
     }
 
@@ -102,7 +108,7 @@ class ModelHubIT {
         useCache(root);
         ModelRef ref = ModelRef.parse(REPO + ":Q8_0");
         String commit = ModelStore.hubCommit(ref);
-        org.junit.jupiter.api.Assertions.assertNotNull(commit, "main resolves to a commit");
+        Assertions.assertNotNull(commit, "main resolves to a commit");
 
         Path file = ModelStore.fetchIntoHub(ref, ModelStore.select(ref), commit, hub);
         assertTrue(file.startsWith(hub));
@@ -175,9 +181,9 @@ class ModelHubIT {
         // what an interrupted parallel download leaves: a full-size sparse file with chunk 0
         // written, and a map saying so. Chunks 1 and 2 are holes.
         Path part = whole.resolveSibling(whole.getFileName() + ".part");
-        try (var allocated = new java.io.RandomAccessFile(part.toFile(), "rw")) {
+        try (var allocated = new RandomAccessFile(part.toFile(), "rw")) {
             allocated.setLength(size);
-            allocated.getChannel().write(java.nio.ByteBuffer.wrap(firstChunk), 0);
+            allocated.getChannel().write(ByteBuffer.wrap(firstChunk), 0);
         }
         Files.write(part.resolveSibling(part.getFileName() + ".map"), new byte[] {1, 0, 0});
         assertEquals(size - (32L << 20), Fetch.remainingBytes(whole, size), "two chunks to go");

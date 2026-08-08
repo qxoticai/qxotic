@@ -4,6 +4,7 @@
 //   java ... com.qxotic.jinfer.models.gemma4.GemmaRun [model.gguf] [prompt] [nTokens]
 package com.qxotic.jinfer.models.gemma4;
 
+import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.jinfer.testkit.ModelFixture;
 import java.lang.foreign.Arena;
@@ -59,9 +60,9 @@ public final class GemmaRun {
         System.err.println("contextCapacity=" + cap);
         long t0 = System.nanoTime();
         if (System.getenv("STEP_PREFILL") != null) { // ingest the prompt one token at a time
-            for (int id : ids) model.ingest(s, com.qxotic.jinfer.Batch.step(id));
+            for (int id : ids) model.ingest(s, Batch.step(id));
         } else {
-            model.ingest(s, com.qxotic.jinfer.Batch.prefill(ids));
+            model.ingest(s, Batch.prefill(ids));
         }
 
         Set<Integer> stops = model.stopTokens();
@@ -70,7 +71,7 @@ public final class GemmaRun {
         int n = 0;
         for (; n < nTokens && !stops.contains(tok); n++) {
             out.append(tk.decode(new int[] {tok}));
-            model.ingest(s, com.qxotic.jinfer.Batch.step(tok));
+            model.ingest(s, Batch.step(tok));
             tok = model.logits(s).argmax();
         }
         double secs = (System.nanoTime() - t0) / 1e9;

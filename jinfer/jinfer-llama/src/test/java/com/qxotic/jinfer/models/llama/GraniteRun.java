@@ -4,6 +4,7 @@
 // <model.gguf> [prompt] [nTokens]
 package com.qxotic.jinfer.models.llama;
 
+import com.qxotic.jinfer.Batch;
 import java.lang.foreign.Arena;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -55,7 +56,7 @@ public final class GraniteRun {
         Granite.State s =
                 model.newState(
                         Math.min(c.contextLength(), ids.length + 256), Math.max(16, ids.length));
-        model.ingest(s, com.qxotic.jinfer.Batch.prefill(ids));
+        model.ingest(s, Batch.prefill(ids));
 
         Set<Integer> stops = model.stopTokens();
         StringBuilder out = new StringBuilder();
@@ -64,7 +65,7 @@ public final class GraniteRun {
         long t0 = System.nanoTime();
         for (; n < nTokens && !stops.contains(tok); n++) {
             out.append(tk.decode(new int[] {tok}));
-            model.ingest(s, com.qxotic.jinfer.Batch.step(tok));
+            model.ingest(s, Batch.step(tok));
             tok = model.logits(s).argmax();
         }
         double secs = (System.nanoTime() - t0) / 1e9;

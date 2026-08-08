@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.llm.Sampling;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -125,7 +126,7 @@ final class ChatEngineRequestTest {
     void theRequestDefensivelyCopiesWhatItIsGiven() {
         List<Message> messages = new ArrayList<>(ONE_TURN);
         List<String> stops = new ArrayList<>(List.of("STOP"));
-        Map<String, Object> kwargs = new java.util.HashMap<>(Map.of("enable_thinking", false));
+        Map<String, Object> kwargs = new HashMap<>(Map.of("enable_thinking", false));
         ChatEngine.Request request =
                 new ChatEngine.Request(
                         messages, List.of(), true, -1, null, 0L, SAMPLING, null, null, false, stops,

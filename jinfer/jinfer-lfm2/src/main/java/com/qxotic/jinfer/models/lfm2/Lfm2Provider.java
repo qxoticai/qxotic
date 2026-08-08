@@ -1,11 +1,17 @@
 package com.qxotic.jinfer.models.lfm2;
 
 import com.qxotic.format.gguf.GGUF;
+import com.qxotic.jinfer.chat.LoadedEmbedder;
 import com.qxotic.jinfer.chat.LoadedModel;
+import com.qxotic.jinfer.chat.LoadedReranker;
 import com.qxotic.jinfer.chat.ModelProvider;
+import com.qxotic.toknroll.Tokenizer;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
+import java.nio.file.Path;
+import java.util.Map;
+import java.util.Set;
 
 /** {@link ModelProvider} service: the Lfm2 port's arch-dispatch entry. */
 public final class Lfm2Provider implements ModelProvider {
@@ -16,8 +22,8 @@ public final class Lfm2Provider implements ModelProvider {
     }
 
     @Override
-    public java.util.Set<String> architectures() {
-        return java.util.Set.of("lfm2", "lfm2moe"); // representative: supports() matches lfm*
+    public Set<String> architectures() {
+        return Set.of("lfm2", "lfm2moe"); // representative: supports() matches lfm*
     }
 
     @Override
@@ -25,8 +31,8 @@ public final class Lfm2Provider implements ModelProvider {
             FileChannel fileChannel,
             GGUF gguf,
             Arena arena,
-            java.util.Map<String, java.nio.file.Path> companions,
-            com.qxotic.toknroll.Tokenizer tokenizer)
+            Map<String, Path> companions,
+            Tokenizer tokenizer)
             throws IOException {
         Lfm2 m = Lfm2.loadModel(fileChannel, gguf, arena, tokenizer);
         // a retrieval checkpoint "loads" as a chat model and then generates noise - refuse by name
@@ -44,9 +50,8 @@ public final class Lfm2Provider implements ModelProvider {
      * file refuses by name instead of producing numbers.
      */
     @Override
-    public com.qxotic.jinfer.chat.LoadedReranker<?> loadReranker(
-            FileChannel fileChannel, GGUF gguf, java.nio.file.Path path, Arena arena)
-            throws IOException {
+    public LoadedReranker<?> loadReranker(
+            FileChannel fileChannel, GGUF gguf, Path path, Arena arena) throws IOException {
         Lfm2 m = Lfm2.loadModel(fileChannel, gguf, arena);
         if (!m.config().isColbert() || m.weights().dense2() == null)
             throw new IllegalArgumentException(
@@ -57,8 +62,7 @@ public final class Lfm2Provider implements ModelProvider {
                             + " checkpoint embeds via Models.loadEmbedder");
         int bos = gguf.getValue(int.class, "tokenizer.ggml.bos_token_id");
         int pad = gguf.getValue(int.class, "tokenizer.ggml.padding_token_id");
-        return new com.qxotic.jinfer.chat.LoadedReranker<>(
-                m, new Lfm2Colbert(m, bos, pad), path.getFileName().toString());
+        return new LoadedReranker<>(m, new Lfm2Colbert(m, bos, pad), path.getFileName().toString());
     }
 
     /**
@@ -67,9 +71,8 @@ public final class Lfm2Provider implements ModelProvider {
      * generative GGUF handed here refuses loudly instead of producing numbers.
      */
     @Override
-    public com.qxotic.jinfer.chat.LoadedEmbedder<?> loadEmbedder(
-            FileChannel fileChannel, GGUF gguf, java.nio.file.Path path, Arena arena)
-            throws IOException {
+    public LoadedEmbedder<?> loadEmbedder(
+            FileChannel fileChannel, GGUF gguf, Path path, Arena arena) throws IOException {
         Lfm2 m = Lfm2.loadModel(fileChannel, gguf, arena);
         if (!m.config().isEmbedder())
             throw new IllegalArgumentException(
@@ -79,7 +82,7 @@ public final class Lfm2Provider implements ModelProvider {
                             + " Models.load, or embed with LFM2.5-Embedding-350M-GGUF");
         // CLS pooling reads the BOS row, so every sequence leads with it (add_bos in the GGUF)
         int bos = gguf.getValue(int.class, "tokenizer.ggml.bos_token_id");
-        return new com.qxotic.jinfer.chat.LoadedEmbedder<Lfm2.State>(
+        return new LoadedEmbedder<Lfm2.State>(
                 m,
                 m.tokenizer(),
                 new int[] {bos},

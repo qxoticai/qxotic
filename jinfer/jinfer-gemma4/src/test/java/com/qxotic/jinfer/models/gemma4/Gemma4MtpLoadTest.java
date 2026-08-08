@@ -9,6 +9,7 @@ import com.qxotic.jinfer.testkit.ModelFixture;
 import java.lang.foreign.Arena;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -30,7 +31,7 @@ public final class Gemma4MtpLoadTest {
     @Tag("integration")
     void run() throws Exception {
         Assumptions.assumeTrue(
-                java.nio.file.Files.exists(ModelFixture.GEMMA4_E2B_MTP.path()),
+                Files.exists(ModelFixture.GEMMA4_E2B_MTP.path()),
                 "model not found:" + " " + ModelFixture.GEMMA4_E2B_MTP.path());
         main(testArgs());
     }
@@ -61,9 +62,7 @@ public final class Gemma4MtpLoadTest {
         check(c.headSizeFull() == 512 && c.headSizeSWA() == 256, "head sizes 512/256");
         check(c.slidingWindow() == 512, "window 512");
         check(c.ropeThetaFull() == 1_000_000f && c.ropeThetaSWA() == 10_000f, "rope 1e6/1e4");
-        check(
-                java.util.Arrays.equals(c.isSWA(), new boolean[] {true, true, true, false}),
-                "isSWA [T,T,T,F]");
+        check(Arrays.equals(c.isSWA(), new boolean[] {true, true, true, false}), "isSWA [T,T,T,F]");
         check(c.vocabularySize() == 262144, "tied head vocab 262144");
         check(c.queryDim(0) == 1024 && c.queryDim(3) == 2048, "queryDim 1024 (swa) / 2048 (full)");
 

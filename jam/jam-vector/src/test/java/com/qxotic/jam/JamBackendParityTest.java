@@ -7,7 +7,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.util.Arrays;
 import java.util.Random;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -62,17 +65,17 @@ class JamBackendParityTest {
             JAM.BF16, JAM.F32
         };
         if (NATIVE == null || q1_0ProbeStatus() == JAM.EUNSUPPORTED) return base;
-        int[] all = java.util.Arrays.copyOf(base, base.length + 1);
+        int[] all = Arrays.copyOf(base, base.length + 1);
         all[base.length] = JAM.Q1_0;
         return all;
     }
 
     /** One tiny probe mm's status: does the loaded libjam carry the jam_mm_q1_0 kernels? */
     private static int q1_0ProbeStatus() {
-        java.util.Random rng = new java.util.Random(SEED);
+        Random rng = new Random(SEED);
         QuantWeights.Weight w = QuantWeights.encode(JAM.Q1_0, 8, 128, A, rng);
-        java.lang.foreign.MemorySegment a = A.allocate(2 * 128 * 4L, 64);
-        java.lang.foreign.MemorySegment r = A.allocate(2 * 8 * 4L, 64);
+        MemorySegment a = A.allocate(2 * 128 * 4L, 64);
+        MemorySegment r = A.allocate(2 * 8 * 4L, 64);
         return NATIVE.mm(
                 w.seg(), 0L, JAM.Q1_0, 128, a, 0L, JAM.F32, 128, r, 0L, JAM.F32, 8, 8, 2, 128);
     }
@@ -159,7 +162,7 @@ class JamBackendParityTest {
 
     @Test
     void nativeGemmEveryDtype() {
-        org.junit.jupiter.api.Assumptions.assumeTrue(NATIVE != null, "libjam not loaded");
+        Assumptions.assumeTrue(NATIVE != null, "libjam not loaded");
         for (int t : NATIVE_ALL)
             for (int n : new int[] {7, 8, 13, 16})
                 parity(NATIVE, "NativeJAM " + name(t), t, 104, n, blockK(t), tol(NATIVE));
@@ -175,7 +178,7 @@ class JamBackendParityTest {
 
     @Test
     void nativeGemvEveryDtype() {
-        org.junit.jupiter.api.Assumptions.assumeTrue(NATIVE != null, "libjam not loaded");
+        Assumptions.assumeTrue(NATIVE != null, "libjam not loaded");
         for (int t : NATIVE_ALL)
             parity(NATIVE, "NativeJAM.gemv " + name(t), t, 512, 1, blockK(t), tol(NATIVE));
     }
@@ -234,7 +237,7 @@ class JamBackendParityTest {
 
     @Test
     void seqShapeSweepNative() {
-        org.junit.jupiter.api.Assumptions.assumeTrue(NATIVE != null, "libjam not loaded");
+        Assumptions.assumeTrue(NATIVE != null, "libjam not loaded");
         for (int[] mk : SWEEP_SHAPES)
             for (int n = 1; n <= MAX_SEQ; n++)
                 for (int t : NATIVE_ALL)
@@ -256,7 +259,7 @@ class JamBackendParityTest {
      */
     @Test
     void nativeDeterministic() {
-        org.junit.jupiter.api.Assumptions.assumeTrue(NATIVE != null, "libjam not loaded");
+        Assumptions.assumeTrue(NATIVE != null, "libjam not loaded");
         for (int[] mk : SWEEP_SHAPES) {
             int m = mk[0], k = mk[1];
             for (int n = 1; n <= MAX_SEQ; n++)
@@ -362,7 +365,7 @@ class JamBackendParityTest {
 
     @Test
     void seqShapeOffsetSweepNative() {
-        org.junit.jupiter.api.Assumptions.assumeTrue(NATIVE != null, "libjam not loaded");
+        Assumptions.assumeTrue(NATIVE != null, "libjam not loaded");
         for (int r0 : ROW_OFFSETS)
             for (int[] mk : SWEEP_SHAPES)
                 for (int n = 1; n <= MAX_SEQ; n++)
@@ -412,7 +415,7 @@ class JamBackendParityTest {
 
     @Test
     void nativeDeterministicLargeM() {
-        org.junit.jupiter.api.Assumptions.assumeTrue(NATIVE != null, "libjam not loaded");
+        Assumptions.assumeTrue(NATIVE != null, "libjam not loaded");
         for (int[] mk : BIG_SHAPES) {
             int m = mk[0], k = mk[1];
             for (int n : new int[] {2, 4, 6, 7, 13})
@@ -450,7 +453,7 @@ class JamBackendParityTest {
      */
     @Test
     void nativeDeterministicLargeMOffset() {
-        org.junit.jupiter.api.Assumptions.assumeTrue(NATIVE != null, "libjam not loaded");
+        Assumptions.assumeTrue(NATIVE != null, "libjam not loaded");
         int r0 = 24;
         for (int[] mk : BIG_SHAPES) {
             int m = mk[0], k = mk[1];
@@ -517,7 +520,7 @@ class JamBackendParityTest {
 
     @Test
     void a4bPrefillShapesDeterministic() {
-        org.junit.jupiter.api.Assumptions.assumeTrue(NATIVE != null, "libjam not loaded");
+        Assumptions.assumeTrue(NATIVE != null, "libjam not loaded");
         final int REPS = 8;
         for (int n : new int[] {2, 4, 6})
             for (int[] sh : A4B_PREFILL_SHAPES) {
@@ -565,7 +568,7 @@ class JamBackendParityTest {
     // slice. ----
     @Test
     void moeExpertOffsetParityNative() {
-        org.junit.jupiter.api.Assumptions.assumeTrue(NATIVE != null, "libjam not loaded");
+        Assumptions.assumeTrue(NATIVE != null, "libjam not loaded");
         int gateUpDim = 1408, dim = 2816;
         for (int e : new int[] {0, 1, 31, 64, 100, 127}) {
             int r0 = e * gateUpDim; // expert e's row offset into the packed tensor
@@ -589,7 +592,7 @@ class JamBackendParityTest {
      */
     @Test
     void moeExpertOffsetDeterministicNative() {
-        org.junit.jupiter.api.Assumptions.assumeTrue(NATIVE != null, "libjam not loaded");
+        Assumptions.assumeTrue(NATIVE != null, "libjam not loaded");
         int gateUpDim = 1408, dim = 2816, n = 6;
         for (int e : new int[] {1, 64, 127}) {
             int r0 = e * gateUpDim;
@@ -645,7 +648,7 @@ class JamBackendParityTest {
     // jinfer's PrefillDeterminism, which isolated jam calls can't reproduce).
     @Test
     void rpPathInterleavedVariableN() {
-        org.junit.jupiter.api.Assumptions.assumeTrue(NATIVE != null, "libjam not loaded");
+        Assumptions.assumeTrue(NATIVE != null, "libjam not loaded");
         int gateUpDim = 1408, dim = 2816, expertFF = 704;
         // (m, k) for the A4B FFN gemms the rp path serves at prefill
         int[][] ffn = {{2112, dim}, {dim, 2112}, {gateUpDim, dim}, {dim, expertFF}};
@@ -781,12 +784,12 @@ class JamBackendParityTest {
      */
     @Test
     void nativeRunsQ1_0() {
-        org.junit.jupiter.api.Assumptions.assumeTrue(NATIVE != null, "libjam not loaded");
+        Assumptions.assumeTrue(NATIVE != null, "libjam not loaded");
         int st = q1_0ProbeStatus();
-        org.junit.jupiter.api.Assumptions.assumeTrue(
+        Assumptions.assumeTrue(
                 st != JAM.EUNSUPPORTED,
                 "stale libjam without jam_mm_q1_0: decline is the contract");
-        org.junit.jupiter.api.Assertions.assertEquals(JAM.OK, st, "jam-native q1_0 must run");
+        Assertions.assertEquals(JAM.OK, st, "jam-native q1_0 must run");
     }
 
     // ---- helpers ----

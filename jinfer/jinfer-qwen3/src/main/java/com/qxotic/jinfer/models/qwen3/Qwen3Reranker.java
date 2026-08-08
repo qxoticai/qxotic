@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.models.qwen3;
 
 import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.Model;
 import com.qxotic.jinfer.chat.Reranker;
 import com.qxotic.jinfer.chat.TokenRuns;
 import com.qxotic.toknroll.IntSequence;
@@ -37,7 +38,7 @@ final class Qwen3Reranker implements Reranker.CrossEncoder<Qwen3.State> {
     private final Qwen3 model;
 
     @Override
-    public com.qxotic.jinfer.Model<?, ?, Qwen3.State> model() {
+    public Model<?, ?, Qwen3.State> model() {
         return model;
     }
 

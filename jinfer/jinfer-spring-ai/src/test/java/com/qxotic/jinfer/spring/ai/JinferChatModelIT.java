@@ -14,6 +14,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.function.LongFunction;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
@@ -313,7 +314,7 @@ class JinferChatModelIT {
         // then seed liveness at temperature 1.0 via divergence - the drift-immune assertion
         try (JinferChatModel small =
                 JinferChatModel.builder()
-                        .modelPath(com.qxotic.jinfer.testkit.ModelFixture.LFM25_350M_Q8.require())
+                        .modelPath(ModelFixture.LFM25_350M_Q8.require())
                         .contextLength(1024)
                         .maxTokens(24)
                         .build()) {
@@ -327,7 +328,7 @@ class JinferChatModelIT {
                     small.call(fixed).getResult().getOutput().getText(),
                     "temperature 0 must replay identically");
 
-            java.util.function.LongFunction<String> at1 =
+            LongFunction<String> at1 =
                     seed ->
                             small.call(
                                             new Prompt(

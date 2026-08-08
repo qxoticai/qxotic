@@ -18,6 +18,7 @@
 // Each 30 s chunk encodes independently (no cross-chunk attention).
 package com.qxotic.jinfer.models.gemma4;
 
+import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.Embedder;
 import com.qxotic.jinfer.F32FloatTensor;
 import com.qxotic.jinfer.FastMath;
@@ -548,10 +549,7 @@ public final class Gemma4Conformer implements Embedder<Media.Audio> {
      * is a label for messages here - nothing is read from it.
      */
     public static Gemma4Conformer loadModel(
-            Path mmprojPath,
-            com.qxotic.format.gguf.GGUF gguf,
-            Map<String, GGMLTensorEntry> t,
-            Arena arena)
+            Path mmprojPath, GGUF gguf, Map<String, GGMLTensorEntry> t, Arena arena)
             throws IOException {
         {
             int dim = gguf.getValue(int.class, "clip.audio.embedding_length");

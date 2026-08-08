@@ -18,7 +18,10 @@ import static com.qxotic.jinfer.Norms.rmsnorm;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.*;
+import com.qxotic.jinfer.cache.PromptCache;
+import com.qxotic.jinfer.cache.StateCodec;
 import com.qxotic.jinfer.chat.LoadedModel;
+import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
 import com.qxotic.toknroll.Tokenizer;
@@ -29,7 +32,9 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import java.util.function.Consumer;
 
 public final class Lfm2
         implements LanguageModel<Lfm2.Configuration, Lfm2.Weights, Lfm2.State>,
@@ -78,7 +83,7 @@ public final class Lfm2
     }
 
     @Override
-    public void forward(State s, com.qxotic.jinfer.Batch batch) {
+    public void forward(State s, Batch batch) {
         int n = batch.count();
         if (n > s.batchCapacity)
             throw new IllegalArgumentException(
@@ -94,7 +99,7 @@ public final class Lfm2
                             + s.contextCapacity);
         }
         switch (batch.input()) {
-            case com.qxotic.jinfer.Batch.Input.Tokens t -> {
+            case Batch.Input.Tokens t -> {
                 int[] ids = t.ids();
                 if (n == 1)
                     Parallel.onDecodePool(
@@ -104,7 +109,7 @@ public final class Lfm2
                             });
                 else forward(s, ids, 0, from, n);
             }
-            case com.qxotic.jinfer.Batch.Input.Sequences seq -> {
+            case Batch.Input.Sequences seq -> {
                 if (configuration.causalAttention)
                     throw new UnsupportedOperationException(
                             "this LFM2.5 checkpoint is generative: batched embedding needs the"
@@ -112,7 +117,7 @@ public final class Lfm2
                                     + " false)");
                 forwardSegmented(s, seq.tokens().ids(), seq.seqLen(), n);
             }
-            case com.qxotic.jinfer.Batch.Input.Embeddings e ->
+            case Batch.Input.Embeddings e ->
                     throw new UnsupportedOperationException(
                             "LFM2.5 is text-only: embedding input is not supported");
         }
@@ -163,13 +168,13 @@ public final class Lfm2
                 chatTemplateSource,
                 stopTokens(),
                 modelSeed,
-                java.util.Optional.of(template()),
-                com.qxotic.jinfer.chat.LoadedModel.SamplingDefaults.NONE);
+                Optional.of(template()),
+                LoadedModel.SamplingDefaults.NONE);
     }
 
     /** The per-turn view of the same template (turn-aligned cache scenarios refine through it). */
-    public java.util.Optional<com.qxotic.jinfer.chat.TurnTemplate> turnTemplate() {
-        return java.util.Optional.of(template());
+    public Optional<TurnTemplate> turnTemplate() {
+        return Optional.of(template());
     }
 
     private Lfm2ChatTemplate template() {
@@ -184,8 +189,8 @@ public final class Lfm2
     }
 
     @Override
-    public java.util.Optional<com.qxotic.jinfer.cache.StateCodec<Lfm2.State>> stateCodec() {
-        return java.util.Optional.of(new Lfm2StateCodec(config()));
+    public Optional<StateCodec<Lfm2.State>> stateCodec() {
+        return Optional.of(new Lfm2StateCodec(config()));
     }
 
     // === Forward ===
@@ -840,10 +845,7 @@ public final class Lfm2
      * sequence boundaries. Emits each sequence's CLS (first-row) embedding, in input order.
      */
     @Override
-    public void embed(
-            State state,
-            com.qxotic.jinfer.Batch.Input.Sequences seqs,
-            java.util.function.Consumer<FloatTensor> sink) {
+    public void embed(State state, Batch.Input.Sequences seqs, Consumer<FloatTensor> sink) {
         if (!configuration.isEmbedder())
             throw new UnsupportedOperationException(
                     "this LFM2.5 checkpoint is not an embedder - load LFM2.5-Embedding"
@@ -1024,7 +1026,7 @@ public final class Lfm2
 
     // === State ===
 
-    public static final class State extends com.qxotic.jinfer.BaseState {
+    public static final class State extends BaseState {
         final int contextCapacity, batchCapacity;
         final FloatTensor residual, xb, xbK, xb2, hb, hb2, query, logits;
         final FloatTensor ropeCos, ropeSin;
@@ -1180,7 +1182,7 @@ public final class Lfm2
     public static Lfm2 loadModel(
             FileChannel fileChannel, GGUF gguf, Arena arena, Tokenizer tokenizer)
             throws IOException {
-        byte[] seed = com.qxotic.jinfer.cache.PromptCache.modelSeed(fileChannel);
+        byte[] seed = PromptCache.modelSeed(fileChannel);
         if (tokenizer == null) {
             tokenizer = Tokenizers.fromGGUF(gguf);
         }

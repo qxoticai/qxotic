@@ -18,6 +18,7 @@ import java.nio.channels.ReadableByteChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -162,10 +163,10 @@ public class TestDataManager {
                 Files.move(
                         tempFile,
                         outputPath,
-                        java.nio.file.StandardCopyOption.REPLACE_EXISTING,
-                        java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+                        StandardCopyOption.REPLACE_EXISTING,
+                        StandardCopyOption.ATOMIC_MOVE);
             } catch (IOException atomicMoveFailure) {
-                Files.move(tempFile, outputPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                Files.move(tempFile, outputPath, StandardCopyOption.REPLACE_EXISTING);
             }
         } catch (IOException | RuntimeException e) {
             Files.deleteIfExists(tempFile);

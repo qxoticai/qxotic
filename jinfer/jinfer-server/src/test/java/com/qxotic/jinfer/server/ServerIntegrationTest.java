@@ -1,12 +1,15 @@
 package com.qxotic.jinfer.server;
 
 import com.qxotic.jinfer.*;
+import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.JsonCodec;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.kernels.*;
 import com.qxotic.jinfer.llm.*;
 import com.qxotic.jinfer.testkit.ModelFixture;
+import com.qxotic.toknroll.IntSequence;
+import java.lang.foreign.Arena;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -88,7 +91,7 @@ public final class ServerIntegrationTest {
         Path model = modelPath();
         modelId = model.getFileName().toString();
         Assumptions.assumeTrue(Files.exists(model), "model not found: " + model);
-        LoadedModel<?> llama = Models.load(model, java.lang.foreign.Arena.ofAuto());
+        LoadedModel<?> llama = Models.load(model, Arena.ofAuto());
         ServerConfig config = ServerTestSupport.config(model);
         Server.Running server = Server.start(llama, config);
         base = ServerTestSupport.baseUrl(server);
@@ -788,7 +791,7 @@ public final class ServerIntegrationTest {
         calls = ToolCalls.parseToolCalls("You can use get_weather to look that up.", tools);
         check(calls.isEmpty(), "bare tool name without parens is not a call");
         // no tools defined -> never treat text as a call
-        calls = ToolCalls.parseToolCalls("[get_weather(city=\"Paris\")]", java.util.Set.of());
+        calls = ToolCalls.parseToolCalls("[get_weather(city=\"Paris\")]", Set.of());
         check(calls.isEmpty(), "no tools defined -> no bare detection");
     }
 
@@ -956,8 +959,7 @@ public final class ServerIntegrationTest {
      * abort path, reporting finish_reason "length". Engine-level so it needs no global flag.
      */
     private static <S extends RuntimeState> void generationDeadline(LoadedModel<S> model) {
-        com.qxotic.toknroll.IntSequence prompt =
-                model.tokenizer().encode("Write a very long, detailed story.");
+        IntSequence prompt = model.tokenizer().encode("Write a very long, detailed story.");
         long start = System.nanoTime();
         S state =
                 model.model()
@@ -992,7 +994,7 @@ public final class ServerIntegrationTest {
      * "length".
      */
     private static void tokenCeiling() throws Exception {
-        int ceiling = com.qxotic.jinfer.cache.PromptCache.Options.DEFAULTS.contextCapacity();
+        int ceiling = PromptCache.Options.DEFAULTS.contextCapacity();
         HttpResponse<String> response =
                 post(
                         "/v1/chat/completions",

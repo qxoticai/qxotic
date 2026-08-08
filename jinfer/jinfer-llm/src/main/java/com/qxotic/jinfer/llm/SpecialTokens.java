@@ -5,9 +5,12 @@ import com.qxotic.toknroll.Specials;
 import com.qxotic.toknroll.StandardTokenType;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Vocabulary;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.OptionalInt;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Special-token views over a {@link Tokenizer}. Lookups here are SPECIALS-ONLY - a name resolves
@@ -23,9 +26,8 @@ public final class SpecialTokens {
      * entry the tokenizer actually has - absent names are skipped, so one list serves every
      * checkpoint of a family.
      */
-    public static java.util.Set<Integer> stops(
-            Tokenizer tokenizer, int eosTokenId, String... names) {
-        java.util.Set<Integer> stops = new java.util.HashSet<>();
+    public static Set<Integer> stops(Tokenizer tokenizer, int eosTokenId, String... names) {
+        Set<Integer> stops = new HashSet<>();
         if (eosTokenId >= 0) stops.add(eosTokenId);
         for (String name : names) find(tokenizer, name).ifPresent(stops::add);
         return stops;
@@ -135,8 +137,7 @@ public final class SpecialTokens {
         return encoder(tokenizer).encode(tokenizer, text);
     }
 
-    private static final java.util.concurrent.ConcurrentHashMap<Tokenizer, int[]> newlines =
-            new java.util.concurrent.ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<Tokenizer, int[]> newlines = new ConcurrentHashMap<>();
 
     /**
      * Token ids that decode to newlines only (LF/CR), per tokenizer (cached). Chat templates emit
@@ -147,7 +148,7 @@ public final class SpecialTokens {
         return newlines.computeIfAbsent(
                 tokenizer,
                 t -> {
-                    java.util.List<Integer> ids = new java.util.ArrayList<>();
+                    List<Integer> ids = new ArrayList<>();
                     for (int i = 0, n = t.vocabulary().size(); i < n; i++) {
                         byte[] b = t.decodeBytes(new int[] {i});
                         if (b.length == 0) continue;

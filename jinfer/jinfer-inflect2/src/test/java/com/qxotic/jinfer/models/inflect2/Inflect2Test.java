@@ -5,11 +5,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.Media;
 import com.qxotic.jinfer.models.inflect2.frontend.TextNormalizer;
 import com.qxotic.jinfer.testkit.ModelFixture;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -78,11 +80,8 @@ class Inflect2Test {
 
     @Test
     void normalizerAppliesUserOverridesFirst() {
-        assertEquals(
-                "pie torch two", TextNormalizer.normalize("PyTorch 2", java.util.Map.of()).trim());
-        assertEquals(
-                "torchy",
-                TextNormalizer.normalize("PyTorch", java.util.Map.of("PyTorch", "torchy")));
+        assertEquals("pie torch two", TextNormalizer.normalize("PyTorch 2", Map.of()).trim());
+        assertEquals("torchy", TextNormalizer.normalize("PyTorch", Map.of("PyTorch", "torchy")));
     }
 
     @Test
@@ -112,7 +111,7 @@ class Inflect2Test {
     }
 
     /** One state per call: these tests are about the model, not about state reuse. */
-    private static com.qxotic.jinfer.Media.Audio synthesize(
+    private static Media.Audio synthesize(
             Inflect2 model, int[] tokens, float lengthScale, float variation, long seed) {
         try (Inflect2.State state = model.newState()) {
             return model.synthesize(state, tokens, lengthScale, variation, seed);

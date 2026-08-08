@@ -13,8 +13,11 @@ import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Vocabulary;
+import java.lang.foreign.Arena;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -91,8 +94,7 @@ final class LoadedModelTokenizerTest {
         }
 
         @Override
-        public RuntimeState newState(
-                int contextCapacity, int batchCapacity, java.lang.foreign.Arena arena) {
+        public RuntimeState newState(int contextCapacity, int batchCapacity, Arena arena) {
             throw new UnsupportedOperationException();
         }
 
@@ -143,8 +145,8 @@ final class LoadedModelTokenizerTest {
                 }
 
                 @Override
-                public java.util.Iterator<Map.Entry<String, Integer>> iterator() {
-                    return java.util.Collections.emptyIterator();
+                public Iterator<Map.Entry<String, Integer>> iterator() {
+                    return Collections.emptyIterator();
                 }
             };
         }

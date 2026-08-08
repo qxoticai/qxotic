@@ -16,10 +16,17 @@ import com.qxotic.jinfer.telemetry.Telemetry;
 import com.qxotic.toknroll.IntSequence;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.lang.foreign.Arena;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
@@ -47,19 +54,19 @@ public final class ChatEngine {
     // the streaming driver: at most ONE lazy platform thread, reused while streams keep coming,
     // gone after an idle minute. One is enough - generations serialize on the engine lock anyway,
     // and a fresh thread per request would just park extras on that lock
-    private final java.util.concurrent.ThreadPoolExecutor streamDriver =
-            new java.util.concurrent.ThreadPoolExecutor(
+    private final ThreadPoolExecutor streamDriver =
+            new ThreadPoolExecutor(
                     0,
                     1,
                     60,
-                    java.util.concurrent.TimeUnit.SECONDS,
-                    new java.util.concurrent.LinkedBlockingQueue<>(),
+                    TimeUnit.SECONDS,
+                    new LinkedBlockingQueue<>(),
                     r -> new Thread(r, "jinfer-stream"));
     private final AtomicReference<Thread> streamThread = new AtomicReference<>();
     private volatile boolean closed;
     // owned: freed at close(), never shared. null when the CALLER loaded the model and keeps the
     // arena - then close() quiesces and frees this engine's own memory, and nothing else
-    private final java.lang.foreign.Arena weights;
+    private final Arena weights;
     private final Runnable leakWatch; // -Djinfer.leakDetection: reports a GC'd unclosed engine
     // held STRONGLY here on purpose: the telemetry registry keeps only a weak reference, so this
     // field is what keeps the gauge alive exactly as long as the engine it samples
@@ -71,7 +78,7 @@ public final class ChatEngine {
     private volatile PromptCache.Sample cacheSnapshot;
 
     /** A loaded model with the arena this engine owns - {@code weights} null = the caller's. */
-    private record Owned(LoadedModel<?> loaded, java.lang.foreign.Arena weights) {}
+    private record Owned(LoadedModel<?> loaded, Arena weights) {}
 
     /**
      * Loads {@code modelPath} into an arena the engine will own. The engine OWNS that arena and
@@ -80,8 +87,8 @@ public final class ChatEngine {
      * always kernel-reclaimable, but load-time conversions/repacks are anonymous memory that a
      * GC-managed arena would only free at a GC that a native-heavy JVM never runs.
      */
-    private static Owned load(Path modelPath, java.util.Map<String, Path> companions) {
-        java.lang.foreign.Arena weights = java.lang.foreign.Arena.ofShared();
+    private static Owned load(Path modelPath, Map<String, Path> companions) {
+        Arena weights = Arena.ofShared();
         try {
             return new Owned(
                     companions.isEmpty()
@@ -98,15 +105,11 @@ public final class ChatEngine {
     }
 
     public ChatEngine(
-            Path modelPath,
-            java.util.Map<String, Path> companions,
-            PromptCache.Options cacheOptions) {
+            Path modelPath, Map<String, Path> companions, PromptCache.Options cacheOptions) {
         this(
                 // null = none, as everywhere else companions are accepted: "no companions" and
                 // "an empty map" must not be two states, and this threw NullPointerException
-                load(
-                        modelPath,
-                        companions == null ? java.util.Map.of() : java.util.Map.copyOf(companions)),
+                load(modelPath, companions == null ? Map.of() : Map.copyOf(companions)),
                 modelPath.getFileName().toString(),
                 cacheOptions);
     }
@@ -242,8 +245,7 @@ public final class ChatEngine {
         streamDriver.shutdown();
         try {
             // await the driver: a live streaming generation may still be reading state memory
-            streamDriver.awaitTermination(
-                    Long.MAX_VALUE, java.util.concurrent.TimeUnit.NANOSECONDS);
+            streamDriver.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
@@ -263,7 +265,7 @@ public final class ChatEngine {
                             streamThread.compareAndSet(Thread.currentThread(), null);
                         }
                     });
-        } catch (java.util.concurrent.RejectedExecutionException closed) {
+        } catch (RejectedExecutionException closed) {
             // the unbounded queue never rejects; rejection means the driver was shut down
             throw new IllegalStateException("the model is closed");
         }
@@ -313,7 +315,7 @@ public final class ChatEngine {
             String forcedTool,
             boolean cachedView,
             List<String> stops,
-            java.util.Map<String, Object> templateKwargs) {
+            Map<String, Object> templateKwargs) {
 
         // ranges, not taste: this is a positional record, so a transposed pair of same-typed
         // knobs would otherwise run silently. The four sampling knobs used to sit here loose and
@@ -336,7 +338,7 @@ public final class ChatEngine {
                     throw new IllegalArgumentException(
                             "forced tool \"" + forcedTool + "\" is not among the offered tools");
             }
-            templateKwargs = templateKwargs == null ? null : java.util.Map.copyOf(templateKwargs);
+            templateKwargs = templateKwargs == null ? null : Map.copyOf(templateKwargs);
             // a view is native-only and the native codec never sees kwargs - the two are
             // contradictory, so reject the request rather than silently drop the kwargs
             if (cachedView && templateKwargs != null)
@@ -479,7 +481,7 @@ public final class ChatEngine {
             Conversation conversation,
             Supplier<List<Object>> messageMaps,
             Supplier<List<Object>> toolMaps,
-            java.util.Map<String, Object> templateKwargs) {
+            Map<String, Object> templateKwargs) {
         Optional<ChatTemplate> template = loaded.template();
         UnsupportedConversation punted = null;
         // kwargs the codec has no equivalent for force the whole-render - taking the native path
@@ -517,7 +519,7 @@ public final class ChatEngine {
     }
 
     /** Any key the native path has no equivalent for; template-encoding must punt on these. */
-    private static boolean unknownKwargs(java.util.Map<String, Object> templateKwargs) {
+    private static boolean unknownKwargs(Map<String, Object> templateKwargs) {
         if (templateKwargs == null) return false;
         for (String key : templateKwargs.keySet()) {
             if (!"enable_thinking".equals(key)) return true;
@@ -605,7 +607,7 @@ public final class ChatEngine {
         // outputType stays TEXT until Prepared carries the grammar; JSON lands with that accessor
         event.inputTokens = prepared.promptTokens();
         event.cachedTokens = completion.restoredTokens();
-        event.cacheTier = completion.tier().name().toLowerCase(java.util.Locale.ROOT);
+        event.cacheTier = completion.tier().name().toLowerCase(Locale.ROOT);
         event.queueTime = Telemetry.takeQueueWait(); // 0 unless something queued this thread
         Generator.GenerationResult result = completion.result();
         if (result != null) {

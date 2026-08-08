@@ -9,6 +9,7 @@ import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.Arrays;
 import java.util.Map;
 
 /**
@@ -247,7 +248,7 @@ public final class Gemma4Mtp {
             throw new IllegalStateException(
                     name
                             + " shape "
-                            + java.util.Arrays.toString(e.shape())
+                            + Arrays.toString(e.shape())
                             + " = "
                             + got
                             + " elems, expected "

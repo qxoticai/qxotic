@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.qxotic.jinfer.models.inflect2.Symbols;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
@@ -61,14 +62,14 @@ class EspeakPhonemizerTest {
         // regressed to one subprocess per word.
         int[] run = espeak.phonemize("the cat can see the dog");
         int[] words = concat(espeak, "the", "cat", "can", "see", "the", "dog");
-        assertTrue(run.length != words.length || !java.util.Arrays.equals(run, words));
+        assertTrue(run.length != words.length || !Arrays.equals(run, words));
     }
 
     private static int[] concat(Phonemizer espeak, String... words) throws IOException {
         int[] tokens = new int[0];
         for (String word : words) {
             int[] one = espeak.phonemize(word);
-            int[] grown = java.util.Arrays.copyOf(tokens, tokens.length + one.length);
+            int[] grown = Arrays.copyOf(tokens, tokens.length + one.length);
             System.arraycopy(one, 0, grown, tokens.length, one.length);
             tokens = grown;
         }

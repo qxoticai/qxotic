@@ -6,6 +6,7 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.ByteOrder;
+import java.util.Arrays;
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.ShortVector;
 import jdk.incubator.vector.VectorOperators;
@@ -285,7 +286,7 @@ public final class F32FloatTensor extends SegmentFloatTensor {
     @Override
     public float kthLargestThreshold(long thisOffset, int size, float[] minHeap) {
         if (!USE_VECTOR_API) return super.kthLargestThreshold(thisOffset, size, minHeap);
-        java.util.Arrays.fill(minHeap, Float.NEGATIVE_INFINITY);
+        Arrays.fill(minHeap, Float.NEGATIVE_INFINITY);
         int len = F_SPECIES.length();
         int upperBound = F_SPECIES.loopBound(size);
         int i = 0;

@@ -19,6 +19,7 @@ import com.qxotic.jinfer.llm.*;
 import com.qxotic.toknroll.Tokenizer;
 import java.io.IOException;
 import java.lang.foreign.Arena;
+import java.lang.ref.Reference;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -63,7 +64,7 @@ public final class Qwen3
     }
 
     @Override
-    public void forward(State s, com.qxotic.jinfer.Batch batch) {
+    public void forward(State s, Batch batch) {
         int n = batch.count();
         if (n > s.batchCapacity)
             throw new IllegalArgumentException(
@@ -79,10 +80,10 @@ public final class Qwen3
                             + s.contextCapacity);
         }
         switch (batch.input()) {
-            case com.qxotic.jinfer.Batch.Input.Tokens t -> forward(s, t.ids(), 0, from, n);
-            case com.qxotic.jinfer.Batch.Input.Sequences seq ->
+            case Batch.Input.Tokens t -> forward(s, t.ids(), 0, from, n);
+            case Batch.Input.Sequences seq ->
                     forwardSegmented(s, seq.tokens().ids(), seq.seqLen(), from, n);
-            case com.qxotic.jinfer.Batch.Input.Embeddings e ->
+            case Batch.Input.Embeddings e ->
                     throw new UnsupportedOperationException(
                             "Qwen3 embedding is text-only: embedding input is not supported");
         }
@@ -105,7 +106,7 @@ public final class Qwen3
         } finally {
             s.exit();
         }
-        java.lang.ref.Reference.reachabilityFence(this);
+        Reference.reachabilityFence(this);
         return out;
     }
 
@@ -533,7 +534,7 @@ public final class Qwen3
 
     // === State ===
 
-    public static final class State extends com.qxotic.jinfer.BaseState {
+    public static final class State extends BaseState {
         final int contextCapacity, batchCapacity;
         final FloatTensor x, xb, k, v, attnQ, attnOut, hb, hb2;
         // rotary values for the batch about to be ingested: sized by BATCH, never context

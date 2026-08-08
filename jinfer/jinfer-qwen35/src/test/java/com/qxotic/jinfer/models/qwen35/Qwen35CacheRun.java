@@ -7,6 +7,7 @@ package com.qxotic.jinfer.models.qwen35;
 import com.qxotic.jinfer.testkit.CacheScenario;
 import com.qxotic.jinfer.testkit.Harness;
 import com.qxotic.jinfer.testkit.ModelFixture;
+import java.lang.foreign.Arena;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -26,7 +27,7 @@ public final class Qwen35CacheRun {
     private static void main(String[] args) throws Exception {
         Path path =
                 Path.of(args.length > 0 ? args[0] : ModelFixture.QWEN35_2B_Q8.path().toString());
-        Qwen35 m = Qwen35.loadModel(path, java.lang.foreign.Arena.ofAuto());
+        Qwen35 m = Qwen35.loadModel(path, Arena.ofAuto());
         Harness<Qwen35.State> h =
                 new Harness<>(
                         m.loaded(),

@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.Models;
@@ -26,8 +27,8 @@ import org.junit.jupiter.api.Test;
 final class ChatEngineWeightsOwnershipTest {
 
     /** No block layer and no catalog: these tests are about the WEIGHTS arena. */
-    private static final com.qxotic.jinfer.cache.PromptCache.Options HOT_ONLY =
-            com.qxotic.jinfer.cache.PromptCache.Options.DEFAULTS.withBlockBudget(0);
+    private static final PromptCache.Options HOT_ONLY =
+            PromptCache.Options.DEFAULTS.withBlockBudget(0);
 
     private static Path model() {
         return ModelFixture.LFM25_350M_Q8.require();

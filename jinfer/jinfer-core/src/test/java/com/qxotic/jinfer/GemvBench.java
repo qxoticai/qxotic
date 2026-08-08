@@ -36,8 +36,8 @@ public final class GemvBench {
         MemorySegment wseg =
                 Arena.ofAuto().allocate(wbytes, 64); // zero-filled; reads happen regardless
         Q8_0FloatTensor w = new Q8_0FloatTensor((long) dim0 * dim1, wseg);
-        F32FloatTensor x = F32FloatTensor.allocate(java.lang.foreign.Arena.ofAuto(), dim1);
-        F32FloatTensor out = F32FloatTensor.allocate(java.lang.foreign.Arena.ofAuto(), dim0);
+        F32FloatTensor x = F32FloatTensor.allocate(Arena.ofAuto(), dim1);
+        F32FloatTensor out = F32FloatTensor.allocate(Arena.ofAuto(), dim0);
         for (int i = 0; i < dim1; i++) x.setFloat(i, 0.013f * (i % 11));
 
         for (int it = 0; it < 60; it++)

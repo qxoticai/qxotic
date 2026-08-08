@@ -5,6 +5,7 @@ import com.qxotic.jinfer.llm.Sampler;
 import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.toknroll.Tokenizer;
 import java.util.HashSet;
+import java.util.OptionalInt;
 import java.util.Set;
 
 /**
@@ -103,7 +104,7 @@ public final class Thinking {
         };
     }
 
-    private static Integer boxed(java.util.OptionalInt id) {
+    private static Integer boxed(OptionalInt id) {
         return id.isPresent() ? id.getAsInt() : null;
     }
 }

@@ -4,6 +4,7 @@ import static com.qxotic.jam.VectorSupport.F_SPECIES;
 import static com.qxotic.jam.VectorSupport.readFloat16;
 
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.nio.ByteOrder;
 import jdk.incubator.vector.IntVector;
 import jdk.incubator.vector.VectorOperators;
@@ -30,9 +31,8 @@ public final class Q1Kernel {
 
     static final int QK = 128, BYTES = 18;
 
-    private static final java.lang.foreign.ValueLayout.OfLong LONG_LE =
-            java.lang.foreign.ValueLayout.JAVA_LONG_UNALIGNED.withOrder(
-                    java.nio.ByteOrder.LITTLE_ENDIAN);
+    private static final ValueLayout.OfLong LONG_LE =
+            ValueLayout.JAVA_LONG_UNALIGNED.withOrder(ByteOrder.LITTLE_ENDIAN);
 
     private static final VectorSpecies<Integer> I_SPECIES =
             VectorSpecies.of(int.class, F_SPECIES.vectorShape());

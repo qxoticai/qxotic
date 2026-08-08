@@ -12,6 +12,7 @@ import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import jdk.jfr.Recording;
 import jdk.jfr.consumer.RecordedEvent;
@@ -103,7 +104,7 @@ class ServerTelemetryTest {
 
     private static List<RecordedEvent> events(Path jfr) throws Exception {
         try (RecordingFile file = new RecordingFile(jfr)) {
-            List<RecordedEvent> found = new java.util.ArrayList<>();
+            List<RecordedEvent> found = new ArrayList<>();
             while (file.hasMoreEvents()) {
                 RecordedEvent event = file.readEvent();
                 if (event.getEventType().getName().equals("jinfer.Inference")) found.add(event);

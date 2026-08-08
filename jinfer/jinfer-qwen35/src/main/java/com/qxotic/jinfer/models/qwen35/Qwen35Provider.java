@@ -3,9 +3,13 @@ package com.qxotic.jinfer.models.qwen35;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.ModelProvider;
+import com.qxotic.toknroll.Tokenizer;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
+import java.nio.file.Path;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * {@link ModelProvider} service: the Qwen 3.5 generative port's arch-dispatch entry, dense and MoE.
@@ -20,8 +24,8 @@ public final class Qwen35Provider implements ModelProvider {
     }
 
     @Override
-    public java.util.Set<String> architectures() {
-        return java.util.Set.of("qwen35", "qwen35moe");
+    public Set<String> architectures() {
+        return Set.of("qwen35", "qwen35moe");
     }
 
     @Override
@@ -29,8 +33,8 @@ public final class Qwen35Provider implements ModelProvider {
             FileChannel fileChannel,
             GGUF gguf,
             Arena arena,
-            java.util.Map<String, java.nio.file.Path> companions,
-            com.qxotic.toknroll.Tokenizer tokenizer)
+            Map<String, Path> companions,
+            Tokenizer tokenizer)
             throws IOException {
         return Qwen35.loadModel(fileChannel, gguf, arena, tokenizer).loaded();
     }

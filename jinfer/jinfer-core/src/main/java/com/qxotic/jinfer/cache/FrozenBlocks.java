@@ -6,11 +6,14 @@ import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.zip.CRC32C;
 
 /**
  * The prompt-cache artifact FORMAT (JKVF) - this class knows files, not models: any number of
@@ -130,7 +133,7 @@ public final class FrozenBlocks {
         }
         byte[] stored = new byte[32];
         h.get(stored);
-        if (!java.util.Arrays.equals(stored, seed32(modelSeed))) {
+        if (!Arrays.equals(stored, seed32(modelSeed))) {
             throw new IllegalStateException(
                     "frozen cache "
                             + file
@@ -199,7 +202,7 @@ public final class FrozenBlocks {
             // so a writer that mounted before another writer appended would overwrite its blocks
             // and orphan them - silent last-writer-wins. The advisory lock serializes writers;
             // the header re-read turns a stale view into a loud refusal instead of data loss.
-            try (java.nio.channels.FileLock ignored = ch.lock()) {
+            try (FileLock ignored = ch.lock()) {
                 ByteBuffer head = ByteBuffer.allocate(12).order(ByteOrder.LITTLE_ENDIAN);
                 ch.read(head, COUNT_OFFSET);
                 head.flip();
@@ -280,7 +283,7 @@ public final class FrozenBlocks {
 
     /** CRC32C of a blob - the frozen-block integrity stamp (store CRCs cover only pool blobs). */
     static int crc32c(MemorySegment mem) {
-        java.util.zip.CRC32C crc = new java.util.zip.CRC32C();
+        CRC32C crc = new CRC32C();
         crc.update(mem.asByteBuffer());
         return (int) crc.getValue();
     }
@@ -290,7 +293,7 @@ public final class FrozenBlocks {
     }
 
     static byte[] seed32(byte[] seed) {
-        return java.util.Arrays.copyOf(seed, 32);
+        return Arrays.copyOf(seed, 32);
     }
 
     static void putKey(ByteBuffer buf, BlockTree.BlockKey k) {
