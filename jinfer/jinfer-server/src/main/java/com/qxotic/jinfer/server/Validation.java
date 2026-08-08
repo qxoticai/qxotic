@@ -28,7 +28,15 @@ final class Validation {
     }
 
     static void validateChatRequest(Map<String, Object> request) {
-        List<Object> messages = Values.asArray(request.get("messages"), "messages");
+        validateChatRequest(request, Values.asArray(request.get("messages"), "messages"));
+    }
+
+    /**
+     * As above over turns the caller already folded - /v1/responses builds its message list from
+     * {@code input} and must be held to the same rules, without a synthetic copy of the request
+     * carrying a {@code messages} key it never had.
+     */
+    static void validateChatRequest(Map<String, Object> request, List<Object> messages) {
         require(!messages.isEmpty(), "messages must not be empty");
         boolean substance = false;
         for (Object message : messages) {
@@ -180,13 +188,9 @@ final class Validation {
                     Float.isFinite(minp) && 0 <= minp && minp <= 1,
                     "Invalid argument: min_p must be within [0, 1]");
         }
-        if (present(request, "max_tokens") || present(request, "max_completion_tokens")) {
+        if (Requests.budget(request) != null) {
             require(
-                    -1
-                            <= Values.intValue(
-                                    request.getOrDefault(
-                                            "max_tokens", request.get("max_completion_tokens")),
-                                    -1),
+                    -1 <= Values.intValue(Requests.budget(request), -1),
                     "Invalid argument: max_tokens must be -1 (context-bounded) or non-negative");
         }
         require(

@@ -209,6 +209,40 @@ class ValidationTest {
         Validation.validateGenerationParams(nulled, odd);
     }
 
+    /**
+     * The OpenAI SDKs serialise an unset field as an explicit null, so {@code {"max_tokens": null,
+     * "max_completion_tokens": 100}} is what a client that only set the newer name actually sends.
+     * {@code getOrDefault} returns the STORED null for a present key, so both the validator and the
+     * resolver fell through to the server's default and threw the client's 100 away.
+     */
+    @Test
+    void anExplicitNullBudgetDefersToTheOtherSpelling() {
+        Map<String, Object> both = new HashMap<>();
+        both.put("max_tokens", null);
+        both.put("max_completion_tokens", 100);
+        assertEquals(100, Requests.budget(both), "the spelling that carries a value wins");
+
+        Map<String, Object> legacy = new HashMap<>();
+        legacy.put("max_tokens", 8);
+        legacy.put("max_completion_tokens", 99);
+        assertEquals(8, Requests.budget(legacy), "max_tokens wins when both are set");
+
+        Map<String, Object> unset = new HashMap<>();
+        unset.put("max_tokens", null);
+        unset.put("max_completion_tokens", null);
+        assertEquals(null, Requests.budget(unset), "both null is no budget at all");
+        assertEquals(null, Requests.budget(new HashMap<>()), "absent is no budget either");
+
+        // and a bad value in the SURVIVING spelling is still refused
+        ServerConfig config = ServerTestSupport.config(Path.of("model.gguf"));
+        Map<String, Object> bad = new HashMap<>(user("hi"));
+        bad.put("max_tokens", null);
+        bad.put("max_completion_tokens", -5);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> Validation.validateGenerationParams(bad, config));
+    }
+
     @Test
     void everyRejectionIsTheTypeTheHandlerMapsTo400() {
         // the contract in one place: if this list grows a case that throws something else, the

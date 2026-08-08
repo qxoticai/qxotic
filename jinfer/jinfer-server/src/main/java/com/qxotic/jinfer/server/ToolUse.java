@@ -47,18 +47,23 @@ final class ToolUse {
      * so the seeded call parses whole. The engine does the seeding now ({@code
      * RequestPolicy.forceCall}, from the template's own callSeed), which is why nothing here builds
      * the seed - only this prefix, to reconstruct what the model was completing.
+     *
+     * <p>{@code forcedTool} is the tool the request ACTUALLY forced ({@code
+     * Generation.forcedTool}), not what it asked for: on a model with no call seed nothing was
+     * seeded, and prepending a marker there invents text the model never emitted and feeds it to
+     * the string scan.
      */
-    static String forcedPrefix(Map<String, Object> request) {
-        String choice = forced(request);
-        if (choice == null) return "";
-        return choice.isEmpty() ? ToolCalls.TC_START : ToolCalls.TC_START + "[" + choice;
+    static String forcedPrefix(String forcedTool) {
+        if (forcedTool == null) return "";
+        return forcedTool.isEmpty() ? ToolCalls.TC_START : ToolCalls.TC_START + "[" + forcedTool;
     }
 
     /**
      * Parses tool calls out of a finished reply, returning the reply re-tagged with them (or the
      * original reply when none parsed).
      */
-    static Reply parse(LoadedModel<?> model, Reply reply, Map<String, Object> request) {
+    static Reply parse(
+            LoadedModel<?> model, Reply reply, Map<String, Object> request, String forcedTool) {
         // The model's own decoder already ran during generation (structured calls on token ids);
         // when it produced calls they are authoritative, so this string-scan fallback is only for
         // models with no native tool-call format (whole-render / no template).
@@ -69,7 +74,7 @@ final class ToolUse {
         // response tokens renders special tokens (<|tool_call_start|>, <think>) as literal text.
         String decoded = model.tokenizer().decode(reply.tokens());
         String text =
-                forcedPrefix(request)
+                forcedPrefix(forcedTool)
                         + (!decoded.strip().isEmpty()
                                 ? decoded
                                 : (reply.reasoning() != null ? reply.reasoning() + "\n" : "")

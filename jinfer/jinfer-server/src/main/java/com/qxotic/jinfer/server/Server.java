@@ -139,22 +139,20 @@ public final class Server {
                                 Map.of("object", "list", "data", List.of(modelCard)));
                     } else if (path.equals("/v1/models/" + servedId)) {
                         Http.sendJson(exchange, 200, modelCard);
-                    } else {
-                        // contexts match by PREFIX, so this also catches /v1/modelsXYZ - which
-                        // substring("/v1/models/".length()) mangled into "YZ" (or "", or an
-                        // exception) because it assumed a separator that is not there
-                        String requested =
-                                path.startsWith("/v1/models/")
-                                        ? path.substring("/v1/models/".length())
-                                        : path.substring("/v1/models".length());
+                    } else if (path.startsWith("/v1/models/")) {
                         Http.sendError(
                                 exchange,
                                 404,
                                 "Unknown model: "
-                                        + requested
+                                        + path.substring("/v1/models/".length())
                                         + " (this server serves "
                                         + servedId
                                         + ")");
+                    } else {
+                        // contexts match by PREFIX, so /v1/modelsXYZ lands here too. That is a
+                        // wrong PATH, not an unknown model - and the substring that called it one
+                        // assumed a separator that is not there, reporting "XYZ" as "YZ".
+                        Http.sendError(exchange, 404, "Not found");
                     }
                 });
         server.createContext(
@@ -436,9 +434,7 @@ public final class Server {
                     // response_format and tool declarations. This endpoint used to skip them
                     // entirely, so a bad role or a malformed tool reached the engine here and
                     // was refused there - or not at all.
-                    Map<String, Object> asChat = new java.util.HashMap<>(request);
-                    asChat.put("messages", folded);
-                    Validation.validateChatRequest(asChat);
+                    Validation.validateChatRequest(request, folded);
                 },
                 (request, id) -> {
                     List<Object> messages = Requests.responseInputMessages(request);
@@ -663,7 +659,7 @@ public final class Server {
 
     /**
      * A streaming text sink: each chunk of generated text becomes one {@code data:} SSE frame built
-     * by {@code chunkOf}, with running usage attached when tracked.
+     * by {@code chunkOf}.
      */
     private static Consumer<String> deltaSink(
             Sse.Stream sse, Function<String, Map<String, Object>> chunkOf) {
