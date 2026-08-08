@@ -346,8 +346,11 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         }
     }
 
+    // topK is NOT rejected here: it is a supported sampling knob (the builder exposes it, the
+    // port's recommendation seeds it, prepare() feeds it to the sampler). A guard here once
+    // predated that support and, because chat() merges the defaults over the request, it rejected
+    // EVERY request on a model whose port recommends a top_k - gemma4 does.
     private static void rejectUnsupported(ChatRequestParameters p) {
-        if (p.topK() != null) throw new UnsupportedFeatureException("topK is not supported");
         if (p.frequencyPenalty() != null)
             throw new UnsupportedFeatureException("frequencyPenalty is not supported");
         if (p.presencePenalty() != null)
