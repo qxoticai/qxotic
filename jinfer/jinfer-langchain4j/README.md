@@ -22,11 +22,15 @@ Run your JVM with jinfer's flags:
 
 ```java
 ChatModel model = JinferChatModel.builder()
-        .modelPath(Path.of("models/LFM2.5-8B-A1B-Q8_0.gguf"))
+        .model("hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF:Q8_0")
         .build();
 
 String answer = model.chat("What is the capital of France?");
 ```
+
+`.model(String)` takes whatever you have: a local GGUF path, a hub ref, or a pasted browser URL.
+A remote ref downloads at `build()` into the shared model cache (resumable, sha256-verified; warm builds cost zero requests, `JINFER_OFFLINE=1` forbids the network - see [models from the hub](../README.md#models-from-the-hub)).
+`.modelPath(Path)` stays the never-network form.
 
 ## Parameters
 
@@ -54,7 +58,7 @@ System.out.println(response.finishReason());   // STOP | LENGTH | TOOL_EXECUTION
 ```
 
 String stop sequences, JSON response format (grammar-constrained decoding), and `toolChoice=REQUIRED` are supported.
-Unsupported knobs (`topK`, penalties, per-request `modelName`, tools combined with a JSON response format) throw `UnsupportedFeatureException` instead of being silently ignored.
+Unsupported knobs (penalties, per-request `modelName`, tools combined with a JSON response format) throw `UnsupportedFeatureException` instead of being silently ignored.
 
 ## Streaming
 
@@ -107,8 +111,8 @@ Media is decoded locally (base64 or `file://` - this library never fetches over 
 
 ```java
 ChatModel gemma = JinferChatModel.builder()
-        .modelPath(Path.of("models/gemma-4-12B-it-qat-UD-Q4_K_XL.gguf"))
-        .mediaProjector(Path.of("models/mmproj-F32.gguf"))   // vision + audio encoders
+        .model("hf.co/unsloth/gemma-4-12b-it-qat-GGUF:Q4_K_XL")
+        .companion("media", "hf.co/unsloth/gemma-4-12b-it-qat-GGUF/mmproj-F32.gguf")
         .build();
 
 ChatResponse seen = gemma.chat(ChatRequest.builder()
@@ -132,7 +136,7 @@ The brain never sees pixels or samples - it delegates questions and reasons over
 
 ```java
 class Senses {
-    final ChatModel gemma;   // gemma-4-12B + mmproj, built with mediaProjector(...)
+    final ChatModel gemma;   // gemma-4-12B + mmproj, built with companion("media", ...)
 
     @Tool("Look at an image file and answer a question about it")
     String lookAt(@P("absolute path of the image file") String path,
