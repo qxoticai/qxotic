@@ -250,6 +250,47 @@ class ServerContractTest {
                         + " delivered nothing at all");
     }
 
+    /**
+     * Llama has no native tool codec, so a tools request falls back to the Jinja whole-render over
+     * the GGUF's own template - and Meta's template opens with {@code {{- bos_token }}}. That
+     * variable was bound by looking for {@code <bos>} / {@code <|startoftext|>} only, so for Llama
+     * 3 (whose BOS is {@code <|begin_of_text|>}) it resolved to null and Jinja rendered the literal
+     * four characters "None" at the very front of every prompt. Off-distribution, the model never
+     * emitted a turn end: it produced a call, opened a fresh assistant header, and repeated until
+     * the budget ran out - finish_reason "length", no call parsed, trailing garbage.
+     *
+     * <p>This is the E2E shape of that bug, and of the argument-spelling one behind it: the reply
+     * must be a CALL, not a truncated essay, and it must carry the argument the user gave.
+     */
+    @Test
+    void aToolsRequestThroughTheWholeRenderCallsAndStops() throws Exception {
+        String body =
+                """
+                {"model":"%s","max_tokens":200,"temperature":0,
+                 "tools":[{"type":"function","function":{"name":"get_weather",
+                   "description":"Get the current weather for a city",
+                   "parameters":{"type":"object","properties":{"city":{"type":"string"}},
+                     "required":["city"]}}}],
+                 "messages":[{"role":"user","content":"What is the weather in Paris?"}]}
+                """
+                        .formatted(modelId);
+        Map<String, Object> reply = json(post("/v1/chat/completions", body).body());
+        Map<?, ?> choice = (Map<?, ?>) ((List<?>) reply.get("choices")).get(0);
+        assertEquals(
+                "tool_calls",
+                choice.get("finish_reason"),
+                "the turn must END on a call, not run to the budget: " + reply);
+
+        List<?> calls = (List<?>) ((Map<?, ?>) choice.get("message")).get("tool_calls");
+        assertTrue(calls != null && !calls.isEmpty(), "a call must be parsed: " + reply);
+        Map<?, ?> function = (Map<?, ?>) ((Map<?, ?>) calls.get(0)).get("function");
+        assertEquals("get_weather", function.get("name"));
+        String arguments = String.valueOf(function.get("arguments"));
+        assertTrue(
+                arguments.contains("Paris"),
+                "the argument the user actually gave must survive: " + arguments);
+    }
+
     /** One model served, so naming it is optional - naming the WRONG one is not. */
     @Test
     void theModelFieldIsOptionalOverTheWire() throws Exception {

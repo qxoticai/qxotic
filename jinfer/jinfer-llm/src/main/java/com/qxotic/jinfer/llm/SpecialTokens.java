@@ -49,6 +49,43 @@ public final class SpecialTokens {
         return OptionalInt.empty();
     }
 
+    /**
+     * The sequence-start spellings jinfer's families use, most specific first. ONE table, because
+     * three call sites each carried their own two-name list ({@code "<bos>", "<|startoftext|>"})
+     * and none of them knew Llama 3's {@code <|begin_of_text|>}. The cost was not cosmetic: the
+     * Jinja whole-render binds {@code bos_token} from this lookup, and a null there renders the
+     * literal four characters {@code None} at the very front of the prompt.
+     *
+     * <p>ponytail: a name table is a heuristic. The authority is the GGUF's {@code
+     * tokenizer.ggml.bos_token_id}, which today only each port's Configuration reads - thread that
+     * onto the tokenizer and this table becomes a fallback.
+     */
+    private static final String[] BOS_NAMES = {
+        "<|begin_of_text|>", // Llama 3.x
+        "<bos>", // Gemma
+        "<s>", // Llama 2, Mistral
+        "<|startoftext|>",
+    };
+
+    /** As {@link #BOS_NAMES} for end-of-sequence / end-of-turn. */
+    private static final String[] EOS_NAMES = {
+        "<|eot_id|>", // Llama 3.x turn end - what its tokenizer_config calls eos_token
+        "<eos>", // Gemma
+        "<|im_end|>", // Qwen and the ChatML families
+        "<|end_of_text|>",
+        "<|endoftext|>",
+    };
+
+    /** The vocabulary's sequence-start token, whatever this family spells it. */
+    public static OptionalInt bos(Tokenizer tokenizer) {
+        return findFirst(tokenizer, BOS_NAMES);
+    }
+
+    /** The vocabulary's end-of-sequence token, whatever this family spells it. */
+    public static OptionalInt eos(Tokenizer tokenizer) {
+        return findFirst(tokenizer, EOS_NAMES);
+    }
+
     /** The id of a special token a curated template requires; throws naming it when absent. */
     public static int require(Tokenizer tokenizer, String name) {
         return find(tokenizer, name)

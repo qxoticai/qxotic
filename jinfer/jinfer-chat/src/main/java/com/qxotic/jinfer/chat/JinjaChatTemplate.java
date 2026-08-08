@@ -72,8 +72,11 @@ public final class JinjaChatTemplate {
         var vars = new LinkedHashMap<String, Object>();
         vars.put("messages", preprocessToolCalls(messages));
         vars.put("add_generation_prompt", addGenerationPrompt);
-        vars.put("bos_token", firstSpecialString(tokenizer, "<bos>", "<|startoftext|>"));
-        vars.put("eos_token", firstSpecialString(tokenizer, "<eos>", "<|endoftext|>"));
+        // a template that opens with {{ bos_token }} - Llama 3's does - renders the literal string
+        // "None" when this is null, putting four characters of garbage at the very front of every
+        // whole-render prompt. The spellings live in SpecialTokens now, in one table.
+        vars.put("bos_token", specialString(SpecialTokens.bos(tokenizer)));
+        vars.put("eos_token", specialString(SpecialTokens.eos(tokenizer)));
         vars.put("tools", tools);
         vars.put("enable_thinking", enableThinking);
         vars.put("preserve_thinking", false);
@@ -207,13 +210,9 @@ public final class JinjaChatTemplate {
         return out;
     }
 
-    /**
-     * The text of the first present special token among {@code names} (preferred name first), or
-     * null if none exist — e.g. {@code <bos>} with a {@code <|startoftext|>} fallback.
-     */
-    private static String firstSpecialString(Tokenizer t, String... names) {
-        java.util.OptionalInt id = SpecialTokens.findFirst(t, names);
-        return id.isPresent() ? t.decode(new int[] {id.getAsInt()}) : null;
+    /** The text of a resolved special token, or null when this vocabulary has none. */
+    private String specialString(java.util.OptionalInt id) {
+        return id.isPresent() ? tokenizer.decode(new int[] {id.getAsInt()}) : null;
     }
 
     /**
