@@ -172,7 +172,7 @@ public final class ModelStore {
     // ponytail: no dedup, no aggregate progress bar (concurrent downloads print named lines, see
     // Fetch.Progress), no shared disk-space budget. Add each when someone actually hits it.
     public static List<Path> resolveAll(List<String> pathOrRefs) {
-        if (pathOrRefs.size() <= 1) {
+        if (pathOrRefs.size() <= 1 || Fetch.oneAtATime()) {
             return pathOrRefs.stream().map(ModelStore::resolve).toList();
         }
         // ponytail: at most 4 files in flight (x up to 8 chunk connections each, see
