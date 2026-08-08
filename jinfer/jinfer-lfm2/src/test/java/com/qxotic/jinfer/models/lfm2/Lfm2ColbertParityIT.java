@@ -8,10 +8,8 @@ import com.qxotic.jinfer.chat.LoadedReranker;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.testkit.ModelFixture;
 import java.lang.foreign.Arena;
-import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -39,12 +37,9 @@ class Lfm2ColbertParityIT {
 
     @Test
     void matchesLlamaCppMaxSimScores() throws Exception {
-        Assumptions.assumeTrue(
-                Files.exists(ModelFixture.LFM25_COLBERT_350M_Q8.path()),
-                "model not found: " + ModelFixture.LFM25_COLBERT_350M_Q8.path());
         try (Arena arena = Arena.ofShared()) {
             LoadedReranker<?> reranker =
-                    Models.loadReranker(ModelFixture.LFM25_COLBERT_350M_Q8.path(), arena);
+                    Models.loadReranker(ModelFixture.LFM25_COLBERT_350M_Q8.require(), arena);
             var state = reranker.model().newState(2048, 512, arena);
             List<Double> scores = new ArrayList<>();
             reranker.scoreAll(state, "", QUERY, DOCUMENTS, scores::add);
@@ -63,12 +58,9 @@ class Lfm2ColbertParityIT {
 
     @Test
     void anInstructionIsRefusedByName() throws Exception {
-        Assumptions.assumeTrue(
-                Files.exists(ModelFixture.LFM25_COLBERT_350M_Q8.path()),
-                "model not found: " + ModelFixture.LFM25_COLBERT_350M_Q8.path());
         try (Arena arena = Arena.ofShared()) {
             LoadedReranker<?> reranker =
-                    Models.loadReranker(ModelFixture.LFM25_COLBERT_350M_Q8.path(), arena);
+                    Models.loadReranker(ModelFixture.LFM25_COLBERT_350M_Q8.require(), arena);
             var state = reranker.model().newState(2048, 512, arena);
             // MaxSim has no instruction slot; silently ignoring one would misreport what ran
             UnsupportedOperationException e =
@@ -84,7 +76,7 @@ class Lfm2ColbertParityIT {
     @Test
     void theWrongCheckpointsRefuseByName() {
         try (Arena arena = Arena.ofShared()) {
-            if (Files.exists(ModelFixture.LFM25_350M_Q8.path())) {
+            if (ModelFixture.LFM25_350M_Q8.present()) {
                 // a generative LFM2 is not the family's reranker
                 IllegalArgumentException e =
                         assertThrows(
@@ -94,7 +86,7 @@ class Lfm2ColbertParityIT {
                                                 ModelFixture.LFM25_350M_Q8.path(), arena));
                 assertTrue(e.getMessage().contains("ColBERT"), e.getMessage());
             }
-            if (Files.exists(ModelFixture.LFM25_COLBERT_350M_Q8.path())) {
+            if (ModelFixture.LFM25_COLBERT_350M_Q8.present()) {
                 // and a retrieval checkpoint must never "chat" - it would generate noise
                 IllegalArgumentException e =
                         assertThrows(

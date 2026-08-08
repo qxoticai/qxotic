@@ -80,8 +80,17 @@ final class Lfm2Colbert implements Reranker<Lfm2.State> {
     }
 
     @Override
+    public Model<?, ?, Lfm2.State> model() {
+        return model;
+    }
+
+    @Override
+    public boolean hasInstructionSlot() {
+        return false; // MaxSim has no prompt; builders that bind an instruction check this
+    }
+
+    @Override
     public int scoreAll(
-            Model<?, ?, Lfm2.State> ignored,
             Lfm2.State state,
             String instruction,
             String query,
@@ -92,28 +101,36 @@ final class Lfm2Colbert implements Reranker<Lfm2.State> {
                     "ColBERT scores by MaxSim over token embeddings and has no instruction slot -"
                             + " drop instruction(...), or use a judge reranker (Qwen3-Reranker)");
         }
-        int[][] seqs = new int[1 + documents.size()][];
-        seqs[0] = querySequence(query);
-        for (int i = 0; i < documents.size(); i++) {
-            seqs[i + 1] = documentSequence(documents.get(i));
-        }
-        // the query is sequence 0, so its matrix exists before any document is visited; each
-        // document scores the moment its rows are read, keeping sink order = input order
+        // the query embeds in its own pass (a <=32-token forward, negligible next to the
+        // documents), so each document then scores the moment its rows are read - sink order is
+        // input order by construction
+        int[] querySeq = querySequence(query);
+        float[][] queryRows = new float[querySeq.length][];
+        int total =
+                model.forEachSequence(
+                        state,
+                        new int[][] {querySeq},
+                        (index, rowStart) -> readRows(state, rowStart, queryRows));
+        int[][] docs = new int[documents.size()][];
+        for (int i = 0; i < documents.size(); i++) docs[i] = documentSequence(documents.get(i));
+        return total
+                + model.forEachSequence(
+                        state,
+                        docs,
+                        (index, rowStart) -> {
+                            float[][] rows = new float[docs[index].length][];
+                            readRows(state, rowStart, rows);
+                            sink.accept(maxSim(queryRows, rows, docs[index]));
+                        });
+    }
+
+    /** One projected+normalized 128-d vector per retained row, into {@code rows}. */
+    private void readRows(Lfm2.State state, int rowStart, float[][] rows) {
         int outDim = model.config().embeddingLengthOut();
-        float[] row = new float[outDim];
-        float[][][] queryRows = new float[1][][];
-        return model.forEachSequence(
-                state,
-                seqs,
-                (index, rowStart) -> {
-                    float[][] rows = new float[seqs[index].length][];
-                    for (int r = 0; r < rows.length; r++) {
-                        model.colbertRow(state, rowStart + r, row);
-                        rows[r] = row.clone();
-                    }
-                    if (index == 0) queryRows[0] = rows; // every query row counts, pads included
-                    else sink.accept(maxSim(queryRows[0], rows, seqs[index]));
-                });
+        for (int r = 0; r < rows.length; r++) {
+            rows[r] = new float[outDim];
+            model.colbertRow(state, rowStart + r, rows[r]);
+        }
     }
 
     /** {@code Σ_q max_d (q·d)} over L2-normalized rows; skiplisted DOCUMENT tokens drop out. */

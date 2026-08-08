@@ -44,15 +44,14 @@ record ModelRef(
     enum Host {
         HF(
                 "hf.co",
-                List.of("huggingface.co"),
                 "https://huggingface.co",
                 "",
                 "main",
                 "HF_TOKEN",
-                "HF_ENDPOINT"),
+                "HF_ENDPOINT",
+                "huggingface.co"),
         MODELSCOPE(
                 "modelscope.cn",
-                List.of(),
                 "https://modelscope.cn",
                 "/models",
                 "master",
@@ -76,14 +75,14 @@ record ModelRef(
 
         Host(
                 String name,
-                List<String> aliases,
                 String defaultBase,
                 String prefix,
                 String defaultRevision,
                 String tokenEnv,
-                String endpointEnv) {
+                String endpointEnv,
+                String... aliases) {
             this.name = name;
-            this.aliases = aliases;
+            this.aliases = List.of(aliases);
             this.defaultBase = defaultBase;
             this.prefix = prefix;
             this.defaultRevision = defaultRevision;

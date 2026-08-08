@@ -806,11 +806,7 @@ public final class Lfm2
 
     /** {@code 1/||t[0..n)||}, or 0 for a zero vector - the shared L2-normalization factor. */
     private static float l2Inv(FloatTensor t, int n) {
-        double ss = 0;
-        for (int i = 0; i < n; i++) {
-            float v = t.getFloat(i);
-            ss += (double) v * v;
-        }
+        float ss = Norms.sumOfSquares(t, 0, n);
         return ss > 0 ? (float) (1.0 / Math.sqrt(ss)) : 0f;
     }
 
@@ -848,10 +844,10 @@ public final class Lfm2
             State state,
             com.qxotic.jinfer.Batch.Input.Sequences seqs,
             java.util.function.Consumer<FloatTensor> sink) {
-        if (configuration.causalAttention || configuration.poolingType != POOLING_CLS)
+        if (!configuration.isEmbedder())
             throw new UnsupportedOperationException(
-                    "this LFM2.5 checkpoint is generative, not an embedder - load"
-                            + " LFM2.5-Embedding (pooling_type=CLS, attention.causal=false)");
+                    "this LFM2.5 checkpoint is not an embedder - load LFM2.5-Embedding"
+                            + " (pooling_type=CLS, attention.causal=false)");
         int[] len = seqs.seqLen();
         int[] ids = seqs.tokens().ids();
         int[][] sequences = new int[len.length][];
@@ -899,20 +895,10 @@ public final class Lfm2
                                     + ") - raise -Djinfer.batchCapacity/contextLength above it,"
                                     + " or chunk the text smaller");
                 total += tokens;
-                int[] ids = new int[tokens];
-                int[] len = new int[end - seq];
-                for (int i = seq, at = 0; i < end; at += seqs[i].length, i++) {
-                    System.arraycopy(seqs[i], 0, ids, at, seqs[i].length);
-                    len[i - seq] = seqs[i].length;
-                }
                 state.reset();
-                ingest(
-                        state,
-                        new Batch(
-                                new Batch.Input.Sequences(new Batch.Input.Tokens(ids), len),
-                                Batch.Outputs.ALL));
-                for (int i = 0, row = 0; i < len.length; row += len[i], i++) {
-                    visitor.sequence(seq + i, row);
+                ingest(state, Batch.pack(Arrays.copyOfRange(seqs, seq, end)));
+                for (int i = seq, row = 0; i < end; row += seqs[i].length, i++) {
+                    visitor.sequence(i, row);
                 }
                 seq = end;
             }
@@ -976,6 +962,16 @@ public final class Lfm2
 
         public boolean isMoELayer(int layer) {
             return expertCount > 0 && layer >= leadingDenseBlockCount;
+        }
+
+        /** An embedding checkpoint (LFM2.5-Embedding): non-causal attention with CLS pooling. */
+        public boolean isEmbedder() {
+            return !causalAttention && poolingType == POOLING_CLS;
+        }
+
+        /** A ColBERT checkpoint: non-causal with a per-token {@code dense_2} projection width. */
+        public boolean isColbert() {
+            return !causalAttention && embeddingLengthOut > 0;
         }
 
         public int maxHiddenDim() {

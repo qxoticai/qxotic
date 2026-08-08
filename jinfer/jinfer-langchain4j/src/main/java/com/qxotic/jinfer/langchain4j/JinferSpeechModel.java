@@ -136,9 +136,9 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
 
     public static final class Builder {
 
-        private SpeechModel<?, ?, ?> model;
-        private Path modelPath;
-        private String modelRef; // model(String): resolved at build(), never in the setter
+        private Object source; // Path | ref/URL String | SpeechModel: the last setter wins
+        private SpeechModel<?, ?, ?> model; // derived from source at build()
+        private Path modelPath; // derived from source at build()
         private Arena arena;
         private Double speed;
         private int maxInputChars = DEFAULT_MAX_INPUT_CHARS;
@@ -149,30 +149,23 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
          * Mutually exclusive with {@link #modelPath}.
          */
         public Builder model(SpeechModel<?, ?, ?> model) {
-            this.model = model;
-            this.modelPath = null;
-            this.modelRef = null;
+            this.source = model;
             return this;
         }
 
         /** The GGUF to load, at the port's own defaults, through architecture dispatch. */
         public Builder modelPath(Path modelPath) {
-            this.modelPath = modelPath;
-            this.model = null;
-            this.modelRef = null;
+            this.source = modelPath;
             return this;
         }
 
         /**
          * The model as ONE string: a local GGUF path, a hub ref ({@code hf.co/owner/repo:Q4_K_M})
-         * or a pasted browser URL. Recorded here and resolved by {@link #build()} with the rest of
-         * the load - a remote ref downloads there, only what is missing. The model setters
-         * overwrite one another: the last one called wins.
+         * or a pasted browser URL - resolved by {@link #build()} with the rest of the load, so a
+         * remote ref downloads there (see the package doc) and the chain never blocks.
          */
         public Builder model(String pathOrRef) {
-            this.modelRef = pathOrRef;
-            this.model = null;
-            this.modelPath = null;
+            this.source = pathOrRef;
             return this;
         }
 
@@ -204,12 +197,17 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
         }
 
         public JinferSpeechModel build() {
-            // the setters clear one another (last one wins), so at most one source is set here
-            if (modelRef != null) modelPath = com.qxotic.jinfer.hub.ModelStore.resolve(modelRef);
-            if (model == null && modelPath == null)
-                throw new IllegalArgumentException(
-                        "a model is required: model(\"hf.co/owner/repo:Q4_K_M\"),"
-                                + " modelPath(...) or model(SpeechModel)");
+            model = null;
+            modelPath = null;
+            switch (source) {
+                case String ref -> modelPath = com.qxotic.jinfer.hub.ModelStore.resolve(ref);
+                case Path path -> modelPath = path;
+                case SpeechModel<?, ?, ?> m -> model = m;
+                case null, default ->
+                        throw new IllegalArgumentException(
+                                "a model is required: model(\"hf.co/owner/repo:Q4_K_M\"),"
+                                        + " modelPath(...) or model(SpeechModel)");
+            }
             if (model != null && arena != null)
                 throw new IllegalArgumentException(
                         "arena(...) is where modelPath(...) loads the weights; a model you built"

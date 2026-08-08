@@ -20,22 +20,29 @@ import java.util.function.DoubleConsumer;
  */
 public interface Reranker<S extends RuntimeState> {
 
+    /** The backbone this recipe scores with - the one it was constructed around. */
+    Model<?, ?, S> model();
+
     /** The task instruction this family's card ships as its default ("" when it has no slot). */
     String defaultInstruction();
 
     /**
+     * Whether this recipe HAS an instruction slot. False for late interaction (MaxSim has no
+     * prompt), and checked where an instruction is BOUND - a builder, a bean - so a misconfigured
+     * application fails at build, never on its first request.
+     */
+    default boolean hasInstructionSlot() {
+        return true;
+    }
+
+    /**
      * Scores every document against {@code query}, one score to {@code sink} per document in input
      * order; returns the exact total token count. {@code state} belongs to this call (reset it) and
-     * comes from {@code model}; the recipe claims it as it works - through {@code ingest}, or
+     * comes from {@link #model()}; the recipe claims it as it works - through {@code ingest}, or
      * explicitly when it also reads rows between forwards.
      */
     int scoreAll(
-            Model<?, ?, S> model,
-            S state,
-            String instruction,
-            String query,
-            List<String> documents,
-            DoubleConsumer sink);
+            S state, String instruction, String query, List<String> documents, DoubleConsumer sink);
 
     /**
      * The cross-encoder shape: scaffold + instruction + query framed ONCE, then each candidate
@@ -64,7 +71,6 @@ public interface Reranker<S extends RuntimeState> {
 
         @Override
         default int scoreAll(
-                Model<?, ?, S> model,
                 S state,
                 String instruction,
                 String query,
@@ -73,7 +79,7 @@ public interface Reranker<S extends RuntimeState> {
             Batch head = head(instruction, query);
             int total = head.count();
             state.reset();
-            ingest(model, state, head);
+            ingest(state, head);
             int framePositions = state.position();
             for (int i = 0; i < documents.size(); i++) {
                 Batch document = document(documents.get(i));
@@ -90,15 +96,15 @@ public interface Reranker<S extends RuntimeState> {
                 }
                 total += document.count();
                 state.resumeAt(framePositions);
-                ingest(model, state, document);
+                ingest(state, document);
                 sink.accept(score(state));
             }
             return total;
         }
 
-        private void ingest(Model<?, ?, S> model, S state, Batch batch) {
+        private void ingest(S state, Batch batch) {
             for (Batch chunk : Batch.prepare(List.of(batch), state.batchCapacity())) {
-                model.ingest(state, chunk);
+                model().ingest(state, chunk);
             }
         }
     }

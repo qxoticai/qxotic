@@ -45,7 +45,7 @@ public record LoadedReranker<S extends RuntimeState>(
                 InferenceEvent.started(name, InferenceEvent.RERANK, InferenceEvent.TEXT);
         long startNanos = System.nanoTime();
         try {
-            int tokens = reranker.scoreAll(model, s, instruction, query, documents, sink);
+            int tokens = reranker.scoreAll(s, instruction, query, documents, sink);
             event.inputTokens = tokens;
             return tokens;
         } catch (RuntimeException | Error failure) {
