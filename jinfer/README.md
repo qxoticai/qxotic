@@ -53,7 +53,7 @@ while ((token = model.sample(state)) != model.eosTokenId()) {
 mvn package
 java --enable-preview --add-modules jdk.incubator.vector \
   -jar target/jinfer.jar --model ./model.gguf --chat
-java -jar target/jinfer.jar --model ./model.gguf --server --port 17325
+java -jar target/jinfer.jar --model ./model.gguf --server --port 17341
 ```
 
 For full speed add `--enable-native-access=ALL-UNNAMED` plus the inline hints from

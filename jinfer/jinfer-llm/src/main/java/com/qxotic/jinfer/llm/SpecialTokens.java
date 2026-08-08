@@ -41,7 +41,7 @@ public final class SpecialTokens {
     }
 
     /** The id of the first present special among ordered alias spellings (e.g. bos/eos names). */
-    public static OptionalInt findFirst(Tokenizer tokenizer, String... names) {
+    static OptionalInt findFirst(Tokenizer tokenizer, String... names) {
         for (String name : names) {
             OptionalInt id = find(tokenizer, name);
             if (id.isPresent()) return id;
@@ -67,7 +67,13 @@ public final class SpecialTokens {
         "<|startoftext|>",
     };
 
-    /** As {@link #BOS_NAMES} for end-of-sequence / end-of-turn. */
+    /**
+     * As {@link #BOS_NAMES} for end-of-sequence, for the ONE caller that needs a single id (the
+     * Jinja {@code eos_token} binding). Deliberately NOT the stop set: {@link #stops} collects
+     * every terminator a family has - Llama 3 alone ends turns with {@code <|eot_id|>} and
+     * tool-call messages with {@code <|eom_id|>} - and each port still declares its own list
+     * because which tokens END GENERATION is a modelling fact, not a spelling.
+     */
     private static final String[] EOS_NAMES = {
         "<|eot_id|>", // Llama 3.x turn end - what its tokenizer_config calls eos_token
         "<eos>", // Gemma

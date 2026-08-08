@@ -29,6 +29,18 @@ final class Requests {
         return requested.isBlank() ? config.modelName() : requested;
     }
 
+    /**
+     * The request's completion budget, whichever of the two spellings carries it, or null when
+     * neither does. {@code getOrDefault("max_tokens", ...)} was wrong for both callers: it returns
+     * the STORED null for a present-but-null key, so {@code {"max_tokens": null,
+     * "max_completion_tokens": 100}} - what an OpenAI SDK serialises when only the newer field is
+     * set - resolved to the server default and threw the client's 100 away.
+     */
+    static Object budget(Map<String, Object> request) {
+        Object legacy = request.get("max_tokens");
+        return legacy != null ? legacy : request.get("max_completion_tokens");
+    }
+
     /** The /v1/completions prompt: a string, or a string array joined by newlines. */
     static String completionPrompt(Map<String, Object> request) {
         Object promptValue = request.get("prompt");

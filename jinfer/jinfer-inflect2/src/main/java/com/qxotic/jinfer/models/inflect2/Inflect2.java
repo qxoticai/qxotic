@@ -1,6 +1,6 @@
 // Inflect2 — VITS-family text-to-waveform model (Nano 3.97M, Micro 9.36M; F16/Q8_0/Q4_0 GGUF).
 //
-//   Inflect2 model = Inflect2.load(Path.of("model.gguf"));
+//   Inflect2 model = Inflect2.load(Path.of("model.gguf"), arena);
 //   Media.Audio audio = model.synthesize(model.newState(), tokens, 1.0f, 0.667f, seed);
 //
 // The pipeline, one step each: embed the phoneme tokens and run a relative-attention transformer

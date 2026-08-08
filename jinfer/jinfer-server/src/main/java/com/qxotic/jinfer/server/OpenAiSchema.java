@@ -1,5 +1,5 @@
 // OpenAI-compatible wire shapes: the JSON envelopes for chat/completions/responses (full and
-// streaming chunks), usage, and llama.cpp-style timings. Pure builders from a Reply
+// streaming chunks), usage, and llama.cpp-style timings. Pure builders from a Reply -
 // no transport, no generation logic.
 package com.qxotic.jinfer.server;
 

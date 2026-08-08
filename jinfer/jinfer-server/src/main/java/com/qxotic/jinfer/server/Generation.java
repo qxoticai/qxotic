@@ -173,7 +173,7 @@ final class Generation {
                         consumedPromptTokens(model.tokenizer(), prepared));
         // Bare-call recovery (llama.cpp #21242): LFM2.5 sometimes emits pythonic calls WITHOUT its
         // markers, so the structural parser finds nothing; the string scan is a no-op otherwise.
-        return tools ? ToolUse.parse(model, reply, request) : reply;
+        return tools ? ToolUse.parse(model, reply, request, forcedTool(request)) : reply;
     }
 
     /**
@@ -746,9 +746,7 @@ final class Generation {
      * same field was a knob nobody had to reason about.
      */
     private int maxOutputTokens(Map<String, Object> request) {
-        return Values.intValue(
-                request.getOrDefault("max_tokens", request.get("max_completion_tokens")),
-                config.defaults().maxOutputTokens());
+        return Values.intValue(Requests.budget(request), config.defaults().maxOutputTokens());
     }
 
     /**
@@ -789,11 +787,14 @@ final class Generation {
 
     /**
      * Effective thinking switch for a server request: chat_template_kwargs.enable_thinking
-     * (llama.cpp convention) overrides the CLI --think flag. Forced tool calls never think - the
-     * call marker is seeded as the first assistant token.
+     * (llama.cpp convention) overrides the CLI --think flag. A forced tool call never thinks - the
+     * call marker is seeded as the first assistant token, leaving no room for a think span. That
+     * reason only holds when forcing ACTUALLY happens, so this asks {@link #forcedTool}: a model
+     * with no call seed ignores tool_choice and generates ordinary prose, and silently disabling
+     * its thinking bought nothing.
      */
     private boolean requestThink(Map<String, Object> request) {
-        if (ToolUse.forced(request) != null) {
+        if (forcedTool(request) != null) {
             return false;
         }
         if (request.get("chat_template_kwargs") instanceof Map<?, ?> kwargs

@@ -72,9 +72,12 @@ public final class JinjaChatTemplate {
         var vars = new LinkedHashMap<String, Object>();
         vars.put("messages", preprocessToolCalls(messages));
         vars.put("add_generation_prompt", addGenerationPrompt);
-        // a template that opens with {{ bos_token }} - Llama 3's does - renders the literal string
-        // "None" when this is null, putting four characters of garbage at the very front of every
-        // whole-render prompt. The spellings live in SpecialTokens now, in one table.
+        // A template that opens with {{ bos_token }} - Llama 3's does - printed the literal string
+        // "None" when this bound null, putting four characters of garbage at the very front of
+        // every whole-render prompt. TWO things fixed that: the spellings live in one table in
+        // SpecialTokens (which is what taught it <|begin_of_text|>), and an absent token binds ""
+        // rather than null, so a vocabulary this build has never seen renders NOTHING instead of
+        // garbage. "" is falsy in Jinja exactly as None is, so {% if bos_token %} is unaffected.
         vars.put("bos_token", specialString(SpecialTokens.bos(tokenizer)));
         vars.put("eos_token", specialString(SpecialTokens.eos(tokenizer)));
         vars.put("tools", tools);
@@ -210,9 +213,9 @@ public final class JinjaChatTemplate {
         return out;
     }
 
-    /** The text of a resolved special token, or null when this vocabulary has none. */
+    /** The text of a resolved special token, or "" when this vocabulary has none. */
     private String specialString(java.util.OptionalInt id) {
-        return id.isPresent() ? tokenizer.decode(new int[] {id.getAsInt()}) : null;
+        return id.isPresent() ? tokenizer.decode(new int[] {id.getAsInt()}) : "";
     }
 
     /**
