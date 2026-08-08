@@ -31,7 +31,6 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -97,61 +96,159 @@ final class Fetch {
     /** Two threads of one JVM cannot both hold a {@link FileLock}, so they queue here first. */
     private static final Map<Path, ReentrantLock> IN_PROCESS = new ConcurrentHashMap<>();
 
-    /** Live transfers right now - what tells a Progress it must not own the terminal line. */
-    private static final AtomicInteger ACTIVE = new AtomicInteger();
-
-    /** True while a \r bar sits unterminated - what Ctrl-C would glue the shell prompt onto. */
-    private static volatile boolean barMidLine;
-
     /**
-     * The Progress that owns the terminal bar right now, repainted by a clock ticker so the spinner
-     * keeps turning through a network stall - the bar itself is DATA-driven and freezes exactly
-     * when the user most needs proof the process is alive. Null when no bar is live.
+     * The terminal's live region - the docker-pull shape: one row per transfer, all repainted in
+     * place as ONE write, finished rows scrolling away as permanent \u2713 lines. Messages print
+     * ABOVE the region ({@link #announce}). Only terminal-bound Progress rows ever register, so a
+     * CI log never sees an escape code; with nothing painted, announce is a plain println.
+     *
+     * <p>This replaces what used to be five separate mechanisms: the one-bar-owner rule, the
+     * line-mode latch, tail padding (\u001b[2K erases the whole line), the mid-line shutdown hook
+     * (every paint ends below the region on a fresh line), and the per-row stall ticker.
      */
-    private static volatile Progress barOwner;
+    static final class Board {
+        private static final java.util.List<Progress> rows = new java.util.ArrayList<>();
+        private static int painted; // lines the live region occupies on screen right now
+        private static long lastPaint;
+        private static Thread ticker;
 
-    private static volatile Thread ticker;
-
-    private static void ensureTicker() {
-        if (ticker != null) {
-            return;
+        /** A transfer joins the region; the ticker keeps spinners turning through stalls. */
+        static synchronized void add(Progress row) {
+            rows.add(row);
+            if (ticker == null) {
+                ticker = new Thread(Board::tick, "jinfer-progress");
+                ticker.setDaemon(true);
+                ticker.start();
+            }
+            paint(true);
         }
-        synchronized (Fetch.class) {
-            if (ticker != null) {
+
+        private static void tick() {
+            while (true) {
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException e) {
+                    return;
+                }
+                synchronized (Board.class) {
+                    if (!rows.isEmpty()) {
+                        paint(false);
+                    }
+                }
+            }
+        }
+
+        /** A message above the region - the "download <ref>" headers, retry notes. */
+        static synchronized void announce(String message) {
+            StringBuilder out = new StringBuilder();
+            if (painted > 0) {
+                out.append("\u001b[").append(painted).append("A\r\u001b[J");
+                painted = 0;
+            }
+            out.append(message).append('\n');
+            progress().print(out);
+            progress().flush();
+            paint(true);
+        }
+
+        /** Data and clock events funnel here; the throttle is shared, ~10 fps total. */
+        static synchronized void repaint(boolean force) {
+            paint(force);
+        }
+
+        private static void paint(boolean force) {
+            long now = System.nanoTime();
+            if (!force && now - lastPaint < Progress.TICK_NANOS) {
                 return;
             }
-            Thread t =
-                    new Thread(
-                            () -> {
-                                while (true) {
-                                    try {
-                                        Thread.sleep(100);
-                                    } catch (InterruptedException e) {
-                                        return;
-                                    }
-                                    Progress owner = barOwner;
-                                    if (owner != null) {
-                                        owner.repaint();
-                                    }
-                                }
-                            },
-                            "jinfer-progress-spinner");
-            t.setDaemon(true);
-            t.start();
-            ticker = t;
+            lastPaint = now;
+            // A row must NEVER wrap: a wrapped row occupies two physical lines, the cursor-up
+            // arithmetic goes off by one, and the region degenerates into a scroll-wall with
+            // remnant characters bleeding between frames. Two defences: the name column shrinks
+            // first (the numbers matter more than the full file name), then a hard clip
+            // guarantees the invariant on any width.
+            int cols = columns();
+            String[] bodies = new String[rows.size()];
+            int labelWidth = stickyLabel, body = 0;
+            for (int i = 0; i < rows.size(); i++) {
+                Progress row = rows.get(i);
+                bodies[i] = row.body(now);
+                labelWidth = Math.max(labelWidth, row.label.length());
+                body = Math.max(body, bodies[i].length());
+            }
+            // STICKY while the region lives: a column that shrank on prune or phase flip would
+            // leave frozen scrollback rows misaligned against the live ones below them
+            labelWidth = Math.max(8, Math.min(labelWidth, cols - 1 - 3 - body));
+            stickyLabel = labelWidth;
+            StringBuilder out = new StringBuilder();
+            if (painted > 0) {
+                out.append("\u001b[").append(painted).append('A');
+            }
+            for (int i = 0; i < rows.size(); i++) {
+                String line = rows.get(i).renderRow(labelWidth, bodies[i]);
+                if (line.length() > cols - 1) {
+                    line = line.substring(0, cols - 1);
+                }
+                out.append("\r\u001b[2K").append(line).append('\n');
+            }
+            painted = rows.size();
+            progress().print(out);
+            progress().flush();
+            // rows finished at the TOP leave the region: the line just painted above the
+            // remainder stays in the scrollback as the permanent record
+            while (!rows.isEmpty() && rows.get(0).done) {
+                rows.remove(0);
+                painted--;
+            }
+            if (rows.isEmpty()) {
+                stickyLabel = 0; // the next batch sizes its own column
+            }
+        }
+
+        private static int stickyLabel;
+
+        private static int columns = -1;
+
+        /** {@code COLUMNS} > {@code stty size} (asked once) > 80, floored at 40. */
+        private static int columns() {
+            if (columns > 0) {
+                return columns;
+            }
+            int c = 0;
+            String env = System.getenv("COLUMNS");
+            if (env != null) {
+                try {
+                    c = Integer.parseInt(env.strip());
+                } catch (NumberFormatException ignored) {
+                    // an unparseable width is not worth failing a repaint over
+                }
+            }
+            if (c <= 0) {
+                try {
+                    Process stty =
+                            new ProcessBuilder("stty", "size")
+                                    .redirectInput(ProcessBuilder.Redirect.INHERIT)
+                                    .start();
+                    String[] parts =
+                            new String(stty.getInputStream().readAllBytes(), StandardCharsets.UTF_8)
+                                    .strip()
+                                    .split("\\s+");
+                    stty.waitFor();
+                    if (parts.length == 2) {
+                        c = Integer.parseInt(parts[1]);
+                    }
+                } catch (Exception unknowable) {
+                    // no stty (Windows), no tty on stdin - the 80-column default is the answer
+                }
+            }
+            columns = c >= 40 ? c : 80;
+            return columns;
         }
     }
 
-    static {
-        // close the bar's line on ANY exit, so an interrupted download never leaves the prompt
-        // appended to a half-drawn bar; a no-op when the line was finished or never drawn
-        Runtime.getRuntime()
-                .addShutdownHook(
-                        new Thread(
-                                () -> {
-                                    if (barMidLine) progress().println();
-                                },
-                                "jinfer-progress-eol"));
+    /** A line above the live region when one is painted, a plain line otherwise. */
+    static void announce(String message) {
+        Board.announce(message);
     }
 
     private static int threads() {
@@ -290,22 +387,6 @@ final class Fetch {
     }
 
     private static void transfer(
-            String url,
-            Path dest,
-            String label,
-            long expectedSize,
-            String sha256,
-            Map<String, String> headers)
-            throws IOException {
-        ACTIVE.incrementAndGet();
-        try {
-            transfer0(url, dest, label, expectedSize, sha256, headers);
-        } finally {
-            ACTIVE.decrementAndGet();
-        }
-    }
-
-    private static void transfer0(
             String url,
             Path dest,
             String label,
@@ -699,34 +780,32 @@ final class Fetch {
     }
 
     /**
-     * One line of download progress. A terminal gets a bar rewritten in place; anything else (a
-     * pipe, a CI log, a systemd unit) gets one line per decile, because a log full of carriage
-     * returns is worse than no progress at all. {@code NO_COLOR} and a non-UTF-8 console both fall
-     * back to ASCII, so the bar renders on a Windows console too.
+     * One transfer's progress. A terminal gets a live row on the {@link Board}; anything else (a
+     * pipe, a CI log, a systemd unit) gets one named line per decile, because a log full of escape
+     * codes is worse than no progress at all. A non-UTF-8 console falls back to ASCII glyphs;
+     * {@code NO_COLOR} or {@code TERM=dumb} falls all the way back to the plain lines.
      */
     static final class Progress {
 
         private static final int WIDTH = 28;
-        private static final long TICK_NANOS = 100_000_000L;
+        static final long TICK_NANOS = 100_000_000L;
 
-        private final String label;
+        final String label;
         private final long total;
         // isTerminal(), NOT console() != null: since JDK 22 a Console is handed out even when
         // output is redirected, so the older check can mistake a CI log or a pipe for a terminal
-        // and fill it with carriage returns
-        private final boolean tty =
+        // and fill it with escape codes
+        private final boolean board =
                 System.console() != null
                         && System.console().isTerminal()
-                        && System.getenv("NO_COLOR") == null;
+                        && System.getenv("NO_COLOR") == null
+                        && !"dumb".equals(System.getenv("TERM"));
         private final boolean unicode = utf8Console();
         private long startBytes;
         private long startNanos = System.nanoTime();
-        private long lastPrint;
         private int lastDecile = -1;
-        // Latched the first time a sibling transfer is live: two \r bars would shred the line,
-        // so concurrent downloads all print the NAMED per-decile lines a CI log gets - and never
-        // flap back, which would rewrite over lines already printed.
-        private boolean lines;
+        private boolean added; // registered on the Board (once, across retries)
+        volatile boolean done; // the Board prunes finished rows from the top of its region
         private String phase = ""; // "" while downloading, the check's name during the read-back
 
         private long downloadRate; // the average the DOWNLOAD achieved, frozen at verify time
@@ -739,22 +818,10 @@ final class Fetch {
         void verifying() {
             double seconds = (System.nanoTime() - startNanos) / 1e9;
             downloadRate = seconds > 0 ? (long) ((total - startBytes) / seconds) : 0;
-            phase = "  sha256";
+            phase = "sha256";
             startBytes = 0;
             startNanos = System.nanoTime();
-            lastPrint = 0;
             lastDecile = -1;
-        }
-
-        private boolean bar() {
-            if (!lines && tty && ACTIVE.get() > 1) {
-                lines = true;
-                if (lastPrint != 0) {
-                    progress().println(); // abandon the half-drawn bar line
-                    barMidLine = false;
-                }
-            }
-            return !lines && tty;
         }
 
         Progress(String label, long total) {
@@ -767,23 +834,28 @@ final class Fetch {
             phase = "";
             startBytes = already;
             startNanos = System.nanoTime();
-            if (!bar()) {
-                progress()
-                        .println(
-                                "  "
-                                        + label
-                                        + "  "
-                                        + size(total)
-                                        + (already > 0 ? ", resuming at " + size(already) : ""));
+            if (board) {
+                if (!added) {
+                    added = true;
+                    Board.add(this);
+                }
+                return;
             }
+            progress()
+                    .println(
+                            "  "
+                                    + label
+                                    + "  "
+                                    + size(total)
+                                    + (already > 0 ? ", resuming at " + size(already) : ""));
         }
 
         void note(String message) {
-            if (bar()) {
-                progress().println();
-                barMidLine = false;
+            if (board) {
+                Board.announce("  " + label + ": " + message);
+            } else {
+                progress().println("  " + label + ": " + message);
             }
-            progress().println("  " + label + ": " + message);
         }
 
         /** Renders while {@code futures} run - the parallel path has no single stream to hook. */
@@ -817,63 +889,44 @@ final class Fetch {
                     frames.charAt((int) ((System.nanoTime() / TICK_NANOS) % frames.length())));
         }
 
-        /** The ticker's stall repaint: last-known bytes, fresh clock, fresh spinner frame. */
-        void repaint() {
-            long now = System.nanoTime();
-            if (barOwner == this && !lines && tty && now - lastPrint >= TICK_NANOS) {
-                lastPrint = now; // shares the data path's throttle: ~10 fps total, never 20
-                printBar(" " + spinner(false) + render(lastWritten, now));
-            }
+        /** This row's numbers half, measured by the Board before it sizes the name column. */
+        String body(long now) {
+            return render(done ? total : lastWritten, now);
         }
 
-        private int lastLength;
+        /** The Board's view of this transfer: spinner, fitted name, bar, numbers. */
+        String renderRow(int labelWidth, String body) {
+            return " " + spinner(done) + " " + fit(label, labelWidth) + body;
+        }
 
-        /**
-         * The ONE place a bar frame reaches the terminal. A carriage return only OVERWRITES, so a
-         * frame shorter than its predecessor (an eta that vanished, a rate that changed width)
-         * would leave the old tail standing - every frame therefore pads out to the longest line it
-         * is replacing.
-         */
-        private void printBar(String line) {
-            StringBuilder out = new StringBuilder("\r").append(line);
-            for (int i = line.length(); i < lastLength; i++) {
-                out.append(' ');
+        /** {@code label} in exactly {@code width} cells: padded, or middle-truncated. */
+        private String fit(String label, int width) {
+            if (label.length() <= width) {
+                return label + " ".repeat(width - label.length());
             }
-            lastLength = line.length();
-            progress().print(out);
-            progress().flush();
-            barMidLine = true;
+            int head = (width - 1) / 2, tail = width - 1 - head;
+            return label.substring(0, head)
+                    + (unicode ? "\u2026" : "~")
+                    + label.substring(label.length() - tail);
         }
 
         void at(long written) {
-            long now = System.nanoTime();
             lastWritten = written;
-            if (bar()) {
-                barOwner = this;
-                ensureTicker();
-                if (now - lastPrint < TICK_NANOS) {
-                    return;
-                }
-                lastPrint = now;
-                printBar(" " + spinner(false) + render(written, now));
+            if (board) {
+                Board.repaint(false);
                 return;
-            }
-            if (barOwner == this) {
-                barOwner = null; // latched into line mode: the ticker must stop repainting
             }
             int decile = total > 0 ? (int) (10 * written / total) : -1;
             if (decile > lastDecile) {
                 lastDecile = decile;
-                progress().println("  " + label + "  " + render(written, now));
+                progress().println("  " + label + "  " + render(written, System.nanoTime()));
             }
         }
 
         void finish() {
-            if (bar()) {
-                barOwner = null;
-                printBar(" " + spinner(true) + render(total, System.nanoTime()));
-                progress().println();
-                barMidLine = false;
+            done = true;
+            if (board) {
+                Board.repaint(true); // the \u2713 shows immediately, and the row may scroll away
             }
         }
 
@@ -883,21 +936,32 @@ final class Fetch {
                     phase.isEmpty()
                             ? (seconds > 0 ? (long) ((written - startBytes) / seconds) : 0)
                             : downloadRate;
+            // EVERY field is fixed-width and right-aligned: "36.1 MB" grows into "104 MB",
+            // "97.1 MB/s" into "1.5 GB/s", "eta 8s" into "eta 34s" - variable widths made the
+            // whole tail breathe on each repaint (and the name column resize with it)
             StringBuilder line = new StringBuilder(" ");
             if (total > 0) {
                 line.append(unicode ? '\u2595' : '[');
                 line.append(bar(written, total, WIDTH, unicode));
                 line.append(unicode ? '\u258f' : ']');
                 line.append(String.format(Locale.ROOT, " %3d%%", 100 * written / total));
-                line.append("  ").append(size(written)).append('/').append(size(total));
+                line.append(String.format(Locale.ROOT, "  %7s/%s", size(written), size(total)));
             } else {
-                line.append(label).append("  ").append(size(written));
+                line.append(label).append(String.format(Locale.ROOT, "  %7s", size(written)));
             }
-            line.append("  ").append(size(rate)).append("/s");
-            if (phase.isEmpty() && total > 0 && rate > 0 && written < total) {
-                line.append("  eta ").append(eta((total - written) / rate));
+            line.append(String.format(Locale.ROOT, "  %7s/s", size(rate)));
+            // ONE tail slot, constant width across phases: it holds "eta 34s" while downloading
+            // and "sha256" during the read-back - if the slot resized at the phase flip, rows
+            // frozen at different moments would freeze with different name-column layouts
+            String tail;
+            if (!phase.isEmpty()) {
+                tail = phase;
+            } else if (total > 0) {
+                tail = "eta " + (rate > 0 && written < total ? eta((total - written) / rate) : "-");
+            } else {
+                tail = "";
             }
-            return line.append(phase).toString();
+            return line.append(String.format(Locale.ROOT, "  %-10s", tail)).toString();
         }
 
         /** The eighth-blocks a sub-cell leading edge is built from, 1/8 first. */

@@ -248,14 +248,13 @@ public final class ModelStore {
         requireOnlineFor(url, dest);
         requireDiskSpace(dest, Fetch.remainingBytes(dest, size));
         tagCacheDirectory(root());
-        Fetch.progress()
-                .println(
-                        "download "
-                                + uri.getHost()
-                                + path
-                                + "\n  "
-                                + uri.getHost()
-                                + " publishes no checksum - verifying size only");
+        Fetch.announce(
+                "download "
+                        + uri.getHost()
+                        + path
+                        + "\n  "
+                        + uri.getHost()
+                        + " publishes no checksum - verifying size only");
         try {
             Fetch.download(url, dest, size, null, headers);
         } catch (IOException e) {
@@ -787,8 +786,7 @@ public final class ModelStore {
         Path dest = pathOf(ref, file.path());
         requireDiskSpace(dest, Fetch.remainingBytes(dest, file.size()));
         tagCacheDirectory(root());
-        Fetch.progress()
-                .println("download " + ref.host().name + "/" + ref.repoId() + "/" + file.path());
+        Fetch.announce("download " + ref.host().name + "/" + ref.repoId() + "/" + file.path());
         Fetch.download(
                 ref.fileUrl(file.path()), dest, file.size(), file.sha256(), headers(ref.host()));
         return dest;
@@ -840,9 +838,7 @@ public final class ModelStore {
         Path dest = under(repo.resolve("snapshots").resolve(commit), file.path());
         if (!Files.isRegularFile(blob)) {
             requireDiskSpace(blob, Fetch.remainingBytes(blob, file.size()));
-            Fetch.progress()
-                    .println(
-                            "download " + ref.host().name + "/" + ref.repoId() + "/" + file.path());
+            Fetch.announce("download " + ref.host().name + "/" + ref.repoId() + "/" + file.path());
             // download at the COMMIT, not the branch: the listing that chose this file and the
             // fetch must not straddle a push
             String url = ref.repoUrl() + "/resolve/" + commit + "/" + file.path();
