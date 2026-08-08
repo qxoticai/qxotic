@@ -419,14 +419,6 @@
   </build>
 
   <profiles>
-    <profile>
-      <id>deprecated</id>
-      <modules>
-        <module>deprecated/span</module>
-        <module>deprecated/scratch</module>
-      </modules>
-    </profile>
-
     <!-- Release profile: signing and javadoc -->
     <profile>
       <id>release</id>
