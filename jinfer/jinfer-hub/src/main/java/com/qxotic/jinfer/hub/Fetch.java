@@ -97,18 +97,28 @@ final class Fetch {
     private static final Map<Path, ReentrantLock> IN_PROCESS = new ConcurrentHashMap<>();
 
     /**
-     * The terminal's live region - the docker-pull shape: one row per transfer, all repainted in
-     * place as ONE write, finished rows scrolling away as permanent \u2713 lines. Messages print
-     * ABOVE the region ({@link #announce}). Only terminal-bound Progress rows ever register, so a
-     * CI log never sees an escape code; with nothing painted, announce is a plain println.
+     * The terminal's live region, docker-pull shaped: one row per transfer, repainted in place as
+     * ONE write, finished rows freezing into the scrollback as permanent \u2713 lines, messages
+     * printed ABOVE the region ({@link #announce}). Its invariants, each one load-bearing:
      *
-     * <p>This replaces what used to be five separate mechanisms: the one-bar-owner rule, the
-     * line-mode latch, tail padding (\u001b[2K erases the whole line), the mid-line shutdown hook
-     * (every paint ends below the region on a fresh line), and the per-row stall ticker.
+     * <ul>
+     *   <li>ONE writer: every terminal touch happens under this class's lock, as a single print.
+     *   <li>A row NEVER wraps: a wrapped row occupies two physical lines and the cursor-up
+     *       arithmetic goes off by one, degenerating the region into a scroll-wall. The name column
+     *       shrinks first (numbers matter more than file names), then a hard clip guarantees the
+     *       invariant on any width.
+     *   <li>Geometry never moves: the name column is STICKY while the region lives (a column that
+     *       shrank on prune would misalign frozen rows against live ones), and every row field is
+     *       fixed-width, so nothing shifts between frames but digits and the bar edge.
+     *   <li>Only terminal-bound rows register: a CI log never sees an escape code.
+     * </ul>
      */
     static final class Board {
-        private static final java.util.List<Progress> rows = new java.util.ArrayList<>();
+        private static final List<Progress> rows = new java.util.ArrayList<>();
+        private static final int PREFIX = 3; // " " + spinner + " ", before the name column
         private static int painted; // lines the live region occupies on screen right now
+        private static int stickyLabel; // the name column, monotonic while the region lives
+        private static int columns = -1;
         private static long lastPaint;
         private static Thread ticker;
 
@@ -120,6 +130,24 @@ final class Fetch {
                 ticker.setDaemon(true);
                 ticker.start();
             }
+            paint(true);
+        }
+
+        /** Data and clock events funnel here; the throttle is shared, ~10 fps total. */
+        static synchronized void repaint(boolean force) {
+            paint(force);
+        }
+
+        /** A message above the region - the "download <ref>" headers, retry notes. */
+        static synchronized void announce(String message) {
+            StringBuilder out = new StringBuilder();
+            if (painted > 0) {
+                out.append("\u001b[").append(painted).append("A\r\u001b[J");
+                painted = 0;
+            }
+            out.append(message).append('\n');
+            progress().print(out);
+            progress().flush();
             paint(true);
         }
 
@@ -138,35 +166,12 @@ final class Fetch {
             }
         }
 
-        /** A message above the region - the "download <ref>" headers, retry notes. */
-        static synchronized void announce(String message) {
-            StringBuilder out = new StringBuilder();
-            if (painted > 0) {
-                out.append("\u001b[").append(painted).append("A\r\u001b[J");
-                painted = 0;
-            }
-            out.append(message).append('\n');
-            progress().print(out);
-            progress().flush();
-            paint(true);
-        }
-
-        /** Data and clock events funnel here; the throttle is shared, ~10 fps total. */
-        static synchronized void repaint(boolean force) {
-            paint(force);
-        }
-
         private static void paint(boolean force) {
             long now = System.nanoTime();
             if (!force && now - lastPaint < Progress.TICK_NANOS) {
                 return;
             }
             lastPaint = now;
-            // A row must NEVER wrap: a wrapped row occupies two physical lines, the cursor-up
-            // arithmetic goes off by one, and the region degenerates into a scroll-wall with
-            // remnant characters bleeding between frames. Two defences: the name column shrinks
-            // first (the numbers matter more than the full file name), then a hard clip
-            // guarantees the invariant on any width.
             int cols = columns();
             String[] bodies = new String[rows.size()];
             int labelWidth = stickyLabel, body = 0;
@@ -176,9 +181,7 @@ final class Fetch {
                 labelWidth = Math.max(labelWidth, row.label.length());
                 body = Math.max(body, bodies[i].length());
             }
-            // STICKY while the region lives: a column that shrank on prune or phase flip would
-            // leave frozen scrollback rows misaligned against the live ones below them
-            labelWidth = Math.max(8, Math.min(labelWidth, cols - 1 - 3 - body));
+            labelWidth = Math.max(8, Math.min(labelWidth, cols - 1 - PREFIX - body));
             stickyLabel = labelWidth;
             StringBuilder out = new StringBuilder();
             if (painted > 0) {
@@ -187,7 +190,7 @@ final class Fetch {
             for (int i = 0; i < rows.size(); i++) {
                 String line = rows.get(i).renderRow(labelWidth, bodies[i]);
                 if (line.length() > cols - 1) {
-                    line = line.substring(0, cols - 1);
+                    line = line.substring(0, cols - 1); // the never-wrap guarantee
                 }
                 out.append("\r\u001b[2K").append(line).append('\n');
             }
@@ -204,10 +207,6 @@ final class Fetch {
                 stickyLabel = 0; // the next batch sizes its own column
             }
         }
-
-        private static int stickyLabel;
-
-        private static int columns = -1;
 
         /** {@code COLUMNS} > {@code stty size} (asked once) > 80, floored at 40. */
         private static int columns() {
@@ -477,7 +476,6 @@ final class Fetch {
                                     return null;
                                 }));
             }
-            progress.pump(written, futures);
             for (Future<?> future : futures) {
                 await(future);
             }
@@ -784,45 +782,45 @@ final class Fetch {
      * pipe, a CI log, a systemd unit) gets one named line per decile, because a log full of escape
      * codes is worse than no progress at all. A non-UTF-8 console falls back to ASCII glyphs;
      * {@code NO_COLOR} or {@code TERM=dumb} falls all the way back to the plain lines.
+     *
+     * <p>Worker threads write the fields, the Board's ticker reads them - each is independently
+     * volatile, so a frame may briefly mix a fresh phase with a stale rate, which costs one tick of
+     * one field and never a tear.
      */
     static final class Progress {
 
         private static final int WIDTH = 28;
         static final long TICK_NANOS = 100_000_000L;
 
-        final String label;
-        private final long total;
-        // isTerminal(), NOT console() != null: since JDK 22 a Console is handed out even when
-        // output is redirected, so the older check can mistake a CI log or a pipe for a terminal
-        // and fill it with escape codes
-        private final boolean board =
+        /** The classic braille ring; ASCII consoles get the four-spoke wheel. */
+        private static final String SPIN =
+                "\u280b\u2819\u2839\u2838\u283c\u2834\u2826\u2827\u2807\u280f";
+
+        private static final String SPIN_ASCII = "|/-\\";
+
+        /** The eighth-blocks a sub-cell leading edge is built from, 1/8 first. */
+        private static final String EIGHTHS = "\u258f\u258e\u258d\u258c\u258b\u258a\u2589";
+
+        // process constants, probed once: isTerminal(), NOT console() != null - since JDK 22 a
+        // Console is handed out even when output is redirected, so the older check can mistake a
+        // CI log for a terminal and fill it with escape codes
+        private static final boolean BOARD =
                 System.console() != null
                         && System.console().isTerminal()
                         && System.getenv("NO_COLOR") == null
                         && !"dumb".equals(System.getenv("TERM"));
-        private final boolean unicode = utf8Console();
-        private long startBytes;
-        private long startNanos = System.nanoTime();
+        private static final boolean UNICODE = utf8Console();
+
+        final String label;
+        private final long total;
+        private volatile long startBytes;
+        private volatile long startNanos = System.nanoTime();
+        private volatile long lastWritten;
+        private volatile long downloadRate; // the DOWNLOAD average, frozen at verify time
+        private volatile String phase = ""; // "", or the check's name during the read-back
+        volatile boolean done; // the Board prunes finished rows from the top of its region
         private int lastDecile = -1;
         private boolean added; // registered on the Board (once, across retries)
-        volatile boolean done; // the Board prunes finished rows from the top of its region
-        private String phase = ""; // "" while downloading, the check's name during the read-back
-
-        private long downloadRate; // the average the DOWNLOAD achieved, frozen at verify time
-
-        /**
-         * The row becomes the sha256 read-back: same line, restarted bar, named phase. The rate
-         * field freezes at the download's average from here on - hash throughput answers a question
-         * nobody asked, and the final line should immortalize the number that matters.
-         */
-        void verifying() {
-            double seconds = (System.nanoTime() - startNanos) / 1e9;
-            downloadRate = seconds > 0 ? (long) ((total - startBytes) / seconds) : 0;
-            phase = "sha256";
-            startBytes = 0;
-            startNanos = System.nanoTime();
-            lastDecile = -1;
-        }
 
         Progress(String label, long total) {
             this.label = label;
@@ -834,7 +832,7 @@ final class Fetch {
             phase = "";
             startBytes = already;
             startNanos = System.nanoTime();
-            if (board) {
+            if (BOARD) {
                 if (!added) {
                     added = true;
                     Board.add(this);
@@ -850,69 +848,9 @@ final class Fetch {
                                     + (already > 0 ? ", resuming at " + size(already) : ""));
         }
 
-        void note(String message) {
-            if (board) {
-                Board.announce("  " + label + ": " + message);
-            } else {
-                progress().println("  " + label + ": " + message);
-            }
-        }
-
-        /** Renders while {@code futures} run - the parallel path has no single stream to hook. */
-        void pump(AtomicLong written, List<Future<?>> futures) {
-            while (!futures.stream().allMatch(Future::isDone)) {
-                at(written.get());
-                try {
-                    Thread.sleep(Duration.ofMillis(100));
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    return;
-                }
-            }
-            at(written.get());
-        }
-
-        /** The classic braille ring; ASCII consoles get the four-spoke wheel. */
-        private static final String SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
-
-        private static final String SPIN_ASCII = "|/-\\";
-
-        private volatile long lastWritten;
-
-        /** The live-ness mark: clock-driven, so it turns even when no byte arrives. */
-        private String spinner(boolean done) {
-            if (done) {
-                return unicode ? "✓" : "*";
-            }
-            String frames = unicode ? SPIN : SPIN_ASCII;
-            return String.valueOf(
-                    frames.charAt((int) ((System.nanoTime() / TICK_NANOS) % frames.length())));
-        }
-
-        /** This row's numbers half, measured by the Board before it sizes the name column. */
-        String body(long now) {
-            return render(done ? total : lastWritten, now);
-        }
-
-        /** The Board's view of this transfer: spinner, fitted name, bar, numbers. */
-        String renderRow(int labelWidth, String body) {
-            return " " + spinner(done) + " " + fit(label, labelWidth) + body;
-        }
-
-        /** {@code label} in exactly {@code width} cells: padded, or middle-truncated. */
-        private String fit(String label, int width) {
-            if (label.length() <= width) {
-                return label + " ".repeat(width - label.length());
-            }
-            int head = (width - 1) / 2, tail = width - 1 - head;
-            return label.substring(0, head)
-                    + (unicode ? "\u2026" : "~")
-                    + label.substring(label.length() - tail);
-        }
-
         void at(long written) {
             lastWritten = written;
-            if (board) {
+            if (BOARD) {
                 Board.repaint(false);
                 return;
             }
@@ -923,36 +861,68 @@ final class Fetch {
             }
         }
 
+        /**
+         * The row becomes the sha256 read-back: same line, restarted bar, named phase. The rate
+         * field freezes at the download's average from here on - hash throughput answers a question
+         * nobody asked, and the final line should immortalize the number that matters.
+         */
+        void verifying() {
+            double seconds = (System.nanoTime() - startNanos) / 1e9;
+            downloadRate = seconds > 0 ? (long) ((total - startBytes) / seconds) : 0;
+            phase = "sha256";
+            startBytes = 0;
+            startNanos = System.nanoTime();
+            lastDecile = -1;
+        }
+
         void finish() {
             done = true;
-            if (board) {
+            if (BOARD) {
                 Board.repaint(true); // the \u2713 shows immediately, and the row may scroll away
             }
         }
 
+        void note(String message) {
+            if (BOARD) {
+                Board.announce("  " + label + ": " + message);
+            } else {
+                progress().println("  " + label + ": " + message);
+            }
+        }
+
+        /** This row's numbers half, measured by the Board before it sizes the name column. */
+        String body(long now) {
+            return render(done ? total : lastWritten, now);
+        }
+
+        /** The Board's view of this transfer: spinner, fitted name, numbers. */
+        String renderRow(int labelWidth, String body) {
+            return " " + spinner(done) + " " + fit(label, labelWidth) + body;
+        }
+
+        /**
+         * The numbers half of a row. EVERY field is fixed-width and right-aligned - "36.1 MB" grows
+         * into "104 MB", "97.1 MB/s" into "1.5 GB/s" - and the tail is ONE constant-width slot
+         * holding "eta 34s" or "sha256": variable widths made the whole line breathe on each
+         * repaint, and a slot that resized at the phase flip froze rows with different layouts.
+         */
         private String render(long written, long now) {
             double seconds = (now - startNanos) / 1e9;
             long rate =
                     phase.isEmpty()
                             ? (seconds > 0 ? (long) ((written - startBytes) / seconds) : 0)
                             : downloadRate;
-            // EVERY field is fixed-width and right-aligned: "36.1 MB" grows into "104 MB",
-            // "97.1 MB/s" into "1.5 GB/s", "eta 8s" into "eta 34s" - variable widths made the
-            // whole tail breathe on each repaint (and the name column resize with it)
             StringBuilder line = new StringBuilder(" ");
             if (total > 0) {
-                line.append(unicode ? '\u2595' : '[');
-                line.append(bar(written, total, WIDTH, unicode));
-                line.append(unicode ? '\u258f' : ']');
+                line.append(UNICODE ? '\u2595' : '[');
+                line.append(bar(written, total, WIDTH, UNICODE));
+                line.append(UNICODE ? '\u258f' : ']');
                 line.append(String.format(Locale.ROOT, " %3d%%", 100 * written / total));
                 line.append(String.format(Locale.ROOT, "  %7s/%s", size(written), size(total)));
             } else {
                 line.append(label).append(String.format(Locale.ROOT, "  %7s", size(written)));
             }
             line.append(String.format(Locale.ROOT, "  %7s/s", size(rate)));
-            // ONE tail slot, constant width across phases: it holds "eta 34s" while downloading
-            // and "sha256" during the read-back - if the slot resized at the phase flip, rows
-            // frozen at different moments would freeze with different name-column layouts
             String tail;
             if (!phase.isEmpty()) {
                 tail = phase;
@@ -964,8 +934,26 @@ final class Fetch {
             return line.append(String.format(Locale.ROOT, "  %-10s", tail)).toString();
         }
 
-        /** The eighth-blocks a sub-cell leading edge is built from, 1/8 first. */
-        private static final String EIGHTHS = "▏▎▍▌▋▊▉";
+        /** {@code text} in exactly {@code width} cells: padded, or middle-truncated. */
+        private static String fit(String text, int width) {
+            if (text.length() <= width) {
+                return text + " ".repeat(width - text.length());
+            }
+            int head = (width - 1) / 2, tail = width - 1 - head;
+            return text.substring(0, head)
+                    + (UNICODE ? "\u2026" : "~")
+                    + text.substring(text.length() - tail);
+        }
+
+        /** The live-ness mark: clock-driven, so it turns even when no byte arrives. */
+        private static String spinner(boolean done) {
+            if (done) {
+                return UNICODE ? "\u2713" : "*";
+            }
+            String frames = UNICODE ? SPIN : SPIN_ASCII;
+            return String.valueOf(
+                    frames.charAt((int) ((System.nanoTime() / TICK_NANOS) % frames.length())));
+        }
 
         /**
          * The bar cells, {@code width} wide, worn between thin caps by the caller: full blocks, ONE
@@ -978,7 +966,7 @@ final class Fetch {
             long eighths = 8L * width * Math.min(written, total) / total;
             int full = (int) (eighths / 8), part = (int) (eighths % 8);
             StringBuilder bar = new StringBuilder(width);
-            bar.append(String.valueOf(unicode ? '█' : '#').repeat(full));
+            bar.append(String.valueOf(unicode ? '\u2588' : '#').repeat(full));
             if (unicode && part > 0) {
                 bar.append(EIGHTHS.charAt(part - 1));
             }
