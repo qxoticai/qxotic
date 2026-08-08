@@ -164,6 +164,46 @@ public final class ModelStore {
     }
 
     /**
+     * {@link #resolve} for several arguments at once, downloading the missing ones CONCURRENTLY - a
+     * cold start with a model plus an mmproj pays the slower download, not the sum. Paths return in
+     * input order; the first failure cancels the rest (their partial state resumes later) and is
+     * the one thrown. Warm entries never spawn anything: one argument short-circuits entirely.
+     */
+    // ponytail: no dedup, no aggregate progress bar (concurrent downloads print named lines, see
+    // Fetch.Progress), no shared disk-space budget. Add each when someone actually hits it.
+    public static List<Path> resolveAll(List<String> pathOrRefs) {
+        if (pathOrRefs.size() <= 1) {
+            return pathOrRefs.stream().map(ModelStore::resolve).toList();
+        }
+        // ponytail: at most 4 files in flight (x up to 8 chunk connections each, see
+        // JINFER_DOWNLOAD_THREADS). A fixed constant, not a knob - add the env var when a real
+        // pull is throttled by it.
+        try (var pool =
+                java.util.concurrent.Executors.newFixedThreadPool(Math.min(4, pathOrRefs.size()))) {
+            List<java.util.concurrent.Future<Path>> futures =
+                    pathOrRefs.stream().map(r -> pool.submit(() -> resolve(r))).toList();
+            List<Path> paths = new ArrayList<>(futures.size());
+            try {
+                for (var future : futures) {
+                    paths.add(future.get());
+                }
+            } catch (java.util.concurrent.ExecutionException e) {
+                futures.forEach(f -> f.cancel(true)); // siblings leave resumable .part files
+                switch (e.getCause()) {
+                    case RuntimeException runtime -> throw runtime;
+                    case Error error -> throw error;
+                    case Throwable other -> throw new IllegalStateException(other);
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                futures.forEach(f -> f.cancel(true));
+                throw new IllegalStateException("interrupted while resolving models", e);
+            }
+            return paths;
+        }
+    }
+
+    /**
      * A plain URL: fetched and cached, with none of what a repository gives us. There is no listing
      * to search, so no quant and no revision, and no published checksum, so the only integrity
      * check is the size the server states. That downgrade is announced rather than assumed - a
@@ -806,7 +846,13 @@ public final class ModelStore {
             // download at the COMMIT, not the branch: the listing that chose this file and the
             // fetch must not straddle a push
             String url = ref.repoUrl() + "/resolve/" + commit + "/" + file.path();
-            Fetch.download(url, blob, file.size(), file.sha256(), headers(ref.host()));
+            Fetch.download(
+                    url,
+                    blob,
+                    nameOf(file.path()),
+                    file.size(),
+                    file.sha256(),
+                    headers(ref.host()));
         }
         if (!isCommit(ref.revisionOrDefault())) {
             writeRef(repo.resolve("refs").resolve(ref.revisionOrDefault()), commit);
