@@ -234,17 +234,20 @@ class JinferChatModelIT {
     }
 
     @Test
+    void topKIsASupportedSamplingKnob() {
+        // once rejected here even though the sampler takes it - and because runtime options merge
+        // over the defaults, a port-recommended top_k (gemma4's 64) made EVERY request fail
+        var response =
+                model.call(
+                        new Prompt(
+                                new UserMessage("One word: ok?"),
+                                JinferChatOptions.builder().topK(10).maxTokens(8).build()));
+        assertNotNull(response.getResult().getOutput().getText());
+    }
+
+    @Test
     void rejectsUnsupportedKnobsSynchronously() {
         // request-shape errors throw from call() itself, never on a worker thread
-        var e1 =
-                assertThrows(
-                        IllegalArgumentException.class,
-                        () ->
-                                model.call(
-                                        new Prompt(
-                                                new UserMessage("hi"),
-                                                JinferChatOptions.builder().topK(10).build())));
-        assertEquals("topK is not supported", e1.getMessage());
         var e2 =
                 assertThrows(
                         IllegalArgumentException.class,
@@ -463,7 +466,9 @@ class JinferChatModelIT {
                         model.call(
                                 new Prompt(
                                         new UserMessage("hi"),
-                                        JinferChatOptions.builder().topK(10).build())));
+                                        JinferChatOptions.builder()
+                                                .frequencyPenalty(0.5)
+                                                .build())));
         observations
                 .assertThat()
                 .hasHandledContextsThatSatisfy(
