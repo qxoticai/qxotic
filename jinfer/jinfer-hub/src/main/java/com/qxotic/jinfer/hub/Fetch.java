@@ -281,7 +281,7 @@ final class Fetch {
                 return size;
             }
             Path mapFile = sibling(part, ".map");
-            int chunks = (int) ((size + CHUNK - 1) / CHUNK);
+            int chunks = chunkCount(size);
             if (Files.exists(mapFile)
                     && Files.size(mapFile) == chunks
                     && Files.size(part) == size) {
@@ -400,7 +400,7 @@ final class Fetch {
             try {
                 if (expectedSize >= PARALLEL_FLOOR) {
                     parallel(url, part, expectedSize, headers, progress);
-                    verify(part, sha256, label, progress);
+                    verify(part, sha256, progress);
                 } else {
                     sequential(url, part, expectedSize, sha256, headers, progress);
                 }
@@ -429,7 +429,7 @@ final class Fetch {
     private static void parallel(
             String url, Path part, long size, Map<String, String> headers, Progress progress)
             throws IOException {
-        int chunks = (int) ((size + CHUNK - 1) / CHUNK);
+        int chunks = chunkCount(size);
         Path mapFile = sibling(part, ".map");
         byte[] done = chunkMap(mapFile, chunks, part, size);
         long already = 0;
@@ -544,6 +544,10 @@ final class Fetch {
         return Files.readAllBytes(mapFile);
     }
 
+    private static int chunkCount(long size) {
+        return (int) ((size + CHUNK - 1) / CHUNK);
+    }
+
     private static long chunkSize(int index, int chunks, long size) {
         return index == chunks - 1 ? size - index * CHUNK : CHUNK;
     }
@@ -569,29 +573,45 @@ final class Fetch {
      * read-back takes SECONDS on a large file, so it reports through the same row: a bar frozen at
      * 100% reads as a hang, and this is precisely when the download is not done yet.
      */
-    private static void verify(Path part, String sha256, String label, Progress progress)
-            throws IOException {
+    private static void verify(Path part, String sha256, Progress progress) throws IOException {
         if (sha256 == null) {
             return;
         }
         progress.verifying();
         MessageDigest digest = sha256Digest();
-        try (InputStream in = Files.newInputStream(part)) {
+        digestFile(part, digest, progress);
+        checkDigest(digest, sha256, part, progress);
+    }
+
+    /** Digests {@code file} into {@code digest}, reporting to {@code progress} when given. */
+    private static void digestFile(Path file, MessageDigest digest, Progress progress)
+            throws IOException {
+        try (InputStream in = Files.newInputStream(file)) {
             byte[] buffer = new byte[BUFFER];
             long hashed = 0;
             for (int n; (n = in.read(buffer)) > 0; ) {
                 digest.update(buffer, 0, n);
                 hashed += n;
-                progress.at(hashed);
+                if (progress != null) {
+                    progress.at(hashed);
+                }
             }
         }
+    }
+
+    /**
+     * THE verification law, in one place for both paths: a mismatch deletes the partial (and its
+     * chunk map - corrupt is beyond resuming), so the retry is a clean download and the final path
+     * never receives unverified bytes.
+     */
+    private static void checkDigest(MessageDigest digest, String expected, Path part, Progress row)
+            throws IOException {
         String actual = HexFormat.of().formatHex(digest.digest());
-        if (!actual.equalsIgnoreCase(sha256)) {
-            // corrupt beyond resuming: drop both, so the retry is a clean download
+        if (!actual.equalsIgnoreCase(expected)) {
             Files.deleteIfExists(part);
             Files.deleteIfExists(sibling(part, ".map"));
             throw new IOException(
-                    label + ": sha256 mismatch, expected " + sha256 + " but got " + actual);
+                    row.label + ": sha256 mismatch, expected " + expected + " but got " + actual);
         }
     }
 
@@ -614,12 +634,7 @@ final class Fetch {
         if (have > 0 && digest != null) {
             // a digest cannot be resumed across processes: re-read what is already on disk. One
             // disk pass against a network download is a trade worth making for a real checksum.
-            try (InputStream in = Files.newInputStream(part)) {
-                byte[] buffer = new byte[BUFFER];
-                for (int n; (n = in.read(buffer)) > 0; ) {
-                    digest.update(buffer, 0, n);
-                }
-            }
+            digestFile(part, digest, null);
         }
         Map<String, String> ranged = headers;
         if (have > 0) {
@@ -656,11 +671,7 @@ final class Fetch {
             throw new IOException("expected " + expectedSize + " bytes, got " + written);
         }
         if (digest != null) {
-            String actual = HexFormat.of().formatHex(digest.digest());
-            if (!actual.equalsIgnoreCase(sha256)) {
-                Files.deleteIfExists(part); // corrupt: never leave it to be resumed
-                throw new IOException("sha256 mismatch, expected " + sha256 + " but got " + actual);
-            }
+            checkDigest(digest, sha256, part, progress);
         }
     }
 
