@@ -56,6 +56,7 @@ public final class Qwen3Provider implements ModelProvider {
         return new LoadedEmbedder<>(
                 m,
                 m.tokenizer(),
+                new int[0],
                 new int[] {eos},
                 m.config().embeddingLength(),
                 path.getFileName().toString());

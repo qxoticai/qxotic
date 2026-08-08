@@ -8,13 +8,15 @@ import com.qxotic.toknroll.Tokenizer;
 /**
  * An embedding port's loaded bundle - the {@link Models#loadEmbedder} counterpart of {@link
  * LoadedModel}, carrying exactly what a provider integration needs: the model, its tokenizer, the
- * port's per-sequence pooling convention ({@code sequenceSuffix} - tokens appended to every encoded
- * sequence, e.g. Qwen3's last-token pooling wants a trailing EOS), and the embedding width (static,
- * so callers never probe with a forward pass).
+ * port's per-sequence framing convention ({@code sequencePrefix}/{@code sequenceSuffix} - tokens
+ * wrapped around every encoded sequence: Qwen3's last-token pooling wants a trailing EOS, LFM2.5's
+ * CLS pooling reads a leading BOS), and the embedding width (static, so callers never probe with a
+ * forward pass).
  */
 public record LoadedEmbedder<S extends RuntimeState>(
         EmbeddingModel<?, ?, S> model,
         Tokenizer tokenizer,
+        int[] sequencePrefix,
         int[] sequenceSuffix,
         int dimension,
         String name) {
@@ -23,8 +25,10 @@ public record LoadedEmbedder<S extends RuntimeState>(
         if (model == null) throw new IllegalArgumentException("null model");
         if (name == null) throw new IllegalArgumentException("null name");
         if (tokenizer == null) throw new IllegalArgumentException("null tokenizer");
+        if (sequencePrefix == null) throw new IllegalArgumentException("null sequencePrefix");
         if (sequenceSuffix == null) throw new IllegalArgumentException("null sequenceSuffix");
         if (dimension <= 0) throw new IllegalArgumentException("dimension " + dimension);
+        sequencePrefix = sequencePrefix.clone();
         sequenceSuffix = sequenceSuffix.clone();
     }
 
@@ -46,8 +50,15 @@ public record LoadedEmbedder<S extends RuntimeState>(
         int total = 0;
         for (int i = 0; i < texts.size(); i++) {
             int[] ids = tokenizer.encode(texts.get(i)).toArray();
-            int[] seq = java.util.Arrays.copyOf(ids, ids.length + sequenceSuffix.length);
-            System.arraycopy(sequenceSuffix, 0, seq, ids.length, sequenceSuffix.length);
+            int[] seq = new int[sequencePrefix.length + ids.length + sequenceSuffix.length];
+            System.arraycopy(sequencePrefix, 0, seq, 0, sequencePrefix.length);
+            System.arraycopy(ids, 0, seq, sequencePrefix.length, ids.length);
+            System.arraycopy(
+                    sequenceSuffix,
+                    0,
+                    seq,
+                    sequencePrefix.length + ids.length,
+                    sequenceSuffix.length);
             if (seq.length > contextLength) {
                 throw new IllegalArgumentException(
                         "text "
