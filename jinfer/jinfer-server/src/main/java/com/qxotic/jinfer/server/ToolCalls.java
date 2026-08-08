@@ -1,6 +1,7 @@
-// Tool-call parsing: turns a model reply into normalized OpenAI tool_calls. Recognizes the
-// three shapes LFM2.5 emits — native <|tool_call_start|>...<|tool_call_end|> blocks, a JSON
-// tool-call envelope, and bare Pythonic [name(args)] text — independent of HTTP/transport.
+// Tool-call parsing: turns a model reply into normalized OpenAI tool_calls. Recognizes the shapes
+// the shipped families actually emit — native <|tool_call_start|>...<|tool_call_end|> blocks
+// (LFM2.5), a JSON tool-call envelope in either the OpenAI "arguments" or the Llama 3.x
+// "parameters" spelling, and bare Pythonic [name(args)] text — independent of HTTP/transport.
 package com.qxotic.jinfer.server;
 
 import com.qxotic.jinfer.*;
@@ -22,9 +23,11 @@ final class ToolCalls {
     static final String TC_END = "<|tool_call_end|>";
 
     /**
-     * Parse tool calls from a model reply, trying the three shapes LFM2.5 is known to emit, in
-     * descending order of confidence: native {@code <|tool_call_start|>...<|tool_call_end|>}
-     * blocks, a JSON tool-call envelope, then bare Pythonic {@code [name(args)]} text.
+     * Parse tool calls from a model reply, in descending order of confidence: native {@code
+     * <|tool_call_start|>...<|tool_call_end|>} blocks, a JSON tool-call envelope, then bare
+     * Pythonic {@code [name(args)]} text. The families differ in more than markers - Llama 3.x is
+     * ASKED for {@code parameters} where OpenAI says {@code arguments} - so the envelope shapes are
+     * enumerated in {@link #jsonCallList} and {@link #normalizeToolCall}, not here.
      */
     static List<Map<String, Object>> parseToolCalls(String text, Set<String> knownTools) {
         List<Map<String, Object>> nativeCalls = parseNativeToolCalls(text, knownTools);
