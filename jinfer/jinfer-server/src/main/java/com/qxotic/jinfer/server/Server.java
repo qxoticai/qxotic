@@ -616,36 +616,46 @@ public final class Server {
                                         "response.output_text.delta",
                                         t -> OpenAiSchema.responseTextDelta(itemId, t));
                         Reply result = generation.chat(request, messages, Sinks.text(sink));
-                        sse.emit(
-                                "response.output_text.done",
-                                Map.of(
-                                        "type",
-                                        "response.output_text.done",
-                                        "item_id",
-                                        itemId,
-                                        "output_index",
-                                        0,
-                                        "content_index",
-                                        0,
-                                        "text",
-                                        result.text()));
-                        sse.emit(
-                                "response.output_item.done",
-                                Map.of(
-                                        "type",
-                                        "response.output_item.done",
-                                        "output_index",
-                                        0,
-                                        "item",
-                                        OpenAiSchema.responseMessageItem(
-                                                itemId, "completed", result.text())));
+                        // a tool-call turn produced no text, so there is no text item to finish -
+                        // emitting one anyway announced a COMPLETED message holding "" and left
+                        // the call visible only in the final envelope
+                        if (result.toolCalls().isEmpty()) {
+                            sse.emit(
+                                    "response.output_text.done",
+                                    Map.of(
+                                            "type",
+                                            "response.output_text.done",
+                                            "item_id",
+                                            itemId,
+                                            "output_index",
+                                            0,
+                                            "content_index",
+                                            0,
+                                            "text",
+                                            result.text()));
+                        }
+                        List<Map<String, Object>> items =
+                                OpenAiSchema.responseOutputItems(id, result);
+                        for (int i = 0; i < items.size(); i++) {
+                            sse.emit(
+                                    "response.output_item.done",
+                                    Map.of(
+                                            "type",
+                                            "response.output_item.done",
+                                            "output_index",
+                                            i,
+                                            "item",
+                                            items.get(i)));
+                        }
                         sse.emit(
                                 "response.completed",
                                 Map.of(
                                         "type",
                                         "response.completed",
                                         "response",
-                                        OpenAiSchema.responseResponse(id, modelId, result)));
+                                        // the SAME items just emitted, not a rebuild: see the
+                                        // overload's note on clock-minted call ids
+                                        OpenAiSchema.responseResponse(id, modelId, result, items)));
                         sse.done();
                     });
         }

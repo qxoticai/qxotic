@@ -144,11 +144,33 @@ final class OpenAiSchema {
         return delta;
     }
 
+    /**
+     * What this turn actually produced, as Responses-API output items: one message, or the function
+     * calls. The streaming handler emits these as {@code response.output_item.done} and the
+     * envelope below carries the same list - one answer, so the item stream and the final response
+     * cannot disagree. They used to: a tool-call reply streamed a COMPLETED message item holding
+     * empty text while {@code response.completed} carried function_call items, so a client
+     * following the item events saw an empty answer and never learned a tool had been called.
+     */
+    static List<Map<String, Object>> responseOutputItems(String id, Reply result) {
+        return result.toolCalls().isEmpty()
+                ? List.of(responseMessageItem("msg_" + id, "completed", result.text()))
+                : responseToolCallItems(ToolCalls.toWire(result.toolCalls()));
+    }
+
     static Map<String, Object> responseResponse(String id, String modelId, Reply result) {
-        List<Map<String, Object>> output =
-                result.toolCalls().isEmpty()
-                        ? List.of(responseMessageItem("msg_" + id, "completed", result.text()))
-                        : responseToolCallItems(ToolCalls.toWire(result.toolCalls()));
+        return responseResponse(id, modelId, result, responseOutputItems(id, result));
+    }
+
+    /**
+     * As above over items the caller ALREADY built. The streaming handler must pass the very list
+     * it emitted: a call the model did not name gets an id minted from the clock, so building the
+     * items twice hands the same call two different {@code call_id}s - one in {@code
+     * response.output_item.done}, another in {@code response.completed} - and a client correlating
+     * them sees two calls where there was one.
+     */
+    static Map<String, Object> responseResponse(
+            String id, String modelId, Reply result, List<Map<String, Object>> output) {
         return responseEnvelope(id, modelId, "completed", output, responseUsage(result));
     }
 
