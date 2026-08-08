@@ -42,9 +42,17 @@ record ModelRef(
      * only the listing API and these few fields differ.
      */
     enum Host {
-        HF("hf.co", "https://huggingface.co", "", "main", "HF_TOKEN", "HF_ENDPOINT"),
+        HF(
+                "hf.co",
+                List.of("huggingface.co"),
+                "https://huggingface.co",
+                "",
+                "main",
+                "HF_TOKEN",
+                "HF_ENDPOINT"),
         MODELSCOPE(
                 "modelscope.cn",
+                List.of(),
                 "https://modelscope.cn",
                 "/models",
                 "master",
@@ -53,6 +61,9 @@ record ModelRef(
 
         /** The canonical name: what a ref says, and the cache's first directory. */
         final String name;
+
+        /** Other spellings that mean this host - what a browser's address bar may say instead. */
+        final List<String> aliases;
 
         final String prefix;
 
@@ -65,12 +76,14 @@ record ModelRef(
 
         Host(
                 String name,
+                List<String> aliases,
                 String defaultBase,
                 String prefix,
                 String defaultRevision,
                 String tokenEnv,
                 String endpointEnv) {
             this.name = name;
+            this.aliases = aliases;
             this.defaultBase = defaultBase;
             this.prefix = prefix;
             this.defaultRevision = defaultRevision;
@@ -94,13 +107,24 @@ record ModelRef(
         }
     }
 
-    /** Spellings that mean a host, including the ones a browser puts in the address bar. */
+    /**
+     * The host {@code name} spells, or null. Each row declares its own spellings, so adding a host
+     * is one enum constant; a leading {@code www.} is stripped by rule rather than enumerated,
+     * covering every host's browser spelling at once. (The listing parser lives in {@code
+     * ModelStore}, where an exhaustive switch makes a row without one a compile error - this class
+     * stays pure grammar.)
+     */
     private static Host host(String name) {
-        return switch (name.toLowerCase(Locale.ROOT)) {
-            case "hf.co", "huggingface.co", "www.huggingface.co" -> Host.HF;
-            case "modelscope.cn", "www.modelscope.cn" -> Host.MODELSCOPE;
-            default -> null;
-        };
+        String canonical = name.toLowerCase(Locale.ROOT);
+        if (canonical.startsWith("www.")) {
+            canonical = canonical.substring("www.".length());
+        }
+        for (Host host : Host.values()) {
+            if (host.name.equals(canonical) || host.aliases.contains(canonical)) {
+                return host;
+            }
+        }
+        return null;
     }
 
     /** Whether this is a host a ref may name - the first segment of every repository ref. */
