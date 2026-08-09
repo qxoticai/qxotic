@@ -114,6 +114,11 @@ public final class Grammar {
 
     private static final Map<Tokenizer, Vocab> WRAPPERS =
             Collections.synchronizedMap(new WeakHashMap<>());
+    // the decoded byte view of a whole vocabulary, computed once per Vocab: term grammars
+    // compile per REQUEST (selections are composed, not cached), and re-decoding 100k+ tokens
+    // per compile was the dominant cost
+    private static final Map<Vocab, byte[][]> BYTE_TABLES =
+            Collections.synchronizedMap(new WeakHashMap<>());
     private static final Map<Vocab, Map<String, Spec>> CACHES =
             Collections.synchronizedMap(new WeakHashMap<>());
 
@@ -204,30 +209,223 @@ public final class Grammar {
         return cache(v).computeIfAbsent(g, k -> build(k, v));
     }
 
+    // ---- programmatic grammars (token-identity terminals) ------------------
+
+    /**
+     * A programmatic grammar term - the composition layer for grammars that interleave plain bytes
+     * with CONTROL TOKENS matched by identity, which no byte-level GBNF can express: a special
+     * contributes empty bytes (so content can never mint it), and for exactly the same reason no
+     * byte literal can ever match it. {@link Token} is the one terminal that names a token id
+     * directly.
+     *
+     * <p>Deliberately NOT a GBNF syntax extension: GBNF text stays the byte-only front door
+     * (llama.cpp-compatible, safe to accept from requests), while identity terminals exist only
+     * here - reachable from trusted composing code, unwritable in a user-supplied grammar.
+     */
+    public sealed interface Term {
+        /** Plain bytes (UTF-8), matched byte-by-byte. */
+        record Text(String text) implements Term {
+            public Text {
+                if (text == null) throw new IllegalArgumentException("null text");
+            }
+        }
+
+        /**
+         * ONE vocabulary token, matched by ID - whatever its byte view (a mistyped special
+         * included: the id is the term author's assertion).
+         */
+        record Token(int id) implements Term {
+            public Token {
+                if (id < 0) throw new IllegalArgumentException("negative token id");
+            }
+        }
+
+        /** A byte-level GBNF fragment embedded whole; its root rule becomes this term. */
+        record Gbnf(String source) implements Term {
+            public Gbnf {
+                if (source == null || source.isBlank())
+                    throw new IllegalArgumentException("empty GBNF fragment");
+            }
+        }
+
+        record Seq(List<Term> parts) implements Term {
+            public Seq {
+                parts = List.copyOf(parts);
+            }
+        }
+
+        record Alt(List<Term> options) implements Term {
+            public Alt {
+                options = List.copyOf(options);
+                if (options.isEmpty()) throw new IllegalArgumentException("empty alternation");
+            }
+        }
+
+        /** {@code max} -1 = unbounded. */
+        record Rep(Term child, int min, int max) implements Term {
+            public Rep {
+                if (min < 0 || max < -1 || (max >= 0 && max < min))
+                    throw new IllegalArgumentException("bad repetition {" + min + "," + max + "}");
+            }
+        }
+
+        static Term text(String text) {
+            return new Text(text);
+        }
+
+        static Term token(int id) {
+            return new Token(id);
+        }
+
+        static Term gbnf(String source) {
+            return new Gbnf(source);
+        }
+
+        static Term seq(Term... parts) {
+            return new Seq(List.of(parts));
+        }
+
+        static Term alt(Term... options) {
+            return new Alt(List.of(options));
+        }
+
+        static Term rep(Term child, int min, int max) {
+            return new Rep(child, min, max);
+        }
+    }
+
+    public static Spec of(Term root, Tokenizer t) {
+        return of(root, vocab(t));
+    }
+
+    /**
+     * Compiles a term over the vocabulary. Uncached on purpose: term grammars are composed per
+     * request from parts the caller already caches (a GBNF payload inside one still hits the
+     * fragment-independent parse each compile, which is cheap; the per-state mask cache, where the
+     * real cost lives, is per-Spec as always).
+     */
+    public static Spec of(Term root, Vocab v) {
+        List<Rule> rules = new ArrayList<>();
+        rules.add(null); // reserve the root id; lowering appends embedded fragments' rules
+        List<Rule.Element> body = new ArrayList<>();
+        lower(root, body, rules);
+        rules.set(0, new Rule(0, body));
+        int vs = v.size();
+        requireIds(body, vs);
+        for (Rule r : rules) if (r != null) requireIds(r.body(), vs);
+        return new Spec(CFG.compile(rules), byteTable(v));
+    }
+
+    /** An out-of-vocabulary identity terminal would compile to a silently DEAD grammar. */
+    private static void requireIds(List<Rule.Element> body, int vocab) {
+        for (Rule.Element e : body) {
+            switch (e) {
+                case Rule.Element.TokenId(int id) -> {
+                    if (id >= vocab)
+                        throw new IllegalArgumentException(
+                                "token id " + id + " is outside this vocabulary (" + vocab + ")");
+                }
+                case Rule.Element.Group(List<Rule.Element> kids) -> requireIds(kids, vocab);
+                case Rule.Element.Repetition(Rule.Element child, int m, int x) ->
+                        requireIds(List.of(child), vocab);
+                default -> {}
+            }
+        }
+    }
+
+    private static void lower(Term t, List<Rule.Element> body, List<Rule> rules) {
+        switch (t) {
+            case Term.Text(String s) -> {
+                for (byte b : s.getBytes(StandardCharsets.UTF_8)) {
+                    body.add(new Rule.Element.Value(b));
+                }
+            }
+            case Term.Token(int id) -> body.add(new Rule.Element.TokenId(id));
+            case Term.Seq(List<Term> parts) -> {
+                for (Term p : parts) lower(p, body, rules);
+            }
+            case Term.Alt(List<Term> options) -> {
+                List<Rule.Element> group = new ArrayList<>();
+                for (int i = 0; i < options.size(); i++) {
+                    if (i > 0) group.add(new Rule.Element.Pipe());
+                    lower(options.get(i), group, rules);
+                }
+                body.add(new Rule.Element.Group(group));
+            }
+            case Term.Rep(Term child, int min, int max) -> {
+                List<Rule.Element> kid = new ArrayList<>();
+                lower(child, kid, rules);
+                Rule.Element unit = kid.size() == 1 ? kid.get(0) : new Rule.Element.Group(kid);
+                body.add(new Rule.Element.Repetition(unit, min, max));
+            }
+            case Term.Gbnf(String source) -> {
+                List<Rule> fragment = parse(source);
+                if (fragment.isEmpty()) {
+                    throw new IllegalArgumentException("unparseable GBNF fragment: " + source);
+                }
+                // embed whole with rule ids shifted past everything appended so far; the
+                // fragment's root (its id 0) is referenced here, names never collide (ids only)
+                int base = rules.size();
+                for (Rule r : fragment) {
+                    rules.add(new Rule(r.id() + base, shift(r.body(), base)));
+                }
+                body.add(new Rule.Element.Ref(base));
+            }
+        }
+    }
+
+    private static List<Rule.Element> shift(List<Rule.Element> body, int base) {
+        List<Rule.Element> out = new ArrayList<>(body.size());
+        for (Rule.Element e : body) out.add(shift(e, base));
+        return out;
+    }
+
+    private static Rule.Element shift(Rule.Element e, int base) {
+        return switch (e) {
+            case Rule.Element.Ref(int rid) -> new Rule.Element.Ref(rid + base);
+            case Rule.Element.Group(List<Rule.Element> kids) ->
+                    new Rule.Element.Group(shift(kids, base));
+            case Rule.Element.Repetition(Rule.Element child, int min, int max) ->
+                    new Rule.Element.Repetition(shift(child, base), min, max);
+            default -> e; // Value, Dot, CharClass, Pipe, TokenId carry no rule ids
+        };
+    }
+
     static Spec build(String gbnf, Vocab v) {
         List<Rule> rules = parse(gbnf);
         if (rules.isEmpty()) return Spec.DISABLED;
-        int vs = v.size();
-        byte[][] tokenBytes = new byte[vs][];
-        for (int t = 0; t < vs; t++) tokenBytes[t] = v.bytes(t);
-        return new Spec(CFG.compile(rules), tokenBytes);
+        return new Spec(CFG.compile(rules), byteTable(v));
+    }
+
+    private static byte[][] byteTable(Vocab v) {
+        return BYTE_TABLES.computeIfAbsent(
+                v,
+                k -> {
+                    byte[][] table = new byte[k.size()][];
+                    for (int t = 0; t < table.length; t++) table[t] = k.bytes(t);
+                    return table;
+                });
     }
 
     // ---- Compiled CFG (byte-level pushdown grammar) ------------------------
     //
     // The grammar is flattened into "slots". A slot is one of:
     //   TERM  — a 256-bit byte set + a continuation slot (the next slot after a matching byte)
+    //   TOKEN - ONE vocabulary token id + a continuation slot, matched by IDENTITY (zero bytes)
     //   REF   — a rule id + a return slot (where to continue once that rule completes)
     //   END   — marks the end of a rule alternative (pop a frame)
     // A rule is a set of alternative entry slots. Groups and repetitions are desugared into
-    // anonymous rules so every leaf is a TERM/REF/END — no nesting survives into the matcher.
+    // anonymous rules so every leaf is a TERM/TOKEN/REF/END - no nesting survives into the
+    // matcher. TOKEN slots come only from programmatic terms (never GBNF text, which stays
+    // byte-only): they are what lets a trusted grammar say "here comes <|constrain|>" while
+    // content grammars still cannot name a control token at all.
 
-    static final byte T_TERM = 0, T_REF = 1, T_END = 2;
+    static final byte T_TERM = 0, T_REF = 1, T_END = 2, T_TOKEN = 3;
 
     static final class CFG {
-        final byte[] kind; // T_TERM | T_REF | T_END
-        final int[] data; // TERM: terminal index;  REF: rule id;  END: unused
-        final int[] next; // TERM/REF: continuation slot (>=0);    END: unused
+        final byte[] kind; // T_TERM | T_TOKEN | T_REF | T_END
+        final int[] data; // TERM: terminal index;  TOKEN: token id;  REF: rule id;  END: unused
+        final int[] next; // TERM/TOKEN/REF: continuation slot (>=0);  END: unused
         final long[][] terms; // terminal byte sets (256-bit, long[4]), indexed by TERM.data
         final int[][] alts; // alts[ruleId] = entry slots, one per alternative
         final int root; // root rule id
@@ -325,6 +523,7 @@ public final class Grammar {
 
             int compileElem(Rule.Element e, int cont) {
                 return switch (e) {
+                    case Rule.Element.TokenId(int id) -> slot(T_TOKEN, id, cont);
                     case Rule.Element.Value(byte b) -> term(singleton(b), cont);
                     case Rule.Element.Dot ignored -> term(all(), cont);
                     case Rule.Element.CharClass(List<Byte> chars, boolean neg) ->
@@ -471,11 +670,17 @@ public final class Grammar {
          * left recursion yields ever-growing stacks, bounded by {@link #CLOSURE_CAP}.
          */
         private State expandSet(List<int[]> raws) {
-            // Fast path (the dominant decode case): every stack already has a TERM on top, so
-            // the closure is just dedup - no worklist, no seen-set, no StackKey allocations.
+            // Fast path (the dominant decode case): every stack already has a TERM or TOKEN on
+            // top, so the closure is just dedup - no worklist, no seen-set, no StackKey
+            // allocations.
             boolean anyEps = false;
             for (int[] s : raws) {
-                if (s.length == 0 || cfg.kind[s[s.length - 1]] != T_TERM) {
+                if (s.length == 0) {
+                    anyEps = true;
+                    break;
+                }
+                byte k = cfg.kind[s[s.length - 1]];
+                if (k != T_TERM && k != T_TOKEN) {
                     anyEps = true;
                     break;
                 }
@@ -508,7 +713,7 @@ public final class Grammar {
                 }
                 int top = stack[stack.length - 1];
                 switch (cfg.kind[top]) {
-                    case T_TERM -> {
+                    case T_TERM, T_TOKEN -> {
                         if (ready.size() < MAX_STACKS) ready.add(stack);
                     }
                     case T_END -> work.add(Arrays.copyOf(stack, stack.length - 1));
@@ -536,25 +741,53 @@ public final class Grammar {
             List<int[]> raws = new ArrayList<>();
             for (int[] s : ready) {
                 int top = s[s.length - 1];
-                if (cfg.termHas(cfg.data[top], b)) raws.add(replaceLast(s, cfg.next[top]));
+                // a TOKEN top never matches a byte: identity terminals cross in advance() only
+                if (cfg.kind[top] == T_TERM && cfg.termHas(cfg.data[top], b)) {
+                    raws.add(replaceLast(s, cfg.next[top]));
+                }
             }
             return raws;
         }
 
         /**
-         * Walk {@code len} bytes from a ready set; returns the resulting state, or null if the
-         * bytes cannot be consumed (the grammar rejects them).
+         * Walk {@code len} bytes from a ready set; returns the surviving stacks RAW (the last step
+         * unexpanded, so a caller can union them with identity crossings before one final closure),
+         * or null if the bytes cannot be consumed (the grammar rejects them).
          */
-        State walk(List<int[]> ready, byte[] bytes, int len) {
+        List<int[]> walkRaw(List<int[]> ready, byte[] bytes, int len) {
             List<int[]> cur = ready;
-            State st = null;
+            List<int[]> raws = null;
             for (int i = 0; i < len; i++) {
-                List<int[]> raws = step(cur, bytes[i] & 0xFF);
+                raws = step(cur, bytes[i] & 0xFF);
                 if (raws.isEmpty()) return null;
-                st = expandSet(raws);
-                cur = st.ready;
+                if (i + 1 < len) cur = expandSet(raws).ready();
             }
-            return st;
+            return raws;
+        }
+
+        /**
+         * One TOKEN against the state: the union of identity crossings (stacks whose top names
+         * exactly this id, whatever the token's byte view - a pinned mistyped special included) and
+         * the byte walk of the token's decoded bytes. Returns the resulting state, a DEAD state
+         * (empty, non-accepting) when the token fits neither way, or null for the legacy no-op
+         * case: an empty-byte token (a special) crossing no identity slot never advances and never
+         * kills the walk - EOS at a dead end, a stop sampled at an accept state.
+         */
+        State advance(List<int[]> ready, int token) {
+            List<int[]> raws = new ArrayList<>();
+            for (int[] s : ready) {
+                int top = s[s.length - 1];
+                if (cfg.kind[top] == T_TOKEN && cfg.data[top] == token) {
+                    raws.add(replaceLast(s, cfg.next[top]));
+                }
+            }
+            byte[] bs = tokenBytes[token];
+            if (bs.length == 0 && raws.isEmpty()) return null;
+            if (bs.length > 0) {
+                List<int[]> viaBytes = walkRaw(ready, bs, bs.length);
+                if (viaBytes != null) raws.addAll(viaBytes);
+            }
+            return expandSet(raws);
         }
 
         long[] maskFor(List<int[]> ready, boolean accepting) {
@@ -569,15 +802,23 @@ public final class Grammar {
         private long[] computeMask(List<int[]> ready, boolean accepting) {
             int vocab = tokenBytes.length;
             long[] m = new long[(vocab + 63) >> 6];
-            // First-byte filter: the union of all ready terminals. A token whose first byte is not
-            // in it cannot match — reject in O(1) without a full walk (most of the vocab, in
-            // practice).
+            // First-byte filter: the union of all ready byte terminals. A token whose first byte
+            // is not in it cannot match - reject in O(1) without a full walk (most of the vocab,
+            // in practice). TOKEN tops admit their id by IDENTITY instead: pre-marked directly,
+            // whatever that token's byte view.
             long[] firsts = new long[4];
             for (int[] s : ready) {
-                long[] tm = cfg.terms[cfg.data[s[s.length - 1]]];
+                int top = s[s.length - 1];
+                if (cfg.kind[top] == T_TOKEN) {
+                    int id = cfg.data[top]; // in-vocab by construction: of(Term,..) validates
+                    m[id >> 6] |= 1L << (id & 63);
+                    continue;
+                }
+                long[] tm = cfg.terms[cfg.data[top]];
                 for (int i = 0; i < 4; i++) firsts[i] |= tm[i];
             }
             for (int t = 0; t < vocab; t++) {
+                if ((m[t >> 6] & (1L << (t & 63))) != 0) continue; // admitted by identity already
                 byte[] bs = tokenBytes[t];
                 boolean ok;
                 if (bs.length == 0) ok = accepting;
@@ -585,7 +826,7 @@ public final class Grammar {
                     int f = bs[0] & 0xFF;
                     ok =
                             (firsts[f >>> 6] & (1L << (f & 63))) != 0
-                                    && walk(ready, bs, bs.length) != null;
+                                    && walkRaw(ready, bs, bs.length) != null;
                 }
                 if (ok) m[t >> 6] |= 1L << (t & 63);
             }
@@ -714,6 +955,27 @@ public final class Grammar {
         }
 
         /**
+         * True when the grammar is fully matched HERE, whether or not continuations remain - the
+         * "may stop now" reading a close-less region needs ({@code exhausted} is the stricter
+         * "nothing left at all"). A schema grammar with a whitespace-tolerant tail accepts after
+         * the closing brace while whitespace continuations stay ready.
+         */
+        public boolean accepting() {
+            return spec.cfg != null && accepting;
+        }
+
+        /**
+         * The admissible-token mask for the CURRENT state as one bit per id ({@code long[]}, bit
+         * {@code t} = token {@code t} admissible) - a fresh copy of the cached mask, for callers
+         * that UNION admission across parallel cursors before masking once. A DISABLED spec returns
+         * null (everything admissible).
+         */
+        public long[] admissible() {
+            if (spec.cfg == null) return null;
+            return spec.maskFor(ready, accepting).clone();
+        }
+
+        /**
          * Masks {@code logits} to grammar-allowed tokens; returns whether any token remains. A
          * DISABLED spec is a pass-through (no masking, always true).
          */
@@ -742,21 +1004,29 @@ public final class Grammar {
         }
 
         /**
-         * Consume a chosen token's bytes, advancing the grammar. Empty-byte tokens (EOS/control) do
-         * not advance. An impossible token drives the cursor to a dead state.
+         * Consume a chosen token, advancing the grammar: identity slots naming exactly this id
+         * cross, and the token's decoded bytes walk the byte terminals - both interpretations
+         * survive when both fit. An empty-byte token (EOS/control) crossing no identity slot does
+         * not advance; an impossible token drives the cursor to a dead state.
          */
         public void advanceWith(int token) {
-            if (spec.cfg == null || token < 0 || token >= spec.tokenBytes.length) return;
-            byte[] bs = spec.tokenBytes[token];
-            if (bs.length == 0) return;
-            State st = spec.walk(ready, bs, bs.length);
-            if (st == null) {
-                ready = List.of();
-                accepting = false;
-            } else {
-                ready = st.ready();
-                accepting = st.accept();
-            }
+            tryAdvance(token);
+        }
+
+        /**
+         * As {@link #advanceWith}, reporting whether the token was actually CONSUMED and the walk
+         * survives: false for the unexpected-special no-op (state unchanged) and for a token that
+         * drives the cursor dead - a caller enforcing a reply language treats both as "this token
+         * does not belong here". A DISABLED spec consumes everything.
+         */
+        public boolean tryAdvance(int token) {
+            if (spec.cfg == null) return true;
+            if (token < 0 || token >= spec.tokenBytes.length) return false;
+            State st = spec.advance(ready, token);
+            if (st == null) return false;
+            ready = st.ready();
+            accepting = st.accept();
+            return !ready.isEmpty() || accepting;
         }
     }
 
@@ -837,6 +1107,14 @@ public final class Grammar {
      */
     public static Spec fromSchema(Map<String, Object> schema, Tokenizer t) {
         return fromSchema(schema, vocab(t));
+    }
+
+    /**
+     * The schema's GBNF source - for embedding a schema payload inside a larger composed grammar
+     * ({@code Term.Gbnf}, reply-language argument regions). {@link #fromSchema} is this compiled.
+     */
+    public static String schemaGbnf(Map<String, Object> schema) {
+        return Schema.toGbnf(schema);
     }
 
     /** Translates a JSON Schema node tree into a GBNF grammar string. */
@@ -1373,6 +1651,9 @@ public final class Grammar {
     record Rule(int id, List<Element> body) {
         sealed interface Element {
             record Value(byte b) implements Element {}
+
+            /** One vocabulary token by IDENTITY - programmatic-terms only, never parsed GBNF. */
+            record TokenId(int id) implements Element {}
 
             record Dot() implements Element {}
 
