@@ -4,19 +4,26 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.testkit.ModelFixture;
+import dev.langchain4j.agent.tool.Tool;
 import dev.langchain4j.agent.tool.ToolSpecification;
+import dev.langchain4j.agent.tool.ToolSpecifications;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
-import dev.langchain4j.exception.UnsupportedFeatureException;
 import dev.langchain4j.model.chat.request.ChatRequest;
+import dev.langchain4j.model.chat.request.ToolChoice;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 import dev.langchain4j.model.chat.response.ChatResponse;
+import dev.langchain4j.service.AiServices;
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
@@ -100,17 +107,32 @@ class CachedPromptIT {
 
     @Test
     void byteIdentityWithUncached() {
-        String question = "Where do I reset my password?";
-        // uncached: prefix inlined into the request on the BASE model (which never uses the tree)
-        ChatResponse plain = base.chat(SUPPORT.get(0), UserMessage.from(question));
-        // cached: same conversation through a view
-        JinferChatModel support = base.withCachedPrompt(SUPPORT, List.of());
-        ChatResponse cached = support.chat(UserMessage.from(question));
+        // OWN engine + pinned seed: the law is view-vs-inline on the SAME tree state, and block
+        // KV is bit-exact only against the define that produced it - other tests' defines share
+        // head blocks computed in different batch shapes, which can drift an ulp and flip an
+        // argmax near-tie. Self-contained, the comparison tests the law, not test order.
+        JinferChatModel fresh =
+                JinferChatModel.builder()
+                        .modelPath(MODEL)
+                        .contextLength(4096)
+                        .maxOutputTokens(128)
+                        .seed(7L)
+                        .build();
+        try {
+            String question = "Where do I reset my password?";
+            // uncached: prefix inlined into the request on the BASE model (never uses the tree)
+            ChatResponse plain = fresh.chat(SUPPORT.get(0), UserMessage.from(question));
+            // cached: same conversation through a view
+            JinferChatModel support = fresh.withCachedPrompt(SUPPORT, List.of());
+            ChatResponse cached = support.chat(UserMessage.from(question));
 
-        assertEquals(plain.aiMessage().text(), cached.aiMessage().text());
-        assertTrue(
-                cached.aiMessage().text().contains("acme.example/reset"),
-                cached.aiMessage().text());
+            assertEquals(plain.aiMessage().text(), cached.aiMessage().text());
+            assertTrue(
+                    cached.aiMessage().text().contains("acme.example/reset"),
+                    cached.aiMessage().text());
+        } finally {
+            fresh.close();
+        }
     }
 
     @Test
@@ -186,22 +208,135 @@ class CachedPromptIT {
         }
     }
 
+    static final ToolSpecification RESET =
+            ToolSpecification.builder()
+                    .name("open_reset_portal")
+                    .description("Open the password reset portal for a customer email")
+                    .parameters(
+                            JsonObjectSchema.builder()
+                                    .addStringProperty("email", "The customer's email address")
+                                    .required("email")
+                                    .build())
+                    .build();
+
     @Test
-    void viewRejectsRequestTools() {
-        JinferChatModel support = base.withCachedPrompt(SUPPORT, List.of());
-        ToolSpecification t =
+    void identicalRequestToolsServeFromTheCache() {
+        // a view's tools are its DEFAULT tool set; a request re-stating the same set (what
+        // AiServices does every call) is a cache hit, and the usage accounting proves it
+        JinferChatModel support = base.withCachedPrompt(SUPPORT, List.of(RESET));
+        ChatResponse r =
+                support.chat(
+                        ChatRequest.builder()
+                                .messages(UserMessage.from("Say OK."))
+                                .toolSpecifications(RESET)
+                                .build());
+        JinferTokenUsage usage = (JinferTokenUsage) r.tokenUsage();
+        assertTrue(
+                usage.cachedInputTokens() > 0,
+                "the welded prefix must be restored, not re-prefilled: " + usage);
+        assertTrue(usage.servedFrom() != PromptCache.Tier.FRESH, usage.toString());
+    }
+
+    @Test
+    void requestToolsOverrideTheWeldedDefault() {
+        // request > view default: different tools serve correctly (byte-identical to the base
+        // model offered the same conversation), uncached, with ONE stderr warning per view
+        JinferChatModel support = base.withCachedPrompt(SUPPORT, List.of(RESET));
+        ToolSpecification other =
                 ToolSpecification.builder()
-                        .name("noop")
+                        .name("get_time")
+                        .description("Get the current local time")
                         .parameters(JsonObjectSchema.builder().build())
                         .build();
-        assertThrows(
-                UnsupportedFeatureException.class,
-                () ->
-                        support.chat(
-                                ChatRequest.builder()
-                                        .messages(UserMessage.from("hi"))
-                                        .toolSpecifications(t)
-                                        .build()));
+        String question = "Where do I reset my password?";
+        // pinned seed: the byte-identity comparison below must not ride on sampling luck
+        var params =
+                JinferChatRequestParameters.builder().toolSpecifications(other).seed(7L).build();
+        var err = new ByteArrayOutputStream();
+        PrintStream real = System.err;
+        ChatResponse overridden;
+        try {
+            System.setErr(new PrintStream(err, true));
+            overridden =
+                    support.chat(
+                            ChatRequest.builder()
+                                    .messages(UserMessage.from(question))
+                                    .parameters(params)
+                                    .build());
+            support.chat(
+                    ChatRequest.builder()
+                            .messages(UserMessage.from(question))
+                            .parameters(params)
+                            .build());
+        } finally {
+            System.setErr(real);
+        }
+        String warnings = err.toString();
+        assertTrue(warnings.contains("open_reset_portal"), warnings);
+        assertTrue(warnings.contains("get_time"), warnings);
+        assertEquals(
+                warnings.indexOf("WARNING"),
+                warnings.lastIndexOf("WARNING"),
+                "the override warns ONCE per view: " + warnings);
+
+        ChatResponse plain =
+                base.chat(
+                        ChatRequest.builder()
+                                .messages(SUPPORT.get(0), UserMessage.from(question))
+                                .parameters(params)
+                                .build());
+        assertEquals(plain.aiMessage().text(), overridden.aiMessage().text());
+        assertEquals(
+                plain.aiMessage().toolExecutionRequests(),
+                overridden.aiMessage().toolExecutionRequests());
+    }
+
+    @Test
+    void toolChoiceNoneOverridesTheWeldedDefault() {
+        // NONE empties the effective tool offer - on a tooled view that is an override like any
+        // other: served without tools, never a rejection
+        JinferChatModel support = base.withCachedPrompt(SUPPORT, List.of(RESET));
+        ChatResponse r =
+                support.chat(
+                        ChatRequest.builder()
+                                .messages(
+                                        UserMessage.from(
+                                                "Open the reset portal for bob@example.com."))
+                                .toolChoice(ToolChoice.NONE)
+                                .build());
+        assertTrue(!r.aiMessage().hasToolExecutionRequests(), r.aiMessage().toString());
+        assertTrue(!r.aiMessage().text().isBlank());
+    }
+
+    /** The mainstream idiom this feature exists for. */
+    static class Portal {
+        final AtomicBoolean opened = new AtomicBoolean();
+
+        @Tool("Open the password reset portal for a customer email")
+        String openResetPortal(String email) {
+            opened.set(true);
+            return "portal opened for " + email;
+        }
+    }
+
+    interface Assistant {
+        String chat(String message);
+    }
+
+    @Test
+    void aiServicesToolAgentRidesTheView() {
+        // AiServices re-sends its @Tool specifications on every request; welding the SAME set
+        // makes each of those requests a cache hit - this must serve, never reject
+        Portal portal = new Portal();
+        JinferChatModel support =
+                base.withCachedPrompt(SUPPORT, ToolSpecifications.toolSpecificationsFrom(portal));
+        Assistant assistant =
+                AiServices.builder(Assistant.class).chatModel(support).tools(portal).build();
+        String answer =
+                assistant.chat("Please open the reset portal for bob@example.com using the tool.");
+        assertTrue(answer != null && !answer.isBlank());
+        // WHETHER the model calls is model behavior; the wire contract is that the view served
+        Assumptions.assumeTrue(portal.opened.get(), "model chose not to call the tool: " + answer);
     }
 
     @Test

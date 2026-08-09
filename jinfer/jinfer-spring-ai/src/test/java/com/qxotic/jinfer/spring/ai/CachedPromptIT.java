@@ -64,17 +64,23 @@ class CachedPromptIT {
 
     @Test
     void twoModelsAreTwoParallelPipelines() throws Exception {
+        // thinking off + pinned seeds: a 32-token budget must go to the answer, not a think
+        // span, and the assertion must not ride on sampling luck
         JinferChatModel base =
                 JinferChatModel.builder()
                         .modelPath(MODEL)
                         .contextLength(2048)
                         .maxTokens(32)
+                        .thinking(false)
+                        .seed(1L)
                         .build();
         JinferChatModel twin =
                 JinferChatModel.builder()
                         .modelPath(MODEL)
                         .contextLength(2048)
                         .maxTokens(32)
+                        .thinking(false)
+                        .seed(2L)
                         .build();
         var pool = Executors.newFixedThreadPool(2);
         try {
@@ -135,19 +141,35 @@ class CachedPromptIT {
 
     @Test
     void byteIdentityWithUncached() {
-        String question = "Where do I reset my password?";
-        // uncached: prefix inlined into the request on the BASE model (which never uses the tree)
-        ChatResponse plain =
-                base.call(new Prompt(List.of(SUPPORT.get(0), new UserMessage(question))));
-        // cached: same conversation through a view
-        JinferChatModel support = base.withCachedPrompt(SUPPORT, List.of());
-        ChatResponse cached = support.call(new Prompt(new UserMessage(question)));
+        // OWN engine + pinned seed: the law is view-vs-inline on the SAME tree state, and block
+        // KV is bit-exact only against the define that produced it - other tests' defines share
+        // head blocks computed in different batch shapes, which can drift an ulp and flip an
+        // argmax near-tie. Self-contained, the comparison tests the law, not test order.
+        JinferChatModel fresh =
+                JinferChatModel.builder()
+                        .modelPath(MODEL)
+                        .contextLength(4096)
+                        .maxTokens(128)
+                        .seed(7L)
+                        .build();
+        try {
+            String question = "Where do I reset my password?";
+            // uncached: prefix inlined into the request on the BASE model (never uses the tree)
+            ChatResponse plain =
+                    fresh.call(new Prompt(List.of(SUPPORT.get(0), new UserMessage(question))));
+            // cached: same conversation through a view
+            JinferChatModel support = fresh.withCachedPrompt(SUPPORT, List.of());
+            ChatResponse cached = support.call(new Prompt(new UserMessage(question)));
 
-        assertEquals(
-                plain.getResult().getOutput().getText(), cached.getResult().getOutput().getText());
-        assertTrue(
-                cached.getResult().getOutput().getText().contains("acme.example/reset"),
-                cached.getResult().getOutput().getText());
+            assertEquals(
+                    plain.getResult().getOutput().getText(),
+                    cached.getResult().getOutput().getText());
+            assertTrue(
+                    cached.getResult().getOutput().getText().contains("acme.example/reset"),
+                    cached.getResult().getOutput().getText());
+        } finally {
+            fresh.close();
+        }
     }
 
     @Test
@@ -215,7 +237,9 @@ class CachedPromptIT {
     }
 
     @Test
-    void viewRejectsRequestTools() {
+    void requestToolsOverrideTheWeldedDefault() {
+        // request > view default: per-request tools are served (uncached, warned once), so
+        // ChatClient/tool-calling flows compose with views instead of exploding
         JinferChatModel support = base.withCachedPrompt(SUPPORT, List.of());
         ToolDefinition def = DefaultToolDefinition.builder().name("noop").inputSchema("{}").build();
         ToolCallback noop =
@@ -230,15 +254,12 @@ class CachedPromptIT {
                         return "";
                     }
                 };
-        assertThrows(
-                IllegalArgumentException.class,
-                () ->
-                        support.call(
-                                new Prompt(
-                                        new UserMessage("hi"),
-                                        JinferChatOptions.builder()
-                                                .toolCallbacks(List.of(noop))
-                                                .build())));
+        ChatResponse r =
+                support.call(
+                        new Prompt(
+                                new UserMessage("Say OK."),
+                                JinferChatOptions.builder().toolCallbacks(List.of(noop)).build()));
+        assertTrue(r.getResult().getOutput() != null);
     }
 
     @Test

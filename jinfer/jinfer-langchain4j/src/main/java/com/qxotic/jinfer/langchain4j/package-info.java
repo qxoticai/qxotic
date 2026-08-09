@@ -51,5 +51,21 @@
  * binds only the OUTPUT channel - think spans sample free, so structured output does not cost
  * reasoning quality. Expect grammar-valid output always; expect FIELD QUALITY to track the model -
  * a constrained small model produces well-formed JSON with weak content.
+ *
+ * <h2>Prompt caching, diagnosable</h2>
+ *
+ * <p>{@code withCachedPrompt(messages, tools)} pins a view's prefix and default tools, prefilled
+ * once and restored per request; caching changes latency, never behavior. Every response accounts
+ * for it - the cache read rides the usage, the OpenAI {@code cached_tokens} pattern:
+ *
+ * <pre>{@code
+ * var usage = (JinferTokenUsage) response.tokenUsage();
+ * usage.cachedInputTokens();  // ~prefix size = warm; 0 = the prefill was paid in full
+ * usage.servedFrom();         // SESSION | BLOCKS | FRESH - which cache tier served
+ * }</pre>
+ *
+ * <p>If TTFT looks cold on a view, read those two numbers first; the usual cause is a request
+ * overriding the welded tool set (a one-time stderr warning names the two sets), then {@code
+ * -Djinfer.promptCache=false}, or a missing {@code loadCachedPrompts} artifact (also warned).
  */
 package com.qxotic.jinfer.langchain4j;

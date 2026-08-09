@@ -98,6 +98,19 @@ class MappingsTest {
                         + " {\"type\": \"object\", \"properties\": {\"city\": {\"type\":"
                         + " \"string\"}}, \"required\": [\"city\"]}}}",
                 tool.rawJson());
+        // the cached-prompt hit test hangs on this: a REBUILT but identical spec renders equal,
+        // so a request re-stating a view's welded tools compares equal by value, not identity
+        ToolSpecification rebuilt =
+                ToolSpecification.builder()
+                        .name("get_weather")
+                        .description("Get current weather for a city")
+                        .parameters(
+                                JsonObjectSchema.builder()
+                                        .addStringProperty("city")
+                                        .required("city")
+                                        .build())
+                        .build();
+        assertEquals(Mappings.toTools(List.of(spec)), Mappings.toTools(List.of(rebuilt)));
     }
 
     @Test
