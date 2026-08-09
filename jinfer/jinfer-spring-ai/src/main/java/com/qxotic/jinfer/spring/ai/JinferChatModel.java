@@ -128,46 +128,66 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                                         ? b.loaded.model().getClass().getSimpleName()
                                         : b.modelName,
                                 cacheOptions);
-        this.videoSampler = b.videoSampler;
-        this.prefix = CachedPrompt.NONE;
-        this.observationRegistry =
-                b.observationRegistry == null ? ObservationRegistry.NOOP : b.observationRegistry;
-        this.observationConvention = b.observationConvention;
-        // precedence: request > builder > the container's recommendation (general.sampling.*)
-        // > port author recommendation > the engine baseline (SamplingDefaults.DEFAULT_*)
-        var recommended = engine.loaded().samplingDefaults();
-        JinferChatOptions knobs =
-                JinferChatOptions.builder()
-                        .model(engine.modelName())
-                        .temperature(
-                                b.temperature != null
-                                        ? b.temperature
-                                        : recommended.temperature() == null
-                                                ? null
-                                                : recommended.temperature().doubleValue())
-                        .topP(
-                                b.topP != null
-                                        ? b.topP
-                                        : recommended.topP() == null
-                                                ? null
-                                                : recommended.topP().doubleValue())
-                        .topK(b.topK != null ? b.topK : recommended.topK())
-                        .minP(
-                                b.minP != null
-                                        ? b.minP
-                                        : recommended.minP() == null
-                                                ? null
-                                                : recommended.minP().doubleValue())
-                        .maxTokens(b.maxTokens)
-                        .seed(b.seed)
-                        .thinking(b.thinking)
-                        .timeout(b.timeout)
-                        .build();
-        if (b.defaultOptions != null) {
-            validate(b.defaultOptions);
-            this.defaultOptions = b.defaultOptions;
-        } else {
-            this.defaultOptions = knobs;
+        // the engine above is live (weights mapped) - anything that throws from here on must
+        // free it, or a failed build() leaks a GB-scale ofShared arena with no backstop
+        try {
+            this.videoSampler = b.videoSampler;
+            this.prefix = CachedPrompt.NONE;
+            this.observationRegistry =
+                    b.observationRegistry == null
+                            ? ObservationRegistry.NOOP
+                            : b.observationRegistry;
+            this.observationConvention = b.observationConvention;
+            // precedence: request > builder > the container's recommendation (general.sampling.*)
+            // > port author recommendation > the engine baseline (SamplingDefaults.DEFAULT_*)
+            var recommended = engine.loaded().samplingDefaults();
+            JinferChatOptions knobs =
+                    JinferChatOptions.builder()
+                            .model(engine.modelName())
+                            .temperature(
+                                    b.temperature != null
+                                            ? b.temperature
+                                            : recommended.temperature() == null
+                                                    ? null
+                                                    : recommended.temperature().doubleValue())
+                            .topP(
+                                    b.topP != null
+                                            ? b.topP
+                                            : recommended.topP() == null
+                                                    ? null
+                                                    : recommended.topP().doubleValue())
+                            .topK(b.topK != null ? b.topK : recommended.topK())
+                            .minP(
+                                    b.minP != null
+                                            ? b.minP
+                                            : recommended.minP() == null
+                                                    ? null
+                                                    : recommended.minP().doubleValue())
+                            .maxTokens(b.maxTokens)
+                            .seed(b.seed)
+                            .thinking(b.thinking)
+                            .timeout(b.timeout)
+                            .build();
+            if (b.defaultOptions != null) {
+                validate(b.defaultOptions);
+                this.defaultOptions = b.defaultOptions;
+            } else {
+                this.defaultOptions = knobs;
+            }
+        } catch (RuntimeException | Error e) {
+            close(
+                    engine::close,
+                    e); // frees the engine-owned weights arena; borrowed weights stay alive
+            throw e;
+        }
+    }
+
+    /** Close-on-failure that keeps the ORIGINAL failure primary if close() itself throws. */
+    private static void close(Runnable close, Throwable failure) {
+        try {
+            close.run();
+        } catch (RuntimeException | Error e) {
+            failure.addSuppressed(e);
         }
     }
 
@@ -211,7 +231,13 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         JinferChatModel forked =
                 new JinferChatModel(
                         this, new ChatEngine(engine.loaded(), engine.modelName(), cacheOptions));
-        return prefix.isEmpty() ? forked : forked.withPrefix(prefix);
+        if (prefix.isEmpty()) return forked;
+        try {
+            return forked.withPrefix(prefix);
+        } catch (RuntimeException | Error e) {
+            close(forked::close, e); // a failed re-define must not leak the fork's engine
+            throw e;
+        }
     }
 
     /**
@@ -338,6 +364,10 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
      * unlikely. Compiling it is the framework-shaped half (Spring AI spells a schema as JSON text);
      * the think gating and the dead-end stop token are the engine's. Specs are cached per (schema,
      * vocab), so repeated schemas reuse the compiled masks.
+     *
+     * <p>Grammar ONLY, deliberately - unlike the langchain4j provider, which also states the schema
+     * in the prompt ({@code RequestPolicy.stating}). Spring AI's own {@code BeanOutputConverter}
+     * already appends the schema as format instructions, so stating it here would say it twice.
      */
     private Grammar.Spec grammar(String outputSchema) {
         if (outputSchema == null) return null;
@@ -822,10 +852,12 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                         "a model is required: model(\"hf.co/owner/repo:Q4_K_M\"),"
                                 + " modelPath(...) or model(LoadedModel)");
             if (source instanceof LoadedModel<?> l) {
-                if (!companions.isEmpty() || contextLength != null)
+                // contextLength stays legal here: state capacity is an ENGINE setting resolved
+                // from cacheOptions, not a load-time one - a forked 32k pipeline needs it
+                if (!companions.isEmpty())
                     throw new IllegalArgumentException(
-                            "companions/contextLength are load-time settings; apply them when you"
-                                    + " build the LoadedModel passed to model(...)");
+                            "companions are load-time settings; apply them when you build the"
+                                    + " LoadedModel passed to model(...)");
                 loaded = l;
                 companionPaths = Map.of();
                 return new JinferChatModel(this);

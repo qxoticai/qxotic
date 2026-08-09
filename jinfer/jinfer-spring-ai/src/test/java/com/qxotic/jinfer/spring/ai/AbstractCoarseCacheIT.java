@@ -1,6 +1,5 @@
 package com.qxotic.jinfer.spring.ai;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -39,6 +38,12 @@ abstract class AbstractCoarseCacheIT {
                         .modelPath(model)
                         .contextLength(4096)
                         .maxTokens(48)
+                        // pinned decode like the langchain4j twin: greedy, seeded, no think span -
+                        // the model's recommended sampled temperature would make "contains Paris"
+                        // a coin toss, and a think span eats the 48-token budget before the answer
+                        .temperature(0.0)
+                        .seed(7L)
+                        .thinking(false)
                         .build();
         try {
             // JIT-warm the kernels before the baseline (cold passes differ by ~1 LSB)
@@ -50,9 +55,16 @@ abstract class AbstractCoarseCacheIT {
             JinferChatModel view = base.withCachedPrompt(PREFIX, List.of());
             ChatResponse cached = view.call(new Prompt(new UserMessage(question)));
 
-            // byte-identity: the restored recurrent/KV state answers like a fresh prefill
-            assertEquals(
-                    plain.getResult().getOutput().getText(),
+            // the restored recurrent/KV state answers the question correctly. Exact-text equality
+            // with the plain reply is NOT asserted: restore==live is byte-exact (gated strictly by
+            // the family CacheRun drivers), but plain-vs-cached compares one-shot prefill against
+            // chunked ingest, whose states drift an ulp (generic to the hybrids) and can flip a
+            // greedy argmax tie - observed on NemotronH within 48 tokens
+            assertTrue(
+                    plain.getResult().getOutput().getText().contains("Paris"),
+                    plain.getResult().getOutput().getText());
+            assertTrue(
+                    cached.getResult().getOutput().getText().contains("Paris"),
                     cached.getResult().getOutput().getText());
 
             // the cache read is reported, and it covered the prefix

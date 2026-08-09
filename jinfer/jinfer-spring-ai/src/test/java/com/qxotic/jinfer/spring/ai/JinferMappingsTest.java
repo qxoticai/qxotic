@@ -8,6 +8,7 @@ import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.Tool;
+import com.qxotic.jinfer.media.VideoSampler;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.net.URI;
@@ -85,7 +86,8 @@ class JinferMappingsTest {
                                                 List.of(
                                                         new ToolResponseMessage.ToolResponse(
                                                                 "abc", "get_weather", "18C sunny")))
-                                        .build()));
+                                        .build()),
+                        VideoSampler.UNIFORM);
         assertEquals(Role.SYSTEM, out.get(0).role());
         assertEquals("be terse", out.get(0).text());
         assertEquals(Role.USER, out.get(1).role());
@@ -161,7 +163,8 @@ class JinferMappingsTest {
                                         URI.create("https://example.com/x.png")))
                         .build();
         assertThrows(
-                UnsupportedOperationException.class, () -> JinferMappings.toMessages(List.of(u)));
+                UnsupportedOperationException.class,
+                () -> JinferMappings.toMessages(List.of(u), VideoSampler.UNIFORM));
     }
 
     @Test
@@ -178,7 +181,7 @@ class JinferMappingsTest {
                                         .data(png.toByteArray())
                                         .build())
                         .build();
-        List<Message> out = JinferMappings.toMessages(List.of(u));
+        List<Message> out = JinferMappings.toMessages(List.of(u), VideoSampler.UNIFORM);
         Part.Blob blob = (Part.Blob) out.get(0).content().get(1);
         assertTrue(blob.media() instanceof com.qxotic.jinfer.Media.Image);
     }
@@ -194,7 +197,7 @@ class JinferMappingsTest {
                                         .data(silenceWav())
                                         .build())
                         .build();
-        List<Message> out = JinferMappings.toMessages(List.of(u));
+        List<Message> out = JinferMappings.toMessages(List.of(u), VideoSampler.UNIFORM);
         Part.Blob blob = (Part.Blob) out.get(0).content().get(1);
         assertTrue(blob.media() instanceof com.qxotic.jinfer.Media.Audio);
     }
@@ -211,7 +214,8 @@ class JinferMappingsTest {
                                         .build())
                         .build();
         assertThrows(
-                UnsupportedOperationException.class, () -> JinferMappings.toMessages(List.of(u)));
+                UnsupportedOperationException.class,
+                () -> JinferMappings.toMessages(List.of(u), VideoSampler.UNIFORM));
     }
 
     @Test
@@ -225,7 +229,8 @@ class JinferMappingsTest {
                                         URI.create("https://example.com/x.wav")))
                         .build();
         assertThrows(
-                UnsupportedOperationException.class, () -> JinferMappings.toMessages(List.of(u)));
+                UnsupportedOperationException.class,
+                () -> JinferMappings.toMessages(List.of(u), VideoSampler.UNIFORM));
     }
 
     @Test
@@ -240,7 +245,8 @@ class JinferMappingsTest {
                                                                 "a", "f", "1"),
                                                         new ToolResponseMessage.ToolResponse(
                                                                 "b", "g", "2")))
-                                        .build()));
+                                        .build()),
+                        VideoSampler.UNIFORM);
         assertEquals(1, out.size());
         assertEquals(Role.TOOL, out.get(0).role());
         assertEquals("a", ((Part.ToolResult) out.get(0).content().get(0)).callId());
@@ -258,7 +264,8 @@ class JinferMappingsTest {
                                                 List.of(
                                                         new AssistantMessage.ToolCall(
                                                                 "i", "function", "f", null)))
-                                        .build()));
+                                        .build()),
+                        VideoSampler.UNIFORM);
         assertEquals(1, out.get(0).content().size());
         Part.ToolCall call = (Part.ToolCall) out.get(0).content().get(0);
         assertEquals(Map.of(), call.arguments()); // null arguments map to empty
@@ -337,7 +344,7 @@ class JinferMappingsTest {
         assertEquals("hmm, let me think", ai.getMetadata().get("thinking"));
 
         // history side: the stored thinking renders back as a Reasoning part on the next turn
-        List<Message> out = JinferMappings.toMessages(List.of(ai));
+        List<Message> out = JinferMappings.toMessages(List.of(ai), VideoSampler.UNIFORM);
         Part.Reasoning reasoning = (Part.Reasoning) out.get(0).content().get(0);
         assertEquals("hmm, let me think", ((Part.Text) reasoning.content().get(0)).text());
         assertEquals("42", ((Part.Text) out.get(0).content().get(1)).text());

@@ -43,10 +43,6 @@ final class JinferMappings {
 
     // ---- Spring AI -> jinfer (typed, for the native codec) ----
 
-    static List<Message> toMessages(List<org.springframework.ai.chat.messages.Message> messages) {
-        return toMessages(messages, VideoSampler.UNIFORM);
-    }
-
     static List<Message> toMessages(
             List<org.springframework.ai.chat.messages.Message> messages,
             VideoSampler videoSampler) {
@@ -163,6 +159,10 @@ final class JinferMappings {
         if (data instanceof String s && s.startsWith("file:")) {
             return Path.of(URI.create(s));
         }
+        if (data instanceof byte[])
+            throw new UnsupportedOperationException(
+                    "inline video bytes are not supported: write them to a file and pass a local"
+                            + " file Resource or file:// URI");
         throw new UnsupportedOperationException(
                 "video needs a local file Resource or file:// URI, got " + data);
     }
