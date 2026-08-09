@@ -257,6 +257,41 @@ class JinferEmbeddingModelIT {
         assertTrue(e.getMessage().contains("Models.loadEmbedder"), e.getMessage());
     }
 
+    @Test
+    void mediaDocumentIsRefusedLoudly() {
+        Document media =
+                new Document(
+                        new org.springframework.ai.content.Media(
+                                org.springframework.util.MimeTypeUtils.IMAGE_PNG,
+                                new org.springframework.core.io.ByteArrayResource(
+                                        new byte[] {1, 2, 3})),
+                        java.util.Map.of());
+        IllegalArgumentException e =
+                assertThrows(IllegalArgumentException.class, () -> model.embed(media));
+        assertTrue(e.getMessage().contains("media"), e.getMessage());
+        IllegalArgumentException batched =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                model.embed(
+                                        List.of(media),
+                                        EmbeddingOptions.builder().build(),
+                                        List::of));
+        assertTrue(batched.getMessage().contains("media"), batched.getMessage());
+    }
+
+    @Test
+    void embedForResponseStaysRaw() {
+        // the seam contract, pinned from the other side: only embed(String) is query-framed;
+        // embedForResponse rides call(), the raw framing-free door
+        String text = "What is the capital of China?";
+        float[] viaResponse = model.embedForResponse(List.of(text)).getResults().get(0).getOutput();
+        assertTrue(cosine(viaResponse, raw(text)) > 0.999, "embedForResponse must stay raw");
+        double toQuery = cosine(viaResponse, model.embed(text));
+        double toRaw = cosine(viaResponse, raw(text));
+        assertTrue(toRaw > toQuery, "raw=" + toRaw + " query=" + toQuery);
+    }
+
     private static float[] raw(String text) {
         return model.call(new EmbeddingRequest(List.of(text), null))
                 .getResults()
