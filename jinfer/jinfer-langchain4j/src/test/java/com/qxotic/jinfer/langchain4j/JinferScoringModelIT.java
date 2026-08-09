@@ -46,6 +46,42 @@ class JinferScoringModelIT {
     }
 
     @Test
+    void forkOfAnOwningModelRefusesWithTheRecipe() {
+        IllegalStateException e =
+                org.junit.jupiter.api.Assertions.assertThrows(
+                        IllegalStateException.class, scorer::fork);
+        org.junit.jupiter.api.Assertions.assertTrue(
+                e.getMessage().contains("Models.loadReranker"), e.getMessage());
+    }
+
+    @Test
+    void sharedWeightsForkScoresTheSameRanking() throws Exception {
+        try (java.lang.foreign.Arena arena = java.lang.foreign.Arena.ofShared()) {
+            var loaded =
+                    com.qxotic.jinfer.chat.Models.loadReranker(
+                            ModelFixture.QWEN3_RERANKER_06B_Q8.path(), arena);
+            JinferScoringModel a =
+                    JinferScoringModel.builder().model(loaded).contextLength(2048).build();
+            JinferScoringModel b = a.fork();
+            try {
+                var docs =
+                        java.util.List.of(
+                                dev.langchain4j.data.segment.TextSegment.from(
+                                        "The reset portal is https://acme.example/reset."),
+                                dev.langchain4j.data.segment.TextSegment.from(
+                                        "Bananas are rich in potassium."));
+                var sa = a.scoreAll(docs, "Where do I reset my password?").content();
+                var sb = b.scoreAll(docs, "Where do I reset my password?").content();
+                org.junit.jupiter.api.Assertions.assertTrue(sa.get(0) > sa.get(1), sa.toString());
+                org.junit.jupiter.api.Assertions.assertTrue(sb.get(0) > sb.get(1), sb.toString());
+            } finally {
+                a.close();
+                b.close();
+            }
+        }
+    }
+
+    @Test
     void relevantDocumentOutranksDistractors() {
         List<TextSegment> docs =
                 List.of(
@@ -121,16 +157,18 @@ class JinferScoringModelIT {
 
     @Test
     void aChatModelIsNotAReranker() {
-        // the mistake to expect: pointing the scorer at the chat GGUF already on disk. The
-        // architecture dispatch must say so by name, before any weight is mapped
-        UnsupportedOperationException e =
+        // the mistake to expect: pointing the scorer at the chat GGUF already on disk. LFM2 IS
+        // a reranker family (ColBERT), so its provider refuses the wrong CHECKPOINT by name and
+        // points at the right one - before any weight is mapped
+        IllegalArgumentException e =
                 assertThrows(
-                        UnsupportedOperationException.class,
+                        IllegalArgumentException.class,
                         () ->
                                 JinferScoringModel.builder()
                                         .modelPath(ModelFixture.LFM25_350M_Q8.require())
                                         .build());
-        assertTrue(e.getMessage().contains("not a reranker architecture"), e.getMessage());
+        assertTrue(e.getMessage().contains("not the family's reranker"), e.getMessage());
+        assertTrue(e.getMessage().contains("LFM2.5-ColBERT"), e.getMessage());
     }
 
     @Test

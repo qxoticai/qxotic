@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.testkit.ModelFixture;
 import dev.langchain4j.data.document.Document;
 import dev.langchain4j.data.embedding.Embedding;
@@ -23,8 +24,10 @@ import dev.langchain4j.store.embedding.EmbeddingStoreIngestor;
 import dev.langchain4j.store.embedding.inmemory.InMemoryEmbeddingStore;
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
+import java.lang.foreign.Arena;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Executors;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -279,6 +282,51 @@ class JinferEmbeddingModelIT {
                 contents.get(0).textSegment().text().contains("acme.example/reset"),
                 contents.get(0).textSegment().text());
     }
+
+    // ---- shared weights: one load, parallel pipelines, user-owned lifetime ----
+
+    @Test
+    void sharedWeightsForkIsAParallelPipeline() throws Exception {
+        try (Arena arena = Arena.ofShared()) {
+            var loaded = Models.loadEmbedder(ModelFixture.QWEN3_EMBED_06B_Q8.require(), arena);
+            JinferEmbeddingModel a =
+                    JinferEmbeddingModel.builder().model(loaded).contextLength(1024).build();
+            JinferEmbeddingModel b = a.fork();
+            try {
+                // borrowed == owned: same vectors as the path-built class-level model
+                Embedding shared = a.embed("hello world").content();
+                assertTrue(cosine(shared, model.embed("hello world").content()) > 0.999);
+                // CONCURRENT embeds on two pipelines over ONE weights copy - the law this
+                // feature exists for (all scratch lives in each instance's own state)
+                var pool = Executors.newFixedThreadPool(2);
+                try {
+                    var fa = pool.submit(() -> a.embed("A kitten sat on the mat.").content());
+                    var fb = pool.submit(() -> b.embed("Taxes are due in April.").content());
+                    assertEquals(model.dimension(), fa.get().dimension());
+                    assertEquals(model.dimension(), fb.get().dimension());
+                    assertTrue(
+                            cosine(fa.get(), fb.get()) < 0.9, "distinct texts, distinct vectors");
+                } finally {
+                    pool.shutdown();
+                }
+            } finally {
+                a.close();
+                b.close();
+            }
+        }
+    }
+
+    @Test
+    void forkOfAnOwningModelRefusesWithTheRecipe() {
+        IllegalStateException e = assertThrows(IllegalStateException.class, model::fork);
+        assertTrue(e.getMessage().contains("Models.loadEmbedder"), e.getMessage());
+        assertTrue(e.getMessage().contains("model(loaded)"), e.getMessage());
+    }
+
+    // deliberately NOT tested: embedding after the owner closes the weights arena. The tensor
+    // hot path reads raw addresses (not liveness-checked segments), so a violation of the
+    // "your arena outlives every instance built on it" contract is a SIGSEGV, not a catchable
+    // exception - the builder javadoc says exactly that.
 
     private static double cosine(Embedding a, Embedding b) {
         float[] x = a.vector(), y = b.vector();

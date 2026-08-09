@@ -50,23 +50,27 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
     final String modelName;
     private final RuntimeState state; // one reusable state; embed() resets it per group
     private final int contextLength;
+    private final boolean ownsWeights; // false = the caller loaded the model and keeps the arena
     private final ObservationRegistry observationRegistry;
     private final EmbeddingModelObservationConvention observationConvention;
     private final ReentrantLock lock = new ReentrantLock(true); // single-stream, like ChatEngine
 
     private JinferEmbeddingModel(Builder b) {
-        // ONE arena for weights and state, adopted by the state: state.close() frees everything
-        // (idempotent, blocking, Cleaner-backstopped - all BaseState's laws, implemented once)
+        // ONE arena adopted by the state: state.close() frees everything this instance allocated
+        // (idempotent, blocking, Cleaner-backstopped - all BaseState's laws, implemented once).
+        // Weights land in it only when THIS instance loads them; a caller-loaded model stays in
+        // the caller's arena, and this arena holds the state alone.
         Arena arena = Arena.ofShared();
         try {
+            this.ownsWeights = b.loaded == null;
             try {
                 // same contract as the chat builder: <= 0 means the model's own maximum (-1 to the
                 // loader); a literal 0 would crash the port's tensor sizing
-                this.loaded = Models.loadEmbedder(b.modelPath, arena);
+                this.loaded = b.loaded != null ? b.loaded : Models.loadEmbedder(b.modelPath, arena);
             } catch (IOException e) {
                 throw new UncheckedIOException("failed to load " + b.modelPath, e);
             }
-            this.modelName = b.modelPath.getFileName().toString();
+            this.modelName = loaded.name();
             // the builder's knob IS the state size: it used to reach the loader, and
             // loading is no longer sized by context. Unset (<= 0) means the model's own.
             this.contextLength =
@@ -83,6 +87,27 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
             arena.close(); // a leaked ofShared arena has no Cleaner: free before failing
             throw e;
         }
+    }
+
+    /**
+     * A parallel pipeline over the same weights: fresh state, own lock, own lifecycle. Only a model
+     * whose weights YOU loaded can fork - the weights' lifetime is your arena's, so a fork can
+     * never dangle. A model that loaded its own weights refuses: it frees them at {@link #close()},
+     * and a fork would outlive them.
+     */
+    public JinferEmbeddingModel fork() {
+        if (ownsWeights) {
+            throw new IllegalStateException(
+                    "this model owns its weights and frees them at close - a fork would dangle."
+                            + " Load once into YOUR arena instead: Models.loadEmbedder(path,"
+                            + " arena), build with model(loaded), then fork freely");
+        }
+        return builder()
+                .model(loaded)
+                .contextLength(contextLength)
+                .observationRegistry(observationRegistry)
+                .observationConvention(observationConvention)
+                .build();
     }
 
     private static <S extends RuntimeState> S newState(LoadedEmbedder<S> l, int ctx, Arena arena) {
@@ -225,8 +250,9 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
     }
 
     public static final class Builder {
-        private Object source; // Path | ref/URL String: the last model setter wins
+        private Object source; // Path | ref/URL String | LoadedEmbedder: the last setter wins
         private Path modelPath; // derived from source at build()
+        private LoadedEmbedder<?> loaded; // derived from source at build()
         private int contextLength = 2048;
         private ObservationRegistry observationRegistry;
         private EmbeddingModelObservationConvention observationConvention;
@@ -243,6 +269,21 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
          */
         public Builder model(String pathOrRef) {
             this.source = pathOrRef;
+            return this;
+        }
+
+        /**
+         * A model you loaded yourself ({@code Models.loadEmbedder(path, arena)}) - the
+         * weight-sharing seam: several instances (and their {@link #fork() forks}) over ONE loaded
+         * copy are parallel pipelines for the price of one load.
+         *
+         * <p>You own its weights arena: {@link JinferEmbeddingModel#close()} frees only this
+         * instance's state, so close your arena after every instance built on it, never before -
+         * the tensor hot path reads raw addresses, so a closed weights arena under a live instance
+         * is a VM crash, not a catchable exception.
+         */
+        public Builder model(LoadedEmbedder<?> loaded) {
+            this.source = loaded;
             return this;
         }
 
@@ -269,16 +310,17 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
         }
 
         public JinferEmbeddingModel build() {
-            modelPath =
-                    switch (source) {
-                        case String ref -> ModelStore.resolve(ref);
-                        case Path path -> path;
-                        case null, default ->
-                                throw new IllegalArgumentException(
-                                        "a model is required:"
-                                                + " model(\"hf.co/owner/repo:Q4_K_M\") or"
-                                                + " modelPath(...)");
-                    };
+            modelPath = null;
+            loaded = null;
+            switch (source) {
+                case String ref -> modelPath = ModelStore.resolve(ref);
+                case Path path -> modelPath = path;
+                case LoadedEmbedder<?> l -> loaded = l;
+                case null, default ->
+                        throw new IllegalArgumentException(
+                                "a model is required: model(\"hf.co/owner/repo:Q4_K_M\"),"
+                                        + " modelPath(...) or model(LoadedEmbedder)");
+            }
             return new JinferEmbeddingModel(this);
         }
     }

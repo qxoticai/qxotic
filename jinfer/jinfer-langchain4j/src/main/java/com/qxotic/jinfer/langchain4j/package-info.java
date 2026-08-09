@@ -11,9 +11,24 @@
  * absent (resumable, checksum-verified; {@code JINFER_OFFLINE=1} forbids the network). {@code
  * .modelPath(Path)} stays the never-network form.
  *
- * <p>One model instance is ONE serial inference pipeline: concurrent calls queue fairly on it, and
- * a second pipeline means a second model over the same GGUF (the weight pages are shared by the OS
- * page cache, so the added cost is one context plus one load).
+ * <p>One model instance is ONE serial inference pipeline: concurrent calls queue fairly on it. For
+ * parallel pipelines, load the weights once into YOUR arena and fork - every builder has a {@code
+ * model(loaded)} seam and every model a {@code fork()}:
+ *
+ * <pre>{@code
+ * try (Arena arena = Arena.ofShared()) {
+ *     var loaded = Models.loadEmbedder(ModelStore.resolve("hf.co/...:Q8_0"), arena);
+ *     var a = JinferEmbeddingModel.builder().model(loaded).build();
+ *     var b = a.fork();               // second pipeline, same weights, a context's price
+ *     // ... parallel ingestion on a and b ...
+ *     a.close(); b.close();
+ * }                                   // the owner frees the weights, at a brace
+ * }</pre>
+ *
+ * <p>The block structure IS the ownership story: your arena outlives every instance built on it
+ * (the tensor hot path reads raw addresses - a closed weights arena under a live pipeline is a VM
+ * crash, not an exception), and {@code fork()} on a model that loaded its OWN weights refuses with
+ * that exact recipe.
  *
  * <h2>Structured output</h2>
  *

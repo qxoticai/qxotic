@@ -251,6 +251,25 @@ Every response accounts for the cache: `((JinferTokenUsage) response.tokenUsage(
 An edited prompt matches to the divergence point and pays only the tail; a wrong-model artifact fails at `build()`.
 Requires a model with a native template codec (the Jinja fallback makes no prefix-stability promise).
 
+## Parallel pipelines
+
+One instance is one serial pipeline; concurrent calls queue fairly on it.
+For real parallelism, load the weights once into YOUR arena and fork - every builder has a `model(loaded)` seam and every model a `fork()`:
+
+```java
+try (Arena arena = Arena.ofShared()) {
+    var loaded = Models.load(ModelStore.resolve("hf.co/...:Q4_K_M"), arena);
+    var a = JinferChatModel.builder().model(loaded).build();
+    var b = a.fork();               // second pipeline, same weights, a context's price
+    // ... concurrent chat on a and b ...
+    a.close(); b.close();
+}                                   // the owner frees the weights, at a brace
+```
+
+The block structure is the ownership story: your arena outlives every instance built on it (the tensor hot path reads raw addresses, so a closed weights arena under a live pipeline is a VM crash, not an exception).
+`fork()` on a model that loaded its own weights refuses with that exact recipe - it frees its weights at `close()`, and a fork would dangle.
+The same seam and `fork()` exist on `JinferEmbeddingModel` (via `Models.loadEmbedder`) and `JinferScoringModel` (via `Models.loadReranker`).
+
 ## Notes
 
 - One generation runs at a time per loaded model; concurrent `chat` calls queue fairly.

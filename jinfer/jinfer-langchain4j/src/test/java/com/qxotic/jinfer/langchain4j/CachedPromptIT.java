@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.cache.PromptCache;
+import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.testkit.ModelFixture;
 import dev.langchain4j.agent.tool.Tool;
 import dev.langchain4j.agent.tool.ToolSpecification;
@@ -19,6 +20,7 @@ import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.service.AiServices;
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
+import java.lang.foreign.Arena;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -180,6 +182,69 @@ class CachedPromptIT {
         ChatResponse r = a2.chat(UserMessage.from("One word: ok?"));
         assertTrue(!r.aiMessage().text().isBlank());
         base2.close();
+    }
+
+    @Test
+    void forkIsAParallelPipelineSharingTheWeights() throws Exception {
+        // ONE load in the USER's arena; fork() mints a second pipeline for the price of a
+        // context. The arena's block structure IS the ownership story: weights die at the brace.
+        try (Arena arena = Arena.ofShared()) {
+            var loaded = Models.load(MODEL, arena);
+            // contextLength is a load-time setting on the LoadedModel path - the builder
+            // refuses it here by design; a generous budget keeps the echo assertion off luck
+            JinferChatModel a =
+                    JinferChatModel.builder()
+                            .model(loaded)
+                            .maxOutputTokens(128)
+                            .thinking(false)
+                            .seed(1L)
+                            .build();
+            JinferChatModel b = a.fork();
+            try {
+                var pool = Executors.newFixedThreadPool(2);
+                try {
+                    var fa =
+                            pool.submit(
+                                    () ->
+                                            a.chat(UserMessage.from("Say exactly: ALPHA"))
+                                                    .aiMessage()
+                                                    .text());
+                    var fb =
+                            pool.submit(
+                                    () ->
+                                            b.chat(UserMessage.from("Say exactly: BRAVO"))
+                                                    .aiMessage()
+                                                    .text());
+                    assertTrue(fa.get().contains("ALPHA"), fa.get());
+                    assertTrue(fb.get().contains("BRAVO"), fb.get());
+                } finally {
+                    pool.shutdown();
+                }
+                // a view's fork re-defines the prefix on its own tree and serves from it
+                JinferChatModel view = a.withCachedPrompt(SUPPORT, List.of());
+                JinferChatModel forkedView = view.fork();
+                try {
+                    String answer =
+                            forkedView
+                                    .chat(UserMessage.from("Where do I reset my password?"))
+                                    .aiMessage()
+                                    .text();
+                    assertTrue(answer != null && !answer.isBlank());
+                } finally {
+                    forkedView.close(); // closes the fork's engine; a and its views live on
+                }
+            } finally {
+                a.close();
+                b.close();
+            }
+        }
+    }
+
+    @Test
+    void forkOfAnOwningModelRefusesWithTheRecipe() {
+        IllegalStateException e = assertThrows(IllegalStateException.class, base::fork);
+        assertTrue(e.getMessage().contains("Models.load"), e.getMessage());
+        assertTrue(e.getMessage().contains("model(loaded)"), e.getMessage());
     }
 
     @Test

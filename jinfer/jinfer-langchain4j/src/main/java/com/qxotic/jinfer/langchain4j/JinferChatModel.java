@@ -43,12 +43,13 @@ import java.util.function.Supplier;
  * models or unframeable requests.
  *
  * <p>Concurrency contract: an instance is ONE serial inference pipeline - concurrent requests queue
- * fairly on it. For a second pipeline, build a second model: the weight PAGES are shared by the OS
- * page cache, so the added cost is one context plus one load. Footprint: an instance holds its
- * weights, ONE full-context state reused for every request (extended on a prefix hit when {@code
- * cachedSessions} is set, reset otherwise - never re-allocated per request), plus the block layer's
- * KV (every served conversation, best-effort, bounded by {@code jinfer.promptCacheMB}; defined
- * prompts are pinned intent within it).
+ * fairly on it. For a second pipeline, load the weights once into YOUR arena ({@code
+ * Models.load(path, arena)}), build with {@code model(loaded)}, and {@code fork()} pipelines for
+ * the price of a context each. Footprint: an instance holds its weights, ONE full-context state
+ * reused for every request (extended on a prefix hit when {@code cachedSessions} is set, reset
+ * otherwise - never re-allocated per request), plus the block layer's KV (every served
+ * conversation, best-effort, bounded by {@code jinfer.promptCacheMB}; defined prompts are pinned
+ * intent within it).
  *
  * <p>Three caching tiers, near-homonyms with distinct jobs: {@code withCachedPrompt} defines a LIVE
  * shared prefix (prefilled once, restored per request - the system-prompt/tools/few-shot case);
@@ -74,6 +75,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     // creation (media decoded once, not per request); a view's conversations all start with this
     // prefix, its KV restored from the engine's block tree instead of re-prefilled.
     final CachedPrompt prefix;
+    private final PromptCache.Options cacheOptions; // the builder's cache knobs, carried for fork()
+    private final boolean ownsWeights; // false = the caller loaded the model and keeps the arena
     // per view (never copied): the first tools override warns once, then stays quiet
     private final AtomicBoolean warnedToolsOverride = new AtomicBoolean();
 
@@ -92,18 +95,17 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     }
 
     private JinferChatModel(Builder b) {
+        this.cacheOptions = cacheOptions(b.cachedPrompts, b.cachedSessions, b.contextLength);
+        this.ownsWeights = b.loaded == null;
         this.engine =
                 b.loaded == null
-                        ? new ChatEngine(
-                                b.modelPath,
-                                b.companionPaths,
-                                cacheOptions(b.cachedPrompts, b.cachedSessions, b.contextLength))
+                        ? new ChatEngine(b.modelPath, b.companionPaths, cacheOptions)
                         : new ChatEngine(
                                 b.loaded,
                                 b.modelName == null
                                         ? b.loaded.model().getClass().getSimpleName()
                                         : b.modelName,
-                                cacheOptions(b.cachedPrompts, b.cachedSessions, b.contextLength));
+                                cacheOptions);
         this.thinking = b.thinking;
         this.seed = b.seed;
         this.timeoutNanos = b.timeout == null ? 0 : b.timeout.toNanos();
@@ -137,6 +139,40 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         }
     }
 
+    /** The fork constructor: a fresh engine over the same borrowed weights, every knob carried. */
+    private JinferChatModel(JinferChatModel base, ChatEngine engine) {
+        this.engine = engine;
+        this.defaults = base.defaults;
+        this.thinking = base.thinking;
+        this.seed = base.seed;
+        this.timeoutNanos = base.timeoutNanos;
+        this.listeners = base.listeners;
+        this.videoSampler = base.videoSampler;
+        this.cacheOptions = base.cacheOptions;
+        this.ownsWeights = false;
+        this.prefix = CachedPrompt.NONE;
+    }
+
+    /**
+     * A parallel pipeline over the same weights: fresh engine, state and stream driver, every
+     * builder knob carried (a mounted cached-prompts artifact is re-mounted read-only; a view's
+     * prefix is re-defined on the fork's own tree). Only a model whose weights YOU loaded can fork
+     * - the weights' lifetime is your arena's, so a fork can never dangle. A model that loaded its
+     * own weights refuses: it frees them at {@link #close()}, and a fork would outlive them.
+     */
+    public JinferChatModel fork() {
+        if (ownsWeights) {
+            throw new IllegalStateException(
+                    "this model owns its weights and frees them at close - a fork would dangle."
+                            + " Load once into YOUR arena instead: Models.load(path, arena), build"
+                            + " with model(loaded), then fork freely");
+        }
+        JinferChatModel forked =
+                new JinferChatModel(
+                        this, new ChatEngine(engine.loaded(), engine.modelName(), cacheOptions));
+        return prefix.isEmpty() ? forked : forked.withPrefix(prefix);
+    }
+
     private JinferChatModel(JinferChatModel base, CachedPrompt prefix) {
         this.engine = base.engine;
         this.defaults = base.defaults;
@@ -145,6 +181,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         this.timeoutNanos = base.timeoutNanos;
         this.listeners = base.listeners;
         this.videoSampler = base.videoSampler;
+        this.cacheOptions = base.cacheOptions;
+        this.ownsWeights = base.ownsWeights;
         this.prefix = prefix;
     }
 
