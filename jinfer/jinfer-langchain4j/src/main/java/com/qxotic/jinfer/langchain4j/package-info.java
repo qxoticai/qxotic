@@ -52,16 +52,19 @@
  * reasoning quality. Expect grammar-valid output always; expect FIELD QUALITY to track the model -
  * a constrained small model produces well-formed JSON with weak content.
  *
- * <h2>Prompt caching, diagnosable</h2>
+ * <h2>Prompt caching and speed, diagnosable</h2>
  *
  * <p>{@code withCachedPrompt(messages, tools)} pins a view's prefix and default tools, prefilled
  * once and restored per request; caching changes latency, never behavior. Every response accounts
- * for it - the cache read rides the usage, the OpenAI {@code cached_tokens} pattern:
+ * for what the engine did - cache read (the OpenAI {@code cached_tokens} pattern) and phase timings
+ * ride the usage, so "is it the model or my code" needs no profiler:
  *
  * <pre>{@code
  * var usage = (JinferTokenUsage) response.tokenUsage();
  * usage.cachedInputTokens();  // ~prefix size = warm; 0 = the prefill was paid in full
  * usage.servedFrom();         // SESSION | BLOCKS | FRESH - which cache tier served
+ * usage.promptNanos();        // prefill wall time; usage.predictedNanos() the decode time
+ * log.info("{}", usage);      // renders it all: cached=1180/1204 BLOCKS, decode=41.9 tok/s
  * }</pre>
  *
  * <p>If TTFT looks cold on a view, read those two numbers first; the usual cause is a request

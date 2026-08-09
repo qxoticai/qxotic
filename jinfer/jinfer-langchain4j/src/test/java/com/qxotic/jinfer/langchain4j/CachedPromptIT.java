@@ -238,6 +238,7 @@ class CachedPromptIT {
                 usage.cachedInputTokens() > 0,
                 "the welded prefix must be restored, not re-prefilled: " + usage);
         assertTrue(usage.servedFrom() != PromptCache.Tier.FRESH, usage.toString());
+        assertTrue(usage.promptNanos() > 0 && usage.predictedNanos() > 0, usage.toString());
     }
 
     @Test
