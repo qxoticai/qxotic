@@ -89,13 +89,16 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             Path cachedPrompts, int cachedSessions, int contextLength) {
         var defaults = PromptCache.Options.DEFAULTS;
         return defaults.withHotSessions(cachedSessions)
-                .withContextCapacity(
-                        contextLength <= 0 ? defaults.contextCapacity() : contextLength)
+                .withContextCapacity(Math.max(0, contextLength)) // 0 = model max, engine-resolved
                 .withCatalog(cachedPrompts, true);
     }
 
     private JinferChatModel(Builder b) {
-        this.cacheOptions = cacheOptions(b.cachedPrompts, b.cachedSessions, b.contextLength);
+        this.cacheOptions =
+                cacheOptions(
+                        b.cachedPrompts,
+                        b.cachedSessions,
+                        b.contextLength == null ? 4096 : b.contextLength);
         this.ownsWeights = b.loaded == null;
         this.engine =
                 b.loaded == null
@@ -456,7 +459,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         private VideoSampler videoSampler = VideoSampler.UNIFORM;
         private Path cachedPrompts;
         private int cachedSessions;
-        private int contextLength;
+        private Integer contextLength; // null = unset -> 4096; the loaded path rejects sets
         private Double temperature;
         private Double topP;
         private Integer topK;
@@ -564,9 +567,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         }
 
         /**
-         * Context window; 0 (default) = the model's own maximum - conversations want the full
-         * window. (The retrieval builders bound theirs at 2048 instead: an embedder or reranker
-         * never fills a full-context state.)
+         * State window (default 4096 - bounded on purpose: a full-context state can be GB-scale
+         * KV). {@code <= 0} opts into the model's maximum, explicitly; larger values clamp to it.
          */
         public Builder contextLength(int contextLength) {
             this.contextLength = contextLength;
@@ -671,7 +673,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                         "a model is required: model(\"hf.co/owner/repo:Q4_K_M\"),"
                                 + " modelPath(...) or model(LoadedModel)");
             if (source instanceof LoadedModel<?> l) {
-                if (!companions.isEmpty() || contextLength != 0)
+                if (!companions.isEmpty() || contextLength != null)
                     throw new IllegalArgumentException(
                             "companions/contextLength are load-time settings; apply them when you"
                                     + " build the LoadedModel passed to model(...)");

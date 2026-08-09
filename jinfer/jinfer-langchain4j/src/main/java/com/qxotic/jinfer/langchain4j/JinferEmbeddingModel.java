@@ -245,10 +245,10 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
         }
 
         /**
-         * The packing window and per-segment ceiling (default 2048; the chat builder defaults to
-         * the model's maximum instead - an embedder never fills one): larger packs more segments
-         * per forward pass and admits longer segments, at the cost of a bigger resident KV state.
-         * {@code <= 0} = the model's own maximum.
+         * The packing window and per-segment ceiling (default 2048 - bounded on purpose, like every
+         * builder; chat's default is 4096): larger packs more segments per forward pass and admits
+         * longer segments, at the cost of a bigger resident KV state. {@code <= 0} opts into the
+         * model's maximum, explicitly.
          */
         public Builder contextLength(int contextLength) {
             this.contextLength = contextLength;

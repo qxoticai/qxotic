@@ -20,7 +20,7 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * @param cachedSessions live conversation states kept resident and reused append-only when a
  *     request's conversation strictly extends one (the multi-turn zero-restore tier); 0 (default)
  *     disables the pool
- * @param contextLength context window; 0 = the model's own maximum
+ * @param contextLength state window (default 4096); {@code <= 0} opts into the model's maximum
  * @param thinking the model's reasoning scaffold toggle (templates without one ignore it); default
  *     on
  * @param timeout wall-clock generation deadline; null = none
@@ -31,7 +31,7 @@ public record JinferChatProperties(
         Map<String, String> companions,
         String cachedPrompts,
         @DefaultValue("0") int cachedSessions,
-        @DefaultValue("0") int contextLength,
+        @DefaultValue("4096") int contextLength,
         Double temperature,
         Double topP,
         Integer maxTokens,

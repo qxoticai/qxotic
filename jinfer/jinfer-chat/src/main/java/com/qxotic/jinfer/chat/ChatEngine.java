@@ -160,6 +160,12 @@ public final class ChatEngine {
         this.loaded = owned.loaded();
         this.modelName = modelName;
         if (cacheOptions == null) throw new IllegalArgumentException("null cache options");
+        // contextCapacity 0 = "the model's maximum", resolvable only now that the model is
+        // loaded; explicit values clamp to it (a state larger than the model serves is waste)
+        int max = loaded.model().config().contextLength();
+        int capacity = cacheOptions.contextCapacity();
+        cacheOptions =
+                cacheOptions.withContextCapacity(capacity == 0 ? max : Math.min(capacity, max));
         PromptCache<?> built = null;
         try {
             // PromptCache.of reads the model's capabilities itself (codec-less = hot-only,
