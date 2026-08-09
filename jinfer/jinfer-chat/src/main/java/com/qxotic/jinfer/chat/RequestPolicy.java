@@ -5,7 +5,10 @@ import com.qxotic.jinfer.llm.Grammar;
 import com.qxotic.jinfer.llm.Sampler;
 import com.qxotic.jinfer.llm.Sampling;
 import com.qxotic.jinfer.llm.SpecialTokens;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
@@ -18,6 +21,15 @@ import java.util.Set;
 public final class RequestPolicy {
 
     private RequestPolicy() {}
+
+    /**
+     * The id to EMIT when a decode must be ended from outside (a grammar's dead end, a forced
+     * call's terminator): the stop set's FIRST element - the model's own end-of-turn, an order
+     * {@link SpecialTokens#stops} establishes and {@code LoadedModel} preserves.
+     */
+    private static int endTurn(LoadedModel<?> m) {
+        return m.stopTokens().iterator().next();
+    }
 
     /**
      * The smallest completion budget a think span fits: below it, thinking is disabled per request
@@ -97,7 +109,7 @@ public final class RequestPolicy {
                 token -> SpecialTokens.isSpecial(tokenizer, token),
                 escape,
                 SpecialTokens.newlineTokens(tokenizer),
-                m.stopTokens().iterator().next());
+                endTurn(m));
     }
 
     /**
@@ -117,7 +129,30 @@ public final class RequestPolicy {
     public static Optional<ForcedCall> forceCall(
             LoadedModel<?> m, List<Tool> tools, Sampler base, int[] replySeed) {
         ChatTemplate template = m.template().orElse(null);
-        if (template == null || template.callSeed().length == 0) return Optional.empty();
+        if (template == null) return Optional.empty();
+        // the reply-language path: ONE walk constrains the whole call - header, an OFFERED name,
+        // SCHEMA-BOUND arguments - leaving no free region to derail in (the legacy pin releases
+        // after the name and the arguments were the model's own, the recorded defect class)
+        Optional<ReplyLanguage.Node> language = template.forcedCallLanguage(tools);
+        if (language.isPresent()) {
+            ReplyLanguage.Selection sel = ReplyLanguage.Selection.of(language.get(), m.tokenizer());
+            int[] seed = sel.forcedPrefix();
+            ReplyLanguage.Walk walk = sel.walk();
+            for (int t : seed) walk.feed(t);
+            int stop = endTurn(m);
+            Sampler constrained =
+                    logits -> {
+                        if (!walk.maskLogits(logits)) return stop; // ended: nothing admissible
+                        int token = base.sampleToken(logits);
+                        walk.feed(token);
+                        return token;
+                    };
+            int[] parserSeed = new int[replySeed.length + seed.length];
+            System.arraycopy(replySeed, 0, parserSeed, 0, replySeed.length);
+            System.arraycopy(seed, 0, parserSeed, replySeed.length, seed.length);
+            return Optional.of(new ForcedCall(Batch.prefill(seed), constrained, parserSeed));
+        }
+        if (template.callSeed().length == 0) return Optional.empty();
         int[] callSeed = template.callSeed();
         Sampler sampler = base;
         Optional<String> pin = template.callGrammar(tools);
@@ -126,7 +161,7 @@ public final class RequestPolicy {
                     Sampler.withPrefixGrammar(
                             base,
                             Grammar.of(pin.get(), m.tokenizer()).cursor(),
-                            m.stopTokens().iterator().next(),
+                            endTurn(m),
                             template.callEpilogue());
         }
         // the caller's seed is the encoded prompt's own tail; a forced render is thinking-off,
@@ -135,5 +170,75 @@ public final class RequestPolicy {
         System.arraycopy(replySeed, 0, parserSeed, 0, replySeed.length);
         System.arraycopy(callSeed, 0, parserSeed, replySeed.length, callSeed.length);
         return Optional.of(new ForcedCall(Batch.prefill(callSeed), sampler, parserSeed));
+    }
+
+    /**
+     * States {@code schema} to the model, appended to the last user message - the other half of a
+     * schema-constrained request.
+     *
+     * <p>A grammar decides what the reply may LOOK like; only the prompt says what it must MEAN. A
+     * schema applied as a grammar alone yields well-formed nonsense: asked to extract a person from
+     * "Johann is 42", a model that never saw the schema answers {@code {"name":"user_agent","age":
+     * 42}} - valid under the grammar, wrong in every way that matters. Hosted providers hide this
+     * because their models are trained on a schema channel; a local GGUF has no such channel, so
+     * the schema must be said out loud.
+     *
+     * <p>Appended to the LAST user message rather than added as a message of its own: it is that
+     * request's instruction, it keeps a cached prefix's bytes untouched, and it is where
+     * langchain4j itself puts the schema when a provider declares no schema support - so a jinfer
+     * prompt reads like every other provider's. ponytail: on a MULTI-TURN structured conversation
+     * the statement moves to each round's newest user turn, so the previous round's bytes diverge
+     * and the warm-session tier re-ingests - a latency ceiling, never a correctness one; a
+     * schema-scoped placement would fix it if extraction loops ever get long.
+     *
+     * <p>Returns {@code messages} unchanged when {@code schema} is null/empty or no user message is
+     * present (a schema stated to nobody would be a silent prompt mutation).
+     */
+    public static List<Message> stating(List<Message> messages, Map<String, Object> schema) {
+        if (schema == null || schema.isEmpty()) return messages;
+        int last = -1;
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            if (messages.get(i).role() == Role.USER) {
+                last = i;
+                break;
+            }
+        }
+        if (last < 0) return messages;
+        List<Message> out = new ArrayList<>(messages);
+        Message user = out.get(last);
+        List<Part> content = new ArrayList<>(user.content());
+        content.add(new Part.Text(statement(schema)));
+        out.set(last, new Message(user.role(), content));
+        return out;
+    }
+
+    /**
+     * {@link #stating} over the OpenAI-shaped maps a Jinja whole-render fallback consumes - same
+     * statement, same placement, so BOTH encode paths of one request state the schema identically
+     * (the fallback serves unported models, exactly the ones a grammar-only schema fails worst on).
+     * Maps whose last user {@code content} is not a plain string return unchanged, like a
+     * conversation with no user message.
+     */
+    public static List<Object> statingMaps(List<Object> maps, Map<String, Object> schema) {
+        if (schema == null || schema.isEmpty()) return maps;
+        for (int i = maps.size() - 1; i >= 0; i--) {
+            if (!(maps.get(i) instanceof Map<?, ?> m) || !"user".equals(m.get("role"))) continue;
+            // the LAST user turn decides: a non-string content there returns unchanged rather
+            // than smuggling the statement onto an EARLIER turn
+            if (!(m.get("content") instanceof String content)) return maps;
+            @SuppressWarnings("unchecked")
+            var user = new LinkedHashMap<>((Map<String, Object>) m);
+            user.put("content", content + statement(schema));
+            List<Object> out = new ArrayList<>(maps);
+            out.set(i, user);
+            return out;
+        }
+        return maps;
+    }
+
+    /** The one statement both {@code stating} shapes append. */
+    private static String statement(Map<String, Object> schema) {
+        return "\nYou must answer with JSON matching this schema, and nothing else:\n"
+                + JsonCodec.stringify(schema);
     }
 }
