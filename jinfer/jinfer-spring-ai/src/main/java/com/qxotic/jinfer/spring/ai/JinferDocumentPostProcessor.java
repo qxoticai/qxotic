@@ -198,9 +198,10 @@ public final class JinferDocumentPostProcessor implements DocumentPostProcessor,
          * copy are parallel pipelines for the price of one load.
          *
          * <p>You own its weights arena: {@link JinferDocumentPostProcessor#close()} frees only this
-         * instance's state, so close your arena after every instance built on it, never before -
-         * the tensor hot path reads raw addresses, so a closed weights arena under a live instance
-         * is a VM crash, not a catchable exception.
+         * instance's state, so close your arena after every instance built on it, never before.
+         * Getting the order wrong sequentially is caught fail-fast (a safety canary throws
+         * IllegalStateException at the next request); freeing the arena DURING a request is a data
+         * race and can still crash the VM.
          */
         public Builder model(LoadedReranker<?> loaded) {
             this.source = loaded;

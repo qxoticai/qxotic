@@ -188,6 +188,7 @@ public final class NemotronH
         Configuration c = configuration;
         int dim = c.embeddingLength;
         float eps = c.rmsNormEps;
+        weights.tokenEmbeddings.safetyCanary(); // fail-fast on freed weights, before raw reads
         for (int i = 0; i < seqLen; i++) {
             weights.tokenEmbeddings.copyTo(
                     (long) ids[tokenOffset + i] * dim, s.x, (long) i * dim, dim);

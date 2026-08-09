@@ -211,6 +211,7 @@ public final class Lfm2
 
     /** Token-embedding lookup into the residual stream (no scaling, unlike Gemma4). */
     private void embedTokens(State state, int[] tokens, int tokenOffset, int seqLen) {
+        weights.tokenEmbeddings.safetyCanary(); // fail-fast on freed weights, before raw reads
         int dim = configuration.embeddingLength;
         for (int s = 0; s < seqLen; s++) {
             weights.tokenEmbeddings.copyTo(

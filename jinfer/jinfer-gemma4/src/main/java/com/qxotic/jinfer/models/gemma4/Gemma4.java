@@ -666,6 +666,7 @@ public final class Gemma4
     private void embed(State state, int[] tokens, int tokenOffset, int seqLen) {
         int dim = configuration.embeddingLength();
         float sqrtDim = (float) Math.sqrt(dim);
+        weights.tokenEmbeddings.safetyCanary(); // fail-fast on freed weights, before raw reads
         for (int s = 0; s < seqLen; s++) {
             int token = tokens[tokenOffset + s];
             weights.tokenEmbeddings.copyTo((long) token * dim, state.residual, s * dim, dim);

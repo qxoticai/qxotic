@@ -241,6 +241,31 @@ class CachedPromptIT {
     }
 
     @Test
+    void useAfterTheOwnerFreesTheWeightsFailsFast() throws Exception {
+        // the 350M keeps this cheap; the canary at the forward's entry turns what used to be a
+        // SIGSEGV into a teaching ISE - for the SEQUENTIAL mistake only
+        Arena arena = Arena.ofShared();
+        JinferChatModel borrowed;
+        try {
+            var loaded = Models.load(ModelFixture.LFM25_350M_Q8.require(), arena);
+            borrowed = JinferChatModel.builder().model(loaded).maxOutputTokens(16).build();
+        } catch (Throwable t) {
+            arena.close();
+            throw t;
+        }
+        try {
+            arena.close(); // the owner frees the weights under the pipeline - out of order
+            IllegalStateException e =
+                    assertThrows(
+                            IllegalStateException.class,
+                            () -> borrowed.chat(UserMessage.from("hi")));
+            assertTrue(e.getMessage().contains("freed"), e.getMessage());
+        } finally {
+            borrowed.close();
+        }
+    }
+
+    @Test
     void forkOfAnOwningModelRefusesWithTheRecipe() {
         IllegalStateException e = assertThrows(IllegalStateException.class, base::fork);
         assertTrue(e.getMessage().contains("Models.load"), e.getMessage());

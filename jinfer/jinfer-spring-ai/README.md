@@ -212,7 +212,8 @@ try (Arena arena = Arena.ofShared()) {
 }                                   // the owner frees the weights, at a brace
 ```
 
-The block structure is the ownership story: your arena outlives every instance built on it (the tensor hot path reads raw addresses, so a closed weights arena under a live pipeline is a VM crash, not an exception).
+The block structure is the ownership story: your arena outlives every instance built on it.
+A sequential violation is caught fail-fast - a safety canary at the forward pass throws `IllegalStateException` on freed weights - while freeing the arena DURING a request is a data race and can still crash the VM.
 `fork()` on a model that loaded its own weights refuses with that exact recipe - it frees its weights at `close()`, and a fork would dangle.
 The same seam and `fork()` exist on `JinferEmbeddingModel` (via `Models.loadEmbedder`) and `JinferDocumentPostProcessor` (via `Models.loadReranker`).
 

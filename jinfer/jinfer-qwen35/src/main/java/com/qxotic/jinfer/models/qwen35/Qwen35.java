@@ -201,6 +201,7 @@ public final class Qwen35
             RoPE.fill(state.ropeCos, state.ropeSin, startPos, seqLen, w.ropeHalf, w.rope);
         }
 
+        w.tokenEmbeddingTable.safetyCanary(); // fail-fast on freed weights, before raw reads
         for (int s = 0; s < seqLen; s++) {
             w.tokenEmbeddingTable.copyTo(tokens[tokenOffset + s] * dim, state.x, s * dim, dim);
         }

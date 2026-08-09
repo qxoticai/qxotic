@@ -228,6 +228,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
         float eps = config.rmsNormEps;
         float embScale = config.embeddingScale, residScale = config.residualScale;
 
+        w.tokenEmbeddingTable.safetyCanary(); // fail-fast on freed weights, before raw reads
         for (int s = 0; s < seqLen; s++) {
             w.tokenEmbeddingTable.copyTo(
                     (long) tokens[tokenOffset + s] * dim, state.x, (long) s * dim, dim);

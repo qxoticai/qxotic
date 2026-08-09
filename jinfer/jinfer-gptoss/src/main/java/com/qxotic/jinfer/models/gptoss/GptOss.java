@@ -227,6 +227,7 @@ public final class GptOss
 
     /** Token-embedding lookup into the residual stream (no scaling). */
     private void embed(State state, int[] tokens, int tokenOffset, int seqLen) {
+        weights.tokenEmbeddings().safetyCanary(); // fail-fast on freed weights, before raw reads
         int dim = configuration.embeddingLength();
         for (int s = 0; s < seqLen; s++) {
             weights.tokenEmbeddings()

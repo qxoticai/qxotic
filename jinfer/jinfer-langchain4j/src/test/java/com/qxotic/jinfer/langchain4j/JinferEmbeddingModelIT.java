@@ -323,10 +323,42 @@ class JinferEmbeddingModelIT {
         assertTrue(e.getMessage().contains("model(loaded)"), e.getMessage());
     }
 
-    // deliberately NOT tested: embedding after the owner closes the weights arena. The tensor
-    // hot path reads raw addresses (not liveness-checked segments), so a violation of the
-    // "your arena outlives every instance built on it" contract is a SIGSEGV, not a catchable
-    // exception - the builder javadoc says exactly that.
+    @Test
+    void useAfterCloseFailsLoudly() {
+        // the OWNED path's twin pin: close() frees weights and state together, and later use
+        // must be an ISE (the state's closed flag or the weights canary - never a crash)
+        JinferEmbeddingModel closed =
+                JinferEmbeddingModel.builder()
+                        .modelPath(ModelFixture.QWEN3_EMBED_06B_Q8.require())
+                        .contextLength(256)
+                        .build();
+        closed.close();
+        assertThrows(IllegalStateException.class, () -> closed.embed("hello"));
+    }
+
+    @Test
+    void useAfterTheOwnerFreesTheWeightsFailsFast() throws Exception {
+        // the safety canary at the forward's entry turns what used to be a SIGSEGV into a
+        // teaching ISE - for the SEQUENTIAL mistake; freeing DURING a request stays a data race
+        Arena arena = Arena.ofShared();
+        JinferEmbeddingModel borrowed;
+        try {
+            var loaded = Models.loadEmbedder(ModelFixture.QWEN3_EMBED_06B_Q8.require(), arena);
+            borrowed = JinferEmbeddingModel.builder().model(loaded).contextLength(512).build();
+        } catch (Throwable t) {
+            arena.close();
+            throw t;
+        }
+        try {
+            arena.close(); // the owner frees the weights under the pipeline - out of order
+            IllegalStateException e =
+                    assertThrows(IllegalStateException.class, () -> borrowed.embed("hello"));
+            assertTrue(e.getMessage().contains("freed"), e.getMessage());
+            assertTrue(e.getMessage().contains("close your arena LAST"), e.getMessage());
+        } finally {
+            borrowed.close(); // the state is the instance's own arena: still closable
+        }
+    }
 
     private static double cosine(Embedding a, Embedding b) {
         float[] x = a.vector(), y = b.vector();
