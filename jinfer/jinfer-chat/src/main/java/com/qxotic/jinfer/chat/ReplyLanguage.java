@@ -217,6 +217,9 @@ public final class ReplyLanguage {
         final List<CRegion> regions;
         final Set<Integer> controlIds; // every resolved mark: pinned ids are control too
         final int entry;
+        // per region: the entry-admissible token set of a GBNF-opening first segment (null for
+        // mark- and free-opening regions) - structure masking's plain-dispatch union
+        final long[][] regionEntry;
         private final int[] forcedPrefix;
         private Closure[] closures; // one per op, computed by validate - dispatch is a lookup
 
@@ -239,6 +242,17 @@ public final class ReplyLanguage {
             this.ops = c.ops();
             this.regions = c.regions;
             this.controlIds = Set.copyOf(c.markIds);
+            // a GBNF-OPENING region (tools + schema output: content is the schema payload)
+            // dispatches on plain tokens its payload admits, so structure masking needs each
+            // such region's ENTRY set - computed once here from a throwaway cursor, never from
+            // the walk's own (the walk's cursor memo must stay untouched until entry)
+            this.regionEntry = new long[regions.size()][];
+            for (int i = 0; i < regions.size(); i++) {
+                CRegion r = regions.get(i);
+                if (r.opener() == -1 && r.segs().get(0) instanceof Seg.Spec s) {
+                    regionEntry[i] = s.spec().cursor().admissible();
+                }
+            }
             validate();
             this.forcedPrefix = extractForcedPrefix();
         }
@@ -251,7 +265,10 @@ public final class ReplyLanguage {
                 if (ops[i].kind == Op.REGION) {
                     CRegion r = regions.get(ops[i].arg);
                     Closure after = closure(ops[i].next);
+                    // FREE-opening only: a gbnf-opening region can exit on an inadmissible
+                    // plain token at acceptance, so a plain-opening successor stays reachable
                     if (r.opener() == -1
+                            && r.segs().get(0) instanceof Seg.Free
                             && after.plain() != -1
                             && after.marks().isEmpty()
                             && after.accept() == -1)
@@ -443,13 +460,11 @@ public final class ReplyLanguage {
                 List<Seg> segs,
                 Set<Integer> markIds,
                 boolean spanShaped) {
-            int opener = -1;
-            if (segs.get(0) instanceof Seg.Spec s) {
-                if (s.leadMark() == -1)
-                    throw new IllegalArgumentException(
-                            "a region must open with a mark or a free hole, not bytes");
-                opener = s.leadMark();
-            }
+            // opener -1 covers TWO opening shapes sharing the plain-dispatch slot: a FREE hole
+            // (pass-through) and a mark-less SPEC (a GBNF-opening region - the tools+schema
+            // content shape - dispatching on exactly the plain tokens its payload admits)
+            int opener =
+                    segs.get(0) instanceof Seg.Spec s && s.leadMark() != -1 ? s.leadMark() : -1;
             return new CRegion(
                     kind, calls, List.copyOf(segs), Set.copyOf(markIds), opener, spanShaped);
         }
@@ -774,11 +789,20 @@ public final class ReplyLanguage {
                 return true; // a free hole: pass-through
             }
             Selection.Closure cl = sel.closure(at);
-            if (cl.plain() != -1) return true; // a free-opening region: pass-through
+            long[] plainEntry = null;
+            if (cl.plain() != -1) {
+                plainEntry = sel.regionEntry[sel.ops[cl.plain()].arg];
+                if (plainEntry == null) return true; // a FREE-opening region: pass-through
+                // a GBNF-opening region: the mask is the union of the payload's entry set, the
+                // closure's marks, and (at an accept position) the control exits
+            }
             int n = Math.toIntExact(logits.size());
             boolean accept = cl.accept() != -1;
             for (int t = 0; t < n; t++) {
-                boolean ok = cl.marks().containsKey(t) || (accept && control(t));
+                boolean ok =
+                        (plainEntry != null && (plainEntry[t >> 6] >>> (t & 63) & 1L) != 0)
+                                || cl.marks().containsKey(t)
+                                || (accept && control(t));
                 if (!ok) logits.setFloat(t, Float.NEGATIVE_INFINITY);
             }
             return true;
