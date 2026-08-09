@@ -4,8 +4,13 @@ import com.qxotic.jinfer.Media;
 import com.qxotic.jinfer.chat.JsonCodec;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
+import com.qxotic.jinfer.media.VideoSampler;
 import com.qxotic.toknroll.Tokenizer;
 import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.data.message.Content;
+import dev.langchain4j.data.message.TextContent;
+import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.exception.UnsupportedFeatureException;
 import dev.langchain4j.model.TokenCountEstimator;
 import java.util.List;
 import java.util.function.ToIntFunction;
@@ -26,10 +31,13 @@ final class Estimators implements TokenCountEstimator {
 
     private final Tokenizer tokenizer;
     private final ToIntFunction<Media> mediaPositions; // null = this model cannot ingest media
+    private final VideoSampler videoSampler; // the MODEL's sampler: counts what chat ingests
 
-    Estimators(Tokenizer tokenizer, ToIntFunction<Media> mediaPositions) {
+    Estimators(
+            Tokenizer tokenizer, ToIntFunction<Media> mediaPositions, VideoSampler videoSampler) {
         this.tokenizer = tokenizer;
         this.mediaPositions = mediaPositions;
+        this.videoSampler = videoSampler;
     }
 
     @Override
@@ -39,8 +47,19 @@ final class Estimators implements TokenCountEstimator {
 
     @Override
     public int estimateTokenCountInMessage(ChatMessage message) {
+        // a model that cannot ingest media refuses BEFORE any decode: the converter below
+        // decodes eagerly (a video would even consult this estimator's absent sampler), so
+        // waiting for countParts would pay hashing and decode I/O just to throw - or NPE first
+        if (mediaPositions == null && message instanceof UserMessage u) {
+            for (Content c : u.contents()) {
+                if (!(c instanceof TextContent)) {
+                    throw new UnsupportedFeatureException(
+                            "this model cannot ingest media, so media tokens cannot be counted");
+                }
+            }
+        }
         int sum = 0;
-        for (Message m : Mappings.toMessages(List.of(message))) {
+        for (Message m : Mappings.toMessages(List.of(message), videoSampler)) {
             sum += countParts(m.content());
         }
         return sum;
@@ -61,7 +80,7 @@ final class Estimators implements TokenCountEstimator {
                         case Part.Text t -> estimateTokenCountInText(t.text());
                         case Part.Blob b -> {
                             if (mediaPositions == null) {
-                                throw new UnsupportedOperationException(
+                                throw new UnsupportedFeatureException(
                                         "this model cannot ingest media, so media tokens cannot"
                                                 + " be counted");
                             }

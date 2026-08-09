@@ -5,6 +5,7 @@ import com.qxotic.jinfer.chat.CachedPrompt;
 import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.chat.RequestPolicy;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.hub.ModelStore;
 import com.qxotic.jinfer.llm.Grammar;
@@ -94,6 +95,14 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     }
 
     private JinferChatModel(Builder b) {
+        // unsupported DEFAULTS reject before anything is mapped: core merges defaults under each
+        // request, so a request can ADD what defaults lack (tools curing a REQUIRED default at
+        // request time) but can never UNSET a knob this engine does not serve - only the latter
+        // is build-fatal, and it need not cost a model load to find out
+        if (b.defaultParameters != null) {
+            List<Tool> stated = statedTools(b.defaultParameters);
+            rejectUnsupported(b.defaultParameters, stated != null && !stated.isEmpty());
+        }
         this.cacheOptions =
                 cacheOptions(
                         b.cachedPrompts,
@@ -109,36 +118,51 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                                         ? b.loaded.model().getClass().getSimpleName()
                                         : b.modelName,
                                 cacheOptions);
-        this.thinking = b.thinking;
-        this.seed = b.seed;
-        this.timeoutNanos = b.timeout == null ? 0 : b.timeout.toNanos();
-        this.listeners = List.copyOf(b.listeners);
-        this.videoSampler = b.videoSampler;
-        this.prefix = CachedPrompt.NONE;
-        // Jinfer-typed ALWAYS: ChatModel.chat merges defaults.overrideWith(request), and only a
-        // jinfer-typed receiver preserves grammar/seed from either side of the merge
-        // precedence: request > builder > the container's recommendation (general.sampling.*)
-        // > port author recommendation > the engine baseline (SamplingDefaults.DEFAULT_*)
-        var recommended = engine.loaded().samplingDefaults();
-        JinferChatRequestParameters base =
-                JinferChatRequestParameters.builder()
-                        .modelName(engine.modelName())
-                        .temperature(
-                                b.temperature != null
-                                        ? b.temperature
-                                        : toDouble(recommended.temperature()))
-                        .topP(b.topP != null ? b.topP : toDouble(recommended.topP()))
-                        .topK(b.topK != null ? b.topK : recommended.topK())
-                        .minP(b.minP != null ? b.minP : toDouble(recommended.minP()))
-                        .maxOutputTokens(b.maxOutputTokens)
-                        .build();
-        // caller-supplied defaults win field-by-field; unsupported ones reject HERE, eagerly - a
-        // model whose defaults can never serve a request should fail at build, not at first use
-        this.defaults = b.defaultParameters == null ? base : base.overrideWith(b.defaultParameters);
-        if (b.defaultParameters != null) {
-            rejectUnsupported(
-                    this.defaults, !prefix.resolveTools(statedTools(this.defaults)).isEmpty());
+        // the engine above is live (weights mapped) - anything that throws from here on must
+        // free it, or a failed build() leaks a GB-scale ofShared arena with no backstop
+        try {
+            this.thinking = b.thinking;
+            this.seed = b.seed;
+            this.timeoutNanos = b.timeout == null ? 0 : b.timeout.toNanos();
+            this.listeners = List.copyOf(b.listeners);
+            this.videoSampler = b.videoSampler;
+            this.prefix = CachedPrompt.NONE;
+            // Jinfer-typed ALWAYS: ChatModel.chat merges defaults.overrideWith(request), and only a
+            // jinfer-typed receiver preserves grammar/seed from either side of the merge
+            // precedence: request > builder > the container's recommendation (general.sampling.*)
+            // > port author recommendation > the engine baseline (SamplingDefaults.DEFAULT_*)
+            var recommended = engine.loaded().samplingDefaults();
+            JinferChatRequestParameters base =
+                    JinferChatRequestParameters.builder()
+                            .modelName(engine.modelName())
+                            .temperature(
+                                    b.temperature != null
+                                            ? b.temperature
+                                            : toDouble(recommended.temperature()))
+                            .topP(b.topP != null ? b.topP : toDouble(recommended.topP()))
+                            .topK(b.topK != null ? b.topK : recommended.topK())
+                            .minP(b.minP != null ? b.minP : toDouble(recommended.minP()))
+                            .maxOutputTokens(b.maxOutputTokens)
+                            .build();
+            // caller-supplied defaults win field-by-field (unsupported ones rejected above,
+            // before the load); a defaults modelName can only be checked against the LIVE engine
+            this.defaults =
+                    b.defaultParameters == null ? base : base.overrideWith(b.defaultParameters);
             rejectModelSwitch(engine, this.defaults);
+        } catch (RuntimeException | Error e) {
+            close(
+                    engine::close,
+                    e); // frees the engine-owned weights arena; borrowed weights stay alive
+            throw e;
+        }
+    }
+
+    /** Close-on-failure that keeps the ORIGINAL failure primary if close() itself throws. */
+    private static void close(Runnable close, Throwable failure) {
+        try {
+            close.run();
+        } catch (RuntimeException | Error e) {
+            failure.addSuppressed(e);
         }
     }
 
@@ -173,7 +197,13 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         JinferChatModel forked =
                 new JinferChatModel(
                         this, new ChatEngine(engine.loaded(), engine.modelName(), cacheOptions));
-        return prefix.isEmpty() ? forked : forked.withPrefix(prefix);
+        if (prefix.isEmpty()) return forked;
+        try {
+            return forked.withPrefix(prefix);
+        } catch (RuntimeException | Error e) {
+            close(forked::close, e); // a failed re-define must not leak the fork's engine
+            throw e;
+        }
     }
 
     private JinferChatModel(JinferChatModel base, CachedPrompt prefix) {
@@ -290,7 +320,9 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     public TokenCountEstimator tokenCountEstimator() {
         var template = engine.loaded().template().orElse(null);
         return new Estimators(
-                engine.loaded().tokenizer(), template == null ? null : template::mediaPositions);
+                engine.loaded().tokenizer(),
+                template == null ? null : template::mediaPositions,
+                videoSampler);
     }
 
     /** A streaming twin sharing this model's engine and cached prefix (the GGUF loads once). */
@@ -335,7 +367,14 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                         ? List.of()
                         : p.toolSpecifications();
         List<Message> messages = new ArrayList<>(prefix.messages());
-        messages.addAll(Mappings.toMessages(request.messages(), videoSampler));
+        // a schema constrains the SHAPE through the grammar below; stating says its MEANING,
+        // which no local model can infer from a mask - to the REQUEST's messages only, a cached
+        // prefix keeps its bytes (see RequestPolicy.stating). Stated on BOTH encode paths: the
+        // typed messages here, the fallback's maps in the supplier below.
+        Map<String, Object> schema = schemaOf(p);
+        messages.addAll(
+                RequestPolicy.stating(
+                        Mappings.toMessages(request.messages(), videoSampler), schema));
         JinferChatRequestParameters j = p instanceof JinferChatRequestParameters jp ? jp : null;
         List<ChatMessage> requestMessages = request.messages();
         ChatEngine.Request lowered =
@@ -358,7 +397,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                                                 ? null
                                                 : j.minP().floatValue(),
                                         j != null && j.seed() != null ? j.seed() : seed),
-                        grammar(p, j),
+                        grammar(p, j, schema),
                         p.toolChoice() == ToolChoice.REQUIRED ? "" : null,
                         cached,
                         p.stopSequences(),
@@ -367,8 +406,18 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                 () ->
                         engine.prepare(
                                 lowered,
-                                () -> Mappings.toMessageMaps(requestMessages),
+                                () ->
+                                        RequestPolicy.statingMaps(
+                                                Mappings.toMessageMaps(requestMessages), schema),
                                 () -> Mappings.toToolMaps(requestTools)));
+    }
+
+    /** The request's JSON schema as a plain map, or null when it carries none. */
+    private static Map<String, Object> schemaOf(ChatRequestParameters p) {
+        ResponseFormat rf = p.responseFormat();
+        if (rf == null || rf.type() != ResponseFormatType.JSON || rf.jsonSchema() == null)
+            return null;
+        return Mappings.toSchemaMap(rf.jsonSchema().rootElement());
     }
 
     /**
@@ -377,14 +426,12 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
      * typed schema) or, jinfer-typed, as raw GBNF. Specs cache per (source, vocab), so repeated
      * schemas reuse the compiled masks.
      */
-    private Grammar.Spec grammar(ChatRequestParameters p, JinferChatRequestParameters j) {
+    private Grammar.Spec grammar(
+            ChatRequestParameters p, JinferChatRequestParameters j, Map<String, Object> schema) {
         var tokenizer = engine.loaded().tokenizer();
         ResponseFormat rf = p.responseFormat();
         if (rf != null && rf.type() == ResponseFormatType.JSON) {
-            return rf.jsonSchema() == null
-                    ? Grammar.json(tokenizer)
-                    : Grammar.fromSchema(
-                            Mappings.toSchemaMap(rf.jsonSchema().rootElement()), tokenizer);
+            return schema == null ? Grammar.json(tokenizer) : Grammar.fromSchema(schema, tokenizer);
         }
         // raw GBNF: the JSON format's generalization (validate() guaranteed they are not combined)
         return j == null || j.grammar() == null ? null : Grammar.of(j.grammar(), tokenizer);
@@ -459,7 +506,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         private VideoSampler videoSampler = VideoSampler.UNIFORM;
         private Path cachedPrompts;
         private int cachedSessions;
-        private Integer contextLength; // null = unset -> 4096; the loaded path rejects sets
+        private Integer contextLength; // null = unset -> 4096
         private Double temperature;
         private Double topP;
         private Integer topK;
@@ -674,10 +721,12 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                         "a model is required: model(\"hf.co/owner/repo:Q4_K_M\"),"
                                 + " modelPath(...) or model(LoadedModel)");
             if (source instanceof LoadedModel<?> l) {
-                if (!companions.isEmpty() || contextLength != null)
+                // contextLength stays legal here: state capacity is an ENGINE setting resolved
+                // from cacheOptions, not a load-time one - a forked 32k pipeline needs it
+                if (!companions.isEmpty())
                     throw new IllegalArgumentException(
-                            "companions/contextLength are load-time settings; apply them when you"
-                                    + " build the LoadedModel passed to model(...)");
+                            "companions are load-time settings; apply them when you build the"
+                                    + " LoadedModel passed to model(...)");
                 loaded = l;
                 companionPaths = Map.of();
                 return new JinferChatModel(this);

@@ -11,6 +11,7 @@ import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.hub.ModelStore;
 import com.qxotic.jinfer.media.AudioCodec;
 import dev.langchain4j.data.audio.Audio;
+import dev.langchain4j.exception.UnsupportedFeatureException;
 import dev.langchain4j.model.audio.TextToSpeechModel;
 import dev.langchain4j.model.audio.TextToSpeechRequest;
 import dev.langchain4j.model.audio.TextToSpeechResponse;
@@ -79,7 +80,7 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
         // langchain4j's voice is free text with no validation upstream; a caller who asks for one
         // and silently gets this model's only voice has been lied to
         if (request.voice() != null && !request.voice().isBlank())
-            throw new UnsupportedOperationException(
+            throw new UnsupportedFeatureException(
                     "this model has one voice; requested '" + request.voice() + "'");
         String text = request.text();
         if (text.length() > maxInputChars)
