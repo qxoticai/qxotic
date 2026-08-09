@@ -38,6 +38,10 @@ class JinferLifecycleIT {
                 .modelPath(SMALL)
                 .contextLength(2048)
                 .maxOutputTokens(8)
+                // GREEDY, which the state-independence assertion below states but the builder
+                // does not otherwise give: unset means the model's recommended temperature, and
+                // two sampled runs of one prompt differ whatever the state did
+                .temperature(0.0)
                 .build();
     }
 
