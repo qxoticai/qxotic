@@ -35,6 +35,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -239,7 +240,9 @@ public final class Gemma4
      * "<eos>"} as its literal pieces, never id 1, so conversation content cannot mint a stop.
      */
     public Set<Integer> stopTokens() {
-        Set<Integer> stops = new HashSet<>();
+        // insertion-ordered like SpecialTokens.stops: the FIRST present name is the id
+        // RequestPolicy.endTurn emits (the model's own end-of-turn, never the handoff marker)
+        Set<Integer> stops = new LinkedHashSet<>();
         // <|tool_response> is the HANDOFF: results are runtime-provided by definition, so a
         // model-emitted response marker always means "stop, my call awaits its result". Without
         // it, the open-turn format leaves room to keep generating past the call - observed on

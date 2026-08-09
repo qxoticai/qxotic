@@ -9,6 +9,8 @@ import com.qxotic.toknroll.Tokenizer;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.Optional;
 import java.util.Set;
 
@@ -49,7 +51,11 @@ public record LoadedModel<S extends RuntimeState>(
         if (seed == null) throw new IllegalArgumentException("null seed");
         if (template == null) throw new IllegalArgumentException("null template optional");
         if (samplingDefaults == null) throw new IllegalArgumentException("null sampling defaults");
-        stopTokens = Set.copyOf(stopTokens);
+        // an ORDER-PRESERVING immutable copy, never Set.copyOf: the set's iteration order carries
+        // meaning - SpecialTokens.stops puts the model's own end-of-turn first, and
+        // RequestPolicy.endTurn emits iterator().next() when a decode must be ended from outside.
+        // Set.copyOf is salt-randomized per JVM run, which turned that pick arbitrary.
+        stopTokens = Collections.unmodifiableSet(new LinkedHashSet<>(stopTokens));
         seed = seed.clone();
     }
 

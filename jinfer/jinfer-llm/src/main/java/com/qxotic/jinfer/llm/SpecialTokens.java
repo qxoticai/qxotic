@@ -7,6 +7,7 @@ import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Vocabulary;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.OptionalInt;
 import java.util.Set;
@@ -25,9 +26,16 @@ public final class SpecialTokens {
      * The model's stop-token set: {@code eosTokenId} (when {@code >= 0}) plus every {@code names}
      * entry the tokenizer actually has - absent names are skipped, so one list serves every
      * checkpoint of a family.
+     *
+     * <p>Insertion-ordered, EOS first. Generation tests every sampled token against the whole set
+     * ({@code Generator}); the order matters for the other, rarer use - the two places that must
+     * WRITE a terminator into the stream rather than recognize one (a grammar's dead end, a forced
+     * call's end; {@code RequestPolicy.endTurn}). Any stop ends the turn, so the old hash order was
+     * never wrong, just arbitrary: the emitted id could be some scaffold marker and could differ
+     * between vocabularies. First-is-EOS makes it the model's own end-of-turn, always.
      */
     public static Set<Integer> stops(Tokenizer tokenizer, int eosTokenId, String... names) {
-        Set<Integer> stops = new HashSet<>();
+        Set<Integer> stops = new LinkedHashSet<>();
         if (eosTokenId >= 0) stops.add(eosTokenId);
         for (String name : names) find(tokenizer, name).ifPresent(stops::add);
         return stops;
