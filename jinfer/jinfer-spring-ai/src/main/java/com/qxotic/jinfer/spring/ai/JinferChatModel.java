@@ -6,6 +6,7 @@ import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.JsonCodec;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.hub.ModelStore;
 import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.Grammar;
@@ -88,6 +89,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     // prefix, its KV restored from the engine's block tree instead of re-prefilled.
     final VideoSampler videoSampler;
     final CachedPrompt prefix;
+    // per view (never copied): the first tools override warns once, then stays quiet
+    private final AtomicBoolean warnedToolsOverride = new AtomicBoolean();
 
     /**
      * The builder's two cache knobs as the cache's own record. Read-only: this mounts a catalog to
@@ -173,11 +176,18 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     }
 
     /**
-     * A model view whose conversations all start with {@code prefixMessages} (+ welded {@code
-     * tools}) - prefilled ONCE into the engine's block tree, restored (not recomputed) on every
-     * call. Composable: calling this on a view branches on its prefix. Immutable, shares the base
-     * engine; a view's prefix is pinned intent, where the base model's traffic is cached
-     * best-effort.
+     * A model view whose conversations all start with {@code prefixMessages}, offering {@code
+     * tools} as the view's DEFAULT tool set - both prefilled ONCE into the engine's block tree,
+     * restored (not recomputed) on every call. Composable: calling this on a view branches on its
+     * prefix. Immutable, shares the base engine; a view's prefix is pinned intent, where the base
+     * model's traffic is cached best-effort.
+     *
+     * <p>Tools follow the standard parameter precedence, request over defaults: a request that
+     * states none offers the welded set (a ChatClient re-stating the SAME set lands on the cache
+     * too); a request that states a different set is served with ITS tools, byte-identical to the
+     * base model - a cache changes latency, never behavior - but forfeits the prepaid prefill for
+     * that call. The usage's cache-read count on every response tells which happened; the first
+     * override also warns once on stderr.
      *
      * <p>(The tree serves the BASE model too: under the default {@code jinfer.promptCache=true},
      * every conversation on a codec model is resumed from and committed to it, bounded by {@code
@@ -230,13 +240,27 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     /** Framework types mapped away; every policy below this line lives in {@link ChatEngine}. */
     private ChatEngine.Prepared prepare(Prompt prompt) {
         JinferChatOptions options = resolveOptions(prompt.getOptions());
-        boolean cached = !prefix.isEmpty();
         List<ToolCallback> callbacks = options.getToolCallbacks();
-        if (cached && callbacks != null && !callbacks.isEmpty()) {
-            throw new IllegalArgumentException(
-                    "a cached-prompt view welds its tools into the cached prefix; per-request"
-                            + " toolCallbacks would silently forfeit the cache - put tools on"
-                            + " withCachedPrompt(...) instead");
+        // request > view default, the standard precedence: stated tools win, an unstated set
+        // falls to the view's welded tools (empty on the base model)
+        List<Tool> tools =
+                callbacks == null || callbacks.isEmpty()
+                        ? prefix.tools()
+                        : JinferMappings.toTools(callbacks);
+        // the prepaid prefill serves exactly its own frame: cached iff the effective tools ARE
+        // the welded ones, compared as the rendered bytes that were prefilled. An override is
+        // served correctly (byte-identical to the base model) at full prefill - a cache changes
+        // latency, never behavior - and warns once so a wiring bug stays discoverable
+        boolean cached = !prefix.isEmpty() && tools.equals(prefix.tools());
+        if (!prefix.isEmpty() && !cached && warnedToolsOverride.compareAndSet(false, true)) {
+            System.err.println(
+                    "WARNING: this cached-prompt view's welded tools "
+                            + tools(prefix.tools())
+                            + " were overridden by the request's "
+                            + tools(tools)
+                            + " - served correctly but UNCACHED (full prefill). Weld this set with"
+                            + " withCachedPrompt(...), or use the base model for per-request"
+                            + " tools. (warned once per view)");
         }
         List<Message> messages = new ArrayList<>(prefix.messages());
         messages.addAll(JinferMappings.toMessages(prompt.getInstructions(), videoSampler));
@@ -244,9 +268,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         ChatEngine.Request lowered =
                 new ChatEngine.Request(
                         messages,
-                        cached
-                                ? prefix.tools()
-                                : callbacks == null ? List.of() : JinferMappings.toTools(callbacks),
+                        tools,
                         options.getThinking() != Boolean.FALSE,
                         options.getMaxTokens() == null ? -1 : options.getMaxTokens(),
                         null, // Spring AI has no reasoning-budget knob
@@ -472,12 +494,17 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                             + "' (one loaded GGUF per instance)");
         if (o.getTimeout() != null && o.getTimeout().isNegative())
             throw new IllegalArgumentException("timeout must not be negative");
-        if (o.getOutputSchema() != null
-                && o.getToolCallbacks() != null
-                && !o.getToolCallbacks().isEmpty())
+        boolean toolsOffered =
+                (o.getToolCallbacks() != null && !o.getToolCallbacks().isEmpty())
+                        || !prefix.tools().isEmpty();
+        if (o.getOutputSchema() != null && toolsOffered)
             throw new IllegalArgumentException(
                     "tools together with an output schema are not supported:"
                             + " grammar-constrained output cannot admit tool-call syntax");
+    }
+
+    private static List<String> tools(List<Tool> tools) {
+        return tools.stream().map(Tool::name).toList();
     }
 
     private ChatResponse response(

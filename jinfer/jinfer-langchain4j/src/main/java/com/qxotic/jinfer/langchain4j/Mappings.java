@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.langchain4j;
 
 import com.qxotic.jinfer.Media;
+import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.JsonCodec;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.OpenAiMaps;
@@ -40,7 +41,6 @@ import dev.langchain4j.model.chat.request.json.JsonSchemaElement;
 import dev.langchain4j.model.chat.request.json.JsonStringSchema;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.output.FinishReason;
-import dev.langchain4j.model.output.TokenUsage;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
@@ -404,18 +404,22 @@ final class Mappings {
     }
 
     static ChatResponse response(
-            String modelName,
-            AiMessage ai,
-            int promptTokens,
-            Generator.GenerationResult result,
-            boolean stoppedBySequence) {
+            String modelName, AiMessage ai, int promptTokens, ChatEngine.Completion done) {
+        Generator.GenerationResult result = done.result();
         return ChatResponse.builder()
                 .id(UUID.randomUUID().toString()) // generation identity for listeners
                 .aiMessage(ai)
                 .modelName(modelName)
-                .tokenUsage(new TokenUsage(promptTokens, result.completionTokens()))
+                // the cache read rides the usage (the OpenAI cached_tokens pattern): cache
+                // behavior is diagnosable per response, not guessed from latency
+                .tokenUsage(
+                        new JinferTokenUsage(
+                                promptTokens,
+                                result.completionTokens(),
+                                done.restoredTokens(),
+                                done.tier()))
                 .finishReason(
-                        stoppedBySequence // a stop-sequence cut IS a stop, not an abort
+                        done.stopped() // a stop-sequence cut IS a stop, not an abort
                                 ? FinishReason.STOP
                                 : toFinishReason(
                                         result.finishReason(), ai.hasToolExecutionRequests()))

@@ -132,9 +132,7 @@ public final class JinferStreamingChatModel implements StreamingChatModel, AutoC
                 safely(handler, () -> handler.onCompleteToolCall(call));
             }
         }
-        ChatResponse response =
-                Mappings.response(
-                        engine.modelName(), ai, p.promptTokens(), done.result(), done.stopped());
+        ChatResponse response = Mappings.response(engine.modelName(), ai, p.promptTokens(), done);
         safely(handler, () -> handler.onCompleteResponse(response));
     }
 

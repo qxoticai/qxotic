@@ -186,12 +186,12 @@ JinferChatModel support2 = base2.withCachedPrompt(
         List.of(new SystemMessage(SUPPORT_INSTRUCTIONS)), supportTools);  // instant
 ```
 
-Rules: the base model never touches the tree (fully stateless by default); views are immutable,
-composable (`withCachedPrompt` on a view branches on its prefix), and reject per-request
-`toolCallbacks` (tools are welded into the cached prefix - on `ChatClient`, that means no
-`defaultToolCallbacks` on a view); an edited prompt matches to the divergence point and pays only
-the tail; a wrong-model artifact fails at `build()`. Requires a model with a native template codec
-(the Jinja fallback makes no prefix-stability promise).
+Rules: the base model never touches the tree (fully stateless by default); views are immutable
+and composable (`withCachedPrompt` on a view branches on its prefix).
+A view's tools are its DEFAULT tool set, request over defaults like every other option: a request stating the same set (a `ChatClient` with matching `defaultToolCallbacks`) serves from the cache, a different set serves correctly at full prefill - byte-identical output either way, with a one-time stderr warning naming the override.
+Every response accounts for the cache in its usage (`cacheReadTokens`, plus phase timings in the native usage detail) - a zero cache read on a view means you are paying full prefill, and the warning says why.
+An edited prompt matches to the divergence point and pays only the tail; a wrong-model artifact fails at `build()`.
+Requires a model with a native template codec (the Jinja fallback makes no prefix-stability promise).
 
 ## Notes
 

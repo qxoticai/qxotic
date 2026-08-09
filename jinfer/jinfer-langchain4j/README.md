@@ -213,11 +213,12 @@ JinferChatModel support2 = base2.withCachedPrompt(
         List.of(SystemMessage.from(SUPPORT_INSTRUCTIONS)), supportTools);  // instant
 ```
 
-Rules: the base model never touches the tree (fully stateless by default); views are immutable,
-composable (`withCachedPrompt` on a view branches on its prefix), and reject per-request
-`toolSpecifications` (tools are welded into the cached prefix); an edited prompt matches to the
-divergence point and pays only the tail; a wrong-model artifact fails at `build()`. Requires a
-model with a native template codec (the Jinja fallback makes no prefix-stability promise).
+Rules: the base model never touches the tree (fully stateless by default); views are immutable
+and composable (`withCachedPrompt` on a view branches on its prefix).
+A view's tools are its DEFAULT tool set, request over defaults like every other parameter: a request stating the same set (what AiServices does) serves from the cache, a different set (or `toolChoice NONE`) serves correctly at full prefill - byte-identical output either way, with a one-time stderr warning naming the override.
+Every response accounts for the cache: `((JinferTokenUsage) response.tokenUsage()).cachedInputTokens()` is the read, `servedFrom()` the tier - 0 and `FRESH` on a view mean you are paying full prefill, and the warning says why.
+An edited prompt matches to the divergence point and pays only the tail; a wrong-model artifact fails at `build()`.
+Requires a model with a native template codec (the Jinja fallback makes no prefix-stability promise).
 
 ## Notes
 
