@@ -46,29 +46,19 @@ class ToolsWithSchemaPrototypeIT {
                                     "temperature_c", Map.of("type", "number")),
                     "required", List.of("city", "temperature_c"));
 
-    /** The LFM2.5 auto tree, content schema-bound: think? (schema-content | call)* im_end? */
+    /** The LFM2.5 auto tree, content schema-bound: the spans preset with the hole STATED. */
     static ReplyLanguage.Node constrainedAuto() {
-        return ReplyLanguage.seq(
-                ReplyLanguage.opt(
-                        ReplyLanguage.think(
-                                ReplyLanguage.mark("<think>"),
-                                ReplyLanguage.free(),
-                                ReplyLanguage.mark("</think>"))),
-                ReplyLanguage.rep(
-                        ReplyLanguage.alt(
-                                ReplyLanguage.content(
-                                        ReplyLanguage.gbnf(Grammar.schemaGbnf(SCHEMA))),
-                                ReplyLanguage.call(
-                                        ToolCallSyntax::parseBlock,
-                                        ReplyLanguage.mark("<|tool_call_start|>"),
-                                        ReplyLanguage.free(),
-                                        ReplyLanguage.mark("<|tool_call_end|>"))),
-                        0,
-                        -1),
-                ReplyLanguage.opt(ReplyLanguage.mark("<|im_end|>")));
+        return ReplyLanguage.spans(
+                "<think>",
+                "</think>",
+                "<|tool_call_start|>",
+                "<|tool_call_end|>",
+                ToolCallSyntax::parseBlock,
+                ReplyLanguage.mark("<|im_end|>"),
+                ReplyLanguage.gbnf(Grammar.schemaGbnf(SCHEMA)));
     }
 
-    /** One request, one walk: it masks the decode and parses the reply. */
+    /** One request, one walk: it masks the decode, parses the reply, and ends the pass. */
     static Message drive(JinferChatModel model, ChatRequest request) {
         ChatEngine.Prepared p = model.prepare(request);
         ReplyLanguage.Walk walk =
@@ -76,14 +66,9 @@ class ToolsWithSchemaPrototypeIT {
                         .walk();
         for (int t : p.parserSeed()) walk.feed(t);
         walk.beginReply();
-        int stop = model.engine.loaded().stopTokens().iterator().next();
         Sampler masked =
-                logits -> {
-                    if (!walk.maskLogits(logits)) return stop;
-                    int token = ((Sampler) FloatTensor::argmax).sampleToken(logits);
-                    walk.feed(token);
-                    return token;
-                };
+                walk.sampler(
+                        FloatTensor::argmax, model.engine.loaded().stopTokens().iterator().next());
         model.engine.generate(p.encoded().prompt(), masked, 512, 0, token -> !walk.ended());
         return walk.finish();
     }

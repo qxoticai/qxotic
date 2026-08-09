@@ -2,6 +2,7 @@ package com.qxotic.jinfer.chat;
 
 import com.qxotic.jinfer.FloatTensor;
 import com.qxotic.jinfer.llm.Grammar;
+import com.qxotic.jinfer.llm.Sampler;
 import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
@@ -192,10 +193,28 @@ public final class ReplyLanguage {
             String callClose,
             Function<String, List<Part.ToolCall>> calls,
             Node terminator) {
+        return spans(thinkOpen, thinkClose, callOpen, callClose, calls, terminator, free());
+    }
+
+    /**
+     * As {@link #spans(String, String, String, String, Function, Node)} with the CONTENT hole
+     * stated: pass {@code gbnf(schemaGbnf)} and the family's visible text can only be that schema
+     * while calls stay its own syntax - tools and a JSON response format as ONE selection.
+     */
+    public static Node spans(
+            String thinkOpen,
+            String thinkClose,
+            String callOpen,
+            String callClose,
+            Function<String, List<Part.ToolCall>> calls,
+            Node terminator,
+            Node contentHole) {
         return seq(
                 opt(think(mark(thinkOpen), free(), mark(thinkClose))),
                 rep(
-                        alt(content(free()), call(calls, mark(callOpen), free(), mark(callClose))),
+                        alt(
+                                content(contentHole),
+                                call(calls, mark(callOpen), free(), mark(callClose))),
                         0,
                         -1),
                 opt(terminator));
@@ -759,6 +778,20 @@ public final class ReplyLanguage {
         @Override
         public boolean ended() {
             return ended;
+        }
+
+        /**
+         * The walk as a decode driver - mask, sample, feed, the ONE way a selection constrains a
+         * generation (the forced-call path and the tools+schema selection both ride it). A walk
+         * with nothing admissible emits {@code endTurn} (the model's own end of turn) forever.
+         */
+        public Sampler sampler(Sampler base, int endTurn) {
+            return logits -> {
+                if (!maskLogits(logits)) return endTurn;
+                int token = base.sampleToken(logits);
+                feed(token);
+                return token;
+            };
         }
 
         /**
