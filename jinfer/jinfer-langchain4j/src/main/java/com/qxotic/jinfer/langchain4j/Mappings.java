@@ -410,14 +410,9 @@ final class Mappings {
                 .id(UUID.randomUUID().toString()) // generation identity for listeners
                 .aiMessage(ai)
                 .modelName(modelName)
-                // the cache read rides the usage (the OpenAI cached_tokens pattern): cache
-                // behavior is diagnosable per response, not guessed from latency
-                .tokenUsage(
-                        new JinferTokenUsage(
-                                promptTokens,
-                                result.completionTokens(),
-                                done.restoredTokens(),
-                                done.tier()))
+                // cache read + phase timings ride the usage: cache behavior and generation
+                // speed are diagnosable per response, not guessed from latency
+                .tokenUsage(new JinferTokenUsage(promptTokens, done))
                 .finishReason(
                         done.stopped() // a stop-sequence cut IS a stop, not an abort
                                 ? FinishReason.STOP
