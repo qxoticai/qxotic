@@ -5,6 +5,7 @@ import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.JsonCodec;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
+import com.qxotic.jinfer.chat.ReplyLanguage;
 import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.TokenRuns;
@@ -17,6 +18,7 @@ import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Hand-written Granite 4.1 chat framing, token-exact with the GGUF's Jinja {@code
@@ -195,19 +197,34 @@ public final class GraniteTurnTemplate implements TurnTemplate {
         return m.content().stream().allMatch(p -> p instanceof Part.Text);
     }
 
-    /** Tool calls parse from the {@code <tool_call>} span's JSON {@code {name, arguments}}. */
+    private ReplyLanguage.Selection autoReply; // memoized: tools-independent, built once
+
+    /**
+     * The reply-language walk over {@code think? (content | tool_call-span)* end_of_text?}. A vocab
+     * without the call markers PRUNES the call alternatives (the old two-branch fallback, derived);
+     * one without think tokens prunes the think span the same way.
+     */
     @Override
     public ReplyParser parser() {
-        if (SpecialTokens.find(tokenizer, "<tool_call>").isEmpty()) {
-            return ReplyParser.spans(tokenizer);
+        if (autoReply == null) {
+            autoReply =
+                    ReplyLanguage.Selection.of(
+                            ReplyLanguage.spans(
+                                    "<think>",
+                                    "</think>",
+                                    "<tool_call>",
+                                    "</tool_call>",
+                                    ToolCallSyntax::parseBlock,
+                                    ReplyLanguage.mark("<|end_of_text|>")),
+                            tokenizer);
         }
-        return ReplyParser.spans(
-                tokenizer, "<tool_call>", "</tool_call>", ToolCallSyntax::parseBlock);
+        return autoReply.walk();
     }
 
-    /** Forced calls seed {@code <tool_call>} (seeding only - no pin hook yet). */
+    /** Forced calls: the envelope carries an OFFERED name, the schema binds the arguments. */
     @Override
-    public int[] callSeed() {
-        return SpecialTokens.find(tokenizer, "<tool_call>").stream().toArray();
+    public Optional<ReplyLanguage.Node> forcedCallLanguage(List<Tool> tools) {
+        if (tools.isEmpty()) return Optional.empty();
+        return Optional.of(JsonEnvelopeReplies.forced(tools, "<|end_of_text|>"));
     }
 }

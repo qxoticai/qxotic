@@ -6,6 +6,7 @@ import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.JsonCodec;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
+import com.qxotic.jinfer.chat.ReplyLanguage;
 import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.TokenRuns;
@@ -16,6 +17,7 @@ import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.toknroll.Tokenizer;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Hand-written MiniCPM5 chat framing (ChatML dialect over the {@code llama} graph): {@code <s>}
@@ -189,16 +191,40 @@ public final class MiniCpm5ChatTemplate implements ChatTemplate {
     /**
      * Calls parse from the span between the trusted {@code <function} / {@code </function>} ids.
      */
+    private ReplyLanguage.Selection autoReply; // memoized: tools-independent, built once
+
+    /**
+     * The reply-language walk; the {@code </param>} closers are SPECIALS inside the payload, and a
+     * marker-pair call span claims interior control tokens AS THEIR SPELLINGS - exactly the decoded
+     * text the old span parser fed {@link MiniCpmToolSyntax#parsePayload}.
+     */
     @Override
     public ReplyParser parser() {
-        return ReplyParser.spans(
-                tokenizer, "<function", "</function>", MiniCpmToolSyntax::parsePayload);
+        if (autoReply == null) {
+            autoReply =
+                    ReplyLanguage.Selection.of(
+                            ReplyLanguage.spans(
+                                    "<think>",
+                                    "</think>",
+                                    "<function",
+                                    "</function>",
+                                    MiniCpmToolSyntax::parsePayload,
+                                    ReplyLanguage.mark("<|im_end|>")),
+                            tokenizer);
+        }
+        return autoReply.walk();
     }
 
-    /** Forced calls seed {@code <function} (seeding only - no pin hook yet). */
+    /** Forced calls seed {@code <function}; the pin below holds the name attribute. */
     @Override
     public int[] callSeed() {
         return new int[] {function};
+    }
+
+    /** The name attribute up to its opening quote. */
+    @Override
+    public Optional<String> callPrefix() {
+        return Optional.of(" name=\"");
     }
 
     /** The generation prompt opens the think span (or its closed pair): pre-feed it. */

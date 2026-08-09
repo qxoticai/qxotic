@@ -6,6 +6,7 @@ import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.JsonCodec;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
+import com.qxotic.jinfer.chat.ReplyLanguage;
 import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.TokenRuns;
@@ -20,6 +21,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 
 /**
  * Hand-written SmolLM3 chat framing (ChatML dialect with a metadata system header), matching the
@@ -200,17 +202,31 @@ public final class SmolLm3ChatTemplate implements ChatTemplate {
         return s.substring(i);
     }
 
-    /** Tool calls parse from the {@code <tool_call>} span's JSON {@code {name, arguments}}. */
+    private ReplyLanguage.Selection autoReply; // memoized: tools-independent, built once
+
+    /** The reply-language walk over {@code think? (content | tool_call-span)* im_end?}. */
     @Override
     public ReplyParser parser() {
-        return ReplyParser.spans(
-                tokenizer, "<tool_call>", "</tool_call>", ToolCallSyntax::parseBlock);
+        if (autoReply == null) {
+            autoReply =
+                    ReplyLanguage.Selection.of(
+                            ReplyLanguage.spans(
+                                    "<think>",
+                                    "</think>",
+                                    "<tool_call>",
+                                    "</tool_call>",
+                                    ToolCallSyntax::parseBlock,
+                                    ReplyLanguage.mark("<|im_end|>")),
+                            tokenizer);
+        }
+        return autoReply.walk();
     }
 
-    /** Forced calls seed {@code <tool_call>} (seeding only - no pin hook yet). */
+    /** Forced calls: the envelope carries an OFFERED name, the schema binds the arguments. */
     @Override
-    public int[] callSeed() {
-        return new int[] {toolCall};
+    public Optional<ReplyLanguage.Node> forcedCallLanguage(List<Tool> tools) {
+        if (tools.isEmpty()) return Optional.empty();
+        return Optional.of(JsonEnvelopeReplies.forced(tools, "<|im_end|>"));
     }
 
     /** No-think prompts close the empty pair in the prompt: pre-feed it. */
