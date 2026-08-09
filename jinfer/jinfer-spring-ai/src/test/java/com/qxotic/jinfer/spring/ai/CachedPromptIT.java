@@ -112,12 +112,14 @@ class CachedPromptIT {
         // cachedSessions(1): turn 2 strictly extends turn 1's pooled state - possible only
         // because the echoed reply restores its verbatim ids through REPLY_KEY metadata, so
         // the re-encode is the exact generated tokens (the round-trip law, spring edition)
+        // pinned seed: an unlucky random seed can spend the whole budget on a think span
         JinferChatModel warm =
                 JinferChatModel.builder()
                         .modelPath(MODEL)
                         .contextLength(4096)
                         .maxTokens(128)
                         .cachedSessions(1)
+                        .seed(7L)
                         .build();
         try {
             UserMessage first =

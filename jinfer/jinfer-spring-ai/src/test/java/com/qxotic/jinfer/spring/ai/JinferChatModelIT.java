@@ -395,11 +395,12 @@ class JinferChatModelIT {
     void usageMetadataIsComplete() {
         ChatResponse r = model.call(new Prompt(new UserMessage("One word: ok?")));
         var usage = r.getMetadata().getUsage();
-        // native usage: the exact phase timings of the pass
+        // native usage: the exact phase timings of the pass, and which cache tier served it
         var nativeUsage =
                 assertInstanceOf(JinferChatModel.JinferUsage.class, usage.getNativeUsage());
         assertTrue(nativeUsage.promptNanos() > 0);
         assertTrue(nativeUsage.predictedNanos() > 0);
+        assertNotNull(nativeUsage.servedFrom());
         // Ollama-style timing key-values
         assertNotNull(r.getMetadata().get("prompt-eval-duration"));
         assertNotNull(r.getMetadata().get("eval-duration"));

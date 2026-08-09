@@ -189,6 +189,10 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
      * that call. The usage's cache-read count on every response tells which happened; the first
      * override also warns once on stderr.
      *
+     * <p>There is deliberately NO messages-only overload: the prepaid frame includes the tool
+     * declarations, so passing {@code List.of()} is the caller acknowledging this view welds no
+     * tools - the cache is not tools-independent, and the signature should not suggest it is.
+     *
      * <p>(The tree serves the BASE model too: under the default {@code jinfer.promptCache=true},
      * every conversation on a codec model is resumed from and committed to it, bounded by {@code
      * jinfer.promptCacheMB} with LRU eviction. {@code -Djinfer.promptCache=false} turns that
@@ -241,26 +245,17 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     private ChatEngine.Prepared prepare(Prompt prompt) {
         JinferChatOptions options = resolveOptions(prompt.getOptions());
         List<ToolCallback> callbacks = options.getToolCallbacks();
-        // request > view default, the standard precedence: stated tools win, an unstated set
-        // falls to the view's welded tools (empty on the base model)
+        // request > view default (CachedPrompt.resolveTools, THE precedence rule): an override
+        // is served correctly (byte-identical to the base model) at full prefill - a cache
+        // changes latency, never behavior - and warns once so a wiring bug stays discoverable
         List<Tool> tools =
-                callbacks == null || callbacks.isEmpty()
-                        ? prefix.tools()
-                        : JinferMappings.toTools(callbacks);
-        // the prepaid prefill serves exactly its own frame: cached iff the effective tools ARE
-        // the welded ones, compared as the rendered bytes that were prefilled. An override is
-        // served correctly (byte-identical to the base model) at full prefill - a cache changes
-        // latency, never behavior - and warns once so a wiring bug stays discoverable
-        boolean cached = !prefix.isEmpty() && tools.equals(prefix.tools());
-        if (!prefix.isEmpty() && !cached && warnedToolsOverride.compareAndSet(false, true)) {
-            System.err.println(
-                    "WARNING: this cached-prompt view's welded tools "
-                            + tools(prefix.tools())
-                            + " were overridden by the request's "
-                            + tools(tools)
-                            + " - served correctly but UNCACHED (full prefill). Weld this set with"
-                            + " withCachedPrompt(...), or use the base model for per-request"
-                            + " tools. (warned once per view)");
+                prefix.resolveTools(
+                        callbacks == null || callbacks.isEmpty()
+                                ? null
+                                : JinferMappings.toTools(callbacks));
+        boolean cached = prefix.serves(tools);
+        if (!cached && !prefix.isEmpty() && warnedToolsOverride.compareAndSet(false, true)) {
+            System.err.println(prefix.toolsOverrideWarning(tools));
         }
         List<Message> messages = new ArrayList<>(prefix.messages());
         messages.addAll(JinferMappings.toMessages(prompt.getInstructions(), videoSampler));
@@ -494,6 +489,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                             + "' (one loaded GGUF per instance)");
         if (o.getTimeout() != null && o.getTimeout().isNegative())
             throw new IllegalArgumentException("timeout must not be negative");
+        // effective tools, the same precedence prepare() serves with: stated else welded
         boolean toolsOffered =
                 (o.getToolCallbacks() != null && !o.getToolCallbacks().isEmpty())
                         || !prefix.tools().isEmpty();
@@ -501,10 +497,6 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             throw new IllegalArgumentException(
                     "tools together with an output schema are not supported:"
                             + " grammar-constrained output cannot admit tool-call syntax");
-    }
-
-    private static List<String> tools(List<Tool> tools) {
-        return tools.stream().map(Tool::name).toList();
     }
 
     private ChatResponse response(
@@ -531,7 +523,9 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                                         result.completionTokens(),
                                         null,
                                         new JinferUsage(
-                                                result.promptNanos(), result.predictedNanos()),
+                                                result.promptNanos(),
+                                                result.predictedNanos(),
+                                                done.tier()),
                                         done.restoredTokens() > 0
                                                 ? Long.valueOf(done.restoredTokens())
                                                 : null,
@@ -543,8 +537,12 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         return new ChatResponse(List.of(generation), metadata);
     }
 
-    /** Native usage detail: the exact phase timings of the generation pass. */
-    public record JinferUsage(long promptNanos, long predictedNanos) {}
+    /**
+     * Native usage detail: the exact phase timings of the generation pass, and which cache tier
+     * served the prompt ({@code FRESH} = nothing matched; note a partial restore still reports
+     * {@code BLOCKS}, so the usage's cache-read COUNT is the ground truth for how much was saved).
+     */
+    public record JinferUsage(long promptNanos, long predictedNanos, PromptCache.Tier servedFrom) {}
 
     private static String toFinishReason(String jinferReason, boolean hasToolCalls) {
         if (hasToolCalls) return "tool_calls";
