@@ -626,6 +626,40 @@ public final class ReplyLanguageTest {
                 "the seed's opening brace stays in the payload");
     }
 
+    /** The tools+schema shape: content is a GBNF payload, calls stay the family's own. */
+    static Node schemaFamily() {
+        return seq(
+                rep(
+                        alt(
+                                content(gbnf("root ::= \"{\" \"1\" (\",\" \"1\")? \"}\"")),
+                                weatherCall()),
+                        0,
+                        -1),
+                mark("<end>"));
+    }
+
+    @Test
+    void aGbnfOpeningContentRegionConstrainsTheReplyAndStillAdmitsCalls() {
+        Walk w = Selection.of(schemaFamily(), TOK).walk();
+        boolean[] ok = admitted(w);
+        assertTrue(ok[ch('{')], "the schema's entry token is admissible at dispatch");
+        assertTrue(ok[CALL], "the call opener stays a first-class alternative");
+        assertTrue(ok[END], "so does the terminator");
+        assertFalse(ok[ch('x')], "a plain token outside the schema is unrepresentable");
+        assertFalse(ok[ch('1')], "even schema bytes out of position");
+
+        // content streams (a Gbnf payload is the MODEL'S text), the call commits atomically
+        List<Step> steps = run(w, ch('{'), ch('1'), ch('}'));
+        assertEquals("{1}", steps.stream().map(Step::fragment).reduce("", String::concat));
+        run(w, CALL, ch('{'), ch('"'), ch('a'), ch('"'), ch(':'), ch('1'), ch('}'), END_CALL, END);
+        Message m = w.finish();
+        assertEquals("{1}", m.text());
+        assertEquals(
+                1,
+                m.content().stream().filter(p -> p instanceof Part.ToolCall).count(),
+                "the call still commits: " + m.content());
+    }
+
     // ---- fixture -----------------------------------------------------------
 
     private static final class FakeTokenizer implements Tokenizer {
