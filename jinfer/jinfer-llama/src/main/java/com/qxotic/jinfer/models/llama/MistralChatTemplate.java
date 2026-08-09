@@ -6,18 +6,21 @@ import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.JsonCodec;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
+import com.qxotic.jinfer.chat.ReplyLanguage;
 import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.TokenRuns;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.chat.ToolCallSyntax;
 import com.qxotic.jinfer.chat.TurnTemplate;
+import com.qxotic.jinfer.llm.Grammar;
 import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.toknroll.Tokenizer;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Hand-written Ministral 3 (Mistral v13 wire) chat framing: {@code <s>} bos, {@code
@@ -154,24 +157,74 @@ public final class MistralChatTemplate implements ChatTemplate {
         return List.of(runs.batch());
     }
 
+    private ReplyLanguage.Selection autoReply; // memoized: tools-independent, built once
+
     /**
-     * A call is the span from {@code [TOOL_CALLS]} to the next call or {@code </s>}; its payload is
-     * {@code name[ARGS]{json}}.
+     * The reply-language walk: a call is {@code %[TOOL_CALLS] name %[ARGS] args-json}, the name and
+     * args as free holes around the interior mark, close-LESS - the region exits when the next call
+     * opens, the reply ends, or the payload's balance completes. The old self-closing span
+     * heuristic derives from the shape.
      */
     @Override
     public ReplyParser parser() {
-        return ReplyParser.spans(tokenizer, "[TOOL_CALLS]", "</s>", MistralChatTemplate::parseCall);
+        if (autoReply == null) {
+            autoReply =
+                    ReplyLanguage.Selection.of(
+                            ReplyLanguage.seq(
+                                    ReplyLanguage.rep(
+                                            ReplyLanguage.alt(
+                                                    ReplyLanguage.content(ReplyLanguage.free()),
+                                                    ReplyLanguage.call(
+                                                            MistralChatTemplate::walkCalls,
+                                                            ReplyLanguage.mark("[TOOL_CALLS]"),
+                                                            ReplyLanguage.free(),
+                                                            ReplyLanguage.mark("[ARGS]"),
+                                                            ReplyLanguage.free())),
+                                            0,
+                                            -1),
+                                    ReplyLanguage.opt(ReplyLanguage.mark("</s>"))),
+                            tokenizer);
+        }
+        return autoReply.walk();
     }
 
-    /** {@code name[ARGS]{json-object}} - one call per span. */
-    static List<Part.ToolCall> parseCall(String payload) {
-        int at = payload.indexOf("[ARGS]");
-        if (at < 0) return List.of();
-        String name = payload.substring(0, at).strip();
+    /**
+     * The forced-call language this family NEVER had: the header is wholly forced ({@code
+     * [TOOL_CALLS]name[ARGS]} - nothing is sampled until the arguments), the arguments are
+     * schema-bound. The empty-prefix pin that dead-ended this model is structurally gone: there is
+     * no free region between the seed and the name for the model to derail in.
+     */
+    @Override
+    public Optional<ReplyLanguage.Node> forcedCallLanguage(List<Tool> tools) {
+        if (tools.isEmpty()) return Optional.empty();
+        List<ReplyLanguage.Node> options = new ArrayList<>(tools.size());
+        for (Tool tool : tools) {
+            options.add(
+                    ReplyLanguage.call(
+                            MistralChatTemplate::walkCalls,
+                            ReplyLanguage.mark("[TOOL_CALLS]"),
+                            ReplyLanguage.bytes(tool.name()),
+                            ReplyLanguage.mark("[ARGS]"),
+                            ReplyLanguage.gbnf(Grammar.schemaGbnf(tool.parameters()))));
+        }
+        return Optional.of(
+                ReplyLanguage.seq(
+                        new ReplyLanguage.Node.Alt(options),
+                        ReplyLanguage.opt(ReplyLanguage.mark("</s>"))));
+    }
+
+    /**
+     * The walk's payload is {@code name{json}} - the interior {@code [ARGS]} mark is excluded from
+     * capture, so the name ends where the object begins. A payload without a parseable object is no
+     * call.
+     */
+    static List<Part.ToolCall> walkCalls(String payload) {
+        int brace = payload.indexOf('{');
+        if (brace <= 0) return List.of();
+        String name = payload.substring(0, brace).strip();
         if (name.isEmpty()) return List.of();
         try {
-            if (JsonCodec.parse(payload.substring(at + "[ARGS]".length()))
-                    instanceof Map<?, ?> parsed) {
+            if (JsonCodec.parse(payload.substring(brace)) instanceof Map<?, ?> parsed) {
                 Map<String, Object> arguments = new LinkedHashMap<>();
                 for (Map.Entry<?, ?> e : parsed.entrySet()) {
                     arguments.put(String.valueOf(e.getKey()), e.getValue());
@@ -182,11 +235,5 @@ public final class MistralChatTemplate implements ChatTemplate {
             // not a JSON object: no call
         }
         return List.of();
-    }
-
-    /** Forced calls seed {@code [TOOL_CALLS]} (seeding only - no pin hook yet). */
-    @Override
-    public int[] callSeed() {
-        return new int[] {toolCalls};
     }
 }

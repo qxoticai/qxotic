@@ -5,6 +5,7 @@ import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
+import com.qxotic.jinfer.chat.ReplyLanguage;
 import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.Tool;
@@ -133,10 +134,24 @@ public final class Lfm2ChatTemplate implements TurnTemplate {
         return out;
     }
 
+    private ReplyLanguage.Selection autoReply; // memoized: tools-independent, built once
+
+    /** The reply-language walk over {@code think? (content | tool_call-span)* im_end?}. */
     @Override
     public ReplyParser parser() {
-        return ReplyParser.spans(
-                tokenizer, "<|tool_call_start|>", "<|tool_call_end|>", ToolCallSyntax::parseBlock);
+        if (autoReply == null) {
+            autoReply =
+                    ReplyLanguage.Selection.of(
+                            ReplyLanguage.spans(
+                                    "<think>",
+                                    "</think>",
+                                    "<|tool_call_start|>",
+                                    "<|tool_call_end|>",
+                                    ToolCallSyntax::parseBlock,
+                                    ReplyLanguage.mark("<|im_end|>")),
+                            tokenizer);
+        }
+        return autoReply.walk();
     }
 
     /** Forced calls seed {@code <|tool_call_start|>} and pin {@code [name}. */
@@ -146,9 +161,8 @@ public final class Lfm2ChatTemplate implements TurnTemplate {
     }
 
     @Override
-    public Optional<String> callGrammar(List<Tool> tools) {
-        if (tools.isEmpty()) return Optional.empty();
-        return Optional.of(ToolCallSyntax.prefixPinGbnf("[", tools));
+    public Optional<String> callPrefix() {
+        return Optional.of("[");
     }
 
     // ---- verbatim splice (the round-trip law) ----
