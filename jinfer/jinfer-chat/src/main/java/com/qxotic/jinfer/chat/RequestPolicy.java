@@ -139,14 +139,7 @@ public final class RequestPolicy {
             int[] seed = sel.forcedPrefix();
             ReplyLanguage.Walk walk = sel.walk();
             for (int t : seed) walk.feed(t);
-            int stop = endTurn(m);
-            Sampler constrained =
-                    logits -> {
-                        if (!walk.maskLogits(logits)) return stop; // ended: nothing admissible
-                        int token = base.sampleToken(logits);
-                        walk.feed(token);
-                        return token;
-                    };
+            Sampler constrained = walk.sampler(base, endTurn(m));
             int[] parserSeed = new int[replySeed.length + seed.length];
             System.arraycopy(replySeed, 0, parserSeed, 0, replySeed.length);
             System.arraycopy(seed, 0, parserSeed, replySeed.length, seed.length);
