@@ -144,16 +144,31 @@ public final class ChatEngine {
             String modelName,
             PromptCache.Options cacheOptions,
             int speculationDepth) {
-        this(new Owned(loaded, null), modelName, cacheOptions);
+        this(new Owned(loaded, null), modelName, cacheOptions, checkedDepth(speculationDepth));
+    }
+
+    /**
+     * Range-checked as a delegation ARGUMENT, so an out-of-range depth throws before anything is
+     * built: a check after {@code this(...)} would abandon a fully built engine (pooled state
+     * arenas, registered telemetry gauge, armed LeakWatch) with no close() - the exact defect class
+     * the providers' build guards exist for.
+     */
+    private static int checkedDepth(int speculationDepth) {
         if (speculationDepth < 1 || speculationDepth > 8) {
             throw new IllegalArgumentException("speculationDepth " + speculationDepth);
         }
-        this.speculationDepth = speculationDepth;
+        return speculationDepth;
     }
 
-    private int speculationDepth = 4; // drafts per verify when the model has a draft head
+    private final int speculationDepth; // drafts per verify when the model has a draft head
 
     private ChatEngine(Owned owned, String modelName, PromptCache.Options cacheOptions) {
+        this(owned, modelName, cacheOptions, 4);
+    }
+
+    private ChatEngine(
+            Owned owned, String modelName, PromptCache.Options cacheOptions, int speculationDepth) {
+        this.speculationDepth = speculationDepth;
         if (owned.loaded() == null) throw new IllegalArgumentException("null model");
         if (modelName == null) throw new IllegalArgumentException("null modelName");
         this.weights = owned.weights();
@@ -658,7 +673,11 @@ public final class ChatEngine {
                             watch.accept(fragment); // stop strings match the content lane only
                         }
                     }
-                    return !out.cancelled() && !watch.stopped();
+                    // an ENDED reply grammar is the model's own end of turn: every further
+                    // token is inert to the parse (fed off-language, or the language accepted
+                    // whole), so generating on only burns budget in silence - observed as
+                    // whole completion halves lost to LENGTH after a stray control token
+                    return !out.cancelled() && !watch.stopped() && !lanes.ended();
                 };
         Outcome outcome =
                 generate(
@@ -673,9 +692,21 @@ public final class ChatEngine {
                     null, outcome.result(), false, true, outcome.restoredTokens(), outcome.tier());
         }
         watch.flush(); // release held-back chars (a stopped watch emits nothing past the cut)
+        Generator.GenerationResult result = outcome.result();
+        if (lanes.ended() && "abort".equals(result.finishReason())) {
+            // the sink aborting FOR the ended grammar is a stop, not a client abort: the
+            // family's reply language ended the turn exactly like a stop token would
+            result =
+                    new Generator.GenerationResult(
+                            result.tokens(),
+                            result.stopToken(),
+                            "stop",
+                            result.promptNanos(),
+                            result.predictedNanos());
+        }
         return new Completion(
                 lanes.finish(),
-                outcome.result(),
+                result,
                 watch.stopped(),
                 false,
                 outcome.restoredTokens(),
