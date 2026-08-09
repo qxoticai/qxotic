@@ -85,6 +85,7 @@ public final class Thinking {
             return inner;
         }
         int openToken = open, closeToken = close;
+        Sampler markersBanned = Sampler.banning(inner, Set.of(open, close));
         return new Sampler() {
             boolean inThink = startInThink;
             int thought;
@@ -95,7 +96,16 @@ public final class Thinking {
                     inThink = false;
                     return closeToken;
                 }
-                int token = inner.sampleToken(logits);
+                // a SPENT budget bans BOTH markers: a model force-closed mid-thought
+                // re-opens on its very next token (greedy Qwen3.5 does, deterministically),
+                // and with only the open banned its next-best is the PAIRED CLOSE - either
+                // marker after the spend is scaffold the reply grammar does not expect, and
+                // the un-banned cap ping-pongs marker noise until LENGTH with a blank
+                // visible answer, the exact starvation the cap exists to prevent
+                int token =
+                        thought >= budget
+                                ? markersBanned.sampleToken(logits)
+                                : inner.sampleToken(logits);
                 if (token == openToken) inThink = true;
                 else if (token == closeToken) inThink = false;
                 else if (inThink) thought++;
