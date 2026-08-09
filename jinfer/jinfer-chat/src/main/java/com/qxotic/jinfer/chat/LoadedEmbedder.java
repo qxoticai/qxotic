@@ -14,8 +14,12 @@ import java.util.function.Consumer;
  * LoadedModel}, carrying exactly what a provider integration needs: the model, its tokenizer, the
  * port's per-sequence framing convention ({@code sequencePrefix}/{@code sequenceSuffix} - tokens
  * wrapped around every encoded sequence: Qwen3's last-token pooling wants a trailing EOS, LFM2.5's
- * CLS pooling reads a leading BOS), and the embedding width (static, so callers never probe with a
- * forward pass).
+ * CLS pooling reads a leading BOS), the embedding width (static, so callers never probe with a
+ * forward pass), and the model card's retrieval TEXT framing ({@code queryPrefix}/{@code
+ * documentPrefix} - prepended before tokenizing when the caller states a retrieval role; {@code ""}
+ * = the card prescribes none for that side). Retrieval-tuned embedders are trained WITH these
+ * prefixes - LFM2.5's {@code "query: "}/{@code "document: "} pair, Qwen3's instructed query - and
+ * embedding bare text instead silently degrades retrieval quality.
  */
 public record LoadedEmbedder<S extends RuntimeState>(
         EmbeddingModel<?, ?, S> model,
@@ -23,7 +27,9 @@ public record LoadedEmbedder<S extends RuntimeState>(
         int[] sequencePrefix,
         int[] sequenceSuffix,
         int dimension,
-        String name) {
+        String name,
+        String queryPrefix,
+        String documentPrefix) {
 
     public LoadedEmbedder {
         if (model == null) throw new IllegalArgumentException("null model");
@@ -32,8 +38,15 @@ public record LoadedEmbedder<S extends RuntimeState>(
         if (sequencePrefix == null) throw new IllegalArgumentException("null sequencePrefix");
         if (sequenceSuffix == null) throw new IllegalArgumentException("null sequenceSuffix");
         if (dimension <= 0) throw new IllegalArgumentException("dimension " + dimension);
+        if (queryPrefix == null) throw new IllegalArgumentException("null queryPrefix");
+        if (documentPrefix == null) throw new IllegalArgumentException("null documentPrefix");
         sequencePrefix = sequencePrefix.clone();
         sequenceSuffix = sequenceSuffix.clone();
+    }
+
+    /** Whether the card prescribes retrieval framing at all (either side non-empty). */
+    public boolean prefixTrained() {
+        return !queryPrefix.isEmpty() || !documentPrefix.isEmpty();
     }
 
     /**

@@ -38,6 +38,12 @@
       <groupId>org.springframework.ai</groupId>
       <artifactId>spring-ai-rag</artifactId>
     </dependency>
+    <!-- E2E proof that the type-seam framing makes a single-bean VectorStore retrieval-correct -->
+    <dependency>
+      <groupId>org.springframework.ai</groupId>
+      <artifactId>spring-ai-vector-store</artifactId>
+      <scope>test</scope>
+    </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-core</artifactId>

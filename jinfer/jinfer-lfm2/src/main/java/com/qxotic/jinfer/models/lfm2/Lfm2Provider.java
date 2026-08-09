@@ -88,6 +88,9 @@ public final class Lfm2Provider implements ModelProvider {
                 new int[] {bos},
                 new int[0],
                 m.config().embeddingLength(),
-                path.getFileName().toString());
+                path.getFileName().toString(),
+                // the card's retrieval framing: LFM2.5-Embedding is trained on this exact pair
+                "query: ",
+                "document: ");
     }
 }

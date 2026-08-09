@@ -155,6 +155,10 @@ EmbeddingResponse r = embeddings.call(
 
 With the starter, `spring.ai.jinfer.embedding.model` (+ `context-length`) wires the bean; `spring.ai.model.embedding` selects the provider.
 
+Retrieval framing is automatic: retrieval-tuned embedders are trained with query/document prefixes (LFM2.5's `query: `/`document: ` pair, Qwen3's instructed query), and the interface types state the intent - `embed(Document)` ingests with the card's document framing, `embed(String)` searches with the query framing.
+A `VectorStore` therefore embeds both sides correctly through the single bean Spring wires, with nothing to configure.
+`call(EmbeddingRequest)` stays the raw, framing-free door.
+
 ## Cached prompts
 
 A cached prompt is paid for once and cheap forever after: `withCachedPrompt` prefills the prefix
