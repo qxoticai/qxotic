@@ -37,4 +37,36 @@ public record CachedPrompt(List<Message> messages, List<Tool> tools) {
     public Conversation conversation(boolean thinking) {
         return new Conversation(messages, tools, thinking, "");
     }
+
+    /**
+     * Request-over-defaults, THE tool precedence rule (stated once, for every adapter): a request
+     * that STATES a tool set - explicitly-none included - is served with its own; {@code null}
+     * (unstated) falls to this prefix's welded default, empty on the base model.
+     */
+    public List<Tool> resolveTools(List<Tool> stated) {
+        return stated == null ? tools : stated;
+    }
+
+    /**
+     * Whether the prepaid prefill serves this effective set: exactly the welded frame, compared as
+     * the rendered bytes that were prefilled. False on the base model - it has no prepaid frame.
+     */
+    public boolean serves(List<Tool> effective) {
+        return !isEmpty() && effective.equals(tools);
+    }
+
+    /** The once-per-view tools-override warning, worded here so every adapter says the same. */
+    public String toolsOverrideWarning(List<Tool> requested) {
+        return "WARNING: this cached-prompt view's welded tools "
+                + names(tools)
+                + " were overridden by the request's "
+                + names(requested)
+                + " - served correctly but UNCACHED (full prefill). Weld this set with"
+                + " withCachedPrompt(...), or use the base model for per-request tools."
+                + " (warned once per view)";
+    }
+
+    private static List<String> names(List<Tool> tools) {
+        return tools.stream().map(Tool::name).toList();
+    }
 }

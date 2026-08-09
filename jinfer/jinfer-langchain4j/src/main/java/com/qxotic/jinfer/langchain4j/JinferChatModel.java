@@ -131,7 +131,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         // model whose defaults can never serve a request should fail at build, not at first use
         this.defaults = b.defaultParameters == null ? base : base.overrideWith(b.defaultParameters);
         if (b.defaultParameters != null) {
-            rejectUnsupported(this.defaults, statesTools(this.defaults));
+            rejectUnsupported(
+                    this.defaults, !prefix.resolveTools(statedTools(this.defaults)).isEmpty());
             rejectModelSwitch(engine, this.defaults);
         }
     }
@@ -160,6 +161,10 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
      * ITS tools, byte-identical to the base model - a cache changes latency, never behavior - but
      * forfeits the prepaid prefill for that call. {@link JinferTokenUsage#cachedInputTokens} on
      * every response tells which happened; the first override also warns once on stderr.
+     *
+     * <p>There is deliberately NO messages-only overload: the prepaid frame includes the tool
+     * declarations, so passing {@code List.of()} is the caller acknowledging this view welds no
+     * tools - the cache is not tools-independent, and the signature should not suggest it is.
      *
      * <p>(The tree serves the BASE model too: under the default {@code jinfer.promptCache=true},
      * every conversation on a codec model is resumed from and committed to it, bounded by {@code
@@ -255,54 +260,39 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     // ---- shared request preparation (also used by the streaming twin) ----
 
     /** Every request-shape rejection, synchronously; both entry points reach it via prepare(). */
-    void validate(ChatRequest request) {
-        ChatRequestParameters p = request.parameters();
-        rejectUnsupported(p, offersTools(p));
+    void validate(ChatRequestParameters p, List<Tool> effectiveTools) {
+        rejectUnsupported(p, !effectiveTools.isEmpty());
         rejectModelSwitch(engine, p);
-        if (p.toolChoice() == ToolChoice.REQUIRED && !offersTools(p)) {
+        if (p.toolChoice() == ToolChoice.REQUIRED && effectiveTools.isEmpty()) {
             throw new IllegalArgumentException("toolChoice REQUIRED without any tools");
         }
     }
 
-    /** Whether this request offers ANY tools: its own, else the view's welded default. */
-    private boolean offersTools(ChatRequestParameters p) {
-        if (p.toolChoice() == ToolChoice.NONE) return false;
-        return statesTools(p) || !prefix.tools().isEmpty();
-    }
-
-    private static boolean statesTools(ChatRequestParameters p) {
-        return p.toolSpecifications() != null && !p.toolSpecifications().isEmpty();
+    /** The request's stated tool set: NONE = explicitly none; null = unstated, defaults apply. */
+    private static List<Tool> statedTools(ChatRequestParameters p) {
+        if (p.toolChoice() == ToolChoice.NONE) return List.of();
+        return p.toolSpecifications() == null || p.toolSpecifications().isEmpty()
+                ? null
+                : Mappings.toTools(p.toolSpecifications());
     }
 
     /** Framework types mapped away; every policy below this line lives in {@link ChatEngine}. */
     ChatEngine.Prepared prepare(ChatRequest request) {
-        validate(request);
         ChatRequestParameters p = request.parameters();
-        // request > view default, the standard precedence: stated tools win, NONE empties the
-        // offer, an unstated set falls to the view's welded tools (empty on the base model)
+        // request > view default (CachedPrompt.resolveTools, THE precedence rule): an override
+        // is served correctly (byte-identical to the base model) at full prefill - a cache
+        // changes latency, never behavior - and warns once so a wiring bug stays discoverable
+        List<Tool> tools = prefix.resolveTools(statedTools(p));
+        validate(p, tools);
+        boolean cached = prefix.serves(tools);
+        if (!cached && !prefix.isEmpty() && warnedToolsOverride.compareAndSet(false, true)) {
+            System.err.println(prefix.toolsOverrideWarning(tools));
+        }
+        // the Jinja fallback re-declares from framework types; NONE offers nothing there either
         List<ToolSpecification> requestTools =
-                p.toolChoice() == ToolChoice.NONE || !statesTools(p)
+                p.toolChoice() == ToolChoice.NONE || p.toolSpecifications() == null
                         ? List.of()
                         : p.toolSpecifications();
-        List<Tool> tools =
-                p.toolChoice() != ToolChoice.NONE && !statesTools(p)
-                        ? prefix.tools()
-                        : Mappings.toTools(requestTools);
-        // the prepaid prefill serves exactly its own frame: cached iff the effective tools ARE
-        // the welded ones, compared as the rendered bytes that were prefilled. An override is
-        // served correctly (byte-identical to the base model) at full prefill - a cache changes
-        // latency, never behavior - and warns once so a wiring bug stays discoverable
-        boolean cached = !prefix.isEmpty() && tools.equals(prefix.tools());
-        if (!prefix.isEmpty() && !cached && warnedToolsOverride.compareAndSet(false, true)) {
-            System.err.println(
-                    "WARNING: this cached-prompt view's welded tools "
-                            + names(prefix.tools())
-                            + " were overridden by the request's "
-                            + names(tools)
-                            + " - served correctly but UNCACHED (full prefill). Weld this set with"
-                            + " withCachedPrompt(...), or use the base model for per-request"
-                            + " tools. (warned once per view)");
-        }
         List<Message> messages = new ArrayList<>(prefix.messages());
         messages.addAll(Mappings.toMessages(request.messages(), videoSampler));
         JinferChatRequestParameters j = p instanceof JinferChatRequestParameters jp ? jp : null;
@@ -408,10 +398,6 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             throw new UnsupportedFeatureException(
                     "grammar and a JSON response format are mutually exclusive: both constrain the"
                             + " same reply - pick one");
-    }
-
-    private static List<String> names(List<Tool> tools) {
-        return tools.stream().map(Tool::name).toList();
     }
 
     private static Double toDouble(Float f) {

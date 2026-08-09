@@ -75,12 +75,15 @@ class CachedPromptIT {
         // served from the pool (hit) and cold (the pool no longer matches after it grew past
         // the request) must answer identically. (Cross-ENGINE comparison is deliberately not
         // asserted: two jam pools in one JVM can drift an argmax tie at high-entropy points.)
+        // pinned seed: hit-vs-cold is a byte-identity comparison, and an unlucky random seed can
+        // spend the whole budget on a think span (null text)
         JinferChatModel warm =
                 JinferChatModel.builder()
                         .modelPath(MODEL)
                         .contextLength(4096)
                         .maxOutputTokens(128)
                         .cachedSessions(1)
+                        .seed(7L)
                         .build();
         UserMessage first = UserMessage.from("Remember the codeword PELICAN. Acknowledge briefly.");
         ChatResponse w1 = warm.chat(ChatRequest.builder().messages(first).build());
