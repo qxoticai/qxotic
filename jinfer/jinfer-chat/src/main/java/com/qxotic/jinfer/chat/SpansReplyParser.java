@@ -128,10 +128,27 @@ final class SpansReplyParser implements ReplyParser {
      * (consecutive fragments append to a builder; the run materializes as ONE {@link Part.Text}
      * when a non-text part arrives or the channel closes - not rebuilt per token).
      */
+    @Override
+    public void beginReply() {
+        // seed-fed scaffold text out, seed-established STATE kept (inThink survives, an open
+        // reasoning node stays open); the call detector survives on purpose - a legacy forced
+        // seed parses whole
+        pending.flush();
+        parts.reset();
+        reasoningIds = IntSequence.newBuilder();
+        if (reasoningContent != null) reasoningContent.reset();
+    }
+
     private static final class PartsBuilder {
         private final List<Part> parts = new ArrayList<>();
         private final StringBuilder text = new StringBuilder();
         private IntSequence.Builder ids = IntSequence.newBuilder();
+
+        void reset() {
+            parts.clear();
+            text.setLength(0);
+            ids = IntSequence.newBuilder();
+        }
 
         void text(String fragment, IntSequence fragmentIds) {
             text.append(fragment);

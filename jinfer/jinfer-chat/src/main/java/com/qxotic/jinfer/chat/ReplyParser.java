@@ -54,6 +54,27 @@ public interface ReplyParser {
      */
     Message finish();
 
+    /**
+     * Prompt bytes are not reply bytes: called once after the prompt's reply seed has been {@link
+     * #feed}ed and before the first generated token, this drops any think/content TEXT the seed
+     * accumulated while keeping the parse STATE it established (an open span stays open) - a
+     * non-thinking scaffold's {@code </think>\n\n} tail must not surface as the reply's leading
+     * newlines. A forced-call seed is the deliberate exception and survives: the seeded call
+     * structure parses whole, so implementations leave call-region capture untouched.
+     */
+    default void beginReply() {}
+
+    /**
+     * The reply is structurally OVER - a parser that enforces its family's reply grammar reports
+     * true once no further token can extend the reply (the control rule fired on an off-language
+     * token, or the language accepted with nothing left to admit). Every later {@link #feed} is
+     * inert, so a generation still running is burning budget on tokens that can never surface; the
+     * driver treats this as the model's own end of turn. Grammarless parsers never end.
+     */
+    default boolean ended() {
+        return false;
+    }
+
     /** One-shot parse of a finished reply (trailing stop token included or not - both work). */
     static Message parse(ReplyParser parser, IntSequence reply) {
         reply.forEachInt(parser::feed);
@@ -130,6 +151,16 @@ public interface ReplyParser {
             @Override
             public Message finish() {
                 return inner.finish();
+            }
+
+            @Override
+            public void beginReply() {
+                inner.beginReply();
+            }
+
+            @Override
+            public boolean ended() {
+                return inner.ended();
             }
         };
     }
