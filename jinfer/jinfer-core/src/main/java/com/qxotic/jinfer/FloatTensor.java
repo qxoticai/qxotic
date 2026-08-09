@@ -46,10 +46,11 @@ public abstract class FloatTensor {
 
     /**
      * Fail-fast canary: throws {@link IllegalStateException} when this tensor's backing memory has
-     * been freed (its arena closed). Best-effort BY NAME - the hot path reads raw addresses for
-     * speed, so this pre-flight check at request entry is the only liveness the engine can offer; a
-     * concurrent free mid-request remains a data race. No-op for tensors that cannot know
-     * (heap-backed).
+     * been freed (its arena closed). Every port calls it on its token-embedding table before each
+     * forward pass's first raw read - EVERY gather site, including secondary forwards like a
+     * segmented embedder path. Best-effort BY NAME: the hot path reads raw addresses for speed, so
+     * this pre-flight check is the only liveness the engine can offer, and a concurrent free
+     * mid-request remains a data race. No-op for tensors that cannot know (heap-backed).
      */
     public void safetyCanary() {}
 
