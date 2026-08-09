@@ -10,11 +10,11 @@ import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.JsonCodec;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
+import com.qxotic.jinfer.chat.ReplyLanguage;
 import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.TokenRuns;
 import com.qxotic.jinfer.chat.Tool;
-import com.qxotic.jinfer.chat.ToolCallSyntax;
 import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.chat.UnsupportedConversation;
 import com.qxotic.jinfer.llm.SpecialTokens;
@@ -411,33 +411,28 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
 
     private <R extends Media> int plan(Class<R> type, R m) {
         if (media == null) {
-            throw new UnsupportedOperationException(
-                    type.getSimpleName()
-                            + " input is not supported by this model (load the mmproj sidecar)");
+            throw new UnsupportedOperationException(unsupported(type));
         }
         return media.embedder(type)
-                .orElseThrow(
-                        () ->
-                                new UnsupportedOperationException(
-                                        type.getSimpleName()
-                                                + " input is not supported by this model (load the"
-                                                + " mmproj sidecar)"))
+                .orElseThrow(() -> new UnsupportedOperationException(unsupported(type)))
                 .positions(m);
     }
 
+    /** Lower-case modality on purpose: framework kits grep for the word as the user typed it. */
+    private static String unsupported(Class<? extends Media> type) {
+        return type.getSimpleName().toLowerCase(java.util.Locale.ROOT)
+                + " input is not supported by this model (load the mmproj sidecar)";
+    }
+
     private <R extends Media> FloatTensor encode(Class<R> type, R m) {
+        // capability gap, not an internal invariant: UnsupportedOperationException like plan(),
+        // so the framework adapters surface their own unsupported-feature type instead of a 500
         if (media == null) {
-            throw new IllegalStateException(
-                    "text-only template: construct with the model's encoders for media turns");
+            throw new UnsupportedOperationException(unsupported(type));
         }
         Embedder<R> embedder =
                 media.embedder(type)
-                        .orElseThrow(
-                                () ->
-                                        new IllegalStateException(
-                                                "this Gemma 4 load carries no "
-                                                        + type.getSimpleName()
-                                                        + " encoder (load with an mmproj)"));
+                        .orElseThrow(() -> new UnsupportedOperationException(unsupported(type)));
         // ONE copy out of the sink's ephemeral view, straight into the caller-owned (GC-managed)
         // return - the unbounded maxChunkSize means one chunk in practice, so the concatenation
         // leg below is a contract-completeness fallback, not a path that runs
@@ -722,24 +717,38 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
         return role.equals(Role.ASSISTANT) ? "model" : role.name();
     }
 
+    private ReplyLanguage.Selection autoReply; // memoized: tools-independent, built once
+
+    /**
+     * The reply-language walk: the thought CHANNEL is the think span (the channel name streams
+     * inside it, as the span parser saw it); a call span claims interior control tokens AS THEIR
+     * SPELLINGS, so the {@code <|"|>} quote token reaches {@link Gemma4ToolSyntax#parseBlock}
+     * exactly as the old span parser fed it; the mistyped-NORMAL {@code <eos>} (pinned by id) is
+     * control everywhere - the old {@code dropping} wrapper and the handoff stop both derive from
+     * the control rule.
+     */
     @Override
     public ReplyParser parser() {
-        // Gemma's thought channel is structurally a think span, so the span grammar handles it
-        // once told the marker names - without which the channel NAME leaked into content as a
-        // literal "thought" in front of every reply.
-        ReplyParser spans =
-                ReplyParser.spans(
-                        tokenizer,
-                        "<|tool_call>",
-                        "<tool_call|>",
-                        Gemma4ToolSyntax::parseBlock,
-                        CHANNEL_OPEN,
-                        CHANNEL_CLOSE);
-        // this GGUF mistypes <eos> (id 1) as NORMAL: the span grammar would route a sampled
-        // trailing stop into content as literal "<eos>" text (which then re-encodes into the
-        // next prompt via the echo) - filter it like the control token it really is
-        if (!tokenizer.vocabulary().contains("<eos>")) return spans;
-        return ReplyParser.dropping(spans, tokenizer.vocabulary().id("<eos>"));
+        if (autoReply == null) {
+            List<ReplyLanguage.Node> ends = new ArrayList<>();
+            ends.add(ReplyLanguage.mark("<turn|>"));
+            ends.add(ReplyLanguage.mark("<end_of_turn>"));
+            ends.add(ReplyLanguage.mark("<|endoftext|>"));
+            if (tokenizer.vocabulary().contains("<eos>")) {
+                ends.add(ReplyLanguage.markId("<eos>", tokenizer.vocabulary().id("<eos>")));
+            }
+            autoReply =
+                    ReplyLanguage.Selection.of(
+                            ReplyLanguage.spans(
+                                    CHANNEL_OPEN,
+                                    CHANNEL_CLOSE,
+                                    "<|tool_call>",
+                                    "<tool_call|>",
+                                    Gemma4ToolSyntax::parseBlock,
+                                    new ReplyLanguage.Node.Alt(ends)),
+                            tokenizer);
+        }
+        return autoReply.walk();
     }
 
     /** Forced calls seed {@code <|tool_call>} and pin {@code call:name}. */
@@ -749,8 +758,7 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
     }
 
     @Override
-    public Optional<String> callGrammar(List<Tool> tools) {
-        if (tools.isEmpty()) return Optional.empty();
-        return Optional.of(ToolCallSyntax.prefixPinGbnf("call:", tools));
+    public Optional<String> callPrefix() {
+        return Optional.of("call:");
     }
 }
