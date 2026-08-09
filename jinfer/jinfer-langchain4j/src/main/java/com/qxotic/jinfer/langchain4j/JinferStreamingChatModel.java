@@ -21,10 +21,12 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Streaming twin of {@link JinferChatModel}: the engine's single lazy driver thread runs the
- * generation and forwards the native {@link ReplyParser}'s two lanes to langchain4j's two streaming
- * channels - content fragments to {@code onPartialResponse} (with a cancellation handle), reasoning
- * fragments to {@code onPartialThinking}. Models without a native parser stream raw decoded text.
+ * Streaming twin of {@link JinferChatModel} - built via {@code
+ * JinferChatModel.builder()....buildStreaming()}, or from a live model via {@code streaming()} (the
+ * GGUF loads once either way): the engine's single lazy driver thread runs the generation and
+ * forwards the native {@link ReplyParser}'s two lanes to langchain4j's two streaming channels -
+ * content fragments to {@code onPartialResponse} (with a cancellation handle), reasoning fragments
+ * to {@code onPartialThinking}. Models without a native parser stream raw decoded text.
  *
  * <p>Contract details (the streaming compliance kit's): invalid requests throw synchronously from
  * {@code chat}; a cancelled handle stops generation and suppresses {@code onCompleteResponse};

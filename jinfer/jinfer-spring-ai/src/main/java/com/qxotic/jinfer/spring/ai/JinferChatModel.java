@@ -707,7 +707,11 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             return this;
         }
 
-        /** Context window; 0 = the model's own maximum. */
+        /**
+         * Context window; 0 (default) = the model's own maximum - conversations want the full
+         * window. (The retrieval builders bound theirs at 2048 instead: an embedder or reranker
+         * never fills a full-context state.)
+         */
         public Builder contextLength(int contextLength) {
             this.contextLength = contextLength;
             return this;
