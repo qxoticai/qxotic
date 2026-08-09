@@ -17,9 +17,10 @@ import java.util.concurrent.locks.ReentrantLock;
  * {@link #close()} frees deterministically (with a {@link Cleaner} backstop, so a dropped unclosed
  * state degrades to GC-eventually rather than leaking); {@code newState(ctx, batch, arena)} borrows
  * the caller's arena and {@link #close()} never touches it - close YOUR arena only after your last
- * call returns (kernels read raw addresses; a live read from a closed arena is a crash, not an
- * exception); {@code newState(ctx, batch, arena, true)} ADOPTS the caller's arena, fusing its
- * lifetime into the state's (close frees it, co-tenants like weights included).
+ * call returns (closing it first sequentially is caught fail-fast by {@link #enter}'s canary;
+ * closing it DURING a computation is a data race the kernels' raw reads can turn into a crash);
+ * {@code newState(ctx, batch, arena, true)} ADOPTS the caller's arena, fusing its lifetime into the
+ * state's (close frees it, co-tenants like weights included).
  *
  * <p>One lock carries the three run-time laws: entry points {@code tryLock} so two concurrent
  * computations fail fast with {@link ConcurrentModificationException} (the single-serial-pipeline
@@ -72,13 +73,24 @@ public abstract class BaseState implements RuntimeState, AutoCloseable {
                         });
     }
 
+    /** What {@link #enter()} says when a borrowed arena was closed under this state. */
+    static final String FREED_MESSAGE =
+            "the state's buffers have been freed - the arena passed to newState must outlive the"
+                    + " state (close your arena LAST). This canary catches the sequential mistake;"
+                    + " freeing the arena DURING a computation is a data race and can still crash"
+                    + " the VM.";
+
     /**
      * Claims this state for a computation on the current thread (reentrant - a generation may hold
      * it across many forwards). Fails fast: another thread computing -> {@link
-     * ConcurrentModificationException}; closed -> {@link IllegalStateException}.
+     * ConcurrentModificationException}; closed -> {@link IllegalStateException}; a BORROWED arena
+     * the caller already closed -> {@link IllegalStateException} too (the state-side safety canary:
+     * kernels read raw addresses, so this entry check is the only liveness on offer, and a
+     * concurrent free mid-computation remains a data race).
      */
     public final void enter() {
         if (closed.get()) throw new IllegalStateException("state is closed");
+        if (!arena.scope().isAlive()) throw new IllegalStateException(FREED_MESSAGE);
         if (!lock.tryLock()) {
             // the holder is either another computation (contract violation) or the winning
             // closer draining us (shutdown); `closed` tells which
