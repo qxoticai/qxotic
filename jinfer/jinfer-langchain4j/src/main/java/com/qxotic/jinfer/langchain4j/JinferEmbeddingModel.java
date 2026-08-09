@@ -8,7 +8,6 @@ import com.qxotic.jinfer.chat.LoadedEmbedder;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.hub.ModelStore;
 import dev.langchain4j.data.embedding.Embedding;
-import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.TokenCountEstimator;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.embedding.request.EmbeddingParameter;
@@ -116,7 +115,17 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
      * LFM2.5-Embedding) on top of the text count.
      */
     public TokenCountEstimator tokenCountEstimator() {
-        return new Estimators(loaded.tokenizer(), null);
+        // no media plan, no sampler: the estimator refuses media messages before any decode
+        return new Estimators(loaded.tokenizer(), null, null);
+    }
+
+    /**
+     * The GGUF this instance loaded, the same name every response's metadata carries - the
+     * interface default answers the literal string "unknown".
+     */
+    @Override
+    public String modelName() {
+        return loaded.name();
     }
 
     /** The embedding width - static from the port, never probed with a forward pass. */
@@ -159,12 +168,6 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
                 .build();
     }
 
-    @Override
-    public Response<List<Embedding>> embedAll(List<TextSegment> segments) {
-        hintBareUse();
-        return embedTexts(segments.stream().map(TextSegment::text).toList());
-    }
-
     private Response<List<Embedding>> embedTexts(List<String> texts) {
         List<Embedding> out = new ArrayList<>(texts.size());
         int dim = loaded.dimension();
@@ -192,7 +195,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
                             + " type, so raw text was embedded as given. For retrieval-quality"
                             + " vectors set .embeddingInputType(QUERY) on"
                             + " EmbeddingStoreContentRetriever and DOCUMENT on"
-                            + " EmbeddingStoreIngestor. (noted once)");
+                            + " EmbeddingStoreIngestor. (noted once per model)");
         }
         return "";
     }

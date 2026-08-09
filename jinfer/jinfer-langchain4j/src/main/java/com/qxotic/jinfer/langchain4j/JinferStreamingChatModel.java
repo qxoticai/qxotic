@@ -33,6 +33,16 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * exceptions thrown by user callbacks are forwarded to {@code onError} per occurrence while the
  * generation continues; parsed tool calls are announced via {@code onCompleteToolCall} before the
  * complete response.
+ *
+ * <p>One divergence from the blocking twin, and it is langchain4j's: {@code
+ * StreamingChatModel.chat} calls {@code doChat} with no try/catch, so a request this provider
+ * rejects SYNCHRONOUSLY (an unsupported parameter, unframeable media) reaches the caller as a
+ * thrown exception but never reaches a registered {@link ChatModelListener} - where {@code
+ * ChatModel.chat} would have reported {@code onError}. Listeners see {@code onRequest} with no
+ * terminal event. Reporting it here is not on offer: the listener plumbing ({@code
+ * ChatModelListenerUtils}, the request's attribute map) is package-private in core, and a
+ * hand-rolled notification would double-report the day core adds the catch. Catch around {@code
+ * chat} for those, or use the blocking twin's listeners.
  */
 public final class JinferStreamingChatModel implements StreamingChatModel, AutoCloseable {
 
@@ -46,6 +56,17 @@ public final class JinferStreamingChatModel implements StreamingChatModel, AutoC
 
     JinferStreamingChatModel(JinferChatModel model) {
         this.model = model;
+    }
+
+    /**
+     * The blocking twin over the same engine - the way to {@code withCachedPrompt}, {@code
+     * saveCachedPrompts} and {@code tokenCountEstimator()} from a model built with {@code
+     * buildStreaming()}, which otherwise hands out a streaming face and no way back. ({@code
+     * fork()} additionally needs weights YOU loaded - a {@code model(LoadedModel)} build - like on
+     * any blocking model.)
+     */
+    public JinferChatModel blocking() {
+        return model;
     }
 
     @Override

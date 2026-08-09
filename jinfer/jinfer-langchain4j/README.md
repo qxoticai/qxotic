@@ -60,9 +60,29 @@ System.out.println(response.finishReason());   // STOP | LENGTH | TOOL_EXECUTION
 String stop sequences, JSON response format (grammar-constrained decoding), and `toolChoice=REQUIRED` are supported.
 Unsupported knobs (penalties, per-request `modelName`, tools combined with a JSON response format) throw `UnsupportedFeatureException` instead of being silently ignored.
 
+## Structured output
+
+`AiServices` returning a POJO works unchanged - the provider advertises `RESPONSE_FORMAT_JSON_SCHEMA`, so langchain4j sends the schema instead of asking for JSON in prose.
+
+```java
+record Person(String name, int age) {}
+
+interface PersonExtractor {
+    Person extract(String text);
+}
+
+Person p = AiServices.create(PersonExtractor.class, model)
+        .extract("Johann is 42 years old and lives in Munich.");   // Person[name=Johann, age=42]
+```
+
+A schema does two jobs here, and a local model needs both.
+The grammar compiled from it masks the logits, so output that violates the schema is unrepresentable - not merely unlikely.
+The schema is *also* stated to the model in the prompt, because a mask constrains shape and says nothing about meaning: a model that never saw the schema answers `{"name": "user_agent", "age": 42}` - valid, and wrong.
+Hosted providers hide this behind models trained on a schema channel; a local GGUF has no such channel.
+
 ## Streaming
 
-`streaming()` shares the already-loaded model - the GGUF is mapped once.
+`streaming()` shares the already-loaded model - the GGUF is mapped once, and `blocking()` gets you back (a model built with `buildStreaming()` reaches `fork()`, `withCachedPrompt` and the token estimator through it).
 Reasoning models stream on two lanes: content to `onPartialResponse`, thinking to `onPartialThinking`.
 
 ```java
@@ -74,6 +94,22 @@ streaming.chat("Tell me a haiku about rivers.", new StreamingChatResponseHandler
     @Override public void onCompleteResponse(ChatResponse done) { System.out.println(); }
     @Override public void onError(Throwable error) { error.printStackTrace(); }
 });
+```
+
+In `AiServices`, the same model streams through the idiomatic `TokenStream` - including through the automatic tool loop:
+
+```java
+interface Assistant { TokenStream chat(String message); }
+
+Assistant assistant = AiServices.builder(Assistant.class)
+        .streamingChatModel(streaming)
+        .build();
+
+assistant.chat("Tell me a haiku about rivers.")
+        .onPartialResponse(System.out::print)
+        .onCompleteResponse(done -> System.out.println())
+        .onError(Throwable::printStackTrace)
+        .start();
 ```
 
 ## Tools, the langchain4j way
@@ -213,6 +249,26 @@ EmbeddingStoreContentRetriever.builder()
 
 Typeless traffic (plain `embed`/`embedAll`) embeds raw text as given - a one-time stderr note points at the knobs when the model is prefix-trained.
 
+## Reranking
+
+`JinferScoringModel` runs a reranker GGUF (Qwen3-Reranker, LFM2 ColBERT) in-process: a `ScoringModel` for langchain4j's `ReRankingContentAggregator`, the standard second stage after embedding retrieval.
+
+```java
+ScoringModel reranker = JinferScoringModel.builder()
+        .model("hf.co/Qwen/Qwen3-Reranker-0.6B-GGUF:Q8_0")
+        .build();
+
+RetrievalAugmentor augmentor = DefaultRetrievalAugmentor.builder()
+        .contentRetriever(retriever)                       // wide net from the embedder
+        .contentAggregator(ReRankingContentAggregator.builder()
+                .scoringModel(reranker)
+                .minScore(0.5)
+                .build())                                  // precise cut from the reranker
+        .build();
+```
+
+The runnable version is `RerankRetrievalIT` in this module's tests.
+
 ## Cached prompts
 
 A cached prompt is paid for once and cheap forever after: `withCachedPrompt` prefills the prefix
@@ -259,7 +315,7 @@ For real parallelism, load the weights once into YOUR arena and fork - every bui
 ```java
 try (Arena arena = Arena.ofShared()) {
     var loaded = Models.load(ModelStore.resolve("hf.co/...:Q4_K_M"), arena);
-    var a = JinferChatModel.builder().model(loaded).build();
+    var a = JinferChatModel.builder().model(loaded).contextLength(8192).build();
     var b = a.fork();               // second pipeline, same weights, a context's price
     // ... concurrent chat on a and b ...
     a.close(); b.close();

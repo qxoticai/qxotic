@@ -66,10 +66,6 @@ final class Mappings {
 
     // ---- langchain4j -> jinfer (typed, for the native codec) ----
 
-    static List<Message> toMessages(List<ChatMessage> messages) {
-        return toMessages(messages, VideoSampler.UNIFORM);
-    }
-
     static List<Message> toMessages(List<ChatMessage> messages, VideoSampler videoSampler) {
         List<Message> out = new ArrayList<>(messages.size());
         for (ChatMessage m : messages) {
@@ -104,6 +100,12 @@ final class Mappings {
                     parts.add(blob("audio", sha256(src), () -> AudioCodec.decode(src)));
                 }
                 case VideoContent v -> {
+                    // no base64 door here, unlike image/audio: the frame sampler reads a FILE
+                    // (ffmpeg seam), so the refusal must not advise the base64 the user just sent
+                    if (v.video().base64Data() != null)
+                        throw new UnsupportedFeatureException(
+                                "inline base64 video is not supported: write it to a file and"
+                                        + " pass its file:// URI");
                     Path src = localPath(v.video().url());
                     parts.add(blob("video", sha256(src), () -> videoSampler.sample(src)));
                 }
