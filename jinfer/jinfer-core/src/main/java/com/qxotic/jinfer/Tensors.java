@@ -40,15 +40,23 @@ abstract class SegmentFloatTensor extends FloatTensor {
 
     final long vbase;
 
+    final MemorySegment.Scope scope; // the backing arena's scope: the safetyCanary handle
+
     SegmentFloatTensor(long size, MemorySegment memorySegment) {
         this.size = size;
         this.vseg = vectorSegment(memorySegment);
         this.vbase = vectorBase(memorySegment);
+        this.scope = memorySegment.scope();
     }
 
     @Override
     public final long size() {
         return size;
+    }
+
+    @Override
+    public final void safetyCanary() {
+        if (!scope.isAlive()) throw new IllegalStateException(FREED_MESSAGE);
     }
 }
 

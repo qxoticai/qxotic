@@ -37,6 +37,22 @@ public abstract class FloatTensor {
         return VECTOR_BIT_SIZE;
     }
 
+    /** What {@link #safetyCanary()} says when its backing memory is gone. */
+    public static final String FREED_MESSAGE =
+            "the weights have been freed - the arena that loaded the model must outlive every"
+                    + " model and pipeline borrowing it (close your arena LAST). This canary"
+                    + " catches the sequential mistake; freeing the arena DURING a request is a"
+                    + " data race and can still crash the VM.";
+
+    /**
+     * Fail-fast canary: throws {@link IllegalStateException} when this tensor's backing memory has
+     * been freed (its arena closed). Best-effort BY NAME - the hot path reads raw addresses for
+     * speed, so this pre-flight check at request entry is the only liveness the engine can offer; a
+     * concurrent free mid-request remains a data race. No-op for tensors that cannot know
+     * (heap-backed).
+     */
+    public void safetyCanary() {}
+
     /**
      * Vector width, or 0 when there is no Vector API to use. Computed in a method, not as a default
      * argument to {@code Integer.getInteger}: Java evaluates that argument EAGERLY, so the old form

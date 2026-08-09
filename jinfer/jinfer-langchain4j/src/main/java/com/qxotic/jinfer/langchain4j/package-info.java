@@ -25,10 +25,11 @@
  * }                                   // the owner frees the weights, at a brace
  * }</pre>
  *
- * <p>The block structure IS the ownership story: your arena outlives every instance built on it
- * (the tensor hot path reads raw addresses - a closed weights arena under a live pipeline is a VM
- * crash, not an exception), and {@code fork()} on a model that loaded its OWN weights refuses with
- * that exact recipe.
+ * <p>The block structure IS the ownership story: your arena outlives every instance built on it. A
+ * sequential violation is caught fail-fast - a safety canary at the forward pass throws {@code
+ * IllegalStateException} on freed weights - while freeing the arena DURING a request is a data race
+ * and can still crash the VM. {@code fork()} on a model that loaded its OWN weights refuses with
+ * the load-once recipe.
  *
  * <h2>Structured output</h2>
  *

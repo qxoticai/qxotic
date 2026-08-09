@@ -155,6 +155,7 @@ public final class Qwen3
         // ONCE for the batch: an angle never depends on the layer
         RoPE.fill(state.ropeCos, state.ropeSin, startPos, seqLen, config.ropeHalf(), w.rope());
 
+        w.tokenEmbeddingTable.safetyCanary(); // fail-fast on freed weights, before raw reads
         for (int s = 0; s < seqLen; s++) {
             w.tokenEmbeddingTable.copyTo(
                     (long) tokens[tokenOffset + s] * dim, state.x, (long) s * dim, dim);
@@ -335,6 +336,7 @@ public final class Qwen3
 
         // rows are not a range here - each sequence restarts at position 0
         RoPE.fill(state.ropeCos, state.ropeSin, posOf, seqLen, config.ropeHalf(), w.rope());
+        w.tokenEmbeddingTable.safetyCanary(); // fail-fast on freed weights, before raw reads
         for (int s = 0; s < seqLen; s++) {
             w.tokenEmbeddingTable.copyTo((long) tokens[s] * dim, state.x, (long) s * dim, dim);
         }
