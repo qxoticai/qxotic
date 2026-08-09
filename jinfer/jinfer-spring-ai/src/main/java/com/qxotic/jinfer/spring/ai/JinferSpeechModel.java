@@ -59,14 +59,11 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
         this.maxInputChars = b.maxInputChars;
         // an arena this instance creates is this instance's to free on EVERY path out of here,
         // including a state allocation that fails after the weights are already mapped
-        Arena created = b.model == null && b.arena == null ? Arena.ofShared() : null;
+        Arena created = b.model == null ? Arena.ofShared() : null;
         try {
             this.model =
                     (SpeechModel<?, ?, SpeechState>)
-                            (b.model != null
-                                    ? b.model
-                                    : Models.loadSpeech(
-                                            b.modelPath, created != null ? created : b.arena));
+                            (b.model != null ? b.model : Models.loadSpeech(b.modelPath, created));
         } catch (IOException e) {
             closeQuietly(created); // a leaked ofShared arena has no backstop: free before failing
             throw new UncheckedIOException("failed to load " + b.modelPath, e);
@@ -213,7 +210,6 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
         private Object source; // Path | ref/URL String | SpeechModel: the last setter wins
         private SpeechModel<?, ?, ?> model; // derived from source at build()
         private Path modelPath; // derived from source at build()
-        private Arena arena;
         private Double speed;
         private int maxInputChars = DEFAULT_MAX_INPUT_CHARS;
 
@@ -240,14 +236,6 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
          */
         public Builder model(String pathOrRef) {
             this.source = pathOrRef;
-            return this;
-        }
-
-        /**
-         * Where the weights map, with {@link #modelPath} only; default an arena closed with this.
-         */
-        public Builder arena(Arena arena) {
-            this.arena = arena;
             return this;
         }
 
@@ -282,10 +270,6 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
                                 "a model is required: model(\"hf.co/owner/repo:Q4_K_M\"),"
                                         + " modelPath(...) or model(SpeechModel)");
             }
-            if (model != null && arena != null)
-                throw new IllegalArgumentException(
-                        "arena(...) is where modelPath(...) loads the weights; a model you built"
-                                + " already has its own");
             return new JinferSpeechModel(this);
         }
     }

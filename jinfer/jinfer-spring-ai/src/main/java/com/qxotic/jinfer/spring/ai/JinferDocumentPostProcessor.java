@@ -171,7 +171,7 @@ public final class JinferDocumentPostProcessor implements DocumentPostProcessor,
         private Object source; // Path | ref/URL String | LoadedReranker: the last setter wins
         private Path modelPath; // derived from source at build()
         private LoadedReranker<?> loaded; // derived from source at build()
-        private int contextLength;
+        private int contextLength = 2048;
         private String instruction;
         private int topK;
         private double minScore;
@@ -208,7 +208,11 @@ public final class JinferDocumentPostProcessor implements DocumentPostProcessor,
             return this;
         }
 
-        /** Context window; 0 = the model's own maximum. Bounds query+document length. */
+        /**
+         * The judging window (default 2048): bounds query+document length; {@code <= 0} = the
+         * model's own maximum. Retrieval builders default BOUNDED - a full-context state is
+         * GB-scale KV a reranker never fills; the chat builder defaults to the maximum instead.
+         */
         public Builder contextLength(int contextLength) {
             this.contextLength = contextLength;
             return this;

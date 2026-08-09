@@ -10,6 +10,7 @@ import com.qxotic.jinfer.Media;
 import com.qxotic.jinfer.SpeechModel;
 import com.qxotic.jinfer.SpeechOptions;
 import com.qxotic.jinfer.SpeechState;
+import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.testkit.ModelFixture;
 import java.lang.foreign.Arena;
 import java.nio.charset.StandardCharsets;
@@ -56,20 +57,6 @@ final class JinferSpeechModelTest {
                 .model(new ToyModel())
                 .build()
                 .close();
-    }
-
-    @Test
-    void anArenaIsForTheLoadingPathOnly() {
-        // a model the caller built already sits in an arena; a second one would own nothing
-        IllegalArgumentException e =
-                assertThrows(
-                        IllegalArgumentException.class,
-                        () ->
-                                JinferSpeechModel.builder()
-                                        .model(new ToyModel())
-                                        .arena(Arena.ofAuto())
-                                        .build());
-        assertTrue(e.getMessage().contains("arena"), e.getMessage());
     }
 
     // ── call ──────────────────────────────────────────────────────────────
@@ -230,11 +217,10 @@ final class JinferSpeechModelTest {
     }
 
     @Test
-    void aCallersArenaOutlivesTheAdapter() {
+    void aCallersArenaOutlivesTheAdapter() throws Exception {
         try (Arena weights = Arena.ofShared()) {
             JinferSpeechModel.builder()
-                    .modelPath(ModelFixture.INFLECT_NANO_V2_Q8.require())
-                    .arena(weights)
+                    .model(Models.loadSpeech(ModelFixture.INFLECT_NANO_V2_Q8.require(), weights))
                     .build()
                     .close();
             assertTrue(weights.scope().isAlive(), "the adapter closed an arena it did not create");
