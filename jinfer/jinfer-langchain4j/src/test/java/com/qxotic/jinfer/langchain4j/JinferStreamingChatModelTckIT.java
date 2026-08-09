@@ -10,6 +10,7 @@ import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.request.ChatRequestParameters;
 import dev.langchain4j.model.chat.request.DefaultChatRequestParameters;
 import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
+import dev.langchain4j.model.output.TokenUsage;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -35,9 +36,64 @@ class JinferStreamingChatModelTckIT extends AbstractStreamingChatModelIT {
 
     private static JinferChatModel shared;
 
+    @Override
+    protected Class<? extends TokenUsage> tokenUsageType(StreamingChatModel model) {
+        return JinferTokenUsage.class;
+    }
+
     @AfterAll
     static void unloadShared() {
         if (shared != null) shared.close();
+    }
+
+    // ---- the blocking kit's per-model capability gates, same reasons ----
+
+    @Override
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.MethodSource("modelsSupportingTools")
+    @org.junit.jupiter.api.condition.EnabledIf("supportsTools")
+    protected void should_execute_a_tool_then_answer(StreamingChatModel model) {
+        JinferChatModelTckIT.assumeNotBareSpecMarginal();
+        super.should_execute_a_tool_then_answer(model);
+    }
+
+    @Override
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.MethodSource("modelsSupportingTools")
+    @org.junit.jupiter.api.condition.EnabledIf("supportsTools")
+    protected void should_execute_multiple_tools_in_parallel_then_answer(StreamingChatModel model) {
+        JinferChatModelTckIT.assumeParallelCallsRepresentable();
+        super.should_execute_multiple_tools_in_parallel_then_answer(model);
+    }
+
+    @Override
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.MethodSource("models")
+    @org.junit.jupiter.api.condition.EnabledIf("supportsMaxOutputTokensParameter")
+    protected void should_respect_maxOutputTokens_in_chat_request(StreamingChatModel model) {
+        JinferChatModelTckIT.assumeReasoningFitsTheBudget();
+        super.should_respect_maxOutputTokens_in_chat_request(model);
+    }
+
+    @Override
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.condition.EnabledIf("supportsMaxOutputTokensParameter")
+    protected void should_respect_maxOutputTokens_in_default_model_parameters() {
+        JinferChatModelTckIT.assumeReasoningFitsTheBudget();
+        super.should_respect_maxOutputTokens_in_default_model_parameters();
+    }
+
+    @Override
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.MethodSource("models")
+    @org.junit.jupiter.api.condition.EnabledIf("supportsMaxOutputTokensParameter")
+    protected void
+            should_respect_common_parameters_wrapped_in_integration_specific_class_in_chat_request(
+                    StreamingChatModel model) {
+        JinferChatModelTckIT.assumeReasoningFitsTheBudget();
+        super
+                .should_respect_common_parameters_wrapped_in_integration_specific_class_in_chat_request(
+                        model);
     }
 
     @Override
@@ -95,6 +151,10 @@ class JinferStreamingChatModelTckIT extends AbstractStreamingChatModelIT {
                                 .modelPath(JinferChatModelTckIT.MODEL)
                                 .contextLength(8192)
                                 .defaultRequestParameters(parameters)
+                                // same greedy pinning as models(); kit parameters override
+                                .temperature(0.0)
+                                .thinking(JinferChatModelTckIT.tckThinking())
+                                .seed(7L)
                                 .build())
                 .streaming();
     }
@@ -109,6 +169,11 @@ class JinferStreamingChatModelTckIT extends AbstractStreamingChatModelIT {
                 .modelPath(JinferChatModelTckIT.MODEL)
                 .contextLength(8192)
                 .maxOutputTokens(512)
+                // pinned GREEDY like the blocking TCK's models(): a compliance suite must not
+                // flake, and a temperature draw at a near-tie flips with cache-state drift
+                .temperature(0.0)
+                .thinking(JinferChatModelTckIT.tckThinking())
+                .seed(7L)
                 .listeners(listeners)
                 .build();
     }
