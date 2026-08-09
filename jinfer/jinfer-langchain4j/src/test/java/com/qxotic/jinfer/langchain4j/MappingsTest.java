@@ -10,6 +10,7 @@ import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.Tool;
+import com.qxotic.jinfer.media.VideoSampler;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.AiMessage;
@@ -42,7 +43,7 @@ class MappingsTest {
                         UserMessage.from("hi"),
                         AiMessage.from("hello"),
                         ToolExecutionResultMessage.from("call1", "get_weather", "18C"));
-        List<Message> out = Mappings.toMessages(in);
+        List<Message> out = Mappings.toMessages(in, VideoSampler.UNIFORM);
         assertEquals(Role.SYSTEM, out.get(0).role());
         assertEquals("be brief", out.get(0).text());
         assertEquals(Role.USER, out.get(1).role());
@@ -65,7 +66,7 @@ class MappingsTest {
                                                 .arguments("{\"city\": \"Paris\"}")
                                                 .build()))
                         .build();
-        Message m = Mappings.toMessages(List.of(withCall)).get(0);
+        Message m = Mappings.toMessages(List.of(withCall), VideoSampler.UNIFORM).get(0);
         Part.ToolCall call = assertInstanceOf(Part.ToolCall.class, m.content().get(0));
         assertEquals("get_weather", call.name());
         assertEquals(Map.of("city", "Paris"), call.arguments());
@@ -163,7 +164,8 @@ class MappingsTest {
 
         Message m =
                 Mappings.toMessages(
-                                List.of(UserMessage.from(ImageContent.from(base64, "image/png"))))
+                                List.of(UserMessage.from(ImageContent.from(base64, "image/png"))),
+                                VideoSampler.UNIFORM)
                         .get(0);
         Part.Blob blob = assertInstanceOf(Part.Blob.class, m.content().get(0));
         var decoded = assertInstanceOf(Media.Image.class, blob.media());
@@ -177,7 +179,8 @@ class MappingsTest {
                 UncheckedIOException.class,
                 () ->
                         Mappings.toMessages(
-                                List.of(UserMessage.from(ImageContent.from("aGk=", "image/png")))));
+                                List.of(UserMessage.from(ImageContent.from("aGk=", "image/png"))),
+                                VideoSampler.UNIFORM));
         assertThrows(
                 UnsupportedFeatureException.class,
                 () ->
@@ -185,7 +188,7 @@ class MappingsTest {
                                 List.of(
                                         UserMessage.from(
                                                 ImageContent.from(
-                                                        URI.create(
-                                                                "https://example.com/a.png"))))));
+                                                        URI.create("https://example.com/a.png")))),
+                                VideoSampler.UNIFORM));
     }
 }

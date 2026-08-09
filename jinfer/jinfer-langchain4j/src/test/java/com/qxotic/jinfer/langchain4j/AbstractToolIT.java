@@ -24,6 +24,7 @@ import dev.langchain4j.model.output.FinishReason;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -158,6 +159,10 @@ abstract class AbstractToolIT {
                         .modelPath(modelPath())
                         .contextLength(4096)
                         .maxOutputTokens(1024)
+                        // deliberately UNSEEDED: this battery is about the wire holding for
+                        // whatever the model says, and one pinned draw is not a safer sample -
+                        // it just picks a different trajectory for all nine families at once.
+                        // The loop this used to paper over is handled in converse().
                         .build();
     }
 
@@ -337,12 +342,21 @@ abstract class AbstractToolIT {
         ToolExecutionRequest call = assumeCall(r);
         assertEquals("send_message", call.name());
         String text = String.valueOf(args(call).get("text"));
-        assertTrue(text.contains("grüß"), call.arguments());
-        assertTrue(text.contains("🌊"), call.arguments());
+        // THE WIRE CLAIM: whatever the model wrote arrives undamaged. Mojibake is what a broken
+        // encode/parse looks like - a replacement char, or UTF-8 bytes read as Latin-1 ("grÃ¼ÃŸ").
+        assertTrue(text.indexOf('\uFFFD') < 0, "replacement char in " + call.arguments());
+        assertTrue(!text.contains("Ã") && !text.contains("â€"), "mojibake in " + call.arguments());
+        assertTrue(text.codePoints().anyMatch(c -> c > 0x7F), "no non-ASCII survived: " + text);
         // SOME quote character must survive the wire; which kind is model behavior (small
         // models paraphrase double quotes to single ones)
         assertTrue(
                 text.contains("\"") || text.contains("'") || text.contains("“"), call.arguments());
+        // COPYING the exact glyphs back is model behavior, not wire: Granite has answered with
+        // "grüss" for "grüß" and 🍊 for 🌊. The deterministic exact-bytes check for every family
+        // is AbstractToolWireTest's unicode round trip, at the tokenizer, with no model involved.
+        Assumptions.assumeTrue(
+                text.contains("grüß") && text.contains("🌊"),
+                "model paraphrased the verbatim text: " + call.arguments());
     }
 
     @Test
@@ -381,6 +395,7 @@ abstract class AbstractToolIT {
      */
     ChatResponse converse(
             List<ChatMessage> history, Map<String, String> results, ToolSpecification... tools) {
+        Set<String> served = new HashSet<>(); // name+args of every call already answered
         for (int round = 0; round < 4; round++) {
             ChatResponse r = chat(history, tools);
             if (!r.aiMessage().hasToolExecutionRequests()) return r;
@@ -388,6 +403,19 @@ abstract class AbstractToolIT {
             for (ToolExecutionRequest call : r.aiMessage().toolExecutionRequests()) {
                 String result = results.get(call.name());
                 assertNotNull(result, "model called an unoffered tool: " + call.name());
+                // Re-asking for a call ALREADY answered in this history is the model going in
+                // circles, not a wire fault - it is looking at the result and asking again. That
+                // is capability, so it aborts rather than fails. A wire fault looks different and
+                // stays an assertion: an unoffered tool above, a fabricated result (Gemma's
+                // missing handoff stop) in the shape assertions, a result the model never sees at
+                // all in the per-test content checks.
+                Assumptions.assumeTrue(
+                        served.add(call.name() + call.arguments()),
+                        "model re-called "
+                                + call.name()
+                                + call.arguments()
+                                + " after being given its result - a capability loop, not a wire"
+                                + " bug");
                 history.add(ToolExecutionResultMessage.from(call.id(), call.name(), result));
             }
         }

@@ -11,6 +11,7 @@ import com.qxotic.jinfer.SpeechOptions;
 import com.qxotic.jinfer.SpeechState;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.testkit.ModelFixture;
+import dev.langchain4j.exception.UnsupportedFeatureException;
 import dev.langchain4j.model.audio.TextToSpeechRequest;
 import java.lang.foreign.Arena;
 import java.nio.file.Path;
@@ -62,9 +63,9 @@ final class JinferSpeechModelTest {
     @Test
     void aVoiceThisModelDoesNotHaveIsRefusedRatherThanIgnored() {
         try (var speech = JinferSpeechModel.builder().model(new ToyModel()).build()) {
-            UnsupportedOperationException e =
+            UnsupportedFeatureException e =
                     assertThrows(
-                            UnsupportedOperationException.class,
+                            UnsupportedFeatureException.class,
                             () ->
                                     speech.synthesize(
                                             TextToSpeechRequest.builder("hi")

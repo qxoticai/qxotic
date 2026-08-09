@@ -32,6 +32,19 @@ class Qwen35CoarseCacheIT extends AbstractCoarseCacheIT {
         return MODEL;
     }
 
+    /**
+     * Byte-identity is a law only under DETERMINISTIC decode: the builder otherwise takes the
+     * model's recommended temperature, and two sampled runs never match.
+     */
+    private static JinferChatModel.Builder deterministic() {
+        return JinferChatModel.builder()
+                .modelPath(MODEL)
+                .contextLength(4096)
+                .maxOutputTokens(32)
+                .temperature(0.0)
+                .seed(7L);
+    }
+
     /** The artifact round trip: export the defined prompt, remount it, still byte-identical. */
     @Test
     void frozenArtifactRoundTrips() throws Exception {
@@ -39,12 +52,7 @@ class Qwen35CoarseCacheIT extends AbstractCoarseCacheIT {
         Path artifact = Files.createTempDirectory("qwen35-coarse").resolve("prefix.jkvf");
         String question = "Name one primary color.";
         String direct;
-        JinferChatModel base =
-                JinferChatModel.builder()
-                        .modelPath(MODEL)
-                        .contextLength(4096)
-                        .maxOutputTokens(32)
-                        .build();
+        JinferChatModel base = deterministic().build();
         try {
             JinferChatModel view = base.withCachedPrompt(PREFIX, List.of());
             direct = view.chat(UserMessage.from(question)).aiMessage().text();
@@ -53,13 +61,7 @@ class Qwen35CoarseCacheIT extends AbstractCoarseCacheIT {
             base.close();
         }
 
-        JinferChatModel mounted =
-                JinferChatModel.builder()
-                        .modelPath(MODEL)
-                        .contextLength(4096)
-                        .maxOutputTokens(32)
-                        .loadCachedPrompts(artifact)
-                        .build();
+        JinferChatModel mounted = deterministic().loadCachedPrompts(artifact).build();
         try {
             JinferChatModel view = mounted.withCachedPrompt(PREFIX, List.of());
             String restored = view.chat(UserMessage.from(question)).aiMessage().text();
@@ -98,12 +100,7 @@ class Qwen35CoarseCacheIT extends AbstractCoarseCacheIT {
                         UserMessage.from("What do I do for case class 7? One sentence."),
                         AiMessage.from("Consult knowledge article 1007 before answering."),
                         UserMessage.from("And for case class 42? One sentence."));
-        JinferChatModel base =
-                JinferChatModel.builder()
-                        .modelPath(MODEL)
-                        .contextLength(4096)
-                        .maxOutputTokens(32)
-                        .build();
+        JinferChatModel base = deterministic().build();
         try {
             base.chat(UserMessage.from("warmup"));
             String question = "Which article covers case class 13? One sentence.";
