@@ -2,6 +2,7 @@
 # Layout on disk: <models-root>/{source}/{user}/{repo}/{file}
 # Kept identical to testkit ModelFixture by ModelFixtureManifestTest.
 hf.co LiquidAI LFM2.5-8B-A1B-GGUF LFM2.5-8B-A1B-Q8_0.gguf
+hf.co LiquidAI LFM2.5-2.6B-GGUF LFM2.5-2.6B-Q8_0.gguf
 hf.co LiquidAI LFM2.5-350M-GGUF LFM2.5-350M-Q8_0.gguf
 hf.co LiquidAI LFM2.5-Embedding-350M-GGUF LFM2.5-Embedding-350M-Q8_0.gguf
 hf.co LiquidAI LFM2.5-ColBERT-350M-GGUF LFM2.5-ColBERT-350M-Q8_0.gguf
