@@ -174,9 +174,9 @@ public final class JinferScoringModel implements ScoringModel, AutoCloseable {
         }
 
         /**
-         * The judging window (default 2048): bounds query+document length; {@code <= 0} = the
-         * model's own maximum. Retrieval builders default BOUNDED - a full-context state is
-         * GB-scale KV a reranker never fills; the chat builder defaults to the maximum instead.
+         * The judging window (default 2048 - bounded on purpose: a full-context state can be
+         * GB-scale KV; the chat builders default to 4096). Bounds query+document length; {@code <=
+         * 0} opts into the model's maximum, explicitly.
          */
         public Builder contextLength(int contextLength) {
             this.contextLength = contextLength;

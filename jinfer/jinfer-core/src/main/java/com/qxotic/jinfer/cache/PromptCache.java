@@ -97,7 +97,9 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
         // (budget, hotSessions) literals would compile and build a pathological cache
         public Options {
             if (hotSessions < 0) throw new IllegalArgumentException("hotSessions " + hotSessions);
-            if (contextCapacity < 1)
+            // 0 is the documented sentinel "the model's maximum" - the engine resolves it after
+            // the model loads; PromptCache itself still requires a resolved positive capacity
+            if (contextCapacity < 0)
                 throw new IllegalArgumentException("contextCapacity " + contextCapacity);
             if (blockBudgetBytes < 0)
                 throw new IllegalArgumentException("blockBudgetBytes " + blockBudgetBytes);
