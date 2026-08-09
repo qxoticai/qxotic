@@ -11,6 +11,11 @@ import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.TokenCountEstimator;
 import dev.langchain4j.model.embedding.EmbeddingModel;
+import dev.langchain4j.model.embedding.request.EmbeddingParameter;
+import dev.langchain4j.model.embedding.request.EmbeddingRequest;
+import dev.langchain4j.model.embedding.request.EmbeddingRequestParameters;
+import dev.langchain4j.model.embedding.response.EmbeddingResponse;
+import dev.langchain4j.model.embedding.response.EmbeddingResponseMetadata;
 import dev.langchain4j.model.output.Response;
 import dev.langchain4j.model.output.TokenUsage;
 import java.io.IOException;
@@ -19,6 +24,8 @@ import java.lang.foreign.Arena;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
@@ -38,6 +45,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
     private final RuntimeState state; // one reusable state; embed() resets it per group
     private final int contextLength;
     private final ReentrantLock lock = new ReentrantLock(true); // single-stream, like ChatEngine
+    private final AtomicBoolean hintedBareUse = new AtomicBoolean();
 
     private JinferEmbeddingModel(Builder b) {
         // ONE arena for weights and state, adopted by the state: state.close() frees everything
@@ -97,10 +105,48 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
         return loaded.dimension();
     }
 
+    /** The one retrieval-relevant parameter; anything else present rejects loudly upstream. */
+    @Override
+    public Set<EmbeddingParameter<?>> supportedParameters() {
+        return Set.of(EmbeddingRequestParameters.INPUT_TYPE);
+    }
+
+    /**
+     * The typed door ({@code EmbeddingRequest.inputType()}): {@code QUERY}/{@code DOCUMENT} apply
+     * the model card's retrieval framing (the port's {@code queryPrefix}/{@code documentPrefix})
+     * before tokenizing - retrieval-tuned embedders are TRAINED with these prefixes, and both
+     * {@code EmbeddingStoreIngestor} and {@code EmbeddingStoreContentRetriever} send the type via
+     * their {@code embeddingInputType(...)} builder knob. A typeless request embeds raw text as
+     * given.
+     */
+    @Override
+    public EmbeddingResponse doEmbed(EmbeddingRequest request) {
+        String prefix =
+                switch (request.inputType()) {
+                    case QUERY -> loaded.queryPrefix();
+                    case DOCUMENT -> loaded.documentPrefix();
+                    case null -> hintBareUse();
+                };
+        List<String> texts = request.inputs().stream().map(in -> prefix + in.text()).toList();
+        Response<List<Embedding>> response = embedTexts(texts);
+        return EmbeddingResponse.builder()
+                .embeddings(response.content())
+                .metadata(
+                        EmbeddingResponseMetadata.builder()
+                                .modelName(loaded.name())
+                                .tokenUsage(response.tokenUsage())
+                                .build())
+                .build();
+    }
+
     @Override
     public Response<List<Embedding>> embedAll(List<TextSegment> segments) {
-        List<String> texts = segments.stream().map(TextSegment::text).toList();
-        List<Embedding> out = new ArrayList<>(segments.size());
+        hintBareUse();
+        return embedTexts(segments.stream().map(TextSegment::text).toList());
+    }
+
+    private Response<List<Embedding>> embedTexts(List<String> texts) {
+        List<Embedding> out = new ArrayList<>(texts.size());
         int dim = loaded.dimension();
         int total;
         lock.lock();
@@ -110,6 +156,25 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
             lock.unlock();
         }
         return Response.from(out, new TokenUsage(total));
+    }
+
+    /**
+     * The silent-degradation net: typeless traffic on a prefix-trained model is served raw (as
+     * every provider serves it), but says so ONCE - naming the framework's own knob, because the
+     * default ingestor/retriever wiring sends no input type at all.
+     */
+    private String hintBareUse() {
+        if (loaded.prefixTrained() && hintedBareUse.compareAndSet(false, true)) {
+            System.err.println(
+                    "NOTE: "
+                            + loaded.name()
+                            + " is prefix-trained for retrieval, but this request stated no input"
+                            + " type, so raw text was embedded as given. For retrieval-quality"
+                            + " vectors set .embeddingInputType(QUERY) on"
+                            + " EmbeddingStoreContentRetriever and DOCUMENT on"
+                            + " EmbeddingStoreIngestor. (noted once)");
+        }
+        return "";
     }
 
     private static Embedding toEmbedding(FloatTensor vector, int dim) {

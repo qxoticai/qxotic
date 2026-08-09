@@ -61,7 +61,13 @@ public final class Qwen3Provider implements ModelProvider {
                 new int[0],
                 new int[] {eos},
                 m.config().embeddingLength(),
-                path.getFileName().toString());
+                path.getFileName().toString(),
+                // the card's instructed-query framing, default retrieval task, verbatim
+                // (get_detailed_instruct: 'Instruct: {task}\nQuery:{query}' - no space after
+                // Query:); documents are embedded bare per the same card
+                "Instruct: Given a web search query, retrieve relevant passages that answer the"
+                        + " query\nQuery:",
+                "");
     }
 
     @Override

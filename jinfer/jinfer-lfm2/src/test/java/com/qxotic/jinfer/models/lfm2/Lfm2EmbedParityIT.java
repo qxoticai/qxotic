@@ -91,6 +91,18 @@ class Lfm2EmbedParityIT {
     }
 
     @Test
+    void cardPrefixesArePinned() throws Exception {
+        // the retrieval framing the goldens above are built with, as the port declares it
+        try (Arena arena = Arena.ofShared()) {
+            LoadedEmbedder<?> embedder =
+                    Models.loadEmbedder(ModelFixture.LFM25_EMBEDDING_350M_Q8.require(), arena);
+            assertEquals("query: ", embedder.queryPrefix());
+            assertEquals("document: ", embedder.documentPrefix());
+            assertTrue(embedder.prefixTrained());
+        }
+    }
+
+    @Test
     void aGenerativeCheckpointIsRefusedAsAnEmbedder() {
         try (Arena arena = Arena.ofShared()) {
             IllegalArgumentException e =

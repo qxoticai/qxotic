@@ -18,6 +18,8 @@ import org.springframework.ai.embedding.Embedding;
 import org.springframework.ai.embedding.EmbeddingOptions;
 import org.springframework.ai.embedding.EmbeddingRequest;
 import org.springframework.ai.embedding.EmbeddingResponse;
+import org.springframework.ai.vectorstore.SearchRequest;
+import org.springframework.ai.vectorstore.SimpleVectorStore;
 
 /**
  * E2E contract of {@link JinferEmbeddingModel} on Qwen3-Embedding 0.6B (mirrors the langchain4j
@@ -42,6 +44,10 @@ class JinferEmbeddingModelIT {
                         .contextLength(1024)
                         .observationRegistry(observations)
                         .build();
+        // vectors are bit-stable only once the JIT settles (cold passes drift ~1 LSB); the
+        // identity assertions below compare across calls, so warm up first
+        model.embed("warmup");
+        model.embed("warmup");
     }
 
     @AfterAll
@@ -102,7 +108,8 @@ class JinferEmbeddingModelIT {
         EmbeddingResponse packed = model.call(new EmbeddingRequest(inputs, null));
         assertEquals(inputs.size(), packed.getResults().size());
         for (int i = 0; i < inputs.size(); i++) {
-            float[] solo = model.embed(inputs.get(i));
+            // both sides through the raw door: embed(String) is the QUERY-framed face now
+            float[] solo = raw(inputs.get(i));
             double cos = cosine(packed.getResults().get(i).getOutput(), solo);
             assertTrue(cos > 0.999, "input " + i + ": packed vs solo cosine " + cos);
         }
@@ -164,11 +171,70 @@ class JinferEmbeddingModelIT {
         assertTrue(e.getMessage().contains("one loaded GGUF per instance"), e.getMessage());
     }
 
+    // ---- the retrieval seam: the interface types state the intent (String = query side,
+    // Document = ingestion side), mapped to the model card's framing ----
+
+    /** Qwen3-Embedding's instructed-query framing, verbatim from the card. */
+    static final String QWEN3_QUERY_PREFIX =
+            "Instruct: Given a web search query, retrieve relevant passages that answer the"
+                    + " query\nQuery:";
+
     @Test
-    void documentEmbedUsesItsText() {
-        float[] viaDocument = model.embed(new Document("hello world"));
-        float[] viaString = model.embed("hello world");
-        assertEquals(cosine(viaDocument, viaString), 1.0, 1e-6);
+    void typedOverloadsApplyTheCardFraming() {
+        String text = "What is the capital of China?";
+        // identity law, at the suite's same-vector tolerance (separate passes jitter an LSB):
+        // the String overload IS the hand-prefixed query, and closer to it than to bare text
+        float[] query = model.embed(text);
+        double toManual = cosine(query, raw(QWEN3_QUERY_PREFIX + text));
+        double toBare = cosine(query, raw(text));
+        assertTrue(toManual > 0.999, "String overload vs hand-prefixed cosine: " + toManual);
+        assertTrue(
+                toManual > toBare,
+                "query framing must matter: manual=" + toManual + " bare=" + toBare);
+        // qwen3 documents are bare per the card: the Document overload == raw, pinned
+        float[] document = model.embed(new Document(text));
+        double doc = cosine(document, raw(text));
+        assertTrue(doc > 0.999, "Document overload vs bare cosine: " + doc);
+    }
+
+    @Test
+    void batchedDocumentEmbedMatchesSingle() {
+        List<Document> docs =
+                List.of(
+                        new Document("The cat sat on the warm windowsill."),
+                        new Document("Quarterly tax filings are due in April."));
+        // one batch (List::of); the store route must equal the single-Document route
+        List<float[]> batched = model.embed(docs, EmbeddingOptions.builder().build(), List::of);
+        assertEquals(2, batched.size());
+        for (int i = 0; i < docs.size(); i++) {
+            assertTrue(cosine(batched.get(i), model.embed(docs.get(i))) > 0.999);
+        }
+    }
+
+    @Test
+    void vectorStoreIsRetrievalCorrectBothSides() {
+        // the single-bean wiring Spring forces: ONE model, both sides framed correctly anyway
+        var store = SimpleVectorStore.builder(model).build();
+        store.add(
+                List.of(
+                        new Document(
+                                "The reset portal for AcmeCloud is https://acme.example/reset."),
+                        new Document("Bananas are yellow fruit rich in potassium.")));
+        List<Document> hits =
+                store.similaritySearch(
+                        SearchRequest.builder()
+                                .query("Where do I reset my AcmeCloud password?")
+                                .topK(1)
+                                .build());
+        assertEquals(1, hits.size());
+        assertTrue(hits.get(0).getText().contains("acme.example/reset"), hits.get(0).getText());
+    }
+
+    private static float[] raw(String text) {
+        return model.call(new EmbeddingRequest(List.of(text), null))
+                .getResults()
+                .get(0)
+                .getOutput();
     }
 
     @Test

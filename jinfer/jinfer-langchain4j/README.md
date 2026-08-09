@@ -182,6 +182,37 @@ AGENT> The top lamp of the traffic light is red.
 Note the last two answers: the recording was a pure sine tone - out of distribution for a speech-tuned audio encoder - and the agent reports the ambiguity instead of inventing content, then recalls both observations from memory.
 The runnable version is `LocalAgentIT` in this module's tests.
 
+## Embeddings
+
+`JinferEmbeddingModel` runs an embedding GGUF (Qwen3-Embedding, LFM2.5-Embedding) in-process, so the whole RAG stack - vectors, store, chat - stays in one JVM with zero egress.
+Segments are packed into context-sized ragged batches: one forward pass embeds many segments, so ingesting hundreds of chunks costs a handful of prefills, not hundreds.
+Usage reports exact token counts.
+
+```java
+EmbeddingModel embeddings = JinferEmbeddingModel.builder()
+        .model("hf.co/Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0")
+        .contextLength(2048)          // packing window; <= 0 = the model's maximum
+        .build();
+```
+
+Retrieval-tuned embedders are trained with query/document framing (LFM2.5's `query: `/`document: ` pair, Qwen3's instructed query), and embedding bare text instead silently degrades retrieval.
+The provider speaks langchain4j's own vocabulary for this - `EmbeddingInputType` - so the framework knobs are all it takes:
+
+```java
+EmbeddingStoreIngestor.builder()
+        .embeddingModel(embeddings)
+        .embeddingStore(store)
+        .embeddingInputType(EmbeddingInputType.DOCUMENT)   // card's document framing
+        .build();
+EmbeddingStoreContentRetriever.builder()
+        .embeddingModel(embeddings)
+        .embeddingStore(store)
+        .embeddingInputType(EmbeddingInputType.QUERY)      // card's query framing
+        .build();
+```
+
+Typeless traffic (plain `embed`/`embedAll`) embeds raw text as given - a one-time stderr note points at the knobs when the model is prefix-trained.
+
 ## Cached prompts
 
 A cached prompt is paid for once and cheap forever after: `withCachedPrompt` prefills the prefix

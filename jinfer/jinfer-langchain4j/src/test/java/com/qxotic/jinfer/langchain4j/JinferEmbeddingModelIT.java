@@ -5,12 +5,24 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.testkit.ModelFixture;
+import dev.langchain4j.data.document.Document;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.data.segment.TextSegment;
+import dev.langchain4j.exception.UnsupportedFeatureException;
+import dev.langchain4j.model.embedding.request.EmbeddingInputType;
+import dev.langchain4j.model.embedding.request.EmbeddingRequest;
+import dev.langchain4j.model.embedding.request.EmbeddingRequestParameters;
+import dev.langchain4j.model.embedding.response.EmbeddingResponse;
 import dev.langchain4j.model.output.Response;
+import dev.langchain4j.rag.content.retriever.EmbeddingStoreContentRetriever;
+import dev.langchain4j.rag.query.Query;
+import dev.langchain4j.store.embedding.EmbeddingStoreIngestor;
+import dev.langchain4j.store.embedding.inmemory.InMemoryEmbeddingStore;
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.AfterAll;
@@ -37,6 +49,10 @@ class JinferEmbeddingModelIT {
                         .modelPath(ModelFixture.QWEN3_EMBED_06B_Q8.require())
                         .contextLength(1024)
                         .build();
+        // vectors are bit-stable only once the JIT settles (cold passes drift ~1 LSB); the
+        // identity assertions below compare across calls, so warm up first
+        model.embed("warmup");
+        model.embed("warmup");
     }
 
     @AfterAll
@@ -157,6 +173,111 @@ class JinferEmbeddingModelIT {
             out.add(TextSegment.from(topics[i % topics.length] + " (variant " + i + ")"));
         }
         return out;
+    }
+
+    // ---- input types: the framework's own query/document vocabulary, mapped to the card ----
+
+    /** Qwen3-Embedding's instructed-query framing, verbatim from the card. */
+    static final String QWEN3_QUERY_PREFIX =
+            "Instruct: Given a web search query, retrieve relevant passages that answer the"
+                    + " query\nQuery:";
+
+    @Test
+    void queryInputTypeAppliesTheCardFraming() {
+        String text = "What is the capital of China?";
+        Embedding typed =
+                model.embed(
+                                EmbeddingRequest.builder()
+                                        .input(text)
+                                        .inputType(EmbeddingInputType.QUERY)
+                                        .build())
+                        .embeddings()
+                        .get(0);
+        // identity law, at the suite's same-vector tolerance (separate passes jitter an LSB):
+        // the typed request IS the hand-prefixed text, and is closer to it than to bare text
+        Embedding manual = model.embed(QWEN3_QUERY_PREFIX + text).content();
+        Embedding bare = model.embed(text).content();
+        double toManual = cosine(typed, manual);
+        double toBare = cosine(typed, bare);
+        assertTrue(toManual > 0.999, "QUERY-typed vs hand-prefixed cosine: " + toManual);
+        assertTrue(
+                toManual > toBare,
+                "QUERY framing must matter: manual=" + toManual + " bare=" + toBare);
+    }
+
+    @Test
+    void documentInputTypeIsBareOnQwen3() {
+        // the card: retrieval documents carry no instruction - DOCUMENT-typed == bare, pinned
+        String text = "The capital of China is Beijing.";
+        EmbeddingResponse typed =
+                model.embed(
+                        EmbeddingRequest.builder()
+                                .input(text)
+                                .inputType(EmbeddingInputType.DOCUMENT)
+                                .build());
+        Embedding bare = model.embed(text).content();
+        double cos = cosine(typed.embeddings().get(0), bare);
+        assertTrue(cos > 0.999, "DOCUMENT-typed vs bare cosine: " + cos);
+    }
+
+    @Test
+    void unsupportedParametersRejectLoudly() {
+        assertEquals(
+                java.util.Set.of(EmbeddingRequestParameters.INPUT_TYPE),
+                model.supportedParameters());
+        assertThrows(
+                UnsupportedFeatureException.class,
+                () -> model.embed(EmbeddingRequest.builder().input("x").dimensions(64).build()));
+    }
+
+    @Test
+    void typelessTrafficHintsOncePerInstance() {
+        // own instance: the class-level model spent its hint tests ago
+        JinferEmbeddingModel fresh =
+                JinferEmbeddingModel.builder()
+                        .modelPath(ModelFixture.QWEN3_EMBED_06B_Q8.require())
+                        .contextLength(512)
+                        .build();
+        var err = new ByteArrayOutputStream();
+        PrintStream real = System.err;
+        try {
+            System.setErr(new PrintStream(err, true));
+            fresh.embed("hello");
+            fresh.embed("again");
+        } finally {
+            System.setErr(real);
+            fresh.close();
+        }
+        String notes = err.toString();
+        assertTrue(notes.contains("embeddingInputType"), notes);
+        assertEquals(notes.indexOf("NOTE"), notes.lastIndexOf("NOTE"), "hinted ONCE: " + notes);
+    }
+
+    @Test
+    void retrieverAndIngestorSpeakInputTypes() {
+        // the E2E wiring this exists for: framework knobs, no jinfer-specific API
+        var store = new InMemoryEmbeddingStore<TextSegment>();
+        EmbeddingStoreIngestor.builder()
+                .embeddingModel(model)
+                .embeddingStore(store)
+                .embeddingInputType(EmbeddingInputType.DOCUMENT)
+                .build()
+                .ingest(
+                        Document.from(
+                                "The reset portal for AcmeCloud is https://acme.example/reset."),
+                        Document.from("Bananas are yellow fruit rich in potassium."));
+        var retriever =
+                EmbeddingStoreContentRetriever.builder()
+                        .embeddingStore(store)
+                        .embeddingModel(model)
+                        .embeddingInputType(EmbeddingInputType.QUERY)
+                        .maxResults(1)
+                        .build();
+        var contents = retriever.retrieve(Query.from("Where do I reset my AcmeCloud password?"));
+        assertEquals(1, contents.size());
+        assertTrue(
+                contents.get(0).textSegment().text().contains("acme.example/reset"),
+                contents.get(0).textSegment().text());
     }
 
     private static double cosine(Embedding a, Embedding b) {

@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.concurrent.locks.ReentrantLock;
 import org.springframework.ai.chat.metadata.DefaultUsage;
 import org.springframework.ai.document.Document;
+import org.springframework.ai.embedding.BatchingStrategy;
 import org.springframework.ai.embedding.Embedding;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.embedding.EmbeddingOptions;
@@ -109,9 +110,51 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
         return loaded.dimension();
     }
 
+    // ---- the retrieval seam: Spring AI has no input-type parameter, but the INTERFACE types
+    // state the intent - stores call embed(Document)/embed(List<Document>,...) to ingest and
+    // embed(String) to search. Mapping the model card's framing onto those types makes every
+    // VectorStore retrieval-correct on BOTH sides through the single bean Spring wires.
+    // call(EmbeddingRequest) stays the raw, framing-free door. ----
+
+    /** Ingestion side: the card's document framing is prepended (LFM2.5: {@code "document: "}). */
     @Override
     public float[] embed(Document document) {
-        return embed(document.getText());
+        return embedOne(loaded.documentPrefix() + document.getText());
+    }
+
+    /**
+     * Ingestion side, the batching route stores actually use: document framing per document, the
+     * strategy's batching preserved.
+     */
+    @Override
+    public List<float[]> embed(
+            List<Document> documents, EmbeddingOptions options, BatchingStrategy strategy) {
+        List<float[]> all = new ArrayList<>(documents.size());
+        for (List<Document> batch : strategy.batch(documents)) {
+            List<String> texts =
+                    batch.stream().map(d -> loaded.documentPrefix() + d.getText()).toList();
+            for (Embedding e : call(new EmbeddingRequest(texts, options)).getResults()) {
+                all.add(e.getOutput());
+            }
+        }
+        return all;
+    }
+
+    /**
+     * Query side: in a store-centric API the lone string IS the query ({@code similaritySearch}
+     * routes here), so the card's query framing is prepended (LFM2.5: {@code "query: "}; Qwen3: its
+     * instructed-query form). For framing-free vectors use {@link #call} directly.
+     */
+    @Override
+    public float[] embed(String text) {
+        return embedOne(loaded.queryPrefix() + text);
+    }
+
+    private float[] embedOne(String text) {
+        return call(new EmbeddingRequest(List.of(text), EmbeddingOptions.builder().build()))
+                .getResults()
+                .get(0)
+                .getOutput();
     }
 
     @Override
