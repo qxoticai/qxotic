@@ -144,7 +144,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
     /** Ingestion side: the card's document framing is prepended (LFM2.5: {@code "document: "}). */
     @Override
     public float[] embed(Document document) {
-        return embedOne(loaded.documentPrefix() + document.getText());
+        return embedOne(loaded.documentPrefix() + text(document));
     }
 
     /**
@@ -157,7 +157,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
         List<float[]> all = new ArrayList<>(documents.size());
         for (List<Document> batch : strategy.batch(documents)) {
             List<String> texts =
-                    batch.stream().map(d -> loaded.documentPrefix() + d.getText()).toList();
+                    batch.stream().map(d -> loaded.documentPrefix() + text(d)).toList();
             for (Embedding e : call(new EmbeddingRequest(texts, options)).getResults()) {
                 all.add(e.getOutput());
             }
@@ -173,6 +173,17 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
     @Override
     public float[] embed(String text) {
         return embedOne(loaded.queryPrefix() + text);
+    }
+
+    /** An embedder embeds TEXT; a media document silently becoming "null" would be a lie. */
+    private static String text(Document document) {
+        if (!document.isText()) {
+            throw new IllegalArgumentException(
+                    "document "
+                            + document.getId()
+                            + " carries media, not text: an embedder embeds text");
+        }
+        return document.getText();
     }
 
     private float[] embedOne(String text) {

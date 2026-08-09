@@ -501,7 +501,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         }
 
         /**
-         * Reported as the response's model name; defaults to the model class. {@link #model} only.
+         * Reported as the response's model name; defaults to the model class. Applies to {@code
+         * model(LoadedModel)} only - path and ref loads name themselves from the file.
          */
         public Builder modelName(String modelName) {
             this.modelName = modelName;

@@ -133,7 +133,9 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
                                             });
                                 }
                                 emitter.complete();
-                            } catch (RuntimeException e) {
+                            } catch (RuntimeException | Error e) {
+                                // Errors too: a swallowed Error on the elastic thread would leave
+                                // the subscriber waiting forever with nothing in the logs
                                 emitter.error(e);
                             } finally {
                                 lifecycle.readLock().unlock();

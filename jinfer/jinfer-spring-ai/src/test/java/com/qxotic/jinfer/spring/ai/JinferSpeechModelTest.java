@@ -313,7 +313,36 @@ final class JinferSpeechModelTest {
     // ── doubles ───────────────────────────────────────────────────────────
 
     /** Emits {@link #CLIPS} fixed clips, remembering what it was asked and how far it got. */
-    private static final class ToyModel implements SpeechModel<Config, Void, ToyState> {
+    @Test
+    void aStreamErrorReachesTheSubscriberEvenWhenItIsAnError() {
+        // the elastic thread must never swallow a failure: RuntimeException AND Error both
+        // surface through the emitter instead of leaving the subscriber waiting forever
+        ToyModel failing =
+                new ToyModel() {
+                    @Override
+                    public void speak(
+                            ToyState state,
+                            String text,
+                            SpeechOptions options,
+                            Predicate<Media.Audio> sink) {
+                        throw new AssertionError("kernel died");
+                    }
+                };
+        try (var speech = JinferSpeechModel.builder().model(failing).build()) {
+            // blockLast wraps non-RuntimeExceptions in Reactor's ReactiveException - the point
+            // is that the failure ARRIVES instead of the subscriber hanging
+            RuntimeException wrapped =
+                    org.junit.jupiter.api.Assertions.assertThrows(
+                            RuntimeException.class,
+                            () -> speech.stream(new TextToSpeechPrompt("hello")).blockLast());
+            Throwable cause = reactor.core.Exceptions.unwrap(wrapped);
+            assertTrue(
+                    cause instanceof AssertionError && cause.getMessage().contains("kernel died"),
+                    String.valueOf(cause));
+        }
+    }
+
+    private static class ToyModel implements SpeechModel<Config, Void, ToyState> {
 
         static final int SAMPLES = 8;
         static final int CLIPS = 3;
