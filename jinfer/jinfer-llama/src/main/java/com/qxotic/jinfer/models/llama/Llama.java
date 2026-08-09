@@ -146,7 +146,17 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                 "<|eom_id|>",
                 "<|im_end|>",
                 "<|endoftext|>",
-                "<|end_of_text|>");
+                "<|end_of_text|>",
+                // A reply that OPENS A TURN has ended, whatever it forgot to close with. Observed
+                // on SmolLM3 after a tool result: instead of answering it emitted <|im_start|> and
+                // wrote the user's next question itself, and that fabricated turn came back as the
+                // reply text. No assistant reply ever contains a turn header, so treating one as a
+                // stop can only cut generation that had already left the turn. Listed LAST: the
+                // first stop is the grammar's dead-end token, and that must stay the real EOS.
+                // ponytail: --raw-prompt transcript authoring (self-talk spanning turns) now stops
+                // at the first header too; a raw flow that wants that builds its own LoadedModel.
+                "<|im_start|>",
+                "<|start_header_id|>");
     }
 
     private TurnTemplate

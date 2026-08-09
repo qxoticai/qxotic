@@ -2,6 +2,7 @@ package com.qxotic.jinfer.chat;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertIterableEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -18,6 +19,8 @@ import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -68,6 +71,26 @@ final class LoadedModelTokenizerTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> loaded(StubTokenizer.encodingEvery(1)).withTokenizer(null));
+    }
+
+    @Test
+    void stopTokenOrderSurvivesTheDefensiveCopy() {
+        // the order carries meaning: SpecialTokens.stops puts the model's own end-of-turn FIRST
+        // and RequestPolicy.endTurn emits iterator().next(). Set.copyOf would salt-randomize
+        // that pick per JVM run - a grammar dead end could then emit a turn HEADER
+        Set<Integer> ordered = new LinkedHashSet<>(List.of(7, 3, 11, 5));
+        LoadedModel<?> m =
+                new LoadedModel<>(
+                        new StubModel(),
+                        StubTokenizer.encodingEvery(1),
+                        "{{ messages }}",
+                        ordered,
+                        new byte[] {1, 2, 3, 4},
+                        Optional.empty(),
+                        LoadedModel.SamplingDefaults.NONE);
+        assertIterableEquals(
+                List.of(7, 3, 11, 5), m.stopTokens(), "insertion order is the contract");
+        assertThrows(UnsupportedOperationException.class, () -> m.stopTokens().add(9));
     }
 
     private static LoadedModel<?> loaded(Tokenizer tokenizer) {
