@@ -2,8 +2,10 @@ package com.qxotic.jinfer.models.gptoss;
 
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.chat.Conversation;
+import com.qxotic.jinfer.chat.JsonCodec;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
+import com.qxotic.jinfer.chat.ReplyLanguage;
 import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.TokenRuns;
@@ -19,6 +21,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -56,7 +59,6 @@ public final class GptOssTurnTemplate implements TurnTemplate {
     private final Tokenizer tokenizer;
     private final List<Batch> conversationStart; // fixed preamble, encoded once
     private final Batch toolsPreamble; // the preamble + routing line, encoded once
-    private final int[] callEpilogue; // " <|constrain|>json<|message|>", resolved once
     private final int start; // <|start|>
     private final int message; // <|message|>
     private final int channel; // <|channel|>
@@ -90,12 +92,6 @@ public final class GptOssTurnTemplate implements TurnTemplate {
                         + " for every message.";
         this.conversationStart = List.of(block("system", systemText));
         this.toolsPreamble = block("system", systemText + TOOLS_LINE);
-        IntSequence.Builder epilogue = IntSequence.newBuilder();
-        epilogue.addAll(tokenizer.encode(" "));
-        epilogue.add(SpecialTokens.require(tokenizer, "<|constrain|>"));
-        epilogue.addAll(tokenizer.encode("json"));
-        epilogue.add(message);
-        this.callEpilogue = epilogue.build().toArray();
     }
 
     /** {@code <|start|>{role}<|message|>{body}<|end|>} - one channel-less block. */
@@ -264,36 +260,140 @@ public final class GptOssTurnTemplate implements TurnTemplate {
         return out;
     }
 
-    /**
-     * Forced calls: the reply is seeded with {@code <|channel|>}, then the pin walks the header's
-     * plain bytes {@code commentary to=functions.} through an offered name and releases - the
-     * content-type, arguments and {@code <|call|>} stay the model's own.
-     */
-    /** Forced calls seed {@code <|channel|>} - the reply opens in a header the pin then owns. */
-    @Override
-    public int[] callSeed() {
-        return new int[] {channel};
-    }
+    // ---- the reply language: parse, constrain and force from ONE definition ----
 
-    @Override
-    public Optional<String> callGrammar(List<Tool> tools) {
-        if (tools.isEmpty()) return Optional.empty();
-        return Optional.of(ToolCallSyntax.prefixPinGbnf("commentary to=functions.", tools));
-    }
+    private static final String NAME_GBNF = "root ::= [a-zA-Z0-9_.-]+";
+
+    private ReplyLanguage.Selection autoReply; // memoized: tools-independent, built once
 
     /**
-     * {@code " <|constrain|>json<|message|>"} - the header's remainder after the pinned name, as
-     * the model emits it natively. Scaffold, so forced: sampling it from the pinned (off-policy)
-     * state is warmup-noise fragile (observed: the model abandoning the call with {@code <|end|>}
-     * and restarting its reply).
+     * The AUTO walk over the canonical Harmony reply language: analysis, preamble, final and call
+     * messages behind the shared {@code <|channel|>} opener (candidacy splits them on the channel
+     * name), each also reachable through a re-opened {@code <|start|>assistant} header, message
+     * separators consumed at structure level. Argument bodies are FREE holes whose parser drops a
+     * malformed payload without ending the reply - the old parser's leniency, kept.
      */
-    @Override
-    public int[] callEpilogue() {
-        return callEpilogue;
-    }
-
     @Override
     public ReplyParser parser() {
-        return new HarmonyReplyParser(tokenizer);
+        if (autoReply == null) {
+            autoReply = ReplyLanguage.Selection.of(autoLanguage(), tokenizer);
+        }
+        return autoReply.walk();
+    }
+
+    private ReplyLanguage.Node autoLanguage() {
+        ReplyLanguage.Node sep =
+                ReplyLanguage.alt(
+                        ReplyLanguage.mark("<|end|>"),
+                        ReplyLanguage.mark("<|call|>"),
+                        ReplyLanguage.mark("<|return|>"));
+        List<ReplyLanguage.Node> shapes = new ArrayList<>();
+        for (boolean reopened : new boolean[] {false, true}) {
+            shapes.add(message(reopened, ReplyLanguage.Kind.THINK, "analysis", null));
+            shapes.add(message(reopened, ReplyLanguage.Kind.CONTENT, "final", null));
+            shapes.add(message(reopened, ReplyLanguage.Kind.CONTENT, "commentary", null));
+            shapes.add(
+                    message(
+                            reopened,
+                            ReplyLanguage.Kind.CALL,
+                            null,
+                            GptOssTurnTemplate::harmonyCalls));
+        }
+        ReplyLanguage.Node msg = new ReplyLanguage.Node.Alt(shapes);
+        return ReplyLanguage.rep(ReplyLanguage.seq(msg, ReplyLanguage.opt(sep)), 0, -1);
+    }
+
+    /** One canonical Harmony message shape; {@code channelName} null = the call header. */
+    private ReplyLanguage.Node message(
+            boolean reopened,
+            ReplyLanguage.Kind kind,
+            String channelName,
+            java.util.function.Function<String, List<Part.ToolCall>> calls) {
+        List<ReplyLanguage.Node> body = new ArrayList<>();
+        if (reopened) {
+            body.add(ReplyLanguage.mark("<|start|>"));
+            body.add(ReplyLanguage.bytes("assistant"));
+        }
+        body.add(ReplyLanguage.mark("<|channel|>"));
+        if (channelName != null) {
+            body.add(ReplyLanguage.bytes(channelName));
+        } else {
+            // ANY dotted recipient, not only functions.*: browser.search and friends are legal
+            // Harmony - the payload parser filters, so a non-functions call drops silently
+            // instead of ending the reply
+            body.add(ReplyLanguage.bytes("commentary to="));
+            body.add(ReplyLanguage.gbnf(NAME_GBNF));
+        }
+        // the constrain adornment (" <|constrain|>json", space optional - the old parser
+        // defended the no-space variant explicitly) appears on CALL headers and, under a JSON
+        // response format, on final/analysis headers too
+        body.add(
+                ReplyLanguage.opt(
+                        ReplyLanguage.seq(
+                                ReplyLanguage.opt(ReplyLanguage.bytes(" ")),
+                                ReplyLanguage.mark("<|constrain|>"),
+                                ReplyLanguage.bytes("json"))));
+        body.add(ReplyLanguage.mark("<|message|>"));
+        body.add(ReplyLanguage.free()); // region-final: the body closes on any control token
+        return new ReplyLanguage.Node.Region(kind, calls, body);
+    }
+
+    /**
+     * The forced-call language: per-tool call regions with SCHEMA-BOUND argument grammars - a
+     * forced call can neither name an unoffered tool nor malform its payload. Replaces the
+     * seed/pin/epilogue recipe whose free argument region failed roughly one REQUIRED run in three
+     * on the 20B.
+     */
+    @Override
+    public Optional<ReplyLanguage.Node> forcedCallLanguage(List<Tool> tools) {
+        if (tools.isEmpty()) return Optional.empty();
+        List<ReplyLanguage.Node> options = new ArrayList<>(tools.size());
+        for (Tool tool : tools) {
+            Map<String, Object> schema = tool.parameters();
+            options.add(
+                    ReplyLanguage.call(
+                            GptOssTurnTemplate::harmonyCalls,
+                            ReplyLanguage.mark("<|channel|>"),
+                            ReplyLanguage.bytes("commentary to=functions." + tool.name() + " "),
+                            ReplyLanguage.mark("<|constrain|>"),
+                            ReplyLanguage.bytes("json"),
+                            ReplyLanguage.mark("<|message|>"),
+                            ReplyLanguage.gbnf(Grammar.schemaGbnf(schema))));
+        }
+        return Optional.of(
+                ReplyLanguage.seq(
+                        new ReplyLanguage.Node.Alt(options),
+                        ReplyLanguage.opt(ReplyLanguage.mark("<|call|>"))));
+    }
+
+    /**
+     * The payload parser both languages share: {@code commentary to=functions.NAME [json]{args}}
+     * captured as text, the args the FIRST JSON object. A payload that yields no name or no object
+     * is NO CALL - the region completed, the reply continues (the old parser's malformed-drop
+     * semantics).
+     */
+    static List<Part.ToolCall> harmonyCalls(String payload) {
+        int at = payload.indexOf("to=functions.");
+        if (at < 0) return List.of();
+        int from = at + "to=functions.".length();
+        int to = from;
+        while (to < payload.length()
+                && !Character.isWhitespace(payload.charAt(to))
+                && payload.charAt(to) != '{') {
+            to++;
+        }
+        String name = payload.substring(from, to);
+        int brace = payload.indexOf('{', to);
+        if (name.isEmpty() || brace < 0) return List.of();
+        try {
+            if (JsonCodec.parse(payload.substring(brace)) instanceof Map<?, ?> args) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> arguments = (Map<String, Object>) args;
+                return List.of(new Part.ToolCall("", name, arguments));
+            }
+        } catch (RuntimeException malformed) {
+            // a payload that never held a parseable object is no call
+        }
+        return List.of();
     }
 }
