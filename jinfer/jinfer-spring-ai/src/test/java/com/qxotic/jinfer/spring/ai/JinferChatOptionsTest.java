@@ -112,6 +112,20 @@ class JinferChatOptionsTest {
     }
 
     @Test
+    void copyOntoTreatsExplicitlyEmptyCallbacksAsUnstated() {
+        // the precedence convention, pinned: empty = nothing stated - standing default callbacks
+        // survive a request whose options carry an explicitly-empty list (unset is null in
+        // Spring AI 2.x; this is the explicit-empty path)
+        JinferChatOptions base =
+                JinferChatOptions.builder().toolCallbacks(java.util.List.of(noopTool())).build();
+        JinferChatOptions merged =
+                JinferChatOptions.copyOnto(
+                        base,
+                        JinferChatOptions.builder().toolCallbacks(java.util.List.of()).build());
+        assertEquals(1, merged.getToolCallbacks().size(), "empty must not wipe standing tools");
+    }
+
+    @Test
     void copyOntoFromToolCallingOptionsCarriesTools() {
         ToolCallingChatOptions foreign =
                 ToolCallingChatOptions.builder()

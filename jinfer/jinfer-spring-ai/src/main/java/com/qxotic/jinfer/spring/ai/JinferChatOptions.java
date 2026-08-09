@@ -126,8 +126,15 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
         if (o.getTopK() != null) b.topK(o.getTopK());
         if (o.getTopP() != null) b.topP(o.getTopP());
         if (o instanceof ToolCallingChatOptions t) {
-            if (t.getToolCallbacks() != null) b.toolCallbacks(t.getToolCallbacks());
-            if (t.getToolContext() != null) b.toolContext(t.getToolContext());
+            // empty means UNSTATED, like everywhere in the precedence story: an explicitly-empty
+            // list must not wipe standing default callbacks. (Unset is null in Spring AI 2.x -
+            // this guards the explicit-empty path some framework code may hand over.)
+            if (t.getToolCallbacks() != null && !t.getToolCallbacks().isEmpty()) {
+                b.toolCallbacks(t.getToolCallbacks());
+            }
+            if (t.getToolContext() != null && !t.getToolContext().isEmpty()) {
+                b.toolContext(t.getToolContext());
+            }
         }
         if (o instanceof StructuredOutputChatOptions s && s.getOutputSchema() != null) {
             b.outputSchema(s.getOutputSchema());
