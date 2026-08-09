@@ -44,6 +44,10 @@ public final class ReplyLanes {
         this.tokenizer = tokenizer;
         if (parser != null) {
             for (int token : parserSeed) parser.feed(token);
+            // prompt bytes are not reply bytes: the seed set the parse STATE; any text it
+            // accumulated (a non-thinking scaffold's trailing newlines) is dropped so streamed
+            // fragments and the finished message agree - see ReplyParser.beginReply
+            parser.beginReply();
         }
     }
 
@@ -87,6 +91,11 @@ public final class ReplyLanes {
     /** The lane of the LAST {@link #feed}ed fragment. */
     public boolean reasoning() {
         return reasoning;
+    }
+
+    /** True once the family's reply grammar declared the reply over - see ReplyParser.ended. */
+    public boolean ended() {
+        return parser != null && parser.ended();
     }
 
     /** The finished structured reply, from the same parse that streamed. */
