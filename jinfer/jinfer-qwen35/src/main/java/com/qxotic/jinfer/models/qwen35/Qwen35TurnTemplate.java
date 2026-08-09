@@ -5,6 +5,7 @@ import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.JsonCodec;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
+import com.qxotic.jinfer.chat.ReplyLanguage;
 import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.TokenRuns;
@@ -18,6 +19,7 @@ import com.qxotic.toknroll.Tokenizer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Hand-written Qwen3.5 chat framing (ChatML dialect), token-exact with the GGUF's Jinja
@@ -316,16 +318,36 @@ public final class Qwen35TurnTemplate implements TurnTemplate {
         return stripLeadingNl(s.substring(0, end));
     }
 
+    private ReplyLanguage.Selection autoReply; // memoized: tools-independent, built once
+
+    /** The reply-language walk over {@code think? (content | tool_call-span)* im_end?}. */
     @Override
     public ReplyParser parser() {
-        return ReplyParser.spans(
-                tokenizer, "<tool_call>", "</tool_call>", ToolCallSyntax::parseFunctionXml);
+        if (autoReply == null) {
+            autoReply =
+                    ReplyLanguage.Selection.of(
+                            ReplyLanguage.spans(
+                                    "<think>",
+                                    "</think>",
+                                    "<tool_call>",
+                                    "</tool_call>",
+                                    ToolCallSyntax::parseFunctionXml,
+                                    ReplyLanguage.mark("<|im_end|>")),
+                            tokenizer);
+        }
+        return autoReply.walk();
     }
 
-    /** Forced calls seed {@code <tool_call>} (seeding only - no pin hook yet). */
+    /** Forced calls seed {@code <tool_call>}; the pin below holds the name. */
     @Override
     public int[] callSeed() {
         return new int[] {SpecialTokens.require(tokenizer, "<tool_call>")};
+    }
+
+    /** The {@code <function=} header this family emits after the marker. */
+    @Override
+    public Optional<String> callPrefix() {
+        return Optional.of("\n<function=");
     }
 
     /** The generation prompt opens the think span (or its closed pair): pre-feed it. */

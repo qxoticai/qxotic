@@ -4,6 +4,7 @@ import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
+import com.qxotic.jinfer.chat.ReplyLanguage;
 import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.TokenRuns;
@@ -16,6 +17,7 @@ import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Hand-written Nemotron-H chat framing (ChatML dialect), matching the GGUF chat_template's shape
@@ -301,19 +303,40 @@ public final class NemotronHTurnTemplate implements TurnTemplate {
      * claim XML-function payloads ({@code <function=NAME><parameter=K>...} - the grammar Nemotron
      * shares with Qwen 3.5).
      */
+    private ReplyLanguage.Selection autoReply; // memoized: tools-independent, built once
+
+    /**
+     * The reply-language walk over {@code think? (content | tool_call-span)* im_end?}; older vocabs
+     * without the tool markers PRUNE the call alternative (the old two-branch fallback, derived
+     * from mark resolution).
+     */
     @Override
     public ReplyParser parser() {
-        if (toolCall < 0) {
-            return ReplyParser.spans(tokenizer); // older vocabs without the tool markers
+        if (autoReply == null) {
+            autoReply =
+                    ReplyLanguage.Selection.of(
+                            ReplyLanguage.spans(
+                                    "<think>",
+                                    "</think>",
+                                    "<tool_call>",
+                                    "</tool_call>",
+                                    ToolCallSyntax::parseFunctionXml,
+                                    ReplyLanguage.mark("<|im_end|>")),
+                            tokenizer);
         }
-        return ReplyParser.spans(
-                tokenizer, "<tool_call>", "</tool_call>", ToolCallSyntax::parseFunctionXml);
+        return autoReply.walk();
     }
 
-    /** Forced calls seed {@code <tool_call>} (seeding only - no pin hook yet). */
+    /** Forced calls seed {@code <tool_call>}; the pin below holds the name. */
     @Override
     public int[] callSeed() {
         return toolCall < 0 ? new int[0] : new int[] {toolCall};
+    }
+
+    /** The {@code <function=} header this family emits after the marker. */
+    @Override
+    public Optional<String> callPrefix() {
+        return Optional.of("\n<function=");
     }
 
     /** The generation prompt opens the think span (or its closed pair): pre-feed it. */
