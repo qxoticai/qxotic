@@ -42,9 +42,10 @@ class JinferChatModelTest {
                 assertThrows(
                         IllegalArgumentException.class,
                         () -> JinferEmbeddingModel.builder().build());
-        // the message teaches BOTH doors, ref form first
+        // the message teaches ALL THREE doors, ref form first
         assertEquals(
-                "a model is required: model(\"hf.co/owner/repo:Q4_K_M\") or modelPath(...)",
+                "a model is required: model(\"hf.co/owner/repo:Q4_K_M\"), modelPath(...) or"
+                        + " model(LoadedEmbedder)",
                 e.getMessage());
     }
 }

@@ -63,14 +63,21 @@ class CachedPromptIT {
     }
 
     @Test
+    void forkOfAnOwningModelRefusesWithTheRecipe() {
+        IllegalStateException e = assertThrows(IllegalStateException.class, base::fork);
+        assertTrue(e.getMessage().contains("Models.load"), e.getMessage());
+        assertTrue(e.getMessage().contains("model(loaded)"), e.getMessage());
+    }
+
+    @Test
     void twoModelsAreTwoParallelPipelines() throws Exception {
-        // thinking off + pinned seeds: a 32-token budget must go to the answer, not a think
-        // span, and the assertion must not ride on sampling luck
+        // thinking off + pinned seeds + a generous budget: the echo assertion must not ride
+        // on sampling luck (a 32-token budget failed on a near-miss "BRAZO" at one seed)
         JinferChatModel base =
                 JinferChatModel.builder()
                         .modelPath(MODEL)
                         .contextLength(2048)
-                        .maxTokens(32)
+                        .maxTokens(128)
                         .thinking(false)
                         .seed(1L)
                         .build();
@@ -78,7 +85,7 @@ class CachedPromptIT {
                 JinferChatModel.builder()
                         .modelPath(MODEL)
                         .contextLength(2048)
-                        .maxTokens(32)
+                        .maxTokens(128)
                         .thinking(false)
                         .seed(2L)
                         .build();

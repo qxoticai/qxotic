@@ -230,6 +230,33 @@ class JinferEmbeddingModelIT {
         assertTrue(hits.get(0).getText().contains("acme.example/reset"), hits.get(0).getText());
     }
 
+    @Test
+    void sharedWeightsForkIsAParallelPipeline() throws Exception {
+        // ONE load in the USER's arena; fork() mints a second pipeline for a context's price
+        try (java.lang.foreign.Arena arena = java.lang.foreign.Arena.ofShared()) {
+            var loaded =
+                    com.qxotic.jinfer.chat.Models.loadEmbedder(
+                            ModelFixture.QWEN3_EMBED_06B_Q8.require(), arena);
+            JinferEmbeddingModel a =
+                    JinferEmbeddingModel.builder().model(loaded).contextLength(1024).build();
+            JinferEmbeddingModel b = a.fork();
+            try {
+                float[] shared = a.embed(new Document("hello world"));
+                assertTrue(cosine(shared, model.embed(new Document("hello world"))) > 0.999);
+                assertEquals(model.dimensions(), b.embed(new Document("second pipeline")).length);
+            } finally {
+                a.close();
+                b.close();
+            }
+        }
+    }
+
+    @Test
+    void forkOfAnOwningModelRefusesWithTheRecipe() {
+        IllegalStateException e = assertThrows(IllegalStateException.class, model::fork);
+        assertTrue(e.getMessage().contains("Models.loadEmbedder"), e.getMessage());
+    }
+
     private static float[] raw(String text) {
         return model.call(new EmbeddingRequest(List.of(text), null))
                 .getResults()
