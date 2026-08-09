@@ -3,15 +3,16 @@ package com.qxotic.jinfer.langchain4j;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.FloatTensor;
 import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.JsonCodec;
+import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
+import com.qxotic.jinfer.chat.ReplyLanguage;
 import com.qxotic.jinfer.chat.ToolCallSyntax;
 import com.qxotic.jinfer.llm.Grammar;
 import com.qxotic.jinfer.llm.Sampler;
-import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.jinfer.testkit.ModelFixture;
-import com.qxotic.toknroll.Tokenizer;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.AiMessage;
@@ -20,20 +21,18 @@ import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.request.ChatRequestParameters;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
- * PROTOTYPE of tools + JSON-schema response format as ONE constrained decode: think stays free,
- * calls stay the family's own syntax (free span between the call markers), and visible CONTENT can
- * only be schema JSON. The dispatch point - schema-cursor union call-marker union end-of-turn - is
- * hand-rolled here because the reply language does not (yet) allow a region to OPEN on a grammar
- * payload ("a region must open with a mark or a free hole"); a green run is the evidence that
- * gbnf-opening regions are the one missing engine piece.
+ * PROTOTYPE of tools + JSON-schema response format as ONE reply-language selection: the family's
+ * auto tree with the CONTENT hole carrying the schema's grammar - think stays free, calls stay the
+ * family's own syntax, and visible text can only be schema JSON. The walk masks generation AND
+ * parses the reply; round 1 must still CALL the tool, round 2's answer must conform. What the
+ * provider today rejects loudly, expressed as a selection - the ship path is a ChatTemplate hook
+ * composing this tree and prepare() wiring where the rejection sits.
  */
 @Tag("integration")
 class ToolsWithSchemaPrototypeIT {
@@ -47,92 +46,50 @@ class ToolsWithSchemaPrototypeIT {
                                     "temperature_c", Map.of("type", "number")),
                     "required", List.of("city", "temperature_c"));
 
-    record Reply(List<Part.ToolCall> calls, String content) {}
-
-    /** One request, one constrained decode: the tools+schema selection, hand-dispatched. */
-    static Reply drive(JinferChatModel model, ChatRequest request) {
-        ChatEngine.Prepared p = model.prepare(request);
-        Tokenizer tokenizer = model.engine.loaded().tokenizer();
-        int thinkOpen = SpecialTokens.find(tokenizer, "<think>").orElseThrow();
-        int thinkClose = SpecialTokens.find(tokenizer, "</think>").orElseThrow();
-        int callOpen = SpecialTokens.find(tokenizer, "<|tool_call_start|>").orElseThrow();
-        int callClose = SpecialTokens.find(tokenizer, "<|tool_call_end|>").orElseThrow();
-        int imEnd = SpecialTokens.find(tokenizer, "<|im_end|>").orElseThrow();
-        int stop = model.engine.loaded().stopTokens().iterator().next();
-        Grammar.Cursor content = Grammar.fromSchema(SCHEMA, tokenizer).cursor();
-        long[] opening = content.admissible(); // the schema's first tokens, for dispatch
-
-        boolean seededThink = false;
-        for (int t : p.parserSeed()) seededThink |= t == thinkOpen;
-        final int THINK = 0, DISPATCH = 1, CONTENT = 2, CALL = 3;
-        int[] mode = {seededThink ? THINK : DISPATCH};
-        List<Integer> callIds = new ArrayList<>();
-        List<Integer> contentIds = new ArrayList<>();
-        List<Part.ToolCall> calls = new ArrayList<>();
-        Sampler argmax = com.qxotic.jinfer.FloatTensor::argmax;
-        Sampler masked =
-                logits -> {
-                    switch (mode[0]) {
-                        case THINK -> {
-                            int t = argmax.sampleToken(logits); // reasoning samples free
-                            if (t == thinkClose) mode[0] = DISPATCH;
-                            return t;
-                        }
-                        case DISPATCH -> {
-                            // the missing engine piece, hand-rolled: a plain token the schema
-                            // admits opens constrained content; the call marker opens a call;
-                            // the terminator ends the turn - the union IS the mask
-                            int n = Math.toIntExact(logits.size());
-                            for (int i = 0; i < n; i++) {
-                                boolean inSchema = (opening[i >> 6] >>> (i & 63) & 1L) != 0;
-                                if (!inSchema && i != callOpen && i != imEnd) {
-                                    logits.setFloat(i, Float.NEGATIVE_INFINITY);
-                                }
-                            }
-                            int t = argmax.sampleToken(logits);
-                            if (t == callOpen) {
-                                mode[0] = CALL;
-                            } else if (t != imEnd) {
-                                mode[0] = CONTENT;
-                                content.tryAdvance(t);
-                                contentIds.add(t);
-                            }
-                            return t;
-                        }
-                        case CONTENT -> {
-                            if (!content.maskLogits(logits)) return stop; // complete: end turn
-                            int t = argmax.sampleToken(logits);
-                            // an ACCEPTING grammar state admits specials (empty bytes) so the
-                            // model can end the turn - control tokens are never content text
-                            if (SpecialTokens.isSpecial(tokenizer, t)) return t;
-                            content.tryAdvance(t);
-                            contentIds.add(t);
-                            return t;
-                        }
-                        default -> {
-                            int t = argmax.sampleToken(logits); // the call span is the model's
-                            if (t == callClose) {
-                                calls.addAll(ToolCallSyntax.parseBlock(decode(tokenizer, callIds)));
-                                callIds.clear();
-                                mode[0] = DISPATCH;
-                            } else {
-                                callIds.add(t);
-                            }
-                            return t;
-                        }
-                    }
-                };
-        model.engine.generate(p.encoded().prompt(), masked, 512, 0, token -> true);
-        return new Reply(calls, decode(tokenizer, contentIds));
+    /** The LFM2.5 auto tree, content schema-bound: think? (schema-content | call)* im_end? */
+    static ReplyLanguage.Node constrainedAuto() {
+        return ReplyLanguage.seq(
+                ReplyLanguage.opt(
+                        ReplyLanguage.think(
+                                ReplyLanguage.mark("<think>"),
+                                ReplyLanguage.free(),
+                                ReplyLanguage.mark("</think>"))),
+                ReplyLanguage.rep(
+                        ReplyLanguage.alt(
+                                ReplyLanguage.content(
+                                        ReplyLanguage.gbnf(Grammar.schemaGbnf(SCHEMA))),
+                                ReplyLanguage.call(
+                                        ToolCallSyntax::parseBlock,
+                                        ReplyLanguage.mark("<|tool_call_start|>"),
+                                        ReplyLanguage.free(),
+                                        ReplyLanguage.mark("<|tool_call_end|>"))),
+                        0,
+                        -1),
+                ReplyLanguage.opt(ReplyLanguage.mark("<|im_end|>")));
     }
 
-    static String decode(Tokenizer tokenizer, List<Integer> ids) {
-        int[] raw = ids.stream().mapToInt(Integer::intValue).toArray();
-        return new String(tokenizer.decodeBytes(raw), StandardCharsets.UTF_8);
+    /** One request, one walk: it masks the decode and parses the reply. */
+    static Message drive(JinferChatModel model, ChatRequest request) {
+        ChatEngine.Prepared p = model.prepare(request);
+        ReplyLanguage.Walk walk =
+                ReplyLanguage.Selection.of(constrainedAuto(), model.engine.loaded().tokenizer())
+                        .walk();
+        for (int t : p.parserSeed()) walk.feed(t);
+        walk.beginReply();
+        int stop = model.engine.loaded().stopTokens().iterator().next();
+        Sampler masked =
+                logits -> {
+                    if (!walk.maskLogits(logits)) return stop;
+                    int token = ((Sampler) FloatTensor::argmax).sampleToken(logits);
+                    walk.feed(token);
+                    return token;
+                };
+        model.engine.generate(p.encoded().prompt(), masked, 512, 0, token -> !walk.ended());
+        return walk.finish();
     }
 
     @Test
-    void oneConstrainedDecodeServesBothToolCallsAndSchemaAnswers() {
+    void oneSelectionServesBothToolCallsAndSchemaAnswers() {
         ToolSpecification weather =
                 ToolSpecification.builder()
                         .name("get_weather")
@@ -156,38 +113,36 @@ class ToolsWithSchemaPrototypeIT {
                     UserMessage.from(
                             "What is the weather in Munich right now? Final answers must be JSON"
                                     + " with keys city and temperature_c, and nothing else.");
-            ChatRequest round1 =
-                    ChatRequest.builder()
-                            .messages(user)
-                            .parameters(
-                                    ChatRequestParameters.builder()
-                                            .toolSpecifications(weather)
-                                            .build())
-                            .build();
-            Reply reply1 = drive(model, round1);
-            assertEquals(1, reply1.calls().size(), "the schema mask must not trap the call");
-            assertEquals("get_weather", reply1.calls().get(0).name());
-            assertEquals("Munich", reply1.calls().get(0).arguments().get("city"));
+            ChatRequestParameters withTool =
+                    ChatRequestParameters.builder().toolSpecifications(weather).build();
+            Message reply1 =
+                    drive(model, ChatRequest.builder().messages(user).parameters(withTool).build());
+            List<Part.ToolCall> calls =
+                    reply1.content().stream()
+                            .filter(part -> part instanceof Part.ToolCall)
+                            .map(part -> (Part.ToolCall) part)
+                            .toList();
+            assertEquals(1, calls.size(), "the schema mask must not trap the call: " + reply1);
+            assertEquals("get_weather", calls.get(0).name());
+            assertEquals("Munich", calls.get(0).arguments().get("city"));
 
-            ChatRequest round2 =
-                    ChatRequest.builder()
-                            .messages(
-                                    user,
-                                    AiMessage.from(
-                                            ToolExecutionRequest.builder()
-                                                    .id("call_0")
-                                                    .name("get_weather")
-                                                    .arguments("{\"city\":\"Munich\"}")
-                                                    .build()),
-                                    ToolExecutionResultMessage.from(
-                                            "call_0", "get_weather", "18C, sunny"))
-                            .parameters(
-                                    ChatRequestParameters.builder()
-                                            .toolSpecifications(weather)
-                                            .build())
-                            .build();
-            Reply reply2 = drive(model, round2);
-            String text = reply2.content().strip();
+            Message reply2 =
+                    drive(
+                            model,
+                            ChatRequest.builder()
+                                    .messages(
+                                            user,
+                                            AiMessage.from(
+                                                    ToolExecutionRequest.builder()
+                                                            .id("call_0")
+                                                            .name("get_weather")
+                                                            .arguments("{\"city\":\"Munich\"}")
+                                                            .build()),
+                                            ToolExecutionResultMessage.from(
+                                                    "call_0", "get_weather", "18C, sunny"))
+                                    .parameters(withTool)
+                                    .build());
+            String text = reply2.text().strip();
             Object parsed = JsonCodec.parse(text);
             assertTrue(parsed instanceof Map, "schema-shaped answer expected: " + text);
             Map<?, ?> map = (Map<?, ?>) parsed;
