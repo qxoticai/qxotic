@@ -134,13 +134,23 @@ record CategoricalSampler(RandomGenerator rng) implements Sampler {
     public int sampleToken(FloatTensor logits) {
         float random0to1 = rng.nextFloat(1f);
         float cdf = 0.0f;
-        for (int i = 0; i < logits.size(); i++) {
+        int n = Math.toIntExact(logits.size());
+        for (int i = 0; i < n; i++) {
             cdf += logits.getFloat(i);
             if (random0to1 < cdf) {
                 return i;
             }
         }
-        return Math.toIntExact(logits.size()) - 1;
+        // The CDF can finish a hair below the draw (float accumulation over a whole vocabulary).
+        // Falling back to the LAST VOCAB TOKEN would hand back something the caller may have
+        // masked out - and under a grammar that is not a cosmetic slip: an inadmissible token
+        // drives the cursor to a dead state, the next step finds nothing admissible, and the
+        // reply ends empty. Scan back for a token the distribution actually allows; the scan
+        // runs only on this near-never fallthrough, keeping the hot loop a bare accumulate.
+        for (int i = n - 1; i >= 0; i--) {
+            if (logits.getFloat(i) > 0) return i;
+        }
+        return n - 1; // all-NaN distribution: nothing is admissible anywhere, pick deterministic
     }
 }
 
