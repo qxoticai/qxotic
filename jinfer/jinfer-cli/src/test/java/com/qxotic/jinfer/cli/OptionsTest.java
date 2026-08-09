@@ -54,6 +54,38 @@ final class OptionsTest {
      * to be accepted in chat and instruct mode and do nothing whatsoever.
      */
     @Test
+    void aCompanionWithoutAModelNamesTheModelFlag(@TempDir Path dir) throws IOException {
+        // --with media=x.gguf and no --model used to reach the companion header read with a null
+        // model path and print the raw NPE; the remedy is the flag's name, before any resolution
+        Path mmproj = Files.createFile(dir.resolve("mmproj.gguf"));
+        IllegalArgumentException e =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> Options.parse(new String[] {"--with", "media=" + mmproj}));
+        assertTrue(e.getMessage().contains("--model"), e.getMessage());
+    }
+
+    @Test
+    void cacheInChatModeIsRefused(@TempDir Path dir) throws IOException {
+        // the --no-grammar rule: a flag that does nothing is refused, not ignored - the chat
+        // loop keeps its own state and never consults the prompt cache
+        Path model = Files.createFile(dir.resolve("m.gguf"));
+        IllegalArgumentException e =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                Options.parse(
+                                        new String[] {
+                                            "--model",
+                                            model.toString(),
+                                            "--chat",
+                                            "--cache",
+                                            dir.resolve("c.jkv").toString()
+                                        }));
+        assertTrue(e.getMessage().contains("--cache"), e.getMessage());
+    }
+
+    @Test
     void noGrammarIsRejectedOutsideServerMode() {
         options(true, true);
         assertThrows(IllegalArgumentException.class, () -> options(false, true));

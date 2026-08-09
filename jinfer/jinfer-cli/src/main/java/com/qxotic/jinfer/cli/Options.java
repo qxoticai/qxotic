@@ -104,6 +104,12 @@ public record Options(
         require(
                 speculationDepth == null || (1 <= speculationDepth && speculationDepth <= 8),
                 "Invalid argument: --speculation-depth must be within [1, 8]");
+        // the chat loop keeps its own state and never consults the prompt cache; accepting the
+        // flag there would make it do nothing (the --no-grammar rule)
+        require(
+                promptCache == null || !interactive || server,
+                "Invalid argument: --cache/--cache-ro apply to instruct and server modes; the chat"
+                        + " loop keeps its own state, so there is nothing for the cache to serve");
         // the only thing --no-grammar does is refuse requests that ask for a grammar, and only
         // the HTTP API has requests. Accepting it elsewhere made it a flag that did nothing.
         require(
@@ -415,6 +421,9 @@ public record Options(
                 List.of("on", "off", "auto").contains(colorMode),
                 "Invalid argument: --color must be one of on|off|auto");
         boolean color = supportsAnsiColors(colorMode);
+        // BEFORE any resolution: a companion or tokenizer without a model would otherwise reach
+        // the model-header read with a null path and die on the NPE instead of naming the flag
+        require(modelRef != null, "Missing argument: --model <path> is required");
         // AFTER the loop, so --help and a bad flag never trigger a download first
         Path modelPath;
         Path tokenizerPath;
