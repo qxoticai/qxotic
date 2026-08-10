@@ -333,6 +333,7 @@ public final class ChatEngine {
             long timeoutNanos,
             Sampling sampling,
             Grammar.Spec grammar,
+            String contentGbnf,
             String forcedTool,
             boolean cachedView,
             List<String> stops,
@@ -458,6 +459,21 @@ public final class ChatEngine {
             sampler =
                     RequestPolicy.constrained(
                             loaded, sampler, request.grammar().cursor(), parserSeed);
+        }
+        if (request.contentGbnf() != null) {
+            // tools + a schema-constrained answer: ONE selection admits the family's own calls
+            // while visible text can only be the schema - the channel-scoped grammar above
+            // cannot serve this (its mask would exclude the call syntax)
+            sampler =
+                    RequestPolicy.toolsWithSchema(
+                                    loaded, request.contentGbnf(), sampler, parserSeed)
+                            .orElseThrow(
+                                    () ->
+                                            new UnsupportedOperationException(
+                                                    "tools together with a JSON response format"
+                                                            + " need a family reply language;"
+                                                            + " this model's template declares"
+                                                            + " none"));
         }
         if (request.forcedTool() != null) {
             // a named choice pins that tool alone; the prompt still frames every offered tool

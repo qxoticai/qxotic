@@ -220,6 +220,52 @@ public final class ReplyLanguage {
                 opt(terminator));
     }
 
+    /**
+     * One span family's derived faces, held by its template: the memoized AUTO walk ({@link
+     * ChatTemplate#parser()} delegates here) and the same tree with the content hole stated ({@link
+     * ChatTemplate#autoLanguage} delegates here - the tools + JSON-schema seam). The marker
+     * spellings are written ONCE; pruning still adapts them per checkpoint.
+     */
+    public static final class Spans {
+        private final String thinkOpen;
+        private final String thinkClose;
+        private final String callOpen;
+        private final String callClose;
+        private final Function<String, List<Part.ToolCall>> calls;
+        private final Node terminator;
+        private final Tokenizer tokenizer;
+        private Selection auto; // memoized: tools-independent, built once
+
+        public Spans(
+                String thinkOpen,
+                String thinkClose,
+                String callOpen,
+                String callClose,
+                Function<String, List<Part.ToolCall>> calls,
+                Node terminator,
+                Tokenizer tokenizer) {
+            this.thinkOpen = thinkOpen;
+            this.thinkClose = thinkClose;
+            this.callOpen = callOpen;
+            this.callClose = callClose;
+            this.calls = calls;
+            this.terminator = terminator;
+            this.tokenizer = tokenizer;
+        }
+
+        /** The family's memoized AUTO walk. */
+        public Walk parser() {
+            if (auto == null) auto = Selection.of(language(free()), tokenizer);
+            return auto.walk();
+        }
+
+        /** The family tree with the content hole stated. */
+        public Node language(Node contentHole) {
+            return spans(
+                    thinkOpen, thinkClose, callOpen, callClose, calls, terminator, contentHole);
+        }
+    }
+
     // ---- selection: a concrete tree bound to one vocabulary ----------------
 
     /**

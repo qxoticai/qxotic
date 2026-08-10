@@ -32,7 +32,7 @@ final class ChatEngineRequestTest {
                 () ->
                         new ChatEngine.Request(
                                 List.of(), List.of(), true, -1, null, 0L, SAMPLING, null, null,
-                                false, List.of(), null));
+                                null, false, List.of(), null));
     }
 
     @Test
@@ -41,34 +41,34 @@ final class ChatEngineRequestTest {
                 IllegalArgumentException.class,
                 () ->
                         new ChatEngine.Request(
-                                ONE_TURN, List.of(), true, -1, null, 0L, null, null, null, false,
-                                List.of(), null));
+                                ONE_TURN, List.of(), true, -1, null, 0L, null, null, null, null,
+                                false, List.of(), null));
     }
 
     @Test
     void negativeBudgetsAreRejectedButUnlimitedIsNot() {
         // -1 = the model's own maximum, for both the completion and the reasoning budget
         new ChatEngine.Request(
-                ONE_TURN, List.of(), true, -1, -1, 0L, SAMPLING, null, null, false, List.of(),
+                ONE_TURN, List.of(), true, -1, -1, 0L, SAMPLING, null, null, null, false, List.of(),
                 null);
         assertThrows(
                 IllegalArgumentException.class,
                 () ->
                         new ChatEngine.Request(
-                                ONE_TURN, List.of(), true, -2, null, 0L, SAMPLING, null, null,
+                                ONE_TURN, List.of(), true, -2, null, 0L, SAMPLING, null, null, null,
                                 false, List.of(), null));
         assertThrows(
                 IllegalArgumentException.class,
                 () ->
                         new ChatEngine.Request(
-                                ONE_TURN, List.of(), true, -1, -2, 0L, SAMPLING, null, null, false,
-                                List.of(), null));
+                                ONE_TURN, List.of(), true, -1, -2, 0L, SAMPLING, null, null, null,
+                                false, List.of(), null));
         assertThrows(
                 IllegalArgumentException.class,
                 () ->
                         new ChatEngine.Request(
                                 ONE_TURN, List.of(), true, -1, null, -1L, SAMPLING, null, null,
-                                false, List.of(), null));
+                                null, false, List.of(), null));
     }
 
     /**
@@ -79,24 +79,24 @@ final class ChatEngineRequestTest {
     @Test
     void aForcedToolMustBeOffered() {
         new ChatEngine.Request(
-                ONE_TURN, ONE_TOOL, true, -1, null, 0L, SAMPLING, null, "", false, List.of(),
+                ONE_TURN, ONE_TOOL, true, -1, null, 0L, SAMPLING, null, null, "", false, List.of(),
                 null); // "" = any offered tool
         new ChatEngine.Request(
-                ONE_TURN, ONE_TOOL, true, -1, null, 0L, SAMPLING, null, "f", false, List.of(),
+                ONE_TURN, ONE_TOOL, true, -1, null, 0L, SAMPLING, null, null, "f", false, List.of(),
                 null);
         assertThrows(
                 IllegalArgumentException.class,
                 () ->
                         new ChatEngine.Request(
-                                ONE_TURN, List.of(), true, -1, null, 0L, SAMPLING, null, "", false,
-                                List.of(), null),
+                                ONE_TURN, List.of(), true, -1, null, 0L, SAMPLING, null, null, "",
+                                false, List.of(), null),
                 "forcing with no tools offered");
         assertThrows(
                 IllegalArgumentException.class,
                 () ->
                         new ChatEngine.Request(
-                                ONE_TURN, ONE_TOOL, true, -1, null, 0L, SAMPLING, null, "g", false,
-                                List.of(), null),
+                                ONE_TURN, ONE_TOOL, true, -1, null, 0L, SAMPLING, null, null, "g",
+                                false, List.of(), null),
                 "forcing a tool that was never offered");
     }
 
@@ -116,6 +116,7 @@ final class ChatEngineRequestTest {
                                 SAMPLING,
                                 null,
                                 null,
+                                null,
                                 true,
                                 List.of(),
                                 Map.of("custom_var", 1)));
@@ -129,8 +130,8 @@ final class ChatEngineRequestTest {
         Map<String, Object> kwargs = new HashMap<>(Map.of("enable_thinking", false));
         ChatEngine.Request request =
                 new ChatEngine.Request(
-                        messages, List.of(), true, -1, null, 0L, SAMPLING, null, null, false, stops,
-                        kwargs);
+                        messages, List.of(), true, -1, null, 0L, SAMPLING, null, null, null, false,
+                        stops, kwargs);
 
         messages.add(Message.user("smuggled"));
         stops.add("SMUGGLED");
@@ -145,7 +146,7 @@ final class ChatEngineRequestTest {
     void absentCollectionsBecomeEmptyRatherThanNull() {
         ChatEngine.Request request =
                 new ChatEngine.Request(
-                        ONE_TURN, null, true, -1, null, 0L, SAMPLING, null, null, false, null,
+                        ONE_TURN, null, true, -1, null, 0L, SAMPLING, null, null, null, false, null,
                         null);
         assertTrue(request.tools().isEmpty());
         assertTrue(request.stops().isEmpty());

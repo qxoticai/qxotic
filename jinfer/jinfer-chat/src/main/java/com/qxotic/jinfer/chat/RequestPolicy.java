@@ -113,6 +113,26 @@ public final class RequestPolicy {
     }
 
     /**
+     * Tools AND a schema-constrained answer as ONE selection: the family's auto language with the
+     * content hole carrying {@code contentGbnf} - the model may call its tools in its own syntax
+     * (thinking stays free), and visible text can only be the schema. Empty when the family
+     * declares no {@link ChatTemplate#autoLanguage} - the caller's cue to reject the combination.
+     */
+    public static Optional<Sampler> toolsWithSchema(
+            LoadedModel<?> m, String contentGbnf, Sampler base, int[] replySeed) {
+        return m.template()
+                .flatMap(t -> t.autoLanguage(ReplyLanguage.gbnf(contentGbnf)))
+                .map(
+                        language -> {
+                            ReplyLanguage.Walk walk =
+                                    ReplyLanguage.Selection.of(language, m.tokenizer()).walk();
+                            for (int t : replySeed) walk.feed(t);
+                            walk.beginReply();
+                            return walk.sampler(base, endTurn(m));
+                        });
+    }
+
+    /**
      * The complete forced-call recipe as ONE value - the three parts only work together, so a
      * caller can never seed without pre-feeding the parser (the historical bug class): {@code seed}
      * joins the prompt (the model can only COMPLETE a call), {@code sampler} prefix-pins the
@@ -188,6 +208,16 @@ public final class RequestPolicy {
      * present (a schema stated to nobody would be a silent prompt mutation).
      */
     public static List<Message> stating(List<Message> messages, Map<String, Object> schema) {
+        return stating(messages, schema, false);
+    }
+
+    /**
+     * As {@link #stating(List, Map)}; {@code toolsOffered} switches to the composed wording - "and
+     * nothing else" talks a model out of CALLING its tools first, so with tools on the request the
+     * statement binds the eventual answer, not the whole reply.
+     */
+    public static List<Message> stating(
+            List<Message> messages, Map<String, Object> schema, boolean toolsOffered) {
         if (schema == null || schema.isEmpty()) return messages;
         int last = -1;
         for (int i = messages.size() - 1; i >= 0; i--) {
@@ -200,7 +230,7 @@ public final class RequestPolicy {
         List<Message> out = new ArrayList<>(messages);
         Message user = out.get(last);
         List<Part> content = new ArrayList<>(user.content());
-        content.add(new Part.Text(statement(schema)));
+        content.add(new Part.Text(statement(schema, toolsOffered)));
         out.set(last, new Message(user.role(), content));
         return out;
     }
@@ -221,7 +251,7 @@ public final class RequestPolicy {
             if (!(m.get("content") instanceof String content)) return maps;
             @SuppressWarnings("unchecked")
             var user = new LinkedHashMap<>((Map<String, Object>) m);
-            user.put("content", content + statement(schema));
+            user.put("content", content + statement(schema, false));
             List<Object> out = new ArrayList<>(maps);
             out.set(i, user);
             return out;
@@ -230,8 +260,11 @@ public final class RequestPolicy {
     }
 
     /** The one statement both {@code stating} shapes append. */
-    private static String statement(Map<String, Object> schema) {
-        return "\nYou must answer with JSON matching this schema, and nothing else:\n"
+    private static String statement(Map<String, Object> schema, boolean toolsOffered) {
+        return (toolsOffered
+                        ? "\nWhen you can answer, reply with JSON matching this schema, and"
+                                + " nothing else:\n"
+                        : "\nYou must answer with JSON matching this schema, and nothing else:\n")
                 + JsonCodec.stringify(schema);
     }
 }
