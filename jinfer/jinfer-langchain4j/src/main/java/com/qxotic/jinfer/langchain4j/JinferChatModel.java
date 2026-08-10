@@ -379,7 +379,6 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                         !tools.isEmpty()));
         JinferChatRequestParameters j = p instanceof JinferChatRequestParameters jp ? jp : null;
         List<ChatMessage> requestMessages = request.messages();
-        boolean composed = schema != null && !tools.isEmpty();
         ChatEngine.Request lowered =
                 new ChatEngine.Request(
                         messages,
@@ -400,8 +399,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                                                 ? null
                                                 : j.minP().floatValue(),
                                         j != null && j.seed() != null ? j.seed() : seed),
-                        composed ? null : grammar(p, j, schema),
-                        composed ? Grammar.schemaHoleGbnf(schema) : null,
+                        contentGbnf(p, j, schema, !tools.isEmpty()),
                         p.toolChoice() == ToolChoice.REQUIRED ? "" : null,
                         cached,
                         p.stopSequences(),
@@ -425,20 +423,24 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     }
 
     /**
-     * The request's decoding constraint, if any - the one piece of the sampling stack that is
-     * genuinely framework-shaped: langchain4j spells it as a response format (schemaless JSON or a
-     * typed schema) or, jinfer-typed, as raw GBNF. Specs cache per (source, vocab), so repeated
-     * schemas reuse the compiled masks.
+     * The request's decoding constraint as GBNF SOURCE, or null - the one currency every
+     * constrained chat decode speaks: a typed schema (tools present = the leading-ws-free
+     * content-hole form), schemaless JSON mode, or raw GBNF. The engine compiles it into the
+     * family's constrained selection; specs cache per (source, vocab), so repeated schemas reuse
+     * the compiled masks.
      */
-    private Grammar.Spec grammar(
-            ChatRequestParameters p, JinferChatRequestParameters j, Map<String, Object> schema) {
-        var tokenizer = engine.loaded().tokenizer();
-        ResponseFormat rf = p.responseFormat();
-        if (rf != null && rf.type() == ResponseFormatType.JSON) {
-            return schema == null ? Grammar.json(tokenizer) : Grammar.fromSchema(schema, tokenizer);
+    private static String contentGbnf(
+            ChatRequestParameters p,
+            JinferChatRequestParameters j,
+            Map<String, Object> schema,
+            boolean toolsOffered) {
+        if (schema != null) {
+            return toolsOffered ? Grammar.schemaHoleGbnf(schema) : Grammar.schemaGbnf(schema);
         }
+        ResponseFormat rf = p.responseFormat();
+        if (rf != null && rf.type() == ResponseFormatType.JSON) return Grammar.jsonGbnf();
         // raw GBNF: the JSON format's generalization (validate() guaranteed they are not combined)
-        return j == null || j.grammar() == null ? null : Grammar.of(j.grammar(), tokenizer);
+        return j == null ? null : j.grammar();
     }
 
     private static <T> T framed(Supplier<T> op) {

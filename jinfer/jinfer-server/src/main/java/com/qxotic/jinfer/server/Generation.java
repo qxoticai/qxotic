@@ -167,8 +167,7 @@ final class Generation {
                         reasoningMax(request),
                         config.limits().requestTimeout().toNanos(),
                         sampling(request),
-                        grammarSpec(request),
-                        null, // tools+schema composition: not yet offered over the wire
+                        grammarSource(request),
                         forcedTool(request),
                         false,
                         textStops(request.get("stop")),
@@ -550,7 +549,7 @@ final class Generation {
     private Reply generate(Map<String, Object> request, IntSequence promptTokens, Sinks sinks) {
         int maxTokens = maxOutputTokens(request);
         boolean think = requestThink(request);
-        Grammar.Spec grammar = grammarSpec(request);
+        String grammar = grammarSource(request);
         // a raw prompt has no conversation, so the template's STATIC seed is the only possible
         // tail knowledge (the chat path gets the conversation-aware seed from encodePrompt)
         int[] replySeed = model.template().map(t -> t.replySeed(think)).orElseGet(() -> new int[0]);
@@ -563,7 +562,8 @@ final class Generation {
                         reasoningMax(request),
                         replySeed);
         if (grammar != null) {
-            sampler = RequestPolicy.constrained(model, sampler, grammar.cursor(), replySeed);
+            // a raw prompt offers no tools: the document is required, thinking stays free
+            sampler = RequestPolicy.constrained(model, grammar, false, sampler, replySeed);
         }
         ChatEngine.Prepared prepared =
                 ChatEngine.Prepared.raw(
@@ -691,19 +691,20 @@ final class Generation {
      * The request's output grammar - {@code grammar} (GBNF string) or {@code response_format:
      * {type: "json_object"}} - or null when unconstrained; the engine turns it into a cursor.
      */
-    private Grammar.Spec grammarSpec(Map<String, Object> request) {
+    private String grammarSource(Map<String, Object> request) {
         Tokenizer tokenizer = model.tokenizer();
         Object gbnf = request.get("grammar");
         if (gbnf instanceof String g && !g.isBlank()) {
-            // a source that compiles to NO rules yields Grammar.Spec.DISABLED, which masks
-            // nothing - so a typo'd grammar used to return free-form text with a 200, and the
-            // caller had no way to tell constrained output from unconstrained
-            return compiled(Grammar.of(g, tokenizer), "grammar");
+            // still VALIDATED eagerly, source or not: a source that compiles to NO rules yields
+            // Grammar.Spec.DISABLED, which masks nothing - a typo'd grammar used to return
+            // free-form text with a 200 (the (source, vocab) cache makes the reuse free)
+            compiled(Grammar.of(g, tokenizer), "grammar");
+            return g;
         }
         Object fmt = request.get("response_format");
         if (fmt instanceof Map<?, ?> f) {
             if ("json_object".equals(f.get("type"))) {
-                return Grammar.json(tokenizer);
+                return Grammar.jsonGbnf();
             }
             if ("json_schema".equals(f.get("type"))) {
                 // shape already checked by Validation, on the handler thread
@@ -712,9 +713,10 @@ final class Generation {
                 Map<String, Object> schema =
                         Values.asObject(
                                 wrapper.get("schema"), "response_format.json_schema.schema");
-                return compiled(
+                compiled(
                         Grammar.fromSchema(schema, tokenizer),
                         "response_format.json_schema.schema");
+                return Grammar.schemaGbnf(schema);
             }
         }
         return null;
