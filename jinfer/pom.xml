@@ -17,6 +17,9 @@
 
   <modules>
     <module>jinfer-core</module>
+    <module>jinfer-xcore</module>
+    <module>jinfer-xkernels</module>
+    <module>jinfer-xlfm2</module>
     <module>jinfer-llm</module>
     <module>jinfer-chat</module>
     <module>jinfer-hub</module>
@@ -105,6 +108,21 @@
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
+        <artifactId>jinfer-xcore</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>jinfer-xkernels</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>jinfer-xlfm2</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
         <artifactId>jinfer-llm</artifactId>
         <version>${project.version}</version>
       </dependency>
@@ -139,6 +157,11 @@
         <artifactId>jinfer-kernels</artifactId>
         <version>${project.version}</version>
         <type>test-jar</type>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>jota</artifactId>
+        <version>0.1.0</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
