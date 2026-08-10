@@ -1177,7 +1177,7 @@ public final class GrammarTest {
                         "required", List.of("a", "b"));
         check(
                 "toGbnf deterministic",
-                Grammar.Schema.toGbnf(schema).equals(Grammar.Schema.toGbnf(schema)));
+                Grammar.Schema.toGbnf(schema, true).equals(Grammar.Schema.toGbnf(schema, true)));
         // and the compiled Spec is cached on the same key
         MockV v = new MockV();
         check("fromSchema cached", Grammar.fromSchema(schema, v) == Grammar.fromSchema(schema, v));

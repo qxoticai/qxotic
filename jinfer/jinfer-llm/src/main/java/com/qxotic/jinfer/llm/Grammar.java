@@ -1097,7 +1097,7 @@ public final class Grammar {
      * is always valid JSON satisfying the supported constraints, never a broken grammar.
      */
     static Spec fromSchema(Map<String, Object> schema, Vocab v) {
-        return of(Schema.toGbnf(schema), v);
+        return of(Schema.toGbnf(schema, true), v);
     }
 
     /**
@@ -1114,7 +1114,17 @@ public final class Grammar {
      * ({@code Term.Gbnf}, reply-language argument regions). {@link #fromSchema} is this compiled.
      */
     public static String schemaGbnf(Map<String, Object> schema) {
-        return Schema.toGbnf(schema);
+        return Schema.toGbnf(schema, true);
+    }
+
+    /**
+     * {@link #schemaGbnf} without LEADING whitespace - the reply-language content-hole form. At a
+     * dispatch point interstitial newlines are scaffold between spans, and a hole whose entry set
+     * admits them swallows the model into content it meant as spacing before a tool call (observed
+     * on LFM2.5: "I should call" in the reasoning, then a hallucinated schema answer).
+     */
+    public static String schemaHoleGbnf(Map<String, Object> schema) {
+        return Schema.toGbnf(schema, false);
     }
 
     /** Translates a JSON Schema node tree into a GBNF grammar string. */
@@ -1122,7 +1132,7 @@ public final class Grammar {
         private final StringBuilder rules = new StringBuilder();
         private int counter;
 
-        static String toGbnf(Map<String, Object> schema) {
+        static String toGbnf(Map<String, Object> schema, boolean leadingWs) {
             Schema s = new Schema();
             // shared leaf rules (any-JSON fallbacks + scalars)
             // BOUNDED whitespace (llama.cpp-style): unbounded ws lets a reluctant model stall
@@ -1144,7 +1154,7 @@ public final class Grammar {
                             + " value)*)? ws \"}\"\n");
             s.rules.append("jarray ::= \"[\" ws (value (ws \",\" ws value)*)? ws \"]\"\n");
             String root = s.body(schema);
-            return "root ::= ws (" + root + ") ws\n" + s.rules;
+            return "root ::= " + (leadingWs ? "ws (" : "(") + root + ") ws\n" + s.rules;
         }
 
         /** Allocate a named rule for {@code node} and return its name (for refs / recursion). */
