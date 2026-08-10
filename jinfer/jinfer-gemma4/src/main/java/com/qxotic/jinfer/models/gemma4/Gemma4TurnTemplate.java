@@ -717,7 +717,29 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
         return role.equals(Role.ASSISTANT) ? "model" : role.name();
     }
 
-    private ReplyLanguage.Selection autoReply; // memoized: tools-independent, built once
+    private ReplyLanguage.Spans spans; // the family's derived faces, markers written once
+
+    private ReplyLanguage.Spans spans() {
+        if (spans == null) {
+            List<ReplyLanguage.Node> ends = new ArrayList<>();
+            ends.add(ReplyLanguage.mark("<turn|>"));
+            ends.add(ReplyLanguage.mark("<end_of_turn>"));
+            ends.add(ReplyLanguage.mark("<|endoftext|>"));
+            if (tokenizer.vocabulary().contains("<eos>")) {
+                ends.add(ReplyLanguage.markId("<eos>", tokenizer.vocabulary().id("<eos>")));
+            }
+            spans =
+                    new ReplyLanguage.Spans(
+                            CHANNEL_OPEN,
+                            CHANNEL_CLOSE,
+                            "<|tool_call>",
+                            "<tool_call|>",
+                            Gemma4ToolSyntax::parseBlock,
+                            new ReplyLanguage.Node.Alt(ends),
+                            tokenizer);
+        }
+        return spans;
+    }
 
     /**
      * The reply-language walk: the thought CHANNEL is the think span (the channel name streams
@@ -729,26 +751,12 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
      */
     @Override
     public ReplyParser parser() {
-        if (autoReply == null) {
-            List<ReplyLanguage.Node> ends = new ArrayList<>();
-            ends.add(ReplyLanguage.mark("<turn|>"));
-            ends.add(ReplyLanguage.mark("<end_of_turn>"));
-            ends.add(ReplyLanguage.mark("<|endoftext|>"));
-            if (tokenizer.vocabulary().contains("<eos>")) {
-                ends.add(ReplyLanguage.markId("<eos>", tokenizer.vocabulary().id("<eos>")));
-            }
-            autoReply =
-                    ReplyLanguage.Selection.of(
-                            ReplyLanguage.spans(
-                                    CHANNEL_OPEN,
-                                    CHANNEL_CLOSE,
-                                    "<|tool_call>",
-                                    "<tool_call|>",
-                                    Gemma4ToolSyntax::parseBlock,
-                                    new ReplyLanguage.Node.Alt(ends)),
-                            tokenizer);
-        }
-        return autoReply.walk();
+        return spans().parser();
+    }
+
+    @Override
+    public Optional<ReplyLanguage.Node> autoLanguage(ReplyLanguage.Node contentHole) {
+        return Optional.of(spans().language(contentHole));
     }
 
     /** Forced calls seed {@code <|tool_call>} and pin {@code call:name}. */
