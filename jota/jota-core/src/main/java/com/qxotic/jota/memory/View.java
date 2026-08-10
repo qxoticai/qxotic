@@ -16,6 +16,20 @@ public interface View {
         return layout().shape();
     }
 
+    /**
+     * The element-dimensioned shape: identical to {@link #shape()} except for block-quantized
+     * dtypes, whose physical shape counts storage blocks — see {@link
+     * DataType#logicalShape(Shape)}.
+     */
+    default Shape logicalShape() {
+        return dataType().logicalShape(shape());
+    }
+
+    /** {@code logicalShape().size()} — the element count. */
+    default long logicalSize() {
+        return logicalShape().size();
+    }
+
     default Stride stride() {
         return layout().stride();
     }

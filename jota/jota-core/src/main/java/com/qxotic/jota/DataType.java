@@ -142,6 +142,67 @@ public interface DataType {
     default long byteSizeFor(Shape shape) {
         return byteSizeFor(shape.size());
     }
+
+    /**
+     * The element-dimensioned shape for a physical (storage) shape. Only block-quantized types
+     * ({@link #elementsPerBlock()} &gt; 1) distinguish the two: their {@code shape()} counts
+     * storage BLOCKS, and blocking always tiles the innermost (last) storage axis, so the logical
+     * shape is the physical shape with its last dimension multiplied by {@code elementsPerBlock()}.
+     * For every other type the physical shape IS the logical shape and this returns it unchanged.
+     *
+     * <p>Nested shapes are not supported for block types (flat shapes only); the conversion follows
+     * the storage axis order regardless of any permutation of the view.
+     */
+    default Shape logicalShape(Shape physical) {
+        long epb = elementsPerBlock();
+        if (epb == 1 || physical.isScalar()) {
+            return physical;
+        }
+        if (!physical.isFlat()) {
+            throw new UnsupportedOperationException(
+                    "block-quantized type " + name() + " with nested shape " + physical);
+        }
+        int rank = physical.flatRank();
+        long[] dims = new long[rank];
+        for (int i = 0; i < rank; i++) {
+            dims[i] = physical.flatAt(i);
+        }
+        dims[rank - 1] = Math.multiplyExact(dims[rank - 1], epb);
+        return Shape.flat(dims);
+    }
+
+    /**
+     * The inverse of {@link #logicalShape(Shape)}: the storage shape for an element-dimensioned
+     * shape, dividing the innermost dimension by {@code elementsPerBlock()} (which must divide it
+     * exactly). Identity for non-block types.
+     */
+    default Shape physicalShape(Shape logical) {
+        long epb = elementsPerBlock();
+        if (epb == 1 || logical.isScalar()) {
+            return logical;
+        }
+        if (!logical.isFlat()) {
+            throw new UnsupportedOperationException(
+                    "block-quantized type " + name() + " with nested shape " + logical);
+        }
+        int rank = logical.flatRank();
+        long last = logical.flatAt(rank - 1);
+        if (last % epb != 0) {
+            throw new IllegalArgumentException(
+                    "innermost dimension "
+                            + last
+                            + " not divisible by block size "
+                            + epb
+                            + " of "
+                            + name());
+        }
+        long[] dims = new long[rank];
+        for (int i = 0; i < rank; i++) {
+            dims[i] = logical.flatAt(i);
+        }
+        dims[rank - 1] = last / epb;
+        return Shape.flat(dims);
+    }
 }
 
 final class DataTypeImpl implements DataType {
