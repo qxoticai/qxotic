@@ -755,8 +755,8 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
     }
 
     @Override
-    public Optional<ReplyLanguage.Node> autoLanguage(ReplyLanguage.Node contentHole) {
-        return Optional.of(spans().language(contentHole));
+    public Optional<ReplyLanguage.Selection> constrainedAuto(String contentGbnf) {
+        return Optional.of(spans().constrainedAuto(contentGbnf));
     }
 
     /** Forced calls seed {@code <|tool_call>} and pin {@code call:name}. */

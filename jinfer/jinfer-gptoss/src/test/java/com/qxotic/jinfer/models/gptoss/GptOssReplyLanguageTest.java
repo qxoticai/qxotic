@@ -178,9 +178,7 @@ class GptOssReplyLanguageTest {
 
     @Test
     void theForcedSelectionAdmitsItsOwnRenderedCallEveryToken() {
-        ReplyLanguage.Selection sel =
-                ReplyLanguage.Selection.of(
-                        template.forcedCallLanguage(List.of(WEATHER)).orElseThrow(), tokenizer);
+        ReplyLanguage.Selection sel = template.forcedCall(List.of(WEATHER)).orElseThrow();
         int[] prefix = sel.forcedPrefix();
         assertTrue(prefix.length > 0 && prefix[0] == id("<|channel|>"));
 
@@ -211,10 +209,7 @@ class GptOssReplyLanguageTest {
     void aMultiToolForcedSelectionBranchesOnlyIntoOfferedNames() {
         // two tools behind the shared header: candidacy walks both, the mask is their union -
         // an UNOFFERED name's diverging token is unsamplable at the branch point
-        ReplyLanguage.Selection sel =
-                ReplyLanguage.Selection.of(
-                        template.forcedCallLanguage(List.of(WEATHER, REFRESH)).orElseThrow(),
-                        tokenizer);
+        ReplyLanguage.Selection sel = template.forcedCall(List.of(WEATHER, REFRESH)).orElseThrow();
         ReplyLanguage.Walk walk = sel.walk();
         walk.feed(id("<|channel|>"));
         for (int t : tokenizer.encode("commentary to=functions.").toArray()) walk.feed(t);
@@ -244,9 +239,7 @@ class GptOssReplyLanguageTest {
     @Test
     void anInventedArgumentKeyIsUnsamplable() {
         // the toolbench_rapidapi_key class: the schema admits only declared property names
-        ReplyLanguage.Selection sel =
-                ReplyLanguage.Selection.of(
-                        template.forcedCallLanguage(List.of(WEATHER)).orElseThrow(), tokenizer);
+        ReplyLanguage.Selection sel = template.forcedCall(List.of(WEATHER)).orElseThrow();
         ReplyLanguage.Walk walk = sel.walk();
         for (int t : sel.forcedPrefix()) walk.feed(t);
         for (int t : tokenizer.encode("{\"").toArray()) walk.feed(t);
@@ -337,9 +330,7 @@ class GptOssReplyLanguageTest {
 
     @Test
     void aForcedNoParameterToolCannotBeDecorated() {
-        ReplyLanguage.Selection sel =
-                ReplyLanguage.Selection.of(
-                        template.forcedCallLanguage(List.of(REFRESH)).orElseThrow(), tokenizer);
+        ReplyLanguage.Selection sel = template.forcedCall(List.of(REFRESH)).orElseThrow();
         ReplyLanguage.Walk walk = sel.walk();
         for (int t : sel.forcedPrefix()) walk.feed(t);
         // the empty-schema grammar admits only an empty object: the noParameterTool skip-gate

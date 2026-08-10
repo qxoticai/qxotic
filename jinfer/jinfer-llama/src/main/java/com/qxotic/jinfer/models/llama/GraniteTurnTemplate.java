@@ -225,14 +225,16 @@ public final class GraniteTurnTemplate implements TurnTemplate {
     }
 
     @Override
-    public Optional<ReplyLanguage.Node> autoLanguage(ReplyLanguage.Node contentHole) {
-        return Optional.of(spans().language(contentHole));
+    public Optional<ReplyLanguage.Selection> constrainedAuto(String contentGbnf) {
+        return Optional.of(spans().constrainedAuto(contentGbnf));
     }
 
     /** Forced calls: the envelope carries an OFFERED name, the schema binds the arguments. */
     @Override
-    public Optional<ReplyLanguage.Node> forcedCallLanguage(List<Tool> tools) {
+    public Optional<ReplyLanguage.Selection> forcedCall(List<Tool> tools) {
         if (tools.isEmpty()) return Optional.empty();
-        return Optional.of(JsonEnvelopeReplies.forced(tools, "<|end_of_text|>"));
+        return Optional.of(
+                ReplyLanguage.Selection.of(
+                        JsonEnvelopeReplies.forced(tools, "<|end_of_text|>"), tokenizer));
     }
 }

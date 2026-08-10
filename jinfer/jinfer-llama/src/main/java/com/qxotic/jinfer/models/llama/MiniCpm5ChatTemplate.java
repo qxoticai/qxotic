@@ -219,8 +219,8 @@ public final class MiniCpm5ChatTemplate implements ChatTemplate {
     }
 
     @Override
-    public Optional<ReplyLanguage.Node> autoLanguage(ReplyLanguage.Node contentHole) {
-        return Optional.of(spans().language(contentHole));
+    public Optional<ReplyLanguage.Selection> constrainedAuto(String contentGbnf) {
+        return Optional.of(spans().constrainedAuto(contentGbnf));
     }
 
     /** Forced calls seed {@code <function}; the pin below holds the name attribute. */

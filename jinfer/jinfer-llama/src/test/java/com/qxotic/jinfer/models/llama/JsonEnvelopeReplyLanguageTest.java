@@ -51,9 +51,7 @@ final class JsonEnvelopeReplyLanguageTest {
 
     /** Drives the forced walk through its own canonical wire, mask-checked at every token. */
     static void forcedWireLaw(Tokenizer tok, ChatTemplate template, String close) {
-        ReplyLanguage.Selection sel =
-                ReplyLanguage.Selection.of(
-                        template.forcedCallLanguage(List.of(WEATHER)).orElseThrow(), tok);
+        ReplyLanguage.Selection sel = template.forcedCall(List.of(WEATHER)).orElseThrow();
         int[] prefix = sel.forcedPrefix();
         assertTrue(prefix.length > 2, "the envelope header is forced into the prompt");
         ReplyLanguage.Walk walk = sel.walk();
@@ -97,9 +95,7 @@ final class JsonEnvelopeReplyLanguageTest {
         // schema-bound - the historical empty-prefix dead-end is structurally unexpressible
         Tokenizer tok = tokenizer(ModelFixture.MINISTRAL_3B_Q8.path());
         MistralChatTemplate template = new MistralChatTemplate(tok);
-        ReplyLanguage.Selection sel =
-                ReplyLanguage.Selection.of(
-                        template.forcedCallLanguage(List.of(WEATHER)).orElseThrow(), tok);
+        ReplyLanguage.Selection sel = template.forcedCall(List.of(WEATHER)).orElseThrow();
         int[] prefix = sel.forcedPrefix();
         assertTrue(prefix.length >= 3, "[TOOL_CALLS] + name + [ARGS] all forced");
         ReplyLanguage.Walk walk = sel.walk();
@@ -127,9 +123,7 @@ final class JsonEnvelopeReplyLanguageTest {
         // diverge inside the envelope bytes, and the second tool's wire commits cleanly
         Tokenizer tok = tokenizer(ModelFixture.SMOLLM3_Q4.path());
         SmolLm3ChatTemplate template = new SmolLm3ChatTemplate(tok, "01 January 2026");
-        ReplyLanguage.Selection sel =
-                ReplyLanguage.Selection.of(
-                        template.forcedCallLanguage(List.of(WEATHER, REFRESH)).orElseThrow(), tok);
+        ReplyLanguage.Selection sel = template.forcedCall(List.of(WEATHER, REFRESH)).orElseThrow();
         ReplyLanguage.Walk walk = sel.walk();
         walk.feed(com.qxotic.jinfer.llm.SpecialTokens.require(tok, "<tool_call>"));
         for (int t : tok.encode("\n{\"name\": \"refresh_cache\", \"arguments\": {}}\n").toArray()) {
@@ -145,9 +139,7 @@ final class JsonEnvelopeReplyLanguageTest {
     void anInventedArgumentKeyIsUnsamplableInTheEnvelope() throws Exception {
         Tokenizer tok = tokenizer(ModelFixture.SMOLLM3_Q4.path());
         SmolLm3ChatTemplate template = new SmolLm3ChatTemplate(tok, "01 January 2026");
-        ReplyLanguage.Selection sel =
-                ReplyLanguage.Selection.of(
-                        template.forcedCallLanguage(List.of(WEATHER)).orElseThrow(), tok);
+        ReplyLanguage.Selection sel = template.forcedCall(List.of(WEATHER)).orElseThrow();
         ReplyLanguage.Walk walk = sel.walk();
         for (int t : sel.forcedPrefix()) walk.feed(t);
         for (int t : tok.encode("{\"").toArray()) walk.feed(t);

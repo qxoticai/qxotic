@@ -147,25 +147,29 @@ public interface ChatTemplate {
     }
 
     /**
-     * The reply-language successor to the seed/pin/epilogue recipe: the COMPLETE forced-call
-     * language for {@code tools} - per-tool call regions with SCHEMA-BOUND arguments, so a forced
+     * The reply-language successor to the seed/pin/epilogue recipe: the COMPILED forced-call
+     * selection over {@code tools} - per-tool call regions with SCHEMA-BOUND arguments, so a forced
      * call can neither name an unoffered tool nor malform its payload (the free region after a
      * released pin was one defect class: LFM2.5's hallucinated argument, Mistral's post-pin derail,
      * gpt-oss's malformed JSON). When present, {@code RequestPolicy.forceCall} drives the whole
-     * forced reply through one {@link ReplyLanguage.Walk} and the legacy hooks above are ignored
-     * for this family. Empty = the legacy recipe (or no forcing at all).
+     * forced reply through the selection's walk and the legacy hooks above are ignored for this
+     * family. Empty = the legacy recipe (or no forcing at all).
+     *
+     * <p>HERMETIC on purpose, like {@link #constrainedAuto}: the template compiles its own tree
+     * with its own tokenizer; the {@link ReplyLanguage.Node} authoring vocabulary is the template
+     * AUTHOR'S currency and never crosses this interface.
      */
-    default Optional<ReplyLanguage.Node> forcedCallLanguage(List<Tool> tools) {
+    default Optional<ReplyLanguage.Selection> forcedCall(List<Tool> tools) {
         return Optional.empty();
     }
 
     /**
-     * The family's AUTO reply language with the CONTENT hole stated - the tools + JSON-schema seam:
-     * pass {@code gbnf(schemaGbnf)} and one selection admits the family's own calls while visible
-     * text can only be the schema (thinking stays free). Empty = this family has no reply language
-     * yet; the caller rejects the combination loudly.
+     * The family's compiled AUTO selection with visible CONTENT bound to {@code contentGbnf} - the
+     * tools + JSON-schema seam: the selection admits the family's own calls while visible text can
+     * only be that grammar (thinking stays free). SOURCE in, the COMPILED selection out. Empty =
+     * this family has no reply language yet; the caller rejects the combination loudly.
      */
-    default Optional<ReplyLanguage.Node> autoLanguage(ReplyLanguage.Node contentHole) {
+    default Optional<ReplyLanguage.Selection> constrainedAuto(String contentGbnf) {
         return Optional.empty();
     }
 

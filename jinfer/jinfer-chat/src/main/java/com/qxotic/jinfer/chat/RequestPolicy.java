@@ -116,16 +116,16 @@ public final class RequestPolicy {
      * Tools AND a schema-constrained answer as ONE selection: the family's auto language with the
      * content hole carrying {@code contentGbnf} - the model may call its tools in its own syntax
      * (thinking stays free), and visible text can only be the schema. Empty when the family
-     * declares no {@link ChatTemplate#autoLanguage} - the caller's cue to reject the combination.
+     * declares no {@link ChatTemplate#constrainedAuto} - the caller's cue to reject the
+     * combination.
      */
     public static Optional<Sampler> toolsWithSchema(
             LoadedModel<?> m, String contentGbnf, Sampler base, int[] replySeed) {
         return m.template()
-                .flatMap(t -> t.autoLanguage(ReplyLanguage.gbnf(contentGbnf)))
+                .flatMap(t -> t.constrainedAuto(contentGbnf))
                 .map(
-                        language -> {
-                            ReplyLanguage.Walk walk =
-                                    ReplyLanguage.Selection.of(language, m.tokenizer()).walk();
+                        selection -> {
+                            ReplyLanguage.Walk walk = selection.walk();
                             for (int t : replySeed) walk.feed(t);
                             walk.beginReply();
                             return walk.sampler(base, endTurn(m));
@@ -153,9 +153,9 @@ public final class RequestPolicy {
         // the reply-language path: ONE walk constrains the whole call - header, an OFFERED name,
         // SCHEMA-BOUND arguments - leaving no free region to derail in (the legacy pin releases
         // after the name and the arguments were the model's own, the recorded defect class)
-        Optional<ReplyLanguage.Node> language = template.forcedCallLanguage(tools);
-        if (language.isPresent()) {
-            ReplyLanguage.Selection sel = ReplyLanguage.Selection.of(language.get(), m.tokenizer());
+        Optional<ReplyLanguage.Selection> selection = template.forcedCall(tools);
+        if (selection.isPresent()) {
+            ReplyLanguage.Selection sel = selection.get();
             int[] seed = sel.forcedPrefix();
             ReplyLanguage.Walk walk = sel.walk();
             for (int t : seed) walk.feed(t);
