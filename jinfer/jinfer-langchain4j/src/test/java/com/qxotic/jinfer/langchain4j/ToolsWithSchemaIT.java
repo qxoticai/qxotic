@@ -85,7 +85,12 @@ class ToolsWithSchemaIT {
 
     @Test
     void theSchemaMaskStillAdmitsTheCallAndThenShapesTheAnswer() {
-        UserMessage user = UserMessage.from("What is the weather in Munich right now?");
+        // the composed mask deliberately admits BOTH calling and answering - that choice is the
+        // model's; the prompt makes it unambiguous so the test pins the MASK, not a near-tie
+        UserMessage user =
+                UserMessage.from(
+                        "What is the weather in Munich right now? Check with your tool - do not"
+                                + " guess.");
         var r1 =
                 model.chat(
                         ChatRequest.builder().messages(user).parameters(toolsAndSchema()).build());

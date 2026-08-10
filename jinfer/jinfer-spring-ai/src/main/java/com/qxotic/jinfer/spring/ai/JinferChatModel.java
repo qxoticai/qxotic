@@ -347,8 +347,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                                                 ? null
                                                 : options.getMinP().floatValue(),
                                         options.getSeed()),
-                        tools.isEmpty() ? grammar(options.getOutputSchema()) : null,
-                        tools.isEmpty() ? null : contentGbnf(options.getOutputSchema()),
+                        contentGbnf(options.getOutputSchema(), !tools.isEmpty()),
                         null, // Spring AI has no forced-tool-call knob
                         cached,
                         options.getStopSequences(),
@@ -370,20 +369,14 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
      * in the prompt ({@code RequestPolicy.stating}). Spring AI's own {@code BeanOutputConverter}
      * already appends the schema as format instructions, so stating it here would say it twice.
      */
-    private Grammar.Spec grammar(String outputSchema) {
-        Map<String, Object> schema = parsedSchema(outputSchema);
-        return schema == null ? null : Grammar.fromSchema(schema, engine.loaded().tokenizer());
-    }
-
-    /** The same schema as GBNF source - with tools present it rides the family reply language. */
-    private static String contentGbnf(String outputSchema) {
-        Map<String, Object> schema = parsedSchema(outputSchema);
-        return schema == null ? null : Grammar.schemaHoleGbnf(schema);
-    }
-
+    /**
+     * The output schema as GBNF source - the engine compiles the family's constrained selection.
+     */
     @SuppressWarnings("unchecked")
-    private static Map<String, Object> parsedSchema(String outputSchema) {
-        return outputSchema == null ? null : (Map<String, Object>) JsonCodec.parse(outputSchema);
+    private static String contentGbnf(String outputSchema, boolean toolsOffered) {
+        if (outputSchema == null) return null;
+        Map<String, Object> schema = (Map<String, Object>) JsonCodec.parse(outputSchema);
+        return toolsOffered ? Grammar.schemaHoleGbnf(schema) : Grammar.schemaGbnf(schema);
     }
 
     @Override
