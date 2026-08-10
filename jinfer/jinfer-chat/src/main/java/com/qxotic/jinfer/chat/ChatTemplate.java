@@ -160,6 +160,16 @@ public interface ChatTemplate {
     }
 
     /**
+     * The family's AUTO reply language with the CONTENT hole stated - the tools + JSON-schema seam:
+     * pass {@code gbnf(schemaGbnf)} and one selection admits the family's own calls while visible
+     * text can only be the schema (thinking stays free). Empty = this family has no reply language
+     * yet; the caller rejects the combination loudly.
+     */
+    default Optional<ReplyLanguage.Node> autoLanguage(ReplyLanguage.Node contentHole) {
+        return Optional.empty();
+    }
+
+    /**
      * Trusted scaffold ids that COMPLETE the forced-call header once {@link #callGrammar}'s pin
      * releases - emitted verbatim, never sampled. Empty for families whose header ends at the
      * pinned name (the model's own continuation is on-distribution there); Harmony's header
