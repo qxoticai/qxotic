@@ -914,3 +914,141 @@ void jam_q5k_repack_band(void* arg, int t0, int t1, int tid) {
                     q5k_dot_scalar(J->w + (int64_t) r * J->w_stride, J->rhs + (int64_t) s * J->rhs_stride, sblocks);
     }
 }
+
+
+static inline float hsum256(__m256 v) {
+    __m128 lo = _mm256_castps256_ps128(v), hi = _mm256_extractf128_ps(v, 1);
+    __m128 sum = _mm_add_ps(lo, hi);
+    sum = _mm_add_ps(sum, _mm_movehl_ps(sum, sum));
+    sum = _mm_add_ss(sum, _mm_movehdup_ps(sum));
+    return _mm_cvtss_f32(sum);
+}
+
+/* ---- K-quant int8 FLOOR at full width: Q4_K @ s8 activations, 512-bit VNNI ----
+ * The seq < JAM_VNNI_MIN_SEQ path (DECODE: no repack amortization) used to fall to the SSE3
+ * floor - quarter-width SIMD on the machines that matter. Same job contract and math as
+ * jam_mm_q4k_sse3, restructured for gemv reality:
+ *   - 512-bit pair dots: a sub-block PAIR's activations are one contiguous 64B load and one
+ *     vpdpbusd yields both sub-block dots (lanes 0-7 = lo nibbles' sub-block, 8-15 = hi's);
+ *   - the per-pair scale vector [fLo x8 | fHi x8] is ONE permutexvar over a per-super-block
+ *     f16 register (ad8 * d * sc8, decoded with SIMD, not byte-by-byte);
+ *   - the dmin*min term is one 256-bit fnmadd per super-block (mn8 * ad8*as8 * dmin);
+ *   - 4-row streaming per column: the four activation vectors and ad8/as8 stay in registers
+ *     across the row group, so per extra row only the weight stream and dots are paid. */
+
+/* Q4_K packed-scale decode, branch- and loop-free (the llama.cpp 3-mask word trick): 12 scale
+ * bytes -> sc[8] in out[0..1], mn[8] in out[2..3], one byte each. ~10 int ops vs the 4-pass
+ * byte loop - the header decode was ~40% of the gemv floor's uops. */
+static inline void q4k_scales_mins_words(const uint8_t* b, uint32_t out[4]) {
+    const uint32_t kmask1 = 0x3f3f3f3f, kmask2 = 0x0f0f0f0f, kmask3 = 0x03030303;
+    uint32_t u0, u1, u2;
+    __builtin_memcpy(&u0, b, 4); __builtin_memcpy(&u1, b + 4, 4); __builtin_memcpy(&u2, b + 8, 4);
+    out[3] = ((u2 >> 4) & kmask2) | (((u1 >> 6) & kmask3) << 4);
+    out[2] = u1 & kmask1;
+    out[1] = (u2 & kmask2) | (((u0 >> 6) & kmask3) << 4);
+    out[0] = u0 & kmask1;
+}
+
+static const int32_t q4k_pair_idx[4][16] = {
+    {0,0,0,0,0,0,0,0, 1,1,1,1,1,1,1,1}, {2,2,2,2,2,2,2,2, 3,3,3,3,3,3,3,3},
+    {4,4,4,4,4,4,4,4, 5,5,5,5,5,5,5,5}, {6,6,6,6,6,6,6,6, 7,7,7,7,7,7,7,7}};
+
+void jam_mm_q4k_avx512vnni(void* arg, int rb, int re, int tid) {
+    (void) tid;
+    const jam_q8_job* J = (const jam_q8_job*) arg;
+    const char* W = (const char*) J->a;
+    const int8_t* AQ = J->aq; const float* AD = J->ad; const float* AS = J->asum;
+    float* C = (float*) J->c;
+    const int ldc = J->ldc, n = J->n, k = J->k, nb = J->nb;
+    const int sblocks = k / JAM_QKK;
+    const size_t w_stride = (size_t)(J->lda / JAM_QKK) * JAM_Q4K_BYTES;
+    const __m256i m4 = _mm256_set1_epi8(0x0F);
+    for (int j = 0; j < n; ++j) {
+        const int8_t* aq = AQ + (size_t) j * k;
+        const float* ad = AD + (size_t) j * nb;
+        const float* as = AS + (size_t) j * nb;
+        int i = rb;
+        for (; i + 3 < re; i += 4) {
+            const uint8_t* w0 = (const uint8_t*) (W + (size_t) i * w_stride);
+            const uint8_t* w1 = w0 + w_stride, *w2 = w1 + w_stride, *w3 = w2 + w_stride;
+            __m512 f0 = _mm512_setzero_ps(), f1 = _mm512_setzero_ps();
+            __m512 f2 = _mm512_setzero_ps(), f3 = _mm512_setzero_ps();
+            float  m0 = 0.f, m1 = 0.f, m2 = 0.f, m3 = 0.f;
+            for (int B = 0; B < sblocks; ++B) {
+                _mm_prefetch((const char*) (w0 + 4 * JAM_Q4K_BYTES), _MM_HINT_T0);
+                _mm_prefetch((const char*) (w1 + 4 * JAM_Q4K_BYTES), _MM_HINT_T0);
+                _mm_prefetch((const char*) (w2 + 4 * JAM_Q4K_BYTES), _MM_HINT_T0);
+                _mm_prefetch((const char*) (w3 + 4 * JAM_Q4K_BYTES), _MM_HINT_T0);
+                __m512i acts[4];
+                for (int g = 0; g < 4; ++g)
+                    acts[g] = _mm512_loadu_si512((const void*) (aq + (size_t) B * JAM_QKK + g * 64));
+                __m256 ad8 = _mm256_loadu_ps(ad + B * 8);
+                __m256 asd8 = _mm256_mul_ps(_mm256_loadu_ps(as + B * 8), ad8); /* ad*as per sub-block */
+                /* per row: decode once, 4 pair dots, 1 vectorized scale apply, 1 vectorized min */
+                #define Q4K_ROW(WR, FR, MR) do { \
+                    float d = jam_half2float(*(const uint16_t*) (WR)); \
+                    float dmin = jam_half2float(*(const uint16_t*) ((WR) + 2)); \
+                    uint32_t sm[4]; q4k_scales_mins_words((WR) + 4, sm); \
+                    __m256 sc8 = _mm256_cvtepi32_ps(_mm256_cvtepu8_epi32(_mm_loadl_epi64((const __m128i*) sm))); \
+                    __m256 mn8 = _mm256_cvtepi32_ps(_mm256_cvtepu8_epi32(_mm_loadl_epi64((const __m128i*) (sm + 2)))); \
+                    __m256 f8 = _mm256_mul_ps(_mm256_mul_ps(ad8, sc8), _mm256_set1_ps(d)); \
+                    __m512 f16 = _mm512_insertf32x8(_mm512_castps256_ps512(f8), f8, 1); \
+                    const uint8_t* q = (WR) + 16; \
+                    for (int g = 0; g < 4; ++g) { \
+                        __m256i qb = _mm256_loadu_si256((const __m256i*) (q + g * 32)); \
+                        __m256i lo = _mm256_and_si256(qb, m4); \
+                        __m256i hi = _mm256_and_si256(_mm256_srli_epi16(qb, 4), m4); \
+                        __m512i wp = _mm512_inserti64x4(_mm512_castsi256_si512(lo), hi, 1); \
+                        __m512i idot = _mm512_dpbusd_epi32(_mm512_setzero_si512(), wp, acts[g]); \
+                        __m512 scale = _mm512_permutexvar_ps( \
+                                _mm512_load_si512((const void*) q4k_pair_idx[g]), f16); \
+                        (FR) = _mm512_fmadd_ps(_mm512_cvtepi32_ps(idot), scale, (FR)); \
+                    } \
+                    __m256 mm = _mm256_mul_ps(mn8, asd8); \
+                    (MR) += dmin * hsum256(mm); \
+                } while (0)
+                Q4K_ROW(w0, f0, m0);
+                Q4K_ROW(w1, f1, m1);
+                Q4K_ROW(w2, f2, m2);
+                Q4K_ROW(w3, f3, m3);
+                #undef Q4K_ROW
+                w0 += JAM_Q4K_BYTES; w1 += JAM_Q4K_BYTES; w2 += JAM_Q4K_BYTES; w3 += JAM_Q4K_BYTES;
+            }
+            C[(size_t) j * ldc + i]     = _mm512_reduce_add_ps(f0) - m0;
+            C[(size_t) j * ldc + i + 1] = _mm512_reduce_add_ps(f1) - m1;
+            C[(size_t) j * ldc + i + 2] = _mm512_reduce_add_ps(f2) - m2;
+            C[(size_t) j * ldc + i + 3] = _mm512_reduce_add_ps(f3) - m3;
+        }
+        for (; i < re; ++i) {   /* row tail */
+            const uint8_t* w = (const uint8_t*) (W + (size_t) i * w_stride);
+            __m512 f0 = _mm512_setzero_ps(); float mAcc = 0.f;
+            for (int B = 0; B < sblocks; ++B, w += JAM_Q4K_BYTES) {
+                __m512i acts[4];
+                for (int g = 0; g < 4; ++g)
+                    acts[g] = _mm512_loadu_si512((const void*) (aq + (size_t) B * JAM_QKK + g * 64));
+                __m256 ad8 = _mm256_loadu_ps(ad + B * 8);
+                __m256 asd8 = _mm256_mul_ps(_mm256_loadu_ps(as + B * 8), ad8);
+                float d = jam_half2float(*(const uint16_t*) w);
+                float dmin = jam_half2float(*(const uint16_t*) (w + 2));
+                uint32_t sm[4]; q4k_scales_mins_words(w + 4, sm);
+                __m256 sc8 = _mm256_cvtepi32_ps(_mm256_cvtepu8_epi32(_mm_loadl_epi64((const __m128i*) sm)));
+                __m256 mn8 = _mm256_cvtepi32_ps(_mm256_cvtepu8_epi32(_mm_loadl_epi64((const __m128i*) (sm + 2))));
+                __m256 f8 = _mm256_mul_ps(_mm256_mul_ps(ad8, sc8), _mm256_set1_ps(d));
+                __m512 f16 = _mm512_insertf32x8(_mm512_castps256_ps512(f8), f8, 1);
+                const uint8_t* q = w + 16;
+                for (int g = 0; g < 4; ++g) {
+                    __m256i qb = _mm256_loadu_si256((const __m256i*) (q + g * 32));
+                    __m256i lo = _mm256_and_si256(qb, m4);
+                    __m256i hi = _mm256_and_si256(_mm256_srli_epi16(qb, 4), m4);
+                    __m512i wp = _mm512_inserti64x4(_mm512_castsi256_si512(lo), hi, 1);
+                    __m512i idot = _mm512_dpbusd_epi32(_mm512_setzero_si512(), wp, acts[g]);
+                    __m512 scale = _mm512_permutexvar_ps(
+                            _mm512_load_si512((const void*) q4k_pair_idx[g]), f16);
+                    f0 = _mm512_fmadd_ps(_mm512_cvtepi32_ps(idot), scale, f0);
+                }
+                mAcc += dmin * hsum256(_mm256_mul_ps(mn8, asd8));
+            }
+            C[(size_t) j * ldc + i] = _mm512_reduce_add_ps(f0) - mAcc;
+        }
+    }
+}
