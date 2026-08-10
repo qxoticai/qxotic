@@ -37,7 +37,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * The {@code RequestPolicy.forceCall} dispatch, unit-level: a template declaring a {@code
- * forcedCallLanguage} is driven by ONE walk (seed = the selection's forced prefix, sampler =
+ * forcedCall} selection is driven by ONE walk (seed = the selection's forced prefix, sampler =
  * mask-then-feed, parser seed = reply seed + forced prefix), while a template with only the legacy
  * hooks keeps the seed/pin recipe. The generation below runs the sampler exactly as the engine
  * would and must produce the family's own wire deterministically - forced regions are single-path
@@ -72,17 +72,22 @@ public final class RequestPolicyForceCallTest {
             }
 
             @Override
-            public Optional<ReplyLanguage.Node> forcedCallLanguage(List<Tool> tools) {
+            public Optional<ReplyLanguage.Selection> forcedCall(List<Tool> tools) {
                 return Optional.of(
-                        seq(
-                                call(
-                                        text -> List.of(new Part.ToolCall("", "f", Map.of())),
-                                        mark("<call>"),
-                                        bytes("f("),
-                                        gbnf("root ::= \"1\""),
-                                        bytes(")"),
-                                        mark("</call>")),
-                                opt(mark("<end>"))));
+                        ReplyLanguage.Selection.of(
+                                seq(
+                                        call(
+                                                text ->
+                                                        List.of(
+                                                                new Part.ToolCall(
+                                                                        "", "f", Map.of())),
+                                                mark("<call>"),
+                                                bytes("f("),
+                                                gbnf("root ::= \"1\""),
+                                                bytes(")"),
+                                                mark("</call>")),
+                                        opt(mark("<end>"))),
+                                TOK));
             }
         };
     }

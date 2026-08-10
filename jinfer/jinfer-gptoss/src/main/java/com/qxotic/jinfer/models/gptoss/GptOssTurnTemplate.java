@@ -277,7 +277,7 @@ public final class GptOssTurnTemplate implements TurnTemplate {
     public ReplyParser parser() {
         if (autoReply == null) {
             autoReply =
-                    ReplyLanguage.Selection.of(autoLanguage(ReplyLanguage.free()).get(), tokenizer);
+                    ReplyLanguage.Selection.of(harmonyLanguage(ReplyLanguage.free()), tokenizer);
         }
         return autoReply.walk();
     }
@@ -286,7 +286,13 @@ public final class GptOssTurnTemplate implements TurnTemplate {
      * The FINAL channel takes the hole; analysis and preamble stay free (the channel-scoping law).
      */
     @Override
-    public Optional<ReplyLanguage.Node> autoLanguage(ReplyLanguage.Node contentHole) {
+    public Optional<ReplyLanguage.Selection> constrainedAuto(String contentGbnf) {
+        return Optional.of(
+                ReplyLanguage.Selection.of(
+                        harmonyLanguage(ReplyLanguage.gbnf(contentGbnf)), tokenizer));
+    }
+
+    private ReplyLanguage.Node harmonyLanguage(ReplyLanguage.Node contentHole) {
         ReplyLanguage.Node sep =
                 ReplyLanguage.alt(
                         ReplyLanguage.mark("<|end|>"),
@@ -318,8 +324,7 @@ public final class GptOssTurnTemplate implements TurnTemplate {
                             ReplyLanguage.free()));
         }
         ReplyLanguage.Node msg = new ReplyLanguage.Node.Alt(shapes);
-        return Optional.of(
-                ReplyLanguage.rep(ReplyLanguage.seq(msg, ReplyLanguage.opt(sep)), 0, -1));
+        return ReplyLanguage.rep(ReplyLanguage.seq(msg, ReplyLanguage.opt(sep)), 0, -1);
     }
 
     /** One canonical Harmony message shape; {@code channelName} null = the call header. */
@@ -365,7 +370,7 @@ public final class GptOssTurnTemplate implements TurnTemplate {
      * on the 20B.
      */
     @Override
-    public Optional<ReplyLanguage.Node> forcedCallLanguage(List<Tool> tools) {
+    public Optional<ReplyLanguage.Selection> forcedCall(List<Tool> tools) {
         if (tools.isEmpty()) return Optional.empty();
         List<ReplyLanguage.Node> options = new ArrayList<>(tools.size());
         for (Tool tool : tools) {
@@ -381,9 +386,11 @@ public final class GptOssTurnTemplate implements TurnTemplate {
                             ReplyLanguage.gbnf(Grammar.schemaGbnf(schema))));
         }
         return Optional.of(
-                ReplyLanguage.seq(
-                        new ReplyLanguage.Node.Alt(options),
-                        ReplyLanguage.opt(ReplyLanguage.mark("<|call|>"))));
+                ReplyLanguage.Selection.of(
+                        ReplyLanguage.seq(
+                                new ReplyLanguage.Node.Alt(options),
+                                ReplyLanguage.opt(ReplyLanguage.mark("<|call|>"))),
+                        tokenizer));
     }
 
     /**

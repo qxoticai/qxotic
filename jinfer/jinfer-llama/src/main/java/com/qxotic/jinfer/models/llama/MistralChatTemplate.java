@@ -174,8 +174,9 @@ public final class MistralChatTemplate implements ChatTemplate {
     }
 
     @Override
-    public Optional<ReplyLanguage.Node> autoLanguage(ReplyLanguage.Node contentHole) {
-        return Optional.of(language(contentHole));
+    public Optional<ReplyLanguage.Selection> constrainedAuto(String contentGbnf) {
+        return Optional.of(
+                ReplyLanguage.Selection.of(language(ReplyLanguage.gbnf(contentGbnf)), tokenizer));
     }
 
     /** The family tree with the content hole stated: {@code (content | call)* </s>?}. */
@@ -202,7 +203,7 @@ public final class MistralChatTemplate implements ChatTemplate {
      * no free region between the seed and the name for the model to derail in.
      */
     @Override
-    public Optional<ReplyLanguage.Node> forcedCallLanguage(List<Tool> tools) {
+    public Optional<ReplyLanguage.Selection> forcedCall(List<Tool> tools) {
         if (tools.isEmpty()) return Optional.empty();
         List<ReplyLanguage.Node> options = new ArrayList<>(tools.size());
         for (Tool tool : tools) {
@@ -215,9 +216,11 @@ public final class MistralChatTemplate implements ChatTemplate {
                             ReplyLanguage.gbnf(Grammar.schemaGbnf(tool.parameters()))));
         }
         return Optional.of(
-                ReplyLanguage.seq(
-                        new ReplyLanguage.Node.Alt(options),
-                        ReplyLanguage.opt(ReplyLanguage.mark("</s>"))));
+                ReplyLanguage.Selection.of(
+                        ReplyLanguage.seq(
+                                new ReplyLanguage.Node.Alt(options),
+                                ReplyLanguage.opt(ReplyLanguage.mark("</s>"))),
+                        tokenizer));
     }
 
     /**

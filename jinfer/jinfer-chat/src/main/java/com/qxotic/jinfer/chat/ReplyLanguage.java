@@ -228,7 +228,7 @@ public final class ReplyLanguage {
     /**
      * One span family's derived faces, held by its template: the memoized AUTO walk ({@link
      * ChatTemplate#parser()} delegates here) and the same tree with the content hole stated ({@link
-     * ChatTemplate#autoLanguage} delegates here - the tools + JSON-schema seam). The marker
+     * ChatTemplate#constrainedAuto} delegates here - the tools + JSON-schema seam). The marker
      * spellings are written ONCE; pruning still adapts them per checkpoint.
      */
     public static final class Spans {
@@ -264,8 +264,13 @@ public final class ReplyLanguage {
             return auto.walk();
         }
 
+        /** The compiled AUTO selection with content bound to {@code contentGbnf}. */
+        public Selection constrainedAuto(String contentGbnf) {
+            return Selection.of(language(gbnf(contentGbnf)), tokenizer);
+        }
+
         /** The family tree with the content hole stated. */
-        public Node language(Node contentHole) {
+        private Node language(Node contentHole) {
             return spans(
                     thinkOpen, thinkClose, callOpen, callClose, calls, terminator, contentHole);
         }

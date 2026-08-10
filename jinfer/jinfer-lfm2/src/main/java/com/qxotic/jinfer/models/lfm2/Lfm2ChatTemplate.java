@@ -158,8 +158,8 @@ public final class Lfm2ChatTemplate implements TurnTemplate {
     }
 
     @Override
-    public Optional<ReplyLanguage.Node> autoLanguage(ReplyLanguage.Node contentHole) {
-        return Optional.of(spans().language(contentHole));
+    public Optional<ReplyLanguage.Selection> constrainedAuto(String contentGbnf) {
+        return Optional.of(spans().constrainedAuto(contentGbnf));
     }
 
     /** Forced calls seed {@code <|tool_call_start|>} and pin {@code [name}. */

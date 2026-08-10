@@ -331,8 +331,8 @@ public final class NemotronHTurnTemplate implements TurnTemplate {
     }
 
     @Override
-    public Optional<ReplyLanguage.Node> autoLanguage(ReplyLanguage.Node contentHole) {
-        return Optional.of(spans().language(contentHole));
+    public Optional<ReplyLanguage.Selection> constrainedAuto(String contentGbnf) {
+        return Optional.of(spans().constrainedAuto(contentGbnf));
     }
 
     /** Forced calls seed {@code <tool_call>}; the pin below holds the name. */
