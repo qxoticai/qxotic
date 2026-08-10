@@ -4,20 +4,18 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.format.gguf.GGUF;
-import com.qxotic.jinfer.F32FloatTensor;
 import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
+import com.qxotic.jinfer.chat.ReplyLanguage;
 import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.TokenRuns;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.kernels.ModelLoader;
-import com.qxotic.jinfer.llm.Grammar;
 import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.jinfer.llm.Tokenizers;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
-import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -38,8 +36,8 @@ import org.junit.jupiter.api.TestInstance;
  * implementation - and this battery proves the family's {@link ChatTemplate#parser} recovers it
  * structurally: non-trivial argument round-trips (unicode, newlines, nesting, numerics, empty),
  * multiple calls per reply, reasoning-then-call routing, content/call separation, malformed
- * payloads, verbatim payload ids, and the forced-call recipe's structural laws ({@code callSeed} is
- * a PREFIX of the generated wire; {@code callGrammar}'s pin ADMITS the family's own bytes).
+ * payloads, verbatim payload ids, and the forced-call law (the family's forced SELECTION admits its
+ * own rendered wire at every token and commits the call).
  *
  * <p>Loads only the GGUF's tokenizer (assume-skips when the file is absent); runs in seconds.
  */
@@ -306,49 +304,51 @@ public abstract class AbstractToolWireTest {
         assertTrue(sawClaimed, "the call wire must be claimed away from the output channels");
     }
 
-    // ---- forced-call recipe laws (seed / pin / epilogue vs the family's OWN wire) ----
+    // ---- the forced-call law (the family's OWN wire under its forced selection) ----
 
     @Test
-    void callSeedIsAPrefixOfTheGeneratedWire() {
-        int[] seed = template.callSeed();
-        Assumptions.assumeTrue(seed.length > 0, "family declares no call seed");
-        TokenRuns reply = runs();
-        call(reply, "get_weather", Map.of("city", "Paris"));
-        int[] wire = reply.build().toArray();
-        assertTrue(wire.length >= seed.length, "wire shorter than seed");
-        for (int i = 0; i < seed.length; i++) {
-            assertEquals(seed[i], wire[i], "seed diverges from the generated wire at " + i);
-        }
-    }
-
-    @Test
-    void callGrammarAdmitsTheFamilysOwnWire() {
-        int[] seed = template.callSeed();
-        var pin =
-                template.callGrammar(
+    void theForcedSelectionAdmitsTheFamilysOwnWire() {
+        var selection =
+                template.forcedCall(
                         List.of(
-                                new Tool("get_weather", "{\"x\":1}"),
-                                new Tool("get_time", "{\"x\":1}")));
-        Assumptions.assumeTrue(pin.isPresent(), "family declares no call grammar");
+                                new Tool(
+                                        "get_weather",
+                                        "{\"name\":\"get_weather\",\"parameters\":{\"type\":"
+                                                + "\"object\",\"properties\":{\"city\":{\"type\":"
+                                                + "\"string\"}},\"required\":[\"city\"]}}"),
+                                new Tool("get_time", "{\"name\":\"get_time\"}")));
+        Assumptions.assumeTrue(selection.isPresent(), "family cannot force calls");
         TokenRuns reply = runs();
         call(reply, "get_weather", Map.of("city", "Paris"));
         int[] wire = reply.build().toArray();
-        Grammar.Cursor cursor = Grammar.of(pin.get(), tokenizer).cursor();
-        // walk the generated wire from just after the seed; every token must keep the matcher
-        // alive (something still admissible) until the pin is fully matched - the released
-        // region after that is the model's own
-        var probe = F32FloatTensor.allocate(Arena.ofAuto(), tokenizer.vocabulary().size());
-        int i = seed.length;
-        while (!cursor.exhausted()) {
-            assertTrue(i < wire.length, "wire ended before the pin was satisfied");
-            cursor.advanceWith(wire[i]);
+
+        // every token of the family's own rendered call must stay admissible under the mask;
+        // the walk may complete (accept) before trailing turn scaffold - stop there
+        ReplyLanguage.Walk walk = selection.get().walk();
+        var probe =
+                com.qxotic.jinfer.F32FloatTensor.allocate(
+                        java.lang.foreign.Arena.ofAuto(), tokenizer.vocabulary().size());
+        for (int i = 0; i < wire.length; i++) {
+            for (int t = 0; t < tokenizer.vocabulary().size(); t++) probe.setFloat(t, 0f);
+            if (!walk.maskLogits(probe)) break; // the language is complete
             final int at = i;
-            if (!cursor.exhausted()) {
-                assertTrue(
-                        cursor.maskLogits(probe),
-                        () -> "pin rejects the family's own wire at token " + at);
+            if (probe.getFloat(wire[i]) != 0f) {
+                if (walk.accepted()) break; // scaffold past the language's own end
+                org.junit.jupiter.api.Assertions.fail(
+                        "the forced selection rejects the family's own wire at token " + at);
             }
-            i++;
+            walk.feed(wire[i]);
         }
+        Message m = walk.finish();
+        var calls =
+                m.content().stream()
+                        .filter(p -> p instanceof Part.ToolCall)
+                        .map(p -> (Part.ToolCall) p)
+                        .toList();
+        org.junit.jupiter.api.Assertions.assertEquals(
+                1, calls.size(), "the forced walk must commit the call: " + m.content());
+        org.junit.jupiter.api.Assertions.assertEquals("get_weather", calls.get(0).name());
+        org.junit.jupiter.api.Assertions.assertEquals(
+                "Paris", String.valueOf(calls.get(0).arguments().get("city")));
     }
 }
