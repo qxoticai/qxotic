@@ -269,6 +269,28 @@ public final class ReplyLanguage {
             return Selection.of(language(gbnf(contentGbnf)), tokenizer);
         }
 
+        /**
+         * The compiled forced-call selection: per offered tool, the family's call region with the
+         * header FORCED through the tool's name ({@code header} renders it, ending AT the name -
+         * never the delimiter after it, whose merge the model was trained on) and the arguments the
+         * model's own free span. Structure cannot derail: the walk holds the region to its closer
+         * and the terminator, where a released pin used to hand the model an off-policy free
+         * region.
+         */
+        public Selection forcedCall(List<Tool> tools, Function<Tool, String> header) {
+            List<Node> options = new ArrayList<>(tools.size());
+            for (Tool tool : tools) {
+                options.add(
+                        call(
+                                calls,
+                                mark(callOpen),
+                                bytes(header.apply(tool)),
+                                free(),
+                                mark(callClose)));
+            }
+            return Selection.of(seq(new Node.Alt(options), opt(terminator)), tokenizer);
+        }
+
         /** The family tree with the content hole stated. */
         private Node language(Node contentHole) {
             return spans(
@@ -361,9 +383,9 @@ public final class ReplyLanguage {
 
         /**
          * The longest leading run with exactly one admissible path, canonically tokenized - the
-         * derived {@code callSeed}/{@code replySeed}: inject into the prompt, then FEED to the walk
-         * so parsing starts in the state the prompt left the model in. Extraction stops at the
-         * first choice point; a payload's fixed opening stays the grammar's job.
+         * derived forced seed / {@code replySeed}: inject into the prompt, then FEED to the walk so
+         * parsing starts in the state the prompt left the model in. Extraction stops at the first
+         * choice point; a payload's fixed opening stays the grammar's job.
          */
         public int[] forcedPrefix() {
             return forcedPrefix.clone();

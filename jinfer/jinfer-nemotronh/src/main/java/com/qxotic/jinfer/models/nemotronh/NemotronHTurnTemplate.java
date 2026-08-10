@@ -8,6 +8,7 @@ import com.qxotic.jinfer.chat.ReplyLanguage;
 import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.TokenRuns;
+import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.chat.ToolCallSyntax;
 import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.chat.UnsupportedConversation;
@@ -335,16 +336,11 @@ public final class NemotronHTurnTemplate implements TurnTemplate {
         return Optional.of(spans().constrainedAuto(contentGbnf));
     }
 
-    /** Forced calls seed {@code <tool_call>}; the pin below holds the name. */
+    /** Forced calls: the header carries an OFFERED name, the arguments stay the model's own. */
     @Override
-    public int[] callSeed() {
-        return toolCall < 0 ? new int[0] : new int[] {toolCall};
-    }
-
-    /** The {@code <function=} header this family emits after the marker. */
-    @Override
-    public Optional<String> callPrefix() {
-        return Optional.of("\n<function=");
+    public Optional<ReplyLanguage.Selection> forcedCall(List<Tool> tools) {
+        if (tools.isEmpty()) return Optional.empty();
+        return Optional.of(spans().forcedCall(tools, tool -> "\n<function=" + tool.name()));
     }
 
     /** The generation prompt opens the think span (or its closed pair): pre-feed it. */
