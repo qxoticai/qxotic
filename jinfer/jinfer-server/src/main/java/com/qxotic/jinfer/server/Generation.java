@@ -168,6 +168,7 @@ final class Generation {
                         config.limits().requestTimeout().toNanos(),
                         sampling(request),
                         grammarSpec(request),
+                        null, // tools+schema composition: not yet offered over the wire
                         forcedTool(request),
                         false,
                         textStops(request.get("stop")),

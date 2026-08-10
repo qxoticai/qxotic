@@ -118,7 +118,7 @@ Capital capital = ChatClient.create(model)
 ```
 
 For reasoning models the grammar stays dormant during the think span and activates at `</think>`.
-An output schema combined with tools throws `IllegalArgumentException` (grammar-constrained output cannot admit tool-call syntax).
+An output schema composes with tools: the schema rides the family's reply language, so the model may call its tools in its own syntax while visible text can only be the schema.
 
 ## Images and audio (Gemma 4)
 

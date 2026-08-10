@@ -374,9 +374,12 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         Map<String, Object> schema = schemaOf(p);
         messages.addAll(
                 RequestPolicy.stating(
-                        Mappings.toMessages(request.messages(), videoSampler), schema));
+                        Mappings.toMessages(request.messages(), videoSampler),
+                        schema,
+                        !tools.isEmpty()));
         JinferChatRequestParameters j = p instanceof JinferChatRequestParameters jp ? jp : null;
         List<ChatMessage> requestMessages = request.messages();
+        boolean composed = schema != null && !tools.isEmpty();
         ChatEngine.Request lowered =
                 new ChatEngine.Request(
                         messages,
@@ -397,7 +400,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                                                 ? null
                                                 : j.minP().floatValue(),
                                         j != null && j.seed() != null ? j.seed() : seed),
-                        grammar(p, j, schema),
+                        composed ? null : grammar(p, j, schema),
+                        composed ? Grammar.schemaHoleGbnf(schema) : null,
                         p.toolChoice() == ToolChoice.REQUIRED ? "" : null,
                         cached,
                         p.stopSequences(),
@@ -473,10 +477,21 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         if (p.presencePenalty() != null)
             throw new UnsupportedFeatureException("presencePenalty is not supported");
         ResponseFormat rf = p.responseFormat();
-        if (rf != null && rf.type() == ResponseFormatType.JSON && tools)
-            throw new UnsupportedFeatureException(
-                    "tools together with a JSON response format are not supported:"
-                            + " grammar-constrained output cannot admit tool-call syntax");
+        if (rf != null && rf.type() == ResponseFormatType.JSON && tools) {
+            // WITH a schema the two compose: the schema rides the family's reply language
+            // (calls stay the family's own syntax, visible text can only be the schema).
+            // Schemaless JSON has no language to state, and a FORCED call plus a schema-shaped
+            // answer cannot both be THE reply - those two stay loud.
+            if (rf.jsonSchema() == null)
+                throw new UnsupportedFeatureException(
+                        "tools together with schemaless JSON format are not supported: state a"
+                                + " schema, the composed selection needs one");
+            if (p.toolChoice() == ToolChoice.REQUIRED)
+                throw new UnsupportedFeatureException(
+                        "toolChoice REQUIRED together with a JSON response format is not"
+                                + " supported: a forced call and a schema-shaped answer cannot"
+                                + " both be the reply");
+        }
         String grammar = p instanceof JinferChatRequestParameters j ? j.grammar() : null;
         if (grammar != null && tools)
             throw new UnsupportedFeatureException(
