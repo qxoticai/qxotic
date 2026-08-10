@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.qxotic</groupId>
+    <artifactId>jinfer-parent</artifactId>
+    <version>0.1.0</version>
+  </parent>
+
+  <artifactId>jinfer-xbench</artifactId>
+  <packaging>jar</packaging>
+
+  <name>jinfer-xbench</name>
+  <description>A/B bench for the FloatTensor migration (cycle 1): JinferBench's harness verbatim,
+    driving BOTH the old com.qxotic.jinfer.models.lfm2.Lfm2 and the x port
+    (com.qxotic.jinfer.x.models.lfm2.Lfm2) behind one --impl flag, so old vs x pp/tg is measured
+    by ONE timing loop in ONE JVM. A consumer of both trees, not an x-module: the "x never deps
+    on old" rule does not apply here — comparing them is the whole point.</description>
+
+  <properties>
+    <maven.deploy.skip>true</maven.deploy.skip>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jota</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-xcore</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-xlfm2</artifactId>
+    </dependency>
+    <!-- the old tree, benchmarked against the x port -->
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-lfm2</artifactId>
+    </dependency>
+  </dependencies>
+</project>
