@@ -26,7 +26,7 @@ final class RequestPolicyStatingTest {
                         Message.user("first"),
                         Message.assistant("ok"),
                         Message.user("Johann is 42"));
-        List<Message> out = RequestPolicy.stating(in, SCHEMA);
+        List<Message> out = RequestPolicy.stating(in, SCHEMA, false);
 
         assertEquals(in.size(), out.size(), "stating adds no message of its own");
         assertEquals(in.get(0), out.get(0));
@@ -42,8 +42,8 @@ final class RequestPolicyStatingTest {
     @Test
     void noSchemaIsNoChange() {
         List<Message> in = List.of(Message.user("hi"));
-        assertSame(in, RequestPolicy.stating(in, null));
-        assertSame(in, RequestPolicy.stating(in, Map.of()));
+        assertSame(in, RequestPolicy.stating(in, null, false));
+        assertSame(in, RequestPolicy.stating(in, Map.of(), false));
     }
 
     @Test
@@ -51,7 +51,7 @@ final class RequestPolicyStatingTest {
         // silently mutating a system message (or inventing a user turn) would change a cached
         // prefix's bytes - the request simply carries the grammar alone
         List<Message> in = List.of(Message.system("be brief"));
-        assertSame(in, RequestPolicy.stating(in, SCHEMA));
+        assertSame(in, RequestPolicy.stating(in, SCHEMA, false));
     }
 
     @Test
@@ -63,7 +63,7 @@ final class RequestPolicyStatingTest {
                 List.of(
                         Map.of("role", "system", "content", "be brief"),
                         Map.of("role", "user", "content", "Johann is 42"));
-        String typedText = RequestPolicy.stating(typed, SCHEMA).get(0).text();
+        String typedText = RequestPolicy.stating(typed, SCHEMA, false).get(0).text();
 
         List<Object> stated = RequestPolicy.statingMaps(maps, SCHEMA);
         assertEquals(maps.size(), stated.size(), "stating adds no message of its own");

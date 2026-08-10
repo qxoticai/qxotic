@@ -209,14 +209,19 @@ public final class ReplyLanguage {
             Function<String, List<Part.ToolCall>> calls,
             Node terminator,
             Node contentHole) {
+        Node callSpan = call(calls, mark(callOpen), free(), mark(callClose));
+        if (contentHole instanceof Node.Free) {
+            return seq(
+                    opt(think(mark(thinkOpen), free(), mark(thinkClose))),
+                    rep(alt(content(contentHole), callSpan), 0, -1),
+                    opt(terminator));
+        }
+        // a STATED hole appears at most once: one request has ONE answer, and a repeatable
+        // schema region would admit a second document after the first completed
         return seq(
                 opt(think(mark(thinkOpen), free(), mark(thinkClose))),
-                rep(
-                        alt(
-                                content(contentHole),
-                                call(calls, mark(callOpen), free(), mark(callClose))),
-                        0,
-                        -1),
+                rep(callSpan, 0, -1),
+                opt(seq(content(contentHole), rep(callSpan, 0, -1))),
                 opt(terminator));
     }
 

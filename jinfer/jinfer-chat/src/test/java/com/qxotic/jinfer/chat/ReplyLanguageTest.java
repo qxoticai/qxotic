@@ -660,6 +660,29 @@ public final class ReplyLanguageTest {
                 "the call still commits: " + m.content());
     }
 
+    @Test
+    void aStatedContentHoleAppearsAtMostOnce() {
+        // the spans preset's composed form: one request has ONE answer - after the document
+        // completes, a second one is unrepresentable while calls stay legal
+        Walk w =
+                Selection.of(
+                                ReplyLanguage.spans(
+                                        "<think>",
+                                        "</think>",
+                                        "<call>",
+                                        "</call>",
+                                        ONE,
+                                        mark("<end>"),
+                                        gbnf("root ::= \"{\" \"1\" \"}\"")),
+                                TOK)
+                        .walk();
+        run(w, ch('{'), ch('1'), ch('}'));
+        boolean[] ok = admitted(w);
+        assertFalse(ok[ch('{')], "no second document");
+        assertTrue(ok[CALL], "calls stay legal after the answer");
+        assertTrue(ok[END]);
+    }
+
     // ---- fixture -----------------------------------------------------------
 
     private static final class FakeTokenizer implements Tokenizer {

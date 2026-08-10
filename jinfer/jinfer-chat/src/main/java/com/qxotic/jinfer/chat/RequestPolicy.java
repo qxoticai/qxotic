@@ -204,17 +204,12 @@ public final class RequestPolicy {
      * and the warm-session tier re-ingests - a latency ceiling, never a correctness one; a
      * schema-scoped placement would fix it if extraction loops ever get long.
      *
+     * <p>{@code toolsOffered} switches to the composed wording - "and nothing else" talks a model
+     * out of CALLING its tools first, so with tools present the statement binds the eventual
+     * answer, not the whole reply.
+     *
      * <p>Returns {@code messages} unchanged when {@code schema} is null/empty or no user message is
      * present (a schema stated to nobody would be a silent prompt mutation).
-     */
-    public static List<Message> stating(List<Message> messages, Map<String, Object> schema) {
-        return stating(messages, schema, false);
-    }
-
-    /**
-     * As {@link #stating(List, Map)}; {@code toolsOffered} switches to the composed wording - "and
-     * nothing else" talks a model out of CALLING its tools first, so with tools on the request the
-     * statement binds the eventual answer, not the whole reply.
      */
     public static List<Message> stating(
             List<Message> messages, Map<String, Object> schema, boolean toolsOffered) {
