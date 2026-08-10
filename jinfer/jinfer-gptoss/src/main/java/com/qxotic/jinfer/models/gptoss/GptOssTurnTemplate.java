@@ -276,12 +276,17 @@ public final class GptOssTurnTemplate implements TurnTemplate {
     @Override
     public ReplyParser parser() {
         if (autoReply == null) {
-            autoReply = ReplyLanguage.Selection.of(autoLanguage(), tokenizer);
+            autoReply =
+                    ReplyLanguage.Selection.of(autoLanguage(ReplyLanguage.free()).get(), tokenizer);
         }
         return autoReply.walk();
     }
 
-    private ReplyLanguage.Node autoLanguage() {
+    /**
+     * The FINAL channel takes the hole; analysis and preamble stay free (the channel-scoping law).
+     */
+    @Override
+    public Optional<ReplyLanguage.Node> autoLanguage(ReplyLanguage.Node contentHole) {
         ReplyLanguage.Node sep =
                 ReplyLanguage.alt(
                         ReplyLanguage.mark("<|end|>"),
@@ -289,18 +294,32 @@ public final class GptOssTurnTemplate implements TurnTemplate {
                         ReplyLanguage.mark("<|return|>"));
         List<ReplyLanguage.Node> shapes = new ArrayList<>();
         for (boolean reopened : new boolean[] {false, true}) {
-            shapes.add(message(reopened, ReplyLanguage.Kind.THINK, "analysis", null));
-            shapes.add(message(reopened, ReplyLanguage.Kind.CONTENT, "final", null));
-            shapes.add(message(reopened, ReplyLanguage.Kind.CONTENT, "commentary", null));
+            shapes.add(
+                    message(
+                            reopened,
+                            ReplyLanguage.Kind.THINK,
+                            "analysis",
+                            null,
+                            ReplyLanguage.free()));
+            shapes.add(message(reopened, ReplyLanguage.Kind.CONTENT, "final", null, contentHole));
+            shapes.add(
+                    message(
+                            reopened,
+                            ReplyLanguage.Kind.CONTENT,
+                            "commentary",
+                            null,
+                            ReplyLanguage.free()));
             shapes.add(
                     message(
                             reopened,
                             ReplyLanguage.Kind.CALL,
                             null,
-                            GptOssTurnTemplate::harmonyCalls));
+                            GptOssTurnTemplate::harmonyCalls,
+                            ReplyLanguage.free()));
         }
         ReplyLanguage.Node msg = new ReplyLanguage.Node.Alt(shapes);
-        return ReplyLanguage.rep(ReplyLanguage.seq(msg, ReplyLanguage.opt(sep)), 0, -1);
+        return Optional.of(
+                ReplyLanguage.rep(ReplyLanguage.seq(msg, ReplyLanguage.opt(sep)), 0, -1));
     }
 
     /** One canonical Harmony message shape; {@code channelName} null = the call header. */
@@ -308,7 +327,8 @@ public final class GptOssTurnTemplate implements TurnTemplate {
             boolean reopened,
             ReplyLanguage.Kind kind,
             String channelName,
-            java.util.function.Function<String, List<Part.ToolCall>> calls) {
+            java.util.function.Function<String, List<Part.ToolCall>> calls,
+            ReplyLanguage.Node bodyHole) {
         List<ReplyLanguage.Node> body = new ArrayList<>();
         if (reopened) {
             body.add(ReplyLanguage.mark("<|start|>"));
@@ -334,7 +354,7 @@ public final class GptOssTurnTemplate implements TurnTemplate {
                                 ReplyLanguage.mark("<|constrain|>"),
                                 ReplyLanguage.bytes("json"))));
         body.add(ReplyLanguage.mark("<|message|>"));
-        body.add(ReplyLanguage.free()); // region-final: the body closes on any control token
+        body.add(bodyHole); // region-final: the body closes on any control token (or accepts)
         return new ReplyLanguage.Node.Region(kind, calls, body);
     }
 

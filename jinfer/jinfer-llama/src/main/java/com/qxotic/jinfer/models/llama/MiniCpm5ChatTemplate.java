@@ -191,7 +191,22 @@ public final class MiniCpm5ChatTemplate implements ChatTemplate {
     /**
      * Calls parse from the span between the trusted {@code <function} / {@code </function>} ids.
      */
-    private ReplyLanguage.Selection autoReply; // memoized: tools-independent, built once
+    private ReplyLanguage.Spans spans; // the family's derived faces, markers written once
+
+    private ReplyLanguage.Spans spans() {
+        if (spans == null) {
+            spans =
+                    new ReplyLanguage.Spans(
+                            "<think>",
+                            "</think>",
+                            "<function",
+                            "</function>",
+                            MiniCpmToolSyntax::parsePayload,
+                            ReplyLanguage.mark("<|im_end|>"),
+                            tokenizer);
+        }
+        return spans;
+    }
 
     /**
      * The reply-language walk; the {@code </param>} closers are SPECIALS inside the payload, and a
@@ -200,19 +215,12 @@ public final class MiniCpm5ChatTemplate implements ChatTemplate {
      */
     @Override
     public ReplyParser parser() {
-        if (autoReply == null) {
-            autoReply =
-                    ReplyLanguage.Selection.of(
-                            ReplyLanguage.spans(
-                                    "<think>",
-                                    "</think>",
-                                    "<function",
-                                    "</function>",
-                                    MiniCpmToolSyntax::parsePayload,
-                                    ReplyLanguage.mark("<|im_end|>")),
-                            tokenizer);
-        }
-        return autoReply.walk();
+        return spans().parser();
+    }
+
+    @Override
+    public Optional<ReplyLanguage.Node> autoLanguage(ReplyLanguage.Node contentHole) {
+        return Optional.of(spans().language(contentHole));
     }
 
     /** Forced calls seed {@code <function}; the pin below holds the name attribute. */

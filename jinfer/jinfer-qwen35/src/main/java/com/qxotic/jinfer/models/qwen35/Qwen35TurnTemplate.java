@@ -318,24 +318,32 @@ public final class Qwen35TurnTemplate implements TurnTemplate {
         return stripLeadingNl(s.substring(0, end));
     }
 
-    private ReplyLanguage.Selection autoReply; // memoized: tools-independent, built once
+    private ReplyLanguage.Spans spans; // the family's derived faces, markers written once
+
+    private ReplyLanguage.Spans spans() {
+        if (spans == null) {
+            spans =
+                    new ReplyLanguage.Spans(
+                            "<think>",
+                            "</think>",
+                            "<tool_call>",
+                            "</tool_call>",
+                            ToolCallSyntax::parseFunctionXml,
+                            ReplyLanguage.mark("<|im_end|>"),
+                            tokenizer);
+        }
+        return spans;
+    }
 
     /** The reply-language walk over {@code think? (content | tool_call-span)* im_end?}. */
     @Override
     public ReplyParser parser() {
-        if (autoReply == null) {
-            autoReply =
-                    ReplyLanguage.Selection.of(
-                            ReplyLanguage.spans(
-                                    "<think>",
-                                    "</think>",
-                                    "<tool_call>",
-                                    "</tool_call>",
-                                    ToolCallSyntax::parseFunctionXml,
-                                    ReplyLanguage.mark("<|im_end|>")),
-                            tokenizer);
-        }
-        return autoReply.walk();
+        return spans().parser();
+    }
+
+    @Override
+    public Optional<ReplyLanguage.Node> autoLanguage(ReplyLanguage.Node contentHole) {
+        return Optional.of(spans().language(contentHole));
     }
 
     /** Forced calls seed {@code <tool_call>}; the pin below holds the name. */

@@ -168,24 +168,31 @@ public final class MistralChatTemplate implements ChatTemplate {
     @Override
     public ReplyParser parser() {
         if (autoReply == null) {
-            autoReply =
-                    ReplyLanguage.Selection.of(
-                            ReplyLanguage.seq(
-                                    ReplyLanguage.rep(
-                                            ReplyLanguage.alt(
-                                                    ReplyLanguage.content(ReplyLanguage.free()),
-                                                    ReplyLanguage.call(
-                                                            MistralChatTemplate::walkCalls,
-                                                            ReplyLanguage.mark("[TOOL_CALLS]"),
-                                                            ReplyLanguage.free(),
-                                                            ReplyLanguage.mark("[ARGS]"),
-                                                            ReplyLanguage.free())),
-                                            0,
-                                            -1),
-                                    ReplyLanguage.opt(ReplyLanguage.mark("</s>"))),
-                            tokenizer);
+            autoReply = ReplyLanguage.Selection.of(language(ReplyLanguage.free()), tokenizer);
         }
         return autoReply.walk();
+    }
+
+    @Override
+    public Optional<ReplyLanguage.Node> autoLanguage(ReplyLanguage.Node contentHole) {
+        return Optional.of(language(contentHole));
+    }
+
+    /** The family tree with the content hole stated: {@code (content | call)* </s>?}. */
+    private static ReplyLanguage.Node language(ReplyLanguage.Node contentHole) {
+        return ReplyLanguage.seq(
+                ReplyLanguage.rep(
+                        ReplyLanguage.alt(
+                                ReplyLanguage.content(contentHole),
+                                ReplyLanguage.call(
+                                        MistralChatTemplate::walkCalls,
+                                        ReplyLanguage.mark("[TOOL_CALLS]"),
+                                        ReplyLanguage.free(),
+                                        ReplyLanguage.mark("[ARGS]"),
+                                        ReplyLanguage.free())),
+                        0,
+                        -1),
+                ReplyLanguage.opt(ReplyLanguage.mark("</s>")));
     }
 
     /**
