@@ -371,18 +371,19 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
      * already appends the schema as format instructions, so stating it here would say it twice.
      */
     private Grammar.Spec grammar(String outputSchema) {
-        if (outputSchema == null) return null;
-        @SuppressWarnings("unchecked")
-        Map<String, Object> schemaMap = (Map<String, Object>) JsonCodec.parse(outputSchema);
-        return Grammar.fromSchema(schemaMap, engine.loaded().tokenizer());
+        Map<String, Object> schema = parsedSchema(outputSchema);
+        return schema == null ? null : Grammar.fromSchema(schema, engine.loaded().tokenizer());
     }
 
     /** The same schema as GBNF source - with tools present it rides the family reply language. */
     private static String contentGbnf(String outputSchema) {
-        if (outputSchema == null) return null;
-        @SuppressWarnings("unchecked")
-        Map<String, Object> schemaMap = (Map<String, Object>) JsonCodec.parse(outputSchema);
-        return Grammar.schemaHoleGbnf(schemaMap);
+        Map<String, Object> schema = parsedSchema(outputSchema);
+        return schema == null ? null : Grammar.schemaHoleGbnf(schema);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> parsedSchema(String outputSchema) {
+        return outputSchema == null ? null : (Map<String, Object>) JsonCodec.parse(outputSchema);
     }
 
     @Override
