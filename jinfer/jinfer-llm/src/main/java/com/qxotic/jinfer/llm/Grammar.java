@@ -1117,6 +1117,11 @@ public final class Grammar {
         return Schema.toGbnf(schema, true);
     }
 
+    /** The schemaless-JSON source ({@link #json}'s grammar) - the JSON-mode content hole. */
+    public static String jsonGbnf() {
+        return JSON_GRAMMAR;
+    }
+
     /**
      * {@link #schemaGbnf} without LEADING whitespace - the reply-language content-hole form. At a
      * dispatch point interstitial newlines are scaffold between spans, and a hole whose entry set

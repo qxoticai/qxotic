@@ -122,12 +122,15 @@ public interface ChatTemplate {
     }
 
     /**
-     * The family's compiled AUTO selection with visible CONTENT bound to {@code contentGbnf} - the
-     * tools + JSON-schema seam: the selection admits the family's own calls while visible text can
-     * only be that grammar (thinking stays free). SOURCE in, the COMPILED selection out. Empty =
-     * this family has no reply language yet; the caller rejects the combination loudly.
+     * The family's compiled constrained selection: visible CONTENT can only be {@code contentGbnf}
+     * and thinking stays free. {@code toolsOffered} states the reply's rights - true admits the
+     * family's own calls and the answer is optional (the model may call instead); false REQUIRES
+     * the document and admits no calls (an empty reply must not comply). SOURCE in, the COMPILED
+     * selection out - the {@link ReplyLanguage.Node} authoring vocabulary never crosses this seam.
+     * Empty = this family has no reply language; the caller falls back or rejects.
      */
-    default Optional<ReplyLanguage.Selection> constrainedAuto(String contentGbnf) {
+    default Optional<ReplyLanguage.Selection> constrainedAuto(
+            String contentGbnf, boolean toolsOffered) {
         return Optional.empty();
     }
 }

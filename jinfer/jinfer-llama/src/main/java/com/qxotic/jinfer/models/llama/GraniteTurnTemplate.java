@@ -225,8 +225,9 @@ public final class GraniteTurnTemplate implements TurnTemplate {
     }
 
     @Override
-    public Optional<ReplyLanguage.Selection> constrainedAuto(String contentGbnf) {
-        return Optional.of(spans().constrainedAuto(contentGbnf));
+    public Optional<ReplyLanguage.Selection> constrainedAuto(
+            String contentGbnf, boolean toolsOffered) {
+        return Optional.of(spans().constrainedAuto(contentGbnf, toolsOffered));
     }
 
     /** Forced calls: the envelope carries an OFFERED name, the schema binds the arguments. */
