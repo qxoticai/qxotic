@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.qxotic</groupId>
+    <artifactId>jinfer-parent</artifactId>
+    <version>0.1.0</version>
+  </parent>
+
+  <artifactId>jinfer-xcore</artifactId>
+  <packaging>jar</packaging>
+
+  <name>jinfer-xcore</name>
+  <description>MemoryView-based kernel cone (FloatTensor migration; see qxotic/.opencode/plans/memoryview-migration.md).
+    Kernels over com.qxotic.jota.memory.MemoryView&lt;MemorySegment&gt;: dtype checked at entry,
+    (segment, byteOffset) extracted once, bodies shared with jinfer-core's FloatTensor kernels.</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jota</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>graalvm-annotations</artifactId>
+      <!-- @AlwaysInline: compile-only, not bundled; GraalVM supplies it at native-image build -->
+      <scope>provided</scope>
+    </dependency>
+    <!-- differential oracles: the old kernel implementations, test-scope ONLY (distinct package
+         roots make the two trees coexist on one classpath) -->
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-core</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <!-- Differential oracles compare against the JAVA floor: exclude the JAM backends so
+               the old Dispatch routes gemm/gemv to the same dot-based code (bit-equal). JAM
+               parity arrives with the JAM arm of x.MatMul. -->
+          <classpathDependencyExcludes>
+            <classpathDependencyExclude>com.qxotic:jam-native</classpathDependencyExclude>
+            <classpathDependencyExclude>com.qxotic:jam-vector</classpathDependencyExclude>
+            <classpathDependencyExclude>com.qxotic:jam-scalar</classpathDependencyExclude>
+          </classpathDependencyExcludes>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>
