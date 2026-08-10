@@ -23,6 +23,12 @@
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
+      <artifactId>jam-core</artifactId>
+      <!-- API + ServiceLoader discovery only; the backends (jam-native/jam-vector) arrive from
+           the CONSUMER's classpath. Absent -> MatMul runs the Java floor, bit-identical. -->
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
       <artifactId>graalvm-annotations</artifactId>
       <!-- @AlwaysInline: compile-only, not bundled; GraalVM supplies it at native-image build -->
       <scope>provided</scope>

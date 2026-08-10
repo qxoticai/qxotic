@@ -7,6 +7,7 @@ import static com.qxotic.jinfer.x.Segments.readFloat;
 import static com.qxotic.jinfer.x.Segments.readFloat16;
 import static com.qxotic.jinfer.x.Segments.writeFloat;
 
+import com.qxotic.jam.JAM;
 import com.qxotic.jinfer.x.Views.Raw;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.memory.MemoryView;
@@ -29,9 +30,14 @@ import jdk.incubator.vector.VectorOperators;
  * <p>Computes {@code C = W · Aᵀ}: for output row {@code s} and weight row {@code row}, {@code
  * C[s*cStride + cOff + row] = dot(W[row], A[s])}.
  *
- * <p>Cycle-1 scope: the Java floor only. The JAM backend arm slots in here later (its {@code (vseg,
- * vbase)} contract is exactly {@code Raw}), including the old runtime-decline → floor handoff and
- * the C2 {@code slowDot} policy from {@code Dispatch}.
+ * <p>Routing is {@code Dispatch}'s measured policy, verbatim: <b>decode</b> ({@code n == 1},
+ * bandwidth-bound) is always the Java floor (the dense dots beat jam's gemv there; the C2 {@code
+ * slowDot} k-quant exception lands with cycle-2's dtypes); <b>prefill</b> ({@code n > 1},
+ * compute-bound) tries native jam, then Vector-API jam, then the floor — jam is only offered a call
+ * when the dtype has a kernel AND k and the weight offset are block-aligned ({@code Dispatch.f32io}
+ * collapses to {@code !inPlace}: {@code a}/{@code c} are FP32 by construction). A runtime decline
+ * (EBUSY, older libjam) falls to the next rung. With no jam backend on the classpath the path is
+ * bit-identical to the floor.
  */
 public final class MatMul {
 
@@ -63,6 +69,22 @@ public final class MatMul {
         Views.requireContiguous(w, "w");
         MemorySegment ws = w.memory().base();
         long wBase = w.byteOffset();
+        // prefill rungs: native jam -> Vector-API jam -> floor (decode n==1 stays on the floor:
+        // the measured Dispatch policy for the dense dots)
+        if (n > 1 && !inPlace && jamApplies(dt, k, wOff)) {
+            if (NATIVE != null
+                    && NATIVE.mm(
+                            ws, wBase, wOff, dt, wStride, av, aOff, aStride, cv, cOff, cStride, m,
+                            n, k)) {
+                return;
+            }
+            if (VECTOR != null
+                    && VECTOR.mm(
+                            ws, wBase, wOff, dt, wStride, av, aOff, aStride, cv, cOff, cStride, m,
+                            n, k)) {
+                return;
+            }
+        }
         if (dt == DataType.Q8_0) {
             long wByte = wBase + wOff / Q8_BLOCK * Q8_BLOCK_BYTES;
             long rowBytes = (long) wStride / Q8_BLOCK * Q8_BLOCK_BYTES;
@@ -407,5 +429,113 @@ public final class MatMul {
                             * readFloat(x, xByte + (long) i * Float.BYTES);
         }
         return sum;
+    }
+
+    // ------------------------------------------------------------------
+    // JAM backends — the port of JamMatMul + Dispatch's provider loading. Raw(vseg, vbase) IS
+    // jam's (segment, byte operand offset) contract, so the handoff is zero-copy; element
+    // offsets/strides convert exactly as the old adapter (weights block-aware, F32 operands ×4).
+    // ------------------------------------------------------------------
+
+    private static final System.Logger LOG = System.getLogger("jinfer.x.jam");
+
+    private static final JamMm NATIVE = boolFlag("jinfer.disableJam") ? null : load("native");
+    private static final JamMm VECTOR = load("vector");
+
+    /**
+     * One JAM backend over Raw pointers; {@code false} = runtime decline (caller falls through).
+     */
+    private static final class JamMm {
+        private final JAM jam;
+
+        JamMm(JAM jam) {
+            this.jam = jam;
+        }
+
+        boolean mm(
+                MemorySegment ws,
+                long wBase,
+                long wOff,
+                DataType dt,
+                int wStride,
+                Raw av,
+                long aOff,
+                int aStride,
+                Raw cv,
+                long cOff,
+                int cStride,
+                int m,
+                int n,
+                int k) {
+            long epb = dt.elementsPerBlock();
+            long wByte = wBase + wOff / epb * dt.byteSize(); // block-aligned per jamApplies
+            int st =
+                    jam.mm(
+                            ws,
+                            wByte,
+                            jamTag(dt),
+                            wStride,
+                            av.vseg(),
+                            av.vbase() + aOff * Float.BYTES,
+                            JAM.F32,
+                            aStride,
+                            cv.vseg(),
+                            cv.vbase() + cOff * Float.BYTES,
+                            JAM.F32,
+                            cStride,
+                            m,
+                            n,
+                            k);
+            return st == JAM.OK;
+        }
+    }
+
+    /** The named JAM backend, or {@code null} if absent/unavailable (Dispatch.loadJam verbatim). */
+    private static JamMm load(String id) {
+        for (JAM.Provider provider : JAM.providers()) {
+            if (!provider.id().equals(id)) continue;
+            try {
+                return new JamMm(provider.create());
+            } catch (Throwable t) {
+                LOG.log(System.Logger.Level.WARNING, "jam {0} backend unavailable ({1})", id, t);
+                return null;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Strict boolean system property (Dispatch.boolFlag verbatim: "1"/"yes"/typos warn + false).
+     */
+    private static boolean boolFlag(String name) {
+        String v = System.getProperty(name);
+        if (v == null) return false;
+        if (v.equalsIgnoreCase("true")) return true;
+        if (v.equalsIgnoreCase("false")) return false;
+        LOG.log(
+                System.Logger.Level.WARNING,
+                "ignoring -D{0}={1} (expected true or false)",
+                name,
+                v);
+        return false;
+    }
+
+    /**
+     * dtypes jam has a kernel for, with exact block alignment of k AND the weight offset (the union
+     * of Dispatch.jamSupports and gemmApplies' wOff check). Cycle 1: the 2.6B checkpoint's dtypes;
+     * the k-quants/MXFP4/NVFP4/Q1_0 land with their jota DataTypes in cycle 2.
+     */
+    private static boolean jamApplies(DataType dt, int k, long wOff) {
+        if (dt != DataType.Q8_0 && dt != DataType.FP32 && dt != DataType.FP16) return false;
+        long epb = dt.elementsPerBlock();
+        return k % epb == 0 && wOff % epb == 0;
+    }
+
+    /** jota DataType -> jam dtype tag (== ggml_type value, mapped explicitly to stay honest). */
+    private static int jamTag(DataType dt) {
+        if (dt == DataType.Q8_0) return JAM.Q8_0;
+        if (dt == DataType.FP32) return JAM.F32;
+        if (dt == DataType.FP16) return JAM.F16;
+        throw new IllegalArgumentException("jam has no kernel for " + dt);
     }
 }
