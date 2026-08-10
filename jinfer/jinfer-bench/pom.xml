@@ -24,6 +24,11 @@
   <dependencies>
     <dependency>
       <groupId>com.qxotic</groupId>
+      <artifactId>jota</artifactId>
+      <version>0.1.0</version>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
       <artifactId>jinfer-core</artifactId>
     </dependency>
     <dependency>
