@@ -759,14 +759,10 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
         return Optional.of(spans().constrainedAuto(contentGbnf));
     }
 
-    /** Forced calls seed {@code <|tool_call>} and pin {@code call:name}. */
+    /** Forced calls: the header carries an OFFERED name, the arguments stay the model's own. */
     @Override
-    public int[] callSeed() {
-        return new int[] {require("<|tool_call>")};
-    }
-
-    @Override
-    public Optional<String> callPrefix() {
-        return Optional.of("call:");
+    public Optional<ReplyLanguage.Selection> forcedCall(List<Tool> tools) {
+        if (tools.isEmpty()) return Optional.empty();
+        return Optional.of(spans().forcedCall(tools, tool -> "call:" + tool.name()));
     }
 }

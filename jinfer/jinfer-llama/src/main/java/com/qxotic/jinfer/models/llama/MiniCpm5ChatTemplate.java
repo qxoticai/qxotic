@@ -223,16 +223,11 @@ public final class MiniCpm5ChatTemplate implements ChatTemplate {
         return Optional.of(spans().constrainedAuto(contentGbnf));
     }
 
-    /** Forced calls seed {@code <function}; the pin below holds the name attribute. */
+    /** Forced calls: the header carries an OFFERED name, the arguments stay the model's own. */
     @Override
-    public int[] callSeed() {
-        return new int[] {function};
-    }
-
-    /** The name attribute up to its opening quote. */
-    @Override
-    public Optional<String> callPrefix() {
-        return Optional.of(" name=\"");
+    public Optional<ReplyLanguage.Selection> forcedCall(List<Tool> tools) {
+        if (tools.isEmpty()) return Optional.empty();
+        return Optional.of(spans().forcedCall(tools, tool -> " name=\"" + tool.name()));
     }
 
     /** The generation prompt opens the think span (or its closed pair): pre-feed it. */

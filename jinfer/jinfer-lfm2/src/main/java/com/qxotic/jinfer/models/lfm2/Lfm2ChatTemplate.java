@@ -162,15 +162,11 @@ public final class Lfm2ChatTemplate implements TurnTemplate {
         return Optional.of(spans().constrainedAuto(contentGbnf));
     }
 
-    /** Forced calls seed {@code <|tool_call_start|>} and pin {@code [name}. */
+    /** Forced calls: the header carries an OFFERED name, the arguments stay the model's own. */
     @Override
-    public int[] callSeed() {
-        return new int[] {tcStart};
-    }
-
-    @Override
-    public Optional<String> callPrefix() {
-        return Optional.of("[");
+    public Optional<ReplyLanguage.Selection> forcedCall(List<Tool> tools) {
+        if (tools.isEmpty()) return Optional.empty();
+        return Optional.of(spans().forcedCall(tools, tool -> "[" + tool.name()));
     }
 
     // ---- verbatim splice (the round-trip law) ----
