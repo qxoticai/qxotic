@@ -347,7 +347,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                                                 ? null
                                                 : options.getMinP().floatValue(),
                                         options.getSeed()),
-                        grammar(options.getOutputSchema()),
+                        tools.isEmpty() ? grammar(options.getOutputSchema()) : null,
+                        tools.isEmpty() ? null : contentGbnf(options.getOutputSchema()),
                         null, // Spring AI has no forced-tool-call knob
                         cached,
                         options.getStopSequences(),
@@ -374,6 +375,14 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         @SuppressWarnings("unchecked")
         Map<String, Object> schemaMap = (Map<String, Object>) JsonCodec.parse(outputSchema);
         return Grammar.fromSchema(schemaMap, engine.loaded().tokenizer());
+    }
+
+    /** The same schema as GBNF source - with tools present it rides the family reply language. */
+    private static String contentGbnf(String outputSchema) {
+        if (outputSchema == null) return null;
+        @SuppressWarnings("unchecked")
+        Map<String, Object> schemaMap = (Map<String, Object>) JsonCodec.parse(outputSchema);
+        return Grammar.schemaHoleGbnf(schemaMap);
     }
 
     @Override
@@ -562,10 +571,9 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         boolean toolsOffered =
                 (o.getToolCallbacks() != null && !o.getToolCallbacks().isEmpty())
                         || !prefix.tools().isEmpty();
-        if (o.getOutputSchema() != null && toolsOffered)
-            throw new IllegalArgumentException(
-                    "tools together with an output schema are not supported:"
-                            + " grammar-constrained output cannot admit tool-call syntax");
+        // tools together with an output schema COMPOSE: the schema rides the family's reply
+        // language (calls stay the family's own syntax, visible text can only be the schema);
+        // a family without a reply language rejects at prepare, loudly
     }
 
     private ChatResponse response(

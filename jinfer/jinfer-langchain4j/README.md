@@ -58,7 +58,8 @@ System.out.println(response.finishReason());   // STOP | LENGTH | TOOL_EXECUTION
 ```
 
 String stop sequences, JSON response format (grammar-constrained decoding), and `toolChoice=REQUIRED` are supported.
-Unsupported knobs (penalties, per-request `modelName`, tools combined with a JSON response format) throw `UnsupportedFeatureException` instead of being silently ignored.
+Tools compose with a JSON *schema* response format: one selection admits the model's own tool calls while visible text can only be the schema, so the agent may call first and must answer shaped.
+Unsupported knobs (penalties, per-request `modelName`, tools with schemaless JSON format, `REQUIRED` with a response format) throw `UnsupportedFeatureException` instead of being silently ignored.
 
 ## Structured output
 
