@@ -241,7 +241,7 @@ class JinferStreamingChatModelTckIT extends AbstractStreamingChatModelIT {
 
     @Override
     protected boolean supportsToolsAndJsonResponseFormatWithSchema() {
-        return false;
+        return true; // the schema rides the family reply language; calls stay the family's own
     }
 
     @Override
