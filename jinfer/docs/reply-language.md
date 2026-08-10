@@ -298,8 +298,8 @@ Writing all nine families changed the interfaces; this is why the exercise prece
 | `callGrammar`, `callPrefix` | the CALL region and its body function | DELETED |
 | `callEpilogue` | interior forced regions (one admissible path) | DELETED |
 | "the pin ends AT the name" | survives as the FORCED-HEADER rule: `Spans.forcedCall` headers end at the name | done |
-| `SpansReplyParser`, `HarmonyReplyParser`, `SpanToolCallDetector`, `ToolCallDetector` | the walk's parse face | `SpansReplyParser` serves the Jinja fallback; `HarmonyReplyParser` is the differential reference (both die with lazy AUTO arming) |
-| `ChannelConstrainedSampler`, `withPrefixGrammar` | the walk's mask face | `withPrefixGrammar` DELETED; `ChannelConstrainedSampler` serves tool-less constrained requests until lazy AUTO arming |
+| `SpansReplyParser`, `HarmonyReplyParser`, `SpanToolCallDetector`, `ToolCallDetector` | the walk's parse face | `SpansReplyParser` serves the Jinja fallback's PARSE; `HarmonyReplyParser` is the differential reference (both die with lazy AUTO arming - masking is already unified) |
+| `ChannelConstrainedSampler`, `withPrefixGrammar` | the walk's mask face | BOTH DELETED - every constrained chat decode rides a selection (`constrainedAuto(gbnf, toolsOffered)`: tools = composed, tool-less = document REQUIRED; template-less models get the generic think-aware shape) |
 | stop-token sets, `RequestPolicy.endTurn` | the accept boundary plus the control rule | partially: `ended()` stops generation; stop sets remain the fast path |
 | `Thinking.capBudget`, think floor | region budgets (deferred; capBudget stays until then) | capBudget stays, now bans reopening once spent |
 | the server's bare-call string scan | unrepresentable input | pending lazy AUTO arming |
