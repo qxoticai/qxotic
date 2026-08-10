@@ -292,21 +292,21 @@ Writing all nine families changed the interfaces; this is why the exercise prece
 
 ## 10. What this replaces
 
-| today | becomes |
-| --- | --- |
-| `callSeed`, `replySeed` | forced-prefix extraction from the selection |
-| `callGrammar`, `callPrefix` | the CALL region and its body function |
-| `callEpilogue` | interior forced regions (one admissible path) |
-| "the pin ends AT the name" | meaningless: no interior grammar edges exist |
-| `SpansReplyParser`, `HarmonyReplyParser`, `SpanToolCallDetector`, `ToolCallDetector` | the walk's parse face |
-| `ChannelConstrainedSampler`, `withPrefixGrammar` | the walk's mask face |
-| stop-token sets, `RequestPolicy.endTurn` | the accept boundary plus the control rule |
-| `Thinking.capBudget`, think floor | region budgets (deferred; capBudget stays until then) |
-| the server's bare-call string scan | unrepresentable input |
-| per-family stop additions (`<|im_start|>`, `<|tool_response>`) | the control rule |
-| wire-law triangle (render vs grammar vs parser tests) | Law 2 over one artifact |
+| today | becomes | status |
+| --- | --- | --- |
+| `callSeed`, `replySeed` | forced-prefix extraction from the selection | `callSeed` DELETED; `replySeed` stays (parsing seam, not forcing) |
+| `callGrammar`, `callPrefix` | the CALL region and its body function | DELETED |
+| `callEpilogue` | interior forced regions (one admissible path) | DELETED |
+| "the pin ends AT the name" | survives as the FORCED-HEADER rule: `Spans.forcedCall` headers end at the name | done |
+| `SpansReplyParser`, `HarmonyReplyParser`, `SpanToolCallDetector`, `ToolCallDetector` | the walk's parse face | `SpansReplyParser` serves the Jinja fallback; `HarmonyReplyParser` is the differential reference (both die with lazy AUTO arming) |
+| `ChannelConstrainedSampler`, `withPrefixGrammar` | the walk's mask face | `withPrefixGrammar` DELETED; `ChannelConstrainedSampler` serves tool-less constrained requests until lazy AUTO arming |
+| stop-token sets, `RequestPolicy.endTurn` | the accept boundary plus the control rule | partially: `ended()` stops generation; stop sets remain the fast path |
+| `Thinking.capBudget`, think floor | region budgets (deferred; capBudget stays until then) | capBudget stays, now bans reopening once spent |
+| the server's bare-call string scan | unrepresentable input | pending lazy AUTO arming |
+| per-family stop additions (`<|im_start|>`, `<|tool_response>`) | the control rule | stops kept as belt-and-braces |
+| wire-law triangle (render vs grammar vs parser tests) | Law 2 over one artifact | ONE forced-selection wire law covers all nine families |
 
-`ChatTemplate`'s reply surface becomes one hook: `replyLanguage()`.
+`ChatTemplate`'s grammar surface is now three words - `parser()`, `forcedCall(tools)`, `constrainedAuto(gbnf)` - plus `replySeed` on the parsing side.
 
 ## 11. Migration plan
 
