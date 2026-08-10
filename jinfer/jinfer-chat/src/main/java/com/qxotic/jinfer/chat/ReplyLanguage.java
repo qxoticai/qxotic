@@ -226,10 +226,11 @@ public final class ReplyLanguage {
     }
 
     /**
-     * One span family's derived faces, held by its template: the memoized AUTO walk ({@link
-     * ChatTemplate#parser()} delegates here) and the same tree with the content hole stated ({@link
-     * ChatTemplate#constrainedAuto} delegates here - the tools + JSON-schema seam). The marker
-     * spellings are written ONCE; pruning still adapts them per checkpoint.
+     * One span family's derived faces, held by its template - the marker spellings are written ONCE
+     * and every {@link ChatTemplate} grammar word delegates here: {@code parser()} (the memoized
+     * AUTO walk), {@code constrainedAuto} (the tree with the content hole stated - the tools +
+     * JSON-schema seam) and {@code forcedCall} (headers forced through offered names). Pruning
+     * still adapts the spellings per checkpoint.
      */
     public static final class Spans {
         private final String thinkOpen;

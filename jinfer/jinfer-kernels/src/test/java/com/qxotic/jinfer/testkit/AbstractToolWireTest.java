@@ -2,8 +2,10 @@ package com.qxotic.jinfer.testkit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import com.qxotic.format.gguf.GGUF;
+import com.qxotic.jinfer.F32FloatTensor;
 import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
@@ -326,7 +328,7 @@ public abstract class AbstractToolWireTest {
         // the walk may complete (accept) before trailing turn scaffold - stop there
         ReplyLanguage.Walk walk = selection.get().walk();
         var probe =
-                com.qxotic.jinfer.F32FloatTensor.allocate(
+                F32FloatTensor.allocate(
                         java.lang.foreign.Arena.ofAuto(), tokenizer.vocabulary().size());
         for (int i = 0; i < wire.length; i++) {
             for (int t = 0; t < tokenizer.vocabulary().size(); t++) probe.setFloat(t, 0f);
@@ -334,8 +336,7 @@ public abstract class AbstractToolWireTest {
             final int at = i;
             if (probe.getFloat(wire[i]) != 0f) {
                 if (walk.accepted()) break; // scaffold past the language's own end
-                org.junit.jupiter.api.Assertions.fail(
-                        "the forced selection rejects the family's own wire at token " + at);
+                fail("the forced selection rejects the family's own wire at token " + at);
             }
             walk.feed(wire[i]);
         }
@@ -345,10 +346,8 @@ public abstract class AbstractToolWireTest {
                         .filter(p -> p instanceof Part.ToolCall)
                         .map(p -> (Part.ToolCall) p)
                         .toList();
-        org.junit.jupiter.api.Assertions.assertEquals(
-                1, calls.size(), "the forced walk must commit the call: " + m.content());
-        org.junit.jupiter.api.Assertions.assertEquals("get_weather", calls.get(0).name());
-        org.junit.jupiter.api.Assertions.assertEquals(
-                "Paris", String.valueOf(calls.get(0).arguments().get("city")));
+        assertEquals(1, calls.size(), "the forced walk must commit the call: " + m.content());
+        assertEquals("get_weather", calls.get(0).name());
+        assertEquals("Paris", String.valueOf(calls.get(0).arguments().get("city")));
     }
 }
