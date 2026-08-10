@@ -236,7 +236,7 @@ public final class JinferBench {
             // llama_decode projects the LAST token of a batch to logits, so pp pays one vocab
             // projection. jinfer's ingest stops at the hidden states, so charge it explicitly or
             // pp is measured doing strictly less work than the reference.
-            sink += model.model().logits(s).getFloat(0);
+            sink += model.model().logits(s).get(0);
             return count / ((System.nanoTime() - t0) / 1e9);
         }
         // tg: prime with one token, then time `count` single-token decode steps
@@ -249,7 +249,7 @@ public final class JinferBench {
             // them, it feeds back `rand() % n_vocab`. An argmax here is a vocab-wide scan per
             // step - 262k reads on Gemma - that the reference does not pay, so it would tax
             // jinfer's tg for nothing. One float keeps the projection from being dead code.
-            sink += model.model().logits(s).getFloat(0);
+            sink += model.model().logits(s).get(0);
             tok = nextToken(tok, vocab);
         }
         return count / ((System.nanoTime() - t0) / 1e9);
