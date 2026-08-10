@@ -343,6 +343,11 @@ public final class ChatEngine {
         // knobs would otherwise run silently. The four sampling knobs used to sit here loose and
         // adjacent; Sampling groups them and validates its own ranges
         public Request {
+            if (grammar != null && contentGbnf != null)
+                throw new IllegalArgumentException(
+                        "grammar and contentGbnf are rival constraints on the same reply:"
+                                + " the channel-scoped cursor serves tool-less requests, the"
+                                + " content hole serves tools+schema - never both");
             if (messages == null || messages.isEmpty())
                 throw new IllegalArgumentException("a request needs at least one message");
             if (sampling == null) throw new IllegalArgumentException("sampling is required");
