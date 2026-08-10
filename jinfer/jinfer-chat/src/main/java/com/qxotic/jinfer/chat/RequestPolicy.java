@@ -1,7 +1,6 @@
 package com.qxotic.jinfer.chat;
 
 import com.qxotic.jinfer.Batch;
-import com.qxotic.jinfer.llm.Grammar;
 import com.qxotic.jinfer.llm.Sampler;
 import com.qxotic.jinfer.llm.Sampling;
 import com.qxotic.jinfer.llm.SpecialTokens;
@@ -11,7 +10,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
-import java.util.Set;
 
 /**
  * The shared request policy: the standard sampling stack, channel-scoped grammar constraint and the
@@ -78,58 +76,45 @@ public final class RequestPolicy {
     }
 
     /**
-     * Grammar-constrained decoding over any compiled cursor (JSON mode, JSON schema, raw GBNF):
-     * dormant through the think span (constraining from token 0 would suppress reasoning), the
-     * newline after {@code </think>} passed through, and a dead-end forcing one of the model's own
-     * stop tokens.
+     * Every constrained CHAT decode is ONE selection: visible content can only be {@code
+     * contentGbnf}, thinking stays free, and {@code toolsOffered} states the reply's rights (true =
+     * the family's calls stay legal and the answer is optional; false = the document is REQUIRED,
+     * an empty reply must not comply). Native families derive it from their own reply language
+     * ({@link ChatTemplate#constrainedAuto}); a model without one gets the generic think-aware
+     * shape - unless tools are offered, which needs the family's call syntax and rejects loudly
+     * without it.
      */
     public static Sampler constrained(
-            LoadedModel<?> m, Sampler s, Grammar.Cursor g, int[] replySeed) {
-        // channel-scoped: the model's OWN reply parser is the channel authority - the grammar
-        // exists only where text becomes output (reasoning, scaffold and call payloads stay
-        // free; Harmony's analysis channel reasons at full strength under a JSON schema). The
-        // wrapper owns a private parser copy pre-fed the reply seed (the encoded prompt's
-        // tail), so it starts in the exact span state the prompt left the model in.
-        ReplyParser parser =
-                m.template()
-                        .map(ChatTemplate::parser)
-                        .orElseGet(() -> ReplyParser.spans(m.tokenizer()));
-        for (int t : replySeed) {
-            parser.feed(t);
+            LoadedModel<?> m,
+            String contentGbnf,
+            boolean toolsOffered,
+            Sampler base,
+            int[] replySeed) {
+        Optional<ReplyLanguage.Selection> family =
+                m.template().flatMap(t -> t.constrainedAuto(contentGbnf, toolsOffered));
+        if (family.isEmpty() && toolsOffered) {
+            throw new UnsupportedOperationException(
+                    "tools together with a JSON response format need a family reply language;"
+                            + " this model's template declares none");
         }
-        Set<String> output = parser.outputChannels();
-        var tokenizer = m.tokenizer();
-        // the pre-start escape: only the span-OPENING marker (the model's right to reason) -
-        // never stop/turn specials, which would let the model end the turn instead of complying
-        int[] escape = SpecialTokens.find(tokenizer, Thinking.OPEN).stream().toArray();
-        return new ChannelConstrainedSampler(
-                s,
-                parser,
-                channel -> output.contains(channel) ? g : null,
-                token -> SpecialTokens.isSpecial(tokenizer, token),
-                escape,
-                SpecialTokens.newlineTokens(tokenizer),
-                endTurn(m));
-    }
-
-    /**
-     * Tools AND a schema-constrained answer as ONE selection: the family's auto language with the
-     * content hole carrying {@code contentGbnf} - the model may call its tools in its own syntax
-     * (thinking stays free), and visible text can only be the schema. Empty when the family
-     * declares no {@link ChatTemplate#constrainedAuto} - the caller's cue to reject the
-     * combination.
-     */
-    public static Optional<Sampler> toolsWithSchema(
-            LoadedModel<?> m, String contentGbnf, Sampler base, int[] replySeed) {
-        return m.template()
-                .flatMap(t -> t.constrainedAuto(contentGbnf))
-                .map(
-                        selection -> {
-                            ReplyLanguage.Walk walk = selection.walk();
-                            for (int t : replySeed) walk.feed(t);
-                            walk.beginReply();
-                            return walk.sampler(base, endTurn(m));
-                        });
+        ReplyLanguage.Selection selection =
+                family.orElseGet(
+                        () ->
+                                ReplyLanguage.Selection.of(
+                                        ReplyLanguage.seq(
+                                                ReplyLanguage.opt(
+                                                        ReplyLanguage.think(
+                                                                ReplyLanguage.mark(Thinking.OPEN),
+                                                                ReplyLanguage.free(),
+                                                                ReplyLanguage.mark(
+                                                                        Thinking.CLOSE))),
+                                                ReplyLanguage.content(
+                                                        ReplyLanguage.gbnf(contentGbnf))),
+                                        m.tokenizer()));
+        ReplyLanguage.Walk walk = selection.walk();
+        for (int t : replySeed) walk.feed(t);
+        walk.beginReply();
+        return walk.sampler(base, endTurn(m));
     }
 
     /**

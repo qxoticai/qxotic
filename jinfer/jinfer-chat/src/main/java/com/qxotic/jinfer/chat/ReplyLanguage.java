@@ -265,9 +265,18 @@ public final class ReplyLanguage {
             return auto.walk();
         }
 
-        /** The compiled AUTO selection with content bound to {@code contentGbnf}. */
-        public Selection constrainedAuto(String contentGbnf) {
-            return Selection.of(language(gbnf(contentGbnf)), tokenizer);
+        /**
+         * The compiled constrained selection - with tools, the composed shape (calls stay legal,
+         * the answer optional); without, the document is REQUIRED and calls are out.
+         */
+        public Selection constrainedAuto(String contentGbnf, boolean toolsOffered) {
+            if (toolsOffered) return Selection.of(language(gbnf(contentGbnf)), tokenizer);
+            return Selection.of(
+                    seq(
+                            opt(think(mark(thinkOpen), free(), mark(thinkClose))),
+                            content(gbnf(contentGbnf)),
+                            opt(terminator)),
+                    tokenizer);
         }
 
         /**

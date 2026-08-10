@@ -174,9 +174,16 @@ public final class MistralChatTemplate implements ChatTemplate {
     }
 
     @Override
-    public Optional<ReplyLanguage.Selection> constrainedAuto(String contentGbnf) {
-        return Optional.of(
-                ReplyLanguage.Selection.of(language(ReplyLanguage.gbnf(contentGbnf)), tokenizer));
+    public Optional<ReplyLanguage.Selection> constrainedAuto(
+            String contentGbnf, boolean toolsOffered) {
+        ReplyLanguage.Node hole = ReplyLanguage.gbnf(contentGbnf);
+        ReplyLanguage.Node tree =
+                toolsOffered
+                        ? language(hole)
+                        : ReplyLanguage.seq(
+                                ReplyLanguage.content(hole),
+                                ReplyLanguage.opt(ReplyLanguage.mark("</s>")));
+        return Optional.of(ReplyLanguage.Selection.of(tree, tokenizer));
     }
 
     /** The family tree with the content hole stated: {@code (content | call)* </s>?}. */

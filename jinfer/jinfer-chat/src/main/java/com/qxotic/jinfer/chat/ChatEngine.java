@@ -6,7 +6,6 @@ import com.qxotic.jinfer.LeakWatch;
 import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.llm.Generator;
-import com.qxotic.jinfer.llm.Grammar;
 import com.qxotic.jinfer.llm.Sampler;
 import com.qxotic.jinfer.llm.Sampling;
 import com.qxotic.jinfer.llm.SpeculativeDecoding;
@@ -332,7 +331,6 @@ public final class ChatEngine {
             Integer reasoningMaxTokens,
             long timeoutNanos,
             Sampling sampling,
-            Grammar.Spec grammar,
             String contentGbnf,
             String forcedTool,
             boolean cachedView,
@@ -343,11 +341,6 @@ public final class ChatEngine {
         // knobs would otherwise run silently. The four sampling knobs used to sit here loose and
         // adjacent; Sampling groups them and validates its own ranges
         public Request {
-            if (grammar != null && contentGbnf != null)
-                throw new IllegalArgumentException(
-                        "grammar and contentGbnf are rival constraints on the same reply:"
-                                + " the channel-scoped cursor serves tool-less requests, the"
-                                + " content hole serves tools+schema - never both");
             if (messages == null || messages.isEmpty())
                 throw new IllegalArgumentException("a request needs at least one message");
             if (sampling == null) throw new IllegalArgumentException("sampling is required");
@@ -460,25 +453,16 @@ public final class ChatEngine {
                         request.maxTokens(),
                         request.reasoningMaxTokens(),
                         parserSeed);
-        if (request.grammar() != null) {
+        if (request.contentGbnf() != null) {
+            // ONE selection constrains every chat decode: content can only be the grammar,
+            // thinking stays free, and with tools offered the family's own calls stay legal
             sampler =
                     RequestPolicy.constrained(
-                            loaded, sampler, request.grammar().cursor(), parserSeed);
-        }
-        if (request.contentGbnf() != null) {
-            // tools + a schema-constrained answer: ONE selection admits the family's own calls
-            // while visible text can only be the schema - the channel-scoped grammar above
-            // cannot serve this (its mask would exclude the call syntax)
-            sampler =
-                    RequestPolicy.toolsWithSchema(
-                                    loaded, request.contentGbnf(), sampler, parserSeed)
-                            .orElseThrow(
-                                    () ->
-                                            new UnsupportedOperationException(
-                                                    "tools together with a JSON response format"
-                                                            + " need a family reply language;"
-                                                            + " this model's template declares"
-                                                            + " none"));
+                            loaded,
+                            request.contentGbnf(),
+                            !request.tools().isEmpty(),
+                            sampler,
+                            parserSeed);
         }
         if (request.forcedTool() != null) {
             // a named choice pins that tool alone; the prompt still frames every offered tool

@@ -342,8 +342,9 @@ public final class Qwen35TurnTemplate implements TurnTemplate {
     }
 
     @Override
-    public Optional<ReplyLanguage.Selection> constrainedAuto(String contentGbnf) {
-        return Optional.of(spans().constrainedAuto(contentGbnf));
+    public Optional<ReplyLanguage.Selection> constrainedAuto(
+            String contentGbnf, boolean toolsOffered) {
+        return Optional.of(spans().constrainedAuto(contentGbnf, toolsOffered));
     }
 
     /** Forced calls: the header carries an OFFERED name, the arguments stay the model's own. */

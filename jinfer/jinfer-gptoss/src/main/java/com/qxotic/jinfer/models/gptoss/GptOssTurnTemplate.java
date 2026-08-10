@@ -286,13 +286,19 @@ public final class GptOssTurnTemplate implements TurnTemplate {
      * The FINAL channel takes the hole; analysis and preamble stay free (the channel-scoping law).
      */
     @Override
-    public Optional<ReplyLanguage.Selection> constrainedAuto(String contentGbnf) {
+    public Optional<ReplyLanguage.Selection> constrainedAuto(
+            String contentGbnf, boolean toolsOffered) {
         return Optional.of(
                 ReplyLanguage.Selection.of(
-                        harmonyLanguage(ReplyLanguage.gbnf(contentGbnf)), tokenizer));
+                        harmonyLanguage(ReplyLanguage.gbnf(contentGbnf), toolsOffered), tokenizer));
     }
 
     private ReplyLanguage.Node harmonyLanguage(ReplyLanguage.Node contentHole) {
+        return harmonyLanguage(contentHole, true);
+    }
+
+    private ReplyLanguage.Node harmonyLanguage(
+            ReplyLanguage.Node contentHole, boolean toolsOffered) {
         ReplyLanguage.Node sep =
                 ReplyLanguage.alt(
                         ReplyLanguage.mark("<|end|>"),
@@ -307,7 +313,6 @@ public final class GptOssTurnTemplate implements TurnTemplate {
                             "analysis",
                             null,
                             ReplyLanguage.free()));
-            shapes.add(message(reopened, ReplyLanguage.Kind.CONTENT, "final", null, contentHole));
             shapes.add(
                     message(
                             reopened,
@@ -315,16 +320,29 @@ public final class GptOssTurnTemplate implements TurnTemplate {
                             "commentary",
                             null,
                             ReplyLanguage.free()));
-            shapes.add(
-                    message(
-                            reopened,
-                            ReplyLanguage.Kind.CALL,
-                            null,
-                            GptOssTurnTemplate::harmonyCalls,
-                            ReplyLanguage.free()));
+            if (toolsOffered) {
+                shapes.add(
+                        message(reopened, ReplyLanguage.Kind.CONTENT, "final", null, contentHole));
+                shapes.add(
+                        message(
+                                reopened,
+                                ReplyLanguage.Kind.CALL,
+                                null,
+                                GptOssTurnTemplate::harmonyCalls,
+                                ReplyLanguage.free()));
+            }
         }
         ReplyLanguage.Node msg = new ReplyLanguage.Node.Alt(shapes);
-        return ReplyLanguage.rep(ReplyLanguage.seq(msg, ReplyLanguage.opt(sep)), 0, -1);
+        ReplyLanguage.Node stream =
+                ReplyLanguage.rep(ReplyLanguage.seq(msg, ReplyLanguage.opt(sep)), 0, -1);
+        if (toolsOffered) return stream;
+        // tool-less: reasoning and preambles stay free, then ONE final message is REQUIRED -
+        // an empty reply must not comply, and there are no calls to take instead
+        ReplyLanguage.Node requiredFinal =
+                ReplyLanguage.alt(
+                        message(false, ReplyLanguage.Kind.CONTENT, "final", null, contentHole),
+                        message(true, ReplyLanguage.Kind.CONTENT, "final", null, contentHole));
+        return ReplyLanguage.seq(stream, requiredFinal, ReplyLanguage.opt(sep));
     }
 
     /** One canonical Harmony message shape; {@code channelName} null = the call header. */
