@@ -1580,31 +1580,8 @@ public final class GrammarTest {
         check("pin: not exhausted before delim", !cur.exhausted());
         advance(cur, v, "{");
         check("pin: exhausted after full match", cur.exhausted());
-        // withPrefixGrammar releases at exhaustion: the sampler sees untouched logits
-        Grammar.Cursor cur2 = spec.cursor();
-        Sampler pinned =
-                Sampler.withPrefixGrammar(
-                        logits -> {
-                            int best = 0;
-                            for (int i = 1; i < logits.size(); i++) {
-                                if (logits.getFloat(i) > logits.getFloat(best)) best = i;
-                            }
-                            return best;
-                        },
-                        cur2,
-                        0,
-                        new int[0]);
-        F32FloatTensor logits = scratch(v);
-        for (int t = 0; t < v.size(); t++) logits.setFloat(t, 0f);
-        logits.setFloat(tidx(v, "}"), 5f); // most-likely token is OUTSIDE the pin
-        int first = pinned.sampleToken(logits);
-        check("pin: sampler forced onto the prefix", first == tidx(v, "a"));
-        advance(cur2, v, "b");
-        advance(cur2, v, "c");
-        advance(cur2, v, "{");
-        for (int t = 0; t < v.size(); t++) logits.setFloat(t, 0f);
-        logits.setFloat(tidx(v, "}"), 5f);
-        check("pin: released after exhaustion", pinned.sampleToken(logits) == tidx(v, "}"));
+        // exhaustion is the release signal walk-forced regions build on (Walk.sampler); the
+        // sampler-level prefix pin itself is gone - every family forces through a selection
     }
 
     static void testParser() {

@@ -144,45 +144,30 @@ public final class RequestPolicy {
 
     /**
      * The recipe for forcing a call to one of {@code tools}, or empty when this model cannot force
-     * (no native codec, or its template declares no call seed) - the caller's cue to reject.
+     * (no native codec, or its template declares no forced-call selection) - the caller's cue to
+     * reject.
      */
     public static Optional<ForcedCall> forceCall(
             LoadedModel<?> m, List<Tool> tools, Sampler base, int[] replySeed) {
-        ChatTemplate template = m.template().orElse(null);
-        if (template == null) return Optional.empty();
-        // the reply-language path: ONE walk constrains the whole call - header, an OFFERED name,
-        // SCHEMA-BOUND arguments - leaving no free region to derail in (the legacy pin releases
-        // after the name and the arguments were the model's own, the recorded defect class)
-        Optional<ReplyLanguage.Selection> selection = template.forcedCall(tools);
-        if (selection.isPresent()) {
-            ReplyLanguage.Selection sel = selection.get();
-            int[] seed = sel.forcedPrefix();
-            ReplyLanguage.Walk walk = sel.walk();
-            for (int t : seed) walk.feed(t);
-            Sampler constrained = walk.sampler(base, endTurn(m));
-            int[] parserSeed = new int[replySeed.length + seed.length];
-            System.arraycopy(replySeed, 0, parserSeed, 0, replySeed.length);
-            System.arraycopy(seed, 0, parserSeed, replySeed.length, seed.length);
-            return Optional.of(new ForcedCall(Batch.prefill(seed), constrained, parserSeed));
-        }
-        if (template.callSeed().length == 0) return Optional.empty();
-        int[] callSeed = template.callSeed();
-        Sampler sampler = base;
-        Optional<String> pin = template.callGrammar(tools);
-        if (pin.isPresent()) {
-            sampler =
-                    Sampler.withPrefixGrammar(
-                            base,
-                            Grammar.of(pin.get(), m.tokenizer()).cursor(),
-                            endTurn(m),
-                            template.callEpilogue());
-        }
-        // the caller's seed is the encoded prompt's own tail; a forced render is thinking-off,
-        // so for every shipped template it is empty or the closed non-thinking scaffold
-        int[] parserSeed = new int[replySeed.length + callSeed.length];
-        System.arraycopy(replySeed, 0, parserSeed, 0, replySeed.length);
-        System.arraycopy(callSeed, 0, parserSeed, replySeed.length, callSeed.length);
-        return Optional.of(new ForcedCall(Batch.prefill(callSeed), sampler, parserSeed));
+        return m.template()
+                .flatMap(t -> t.forcedCall(tools))
+                .map(
+                        sel -> {
+                            // ONE walk constrains the whole call - header, an OFFERED name, the
+                            // family's arguments - leaving no free region to derail in (the old
+                            // pin released after the name and the model's own continuation was
+                            // the recorded defect class)
+                            int[] seed = sel.forcedPrefix();
+                            ReplyLanguage.Walk walk = sel.walk();
+                            for (int t : seed) walk.feed(t);
+                            int[] parserSeed = new int[replySeed.length + seed.length];
+                            System.arraycopy(replySeed, 0, parserSeed, 0, replySeed.length);
+                            System.arraycopy(seed, 0, parserSeed, replySeed.length, seed.length);
+                            return new ForcedCall(
+                                    Batch.prefill(seed),
+                                    walk.sampler(base, endTurn(m)),
+                                    parserSeed);
+                        });
     }
 
     /**

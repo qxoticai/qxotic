@@ -97,35 +97,6 @@ public interface Sampler {
             return inner.sampleToken(logits);
         };
     }
-
-    /**
-     * Prefix-pin with a forced epilogue: once the pin exhausts, {@code epilogue} ids are emitted
-     * verbatim (bypassing the logits) before sampling releases. For families whose call header
-     * continues with SCAFFOLD after the pinned name - Harmony's {@code " <|constrain|>json
-     * <|message|>"} - improvising it from an off-policy state derails generation; forcing it keeps
-     * the model on-distribution until the free payload.
-     */
-    static Sampler withPrefixGrammar(
-            Sampler inner, Grammar.Cursor cursor, int eosToken, int[] epilogue) {
-        if (cursor == null) return inner;
-        boolean[] released = {false};
-        int[] forced = {0};
-        return logits -> {
-            if (released[0]) return inner.sampleToken(logits);
-            if (cursor.exhausted()) {
-                if (forced[0] < epilogue.length) return epilogue[forced[0]++];
-                released[0] = true;
-                return inner.sampleToken(logits);
-            }
-            if (!cursor.maskLogits(logits)) {
-                cursor.advanceWith(eosToken); // no vocab token fits the pin: end cleanly
-                return eosToken;
-            }
-            int token = inner.sampleToken(logits);
-            cursor.advanceWith(token);
-            return token;
-        };
-    }
 }
 
 record CategoricalSampler(RandomGenerator rng) implements Sampler {
