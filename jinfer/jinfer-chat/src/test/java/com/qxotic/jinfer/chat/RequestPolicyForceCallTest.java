@@ -137,35 +137,7 @@ public final class RequestPolicyForceCallTest {
     }
 
     @Test
-    void aTemplateWithoutALanguageKeepsTheLegacySeedRecipe() {
-        ChatTemplate legacy =
-                new ChatTemplate() {
-                    @Override
-                    public List<Batch> encode(Conversation conversation) {
-                        throw new UnsupportedOperationException();
-                    }
-
-                    @Override
-                    public ReplyParser parser() {
-                        throw new UnsupportedOperationException();
-                    }
-
-                    @Override
-                    public int[] callSeed() {
-                        return new int[] {CALL};
-                    }
-                };
-        RequestPolicy.ForcedCall forced =
-                RequestPolicy.forceCall(model(legacy), List.of(F), FloatTensor::argmax, new int[0])
-                        .orElseThrow();
-        assertArrayEquals(
-                new int[] {CALL},
-                ((Batch.Input.Tokens) forced.seed().input()).ids(),
-                "the legacy path seeds the call marker alone");
-    }
-
-    @Test
-    void aTemplateWithNeitherCannotForce() {
+    void aTemplateWithoutASelectionCannotForce() {
         ChatTemplate none =
                 new ChatTemplate() {
                     @Override

@@ -106,47 +106,6 @@ public interface ChatTemplate {
     }
 
     /**
-     * Trusted ids seeded into the reply to FORCE a tool call ({@code toolChoice REQUIRED}): the
-     * family's call-opening marker ({@code <|tool_call_start|>}, Harmony's {@code <|channel|>}),
-     * appended to the prompt so the model can only COMPLETE a call. Empty = this family cannot
-     * force calls. The seed deliberately stops BEFORE any delimiter the model's training merges
-     * with what follows (never the paren).
-     */
-    default int[] callSeed() {
-        return new int[0];
-    }
-
-    /**
-     * The family's literal call-header bytes between {@link #callSeed}'s marker and the tool name -
-     * declaring one gives {@link #callGrammar} its pin. Ends AT the name: never include the
-     * delimiter that follows it, because pinning it forces a lone-token split off the merge the
-     * model was trained on and the model starts inventing arguments (observed on LFM2.5: a
-     * hallucinated {@code toolbench_rapidapi_key}).
-     *
-     * <p>Empty means forcing relies on the seed alone, which pins nothing: the model completes the
-     * marker with a name of its own choosing, and a REQUIRED request can come back calling a tool
-     * nobody offered (observed on SmolLM3: {@code get_greeting} for "Say hello."). Declare one
-     * whenever the name region is plain bytes - {@code AbstractToolWireTest} checks the pin against
-     * the family's own generated wire, and an E2E {@code requiredForcesAnOfferedTool} run is still
-     * required on top: a pin can admit the RENDERED wire and still dead-end what the model samples
-     * (why Mistral, whose name follows its marker with no literal prefix at all, declares none).
-     */
-    default Optional<String> callPrefix() {
-        return Optional.empty();
-    }
-
-    /**
-     * The dual of {@link #parser} for FORCED tool calls: a GBNF prefix grammar {@code prefix
-     * (name|...|name)} over {@link #callPrefix}'s plain bytes, pinning the reply (already seeded
-     * with {@link #callSeed}) to a call of an OFFERED tool. The pin covers only the prefix; once
-     * matched the sampler releases and the arguments stay the model's own.
-     */
-    default Optional<String> callGrammar(List<Tool> tools) {
-        if (tools.isEmpty()) return Optional.empty();
-        return callPrefix().map(p -> ToolCallSyntax.prefixPinGbnf(p, tools));
-    }
-
-    /**
      * The reply-language successor to the seed/pin/epilogue recipe: the COMPILED forced-call
      * selection over {@code tools} - per-tool call regions with SCHEMA-BOUND arguments, so a forced
      * call can neither name an unoffered tool nor malform its payload (the free region after a
@@ -171,16 +130,5 @@ public interface ChatTemplate {
      */
     default Optional<ReplyLanguage.Selection> constrainedAuto(String contentGbnf) {
         return Optional.empty();
-    }
-
-    /**
-     * Trusted scaffold ids that COMPLETE the forced-call header once {@link #callGrammar}'s pin
-     * releases - emitted verbatim, never sampled. Empty for families whose header ends at the
-     * pinned name (the model's own continuation is on-distribution there); Harmony's header
-     * continues {@code " <|constrain|>json<|message|>"} after the name, which is scaffold, not a
-     * model choice - improvising it from the pinned (off-policy) state derails generation.
-     */
-    default int[] callEpilogue() {
-        return new int[0];
     }
 }

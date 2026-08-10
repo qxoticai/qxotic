@@ -227,13 +227,17 @@ final class Generation {
     }
 
     /**
-     * Whether this model can force a call at all (a native codec that declares a call seed). When
-     * it cannot, the request degrades to an unforced generation rather than failing - forcing is
-     * best-effort on the wire. A forced name the request never offered is the engine's law now: the
-     * {@link ChatEngine.Request} constructor rejects it, and the 400 mapping answers.
+     * Whether this model can force a call at all (a native codec that declares a forced-call
+     * selection). When it cannot, the request degrades to an unforced generation rather than
+     * failing - forcing is best-effort on the wire. A forced name the request never offered is the
+     * engine's law now: the {@link ChatEngine.Request} constructor rejects it, and the 400 mapping
+     * answers. Probed with a throwaway tool: the selection compiles per tool set, so presence for
+     * ONE tool is presence for any.
      */
     private boolean nativeForcedOk() {
-        return template != null && template.callSeed().length != 0;
+        return template != null
+                && template.forcedCall(List.of(new Tool("probe", "{\"name\":\"probe\"}")))
+                        .isPresent();
     }
 
     /**

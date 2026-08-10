@@ -45,8 +45,9 @@ final class ToolUse {
     /**
      * The call-marker text a FORCED turn was seeded with, re-attached to the reply before parsing
      * so the seeded call parses whole. The engine does the seeding now ({@code
-     * RequestPolicy.forceCall}, from the template's own callSeed), which is why nothing here builds
-     * the seed - only this prefix, to reconstruct what the model was completing.
+     * RequestPolicy.forceCall}, from the template's own forced-call selection), which is why
+     * nothing here builds the seed - only this prefix, to reconstruct what the model was
+     * completing.
      *
      * <p>{@code forcedTool} is the tool the request ACTUALLY forced ({@code
      * Generation.forcedTool}), not what it asked for: on a model with no call seed nothing was
