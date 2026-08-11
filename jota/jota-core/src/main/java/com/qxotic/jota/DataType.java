@@ -132,6 +132,57 @@ public interface DataType {
     // ValueLayout.JAVA_BYTE).withName("q_nibbles")
     //            ).withName("q4_1"), true, null);
 
+    /** k-quant super-block (ggml Q4_K): 256 values in {@code d*sc*q - dmin*m} per 32-value sub. */
+    DataType Q4_K =
+            new DataTypeImpl(
+                    256,
+                    MemoryLayout.structLayout(
+                                    ValueLayout.JAVA_SHORT_UNALIGNED.withName("d"), // float16
+                                    ValueLayout.JAVA_SHORT_UNALIGNED.withName("dmin"), // float16
+                                    MemoryLayout.sequenceLayout(12, ValueLayout.JAVA_BYTE)
+                                            .withName("scales"), // 8 packed 6-bit scale/min pairs
+                                    MemoryLayout.sequenceLayout(128, ValueLayout.JAVA_BYTE)
+                                            .withName("qs")) // 256 4-bit quants
+                            .withName("q4_k"),
+                    false,
+                    false,
+                    null);
+
+    /** k-quant super-block (ggml Q5_K): Q4_K's payload plus a 1-bit high plane (5-bit quants). */
+    DataType Q5_K =
+            new DataTypeImpl(
+                    256,
+                    MemoryLayout.structLayout(
+                                    ValueLayout.JAVA_SHORT_UNALIGNED.withName("d"), // float16
+                                    ValueLayout.JAVA_SHORT_UNALIGNED.withName("dmin"), // float16
+                                    MemoryLayout.sequenceLayout(12, ValueLayout.JAVA_BYTE)
+                                            .withName("scales"),
+                                    MemoryLayout.sequenceLayout(32, ValueLayout.JAVA_BYTE)
+                                            .withName("qh"), // 256 1-bit high bits
+                                    MemoryLayout.sequenceLayout(128, ValueLayout.JAVA_BYTE)
+                                            .withName("qs"))
+                            .withName("q5_k"),
+                    false,
+                    false,
+                    null);
+
+    /** k-quant super-block (ggml Q6_K): {@code d*sc*(q - 32)}, signed int8 per-16-value scales. */
+    DataType Q6_K =
+            new DataTypeImpl(
+                    256,
+                    MemoryLayout.structLayout(
+                                    MemoryLayout.sequenceLayout(128, ValueLayout.JAVA_BYTE)
+                                            .withName("ql"), // 256 4-bit low nibbles
+                                    MemoryLayout.sequenceLayout(64, ValueLayout.JAVA_BYTE)
+                                            .withName("qh"), // 256 2-bit high bits
+                                    MemoryLayout.sequenceLayout(16, ValueLayout.JAVA_BYTE)
+                                            .withName("scales"), // signed int8
+                                    ValueLayout.JAVA_SHORT_UNALIGNED.withName("d")) // float16
+                            .withName("q6_k"),
+                    false,
+                    false,
+                    null);
+
     default long byteSizeFor(long elementCount) {
         if (elementCount < 0) {
             throw new IllegalArgumentException("negative count");
