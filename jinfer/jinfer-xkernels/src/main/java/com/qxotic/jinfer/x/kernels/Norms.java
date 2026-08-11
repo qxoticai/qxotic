@@ -1,10 +1,12 @@
-package com.qxotic.jinfer.x;
+package com.qxotic.jinfer.x.kernels;
 
 import static com.qxotic.jinfer.x.Segments.F_SPECIES;
 import static com.qxotic.jinfer.x.Segments.USE_VECTOR_API;
 import static com.qxotic.jinfer.x.Segments.readFloat;
 import static com.qxotic.jinfer.x.Segments.writeFloat;
 
+import com.qxotic.jinfer.x.Parallel;
+import com.qxotic.jinfer.x.Views;
 import com.qxotic.jinfer.x.Views.Raw;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.MemorySegment;
@@ -105,6 +107,31 @@ public final class Norms {
                             * ss
                             * readFloat(xv.vseg(), xv.vbase() + (xOffset + i) * Float.BYTES));
         }
+    }
+
+    /**
+     * Per-row {@link #rmsnorm} over {@code rows} rows of {@code rowDim} lanes ({@code out == x} for
+     * in-place post-norms) - the pre/post-norm idiom of a transformer block, shared by every model
+     * port so none of them re-rolls the row loop.
+     */
+    public static void rmsnormRows(
+            MemoryView<MemorySegment> out,
+            MemoryView<MemorySegment> x,
+            MemoryView<MemorySegment> weight,
+            int rows,
+            int rowDim,
+            float rmsNormEps) {
+        Parallel.forRows(
+                rows,
+                r ->
+                        rmsnorm(
+                                out,
+                                (long) r * rowDim,
+                                x,
+                                (long) r * rowDim,
+                                weight,
+                                rowDim,
+                                rmsNormEps));
     }
 
     /**

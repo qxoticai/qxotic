@@ -1,4 +1,4 @@
-package com.qxotic.jinfer.x;
+package com.qxotic.jinfer.x.kernels;
 
 /**
  * Fast float transcendentals for the hot paths: e^x as 2^n * e^r (n = round(x*log2e) via the

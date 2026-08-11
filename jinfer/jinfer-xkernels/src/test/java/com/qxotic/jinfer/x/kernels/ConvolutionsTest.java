@@ -1,4 +1,4 @@
-package com.qxotic.jinfer.x;
+package com.qxotic.jinfer.x.kernels;
 
 import com.qxotic.jinfer.F32FloatTensor;
 import com.qxotic.jinfer.FloatTensor;

@@ -12,9 +12,10 @@
   <packaging>jar</packaging>
 
   <name>jinfer-xkernels</name>
-  <description>MemoryView-based loader cone (FloatTensor migration; see qxotic/.opencode/plans/memoryview-migration.md).
-    GGUF loading producing MemoryView&lt;MemorySegment&gt; weights (one jota Memory over the READ_ONLY
-    mmap, per-tensor views with real Shapes), FP16 KvTransfer.</description>
+  <description>MemoryView-based kernel cone (FloatTensor migration; see qxotic/.opencode/plans/memoryview-migration.md).
+    The compute kernels over com.qxotic.jota.memory.MemoryView&lt;MemorySegment&gt; (matmul, norms, rope,
+    convolutions, flash attention, activations, MoE) plus GGUF loading and FP16 KvTransfer. Model
+    implementation modules (jinfer-xlfm2, ...) depend on this module for the kernels.</description>
 
   <dependencies>
     <dependency>
@@ -28,6 +29,18 @@
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>gguf</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jam-core</artifactId>
+      <!-- API + ServiceLoader discovery only; the backends (jam-native/jam-vector) arrive from
+           the CONSUMER's classpath. Absent -> MatMul runs the Java floor, bit-identical. -->
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>graalvm-annotations</artifactId>
+      <!-- @AlwaysInline: compile-only, not bundled; GraalVM supplies it at native-image build -->
+      <scope>provided</scope>
     </dependency>
     <!-- differential oracles: the old loader and tensor implementations, test-scope ONLY -->
     <dependency>

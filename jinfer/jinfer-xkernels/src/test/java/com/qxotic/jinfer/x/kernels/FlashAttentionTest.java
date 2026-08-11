@@ -1,8 +1,10 @@
-package com.qxotic.jinfer.x;
+package com.qxotic.jinfer.x.kernels;
 
 import com.qxotic.format.gguf.GGMLType;
 import com.qxotic.jinfer.F32FloatTensor;
 import com.qxotic.jinfer.FloatTensor;
+import com.qxotic.jinfer.x.PanamaMemoryArena;
+import com.qxotic.jinfer.x.Views;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryView;
@@ -286,7 +288,7 @@ class FlashAttentionTest {
                 SCALE,
                 0,
                 withSinks ? newView(sinks, N_HEADS, false) : null,
-                new FlashAttention.DecodeScratch(arena));
+                new FlashAttention.DecodeScratch(new PanamaMemoryArena(arena)));
         assertOutClose(
                 outOld,
                 outNew,

@@ -1,12 +1,19 @@
-package com.qxotic.jinfer.x;
+package com.qxotic.jinfer.x.kernels;
 
+import static com.qxotic.jinfer.x.Segments.F16_BYTES;
 import static com.qxotic.jinfer.x.Segments.readFloat;
 import static com.qxotic.jinfer.x.Segments.readFloat16;
 import static com.qxotic.jinfer.x.Segments.writeFloat;
 
 import com.oracle.svm.shared.AlwaysInline;
+import com.qxotic.jinfer.x.Convert;
+import com.qxotic.jinfer.x.Parallel;
+import com.qxotic.jinfer.x.RuntimeFlags;
+import com.qxotic.jinfer.x.Segments;
+import com.qxotic.jinfer.x.Views;
 import com.qxotic.jinfer.x.Views.Raw;
 import com.qxotic.jota.DataType;
+import com.qxotic.jota.memory.MemoryAllocator;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -25,9 +32,6 @@ import jdk.incubator.vector.VectorSpecies;
  * instanceof F16FloatTensor} switch). Anything else falls back to scalar, as before.
  */
 public final class FlashAttention {
-
-    /** Bytes per F16 element (the old package-private {@code Float16.BYTES}). */
-    private static final int F16_BYTES = 2;
 
     /**
      * True when AOT-compiled into a native image (property is set during the image build; this
@@ -1601,18 +1605,18 @@ public final class FlashAttention {
      * buffer here survived close() in every family (plus one orphaned copy per lazy regrowth).
      */
     public static final class DecodeScratch {
-        private final Arena arena;
+        private final MemoryAllocator<MemorySegment> allocator;
         MemorySegment o;
         float[] m;
         double[] l;
 
-        public DecodeScratch(Arena arena) {
-            this.arena = arena;
+        public DecodeScratch(MemoryAllocator<MemorySegment> allocator) {
+            this.allocator = allocator;
         }
 
         void ensure(int totalPartials, int headSize) {
             long oBytes = (long) totalPartials * headSize * Float.BYTES;
-            if (o == null || o.byteSize() < oBytes) o = arena.allocate(oBytes, 64);
+            if (o == null || o.byteSize() < oBytes) o = allocator.allocateMemory(oBytes, 64).base();
             if (m == null || m.length < totalPartials) m = new float[totalPartials];
             if (l == null || l.length < totalPartials) l = new double[totalPartials];
         }
