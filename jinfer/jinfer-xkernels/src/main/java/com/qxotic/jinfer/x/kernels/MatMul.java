@@ -51,6 +51,57 @@ public final class MatMul {
     private static final int Q8_BLOCK = 32; // Q8_0 elements per block
     private static final int Q8_BLOCK_BYTES = 34; // f16 scale + 32 int8
 
+    // === gemm/gemv entry shims: one place that owns the model-side matmul contract ===
+    // NOT BLAS dgemm: this is llama.cpp's ggml_mul_mat(w, a) worldview, c = w · aᵀ, with
+    //   w [m, k]  the weight (out_features x in_features, as the GGUF lays it out),
+    //   a [n, k]  the activations (batch rows x in_features),
+    //   c [n, m]  the result (batch rows x out_features).
+    // - trailing (m, n, k) = (w rows = output width, a rows = batch, contraction) - exactly
+    //   mm's and JAM's order; no swap anywhere. (BLAS/ONNX-pilled readers: m is the WEIGHT
+    //   rows here, ggml's assignment - not dgemm's m = activation rows.)
+    // - wStride = k is hardcoded: model weight views are dense contiguous rows - a fact,
+    //   not a per-call-site choice.
+    // (heritage: the old FloatTensor virtuals w.gemm/w.matmul, resolved to mm)
+
+    /** {@code c = w · aᵀ} for each of the n activation rows: out is m wide, contraction k. */
+    public static void gemm(
+            MemoryView<MemorySegment> w,
+            MemoryView<MemorySegment> a,
+            int aStride,
+            MemoryView<MemorySegment> c,
+            int cStride,
+            int m,
+            int n,
+            int k) {
+        mm(w, 0, k, a, 0, aStride, c, 0, cStride, m, n, k);
+    }
+
+    /** As above at a weight offset (a MoE expert slice). */
+    public static void gemm(
+            MemoryView<MemorySegment> w,
+            long wOff,
+            MemoryView<MemorySegment> a,
+            int aStride,
+            MemoryView<MemorySegment> c,
+            int cStride,
+            int m,
+            int n,
+            int k) {
+        mm(w, wOff, k, a, 0, aStride, c, 0, cStride, m, n, k);
+    }
+
+    /**
+     * {@code c = w · a}, one row: mm's n==1 arm routes this to the decode path - no policy here.
+     */
+    public static void gemv(
+            MemoryView<MemorySegment> w,
+            MemoryView<MemorySegment> a,
+            MemoryView<MemorySegment> c,
+            int m,
+            int k) {
+        mm(w, 0, k, a, 0, k, c, 0, m, m, 1, k);
+    }
+
     public static void mm(
             MemoryView<MemorySegment> w,
             long wOff,

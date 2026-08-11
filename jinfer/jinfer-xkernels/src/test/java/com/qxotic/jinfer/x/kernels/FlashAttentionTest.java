@@ -199,6 +199,11 @@ class FlashAttentionTest {
         slidingWindowParity(0, 0, false, false, 30);
     }
 
+    @Test
+    void slidingWindowFullF16Cache() {
+        slidingWindowParity(0, 0, false, true, 40);
+    }
+
     // ---- bidirectional prefill -----------------------------------------------------
 
     @Test

@@ -135,7 +135,8 @@ public final class Lfm2
                             weights.finalNorm,
                             dim,
                             configuration.rmsNormEps);
-                    gemv(weights.wcls, s.normed, s.logits, configuration.vocabularySize, dim);
+                    MatMul.gemv(
+                            weights.wcls, s.normed, s.logits, configuration.vocabularySize, dim);
                     Activations.softcap(
                             s.logits,
                             0,
@@ -197,7 +198,7 @@ public final class Lfm2
                 weights.layers[l].attnNorm(); // conv layers use attn_norm as the mixer pre-norm
         Norms.rmsnormRows(
                 state.normed, state.residual, preNorm, seqLen, dim, configuration.rmsNormEps);
-        gemm(
+        MatMul.gemm(
                 sc.inProj(),
                 state.normed,
                 dim,
@@ -207,7 +208,7 @@ public final class Lfm2
                 seqLen,
                 dim);
         shortConvScan(state, l, seqLen);
-        gemm(sc.outProj(), state.branchOut, dim, state.shortConvOut, dim, dim, seqLen, dim);
+        MatMul.gemm(sc.outProj(), state.branchOut, dim, state.shortConvOut, dim, dim, seqLen, dim);
         Ops.addInPlace(state.residual, 0, state.shortConvOut, 0, seqLen * dim);
     }
 
@@ -338,11 +339,12 @@ public final class Lfm2
         MemoryView<MemorySegment> attNormW = weights.layers[l].attnNorm();
         Norms.rmsnormRows(
                 state.normed, state.residual, attNormW, seqLen, dim, configuration.rmsNormEps);
-        gemm(attn.wq(), state.normed, dim, state.query, queryDim, queryDim, seqLen, dim);
+        MatMul.gemm(attn.wq(), state.normed, dim, state.query, queryDim, queryDim, seqLen, dim);
         headNormRope(state, state.query, queryDim, config.numberOfHeads, attn.qNorm(), seqLen);
         MemoryView<MemorySegment> bK = state.batchK[l], bV = state.batchV[l];
-        gemm(attn.wk(), state.normed, dim, bK, kvDim, kvDim, seqLen, dim);
-        if (attn.wv() != null) gemm(attn.wv(), state.normed, dim, bV, kvDim, kvDim, seqLen, dim);
+        MatMul.gemm(attn.wk(), state.normed, dim, bK, kvDim, kvDim, seqLen, dim);
+        if (attn.wv() != null)
+            MatMul.gemm(attn.wv(), state.normed, dim, bV, kvDim, kvDim, seqLen, dim);
         else Convert.copyF32(bK, 0, bV, 0, (long) seqLen * kvDim);
         headNormRope(state, bK, kvDim, nKvHeads, attn.kNorm(), seqLen);
     }
@@ -351,7 +353,7 @@ public final class Lfm2
     private void attentionFinish(State state, int l, int seqLen) {
         int dim = configuration.embeddingLength;
         AttentionWeights attn = weights.layers[l].attention();
-        gemm(
+        MatMul.gemm(
                 attn.wo(),
                 state.attnOut,
                 configuration.queryDim(),
@@ -417,8 +419,8 @@ public final class Lfm2
                 postFfwW = weights.layers[l].postFfnNorm();
         Norms.rmsnormRows(
                 state.normed, state.residual, ffnNormW, seqLen, dim, configuration.rmsNormEps);
-        gemm(ffn.gate(), state.normed, dim, state.hidden, hiddenDim, hiddenDim, seqLen, dim);
-        gemm(ffn.up(), state.normed, dim, state.hidden2, hiddenDim, hiddenDim, seqLen, dim);
+        MatMul.gemm(ffn.gate(), state.normed, dim, state.hidden, hiddenDim, hiddenDim, seqLen, dim);
+        MatMul.gemm(ffn.up(), state.normed, dim, state.hidden2, hiddenDim, hiddenDim, seqLen, dim);
         Parallel.forRows(
                 seqLen,
                 s ->
@@ -428,7 +430,7 @@ public final class Lfm2
                                 state.hidden2,
                                 s * hiddenDim,
                                 hiddenDim));
-        gemm(ffn.down(), state.hidden, hiddenDim, state.normed, dim, dim, seqLen, hiddenDim);
+        MatMul.gemm(ffn.down(), state.hidden, hiddenDim, state.normed, dim, dim, seqLen, hiddenDim);
         if (postFfwW != null)
             Norms.rmsnormRows(
                     state.normed, state.normed, postFfwW, seqLen, dim, configuration.rmsNormEps);
@@ -452,7 +454,8 @@ public final class Lfm2
         // pre-norm into normed, then route on it
         Norms.rmsnormRows(
                 state.normed, state.residual, ffnNormW, seqLen, dim, configuration.rmsNormEps);
-        gemm(moe.router(), state.normed, dim, state.moeRouterB, nExperts, nExperts, seqLen, dim);
+        MatMul.gemm(
+                moe.router(), state.normed, dim, state.moeRouterB, nExperts, nExperts, seqLen, dim);
 
         Raw routerB = Views.rawF32(state.moeRouterB, "moeRouterB");
         int[] counts = state.moeExpertCounts;
@@ -501,7 +504,7 @@ public final class Lfm2
                 state.moeOutB,
                 null,
                 (e, n, gather, out) -> {
-                    gemm(
+                    MatMul.gemm(
                             moe.gateExps(),
                             (long) e * expertFF * dim,
                             gather,
@@ -511,7 +514,7 @@ public final class Lfm2
                             expertFF,
                             n,
                             dim);
-                    gemm(
+                    MatMul.gemm(
                             moe.upExps(),
                             (long) e * expertFF * dim,
                             gather,
@@ -530,7 +533,7 @@ public final class Lfm2
                                             state.hidden2,
                                             j * expertFF,
                                             expertFF));
-                    gemm(
+                    MatMul.gemm(
                             moe.downExps(),
                             (long) e * dim * expertFF,
                             state.hidden,
@@ -621,7 +624,7 @@ public final class Lfm2
         MemoryView<MemorySegment> preNorm = weights.layers[l].attnNorm();
         Norms.rmsnormRows(
                 state.normed, state.residual, preNorm, seqLen, dim, configuration.rmsNormEps);
-        gemm(
+        MatMul.gemm(
                 sc.inProj(),
                 state.normed,
                 dim,
@@ -681,7 +684,7 @@ public final class Lfm2
                 }
             }
         }
-        gemm(sc.outProj(), state.branchOut, dim, state.shortConvOut, dim, dim, seqLen, dim);
+        MatMul.gemm(sc.outProj(), state.branchOut, dim, state.shortConvOut, dim, dim, seqLen, dim);
         Ops.addInPlace(state.residual, 0, state.shortConvOut, 0, seqLen * dim);
     }
 
@@ -772,7 +775,7 @@ public final class Lfm2
                 weights.finalNorm,
                 dim,
                 configuration.rmsNormEps);
-        gemv(weights.dense2(), es.embOut, es.colbertOut, outDim, dim);
+        MatMul.gemv(weights.dense2(), es.embOut, es.colbertOut, outDim, dim);
         float inv = l2Inv(es.colbertOut, outDim);
         Ops.mapInPlace(es.colbertOut, 0, outDim, v -> v * inv);
         return es.colbertOut;
@@ -847,57 +850,6 @@ public final class Lfm2
             state.exit();
         }
         return total;
-    }
-
-    // === gemm/gemv shims: one place that owns the model-side matmul contract ===
-    // NOT BLAS dgemm: this is llama.cpp's ggml_mul_mat(w, a) worldview, c = w · aᵀ, with
-    //   w [m, k]  the weight (out_features x in_features, as the GGUF lays it out),
-    //   a [n, k]  the activations (batch rows x in_features),
-    //   c [n, m]  the result (batch rows x out_features).
-    // - trailing (m, n, k) = (w rows = output width, a rows = batch, contraction) - exactly
-    //   MatMul.mm's and JAM's order; no swap anywhere. (BLAS/ONNX-pilled readers: m is the
-    //   WEIGHT rows here, ggml's assignment - not dgemm's m = activation rows.)
-    // - wStride = k is hardcoded: this model's weight views are dense contiguous rows - a fact,
-    //   not a per-call-site choice.
-    // (heritage: the old FloatTensor virtuals w.gemm/w.matmul, resolved to MatMul.mm)
-
-    /** {@code c = w · aᵀ} for each of the n activation rows: out is m wide, contraction k. */
-    private static void gemm(
-            MemoryView<MemorySegment> w,
-            MemoryView<MemorySegment> a,
-            int aStride,
-            MemoryView<MemorySegment> c,
-            int cStride,
-            int m,
-            int n,
-            int k) {
-        MatMul.mm(w, 0, k, a, 0, aStride, c, 0, cStride, m, n, k);
-    }
-
-    /** As above at a weight offset (the MoE expert slice). */
-    private static void gemm(
-            MemoryView<MemorySegment> w,
-            long wOff,
-            MemoryView<MemorySegment> a,
-            int aStride,
-            MemoryView<MemorySegment> c,
-            int cStride,
-            int m,
-            int n,
-            int k) {
-        MatMul.mm(w, wOff, k, a, 0, aStride, c, 0, cStride, m, n, k);
-    }
-
-    /**
-     * {@code c = w · a}, one row: mm's n==1 arm routes this to the decode path - no policy here.
-     */
-    private static void gemv(
-            MemoryView<MemorySegment> w,
-            MemoryView<MemorySegment> a,
-            MemoryView<MemorySegment> c,
-            int m,
-            int k) {
-        MatMul.mm(w, 0, k, a, 0, k, c, 0, m, m, 1, k);
     }
 
     // === Configuration ===
