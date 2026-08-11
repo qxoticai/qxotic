@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.x;
 
+import static com.qxotic.jinfer.x.Segments.F16_BYTES;
 import static com.qxotic.jinfer.x.Segments.readByte;
 import static com.qxotic.jinfer.x.Segments.readFloat;
 import static com.qxotic.jinfer.x.Segments.readFloat16;
@@ -25,15 +26,12 @@ import jdk.incubator.vector.VectorOperators;
  */
 public final class Convert {
 
-    /** Bytes per F16 element (the old package-private {@code Float16.BYTES}). */
-    static final int F16_BYTES = 2;
-
     private Convert() {}
 
     /** Decode F_SPECIES.length() consecutive F16 values to an F32 vector (IEEE half -> single). */
     @AlwaysInline(
             "hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compiler)")
-    static FloatVector f16ToF32Vector(MemorySegment memSeg, long byteOffset) {
+    public static FloatVector f16ToF32Vector(MemorySegment memSeg, long byteOffset) {
         ShortVector bits16 =
                 ShortVector.fromMemorySegment(
                         Segments.S_SPECIES_HALF, memSeg, byteOffset, ByteOrder.LITTLE_ENDIAN);
@@ -155,6 +153,30 @@ public final class Convert {
             }
             idx += chunk;
             rem -= chunk;
+        }
+    }
+
+    /**
+     * The static heir of the old virtual {@code copyTo} for the ->F32 direction: one dtype switch
+     * per span, routed to the arms above (Q8_0 dequant / F16 vector / F32 raw copy). The dispatch
+     * table lives here, next to the arms it selects — a model never re-encodes it, and a cycle-2
+     * dtype adds one case in one file.
+     */
+    public static void copyToF32(
+            MemoryView<MemorySegment> src,
+            long srcElemOff,
+            MemoryView<MemorySegment> dst,
+            long dstElemOff,
+            int count) {
+        DataType dt = src.dataType();
+        if (dt == DataType.Q8_0) {
+            dequantQ8_0(src, srcElemOff, dst, dstElemOff, count);
+        } else if (dt == DataType.FP16) {
+            f16ToF32(src, srcElemOff, dst, dstElemOff, count);
+        } else if (dt == DataType.FP32) {
+            copyF32(src, srcElemOff, dst, dstElemOff, count);
+        } else {
+            throw new UnsupportedOperationException("no ->F32 copy arm for " + dt);
         }
     }
 }

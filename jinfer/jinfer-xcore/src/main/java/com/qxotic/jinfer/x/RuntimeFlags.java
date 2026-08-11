@@ -8,7 +8,7 @@ import java.nio.file.Path;
  * only what the decode work-runners read. The rest (prompt lengths, cache, batch defaults) lands
  * with the boundary cone that owns it.
  */
-final class RuntimeFlags {
+public final class RuntimeFlags {
 
     // decode runs at physical-core width on a spin-barrier pool (Parallel.onDecodePool /
     // SpinPool): decode is memory-bandwidth bound, so one thread per PHYSICAL core saturates DRAM
@@ -16,11 +16,12 @@ final class RuntimeFlags {
     // -Djinfer.decodeSpin=false forces the plain ForkJoin path.
     public static final int DECODE_THREADS =
             Integer.getInteger("jinfer.decodeThreads", physicalCoreCount());
-    static final boolean DECODE_SPIN = !"false".equals(System.getProperty("jinfer.decodeSpin"));
+    public static final boolean DECODE_SPIN =
+            !"false".equals(System.getProperty("jinfer.decodeSpin"));
 
     // Keys per flashDecode partition: below this there is nothing to gain from splitting the
     // attended range, so it falls through to rollingDecode.
-    static final int DECODE_BLOCK_SIZE = Integer.getInteger("jinfer.decodeBlockSize", 512);
+    public static final int DECODE_BLOCK_SIZE = Integer.getInteger("jinfer.decodeBlockSize", 512);
 
     /**
      * Best-effort physical-core count for sizing the bandwidth-bound decode pool. Linux reports SMT

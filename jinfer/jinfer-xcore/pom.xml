@@ -12,20 +12,15 @@
   <packaging>jar</packaging>
 
   <name>jinfer-xcore</name>
-  <description>MemoryView-based kernel cone (FloatTensor migration; see qxotic/.opencode/plans/memoryview-migration.md).
-    Kernels over com.qxotic.jota.memory.MemoryView&lt;MemorySegment&gt;: dtype checked at entry,
-    (segment, byteOffset) extracted once, bodies shared with jinfer-core's FloatTensor kernels.</description>
+  <description>MemoryView-based substrate (FloatTensor migration; see qxotic/.opencode/plans/memoryview-migration.md).
+    Memory plumbing over com.qxotic.jota.memory.MemoryView&lt;MemorySegment&gt;: views, segment access,
+    dtype conversion, the Panama arena adapter, and the decode execution pool. The compute kernels
+    live in jinfer-xkernels.</description>
 
   <dependencies>
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jota</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>jam-core</artifactId>
-      <!-- API + ServiceLoader discovery only; the backends (jam-native/jam-vector) arrive from
-           the CONSUMER's classpath. Absent -> MatMul runs the Java floor, bit-identical. -->
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
