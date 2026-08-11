@@ -1,8 +1,8 @@
 // Shared GGUF loading plumbing: parse metadata, memory-map tensors, and expose them as
 // MemoryView<MemorySegment> weights (one jota Memory over the READ_ONLY mmap, one view per
 // tensor). Ported from jinfer-kernels ModelLoader: FloatTensor.create + flat shapes become
-// typed views carrying real Shapes; dtypes are restricted to the cycle-1 scope {Q8_0, F32, F16}
-// — anything else fails at LOAD time, not inside a kernel.
+// typed views carrying real Shapes; dtypes cover the Llama-family scope {Q8_0, Q4_K, Q5_K, Q6_K,
+// F32, F16} — anything else fails at LOAD time, not inside a kernel.
 package com.qxotic.jinfer.x.kernels;
 
 import com.qxotic.format.gguf.GGMLType;
@@ -30,17 +30,24 @@ public final class ModelLoader {
     private ModelLoader() {}
 
     /**
-     * The cycle-1 dtype scope: Q8_0 weights, F32 norms/taps, F16 KV. Anything else throws HERE
-     * (load time) — the old tree discovered unsupported quants inside a kernel call.
+     * The supported dtype scope: Q8_0 and the k-quants (Q4_K/Q5_K/Q6_K — the Q4_K_M recipe and its
+     * siblings) for weights, F32 norms/taps, F16 KV. Anything else throws HERE (load time) — the
+     * old tree discovered unsupported quants inside a kernel call.
      */
     public static DataType dataType(GGMLType ggmlType) {
         return switch (ggmlType) {
             case F32 -> DataType.FP32;
             case F16 -> DataType.FP16;
             case Q8_0 -> DataType.Q8_0;
+            case Q4_K -> DataType.Q4_K;
+            case Q5_K -> DataType.Q5_K;
+            case Q6_K -> DataType.Q6_K;
             default ->
                     throw new UnsupportedOperationException(
-                            "GGMLType " + ggmlType + " outside the cycle-1 scope {Q8_0, F32, F16}");
+                            "GGMLType "
+                                    + ggmlType
+                                    + " outside the supported scope {Q8_0, Q4_K, Q5_K, Q6_K, F32,"
+                                    + " F16}");
         };
     }
 

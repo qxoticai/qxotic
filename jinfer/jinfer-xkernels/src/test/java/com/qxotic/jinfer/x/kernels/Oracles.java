@@ -86,6 +86,64 @@ final class Oracles {
         return FloatTensor.create(GGMLType.Q8_0, n, seg);
     }
 
+    static FloatTensor oldK(GGMLType type, MemorySegment seg, long n) {
+        return FloatTensor.create(type, n, seg);
+    }
+
+    /** Q4_K weights, m×k elements: small valid f16 d/dmin, random packed scales + payloads. */
+    static MemorySegment q4k(Arena arena, int m, int k, long seed) {
+        Random rng = new Random(seed);
+        MemorySegment seg = arena.allocate((long) m * k / 256 * 144, 64);
+        for (long b = 0; b < seg.byteSize() / 144; b++) {
+            seg.set(ValueLayout.JAVA_SHORT_UNALIGNED, b * 144, Float.floatToFloat16(0.015625f));
+            seg.set(
+                    ValueLayout.JAVA_SHORT_UNALIGNED,
+                    b * 144 + 2,
+                    Float.floatToFloat16(0.0078125f));
+            for (int i = 4; i < 144; i++) {
+                seg.set(ValueLayout.JAVA_BYTE, b * 144 + i, (byte) rng.nextInt(256));
+            }
+        }
+        return seg;
+    }
+
+    /** Q5_K weights, m×k elements: Q4_K's layout plus the 32-byte high-bit plane. */
+    static MemorySegment q5k(Arena arena, int m, int k, long seed) {
+        Random rng = new Random(seed);
+        MemorySegment seg = arena.allocate((long) m * k / 256 * 176, 64);
+        for (long b = 0; b < seg.byteSize() / 176; b++) {
+            seg.set(ValueLayout.JAVA_SHORT_UNALIGNED, b * 176, Float.floatToFloat16(0.015625f));
+            seg.set(
+                    ValueLayout.JAVA_SHORT_UNALIGNED,
+                    b * 176 + 2,
+                    Float.floatToFloat16(0.0078125f));
+            for (int i = 4; i < 176; i++) {
+                seg.set(ValueLayout.JAVA_BYTE, b * 176 + i, (byte) rng.nextInt(256));
+            }
+        }
+        return seg;
+    }
+
+    /** Q6_K weights, m×k elements: random ql/qh/int8-scales, small valid f16 d. */
+    static MemorySegment q6k(Arena arena, int m, int k, long seed) {
+        Random rng = new Random(seed);
+        MemorySegment seg = arena.allocate((long) m * k / 256 * 210, 64);
+        for (long b = 0; b < seg.byteSize() / 210; b++) {
+            for (int i = 0; i < 208; i++) {
+                seg.set(ValueLayout.JAVA_BYTE, b * 210 + i, (byte) rng.nextInt(256));
+            }
+            seg.set(
+                    ValueLayout.JAVA_SHORT_UNALIGNED,
+                    b * 210 + 208,
+                    Float.floatToFloat16(0.015625f));
+        }
+        return seg;
+    }
+
+    static MemoryView<MemorySegment> kView(DataType dt, MemorySegment seg, long n) {
+        return Views.wrap(seg, dt, Shape.flat(n / 256)); // shape counts super-blocks
+    }
+
     static MemoryView<MemorySegment> f32View(MemorySegment seg, long n) {
         return Views.wrap(seg, DataType.FP32, Shape.flat(n));
     }

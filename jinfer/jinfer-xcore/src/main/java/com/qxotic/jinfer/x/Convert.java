@@ -156,6 +156,129 @@ public final class Convert {
         }
     }
 
+    // ------------------------------------------------------------------
+    // k-quant -> F32 (the embedding gather-dequant for Q4_K_M & siblings): per-element decode,
+    // bit-identical to the old Q4_K/Q5_K/Q6_KFloatTensor.getFloat. Spans may start mid-block
+    // (a token row is always whole, but the arm stays honest for any span).
+    // ------------------------------------------------------------------
+
+    private static final int QK = 256; // k-quant super-block elements
+
+    /** Decode scale or min for sub-block j (0..7) from the 12-byte scales array (verbatim). */
+    private static int scaleMinK4(MemorySegment w, long scalesOffset, int j, boolean isMin) {
+        if (j < 4) {
+            int idx = isMin ? j + 4 : j;
+            return Byte.toUnsignedInt(readByte(w, scalesOffset + idx)) & 63;
+        }
+        int lowIdx = j + 4;
+        int highIdx = isMin ? j : j - 4;
+        int low =
+                isMin
+                        ? (Byte.toUnsignedInt(readByte(w, scalesOffset + lowIdx)) >> 4)
+                        : (Byte.toUnsignedInt(readByte(w, scalesOffset + lowIdx)) & 0xF);
+        int high = (Byte.toUnsignedInt(readByte(w, scalesOffset + highIdx)) >> 6) & 0x3;
+        return low | (high << 4);
+    }
+
+    private static float q4kAt(MemorySegment w, long base, long blockOffset, int i) {
+        float d = readFloat16(w, base + blockOffset);
+        float dmin = readFloat16(w, base + blockOffset + 2);
+        long scalesOffset = base + blockOffset + 4;
+        long qsOffset = base + blockOffset + 16;
+        int group = i / 64;
+        int inGroup = i % 64;
+        boolean isHigh = inGroup >= 32;
+        int subBlock = isHigh ? group * 2 + 1 : group * 2;
+        int nibbleIndex = isHigh ? inGroup - 32 : inGroup;
+        int sc = scaleMinK4(w, scalesOffset, subBlock, false);
+        int m = scaleMinK4(w, scalesOffset, subBlock, true);
+        int qsByte = Byte.toUnsignedInt(readByte(w, qsOffset + group * 32 + nibbleIndex));
+        int quant = isHigh ? (qsByte >> 4) & 0xF : qsByte & 0xF;
+        return d * sc * quant - dmin * m;
+    }
+
+    private static float q5kAt(MemorySegment w, long base, long blockOffset, int i) {
+        float d = readFloat16(w, base + blockOffset);
+        float dmin = readFloat16(w, base + blockOffset + 2);
+        long scalesOffset = base + blockOffset + 4;
+        long qhOffset = base + blockOffset + 16;
+        long qsOffset = base + blockOffset + 48;
+        int group = i / 64;
+        int inGroup = i % 64;
+        boolean isHigh = inGroup >= 32;
+        int l = isHigh ? inGroup - 32 : inGroup;
+        int subBlock = isHigh ? group * 2 + 1 : group * 2;
+        int sc = scaleMinK4(w, scalesOffset, subBlock, false);
+        int m = scaleMinK4(w, scalesOffset, subBlock, true);
+        int qsByte = Byte.toUnsignedInt(readByte(w, qsOffset + group * 32 + l));
+        int nibble = isHigh ? (qsByte >> 4) & 0xF : qsByte & 0xF;
+        int qhBitPos = isHigh ? 2 * group + 1 : 2 * group;
+        int qhBit = (Byte.toUnsignedInt(readByte(w, qhOffset + l)) >> qhBitPos) & 1;
+        int quant = nibble | (qhBit << 4);
+        return d * sc * quant - dmin * m;
+    }
+
+    private static float q6kAt(MemorySegment w, long base, long blockOffset, int i) {
+        long qlOff = base + blockOffset;
+        long qhOff = base + blockOffset + 128;
+        long scOff = base + blockOffset + 192;
+        float d = readFloat16(w, base + blockOffset + 208);
+        int half = i / 128;
+        int rem128 = i % 128;
+        int sub32 = rem128 / 32;
+        int l = rem128 % 32;
+        long qlBase = qlOff + half * 64L;
+        long qhBase = qhOff + half * 32L;
+        int qlNibble, qhShift;
+        switch (sub32) {
+            case 0 -> {
+                qlNibble = Byte.toUnsignedInt(readByte(w, qlBase + l)) & 0xF;
+                qhShift = 0;
+            }
+            case 1 -> {
+                qlNibble = Byte.toUnsignedInt(readByte(w, qlBase + 32 + l)) & 0xF;
+                qhShift = 2;
+            }
+            case 2 -> {
+                qlNibble = (Byte.toUnsignedInt(readByte(w, qlBase + l)) >> 4) & 0xF;
+                qhShift = 4;
+            }
+            default -> {
+                qlNibble = (Byte.toUnsignedInt(readByte(w, qlBase + 32 + l)) >> 4) & 0xF;
+                qhShift = 6;
+            }
+        }
+        int qhBits = (Byte.toUnsignedInt(readByte(w, qhBase + l)) >> qhShift) & 3;
+        int q6 = (qlNibble | (qhBits << 4)) - 32;
+        int sc = readByte(w, scOff + half * 8 + sub32 * 2 + l / 16); // signed int8
+        return d * sc * q6;
+    }
+
+    /** k-quant → F32 over an element span; element decode per super-block (see qNkAt). */
+    private static void dequantK(
+            MemoryView<MemorySegment> src,
+            DataType dt,
+            long srcElemOff,
+            MemoryView<MemorySegment> dst,
+            long dstElemOff,
+            int count) {
+        Raw s = Views.raw(src, dt, "src");
+        Raw d = Views.rawF32(dst, "dst");
+        int blockBytes = (int) dt.byteSize();
+        for (int j = 0; j < count; j++) {
+            long idx = srcElemOff + j;
+            long blockOffset = (idx / QK) * blockBytes;
+            int i = (int) (idx % QK);
+            float v =
+                    dt == DataType.Q4_K
+                            ? q4kAt(s.vseg(), s.vbase(), blockOffset, i)
+                            : dt == DataType.Q5_K
+                                    ? q5kAt(s.vseg(), s.vbase(), blockOffset, i)
+                                    : q6kAt(s.vseg(), s.vbase(), blockOffset, i);
+            writeFloat(d.vseg(), d.vbase() + (dstElemOff + j) * Float.BYTES, v);
+        }
+    }
+
     /**
      * The static heir of the old virtual {@code copyTo} for the ->F32 direction: one dtype switch
      * per span, routed to the arms above (Q8_0 dequant / F16 vector / F32 raw copy). The dispatch
@@ -171,6 +294,8 @@ public final class Convert {
         DataType dt = src.dataType();
         if (dt == DataType.Q8_0) {
             dequantQ8_0(src, srcElemOff, dst, dstElemOff, count);
+        } else if (dt == DataType.Q4_K || dt == DataType.Q5_K || dt == DataType.Q6_K) {
+            dequantK(src, dt, srcElemOff, dst, dstElemOff, count);
         } else if (dt == DataType.FP16) {
             f16ToF32(src, srcElemOff, dst, dstElemOff, count);
         } else if (dt == DataType.FP32) {
