@@ -29,9 +29,12 @@ public interface RuntimeState {
     }
 
     /**
-     * Makes the state resumable at {@code position} after its KV/recurrent contents were restored
-     * externally (prompt cache): sets the cursor and resets per-batch scratch invariants. Transient
-     * output state (logits) is NOT restored - ingest before reading logits.
+     * Makes the state resumable at {@code position}. Two uses rest on the same law - rows past the
+     * cursor are masked, then overwritten: prompt-cache restore (KV/recurrent contents restored
+     * externally, the cursor set to match; transient output state (logits) is NOT restored - ingest
+     * before reading logits), and cross-encoder rewind ({@link Reranker.CrossEncoder} re-ingests
+     * each candidate at the frame boundary; nothing external is restored, the frame's rows are
+     * simply still valid).
      */
     default void resumeAt(int position) {
         throw new UnsupportedOperationException(
