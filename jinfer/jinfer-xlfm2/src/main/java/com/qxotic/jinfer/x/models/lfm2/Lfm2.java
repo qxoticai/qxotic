@@ -331,7 +331,6 @@ public final class Lfm2
     private void attentionProject(State state, int l, int seqLen) {
         Configuration config = configuration;
         int dim = config.embeddingLength;
-        int headSize = config.headSize, halfHeadSize = headSize / 2;
         int queryDim = config.queryDim(), kvDim = config.kvDim(l);
         int nKvHeads = config.numberOfKeyValueHeadsPerLayer[l];
         AttentionWeights attn = weights.layers[l].attention();
@@ -340,30 +339,12 @@ public final class Lfm2
         Norms.rmsnormRows(
                 state.normed, state.residual, attNormW, seqLen, dim, configuration.rmsNormEps);
         gemm(attn.wq(), state.normed, dim, state.query, queryDim, queryDim, seqLen, dim);
-        headNormRope(
-                state.query,
-                queryDim,
-                config.numberOfHeads,
-                headSize,
-                halfHeadSize,
-                attn.qNorm(),
-                seqLen,
-                state.ropeCos,
-                state.ropeSin);
+        headNormRope(state, state.query, queryDim, config.numberOfHeads, attn.qNorm(), seqLen);
         MemoryView<MemorySegment> bK = state.batchK[l], bV = state.batchV[l];
         gemm(attn.wk(), state.normed, dim, bK, kvDim, kvDim, seqLen, dim);
         if (attn.wv() != null) gemm(attn.wv(), state.normed, dim, bV, kvDim, kvDim, seqLen, dim);
         else Convert.copyF32(bK, 0, bV, 0, (long) seqLen * kvDim);
-        headNormRope(
-                bK,
-                kvDim,
-                nKvHeads,
-                headSize,
-                halfHeadSize,
-                attn.kNorm(),
-                seqLen,
-                state.ropeCos,
-                state.ropeSin);
+        headNormRope(state, bK, kvDim, nKvHeads, attn.kNorm(), seqLen);
     }
 
     /** The shared tail: output projection, optional post-norm, added to the residual. */
@@ -393,16 +374,15 @@ public final class Lfm2
 
     /** Per-head RMS-norm then NeoX RoPE over each row (shared by Q and K). */
     private void headNormRope(
+            State state,
             MemoryView<MemorySegment> t,
             int rowStride,
             int nHeads,
-            int headSize,
-            int halfHeadSize,
             MemoryView<MemorySegment> normW,
-            int seqLen,
-            MemoryView<MemorySegment> cos,
-            MemoryView<MemorySegment> sin) {
+            int seqLen) {
+        int headSize = configuration.headSize, halfHeadSize = headSize / 2;
         float eps = configuration.rmsNormEps;
+        MemoryView<MemorySegment> cos = state.ropeCos, sin = state.ropeSin;
         Parallel.forRows(
                 seqLen,
                 s -> {
@@ -607,8 +587,8 @@ public final class Lfm2
      * sequence boundaries - so no KV cache is read or written.
      */
     private void forwardSegmented(State state, int[] tokens, int[] seqLen, int n) {
-        int[] posOf = new int[n];
-        int[] segRow0 = new int[seqLen.length];
+        EmbedScratch es = state.embedScratch(configuration);
+        int[] posOf = es.posOf, segRow0 = es.segRow0;
         int at = 0;
         for (int g = 0; g < seqLen.length; g++) {
             segRow0[g] = at;
@@ -669,7 +649,7 @@ public final class Lfm2
                                         tmp.vbase() + (long) (tmpOff + 2 * dim + c) * Float.BYTES));
             }
         }
-        for (int g = 0; g < segRow0.length; g++) {
+        for (int g = 0; g < segLen.length; g++) {
             int r0 = segRow0[g], rEnd = r0 + segLen[g];
             for (int s = r0; s < rEnd; s++) {
                 int tmpOff = s * SHORTCONV_PARTS * dim, outOff = s * dim;
@@ -720,7 +700,7 @@ public final class Lfm2
         MemoryView<MemorySegment> bK = state.batchK[l], bV = state.batchV[l];
         float scale = 1.0f / (float) Math.sqrt(headSize);
         EmbedScratch es = state.embedScratch(config);
-        for (int g = 0; g < segRow0.length; g++) {
+        for (int g = 0; g < segLen.length; g++) {
             int r0 = segRow0[g], sl = segLen[g];
             Convert.copyF32(state.query, (long) r0 * queryDim, es.segQ, 0, (long) sl * queryDim);
             Convert.copyF32(bK, (long) r0 * kvDim, es.segK, 0, (long) sl * kvDim);
@@ -1211,6 +1191,9 @@ public final class Lfm2
     static final class EmbedScratch {
         final MemoryView<MemorySegment> segQ, segK, segV, segOut, embOut, colbertOut;
 
+        /** Position per row, and first row per segment (refilled per forwardSegmented). */
+        final int[] posOf, segRow0;
+
         EmbedScratch(
                 Configuration config, int batchCapacity, MemoryAllocator<MemorySegment> memory) {
             int queryDim = config.queryDim(), kvDim = config.maxKvDim();
@@ -1220,6 +1203,8 @@ public final class Lfm2
             this.segV = Views.allocateF32(memory, batchCapacity * kvDim);
             this.embOut = Views.allocateF32(memory, config.embeddingLength());
             this.colbertOut = Views.allocateF32(memory, Math.max(1, config.embeddingLengthOut()));
+            this.posOf = new int[batchCapacity];
+            this.segRow0 = new int[batchCapacity]; // a segment per row is the densest packing
         }
     }
 

@@ -162,7 +162,7 @@ public final class Lfm2Colbert implements Reranker<Lfm2.State> {
      */
     private float[] copyRow(Lfm2.State state, int row) {
         MemoryView<?> view = model.colbertRow(state, row);
-        Views.requireF32(view, "colbertRow"); // the copy bridge reads raw FP32 bytes
+        Views.rawF32(view, "colbertRow"); // requireDense: the F32 + contiguity gate
         int outDim = model.config().embeddingLengthOut();
         float[] dst = new float[outDim];
         MemoryView<MemorySegment> src = Views.castToSegmentBacked(view, "colbertRow");
@@ -184,9 +184,8 @@ public final class Lfm2Colbert implements Reranker<Lfm2.State> {
         Arrays.fill(best, Double.NEGATIVE_INFINITY);
         for (int d = 0; d < docIds.length; d++) {
             if (skiplist.contains(docIds[d])) continue;
-            MemoryView<?> view = model.colbertRow(state, rowStart + d);
-            Views.requireF32(view, "colbertRow"); // the dot below reads raw floats
-            Views.Raw row = Views.rawF32(view, "colbertRow");
+            // rawF32's requireDense is the F32 gate; the dot below reads raw floats
+            Views.Raw row = Views.rawF32(model.colbertRow(state, rowStart + d), "colbertRow");
             for (int q = 0; q < queryRows.length; q++) {
                 float[] qr = queryRows[q];
                 double dot = 0;
