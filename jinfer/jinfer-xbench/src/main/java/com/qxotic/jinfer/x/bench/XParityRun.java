@@ -22,6 +22,14 @@ import java.nio.file.Path;
  * old Dispatch does (same libjam, same kernels — diffs should be floor-level tiny), the second
  * reproduces XLfm2Test's floor gate outside surefire. Prompt is synthetic in-range ids, so the
  * tokenizer never enters the comparison.
+ *
+ * <p>MoE CAVEAT (LFM2-8B-A1B): on MoE checkpoints only the {@code -Djinfer.disableJam=true} run is
+ * a correctness gate. Discrete top-k expert routing amplifies tiny accumulation-order differences
+ * between the native and Java backends into different expert sets, which then legitimately diverge
+ * the logits (~1e-1 max-abs, argmax flips) — and the divergence is symmetric: old-jam vs old-floor
+ * disagrees exactly as x-jam vs x-floor does, with x landing on the floor-consistent side. A jam-on
+ * mismatch here means "backend mix", not "x bug"; the floor run (and XLfm2Test's MoE leg) carries
+ * the correctness signal.
  */
 public final class XParityRun {
 

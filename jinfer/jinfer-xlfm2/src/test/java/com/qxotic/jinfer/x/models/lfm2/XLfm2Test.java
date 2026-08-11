@@ -28,11 +28,15 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 /**
- * THE cycle-1 gate: the x LFM2.5 port vs the old FloatTensor LFM2 port on the REAL
- * LFM2.5-2.6B-Q8_0.gguf, ONE shared tokenizer instance fed to both loaders, greedy N=64 — strict
- * token-id parity at every step plus a logits max-abs-diff check on the prefill and final steps
- * (both trees route gemm/gemv to the same dot-based Java floor: the JAM backends are
- * surefire-excluded). Skipped when the model is not in the HF cache.
+ * THE cycle-1 gate: the x LFM2.5 port vs the old FloatTensor LFM2 port on the REAL checkpoints, ONE
+ * shared tokenizer instance fed to both loaders, greedy N=64 — strict token-id parity at every step
+ * plus a logits max-abs-diff check on the prefill and final steps (both trees route gemm/gemv to
+ * the same dot-based Java floor: the JAM backends are surefire-excluded). Two legs:
+ * LFM2.5-2.6B-Q8_0 (fully dense) and LFM2-8B-A1B-Q8_0 (lfm2moe: 32 experts top-4, sigmoid gating —
+ * the ONLY gate the x MoE path has). Floor-only on purpose: discrete top-k routing amplifies
+ * backend-mix noise into argmax flips even when both trees are individually correct, so jam-on MoE
+ * divergence is NOT a correctness signal (see XParityRun's javadoc). Skipped per leg when the
+ * checkpoint is not in the HF cache.
  */
 class XLfm2Test {
 
@@ -41,36 +45,46 @@ class XLfm2Test {
     private static final int N_TOKENS = 64;
     private static final float LOGIT_TOLERANCE = 1e-2f;
 
-    private static Path model;
+    private static Path denseModel;
+    private static Path moeModel;
 
     @BeforeAll
-    static void findModel() throws IOException {
-        Path repo = HF_CACHE.resolve("models--LiquidAI--LFM2.5-2.6B-GGUF/snapshots");
-        if (Files.isDirectory(repo)) {
-            try (Stream<Path> snaps = Files.list(repo)) {
-                model =
-                        snaps.flatMap(
-                                        s -> {
-                                            try {
-                                                return Files.list(s);
-                                            } catch (IOException e) {
-                                                return Stream.empty();
-                                            }
-                                        })
-                                .filter(
-                                        p ->
-                                                p.getFileName()
-                                                        .toString()
-                                                        .equals("LFM2.5-2.6B-Q8_0.gguf"))
-                                .findFirst()
-                                .orElse(null);
-            }
+    static void findModels() throws IOException {
+        denseModel = findGguf("models--LiquidAI--LFM2.5-2.6B-GGUF", "LFM2.5-2.6B-Q8_0.gguf");
+        moeModel = findGguf("models--LiquidAI--LFM2-8B-A1B-GGUF", "LFM2-8B-A1B-Q8_0.gguf");
+    }
+
+    private static Path findGguf(String repoName, String fileName) throws IOException {
+        Path repo = HF_CACHE.resolve(repoName).resolve("snapshots");
+        if (!Files.isDirectory(repo)) return null;
+        try (Stream<Path> snaps = Files.list(repo)) {
+            return snaps.flatMap(
+                            s -> {
+                                try {
+                                    return Files.list(s);
+                                } catch (IOException e) {
+                                    return Stream.empty();
+                                }
+                            })
+                    .filter(p -> p.getFileName().toString().equals(fileName))
+                    .findFirst()
+                    .orElse(null);
         }
     }
 
     @Test
-    void greedyParity() throws Exception {
-        assumeTrue(model != null, "LFM2.5-2.6B-Q8_0.gguf not in the HF cache");
+    void greedyParityDense() throws Exception {
+        assumeTrue(denseModel != null, "LFM2.5-2.6B-Q8_0.gguf not in the HF cache");
+        assertGreedyParity(denseModel);
+    }
+
+    @Test
+    void greedyParityMoe() throws Exception {
+        assumeTrue(moeModel != null, "LFM2-8B-A1B-Q8_0.gguf not in the HF cache");
+        assertGreedyParity(moeModel);
+    }
+
+    private static void assertGreedyParity(Path model) throws Exception {
         try (FileChannel channel = FileChannel.open(model)) {
             GGUF gguf = ModelLoader.readGguf(channel, "lfm2.5");
             Tokenizer tokenizer =
