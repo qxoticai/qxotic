@@ -19,12 +19,13 @@ import java.util.concurrent.ForkJoinPool;
  * until throughput settles, then timed reps) — one loop measures both trees, so JVM state is shared
  * and the comparison is the number, not the noise.
  *
- * <p>The checkpoint must be a bidirectional embedder (pooling CLS, attention.causal=false —
- * LFM2.5-ColBERT-350M works: dense_2 head, bidirectional). Both trees refuse causal checkpoints by
- * name.
+ * <p>{@code --family} picks the model pair: {@code lfm2} (default) needs a bidirectional embedder
+ * (pooling CLS, attention.causal=false — LFM2.5-ColBERT-350M works: dense_2 head, bidirectional;
+ * both trees refuse causal checkpoints by name), {@code qwen3} a causal one (pooling LAST —
+ * Qwen3-Embedding-0.6B; the reranker checkpoint shares the backbone).
  *
  * <pre>
- *   java ... XEmbedBench -m model.gguf [--impl old,x] [-s 256] [--minlen 8] [--maxlen 64] [-b 512] [-r 5] [-w 3]
+ *   java ... XEmbedBench -m model.gguf [--family lfm2|qwen3] [--impl old,x] [-s 256] [--minlen 8] [--maxlen 64] [-b 512] [-r 5] [-w 3]
  * </pre>
  */
 public final class XEmbedBench {
@@ -33,11 +34,13 @@ public final class XEmbedBench {
 
     public static void main(String[] args) throws Exception {
         String modelPath = null;
+        String family = "lfm2";
         List<String> impls = new ArrayList<>();
         int nSeq = 256, minLen = 8, maxLen = 64, batchCap = 512, reps = 5, warmup = 3;
         for (int i = 0; i < args.length; i++) {
             switch (args[i]) {
                 case "-m", "--model" -> modelPath = args[++i];
+                case "--family" -> family = args[++i];
                 case "--impl" -> impls.addAll(List.of(args[++i].split(",")));
                 case "-s", "--sequences" -> nSeq = Integer.parseInt(args[++i]);
                 case "--minlen" -> minLen = Integer.parseInt(args[++i]);
@@ -57,6 +60,11 @@ public final class XEmbedBench {
             }
         }
         if (modelPath == null) {
+            usage(System.err);
+            System.exit(2);
+        }
+        if (!family.equals("lfm2") && !family.equals("qwen3")) {
+            System.err.println("unknown family: " + family);
             usage(System.err);
             System.exit(2);
         }
@@ -80,7 +88,7 @@ public final class XEmbedBench {
                     "loading %s (ctx=%d; %d packed tokens across %d seqs, avg %.1f, batchCap=%d)"
                             + " impl=%s ...%n",
                     modelPath, ctx, total, nSeq, (double) total / nSeq, batchCap, implName);
-            BenchModel impl = load(Path.of(modelPath), implName);
+            BenchModel impl = load(Path.of(modelPath), family, implName);
             int vocab = impl.vocab();
             int[] ids = new int[total];
             for (int i = 0; i < total; i++) ids[i] = (i * 17 + 1) % vocab;
@@ -224,11 +232,82 @@ public final class XEmbedBench {
         }
     }
 
-    private static BenchModel load(Path path, String impl) throws Exception {
-        return switch (impl) {
-            case "old" -> new OldImpl(path);
-            case "x" -> new XImpl(path);
-            default -> throw new IllegalArgumentException("unknown impl: " + impl);
+    static final class OldQwen3Impl extends BenchModel {
+        private final com.qxotic.jinfer.models.qwen3.Qwen3 model;
+        private com.qxotic.jinfer.models.qwen3.Qwen3.State s;
+
+        OldQwen3Impl(Path path) throws Exception {
+            this.model = com.qxotic.jinfer.models.qwen3.Qwen3.loadModel(path, Arena.ofAuto());
+        }
+
+        @Override
+        int vocab() {
+            return model.config().vocabularySize();
+        }
+
+        @Override
+        void newState(int ctx, int batchCap) {
+            s = model.newState(ctx, batchCap);
+        }
+
+        @Override
+        int embed(int[] ids, int[] seqLen) {
+            int[] got = {0};
+            model.embed(
+                    s,
+                    new com.qxotic.jinfer.Batch.Input.Sequences(
+                            new com.qxotic.jinfer.Batch.Input.Tokens(ids), seqLen),
+                    e -> {
+                        sink += e.getFloat(0);
+                        got[0]++;
+                    });
+            return got[0];
+        }
+    }
+
+    static final class XQwen3Impl extends BenchModel {
+        private final com.qxotic.jinfer.x.models.qwen3.Qwen3 model;
+        private com.qxotic.jinfer.x.models.qwen3.Qwen3.State s;
+
+        XQwen3Impl(Path path) throws Exception {
+            this.model = com.qxotic.jinfer.x.models.qwen3.Qwen3.loadModel(path, Arena.ofAuto());
+        }
+
+        @Override
+        int vocab() {
+            return model.config().vocabularySize();
+        }
+
+        @Override
+        void newState(int ctx, int batchCap) {
+            s = model.newState(ctx, batchCap);
+        }
+
+        @Override
+        int embed(int[] ids, int[] seqLen) {
+            int[] got = {0};
+            model.embed(
+                    s,
+                    new com.qxotic.jinfer.x.boundary.Batch.Input.Sequences(
+                            new com.qxotic.jinfer.x.boundary.Batch.Input.Tokens(ids), seqLen),
+                    e -> {
+                        Views.Raw r = Views.rawF32(e, "embedding");
+                        sink += Segments.readFloat(r.vseg(), r.vbase());
+                        got[0]++;
+                    });
+            return got[0];
+        }
+    }
+
+    private static BenchModel load(Path path, String family, String impl) throws Exception {
+        return switch (family + ":" + impl) {
+            case "lfm2:old" -> new OldImpl(path);
+            case "lfm2:x" -> new XImpl(path);
+            case "qwen3:old" -> new OldQwen3Impl(path);
+            case "qwen3:x" -> new XQwen3Impl(path);
+            default ->
+                    throw new IllegalArgumentException(
+                            "unknown family/impl: " + family + ":" + impl);
         };
     }
 
@@ -246,10 +325,12 @@ public final class XEmbedBench {
     private static void usage(PrintStream out) {
         out.println(
                 """
-                XEmbedBench — ragged/packed batched-embedding throughput, old Lfm2 vs x (one JVM)
+                XEmbedBench — ragged/packed batched-embedding throughput, old vs x (one JVM)
 
-                usage: XEmbedBench -m <bidirectional-embedder.gguf> [options]
-                  -m, --model <path>      embedding checkpoint (pooling CLS, attention.causal=false)
+                usage: XEmbedBench -m <embedder.gguf> [options]
+                  -m, --model <path>      embedding checkpoint (see --family)
+                      --family <name>     lfm2: bidirectional (pooling CLS, attention.causal=false);
+                                          qwen3: causal (pooling LAST). Default lfm2
                       --impl <list>       comma-separated impls to measure (default old,x)
                   -s, --sequences <N>     number of packed sequences (default 256)
                       --minlen <N>        min sequence length (default 8)
