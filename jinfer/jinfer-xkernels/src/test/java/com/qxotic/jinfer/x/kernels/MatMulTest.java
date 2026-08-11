@@ -1,16 +1,17 @@
-package com.qxotic.jinfer.x;
+package com.qxotic.jinfer.x.kernels;
 
-import static com.qxotic.jinfer.x.Oracles.assertClose;
-import static com.qxotic.jinfer.x.Oracles.f32;
-import static com.qxotic.jinfer.x.Oracles.f32View;
-import static com.qxotic.jinfer.x.Oracles.oldF32;
-import static com.qxotic.jinfer.x.Oracles.oldQ8;
-import static com.qxotic.jinfer.x.Oracles.q8;
-import static com.qxotic.jinfer.x.Oracles.q8View;
+import static com.qxotic.jinfer.x.kernels.Oracles.assertClose;
+import static com.qxotic.jinfer.x.kernels.Oracles.f32;
+import static com.qxotic.jinfer.x.kernels.Oracles.f32View;
+import static com.qxotic.jinfer.x.kernels.Oracles.oldF32;
+import static com.qxotic.jinfer.x.kernels.Oracles.oldQ8;
+import static com.qxotic.jinfer.x.kernels.Oracles.q8;
+import static com.qxotic.jinfer.x.kernels.Oracles.q8View;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.qxotic.jinfer.F32FloatTensor;
 import com.qxotic.jinfer.FloatTensor;
+import com.qxotic.jinfer.x.Views;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryView;

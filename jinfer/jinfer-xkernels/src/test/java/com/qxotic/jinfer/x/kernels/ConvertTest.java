@@ -1,9 +1,12 @@
-package com.qxotic.jinfer.x;
+package com.qxotic.jinfer.x.kernels;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.qxotic.format.gguf.GGMLType;
 import com.qxotic.jinfer.FloatTensor;
+import com.qxotic.jinfer.x.Convert;
+import com.qxotic.jinfer.x.Views;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryView;
@@ -95,5 +98,46 @@ class ConvertTest {
         for (int i = 0; i < count; i++) {
             assertEquals(getF32(dOld, i), getF32(dNew, i), "dequant offset at " + i);
         }
+    }
+
+    /**
+     * copyToF32 routes each dtype to its arm (outputs match the direct-arm calls, which are
+     * themselves oracle-tested above) and rejects a dtype with no arm.
+     */
+    @Test
+    void copyToF32Routing() {
+        int n = 96; // three Q8_0 blocks, so all three arms get non-trivial spans
+        MemorySegment dstArm = arena.allocate(4L * n, 64);
+        MemorySegment dstRouted = arena.allocate(4L * n, 64);
+
+        // Q8_0 -> dequantQ8_0
+        MemorySegment q8 = Oracles.q8(arena, 1, n, 7);
+        Convert.dequantQ8_0(Oracles.q8View(q8, n), 0, Oracles.f32View(dstArm, n), 0, n);
+        Convert.copyToF32(Oracles.q8View(q8, n), 0, Oracles.f32View(dstRouted, n), 0, n);
+        for (int i = 0; i < n; i++)
+            assertEquals(getF32(dstArm, i), getF32(dstRouted, i), "routed Q8_0 at " + i);
+
+        // FP16 -> f16ToF32
+        MemorySegment f16 = arena.allocate(2L * n, 64);
+        for (int i = 0; i < n; i++)
+            f16.set(ValueLayout.JAVA_SHORT_UNALIGNED, 2L * i, Float.floatToFloat16(i * 0.25f - 8));
+        Convert.f16ToF32(f16View(f16, n), 0, Oracles.f32View(dstArm, n), 0, n);
+        Convert.copyToF32(f16View(f16, n), 0, Oracles.f32View(dstRouted, n), 0, n);
+        for (int i = 0; i < n; i++)
+            assertEquals(getF32(dstArm, i), getF32(dstRouted, i), "routed FP16 at " + i);
+
+        // FP32 -> copyF32
+        MemorySegment f32 = Oracles.f32(arena, n, 11);
+        Convert.copyF32(Oracles.f32View(f32, n), 0, Oracles.f32View(dstArm, n), 0, n);
+        Convert.copyToF32(Oracles.f32View(f32, n), 0, Oracles.f32View(dstRouted, n), 0, n);
+        for (int i = 0; i < n; i++)
+            assertEquals(getF32(dstArm, i), getF32(dstRouted, i), "routed FP32 at " + i);
+
+        // no arm: FP64 rejected
+        MemorySegment f64 = arena.allocate(8L * n, 64);
+        MemoryView<MemorySegment> f64View = Views.wrap(f64, DataType.FP64, Shape.flat(n));
+        assertThrows(
+                UnsupportedOperationException.class,
+                () -> Convert.copyToF32(f64View, 0, Oracles.f32View(dstRouted, n), 0, n));
     }
 }

@@ -7,7 +7,6 @@
 // per expert (never per element), so the vector kernels inside stay monomorphic.
 package com.qxotic.jinfer.x.kernels;
 
-import com.qxotic.jinfer.x.Ops;
 import com.qxotic.jinfer.x.Parallel;
 import com.qxotic.jinfer.x.Views;
 import com.qxotic.jinfer.x.Views.Raw;

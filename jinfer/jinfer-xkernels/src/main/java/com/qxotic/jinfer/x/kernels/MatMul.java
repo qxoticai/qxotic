@@ -1,4 +1,4 @@
-package com.qxotic.jinfer.x;
+package com.qxotic.jinfer.x.kernels;
 
 import static com.qxotic.jinfer.x.Segments.F_SPECIES;
 import static com.qxotic.jinfer.x.Segments.USE_VECTOR_API;
@@ -8,6 +8,8 @@ import static com.qxotic.jinfer.x.Segments.readFloat16;
 import static com.qxotic.jinfer.x.Segments.writeFloat;
 
 import com.qxotic.jam.JAM;
+import com.qxotic.jinfer.x.Parallel;
+import com.qxotic.jinfer.x.Views;
 import com.qxotic.jinfer.x.Views.Raw;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.memory.MemoryView;

@@ -26,7 +26,7 @@ public final class KvTransfer {
             long elems,
             boolean out) {
         DataType dtype = t.dataType();
-        Views.requireDtype(t, DataType.FP16, "kv"); // cycle-1 scope: FP16 KV
+        Views.requireDatatype(t, DataType.FP16, "kv"); // cycle-1 scope: FP16 KV
         long elemBytes = dtype.byteSize();
         long srcByte = t.byteOffset() + elemOff * elemBytes;
         long bytes = elems * elemBytes;

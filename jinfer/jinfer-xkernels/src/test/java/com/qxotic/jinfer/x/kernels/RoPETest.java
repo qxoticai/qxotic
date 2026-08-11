@@ -1,6 +1,7 @@
-package com.qxotic.jinfer.x;
+package com.qxotic.jinfer.x.kernels;
 
 import com.qxotic.jinfer.FloatTensor;
+import com.qxotic.jinfer.x.Views;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryView;
