@@ -55,6 +55,13 @@
       <artifactId>jinfer-llm</artifactId>
       <scope>test</scope>
     </dependency>
+    <dependency>
+      <!-- the shipped scorer (Models.loadReranker -> Qwen3Provider -> old Qwen3Reranker): the
+           score leg's oracle, and its Models dispatch needs the ServiceLoader wiring -->
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-chat</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>

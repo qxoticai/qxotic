@@ -18,6 +18,7 @@ package com.qxotic.jinfer.x.models.qwen3;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.x.Convert;
 import com.qxotic.jinfer.x.Parallel;
+import com.qxotic.jinfer.x.Segments;
 import com.qxotic.jinfer.x.Views;
 import com.qxotic.jinfer.x.boundary.BaseState;
 import com.qxotic.jinfer.x.boundary.Batch;
@@ -39,6 +40,7 @@ import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.lang.ref.Reference;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -441,6 +443,53 @@ public final class Qwen3
                             weights.wcls(), s.normed, s.logits, configuration.vocabularySize, dim);
                     return s.logits;
                 });
+    }
+
+    /**
+     * The raw LM logit of ONE token at the last ingested row, via the TIED token-embedding head
+     * (Qwen3 small variants tie the LM head; reranker GGUFs carry no separate output.weight). A
+     * reranker reads its two verdict tokens with two of these - two dot products, where a
+     * generative head would project the whole vocabulary (~155 MB streamed at Q8) to reach them.
+     * Claims the state and fences the model, like every other public entry point that runs kernels;
+     * {@link #targetedHead} is the unfenced seam.
+     */
+    public float logit(State s, int token) {
+        s.enter();
+        float out;
+        try {
+            out = targetedHead(s, token);
+        } finally {
+            s.exit();
+        }
+        Reference.reachabilityFence(this);
+        return out;
+    }
+
+    private float targetedHead(State s, int token) {
+        int dim = configuration.embeddingLength;
+        // the last retained row IS the last row of the chunk just ingested
+        int row = s.lastChunkLen - 1;
+        Norms.rmsnorm(
+                s.normed,
+                0,
+                s.residual,
+                (long) row * dim,
+                weights.finalNorm(),
+                dim,
+                configuration.rmsNormEps);
+        // one row of the tied head: c[0] = tokenEmbeddings[token] . normed
+        MatMul.gemm(
+                weights.tokenEmbeddings,
+                (long) token * dim,
+                s.normed,
+                dim,
+                s.logits,
+                configuration.vocabularySize,
+                1,
+                1,
+                dim);
+        Views.Raw r = Views.rawF32(s.logits, "logits");
+        return Segments.readFloat(r.vseg(), r.vbase());
     }
 
     /**
