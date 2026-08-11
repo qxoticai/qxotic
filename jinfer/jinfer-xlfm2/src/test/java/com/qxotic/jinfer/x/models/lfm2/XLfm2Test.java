@@ -7,11 +7,11 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.FloatTensor;
 import com.qxotic.jinfer.llm.SpecialTokens;
-import com.qxotic.jinfer.x.Ops;
 import com.qxotic.jinfer.x.Segments;
 import com.qxotic.jinfer.x.Views;
 import com.qxotic.jinfer.x.boundary.Batch;
 import com.qxotic.jinfer.x.kernels.ModelLoader;
+import com.qxotic.jinfer.x.kernels.Ops;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
@@ -113,25 +113,20 @@ class XLfm2Test {
             try (var xs =
                     xm.newState(
                             Math.min(xc.contextLength(), ids.length + N_TOKENS + 16),
-                            Math.max(16, ids.length),
-                            Arena.ofAuto())) {
-                xs.enter();
-                try {
-                    xm.forward(xs, Batch.prefill(ids));
-                    xIds = new int[N_TOKENS];
-                    MemoryView<MemorySegment> logits = head(xm, xs);
-                    xFirst = snapshotX(logits, vocab);
-                    int tok = Ops.argmax(logits, 0, vocab);
-                    for (int n = 0; n < N_TOKENS; n++) {
-                        xIds[n] = tok;
-                        xm.forward(xs, Batch.step(tok));
-                        logits = head(xm, xs);
-                        tok = Ops.argmax(logits, 0, vocab);
-                    }
-                    xLast = snapshotX(logits, vocab);
-                } finally {
-                    xs.exit();
+                            Math.max(16, ids.length))) {
+                xm.ingest(xs, Batch.prefill(ids));
+                xIds = new int[N_TOKENS];
+                MemoryView<MemorySegment> logits =
+                        Views.castToSegmentBacked(xm.logits(xs), "logits");
+                xFirst = snapshotX(logits, vocab);
+                int tok = Ops.argmax(logits, 0, vocab);
+                for (int n = 0; n < N_TOKENS; n++) {
+                    xIds[n] = tok;
+                    xm.ingest(xs, Batch.step(tok));
+                    logits = Views.castToSegmentBacked(xm.logits(xs), "logits");
+                    tok = Ops.argmax(logits, 0, vocab);
                 }
+                xLast = snapshotX(logits, vocab);
             }
 
             float firstDiff = maxAbsDiff(oldFirst, xFirst);
@@ -142,11 +137,6 @@ class XLfm2Test {
             assertTrue(lastDiff < LOGIT_TOLERANCE, "final logits diverged: " + lastDiff);
             assertArrayEquals(oldIds, xIds, "greedy token-id divergence");
         }
-    }
-
-    @SuppressWarnings("unchecked")
-    private static MemoryView<MemorySegment> head(Lfm2 m, Lfm2.State s) {
-        return (MemoryView<MemorySegment>) m.head(s, 0);
     }
 
     private static float[] snapshotOld(FloatTensor logits, int vocab) {

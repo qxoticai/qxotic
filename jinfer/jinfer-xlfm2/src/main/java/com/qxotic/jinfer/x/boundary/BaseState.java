@@ -1,6 +1,9 @@
 package com.qxotic.jinfer.x.boundary;
 
+import com.qxotic.jinfer.x.PanamaMemoryArena;
+import com.qxotic.jota.memory.MemoryArena;
 import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
 import java.lang.ref.Cleaner;
 import java.util.ConcurrentModificationException;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -12,15 +15,15 @@ import java.util.concurrent.locks.ReentrantLock;
  * carries no cursor boilerplate. Fields are public for the model's own forward code (hot-path reads
  * like {@code s.position} across packages); mutation belongs to the two lifecycle methods only.
  *
- * <p>Also owns the state's MEMORY lifetime. Every buffer of a state comes from its {@link #arena};
- * who provided the arena owns it: {@code newState(ctx, batch)} builds an internal owned arena that
- * {@link #close()} frees deterministically (with a {@link Cleaner} backstop, so a dropped unclosed
- * state degrades to GC-eventually rather than leaking); {@code newState(ctx, batch, arena)} borrows
- * the caller's arena and {@link #close()} never touches it - close YOUR arena only after your last
- * call returns (closing it first sequentially is caught fail-fast by {@link #enter}'s canary;
- * closing it DURING a computation is a data race the kernels' raw reads can turn into a crash);
- * {@code newState(ctx, batch, arena, true)} ADOPTS the caller's arena, fusing its lifetime into the
- * state's (close frees it, co-tenants like weights included).
+ * <p>Also owns the state's MEMORY lifetime. Every buffer of a state comes from its {@link
+ * #memoryArena()}; who provided the arena owns it: {@code newState(ctx, batch)} builds an internal
+ * owned arena that {@link #close()} frees deterministically (with a {@link Cleaner} backstop, so a
+ * dropped unclosed state degrades to GC-eventually rather than leaking); {@code newState(ctx,
+ * batch, arena)} borrows the caller's arena and {@link #close()} never touches it - close YOUR
+ * arena only after your last call returns (closing it first sequentially is caught fail-fast by
+ * {@link #enter}'s canary; closing it DURING a computation is a data race the kernels' raw reads
+ * can turn into a crash); {@code newState(ctx, batch, arena, true)} ADOPTS the caller's arena,
+ * fusing its lifetime into the state's (close frees it, co-tenants like weights included).
  *
  * <p>One lock carries the three run-time laws: entry points {@code tryLock} so two concurrent
  * computations fail fast with {@link ConcurrentModificationException} (the single-serial-pipeline
@@ -32,8 +35,13 @@ public abstract class BaseState implements RuntimeState, AutoCloseable {
 
     private static final Cleaner CLEANER = Cleaner.create();
 
-    /** Every buffer of this state allocates from here; ownership per the class contract. */
-    public final Arena arena;
+    /**
+     * The state's memory, in its concrete reality: the enter-canary needs {@link
+     * PanamaMemoryArena#isAlive()} and the close path the wrapped JDK Arena - neither is on the
+     * {@link MemoryArena} interface, so the ONE field stays concrete and private. What states and
+     * models see is {@link #memoryArena()}: the opaque allocation interface.
+     */
+    private final PanamaMemoryArena memoryArena;
 
     private final ReentrantLock lock = new ReentrantLock();
     private final AtomicBoolean closed = new AtomicBoolean();
@@ -41,13 +49,23 @@ public abstract class BaseState implements RuntimeState, AutoCloseable {
 
     protected BaseState(Arena arena) {
         if (arena == null) throw new IllegalArgumentException("null arena");
-        this.arena = arena;
+        this.memoryArena = new PanamaMemoryArena(arena);
     }
 
     /**
-     * Marks this state as owning {@link #arena} - called only by the adopting {@code newState}
-     * flavors. A non-closeable arena (ofAuto/global) may be adopted: owning it just means there is
-     * nothing to free eagerly, and {@link #close()} stays a valid no-op on the memory.
+     * The state's memory, opaque: every buffer of the state allocates from this. Ownership
+     * (borrowed/owned/adopted, the {@code owned} Cleanable) stays this class's business - the
+     * interface hands out allocation only. An implementation seam for model State subclasses, never
+     * boundary API.
+     */
+    protected final MemoryArena<MemorySegment> memoryArena() {
+        return memoryArena;
+    }
+
+    /**
+     * Marks this state as owning its arena - called only by the adopting {@code newState} flavors.
+     * A non-closeable arena (ofAuto/global) may be adopted: owning it just means there is nothing
+     * to free eagerly, and {@link #close()} stays a valid no-op on the memory.
      */
     final void adoptArena() {
         // at-most-once: a second registration would mean two Cleanables racing to close one arena.
@@ -56,7 +74,7 @@ public abstract class BaseState implements RuntimeState, AutoCloseable {
         if (owned != null) throw new IllegalStateException("this state already owns its arena");
         // the cleanup action must not capture the state itself - only the arena, the closed
         // flag (its own object), and the optional LeakWatch site
-        Arena a = arena;
+        Arena a = memoryArena.arena();
         AtomicBoolean closedFlag = closed;
         Throwable site = LeakWatch.site("owned state arena");
         owned =
@@ -90,7 +108,7 @@ public abstract class BaseState implements RuntimeState, AutoCloseable {
      */
     public final void enter() {
         if (closed.get()) throw new IllegalStateException("state is closed");
-        if (!arena.scope().isAlive()) throw new IllegalStateException(FREED_MESSAGE);
+        if (!memoryArena.isAlive()) throw new IllegalStateException(FREED_MESSAGE);
         if (!lock.tryLock()) {
             // the holder is either another computation (contract violation) or the winning
             // closer draining us (shutdown); `closed` tells which

@@ -9,14 +9,8 @@ import static com.qxotic.jinfer.x.Segments.readFloat;
 import static com.qxotic.jinfer.x.Segments.writeFloat;
 
 import com.qxotic.format.gguf.GGUF;
-import com.qxotic.jinfer.x.Activations;
 import com.qxotic.jinfer.x.Convert;
-import com.qxotic.jinfer.x.FlashAttention;
-import com.qxotic.jinfer.x.MatMul;
-import com.qxotic.jinfer.x.Norms;
-import com.qxotic.jinfer.x.Ops;
 import com.qxotic.jinfer.x.Parallel;
-import com.qxotic.jinfer.x.RoPE;
 import com.qxotic.jinfer.x.Views;
 import com.qxotic.jinfer.x.Views.Raw;
 import com.qxotic.jinfer.x.boundary.BaseState;
@@ -24,10 +18,17 @@ import com.qxotic.jinfer.x.boundary.Batch;
 import com.qxotic.jinfer.x.boundary.Config;
 import com.qxotic.jinfer.x.boundary.EmbeddingModel;
 import com.qxotic.jinfer.x.boundary.LanguageModel;
+import com.qxotic.jinfer.x.kernels.Activations;
+import com.qxotic.jinfer.x.kernels.FlashAttention;
+import com.qxotic.jinfer.x.kernels.MatMul;
 import com.qxotic.jinfer.x.kernels.ModelLoader;
 import com.qxotic.jinfer.x.kernels.Moe;
+import com.qxotic.jinfer.x.kernels.Norms;
+import com.qxotic.jinfer.x.kernels.Ops;
+import com.qxotic.jinfer.x.kernels.RoPE;
 import com.qxotic.jinfer.x.kernels.Trace;
 import com.qxotic.jota.DataType;
+import com.qxotic.jota.memory.MemoryAllocator;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
@@ -48,6 +49,9 @@ public final class Lfm2
 
     /** llama.cpp's pooling_type enum value for CLS - pool the sequence's FIRST row (its BOS). */
     static final int POOLING_CLS = 2;
+
+    /** The short-conv in_proj's 3-way row split: B | C_gate | x blocks, each dim wide. */
+    private static final int SHORTCONV_PARTS = 3;
 
     private final Configuration configuration;
     private final Tokenizer tokenizer;
@@ -124,14 +128,14 @@ public final class Lfm2
         return Parallel.onDecodePool(
                 () -> {
                     Norms.rmsnorm(
-                            s.xb,
+                            s.normed,
                             0,
                             s.residual,
                             (long) row * dim,
                             weights.finalNorm,
                             dim,
                             configuration.rmsNormEps);
-                    gemv(weights.wcls, s.xb, s.logits, configuration.vocabularySize, dim);
+                    gemv(weights.wcls, s.normed, s.logits, configuration.vocabularySize, dim);
                     Activations.softcap(
                             s.logits,
                             0,
@@ -150,7 +154,7 @@ public final class Lfm2
                 state.ropeSin,
                 startPos,
                 seqLen,
-                configuration.headSizeFull / 2,
+                configuration.headSize / 2,
                 weights.rope());
         embedTokens(state, tokens, tokenOffset, seqLen);
         for (int l = 0; l < configuration.numberOfLayers; l++) layer(state, l, startPos, seqLen);
@@ -161,20 +165,16 @@ public final class Lfm2
     private void embedTokens(State state, int[] tokens, int tokenOffset, int seqLen) {
         Views.checkAlive(weights.tokenEmbeddings, "tokenEmbeddings"); // fail-fast on freed weights
         int dim = configuration.embeddingLength;
-        MemoryView<MemorySegment> emb = weights.tokenEmbeddings;
-        DataType dt = emb.dataType();
+        // ponytail: per-row dispatch via Convert.copyToF32 (the cost profile of the old per-row
+        // virtual copyTo it replaces); the batched gather-dequant - dispatch hoisted once per
+        // table - is a planned, separately-benchmarked commit, not a polish
         for (int s = 0; s < seqLen; s++) {
-            long srcOff = (long) tokens[tokenOffset + s] * dim;
-            long dstOff = (long) s * dim;
-            if (dt == DataType.Q8_0) {
-                Convert.dequantQ8_0(emb, srcOff, state.residual, dstOff, dim);
-            } else if (dt == DataType.FP16) {
-                Convert.f16ToF32(emb, srcOff, state.residual, dstOff, dim);
-            } else if (dt == DataType.FP32) {
-                Convert.copyF32(emb, srcOff, state.residual, dstOff, dim);
-            } else {
-                throw new UnsupportedOperationException("embedding dtype " + dt);
-            }
+            Convert.copyToF32(
+                    weights.tokenEmbeddings,
+                    (long) tokens[tokenOffset + s] * dim,
+                    state.residual,
+                    (long) s * dim,
+                    dim);
         }
     }
 
@@ -192,24 +192,22 @@ public final class Lfm2
     /** Pre-norm -> in-proj (B|C_gate|x) -> causal FIR scan -> out-proj, added to the residual. */
     private void shortConvMixer(State state, int l, int seqLen) {
         int dim = configuration.embeddingLength;
-        float eps = configuration.rmsNormEps;
         ShortConvWeights sc = weights.layers[l].shortConv();
         MemoryView<MemorySegment> preNorm =
                 weights.layers[l].attnNorm(); // conv layers use attn_norm as the mixer pre-norm
-        Parallel.forRows(
+        Norms.rmsnormRows(
+                state.normed, state.residual, preNorm, seqLen, dim, configuration.rmsNormEps);
+        gemm(
+                sc.inProj(),
+                state.normed,
+                dim,
+                state.shortConvTmp,
+                SHORTCONV_PARTS * dim,
+                SHORTCONV_PARTS * dim,
                 seqLen,
-                s ->
-                        Norms.rmsnorm(
-                                state.xb,
-                                (long) s * dim,
-                                state.residual,
-                                (long) s * dim,
-                                preNorm,
-                                dim,
-                                eps));
-        gemm(sc.inProj(), state.xb, dim, state.shortConvTmp, 3 * dim, seqLen, 3 * dim, dim);
+                dim);
         shortConvScan(state, l, seqLen);
-        gemm(sc.outProj(), state.xb2, dim, state.shortConvOut, dim, seqLen, dim, dim);
+        gemm(sc.outProj(), state.branchOut, dim, state.shortConvOut, dim, dim, seqLen, dim);
         Ops.addInPlace(state.residual, 0, state.shortConvOut, 0, seqLen * dim);
     }
 
@@ -219,58 +217,49 @@ public final class Lfm2
      * (Σ_{k<hist} state[k]·kernel[k] + bx[s]·kernel[hist])}, where {@code state} holds the previous
      * {@code hist=dConv-1} bx values; bx is materialized in place over the B block of shortConvTmp
      * and the newest bx rolls into shortConvState.
+     *
+     * <p>ponytail: a kernel living in the model - it moves to {@code Convolutions} (with its own
+     * differential oracle) when cycle 2 ports {@code Llama.shortConvScan}; the second caller is the
+     * API proof, until then it stays where the old tree has it.
      */
     private void shortConvScan(State state, int l, int seqLen) {
         int dim = configuration.embeddingLength;
         int dConv = configuration.shortConvLCache, hist = dConv - 1;
-        Raw kernel =
+        // seg/base locals, the xcore kernel idiom (MatMul.run): Raw extracted once, then plain
+        Raw kernelRaw =
                 Views.rawF32(
                         weights.layers[l].shortConv().kernel(),
                         "kernel"); // per channel: dConv taps at c*dConv + k
-        Raw convState = Views.rawF32(state.shortConvState[l], "shortConvState");
-        Raw tmp = Views.rawF32(state.shortConvTmp, "shortConvTmp");
-        Raw out = Views.rawF32(state.xb2, "xb2");
+        Raw convRaw = Views.rawF32(state.shortConvState[l], "shortConvState");
+        Raw tmpRaw = Views.rawF32(state.shortConvTmp, "shortConvTmp");
+        Raw outRaw = Views.rawF32(state.branchOut, "branchOut");
+        MemorySegment ks = kernelRaw.vseg(),
+                cs = convRaw.vseg(),
+                ts = tmpRaw.vseg(),
+                os = outRaw.vseg();
+        long kb = kernelRaw.vbase(), cb = convRaw.vbase(), tb = tmpRaw.vbase(), ob = outRaw.vbase();
         for (int s = 0; s < seqLen; s++) {
-            int tmpOff = s * 3 * dim, outOff = s * dim;
+            int tmpOff = s * SHORTCONV_PARTS * dim, outOff = s * dim;
             for (int c = 0; c < dim; c++) {
-                float b = readFloat(tmp.vseg(), tmp.vbase() + (long) (tmpOff + c) * Float.BYTES);
-                float cg =
-                        readFloat(
-                                tmp.vseg(), tmp.vbase() + (long) (tmpOff + dim + c) * Float.BYTES);
-                float xv =
-                        readFloat(
-                                tmp.vseg(),
-                                tmp.vbase() + (long) (tmpOff + 2 * dim + c) * Float.BYTES);
+                float b = readFloat(ts, tb + 4L * (tmpOff + c));
+                float cg = readFloat(ts, tb + 4L * (tmpOff + dim + c));
+                float xv = readFloat(ts, tb + 4L * (tmpOff + 2 * dim + c));
                 float bx = b * xv;
-                writeFloat(tmp.vseg(), tmp.vbase() + (long) (tmpOff + c) * Float.BYTES, bx);
+                writeFloat(ts, tb + 4L * (tmpOff + c), bx);
                 int kBase = c * dConv;
                 float sum = 0f;
                 for (int k = 0; k < hist; k++)
                     sum +=
-                            readFloat(
-                                            convState.vseg(),
-                                            convState.vbase() + ((long) k * dim + c) * Float.BYTES)
-                                    * readFloat(
-                                            kernel.vseg(),
-                                            kernel.vbase() + (long) (kBase + k) * Float.BYTES);
-                sum +=
-                        bx
-                                * readFloat(
-                                        kernel.vseg(),
-                                        kernel.vbase() + (long) (kBase + dConv - 1) * Float.BYTES);
-                writeFloat(out.vseg(), out.vbase() + (long) (outOff + c) * Float.BYTES, cg * sum);
+                            readFloat(cs, cb + 4L * ((long) k * dim + c))
+                                    * readFloat(ks, kb + 4L * (kBase + k));
+                sum += bx * readFloat(ks, kb + 4L * (kBase + dConv - 1));
+                writeFloat(os, ob + 4L * (outOff + c), cg * sum);
                 for (int k = 0; k < hist - 1; k++)
                     writeFloat(
-                            convState.vseg(),
-                            convState.vbase() + ((long) k * dim + c) * Float.BYTES,
-                            readFloat(
-                                    convState.vseg(),
-                                    convState.vbase() + ((long) (k + 1) * dim + c) * Float.BYTES));
-                if (hist > 0)
-                    writeFloat(
-                            convState.vseg(),
-                            convState.vbase() + ((long) (hist - 1) * dim + c) * Float.BYTES,
-                            bx);
+                            cs,
+                            cb + 4L * ((long) k * dim + c),
+                            readFloat(cs, cb + 4L * ((long) (k + 1) * dim + c)));
+                if (hist > 0) writeFloat(cs, cb + 4L * ((long) (hist - 1) * dim + c), bx);
             }
         }
     }
@@ -284,7 +273,7 @@ public final class Lfm2
      */
     private void attention(State state, int l, int startPos, int seqLen) {
         Configuration config = configuration;
-        int headSize = config.headSizeFull;
+        int headSize = config.headSize;
         int queryDim = config.queryDim(), kvDim = config.kvDim(l);
         int kvMul = config.numberOfHeads / config.numberOfKeyValueHeadsPerLayer[l];
         attentionProject(state, l, seqLen);
@@ -293,7 +282,7 @@ public final class Lfm2
         if (seqLen > 1) {
             FlashAttention.slidingWindowPrefill(
                     state.query,
-                    state.xbK,
+                    state.attnOut,
                     state.keyCache[l],
                     state.valueCache[l],
                     bK,
@@ -313,7 +302,7 @@ public final class Lfm2
         } else {
             FlashAttention.flashDecode(
                     state.query,
-                    state.xbK,
+                    state.attnOut,
                     state.keyCache[l],
                     state.valueCache[l],
                     bK,
@@ -342,45 +331,35 @@ public final class Lfm2
     private void attentionProject(State state, int l, int seqLen) {
         Configuration config = configuration;
         int dim = config.embeddingLength;
-        float eps = config.rmsNormEps;
-        int headSize = config.headSizeFull, halfHead = headSize / 2;
+        int headSize = config.headSize, halfHeadSize = headSize / 2;
         int queryDim = config.queryDim(), kvDim = config.kvDim(l);
         int nKvHeads = config.numberOfKeyValueHeadsPerLayer[l];
         AttentionWeights attn = weights.layers[l].attention();
 
         MemoryView<MemorySegment> attNormW = weights.layers[l].attnNorm();
-        Parallel.forRows(
-                seqLen,
-                s ->
-                        Norms.rmsnorm(
-                                state.xb,
-                                (long) s * dim,
-                                state.residual,
-                                (long) s * dim,
-                                attNormW,
-                                dim,
-                                eps));
-        gemm(attn.wq(), state.xb, dim, state.query, queryDim, seqLen, queryDim, dim);
+        Norms.rmsnormRows(
+                state.normed, state.residual, attNormW, seqLen, dim, configuration.rmsNormEps);
+        gemm(attn.wq(), state.normed, dim, state.query, queryDim, queryDim, seqLen, dim);
         headNormRope(
                 state.query,
                 queryDim,
                 config.numberOfHeads,
                 headSize,
-                halfHead,
+                halfHeadSize,
                 attn.qNorm(),
                 seqLen,
                 state.ropeCos,
                 state.ropeSin);
         MemoryView<MemorySegment> bK = state.batchK[l], bV = state.batchV[l];
-        gemm(attn.wk(), state.xb, dim, bK, kvDim, seqLen, kvDim, dim);
-        if (attn.wv() != null) gemm(attn.wv(), state.xb, dim, bV, kvDim, seqLen, kvDim, dim);
+        gemm(attn.wk(), state.normed, dim, bK, kvDim, kvDim, seqLen, dim);
+        if (attn.wv() != null) gemm(attn.wv(), state.normed, dim, bV, kvDim, kvDim, seqLen, dim);
         else Convert.copyF32(bK, 0, bV, 0, (long) seqLen * kvDim);
         headNormRope(
                 bK,
                 kvDim,
                 nKvHeads,
                 headSize,
-                halfHead,
+                halfHeadSize,
                 attn.kNorm(),
                 seqLen,
                 state.ropeCos,
@@ -390,31 +369,26 @@ public final class Lfm2
     /** The shared tail: output projection, optional post-norm, added to the residual. */
     private void attentionFinish(State state, int l, int seqLen) {
         int dim = configuration.embeddingLength;
-        float eps = configuration.rmsNormEps;
         AttentionWeights attn = weights.layers[l].attention();
         gemm(
                 attn.wo(),
-                state.xbK,
+                state.attnOut,
                 configuration.queryDim(),
-                state.xb2,
+                state.branchOut,
+                dim,
                 dim,
                 seqLen,
-                dim,
                 configuration.queryDim());
         MemoryView<MemorySegment> postAttW = weights.layers[l].postAttnNorm();
         if (postAttW != null)
-            Parallel.forRows(
+            Norms.rmsnormRows(
+                    state.branchOut,
+                    state.branchOut,
+                    postAttW,
                     seqLen,
-                    s ->
-                            Norms.rmsnorm(
-                                    state.xb2,
-                                    (long) s * dim,
-                                    state.xb2,
-                                    (long) s * dim,
-                                    postAttW,
-                                    dim,
-                                    eps));
-        Ops.addInPlace(state.residual, 0, state.xb2, 0, seqLen * dim);
+                    dim,
+                    configuration.rmsNormEps);
+        Ops.addInPlace(state.residual, 0, state.branchOut, 0, seqLen * dim);
     }
 
     /** Per-head RMS-norm then NeoX RoPE over each row (shared by Q and K). */
@@ -423,7 +397,7 @@ public final class Lfm2
             int rowStride,
             int nHeads,
             int headSize,
-            int halfHead,
+            int halfHeadSize,
             MemoryView<MemorySegment> normW,
             int seqLen,
             MemoryView<MemorySegment> cos,
@@ -443,7 +417,7 @@ public final class Lfm2
                                 s,
                                 cos,
                                 sin,
-                                halfHead);
+                                halfHeadSize);
                     }
                 });
     }
@@ -458,42 +432,27 @@ public final class Lfm2
             return;
         }
         int dim = config.embeddingLength, hiddenDim = config.feedForwardLength[l];
-        float eps = config.rmsNormEps;
         DenseFfnWeights ffn = weights.layers[l].dense();
         MemoryView<MemorySegment> ffnNormW = weights.layers[l].ffnNorm(),
                 postFfwW = weights.layers[l].postFfnNorm();
-        Parallel.forRows(
-                seqLen,
-                s ->
-                        Norms.rmsnorm(
-                                state.xb,
-                                (long) s * dim,
-                                state.residual,
-                                (long) s * dim,
-                                ffnNormW,
-                                dim,
-                                eps));
-        gemm(ffn.gate(), state.xb, dim, state.hb, hiddenDim, seqLen, hiddenDim, dim);
-        gemm(ffn.up(), state.xb, dim, state.hb2, hiddenDim, seqLen, hiddenDim, dim);
+        Norms.rmsnormRows(
+                state.normed, state.residual, ffnNormW, seqLen, dim, configuration.rmsNormEps);
+        gemm(ffn.gate(), state.normed, dim, state.hidden, hiddenDim, hiddenDim, seqLen, dim);
+        gemm(ffn.up(), state.normed, dim, state.hidden2, hiddenDim, hiddenDim, seqLen, dim);
         Parallel.forRows(
                 seqLen,
                 s ->
                         Activations.siluMultiply(
-                                state.hb, s * hiddenDim, state.hb2, s * hiddenDim, hiddenDim));
-        gemm(ffn.down(), state.hb, hiddenDim, state.xb, dim, seqLen, dim, hiddenDim);
+                                state.hidden,
+                                s * hiddenDim,
+                                state.hidden2,
+                                s * hiddenDim,
+                                hiddenDim));
+        gemm(ffn.down(), state.hidden, hiddenDim, state.normed, dim, dim, seqLen, hiddenDim);
         if (postFfwW != null)
-            Parallel.forRows(
-                    seqLen,
-                    s ->
-                            Norms.rmsnorm(
-                                    state.xb,
-                                    (long) s * dim,
-                                    state.xb,
-                                    (long) s * dim,
-                                    postFfwW,
-                                    dim,
-                                    eps));
-        Ops.addInPlace(state.residual, 0, state.xb, 0, seqLen * dim);
+            Norms.rmsnormRows(
+                    state.normed, state.normed, postFfwW, seqLen, dim, configuration.rmsNormEps);
+        Ops.addInPlace(state.residual, 0, state.normed, 0, seqLen * dim);
     }
 
     /**
@@ -510,39 +469,18 @@ public final class Lfm2
         MemoryView<MemorySegment> ffnNormW = weights.layers[l].ffnNorm(),
                 postFfnNorm = weights.layers[l].postFfnNorm();
 
-        // pre-norm into xb, then route on it
-        Parallel.forRows(
-                seqLen,
-                s ->
-                        Norms.rmsnorm(
-                                state.xb,
-                                (long) s * dim,
-                                state.residual,
-                                (long) s * dim,
-                                ffnNormW,
-                                dim,
-                                eps));
-        gemm(moe.router(), state.xb, dim, state.moeRouterB, nExperts, seqLen, nExperts, dim);
+        // pre-norm into normed, then route on it
+        Norms.rmsnormRows(
+                state.normed, state.residual, ffnNormW, seqLen, dim, configuration.rmsNormEps);
+        gemm(moe.router(), state.normed, dim, state.moeRouterB, nExperts, nExperts, seqLen, dim);
 
         Raw routerB = Views.rawF32(state.moeRouterB, "moeRouterB");
-        Raw expBias =
-                moe.expProbsBias() != null
-                        ? Views.rawF32(moe.expProbsBias(), "expProbsBias")
-                        : null;
         int[] counts = state.moeExpertCounts;
         Arrays.fill(counts, 0);
         for (int s = 0; s < seqLen; s++) {
             long ro = (long) s * nExperts;
-            if (expBias != null) {
-                for (int i = 0; i < nExperts; i++)
-                    writeFloat(
-                            routerB.vseg(),
-                            routerB.vbase() + (ro + i) * Float.BYTES,
-                            readFloat(routerB.vseg(), routerB.vbase() + (ro + i) * Float.BYTES)
-                                    + readFloat(
-                                            expBias.vseg(),
-                                            expBias.vbase() + (long) i * Float.BYTES));
-            }
+            if (moe.expProbsBias() != null)
+                Ops.addInPlace(state.moeRouterB, ro, moe.expProbsBias(), 0, nExperts);
             if (config.expertGatingFunc == 2)
                 Ops.mapInPlace(
                         state.moeRouterB, ro, nExperts, v -> (float) (1.0 / (1.0 + Math.exp(-v))));
@@ -577,7 +515,7 @@ public final class Lfm2
         Moe.dispatch(
                 r,
                 dim,
-                state.xb,
+                state.normed,
                 state.moeGather,
                 state.moeDownB,
                 state.moeOutB,
@@ -588,39 +526,39 @@ public final class Lfm2
                             (long) e * expertFF * dim,
                             gather,
                             dim,
-                            state.hb,
+                            state.hidden,
+                            expertFF,
                             expertFF,
                             n,
-                            expertFF,
                             dim);
                     gemm(
                             moe.upExps(),
                             (long) e * expertFF * dim,
                             gather,
                             dim,
-                            state.hb2,
+                            state.hidden2,
+                            expertFF,
                             expertFF,
                             n,
-                            expertFF,
                             dim);
                     Parallel.forRows(
                             n,
                             j ->
                                     Activations.siluMultiply(
-                                            state.hb,
+                                            state.hidden,
                                             j * expertFF,
-                                            state.hb2,
+                                            state.hidden2,
                                             j * expertFF,
                                             expertFF));
                     gemm(
                             moe.downExps(),
                             (long) e * dim * expertFF,
-                            state.hb,
+                            state.hidden,
                             expertFF,
                             out,
                             dim,
-                            n,
                             dim,
+                            n,
                             expertFF);
                 });
 
@@ -679,12 +617,7 @@ public final class Lfm2
         if (at != n)
             throw new IllegalArgumentException("seqLen sums to " + at + ", batch has " + n);
         RoPE.fill(
-                state.ropeCos,
-                state.ropeSin,
-                posOf,
-                n,
-                configuration.headSizeFull / 2,
-                weights.rope());
+                state.ropeCos, state.ropeSin, posOf, n, configuration.headSize / 2, weights.rope());
         embedTokens(state, tokens, 0, n);
         for (int l = 0; l < configuration.numberOfLayers; l++) {
             if (configuration.isRecurrentLayer(l))
@@ -704,30 +637,28 @@ public final class Lfm2
     private void shortConvMixerCentered(
             State state, int l, int seqLen, int[] segRow0, int[] segLen) {
         int dim = configuration.embeddingLength;
-        float eps = configuration.rmsNormEps;
         ShortConvWeights sc = weights.layers[l].shortConv();
         MemoryView<MemorySegment> preNorm = weights.layers[l].attnNorm();
-        Parallel.forRows(
+        Norms.rmsnormRows(
+                state.normed, state.residual, preNorm, seqLen, dim, configuration.rmsNormEps);
+        gemm(
+                sc.inProj(),
+                state.normed,
+                dim,
+                state.shortConvTmp,
+                SHORTCONV_PARTS * dim,
+                SHORTCONV_PARTS * dim,
                 seqLen,
-                s ->
-                        Norms.rmsnorm(
-                                state.xb,
-                                (long) s * dim,
-                                state.residual,
-                                (long) s * dim,
-                                preNorm,
-                                dim,
-                                eps));
-        gemm(sc.inProj(), state.xb, dim, state.shortConvTmp, 3 * dim, seqLen, 3 * dim, dim);
+                dim);
 
         int dConv = configuration.shortConvLCache, pad = (dConv - 1) / 2;
         Raw kernel = Views.rawF32(sc.kernel(), "kernel"); // per channel: dConv taps at c*dConv + k
         Raw tmp = Views.rawF32(state.shortConvTmp, "shortConvTmp");
-        Raw out = Views.rawF32(state.xb2, "xb2");
+        Raw out = Views.rawF32(state.branchOut, "branchOut");
         // materialize bx = B*x in place over the B block first: the centered window reads
         // NEIGHBOUR rows, so every bx must exist before any output row is computed
         for (int s = 0; s < seqLen; s++) {
-            int tmpOff = s * 3 * dim;
+            int tmpOff = s * SHORTCONV_PARTS * dim;
             for (int c = 0; c < dim; c++) {
                 writeFloat(
                         tmp.vseg(),
@@ -741,7 +672,7 @@ public final class Lfm2
         for (int g = 0; g < segRow0.length; g++) {
             int r0 = segRow0[g], rEnd = r0 + segLen[g];
             for (int s = r0; s < rEnd; s++) {
-                int tmpOff = s * 3 * dim, outOff = s * dim;
+                int tmpOff = s * SHORTCONV_PARTS * dim, outOff = s * dim;
                 for (int c = 0; c < dim; c++) {
                     float cg =
                             readFloat(
@@ -756,7 +687,8 @@ public final class Lfm2
                                     readFloat(
                                                     tmp.vseg(),
                                                     tmp.vbase()
-                                                            + ((long) row * 3 * dim + c)
+                                                            + ((long) row * SHORTCONV_PARTS * dim
+                                                                            + c)
                                                                     * Float.BYTES)
                                             * readFloat(
                                                     kernel.vseg(),
@@ -769,7 +701,7 @@ public final class Lfm2
                 }
             }
         }
-        gemm(sc.outProj(), state.xb2, dim, state.shortConvOut, dim, seqLen, dim, dim);
+        gemm(sc.outProj(), state.branchOut, dim, state.shortConvOut, dim, dim, seqLen, dim);
         Ops.addInPlace(state.residual, 0, state.shortConvOut, 0, seqLen * dim);
     }
 
@@ -781,7 +713,7 @@ public final class Lfm2
     private void attentionBidirectional(
             State state, int l, int seqLen, int[] segRow0, int[] segLen) {
         Configuration config = configuration;
-        int headSize = config.headSizeFull;
+        int headSize = config.headSize;
         int queryDim = config.queryDim(), kvDim = config.kvDim(l);
         int kvMul = config.numberOfHeads / config.numberOfKeyValueHeadsPerLayer[l];
         attentionProject(state, l, seqLen);
@@ -805,7 +737,8 @@ public final class Lfm2
                     queryDim,
                     kvMul,
                     scale);
-            Convert.copyF32(es.segOut, 0, state.xbK, (long) r0 * queryDim, (long) sl * queryDim);
+            Convert.copyF32(
+                    es.segOut, 0, state.attnOut, (long) r0 * queryDim, (long) sl * queryDim);
         }
         attentionFinish(state, l, seqLen);
     }
@@ -840,30 +773,29 @@ public final class Lfm2
     }
 
     /**
-     * The ColBERT per-token read for one retained row: final-norm, {@code dense_2} projection to
-     * {@code embeddingLengthOut}, L2-normalized - what llama.cpp's {@code build_dense_out} does to
-     * {@code t_embd}, plus the client-side normalize the reference stack applies before MaxSim.
-     * {@code out} is the caller's buffer. (The ColBERT face class itself is not part of this
-     * slice.)
+     * The ColBERT per-token read for one retained row (LFM2.5-ColBERT): final-norm, {@code dense_2}
+     * projection to {@code embeddingLengthOut}, L2-normalized - what llama.cpp's {@code
+     * build_dense_out} does to {@code t_embd}, plus the client-side normalize the reference stack
+     * applies before MaxSim. The returned view is a REUSED per-state buffer (the {@link #pool}
+     * contract): valid until the next {@code colbertRow}/{@code pool} call - the caller copies it
+     * out per row. (The ColBERT face class itself is not part of this slice.)
      */
-    void colbertRow(State s, int row, float[] out) {
+    MemoryView<?> colbertRow(State s, int row) {
         int dim = configuration.embeddingLength;
         int outDim = configuration.embeddingLengthOut;
-        MemoryView<MemorySegment> normed = s.embedScratch(configuration).embOut;
+        EmbedScratch es = s.embedScratch(configuration);
         Norms.rmsnorm(
-                normed,
+                es.embOut,
                 0,
                 s.residual,
                 (long) row * dim,
                 weights.finalNorm,
                 dim,
                 configuration.rmsNormEps);
-        MemoryView<MemorySegment> projected = s.embedScratch(configuration).colbertOut;
-        gemv(weights.dense2(), normed, projected, outDim, dim);
-        float inv = l2Inv(projected, outDim);
-        Raw p = Views.rawF32(projected, "colbertOut");
-        for (int i = 0; i < outDim; i++)
-            out[i] = readFloat(p.vseg(), p.vbase() + (long) i * Float.BYTES) * inv;
+        gemv(weights.dense2(), es.embOut, es.colbertOut, outDim, dim);
+        float inv = l2Inv(es.colbertOut, outDim);
+        Ops.mapInPlace(es.colbertOut, 0, outDim, v -> v * inv);
+        return es.colbertOut;
     }
 
     /**
@@ -937,17 +869,27 @@ public final class Lfm2
         return total;
     }
 
-    // === gemm/gemv entry shims (the old FloatTensor virtuals, resolved to MatMul.mm) ===
+    // === gemm/gemv shims: one place that owns the model-side matmul contract ===
+    // NOT BLAS dgemm: this is llama.cpp's ggml_mul_mat(w, a) worldview, c = w · aᵀ, with
+    //   w [m, k]  the weight (out_features x in_features, as the GGUF lays it out),
+    //   a [n, k]  the activations (batch rows x in_features),
+    //   c [n, m]  the result (batch rows x out_features).
+    // - trailing (m, n, k) = (w rows = output width, a rows = batch, contraction) - exactly
+    //   MatMul.mm's and JAM's order; no swap anywhere. (BLAS/ONNX-pilled readers: m is the
+    //   WEIGHT rows here, ggml's assignment - not dgemm's m = activation rows.)
+    // - wStride = k is hardcoded: this model's weight views are dense contiguous rows - a fact,
+    //   not a per-call-site choice.
+    // (heritage: the old FloatTensor virtuals w.gemm/w.matmul, resolved to MatMul.mm)
 
-    /** {@code c = w · aᵀ} per row: the old {@code w.gemm(a, aStride, c, cStride, n, m, k)}. */
+    /** {@code c = w · aᵀ} for each of the n activation rows: out is m wide, contraction k. */
     private static void gemm(
             MemoryView<MemorySegment> w,
             MemoryView<MemorySegment> a,
             int aStride,
             MemoryView<MemorySegment> c,
             int cStride,
-            int n,
             int m,
+            int n,
             int k) {
         MatMul.mm(w, 0, k, a, 0, aStride, c, 0, cStride, m, n, k);
     }
@@ -960,13 +902,15 @@ public final class Lfm2
             int aStride,
             MemoryView<MemorySegment> c,
             int cStride,
-            int n,
             int m,
+            int n,
             int k) {
         MatMul.mm(w, wOff, k, a, 0, aStride, c, 0, cStride, m, n, k);
     }
 
-    /** {@code c = w · a} (single row): the old {@code w.matmul(a, c, m, k)}. */
+    /**
+     * {@code c = w · a}, one row: mm's n==1 arm routes this to the decode path - no policy here.
+     */
     private static void gemv(
             MemoryView<MemorySegment> w,
             MemoryView<MemorySegment> a,
@@ -988,7 +932,7 @@ public final class Lfm2
             int contextLength,
             float rmsNormEps,
             float ropeTheta,
-            int headSizeFull,
+            int headSize,
             float logitSoftcapping,
             int shortConvLCache,
             int expertCount,
@@ -1008,16 +952,12 @@ public final class Lfm2
             return max;
         }
 
-        public int headSize() {
-            return headSizeFull;
-        }
-
         public int queryDim() {
-            return numberOfHeads * headSizeFull;
+            return numberOfHeads * headSize;
         }
 
         public int kvDim(int layer) {
-            return numberOfKeyValueHeadsPerLayer[layer] * headSizeFull;
+            return numberOfKeyValueHeadsPerLayer[layer] * headSize;
         }
 
         public boolean isRecurrentLayer(int layer) {
@@ -1099,9 +1039,58 @@ public final class Lfm2
 
     public static final class State extends BaseState {
         final int contextCapacity, batchCapacity;
-        final MemoryView<MemorySegment> residual, xb, xbK, xb2, hb, hb2, query, logits;
+
+        /**
+         * The residual stream every block adds back into (old jinfer {@code residual}; llama.cpp
+         * {@code inpL}, with {@code inpSA}/{@code inpFF} its per-sublayer checkpoints).
+         */
+        final MemoryView<MemorySegment> residual;
+
+        /**
+         * Pre-norm output - the input of EVERY projection (wq/wk/wv, conv in_proj, FFN gate/up, MoE
+         * router); second life as the FFN branch output (down-proj destination, post-FFN norm)
+         * before the residual add (old jinfer {@code xb}; llama.cpp {@code cur} right after the
+         * norm).
+         */
+        final MemoryView<MemorySegment> normed;
+
+        /**
+         * The attention/conv branch's output: attention's o_proj destination (post-attn-norm
+         * candidate) or the conv FIR scan's output (out-proj input) - normed and added to the
+         * residual (old jinfer {@code xb2}; llama.cpp {@code cur} after the o_proj/conv block).
+         */
+        final MemoryView<MemorySegment> branchOut;
+
+        /**
+         * Flash-attention result, all heads concatenated, pre-o_proj (old jinfer {@code xbK};
+         * llama.cpp {@code kqv_out}).
+         */
+        final MemoryView<MemorySegment> attnOut;
+
+        /**
+         * FFN gate projection; post silu-multiply the gated hidden (old jinfer {@code hb}; the gate
+         * leg of llama.cpp's build_ffn).
+         */
+        final MemoryView<MemorySegment> hidden;
+
+        /**
+         * FFN up projection, silu-multiplied into {@link #hidden} (old jinfer {@code hb2}; the up
+         * leg of llama.cpp's build_ffn).
+         */
+        final MemoryView<MemorySegment> hidden2;
+
+        /**
+         * Q projection, per-head normed + RoPE'd in place (old jinfer {@code query}; llama.cpp
+         * {@code Qcur}).
+         */
+        final MemoryView<MemorySegment> query;
+
+        /** The vocab projection of the retained row(s) (llama.cpp's {@code logits} node). */
+        final MemoryView<MemorySegment> logits;
+
         final MemoryView<MemorySegment> ropeCos, ropeSin;
-        final FlashAttention.DecodeScratch decodeScratch = new FlashAttention.DecodeScratch(arena);
+        final FlashAttention.DecodeScratch decodeScratch =
+                new FlashAttention.DecodeScratch(memoryArena());
         final MemoryView<MemorySegment>[] keyCache,
                 valueCache,
                 batchK,
@@ -1118,7 +1107,8 @@ public final class Lfm2
         EmbedScratch embedScratch; // lazy: only the embedding checkpoints ever pay for it
 
         EmbedScratch embedScratch(Configuration config) {
-            if (embedScratch == null) embedScratch = new EmbedScratch(config, batchCapacity, arena);
+            if (embedScratch == null)
+                embedScratch = new EmbedScratch(config, batchCapacity, memoryArena());
             return embedScratch;
         }
 
@@ -1154,19 +1144,19 @@ public final class Lfm2
             int dim = config.embeddingLength;
             int maxQueryDim = config.queryDim();
             int maxHiddenDim = config.maxHiddenDim();
-            this.residual = Views.allocateF32(arena, c * dim);
-            this.xb = Views.allocateF32(arena, c * dim);
-            this.xb2 = Views.allocateF32(arena, c * dim);
-            this.xbK = Views.allocateF32(arena, c * maxQueryDim);
-            this.query = Views.allocateF32(arena, c * maxQueryDim);
-            this.hb = Views.allocateF32(arena, c * maxHiddenDim);
-            this.hb2 = Views.allocateF32(arena, c * maxHiddenDim);
-            this.logits = Views.allocateF32(arena, config.vocabularySize);
+            this.residual = Views.allocateF32(memoryArena(), c * dim);
+            this.normed = Views.allocateF32(memoryArena(), c * dim);
+            this.branchOut = Views.allocateF32(memoryArena(), c * dim);
+            this.attnOut = Views.allocateF32(memoryArena(), c * maxQueryDim);
+            this.query = Views.allocateF32(memoryArena(), c * maxQueryDim);
+            this.hidden = Views.allocateF32(memoryArena(), c * maxHiddenDim);
+            this.hidden2 = Views.allocateF32(memoryArena(), c * maxHiddenDim);
+            this.logits = Views.allocateF32(memoryArena(), config.vocabularySize);
             // rotary values for the batch about to be ingested: sized by BATCH, never context
-            this.ropeCos = Views.allocateF32(arena, c * (config.headSizeFull / 2));
-            this.ropeSin = Views.allocateF32(arena, c * (config.headSizeFull / 2));
-            this.shortConvTmp = Views.allocateF32(arena, c * 3 * dim);
-            this.shortConvOut = Views.allocateF32(arena, c * dim);
+            this.ropeCos = Views.allocateF32(memoryArena(), c * (config.headSize / 2));
+            this.ropeSin = Views.allocateF32(memoryArena(), c * (config.headSize / 2));
+            this.shortConvTmp = Views.allocateF32(memoryArena(), c * SHORTCONV_PARTS * dim);
+            this.shortConvOut = Views.allocateF32(memoryArena(), c * dim);
             int n = config.numberOfLayers;
             this.keyCache = new MemoryView[n];
             this.valueCache = new MemoryView[n];
@@ -1176,21 +1166,21 @@ public final class Lfm2
             int hist = Math.max(config.shortConvLCache - 1, 0);
             for (int l = 0; l < n; l++) {
                 if (config.isRecurrentLayer(l)) {
-                    shortConvState[l] = Views.allocateF32(arena, hist * dim);
+                    shortConvState[l] = Views.allocateF32(memoryArena(), hist * dim);
                 } else {
                     int kvDim = config.kvDim(l);
-                    keyCache[l] = Views.allocateF16(arena, contextCapacity, kvDim);
-                    valueCache[l] = Views.allocateF16(arena, contextCapacity, kvDim);
-                    batchK[l] = Views.allocateF32(arena, c * kvDim);
-                    batchV[l] = Views.allocateF32(arena, c * kvDim);
+                    keyCache[l] = Views.allocateF16(memoryArena(), contextCapacity, kvDim);
+                    valueCache[l] = Views.allocateF16(memoryArena(), contextCapacity, kvDim);
+                    batchK[l] = Views.allocateF32(memoryArena(), c * kvDim);
+                    batchV[l] = Views.allocateF32(memoryArena(), c * kvDim);
                 }
             }
             if (config.isMoE()) {
                 int e = config.expertCount, tk = config.expertUsedCount;
-                this.moeRouterB = Views.allocateF32(arena, c * e);
-                this.moeGather = Views.allocateF32(arena, c * dim);
-                this.moeDownB = Views.allocateF32(arena, c * dim);
-                this.moeOutB = Views.allocateF32(arena, c * dim);
+                this.moeRouterB = Views.allocateF32(memoryArena(), c * e);
+                this.moeGather = Views.allocateF32(memoryArena(), c * dim);
+                this.moeDownB = Views.allocateF32(memoryArena(), c * dim);
+                this.moeOutB = Views.allocateF32(memoryArena(), c * dim);
                 this.moeExpertCounts = new int[e];
                 this.moeRowTopE = new int[c * tk];
                 this.moeRowTopP = new float[c * tk];
@@ -1221,14 +1211,15 @@ public final class Lfm2
     static final class EmbedScratch {
         final MemoryView<MemorySegment> segQ, segK, segV, segOut, embOut, colbertOut;
 
-        EmbedScratch(Configuration config, int batchCapacity, Arena arena) {
+        EmbedScratch(
+                Configuration config, int batchCapacity, MemoryAllocator<MemorySegment> memory) {
             int queryDim = config.queryDim(), kvDim = config.maxKvDim();
-            this.segQ = Views.allocateF32(arena, batchCapacity * queryDim);
-            this.segOut = Views.allocateF32(arena, batchCapacity * queryDim);
-            this.segK = Views.allocateF32(arena, batchCapacity * kvDim);
-            this.segV = Views.allocateF32(arena, batchCapacity * kvDim);
-            this.embOut = Views.allocateF32(arena, config.embeddingLength());
-            this.colbertOut = Views.allocateF32(arena, Math.max(1, config.embeddingLengthOut()));
+            this.segQ = Views.allocateF32(memory, batchCapacity * queryDim);
+            this.segOut = Views.allocateF32(memory, batchCapacity * queryDim);
+            this.segK = Views.allocateF32(memory, batchCapacity * kvDim);
+            this.segV = Views.allocateF32(memory, batchCapacity * kvDim);
+            this.embOut = Views.allocateF32(memory, config.embeddingLength());
+            this.colbertOut = Views.allocateF32(memory, Math.max(1, config.embeddingLengthOut()));
         }
     }
 
@@ -1264,7 +1255,7 @@ public final class Lfm2
         int embeddingLength = gguf.getValue(int.class, arch + ".embedding_length");
         int numberOfHeads = gguf.getValue(int.class, arch + ".attention.head_count");
         int numberOfLayers = gguf.getValue(int.class, arch + ".block_count");
-        int headSizeFull = embeddingLength / numberOfHeads;
+        int headSize = embeddingLength / numberOfHeads;
         float rmsNormEps =
                 gguf.getValueOrDefault(
                         float.class, arch + ".attention.layer_norm_rms_epsilon", 1e-5f);
@@ -1303,7 +1294,7 @@ public final class Lfm2
         int[] kvHeads = new int[numberOfLayers];
         for (int i = 0; i < numberOfLayers; i++) {
             var kWeight = gguf.getTensor("blk." + i + ".attn_k.weight");
-            kvHeads[i] = kWeight != null ? Math.toIntExact(kWeight.shape()[1]) / headSizeFull : 0;
+            kvHeads[i] = kWeight != null ? Math.toIntExact(kWeight.shape()[1]) / headSize : 0;
         }
 
         Configuration config =
@@ -1317,7 +1308,7 @@ public final class Lfm2
                         contextLength,
                         rmsNormEps,
                         ropeTheta,
-                        headSizeFull,
+                        headSize,
                         logitSoftcapping,
                         shortConvLCache,
                         expertCount,
@@ -1336,45 +1327,45 @@ public final class Lfm2
 
     // ---- loadWeights helpers: the old ModelLoader.toF32Tensor/loadQuantized fail-fast contract --
 
-    private static MemoryView<MemorySegment> quant(
+    private static MemoryView<MemorySegment> require(
             Map<String, MemoryView<MemorySegment>> tensors, String name) {
         return Objects.requireNonNull(tensors.get(name), name);
     }
 
     /** F32 view by name (dtype checked AT LOAD, the old toF32Tensor fail-fast), or throw. */
-    private static MemoryView<MemorySegment> f32(
+    private static MemoryView<MemorySegment> requireF32(
             Map<String, MemoryView<MemorySegment>> tensors, String name) {
-        MemoryView<MemorySegment> v = quant(tensors, name);
-        Views.requireDtype(v, DataType.FP32, name);
+        MemoryView<MemorySegment> v = require(tensors, name);
+        Views.requireDatatype(v, DataType.FP32, name);
         return v;
     }
 
-    private static MemoryView<MemorySegment> quantOrNull(
+    private static MemoryView<MemorySegment> find(
             Map<String, MemoryView<MemorySegment>> tensors, String name) {
         return tensors.get(name);
     }
 
-    private static MemoryView<MemorySegment> f32OrNull(
+    private static MemoryView<MemorySegment> findF32(
             Map<String, MemoryView<MemorySegment>> tensors, String name) {
-        MemoryView<MemorySegment> v = tensors.get(name);
-        if (v != null) Views.requireDtype(v, DataType.FP32, name);
+        MemoryView<MemorySegment> v = find(tensors, name);
+        if (v != null) Views.requireDatatype(v, DataType.FP32, name);
         return v;
     }
 
     static Weights loadWeights(
             Map<String, MemoryView<MemorySegment>> tensors, Configuration config) {
         int n = config.numberOfLayers;
-        RoPE.Schedule rope = RoPE.plain(config.headSizeFull, config.ropeTheta);
+        RoPE.Schedule rope = RoPE.plain(config.headSize, config.ropeTheta);
 
-        MemoryView<MemorySegment> tokenEmbeddings = quant(tensors, "token_embd.weight");
+        MemoryView<MemorySegment> tokenEmbeddings = require(tensors, "token_embd.weight");
         MemoryView<MemorySegment> wcls =
                 tensors.containsKey("output.weight")
-                        ? quant(tensors, "output.weight")
+                        ? require(tensors, "output.weight")
                         : tokenEmbeddings; // tied embeddings
         // LFM2.5 names the final norm token_embd_norm (no separate output_norm); embeddings are
         // tied.
         MemoryView<MemorySegment> finalNorm =
-                f32(
+                requireF32(
                         tensors,
                         tensors.containsKey("output_norm.weight")
                                 ? "output_norm.weight"
@@ -1383,29 +1374,29 @@ public final class Lfm2
         LayerWeights[] layers = new LayerWeights[n];
         for (int i = 0; i < n; i++) {
             String p = "blk." + i + ".";
-            MemoryView<MemorySegment> attnNorm = f32(tensors, p + "attn_norm.weight");
+            MemoryView<MemorySegment> attnNorm = requireF32(tensors, p + "attn_norm.weight");
             MemoryView<MemorySegment> postAttnNorm =
-                    f32OrNull(tensors, p + "post_attention_norm.weight");
-            MemoryView<MemorySegment> ffnNorm = f32(tensors, p + "ffn_norm.weight");
-            MemoryView<MemorySegment> postFfnNorm = f32OrNull(tensors, p + "post_ffw_norm.weight");
+                    findF32(tensors, p + "post_attention_norm.weight");
+            MemoryView<MemorySegment> ffnNorm = requireF32(tensors, p + "ffn_norm.weight");
+            MemoryView<MemorySegment> postFfnNorm = findF32(tensors, p + "post_ffw_norm.weight");
 
             AttentionWeights attention = null;
             ShortConvWeights shortConv = null;
             if (config.isRecurrentLayer(i)) {
                 shortConv =
                         new ShortConvWeights(
-                                f32(tensors, p + "shortconv.conv.weight"),
-                                quant(tensors, p + "shortconv.in_proj.weight"),
-                                quant(tensors, p + "shortconv.out_proj.weight"));
+                                requireF32(tensors, p + "shortconv.conv.weight"),
+                                require(tensors, p + "shortconv.in_proj.weight"),
+                                require(tensors, p + "shortconv.out_proj.weight"));
             } else {
                 attention =
                         new AttentionWeights(
-                                quant(tensors, p + "attn_q.weight"),
-                                quant(tensors, p + "attn_k.weight"),
-                                quantOrNull(tensors, p + "attn_v.weight"),
-                                quant(tensors, p + "attn_output.weight"),
-                                f32(tensors, p + "attn_q_norm.weight"),
-                                f32(tensors, p + "attn_k_norm.weight"));
+                                require(tensors, p + "attn_q.weight"),
+                                require(tensors, p + "attn_k.weight"),
+                                find(tensors, p + "attn_v.weight"),
+                                require(tensors, p + "attn_output.weight"),
+                                requireF32(tensors, p + "attn_q_norm.weight"),
+                                requireF32(tensors, p + "attn_k_norm.weight"));
             }
 
             DenseFfnWeights dense = null;
@@ -1413,17 +1404,17 @@ public final class Lfm2
             if (config.isMoELayer(i)) {
                 moe =
                         new MoeFfnWeights(
-                                quant(tensors, p + "ffn_gate_inp.weight"),
-                                quant(tensors, p + "ffn_gate_exps.weight"),
-                                quant(tensors, p + "ffn_up_exps.weight"),
-                                quant(tensors, p + "ffn_down_exps.weight"),
-                                f32OrNull(tensors, p + "exp_probs_b.bias"));
+                                require(tensors, p + "ffn_gate_inp.weight"),
+                                require(tensors, p + "ffn_gate_exps.weight"),
+                                require(tensors, p + "ffn_up_exps.weight"),
+                                require(tensors, p + "ffn_down_exps.weight"),
+                                findF32(tensors, p + "exp_probs_b.bias"));
             } else {
                 dense =
                         new DenseFfnWeights(
-                                quant(tensors, p + "ffn_gate.weight"),
-                                quant(tensors, p + "ffn_up.weight"),
-                                quant(tensors, p + "ffn_down.weight"));
+                                require(tensors, p + "ffn_gate.weight"),
+                                require(tensors, p + "ffn_up.weight"),
+                                require(tensors, p + "ffn_down.weight"));
             }
             layers[i] =
                     new LayerWeights(
@@ -1437,7 +1428,7 @@ public final class Lfm2
                             moe);
         }
         MemoryView<MemorySegment> dense2 =
-                tensors.containsKey("dense_2.weight") ? quant(tensors, "dense_2.weight") : null;
+                tensors.containsKey("dense_2.weight") ? require(tensors, "dense_2.weight") : null;
         return new Weights(tokenEmbeddings, layers, finalNorm, rope, wcls, dense2);
     }
 }

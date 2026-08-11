@@ -4,15 +4,14 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.llm.SpecialTokens;
-import com.qxotic.jinfer.x.Ops;
+import com.qxotic.jinfer.x.Views;
 import com.qxotic.jinfer.x.boundary.Batch;
 import com.qxotic.jinfer.x.kernels.ModelLoader;
-import com.qxotic.jota.memory.MemoryView;
+import com.qxotic.jinfer.x.kernels.Ops;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
 import java.io.IOException;
 import java.lang.foreign.Arena;
-import java.lang.foreign.MemorySegment;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -106,7 +105,6 @@ class XLfm2Bench {
         }
     }
 
-    @SuppressWarnings("unchecked")
     private static double benchX(FileChannel channel, GGUF gguf, Tokenizer tk, int[] ids)
             throws Exception {
         var m = Lfm2.loadModel(channel, gguf, Arena.ofAuto(), tk);
@@ -114,34 +112,31 @@ class XLfm2Bench {
         try (var s =
                 m.newState(
                         Math.min(c.contextLength(), ids.length + WARMUP + TIMED + 16),
-                        Math.max(16, ids.length),
-                        Arena.ofAuto())) {
-            s.enter();
-            try {
-                m.forward(s, Batch.prefill(ids));
-                int tok =
-                        Ops.argmax((MemoryView<MemorySegment>) m.head(s, 0), 0, c.vocabularySize());
-                for (int n = 0; n < WARMUP; n++) {
-                    m.forward(s, Batch.step(tok));
-                    tok =
-                            Ops.argmax(
-                                    (MemoryView<MemorySegment>) m.head(s, 0),
-                                    0,
-                                    c.vocabularySize());
-                }
-                long t0 = System.nanoTime();
-                for (int n = 0; n < TIMED; n++) {
-                    m.forward(s, Batch.step(tok));
-                    tok =
-                            Ops.argmax(
-                                    (MemoryView<MemorySegment>) m.head(s, 0),
-                                    0,
-                                    c.vocabularySize());
-                }
-                return TIMED / ((System.nanoTime() - t0) / 1e9);
-            } finally {
-                s.exit();
+                        Math.max(16, ids.length))) {
+            m.ingest(s, Batch.prefill(ids));
+            int tok =
+                    Ops.argmax(
+                            Views.castToSegmentBacked(m.logits(s), "logits"),
+                            0,
+                            c.vocabularySize());
+            for (int n = 0; n < WARMUP; n++) {
+                m.ingest(s, Batch.step(tok));
+                tok =
+                        Ops.argmax(
+                                Views.castToSegmentBacked(m.logits(s), "logits"),
+                                0,
+                                c.vocabularySize());
             }
+            long t0 = System.nanoTime();
+            for (int n = 0; n < TIMED; n++) {
+                m.ingest(s, Batch.step(tok));
+                tok =
+                        Ops.argmax(
+                                Views.castToSegmentBacked(m.logits(s), "logits"),
+                                0,
+                                c.vocabularySize());
+            }
+            return TIMED / ((System.nanoTime() - t0) / 1e9);
         }
     }
 }
