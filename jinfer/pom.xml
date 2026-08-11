@@ -22,6 +22,7 @@
     <module>jinfer-xboundary</module>
     <module>jinfer-xlfm2</module>
     <module>jinfer-xqwen3</module>
+    <module>jinfer-xllama</module>
     <module>jinfer-xbench</module>
     <module>jinfer-llm</module>
     <module>jinfer-chat</module>
@@ -132,6 +133,11 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-xqwen3</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>jinfer-xllama</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
