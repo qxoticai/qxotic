@@ -19,6 +19,7 @@
     <module>jinfer-core</module>
     <module>jinfer-xcore</module>
     <module>jinfer-xkernels</module>
+    <module>jinfer-xboundary</module>
     <module>jinfer-xlfm2</module>
     <module>jinfer-xbench</module>
     <module>jinfer-llm</module>
@@ -115,6 +116,11 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-xkernels</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>jinfer-xboundary</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>

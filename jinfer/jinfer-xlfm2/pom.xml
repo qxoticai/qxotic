@@ -13,9 +13,7 @@
 
   <name>jinfer-xlfm2</name>
   <description>MemoryView port of LFM2.5 (cycle 1 of the FloatTensor migration; see
-    qxotic/.opencode/plans/memoryview-migration.md). Carries the slice's minimal boundary clones
-    (x.boundary: Model/LanguageModel/EmbeddingModel/Batch/BaseState) — promote to a shared
-    x-boundary module when cycle 2 needs them.</description>
+    qxotic/.opencode/plans/memoryview-migration.md). The boundary cone lives in jinfer-xboundary.</description>
 
   <dependencies>
     <dependency>
@@ -29,6 +27,10 @@
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-xkernels</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-xboundary</artifactId>
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/POM/4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.qxotic</groupId>
+    <artifactId>jinfer-parent</artifactId>
+    <version>0.1.0</version>
+  </parent>
+
+  <artifactId>jinfer-xboundary</artifactId>
+  <packaging>jar</packaging>
+
+  <name>jinfer-xboundary</name>
+  <description>The x boundary cone (FloatTensor migration; see qxotic/.opencode/plans/memoryview-migration.md):
+    the model-facing API every x model jar shares - Model/LanguageModel/EmbeddingModel/Reranker over
+    jota MemoryView, Batch, the BaseState ownership/claiming machine (one PanamaMemoryArena behind an
+    opaque MemoryArena accessor), Arenas.newCrossThread, LeakWatch. Extracted from jinfer-xlfm2 when
+    the second model family (xqwen3) landed. Model jars depend on this + jinfer-xkernels, never on
+    each other.</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jota</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-xcore</artifactId>
+    </dependency>
+  </dependencies>
+</project>
