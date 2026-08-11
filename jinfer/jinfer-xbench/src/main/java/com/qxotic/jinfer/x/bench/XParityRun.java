@@ -1,7 +1,8 @@
 package com.qxotic.jinfer.x.bench;
 
-import com.qxotic.jinfer.x.Ops;
+import com.qxotic.jinfer.x.Views;
 import com.qxotic.jinfer.x.boundary.Batch;
+import com.qxotic.jinfer.x.kernels.Ops;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -57,25 +58,18 @@ public final class XParityRun {
             }
         }
         int[] xIds;
-        try (var xs = xm.newState(ctx, Math.max(16, prompt.length), Arena.ofAuto())) {
-            xs.enter();
-            try {
-                xm.forward(xs, Batch.prefill(prompt));
-                xIds = new int[n];
-                @SuppressWarnings("unchecked")
-                MemoryView<MemorySegment> logits = (MemoryView<MemorySegment>) xm.head(xs, 0);
-                int tok = Ops.argmax(logits, 0, vocab);
-                for (int g = 0; g < n; g++) {
-                    xIds[g] = tok;
-                    xm.forward(xs, Batch.step(tok));
-                    logits = (MemoryView<MemorySegment>) xm.head(xs, 0);
-                    tok = Ops.argmax(logits, 0, vocab);
-                }
-            } finally {
-                xs.exit();
+        try (var xs = xm.newState(ctx, Math.max(16, prompt.length))) {
+            xm.ingest(xs, Batch.prefill(prompt));
+            xIds = new int[n];
+            MemoryView<MemorySegment> logits = Views.castToSegmentBacked(xm.logits(xs), "logits");
+            int tok = Ops.argmax(logits, 0, vocab);
+            for (int g = 0; g < n; g++) {
+                xIds[g] = tok;
+                xm.ingest(xs, Batch.step(tok));
+                logits = Views.castToSegmentBacked(xm.logits(xs), "logits");
+                tok = Ops.argmax(logits, 0, vocab);
             }
         }
-
         // token parity is the strict gate; per-step logits closeness is implied by 64 equal
         // argmaxes over a 128k vocab.
         int divergent = -1;

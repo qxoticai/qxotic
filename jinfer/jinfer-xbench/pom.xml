@@ -33,6 +33,10 @@
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-xkernels</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
       <artifactId>jinfer-xlfm2</artifactId>
     </dependency>
     <!-- the old tree, benchmarked against the x port -->
