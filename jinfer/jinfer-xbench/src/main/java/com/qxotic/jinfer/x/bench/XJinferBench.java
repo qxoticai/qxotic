@@ -2,10 +2,8 @@ package com.qxotic.jinfer.x.bench;
 
 import com.qxotic.jinfer.x.Segments;
 import com.qxotic.jinfer.x.Views;
-import com.qxotic.jota.memory.MemoryView;
 import java.io.PrintStream;
 import java.lang.foreign.Arena;
-import java.lang.foreign.MemorySegment;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -23,12 +21,14 @@ import java.util.concurrent.ForkJoinPool;
  * <ul>
  *   <li>loading is direct ({@code Lfm2.loadModel}) on both sides — the slice has no ServiceLoader
  *       {@code Models} front, and load time is not measured anyway
- *   <li>the model seam is abstracted ({@link Impl}) instead of {@code LoadedModel<S>}
- *   <li>the x side chunks prefill manually — {@code x.Batch} has no {@code prepare}; the loop is
- *       byte-for-byte {@code Batch.flushRun}'s chunking of one Tokens+LAST batch
- *   <li>the x side wraps each {@code forward}/{@code head} in {@code enter()}/{@code exit()} — the
- *       same per-call claim the old {@code ingest}/{@code logits} defaults make
+ *   <li>the model seam is abstracted ({@link BenchModel}) instead of {@code LoadedModel<S>}
  * </ul>
+ *
+ * Both sides drive the CLAIMING public API ({@code ingest}/{@code logits} — per-call claim,
+ * reachability fence) and chunk prefill through their own {@code Batch.prepare} — identical chunk
+ * sequences (equivalence is property-tested in {@code BatchTest}); the x prepare skips the old
+ * one's concat copy on a legal single batch, a few hundred ns inside the timed region, immaterial
+ * against ~3ms of forward.
  *
  * <pre>jinfer-xbench -m model.gguf [--impl old,x] [-p 512] [-n 128] [-r 5] [-w 2] [--ctx N]</pre>
  */
@@ -201,45 +201,28 @@ public final class XJinferBench {
 
         @Override
         void newState(int ctx) {
-            s = model.newState(ctx, com.qxotic.jinfer.RuntimeFlags.BATCH_CAPACITY, Arena.ofAuto());
+            s = model.newState(ctx); // owned arena, GC/Cleaner-freed — as JinferBench
         }
 
         @Override
         void ingestPrefill(int[] prompt) {
-            // x.Batch has no prepare(): this loop IS Batch.flushRun's chunking of one
-            // Tokens+LAST batch (concat, slice at batchCapacity, prefill each).
-            int cap = s.batchCapacity();
-            for (int from = 0; from < prompt.length; from += cap) {
-                int[] chunk = Arrays.copyOfRange(prompt, from, Math.min(from + cap, prompt.length));
-                s.enter();
-                try {
-                    model.forward(s, com.qxotic.jinfer.x.boundary.Batch.prefill(chunk));
-                } finally {
-                    s.exit();
-                }
+            for (com.qxotic.jinfer.x.boundary.Batch b :
+                    com.qxotic.jinfer.x.boundary.Batch.prepare(
+                            List.of(com.qxotic.jinfer.x.boundary.Batch.prefill(prompt)),
+                            s.batchCapacity())) {
+                model.ingest(s, b);
             }
         }
 
         @Override
         void ingestStep(int tok) {
-            s.enter();
-            try {
-                model.forward(s, com.qxotic.jinfer.x.boundary.Batch.step(tok));
-            } finally {
-                s.exit();
-            }
+            model.ingest(s, com.qxotic.jinfer.x.boundary.Batch.step(tok));
         }
 
         @Override
-        @SuppressWarnings("unchecked")
         float logits0() {
-            s.enter();
-            try {
-                Views.Raw r = Views.rawF32((MemoryView<MemorySegment>) model.head(s, 0), "logits");
-                return Segments.readFloat(r.vseg(), r.vbase());
-            } finally {
-                s.exit();
-            }
+            Views.Raw r = Views.rawF32(model.logits(s), "logits");
+            return Segments.readFloat(r.vseg(), r.vbase());
         }
     }
 
