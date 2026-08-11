@@ -1,0 +1,126 @@
+package com.qxotic.jinfer.x.models.lfm2;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
+
+import com.qxotic.format.gguf.GGUF;
+import com.qxotic.jinfer.x.boundary.Reranker;
+import com.qxotic.jinfer.x.kernels.ModelLoader;
+import com.qxotic.toknroll.Tokenizer;
+import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
+import java.io.IOException;
+import java.lang.foreign.Arena;
+import java.nio.channels.FileChannel;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Stream;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+
+/**
+ * The x ColBERT gate: LFM2.5-ColBERT-350M-Q8_0 reranking parity against llama.cpp - the SAME golden
+ * MaxSim scores the old tree's {@code Lfm2ColbertParityIT} asserts (computed by the reference flow:
+ * {@code llama-server --embeddings} per-token embeddings on this exact Q8_0 file, L2-normalized,
+ * MaxSim with the model card's preprocessing). Both trees asserting the same absolute scores IS the
+ * old-vs-x gate, transitively - and it catches what a ranking test never would: drift in the three
+ * hand-offs (marker tokens, pad expansion rows, skiplist). Skipped when the checkpoint is not in
+ * the HF cache.
+ */
+class XLfm2ColbertTest {
+
+    private static final Path HF_CACHE =
+            Path.of(System.getProperty("user.home"), ".cache/huggingface/hub");
+    private static final String QUERY = "What is panda?";
+    private static final List<String> DOCUMENTS =
+            List.of(
+                    "hi",
+                    "it is a bear",
+                    "The giant panda (Ailuropoda melanoleuca), sometimes called a panda bear or"
+                            + " simply panda, is a bear species endemic to China.");
+
+    /** llama.cpp reference scores for (QUERY, DOCUMENTS) on this exact Q8_0 file. */
+    private static final double[] GOLDEN_SCORES = {28.9881, 29.5442, 30.0316};
+
+    private static Path model;
+
+    @BeforeAll
+    static void findModel() throws IOException {
+        Path repo = HF_CACHE.resolve("models--LiquidAI--LFM2.5-ColBERT-350M-GGUF/snapshots");
+        if (Files.isDirectory(repo)) {
+            try (Stream<Path> snaps = Files.list(repo)) {
+                model =
+                        snaps.flatMap(
+                                        s -> {
+                                            try {
+                                                return Files.list(s);
+                                            } catch (IOException e) {
+                                                return Stream.empty();
+                                            }
+                                        })
+                                .filter(
+                                        p ->
+                                                p.getFileName()
+                                                        .toString()
+                                                        .equals("LFM2.5-ColBERT-350M-Q8_0.gguf"))
+                                .findFirst()
+                                .orElse(null);
+            }
+        }
+    }
+
+    @Test
+    void matchesLlamaCppMaxSimScores() throws Exception {
+        assumeTrue(model != null, "LFM2.5-ColBERT-350M-Q8_0.gguf not in the HF cache");
+        try (FileChannel channel = FileChannel.open(model)) {
+            GGUF gguf = ModelLoader.readGguf(channel, "lfm2.5-colbert");
+            Tokenizer tokenizer =
+                    GGUFTokenizerLoader.createBuilderWithBuiltins().build().fromGGUF(gguf);
+            var xm = Lfm2.loadModel(channel, gguf, Arena.ofAuto(), tokenizer);
+            Reranker<Lfm2.State> reranker = Lfm2Colbert.fromGguf(xm, gguf);
+            try (var state = xm.newState(2048, 512)) {
+                List<Double> scores = new ArrayList<>();
+                reranker.scoreAll(state, "", QUERY, DOCUMENTS, scores::add);
+                assertEquals(DOCUMENTS.size(), scores.size());
+                for (int i = 0; i < GOLDEN_SCORES.length; i++) {
+                    assertEquals(
+                            GOLDEN_SCORES[i],
+                            scores.get(i),
+                            0.05, // quant kernel-order noise; measured deltas are <= 0.03
+                            "document " + i + " drifted from llama.cpp");
+                }
+                // the point of a reranker: the on-topic document wins
+                assertTrue(scores.get(2) > scores.get(1) && scores.get(1) > scores.get(0));
+            }
+        }
+    }
+
+    @Test
+    void anInstructionIsRefusedByName() throws Exception {
+        assumeTrue(model != null, "LFM2.5-ColBERT-350M-Q8_0.gguf not in the HF cache");
+        try (FileChannel channel = FileChannel.open(model)) {
+            GGUF gguf = ModelLoader.readGguf(channel, "lfm2.5-colbert");
+            Tokenizer tokenizer =
+                    GGUFTokenizerLoader.createBuilderWithBuiltins().build().fromGGUF(gguf);
+            var xm = Lfm2.loadModel(channel, gguf, Arena.ofAuto(), tokenizer);
+            Reranker<Lfm2.State> reranker = Lfm2Colbert.fromGguf(xm, gguf);
+            try (var state = xm.newState(2048, 512)) {
+                // MaxSim has no instruction slot; silently ignoring one would misreport what ran
+                UnsupportedOperationException e =
+                        assertThrows(
+                                UnsupportedOperationException.class,
+                                () ->
+                                        reranker.scoreAll(
+                                                state,
+                                                "Judge relevance.",
+                                                QUERY,
+                                                DOCUMENTS,
+                                                s -> {}));
+                assertTrue(e.getMessage().contains("instruction"), e.getMessage());
+            }
+        }
+    }
+}
