@@ -52,8 +52,9 @@ public interface Reranker<S extends RuntimeState> {
      * RuntimeState#resumeAt} rests on). Requires a pure-attention port: rewind is a cursor move. A
      * bidirectional or conv-bearing backbone (LFM2) cannot be one - see {@link Reranker}.
      *
-     * <p>PONYTAIL: no x port implements this yet (the first is the cycle-2 Qwen3 family with its
-     * Qwen3Reranker); the template is UNGATED until that port lands with its parity test.
+     * <p>GATED by the cycle-2 Qwen3 family: jinfer-xqwen3's Qwen3Reranker lands the first
+     * implementation with its parity test (token-exact judge frame + scores vs the old tree's
+     * shipped scorer, whole-frame and chunked).
      *
      * <p>Two tokenization domains, as everywhere: scaffolding is emitted as trusted ids; the
      * instruction, query and document go through the plain path and can never mint control tokens.
