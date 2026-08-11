@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.qxotic</groupId>
+    <artifactId>jinfer-parent</artifactId>
+    <version>0.1.0</version>
+  </parent>
+
+  <artifactId>jinfer-xllama</artifactId>
+  <packaging>jar</packaging>
+
+  <name>jinfer-xllama</name>
+  <description>MemoryView port of the Llama family (Llama 3.x, Mistral/Ministral, MiniCPM, SmolLM3
+    via metadata flags, plus Granite's own class) — cycle 3 of the FloatTensor migration (see
+    qxotic/.opencode/plans/memoryview-migration.md). The boundary cone lives in
+    jinfer-xboundary.</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jota</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-xcore</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-xkernels</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-xboundary</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>gguf</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>toknroll-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>toknroll-gguf</artifactId>
+    </dependency>
+    <!-- differential gate: the old Llama/Granite ports (and their tree), test-scope ONLY -->
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-llama</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-llm</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <!-- Differential oracles compare against the JAVA floor: exclude the JAM backends so
+               the old Dispatch routes gemm/gemv to the same dot-based code. JAM parity arrives
+               with the JAM arm of x.MatMul. -->
+          <classpathDependencyExcludes>
+            <classpathDependencyExclude>com.qxotic:jam-native</classpathDependencyExclude>
+            <classpathDependencyExclude>com.qxotic:jam-vector</classpathDependencyExclude>
+            <classpathDependencyExclude>com.qxotic:jam-scalar</classpathDependencyExclude>
+          </classpathDependencyExcludes>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>
