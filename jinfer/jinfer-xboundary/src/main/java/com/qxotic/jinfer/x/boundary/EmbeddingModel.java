@@ -2,6 +2,7 @@ package com.qxotic.jinfer.x.boundary;
 
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.ref.Reference;
+import java.util.Arrays;
 import java.util.function.Consumer;
 
 /**
@@ -45,6 +46,57 @@ public interface EmbeddingModel<C extends Config, W, S extends RuntimeState>
      * Embed packed ragged sequences (see {@link Batch.Input.Sequences}), streaming each sequence's
      * pooled vector to {@code sink} in input order. The view handed to the sink may be a REUSED
      * per-state buffer: it is valid only until the next sink call - copy it out before returning.
+     *
+     * <p>The default is the CAUSAL streaming law: the packed stream is ingested in {@code
+     * batchCapacity}-sized chunks over one KV context (a sequence may span chunks - the model's
+     * segmented attention carries its KV), and each sequence's LAST row is pooled as it completes.
+     * Bidirectional families (LFM2) override it outright: a sequence must be forwarded WHOLE, so
+     * they re-group on sequence boundaries instead.
      */
-    void embed(S state, Batch.Input.Sequences seqs, Consumer<MemoryView<?>> sink);
+    default void embed(S state, Batch.Input.Sequences seqs, Consumer<MemoryView<?>> sink) {
+        // Claimed across the WHOLE operation, not per chunk: reset() below mutates the cursor, and
+        // releasing between chunks would let two concurrent embeds interleave their chunks into
+        // one KV context - corrupting both, with no CME to say so. Reentrant, so the per-chunk
+        // ingest/embedding claims nest inside this one.
+        BaseState base = (BaseState) state;
+        base.enter();
+        try {
+            embed0(state, seqs, sink);
+        } finally {
+            base.exit();
+        }
+    }
+
+    private void embed0(S state, Batch.Input.Sequences seqs, Consumer<MemoryView<?>> sink) {
+        int[] len = seqs.seqLen();
+        int[] ids = seqs.tokens().ids();
+        int n = ids.length;
+        if (n > state.contextCapacity())
+            throw new IllegalArgumentException(
+                    "state contextCapacity "
+                            + state.contextCapacity()
+                            + " < packed length "
+                            + n
+                            + " (batchCapacity may be smaller; it only bounds the chunk)");
+        int bc = state.batchCapacity();
+        state.reset();
+        int j = 0, seqStart = 0;
+        for (int cs = 0; cs < n; cs += bc) {
+            int ce = Math.min(cs + bc, n);
+            int[] chunkIds = Arrays.copyOfRange(ids, cs, ce);
+            // seqLen stays the FULL stream layout - the segmented attention resolves which
+            // segments intersect this chunk from the cursor (a sequence may span chunks)
+            ingest(
+                    state,
+                    new Batch(
+                            new Batch.Input.Sequences(new Batch.Input.Tokens(chunkIds), len),
+                            Batch.Outputs.ALL));
+            while (j < len.length && seqStart + len[j] - 1 < ce) {
+                sink.accept(
+                        embedding(state, (seqStart + len[j] - 1) - cs)); // index within this chunk
+                seqStart += len[j];
+                j++;
+            }
+        }
+    }
 }
