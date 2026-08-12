@@ -15,6 +15,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -266,6 +267,29 @@ public final class ModelStore {
             throw new UncheckedIOException("could not fetch " + url + ": " + e, e);
         }
         return dest;
+    }
+
+    /**
+     * {@link #resolve} without the download: the cached file this ref or path names, or empty. Same
+     * lookup order as resolve - jinfer's own cache first, then the HuggingFace hub cache - so a hit
+     * here is exactly the file resolve would return without fetching. Never touches the network,
+     * which is what makes it safe to call from a test or a {@code list} command. Plain URLs are
+     * refused: they carry no checksum, so finding one in the cache would vouch for bytes nothing
+     * verified.
+     */
+    public static Optional<Path> find(String pathOrRef) {
+        if (ModelRef.isRef(pathOrRef)) {
+            try {
+                return Optional.ofNullable(cachedFile(ModelRef.parse(pathOrRef)));
+            } catch (IOException e) {
+                throw new UncheckedIOException("could not look up " + pathOrRef + ": " + e, e);
+            }
+        }
+        if (ModelRef.hostOfUrl(pathOrRef) != null) {
+            throw new IllegalArgumentException(
+                    "plain URLs can only be resolved (they carry no checksum): " + pathOrRef);
+        }
+        return Optional.ofNullable(localFile(pathOrRef));
     }
 
     private static void requireOnlineFor(String what, Path dest) {
