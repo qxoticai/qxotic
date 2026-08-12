@@ -86,51 +86,25 @@ public interface DataType {
                     "float64",
                     "double");
 
-    /** scale * q_values[i] */
-    DataType Q8_0 =
-            new DataTypeImpl(
-                    32,
-                    MemoryLayout.structLayout(
-                                    ValueLayout.JAVA_SHORT_UNALIGNED.withName("scale"), // float16
-                                    MemoryLayout.sequenceLayout(32, ValueLayout.JAVA_BYTE)
-                                            .withName("q_values"))
-                            .withName("q8_0"),
-                    false,
-                    false,
-                    null);
+    DataType Q4_0 = blockType("q4_0", 32, 18);
+    DataType Q4_1 = blockType("q4_1", 32, 20);
+    DataType Q5_1 = blockType("q5_1", 32, 24);
+    DataType Q8_0 = blockType("q8_0", 32, 34);
+    DataType Q4_K = blockType("q4_k", 256, 144);
+    DataType Q5_K = blockType("q5_k", 256, 176);
+    DataType Q6_K = blockType("q6_k", 256, 210);
+    DataType MXFP4 = blockType("mxfp4", 32, 17);
+    DataType NVFP4 = blockType("nvfp4", 64, 36);
+    DataType Q1_0 = blockType("q1_0", 128, 18);
 
-    //    /**
-    //     * scale * q_values[i] + zero_point
-    //     */
-    //    DataType Q8_1 = new DataTypeImpl(
-    //            32,
-    //            MemoryLayout.structLayout(
-    //                    ValueLayout.JAVA_SHORT_UNALIGNED.withName("scale"), // float16
-    //                    ValueLayout.JAVA_SHORT_UNALIGNED.withName("zero_point"), // float16
-    //                    MemoryLayout.sequenceLayout(32,
-    // ValueLayout.JAVA_BYTE).withName("q_values")
-    //            ).withName("q8_1"), true, null);
-
-    DataType Q4_0 =
-            new DataTypeImpl(
-                    32,
-                    MemoryLayout.structLayout(
-                                    ValueLayout.JAVA_SHORT_UNALIGNED.withName("scale"), // float16
-                                    MemoryLayout.sequenceLayout(16, ValueLayout.JAVA_BYTE)
-                                            .withName("q_values"))
-                            .withName("q4_0"),
-                    false,
-                    false,
-                    null);
-
-    //    DataType Q4_1 = new DataTypeImpl(
-    //            32,
-    //            MemoryLayout.structLayout(
-    //                    ValueLayout.JAVA_SHORT_UNALIGNED.withName("scale"), // float16
-    //                    ValueLayout.JAVA_SHORT_UNALIGNED.withName("zero_point"), // float16
-    //                    MemoryLayout.sequenceLayout(16,
-    // ValueLayout.JAVA_BYTE).withName("q_nibbles")
-    //            ).withName("q4_1"), true, null);
+    private static DataType blockType(String name, long elements, long bytes) {
+        return new DataTypeImpl(
+                elements,
+                MemoryLayout.sequenceLayout(bytes, ValueLayout.JAVA_BYTE).withName(name),
+                false,
+                false,
+                null);
+    }
 
     default long byteSizeFor(long elementCount) {
         if (elementCount < 0) {

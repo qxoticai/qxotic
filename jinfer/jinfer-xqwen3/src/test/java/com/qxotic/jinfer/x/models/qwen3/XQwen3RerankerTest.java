@@ -3,19 +3,15 @@ package com.qxotic.jinfer.x.models.qwen3;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import com.qxotic.jinfer.chat.LoadedReranker;
 import com.qxotic.jinfer.chat.Models;
+import com.qxotic.jinfer.testkit.TestModels;
 import com.qxotic.jinfer.x.boundary.Batch;
-import java.io.IOException;
 import java.lang.foreign.Arena;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Stream;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -27,12 +23,10 @@ import org.junit.jupiter.api.Test;
  * capacity that fits the whole frame and at one that forces chunking mid-frame (exercising the KV
  * carry AND the per-candidate cursor rewind) — token-count equality plus per-document score parity.
  * Both trees route gemm/gemv to the same dot-based Java floor (JAM surefire-excluded). Skipped when
- * the checkpoint is not in the HF cache.
+ * the checkpoint is not cached.
  */
 class XQwen3RerankerTest {
 
-    private static final Path HF_CACHE =
-            Path.of(System.getProperty("user.home"), ".cache/huggingface/hub");
     private static final double SCORE_TOLERANCE = 5e-3;
 
     private static final String QUERY = "When was the Eiffel Tower built?";
@@ -54,38 +48,13 @@ class XQwen3RerankerTest {
         77091, 198, 151667, 271, 151668, 271
     };
 
-    private static Path rerankerModel;
-
-    @BeforeAll
-    static void findModels() throws IOException {
-        rerankerModel =
-                findGguf(
-                        "models--mradermacher--Qwen3-Reranker-0.6B-GGUF",
-                        "Qwen3-Reranker-0.6B.Q8_0.gguf");
-    }
-
-    private static Path findGguf(String repoName, String fileName) throws IOException {
-        Path repo = HF_CACHE.resolve(repoName).resolve("snapshots");
-        if (!Files.isDirectory(repo)) return null;
-        try (Stream<Path> snaps = Files.list(repo)) {
-            return snaps.flatMap(
-                            s -> {
-                                try {
-                                    return Files.list(s);
-                                } catch (IOException e) {
-                                    return Stream.empty();
-                                }
-                            })
-                    .filter(p -> p.getFileName().toString().equals(fileName))
-                    .findFirst()
-                    .orElse(null);
-        }
+    private static Path rerankerModel() {
+        return TestModels.require("hf.co/mradermacher/Qwen3-Reranker-0.6B-GGUF:Q8_0");
     }
 
     @Test
     void frameIsTokenExact() throws Exception {
-        assumeTrue(rerankerModel != null, "Qwen3-Reranker-0.6B.Q8_0.gguf not in the HF cache");
-        Qwen3 xm = Qwen3.loadModel(rerankerModel, Arena.ofAuto());
+        Qwen3 xm = Qwen3.loadModel(rerankerModel(), Arena.ofAuto());
         Qwen3Reranker reranker = new Qwen3Reranker(xm);
         // the reuse law rides in these two arrays: the frame ends AT the document opener (id 26818,
         // the ':' of "<Document>:") and the candidate carries the leading space, so the split is a
@@ -97,13 +66,11 @@ class XQwen3RerankerTest {
 
     @Test
     void scoreParityWholeFrame() throws Exception {
-        assumeTrue(rerankerModel != null, "Qwen3-Reranker-0.6B.Q8_0.gguf not in the HF cache");
         assertScoreParity(512); // frame + document fit in one chunk
     }
 
     @Test
     void scoreParityChunked() throws Exception {
-        assumeTrue(rerankerModel != null, "Qwen3-Reranker-0.6B.Q8_0.gguf not in the HF cache");
         assertScoreParity(16); // chunks mid-frame AND mid-document
     }
 
@@ -116,6 +83,7 @@ class XQwen3RerankerTest {
                             + " it was initially criticized by Parisian artists.");
 
     private static void assertScoreParity(int batchCapacity) throws Exception {
+        Path rerankerModel = rerankerModel();
         LoadedReranker<?> loaded = Models.loadReranker(rerankerModel, Arena.ofAuto());
         Qwen3 xm = Qwen3.loadModel(rerankerModel, Arena.ofAuto());
         Qwen3Reranker xr = new Qwen3Reranker(xm);

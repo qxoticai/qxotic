@@ -3,8 +3,6 @@ package com.qxotic.jinfer.x.kernels;
 import static com.qxotic.jinfer.x.Segments.readFloat;
 import static com.qxotic.jinfer.x.Segments.writeFloat;
 
-import com.qxotic.jinfer.x.Views;
-import com.qxotic.jinfer.x.Views.Raw;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.MemorySegment;
 import java.util.function.IntUnaryOperator;
@@ -181,8 +179,8 @@ public final class RoPE {
             int count,
             int lanes,
             Schedule schedule) {
-        Raw c = Views.rawF32(cos, "cos");
-        Raw s = Views.rawF32(sin, "sin");
+        Raw c = Raw.f32(cos, "cos");
+        Raw s = Raw.f32(sin, "sin");
         float amplitude = schedule.amplitude();
         float[] row = new float[lanes];
         long n = 0;
@@ -215,9 +213,9 @@ public final class RoPE {
             MemoryView<MemorySegment> cos,
             MemoryView<MemorySegment> sin,
             int lanes) {
-        Raw qv = Views.rawF32(q, "q");
-        Raw c = Views.rawF32(cos, "cos");
-        Raw s = Views.rawF32(sin, "sin");
+        Raw qv = Raw.f32(q, "q");
+        Raw c = Raw.f32(cos, "cos");
+        Raw s = Raw.f32(sin, "sin");
         long base = (long) row * lanes;
         for (int j = 0; j < lanes; j++) {
             float cv = readFloat(c.vseg(), c.vbase() + (base + j) * Float.BYTES);
@@ -241,9 +239,9 @@ public final class RoPE {
             MemoryView<MemorySegment> cos,
             MemoryView<MemorySegment> sin,
             int lanes) {
-        Raw qv = Views.rawF32(q, "q");
-        Raw c = Views.rawF32(cos, "cos");
-        Raw s = Views.rawF32(sin, "sin");
+        Raw qv = Raw.f32(q, "q");
+        Raw c = Raw.f32(cos, "cos");
+        Raw s = Raw.f32(sin, "sin");
         long base = (long) row * lanes;
         for (int j = 0; j < lanes; j++) {
             float cv = readFloat(c.vseg(), c.vbase() + (base + j) * Float.BYTES);
@@ -253,6 +251,31 @@ public final class RoPE {
             float v1 = readFloat(qv.vseg(), qv.vbase() + (i + lanes) * Float.BYTES);
             writeFloat(qv.vseg(), qv.vbase() + i * Float.BYTES, v0 * cv - v1 * sv);
             writeFloat(qv.vseg(), qv.vbase() + (i + lanes) * Float.BYTES, v0 * sv + v1 * cv);
+        }
+    }
+
+    /**
+     * The angle-direct twin of {@link #applyNeox} for callers without materialized cos/sin tables
+     * (Gemma4 vision 2D RoPE): rotates pairs {@code (base+i, base+i+pairs)} with angle {@code
+     * position * theta^(-2i/ropeDim)} computed inline. Angles match {@link Schedule#plain}.
+     */
+    public static void rotatePairs(
+            MemoryView<MemorySegment> value,
+            long base,
+            int pairs,
+            int ropeDim,
+            int position,
+            double theta) {
+        Raw raw = Raw.f32(value, "value");
+        for (int i = 0; i < pairs; i++) {
+            long first = raw.vbase() + (base + i) * Float.BYTES;
+            long second = raw.vbase() + (base + i + pairs) * Float.BYTES;
+            float a = readFloat(raw.vseg(), first), b = readFloat(raw.vseg(), second);
+            float inverseFrequency = (float) Math.pow(theta, -(2.0 * i) / ropeDim);
+            float angle = position * inverseFrequency;
+            float cosine = (float) Math.cos(angle), sine = (float) Math.sin(angle);
+            writeFloat(raw.vseg(), first, a * cosine - b * sine);
+            writeFloat(raw.vseg(), second, a * sine + b * cosine);
         }
     }
 }

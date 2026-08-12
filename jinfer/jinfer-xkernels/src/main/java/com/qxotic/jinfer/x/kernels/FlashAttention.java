@@ -6,12 +6,10 @@ import static com.qxotic.jinfer.x.Segments.readFloat16;
 import static com.qxotic.jinfer.x.Segments.writeFloat;
 
 import com.oracle.svm.shared.AlwaysInline;
-import com.qxotic.jinfer.x.Convert;
 import com.qxotic.jinfer.x.Parallel;
 import com.qxotic.jinfer.x.RuntimeFlags;
 import com.qxotic.jinfer.x.Segments;
 import com.qxotic.jinfer.x.Views;
-import com.qxotic.jinfer.x.Views.Raw;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.memory.MemoryAllocator;
 import com.qxotic.jota.memory.MemoryView;
@@ -977,8 +975,8 @@ public final class FlashAttention {
             int queryDim,
             int kvMul,
             float scale) {
-        Raw qRaw = Views.rawF32(q, "q");
-        Raw outRaw = Views.rawF32(out, "out");
+        Raw qRaw = Raw.f32(q, "q");
+        Raw outRaw = Raw.f32(out, "out");
         Src ck = src(cK, "cK");
         Src cv = src(cV, "cV");
         boolean vec = Segments.USE_VECTOR_API; // qkTile/pvTile handle both F32 and F16 caches
@@ -1299,13 +1297,13 @@ public final class FlashAttention {
         // creation time. This guards future ring adopters against a silently-wrong addressing mask.
         assert ringMask == 0 || (ringMask & (ringMask + 1)) == 0
                 : "SWA ring length must be a power of two, got mask " + ringMask;
-        Raw qRaw = Views.rawF32(q, "q");
-        Raw outRaw = Views.rawF32(out, "out");
+        Raw qRaw = Raw.f32(q, "q");
+        Raw outRaw = Raw.f32(out, "out");
         Src ck = src(cK, "cK");
         Src cv = src(cV, "cV");
         Src bk = src(bK, "bK");
         Src bv = src(bV, "bV");
-        Raw sinksRaw = sinks != null ? Views.rawF32(sinks, "sinks") : null;
+        Raw sinksRaw = sinks != null ? Raw.f32(sinks, "sinks") : null;
         boolean vec = Segments.USE_VECTOR_API;
         int attStart = window > 0 ? Math.max(0, startPos - window + 1) : 0;
         int nQBlocks = (seqLen + Br - 1) / Br;
@@ -1653,13 +1651,13 @@ public final class FlashAttention {
             int ringMask,
             MemoryView<MemorySegment> sinks,
             DecodeScratch scratch) {
-        Raw qRaw = Views.rawF32(q, "q");
-        Raw outRaw = Views.rawF32(out, "out");
+        Raw qRaw = Raw.f32(q, "q");
+        Raw outRaw = Raw.f32(out, "out");
         Src ck = src(cK, "cK");
         Src cv = src(cV, "cV");
         Src bk = bK != null ? src(bK, "bK") : null;
         Src bv = bV != null ? src(bV, "bV") : null;
-        Raw sinksRaw = sinks != null ? Views.rawF32(sinks, "sinks") : null;
+        Raw sinksRaw = sinks != null ? Raw.f32(sinks, "sinks") : null;
         int range = position - attStart + 1;
         int nParts =
                 Math.max(

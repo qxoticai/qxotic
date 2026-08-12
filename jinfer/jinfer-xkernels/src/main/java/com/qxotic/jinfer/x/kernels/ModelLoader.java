@@ -1,13 +1,13 @@
 // Shared GGUF loading plumbing: parse metadata, memory-map tensors, and expose them as
 // MemoryView<MemorySegment> weights (one jota Memory over the READ_ONLY mmap, one view per
 // tensor). Ported from jinfer-kernels ModelLoader: FloatTensor.create + flat shapes become
-// typed views carrying real Shapes; dtypes are restricted to the cycle-1 scope {Q8_0, F32, F16}
-// — anything else fails at LOAD time, not inside a kernel.
+// typed views carrying real Shapes; unsupported dtypes fail at LOAD time, not inside a kernel.
 package com.qxotic.jinfer.x.kernels;
 
-import com.qxotic.format.gguf.GGMLType;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.format.gguf.TensorEntry;
+import com.qxotic.jinfer.FloatTensor;
+import com.qxotic.jinfer.x.Views;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
@@ -29,19 +29,13 @@ public final class ModelLoader {
 
     private ModelLoader() {}
 
-    /**
-     * The cycle-1 dtype scope: Q8_0 weights, F32 norms/taps, F16 KV. Anything else throws HERE
-     * (load time) — the old tree discovered unsupported quants inside a kernel call.
-     */
-    public static DataType dataType(GGMLType ggmlType) {
-        return switch (ggmlType) {
-            case F32 -> DataType.FP32;
-            case F16 -> DataType.FP16;
-            case Q8_0 -> DataType.Q8_0;
-            default ->
-                    throw new UnsupportedOperationException(
-                            "GGMLType " + ggmlType + " outside the cycle-1 scope {Q8_0, F32, F16}");
-        };
+    static FloatTensor floatTensor(MemoryView<MemorySegment> view, String name) {
+        Views.requireContiguous(view, name);
+        MemoryView<MemorySegment> v = Views.castToSegmentBacked(view, name);
+        return FloatTensor.create(
+                GGMLDataTypes.toGGMLType(v.dataType()),
+                v.logicalSize(),
+                v.memory().base().asSlice(v.byteOffset(), v.dataType().byteSizeFor(v.shape())));
     }
 
     /**
@@ -100,7 +94,9 @@ public final class ModelLoader {
         Memory<MemorySegment> memory = MemoryFactory.ofMemorySegment(tensorData);
         Map<String, MemoryView<MemorySegment>> tensorViews = HashMap.newHashMap(tensors.size());
         for (TensorEntry tensor : tensors) {
-            DataType dtype = dataType(tensor.ggmlType()); // scope guard: throws on unsupported
+            DataType dtype =
+                    GGMLDataTypes.toDataType(
+                            tensor.ggmlType()); // scope guard: throws on unsupported
             // GGUF dims are FASTEST-first (shape[0] is the contiguous dim); a jota row-major
             // layout wants slowest-first, so reverse, then let the block dtype fold the last
             // (contiguous) dim into blocks (physicalShape).

@@ -2,12 +2,11 @@ package com.qxotic.jinfer.x.models.lfm2;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.FloatTensor;
 import com.qxotic.jinfer.llm.SpecialTokens;
-import com.qxotic.jinfer.x.Segments;
+import com.qxotic.jinfer.testkit.TestModels;
 import com.qxotic.jinfer.x.Views;
 import com.qxotic.jinfer.x.boundary.Batch;
 import com.qxotic.jinfer.x.kernels.ModelLoader;
@@ -15,16 +14,12 @@ import com.qxotic.jinfer.x.kernels.Ops;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
-import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.nio.channels.FileChannel;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Stream;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -36,52 +31,21 @@ import org.junit.jupiter.api.Test;
  * the ONLY gate the x MoE path has). Floor-only on purpose: discrete top-k routing amplifies
  * backend-mix noise into argmax flips even when both trees are individually correct, so jam-on MoE
  * divergence is NOT a correctness signal (see XParityRun's javadoc). Skipped per leg when the
- * checkpoint is not in the HF cache.
+ * checkpoint is not cached.
  */
 class XLfm2Test {
 
-    private static final Path HF_CACHE =
-            Path.of(System.getProperty("user.home"), ".cache/huggingface/hub");
     private static final int N_TOKENS = 64;
     private static final float LOGIT_TOLERANCE = 1e-2f;
 
-    private static Path denseModel;
-    private static Path moeModel;
-
-    @BeforeAll
-    static void findModels() throws IOException {
-        denseModel = findGguf("models--LiquidAI--LFM2.5-2.6B-GGUF", "LFM2.5-2.6B-Q8_0.gguf");
-        moeModel = findGguf("models--LiquidAI--LFM2-8B-A1B-GGUF", "LFM2-8B-A1B-Q8_0.gguf");
-    }
-
-    private static Path findGguf(String repoName, String fileName) throws IOException {
-        Path repo = HF_CACHE.resolve(repoName).resolve("snapshots");
-        if (!Files.isDirectory(repo)) return null;
-        try (Stream<Path> snaps = Files.list(repo)) {
-            return snaps.flatMap(
-                            s -> {
-                                try {
-                                    return Files.list(s);
-                                } catch (IOException e) {
-                                    return Stream.empty();
-                                }
-                            })
-                    .filter(p -> p.getFileName().toString().equals(fileName))
-                    .findFirst()
-                    .orElse(null);
-        }
-    }
-
     @Test
     void greedyParityDense() throws Exception {
-        assumeTrue(denseModel != null, "LFM2.5-2.6B-Q8_0.gguf not in the HF cache");
-        assertGreedyParity(denseModel);
+        assertGreedyParity(TestModels.require("hf.co/LiquidAI/LFM2.5-2.6B-GGUF:Q8_0"));
     }
 
     @Test
     void greedyParityMoe() throws Exception {
-        assumeTrue(moeModel != null, "LFM2-8B-A1B-Q8_0.gguf not in the HF cache");
-        assertGreedyParity(moeModel);
+        assertGreedyParity(TestModels.require("hf.co/LiquidAI/LFM2-8B-A1B-GGUF:Q8_0"));
     }
 
     private static void assertGreedyParity(Path model) throws Exception {
@@ -160,10 +124,8 @@ class XLfm2Test {
     }
 
     private static float[] snapshotX(MemoryView<MemorySegment> logits, int vocab) {
-        Views.Raw r = Views.rawF32(logits, "logits");
         float[] out = new float[vocab];
-        for (int i = 0; i < vocab; i++)
-            out[i] = Segments.readFloat(r.vseg(), r.vbase() + (long) i * Float.BYTES);
+        for (int i = 0; i < vocab; i++) out[i] = Views.getFloat(logits, i, "logits");
         return out;
     }
 

@@ -1,21 +1,17 @@
 package com.qxotic.jinfer.x.models.qwen3;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import com.qxotic.jinfer.FloatTensor;
-import com.qxotic.jinfer.x.Segments;
+import com.qxotic.jinfer.testkit.TestModels;
 import com.qxotic.jinfer.x.Views;
 import com.qxotic.jinfer.x.boundary.Batch;
 import com.qxotic.jota.memory.MemoryView;
-import java.io.IOException;
 import java.lang.foreign.Arena;
-import java.nio.file.Files;
+import java.lang.foreign.MemorySegment;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Stream;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -25,61 +21,23 @@ import org.junit.jupiter.api.Test;
  * cosine + max-abs-diff on the L2-normalized vectors. Both trees route gemm/gemv to the same
  * dot-based Java floor (the JAM backends are surefire-excluded). Two legs: Qwen3-Embedding-0.6B
  * (the embedder) and Qwen3-Reranker-0.6B (the judge — same backbone, the tied-head verdict itself
- * is gated by the Qwen3Reranker port's test). Skipped per leg when the checkpoint is not in the HF
- * cache.
+ * is gated by the Qwen3Reranker port's test). Skipped per leg when the checkpoint is not cached.
  */
 class XQwen3Test {
 
-    private static final Path HF_CACHE =
-            Path.of(System.getProperty("user.home"), ".cache/huggingface/hub");
     private static final int BATCH_CAPACITY =
             Integer.getInteger("xqwen3.batchCapacity", 16); // < longest sequence: forces chunks
     private static final float MAX_ABS_TOLERANCE = 1e-2f;
     private static final double COSINE_TOLERANCE = 1e-4;
 
-    private static Path embedModel;
-    private static Path rerankerModel;
-
-    @BeforeAll
-    static void findModels() throws IOException {
-        embedModel =
-                findGguf(
-                        "models--Qwen--Qwen3-Embedding-0.6B-GGUF",
-                        "Qwen3-Embedding-0.6B-Q8_0.gguf");
-        rerankerModel =
-                findGguf(
-                        "models--mradermacher--Qwen3-Reranker-0.6B-GGUF",
-                        "Qwen3-Reranker-0.6B.Q8_0.gguf");
-    }
-
-    private static Path findGguf(String repoName, String fileName) throws IOException {
-        Path repo = HF_CACHE.resolve(repoName).resolve("snapshots");
-        if (!Files.isDirectory(repo)) return null;
-        try (Stream<Path> snaps = Files.list(repo)) {
-            return snaps.flatMap(
-                            s -> {
-                                try {
-                                    return Files.list(s);
-                                } catch (IOException e) {
-                                    return Stream.empty();
-                                }
-                            })
-                    .filter(p -> p.getFileName().toString().equals(fileName))
-                    .findFirst()
-                    .orElse(null);
-        }
-    }
-
     @Test
     void embedParityEmbeddingCheckpoint() throws Exception {
-        assumeTrue(embedModel != null, "Qwen3-Embedding-0.6B-Q8_0.gguf not in the HF cache");
-        assertEmbedParity(embedModel);
+        assertEmbedParity(TestModels.require("hf.co/Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0"));
     }
 
     @Test
     void embedParityRerankerCheckpoint() throws Exception {
-        assumeTrue(rerankerModel != null, "Qwen3-Reranker-0.6B.Q8_0.gguf not in the HF cache");
-        assertEmbedParity(rerankerModel);
+        assertEmbedParity(TestModels.require("hf.co/mradermacher/Qwen3-Reranker-0.6B-GGUF:Q8_0"));
     }
 
     private static final String[] TEXTS = {
@@ -157,10 +115,9 @@ class XQwen3Test {
     }
 
     private static float[] snapshotX(MemoryView<?> e, int dim) {
-        Views.Raw r = Views.rawF32(e, "embedding");
+        MemoryView<MemorySegment> view = Views.castToSegmentBacked(e, "embedding");
         float[] out = new float[dim];
-        for (int i = 0; i < dim; i++)
-            out[i] = Segments.readFloat(r.vseg(), r.vbase() + (long) i * Float.BYTES);
+        for (int i = 0; i < dim; i++) out[i] = Views.getFloat(view, i, "embedding");
         return out;
     }
 

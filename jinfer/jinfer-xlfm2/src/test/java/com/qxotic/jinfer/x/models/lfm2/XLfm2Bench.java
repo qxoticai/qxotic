@@ -1,24 +1,18 @@
 package com.qxotic.jinfer.x.models.lfm2;
 
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
-
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.llm.SpecialTokens;
+import com.qxotic.jinfer.testkit.TestModels;
 import com.qxotic.jinfer.x.Views;
 import com.qxotic.jinfer.x.boundary.Batch;
 import com.qxotic.jinfer.x.kernels.ModelLoader;
 import com.qxotic.jinfer.x.kernels.Ops;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
-import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Stream;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -30,43 +24,14 @@ import org.junit.jupiter.api.Test;
  */
 class XLfm2Bench {
 
-    private static final Path HF_CACHE =
-            Path.of(System.getProperty("user.home"), ".cache/huggingface/hub");
     private static final int WARMUP = 32;
     private static final int TIMED = 128;
-
-    private static Path model;
-
-    @BeforeAll
-    static void findModel() throws IOException {
-        Path repo = HF_CACHE.resolve("models--LiquidAI--LFM2.5-2.6B-GGUF/snapshots");
-        if (Files.isDirectory(repo)) {
-            try (Stream<Path> snaps = Files.list(repo)) {
-                model =
-                        snaps.flatMap(
-                                        s -> {
-                                            try {
-                                                return Files.list(s);
-                                            } catch (IOException e) {
-                                                return Stream.empty();
-                                            }
-                                        })
-                                .filter(
-                                        p ->
-                                                p.getFileName()
-                                                        .toString()
-                                                        .equals("LFM2.5-2.6B-Q8_0.gguf"))
-                                .findFirst()
-                                .orElse(null);
-            }
-        }
-    }
 
     @Test
     @Tag("bench")
     void ab() throws Exception {
-        assumeTrue(model != null, "LFM2.5-2.6B-Q8_0.gguf not in the HF cache");
-        try (FileChannel channel = FileChannel.open(model)) {
+        try (FileChannel channel =
+                FileChannel.open(TestModels.require("hf.co/LiquidAI/LFM2.5-2.6B-GGUF:Q8_0"))) {
             GGUF gguf = ModelLoader.readGguf(channel, "lfm2.5");
             Tokenizer tokenizer =
                     GGUFTokenizerLoader.createBuilderWithBuiltins().build().fromGGUF(gguf);

@@ -5,20 +5,17 @@
 // are the x statics; gemm/gemv entry shims resolve to x.MatMul.mm here (the old virtuals').
 package com.qxotic.jinfer.x.models.lfm2;
 
-import static com.qxotic.jinfer.x.Segments.readFloat;
-import static com.qxotic.jinfer.x.Segments.writeFloat;
-
 import com.qxotic.format.gguf.GGUF;
-import com.qxotic.jinfer.x.Convert;
 import com.qxotic.jinfer.x.Parallel;
 import com.qxotic.jinfer.x.Views;
-import com.qxotic.jinfer.x.Views.Raw;
 import com.qxotic.jinfer.x.boundary.BaseState;
 import com.qxotic.jinfer.x.boundary.Batch;
 import com.qxotic.jinfer.x.boundary.Config;
 import com.qxotic.jinfer.x.boundary.EmbeddingModel;
 import com.qxotic.jinfer.x.boundary.LanguageModel;
 import com.qxotic.jinfer.x.kernels.Activations;
+import com.qxotic.jinfer.x.kernels.Convert;
+import com.qxotic.jinfer.x.kernels.Convolutions;
 import com.qxotic.jinfer.x.kernels.FlashAttention;
 import com.qxotic.jinfer.x.kernels.MatMul;
 import com.qxotic.jinfer.x.kernels.ModelLoader;
@@ -117,6 +114,9 @@ public final class Lfm2
                                     + " false)");
                 forwardSegmented(s, seq.tokens().ids(), seq.seqLen(), n);
             }
+            case Batch.Input.Embeddings ignored ->
+                    throw new UnsupportedOperationException(
+                            "x LFM2 does not support embedding inputs");
         }
         s.advance(n, batch.outputs());
     }
@@ -207,62 +207,17 @@ public final class Lfm2
                 SHORTCONV_PARTS * dim,
                 seqLen,
                 dim);
-        shortConvScan(state, l, seqLen);
+        Convolutions.shortConvScan(
+                weights.layers[l].shortConv().kernel(),
+                state.shortConvState[l],
+                state.shortConvTmp,
+                state.branchOut,
+                seqLen,
+                configuration.embeddingLength,
+                configuration.shortConvLCache,
+                SHORTCONV_PARTS);
         MatMul.gemm(sc.outProj(), state.branchOut, dim, state.shortConvOut, dim, dim, seqLen, dim);
         Ops.addInPlace(state.residual, 0, state.shortConvOut, 0, seqLen * dim);
-    }
-
-    /**
-     * Causal short-convolution as a dConv-tap FIR over bx = B∘x rows (scalar; ported from the
-     * production {@code Llama.shortConvScan}). For each channel: {@code out[s] = C_gate[s] *
-     * (Σ_{k<hist} state[k]·kernel[k] + bx[s]·kernel[hist])}, where {@code state} holds the previous
-     * {@code hist=dConv-1} bx values; bx is materialized in place over the B block of shortConvTmp
-     * and the newest bx rolls into shortConvState.
-     *
-     * <p>ponytail: a kernel living in the model - it moves to {@code Convolutions} (with its own
-     * differential oracle) when cycle 2 ports {@code Llama.shortConvScan}; the second caller is the
-     * API proof, until then it stays where the old tree has it.
-     */
-    private void shortConvScan(State state, int l, int seqLen) {
-        int dim = configuration.embeddingLength;
-        int dConv = configuration.shortConvLCache, hist = dConv - 1;
-        // seg/base locals, the xcore kernel idiom (MatMul.run): Raw extracted once, then plain
-        Raw kernelRaw =
-                Views.rawF32(
-                        weights.layers[l].shortConv().kernel(),
-                        "kernel"); // per channel: dConv taps at c*dConv + k
-        Raw convRaw = Views.rawF32(state.shortConvState[l], "shortConvState");
-        Raw tmpRaw = Views.rawF32(state.shortConvTmp, "shortConvTmp");
-        Raw outRaw = Views.rawF32(state.branchOut, "branchOut");
-        MemorySegment ks = kernelRaw.vseg(),
-                cs = convRaw.vseg(),
-                ts = tmpRaw.vseg(),
-                os = outRaw.vseg();
-        long kb = kernelRaw.vbase(), cb = convRaw.vbase(), tb = tmpRaw.vbase(), ob = outRaw.vbase();
-        for (int s = 0; s < seqLen; s++) {
-            int tmpOff = s * SHORTCONV_PARTS * dim, outOff = s * dim;
-            for (int c = 0; c < dim; c++) {
-                float b = readFloat(ts, tb + 4L * (tmpOff + c));
-                float cg = readFloat(ts, tb + 4L * (tmpOff + dim + c));
-                float xv = readFloat(ts, tb + 4L * (tmpOff + 2 * dim + c));
-                float bx = b * xv;
-                writeFloat(ts, tb + 4L * (tmpOff + c), bx);
-                int kBase = c * dConv;
-                float sum = 0f;
-                for (int k = 0; k < hist; k++)
-                    sum +=
-                            readFloat(cs, cb + 4L * ((long) k * dim + c))
-                                    * readFloat(ks, kb + 4L * (kBase + k));
-                sum += bx * readFloat(ks, kb + 4L * (kBase + dConv - 1));
-                writeFloat(os, ob + 4L * (outOff + c), cg * sum);
-                for (int k = 0; k < hist - 1; k++)
-                    writeFloat(
-                            cs,
-                            cb + 4L * ((long) k * dim + c),
-                            readFloat(cs, cb + 4L * ((long) (k + 1) * dim + c)));
-                if (hist > 0) writeFloat(cs, cb + 4L * ((long) (hist - 1) * dim + c), bx);
-            }
-        }
     }
 
     // --- attention (GQA) ---
@@ -457,9 +412,6 @@ public final class Lfm2
         MatMul.gemm(
                 moe.router(), state.normed, dim, state.moeRouterB, nExperts, nExperts, seqLen, dim);
 
-        Raw routerB = Views.rawF32(state.moeRouterB, "moeRouterB");
-        int[] counts = state.moeExpertCounts;
-        Arrays.fill(counts, 0);
         for (int s = 0; s < seqLen; s++) {
             long ro = (long) s * nExperts;
             if (moe.expProbsBias() != null)
@@ -468,24 +420,16 @@ public final class Lfm2
                 Ops.mapInPlace(
                         state.moeRouterB, ro, nExperts, v -> (float) (1.0 / (1.0 + Math.exp(-v))));
             else Ops.softmaxInPlace(state.moeRouterB, ro, nExperts);
-            for (int ki = 0; ki < topK; ki++) {
-                int best = 0;
-                float bestVal = Float.NEGATIVE_INFINITY;
-                for (int ei = 0; ei < nExperts; ei++) {
-                    float v = readFloat(routerB.vseg(), routerB.vbase() + (ro + ei) * Float.BYTES);
-                    if (v > bestVal) {
-                        bestVal = v;
-                        best = ei;
-                    }
-                }
-                state.moeRowTopE[s * topK + ki] = best;
-                state.moeRowTopP[s * topK + ki] = bestVal;
-                writeFloat(
-                        routerB.vseg(),
-                        routerB.vbase() + (ro + best) * Float.BYTES,
-                        Float.NEGATIVE_INFINITY);
-                counts[best]++;
-            }
+        }
+        Moe.selectTopK(
+                state.moeRouterB,
+                seqLen,
+                nExperts,
+                topK,
+                state.moeRowTopE,
+                state.moeRowTopP,
+                state.moeExpertCounts);
+        for (int s = 0; s < seqLen; s++) {
             float sum = 0f; // normalize the k routed weights
             for (int ki = 0; ki < topK; ki++) sum += state.moeRowTopP[s * topK + ki];
             for (int ki = 0; ki < topK; ki++) state.moeRowTopP[s * topK + ki] /= sum;
@@ -634,56 +578,16 @@ public final class Lfm2
                 seqLen,
                 dim);
 
-        int dConv = configuration.shortConvLCache, pad = (dConv - 1) / 2;
-        Raw kernel = Views.rawF32(sc.kernel(), "kernel"); // per channel: dConv taps at c*dConv + k
-        Raw tmp = Views.rawF32(state.shortConvTmp, "shortConvTmp");
-        Raw out = Views.rawF32(state.branchOut, "branchOut");
-        // materialize bx = B*x in place over the B block first: the centered window reads
-        // NEIGHBOUR rows, so every bx must exist before any output row is computed
-        for (int s = 0; s < seqLen; s++) {
-            int tmpOff = s * SHORTCONV_PARTS * dim;
-            for (int c = 0; c < dim; c++) {
-                writeFloat(
-                        tmp.vseg(),
-                        tmp.vbase() + (long) (tmpOff + c) * Float.BYTES,
-                        readFloat(tmp.vseg(), tmp.vbase() + (long) (tmpOff + c) * Float.BYTES)
-                                * readFloat(
-                                        tmp.vseg(),
-                                        tmp.vbase() + (long) (tmpOff + 2 * dim + c) * Float.BYTES));
-            }
-        }
-        for (int g = 0; g < segLen.length; g++) {
-            int r0 = segRow0[g], rEnd = r0 + segLen[g];
-            for (int s = r0; s < rEnd; s++) {
-                int tmpOff = s * SHORTCONV_PARTS * dim, outOff = s * dim;
-                for (int c = 0; c < dim; c++) {
-                    float cg =
-                            readFloat(
-                                    tmp.vseg(),
-                                    tmp.vbase() + (long) (tmpOff + dim + c) * Float.BYTES);
-                    int kBase = c * dConv;
-                    float sum = 0f;
-                    for (int k = 0; k < dConv; k++) {
-                        int row = s - pad + k; // zero beyond this sequence's own edges
-                        if (row >= r0 && row < rEnd) {
-                            sum +=
-                                    readFloat(
-                                                    tmp.vseg(),
-                                                    tmp.vbase()
-                                                            + ((long) row * SHORTCONV_PARTS * dim
-                                                                            + c)
-                                                                    * Float.BYTES)
-                                            * readFloat(
-                                                    kernel.vseg(),
-                                                    kernel.vbase()
-                                                            + (long) (kBase + k) * Float.BYTES);
-                        }
-                    }
-                    writeFloat(
-                            out.vseg(), out.vbase() + (long) (outOff + c) * Float.BYTES, cg * sum);
-                }
-            }
-        }
+        Convolutions.segmentedShortConv(
+                sc.kernel(),
+                state.shortConvTmp,
+                state.branchOut,
+                segRow0,
+                segLen,
+                seqLen,
+                configuration.embeddingLength,
+                configuration.shortConvLCache,
+                SHORTCONV_PARTS);
         MatMul.gemm(sc.outProj(), state.branchOut, dim, state.shortConvOut, dim, dim, seqLen, dim);
         Ops.addInPlace(state.residual, 0, state.shortConvOut, 0, seqLen * dim);
     }

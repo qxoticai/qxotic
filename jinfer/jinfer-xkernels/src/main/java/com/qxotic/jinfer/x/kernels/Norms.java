@@ -6,8 +6,6 @@ import static com.qxotic.jinfer.x.Segments.readFloat;
 import static com.qxotic.jinfer.x.Segments.writeFloat;
 
 import com.qxotic.jinfer.x.Parallel;
-import com.qxotic.jinfer.x.Views;
-import com.qxotic.jinfer.x.Views.Raw;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteOrder;
@@ -16,9 +14,9 @@ import jdk.incubator.vector.VectorOperators;
 
 /**
  * Normalization kernels over views — ported byte-for-byte from jinfer-core {@code Norms}. All
- * operands are dense FP32 (checked at entry via {@link Views#rawF32}); the old non-F32 scalar
- * fallbacks are gone by contract, the {@code USE_VECTOR_API=false} scalar path remains (now raw
- * FP32 reads, same math).
+ * operands are dense FP32 (checked at entry via {@link Raw#f32}); the old non-F32 scalar fallbacks
+ * are gone by contract, the {@code USE_VECTOR_API=false} scalar path remains (now raw FP32 reads,
+ * same math).
  */
 public final class Norms {
     private Norms() {}
@@ -35,9 +33,9 @@ public final class Norms {
             MemoryView<MemorySegment> weight,
             int size,
             float rmsNormEps) {
-        Raw o = Views.rawF32(out, "out");
-        Raw xv = Views.rawF32(x, "x");
-        Raw w = Views.rawF32(weight, "weight");
+        Raw o = Raw.f32(out, "out");
+        Raw xv = Raw.f32(x, "x");
+        Raw w = Raw.f32(weight, "weight");
         if (USE_VECTOR_API) {
             var species = F_SPECIES;
             int upperBound = species.loopBound(size);
@@ -139,7 +137,7 @@ public final class Norms {
      * derivation).
      */
     public static float sumOfSquares(MemoryView<MemorySegment> x, long xOffset, int size) {
-        Raw xv = Views.rawF32(x, "x");
+        Raw xv = Raw.f32(x, "x");
         if (USE_VECTOR_API) {
             var species = F_SPECIES;
             int upperBound = species.loopBound(size);
@@ -181,9 +179,9 @@ public final class Norms {
             MemoryView<MemorySegment> weight,
             int size,
             float scale) {
-        Raw o = Views.rawF32(out, "out");
-        Raw xv = Views.rawF32(x, "x");
-        Raw w = Views.rawF32(weight, "weight");
+        Raw o = Raw.f32(out, "out");
+        Raw xv = Raw.f32(x, "x");
+        Raw w = Raw.f32(weight, "weight");
         if (USE_VECTOR_API) {
             var species = F_SPECIES;
             int upperBound = species.loopBound(size);
@@ -245,8 +243,8 @@ public final class Norms {
             Ops.divideInPlace(x, xOffset, size, rms);
             return;
         }
-        Raw o = Views.rawF32(out, "out");
-        Raw xv = Views.rawF32(x, "x");
+        Raw o = Raw.f32(out, "out");
+        Raw xv = Raw.f32(x, "x");
         for (int i = 0; i < size; i++) {
             writeFloat(
                     o.vseg(),
@@ -268,10 +266,10 @@ public final class Norms {
             int C,
             int T,
             float eps) {
-        Raw o = Views.rawF32(out, "out");
-        Raw xv = Views.rawF32(x, "x");
-        Raw g = Views.rawF32(gamma, "gamma");
-        Raw b = Views.rawF32(beta, "beta");
+        Raw o = Raw.f32(out, "out");
+        Raw xv = Raw.f32(x, "x");
+        Raw g = Raw.f32(gamma, "gamma");
+        Raw b = Raw.f32(beta, "beta");
         var sp = F_SPECIES;
         int bound = USE_VECTOR_API ? sp.loopBound(C) : 0;
         for (int t = 0; t < T; t++) {
@@ -324,5 +322,50 @@ public final class Norms {
                                 + readFloat(b.vseg(), b.vbase() + (long) c * Float.BYTES));
             }
         }
+    }
+
+    /**
+     * In-place LayerNorm and ReLU across channels of channel-major {@code [channel][position]}
+     * data. There is a learned weight and no bias.
+     */
+    public static void layerNormChannelsReluInPlace(
+            MemoryView<MemorySegment> x,
+            MemoryView<MemorySegment> weight,
+            int channels,
+            int positions,
+            float eps) {
+        Raw xv = Raw.f32(x, "x");
+        Raw w = Raw.f32(weight, "weight");
+        Parallel.parallelFor(
+                0,
+                positions,
+                p -> {
+                    double mean = 0;
+                    for (int c = 0; c < channels; c++) {
+                        mean +=
+                                readFloat(
+                                        xv.vseg(),
+                                        xv.vbase() + ((long) c * positions + p) * Float.BYTES);
+                    }
+                    mean /= channels;
+                    double variance = 0;
+                    for (int c = 0; c < channels; c++) {
+                        double d =
+                                readFloat(
+                                                xv.vseg(),
+                                                xv.vbase()
+                                                        + ((long) c * positions + p) * Float.BYTES)
+                                        - mean;
+                        variance += d * d;
+                    }
+                    float inv = (float) (1.0 / Math.sqrt(variance / channels + eps));
+                    for (int c = 0; c < channels; c++) {
+                        long at = xv.vbase() + ((long) c * positions + p) * Float.BYTES;
+                        float normalized =
+                                (float) ((readFloat(xv.vseg(), at) - mean) * inv)
+                                        * readFloat(w.vseg(), w.vbase() + (long) c * Float.BYTES);
+                        writeFloat(xv.vseg(), at, Math.max(0f, normalized));
+                    }
+                });
     }
 }

@@ -7,11 +7,13 @@
 // per expert (never per element), so the vector kernels inside stay monomorphic.
 package com.qxotic.jinfer.x.kernels;
 
+import static com.qxotic.jinfer.x.Segments.readFloat;
+import static com.qxotic.jinfer.x.Segments.writeFloat;
+
 import com.qxotic.jinfer.x.Parallel;
-import com.qxotic.jinfer.x.Views;
-import com.qxotic.jinfer.x.Views.Raw;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.MemorySegment;
+import java.util.Arrays;
 
 public final class Moe {
     private Moe() {}
@@ -63,6 +65,44 @@ public final class Moe {
     }
 
     /**
+     * The shared top-k selection over gated logits (every architecture's loop is identical: k times
+     * argmax, mask the winner to -Infinity, count the route). Gating (bias/softmax/sigmoid) runs
+     * BEFORE this and normalization AFTER, both per-architecture. Fills {@code rowTopE}/{@code
+     * rowTopP} ({@code s*topK+k}) and re-zeros then fills {@code counts}; {@code logits} is
+     * [rows][experts] and is consumed (masked) in place.
+     */
+    public static void selectTopK(
+            MemoryView<MemorySegment> logits,
+            int rows,
+            int experts,
+            int topK,
+            int[] rowTopE,
+            float[] rowTopP,
+            int[] counts) {
+        Raw r = Raw.f32(logits, "logits");
+        Arrays.fill(counts, 0);
+        for (int s = 0; s < rows; s++) {
+            long ro = (long) s * experts;
+            for (int ki = 0; ki < topK; ki++) {
+                int best = 0;
+                float bestVal = Float.NEGATIVE_INFINITY;
+                for (int ei = 0; ei < experts; ei++) {
+                    float v = readFloat(r.vseg(), r.vbase() + (ro + ei) * Float.BYTES);
+                    if (v > bestVal) {
+                        bestVal = v;
+                        best = ei;
+                    }
+                }
+                rowTopE[s * topK + ki] = best;
+                rowTopP[s * topK + ki] = bestVal;
+                writeFloat(
+                        r.vseg(), r.vbase() + (ro + best) * Float.BYTES, Float.NEGATIVE_INFINITY);
+                counts[best]++;
+            }
+        }
+    }
+
+    /**
      * Expert {@code e}'s FFN over {@code n} gathered rows ({@code gather}, stride dim) → {@code n}
      * rows in {@code out} (stride dim). Gated/ungated, activation, biases and weight layout live
      * here.
@@ -78,8 +118,8 @@ public final class Moe {
             MemoryView<MemorySegment> dst,
             long dstElemOff,
             long elems) {
-        Raw s = Views.rawF32(src, "src");
-        Raw d = Views.rawF32(dst, "dst");
+        Raw s = Raw.f32(src, "src");
+        Raw d = Raw.f32(dst, "dst");
         MemorySegment.copy(
                 s.vseg(),
                 s.vbase() + srcElemOff * Float.BYTES,
@@ -105,7 +145,7 @@ public final class Moe {
             MemoryView<MemorySegment> out,
             MemoryView<MemorySegment> expertScale,
             ExpertKernel kernel) {
-        Raw scaleRaw = expertScale != null ? Views.rawF32(expertScale, "expertScale") : null;
+        Raw scaleRaw = expertScale != null ? Raw.f32(expertScale, "expertScale") : null;
         int[] off = r.offsets;
         off[0] = 0;
         for (int e = 0; e < r.numExperts; e++) off[e + 1] = off[e] + r.counts[e];

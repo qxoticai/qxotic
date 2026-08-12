@@ -1,14 +1,18 @@
-package com.qxotic.jinfer.x;
+package com.qxotic.jinfer.x.kernels;
 
 import static com.qxotic.jinfer.x.Segments.F16_BYTES;
+import static com.qxotic.jinfer.x.Segments.I_SPECIES;
+import static com.qxotic.jinfer.x.Segments.S_SPECIES_HALF;
 import static com.qxotic.jinfer.x.Segments.readByte;
 import static com.qxotic.jinfer.x.Segments.readFloat;
 import static com.qxotic.jinfer.x.Segments.readFloat16;
+import static com.qxotic.jinfer.x.Segments.readShort;
 import static com.qxotic.jinfer.x.Segments.writeFloat;
 import static com.qxotic.jinfer.x.Segments.writeShort;
 
 import com.oracle.svm.shared.AlwaysInline;
-import com.qxotic.jinfer.x.Views.Raw;
+import com.qxotic.jinfer.x.Segments;
+import com.qxotic.jota.BFloat16;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.MemorySegment;
@@ -58,8 +62,8 @@ public final class Convert {
             MemoryView<MemorySegment> dst,
             long dstElemOff,
             long count) {
-        Raw s = Views.rawF32(src, "src");
-        Raw d = Views.rawF32(dst, "dst");
+        Raw s = Raw.f32(src, "src");
+        Raw d = Raw.f32(dst, "dst");
         MemorySegment.copy(
                 s.vseg(),
                 s.vbase() + srcElemOff * Float.BYTES,
@@ -79,8 +83,8 @@ public final class Convert {
             MemoryView<MemorySegment> dst,
             long dstElemOff,
             int count) {
-        Raw s = Views.raw(src, DataType.FP16, "src");
-        Raw d = Views.rawF32(dst, "dst");
+        Raw s = Raw.of(src, DataType.FP16, "src");
+        Raw d = Raw.f32(dst, "dst");
         int i = 0;
         if (Segments.USE_VECTOR_API) {
             var sp = Segments.S_SPECIES_HALF;
@@ -101,6 +105,43 @@ public final class Convert {
         }
     }
 
+    /** BF16 -> F32 over an element span. */
+    public static void bf16ToF32(
+            MemoryView<MemorySegment> src,
+            long srcElemOff,
+            MemoryView<MemorySegment> dst,
+            long dstElemOff,
+            int count) {
+        Raw s = Raw.of(src, DataType.BF16, "src");
+        Raw d = Raw.f32(dst, "dst");
+        int i = 0;
+        if (Segments.USE_VECTOR_API) {
+            int bound = S_SPECIES_HALF.loopBound(count);
+            for (; i < bound; i += S_SPECIES_HALF.length()) {
+                ShortVector bits =
+                        ShortVector.fromMemorySegment(
+                                S_SPECIES_HALF,
+                                s.vseg(),
+                                s.vbase() + (srcElemOff + i) * F16_BYTES,
+                                ByteOrder.LITTLE_ENDIAN);
+                bits.castShape(I_SPECIES, 0)
+                        .lanewise(VectorOperators.LSHL, 16)
+                        .reinterpretAsFloats()
+                        .intoMemorySegment(
+                                d.vseg(),
+                                d.vbase() + (dstElemOff + i) * Float.BYTES,
+                                ByteOrder.LITTLE_ENDIAN);
+            }
+        }
+        for (; i < count; i++) {
+            writeFloat(
+                    d.vseg(),
+                    d.vbase() + (dstElemOff + i) * Float.BYTES,
+                    BFloat16.toFloat(
+                            readShort(s.vseg(), s.vbase() + (srcElemOff + i) * F16_BYTES)));
+        }
+    }
+
     /**
      * F32 → F16 over an element span (the KV-cache write path, old F32→F16 {@code copyTo}):
      * per-element {@code Float.floatToFloat16}, faithful to the old {@code setFloat} loop.
@@ -111,8 +152,8 @@ public final class Convert {
             MemoryView<MemorySegment> dst,
             long dstElemOff,
             int count) {
-        Raw s = Views.rawF32(src, "src");
-        Raw d = Views.raw(dst, DataType.FP16, "dst");
+        Raw s = Raw.f32(src, "src");
+        Raw d = Raw.of(dst, DataType.FP16, "dst");
         for (int i = 0; i < count; i++) {
             writeShort(
                     d.vseg(),
@@ -133,8 +174,8 @@ public final class Convert {
             MemoryView<MemorySegment> dst,
             long dstElemOff,
             int count) {
-        Raw s = Views.raw(src, DataType.Q8_0, "src");
-        Raw d = Views.rawF32(dst, "dst");
+        Raw s = Raw.of(src, DataType.Q8_0, "src");
+        Raw d = Raw.f32(dst, "dst");
         final int B = 32, BS = 34;
         int di = 0, rem = count;
         long idx = srcElemOff;
@@ -156,6 +197,59 @@ public final class Convert {
         }
     }
 
+    /** MXFP4 -> F32 over an element span. */
+    public static void dequantMxfp4(
+            MemoryView<MemorySegment> src,
+            long srcElemOff,
+            MemoryView<MemorySegment> dst,
+            long dstElemOff,
+            int count) {
+        Raw s = Raw.of(src, DataType.MXFP4, "src");
+        Raw d = Raw.f32(dst, "dst");
+        int written = 0;
+        long index = srcElemOff;
+        while (written < count) {
+            long blockOffset = index / 32 * 17;
+            int inBlock = (int) (index % 32);
+            int chunk = Math.min(32 - inBlock, count - written);
+            float scale =
+                    mxfp4Scale(Byte.toUnsignedInt(readByte(s.vseg(), s.vbase() + blockOffset)));
+            for (int i = 0; i < chunk; i++) {
+                int lane = inBlock + i;
+                int packed =
+                        Byte.toUnsignedInt(
+                                readByte(s.vseg(), s.vbase() + blockOffset + 1 + (lane & 15)));
+                int code = lane < 16 ? packed & 15 : packed >>> 4;
+                writeFloat(
+                        d.vseg(),
+                        d.vbase() + (dstElemOff + written + i) * Float.BYTES,
+                        mxfp4Value(code) * scale);
+            }
+            index += chunk;
+            written += chunk;
+        }
+    }
+
+    private static int mxfp4Value(int code) {
+        int magnitude =
+                switch (code & 7) {
+                    case 0 -> 0;
+                    case 1 -> 1;
+                    case 2 -> 2;
+                    case 3 -> 3;
+                    case 4 -> 4;
+                    case 5 -> 6;
+                    case 6 -> 8;
+                    default -> 12;
+                };
+        return (code & 8) == 0 ? magnitude : -magnitude;
+    }
+
+    private static float mxfp4Scale(int value) {
+        int bits = value < 2 ? 0x00200000 << value : (value - 1) << 23;
+        return Float.intBitsToFloat(bits);
+    }
+
     /**
      * The static heir of the old virtual {@code copyTo} for the ->F32 direction: one dtype switch
      * per span, routed to the arms above (Q8_0 dequant / F16 vector / F32 raw copy). The dispatch
@@ -171,12 +265,17 @@ public final class Convert {
         DataType dt = src.dataType();
         if (dt == DataType.Q8_0) {
             dequantQ8_0(src, srcElemOff, dst, dstElemOff, count);
+        } else if (dt == DataType.MXFP4) {
+            dequantMxfp4(src, srcElemOff, dst, dstElemOff, count);
         } else if (dt == DataType.FP16) {
             f16ToF32(src, srcElemOff, dst, dstElemOff, count);
+        } else if (dt == DataType.BF16) {
+            bf16ToF32(src, srcElemOff, dst, dstElemOff, count);
         } else if (dt == DataType.FP32) {
             copyF32(src, srcElemOff, dst, dstElemOff, count);
         } else {
-            throw new UnsupportedOperationException("no ->F32 copy arm for " + dt);
+            ModelLoader.floatTensor(src, "src")
+                    .copyTo(srcElemOff, ModelLoader.floatTensor(dst, "dst"), dstElemOff, count);
         }
     }
 }

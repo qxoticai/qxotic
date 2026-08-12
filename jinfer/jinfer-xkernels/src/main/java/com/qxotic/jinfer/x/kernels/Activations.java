@@ -5,8 +5,6 @@ import static com.qxotic.jinfer.x.Segments.USE_VECTOR_API;
 import static com.qxotic.jinfer.x.Segments.readFloat;
 import static com.qxotic.jinfer.x.Segments.writeFloat;
 
-import com.qxotic.jinfer.x.Views;
-import com.qxotic.jinfer.x.Views.Raw;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteOrder;
@@ -72,8 +70,8 @@ public final class Activations {
             MemoryView<MemorySegment> up,
             int upOff,
             int n) {
-        Raw g = Views.rawF32(gate, "gate");
-        Raw u = Views.rawF32(up, "up");
+        Raw g = Raw.f32(gate, "gate");
+        Raw u = Raw.f32(up, "up");
         if (USE_VECTOR_API) {
             VectorSpecies<Float> sp = F_SPECIES;
             int bound = sp.loopBound(n);
@@ -109,6 +107,49 @@ public final class Activations {
     }
 
     /**
+     * Exact quick-GELU gate {@code gate = gate / (1 + exp(-1.702 * gate)) * up}; mutates {@code
+     * gate}. This intentionally stays scalar because the vision projector requires {@link Math#exp}
+     * rather than the tanh approximation used by other fused gates.
+     */
+    public static void quickGeluMultiply(
+            MemoryView<MemorySegment> gate,
+            long gateOff,
+            MemoryView<MemorySegment> up,
+            long upOff,
+            int n) {
+        Raw g = Raw.f32(gate, "gate");
+        Raw u = Raw.f32(up, "up");
+        for (int i = 0; i < n; i++) {
+            long gb = g.vbase() + (gateOff + i) * Float.BYTES;
+            float gv = readFloat(g.vseg(), gb);
+            float activated = gv / (1f + (float) Math.exp(-1.702f * gv));
+            writeFloat(
+                    g.vseg(),
+                    gb,
+                    activated * readFloat(u.vseg(), u.vbase() + (upOff + i) * Float.BYTES));
+        }
+    }
+
+    /** {@code out[i] = packed[i] * sigmoid(packed[n + i])} over two contiguous halves. */
+    public static void glu(
+            MemoryView<MemorySegment> out,
+            long outOff,
+            MemoryView<MemorySegment> packed,
+            long packedOff,
+            int n) {
+        Raw o = Raw.f32(out, "out");
+        Raw x = Raw.f32(packed, "packed");
+        for (int i = 0; i < n; i++) {
+            float first = readFloat(x.vseg(), x.vbase() + (packedOff + i) * Float.BYTES);
+            float second = readFloat(x.vseg(), x.vbase() + (packedOff + n + i) * Float.BYTES);
+            writeFloat(
+                    o.vseg(),
+                    o.vbase() + (outOff + i) * Float.BYTES,
+                    first * FastMath.sigmoid(second));
+        }
+    }
+
+    /**
      * Exact gpt-oss clamped-SwiGLU scalar: {@code quickgelu(min(gate,7)) * (clamp(up,±7) + 1)},
      * where {@code quickgelu(x) = x*sigmoid(1.702x)}. The full-scalar oracle for {@link
      * #clampedSwigluMultiply}.
@@ -137,8 +178,8 @@ public final class Activations {
             MemoryView<MemorySegment> up,
             int upOff,
             int n) {
-        Raw g = Views.rawF32(gate, "gate");
-        Raw u = Views.rawF32(up, "up");
+        Raw g = Raw.f32(gate, "gate");
+        Raw u = Raw.f32(up, "up");
         if (USE_VECTOR_API) {
             VectorSpecies<Float> sp = F_SPECIES;
             int bound = sp.loopBound(n);
@@ -213,9 +254,9 @@ public final class Activations {
             MemoryView<MemorySegment> gate,
             long gateOff,
             int n) {
-        Raw o = Views.rawF32(out, "out");
-        Raw f = Views.rawF32(filter, "filter");
-        Raw g = Views.rawF32(gate, "gate");
+        Raw o = Raw.f32(out, "out");
+        Raw f = Raw.f32(filter, "filter");
+        Raw g = Raw.f32(gate, "gate");
         if (USE_VECTOR_API) {
             VectorSpecies<Float> sp = F_SPECIES;
             int bound = sp.loopBound(n);
@@ -259,7 +300,7 @@ public final class Activations {
     /** In-place logit soft-cap {@code x = cap * tanh(x / cap)} (no-op when {@code cap <= 0}). */
     public static void softcap(MemoryView<MemorySegment> t, int off, int n, float cap) {
         if (cap <= 0f) return;
-        Raw r = Views.rawF32(t, "t");
+        Raw r = Raw.f32(t, "t");
         if (USE_VECTOR_API) {
             VectorSpecies<Float> sp = F_SPECIES;
             int bound = sp.loopBound(n);

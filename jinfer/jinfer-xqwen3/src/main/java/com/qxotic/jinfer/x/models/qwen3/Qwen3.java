@@ -16,9 +16,7 @@
 package com.qxotic.jinfer.x.models.qwen3;
 
 import com.qxotic.format.gguf.GGUF;
-import com.qxotic.jinfer.x.Convert;
 import com.qxotic.jinfer.x.Parallel;
-import com.qxotic.jinfer.x.Segments;
 import com.qxotic.jinfer.x.Views;
 import com.qxotic.jinfer.x.boundary.BaseState;
 import com.qxotic.jinfer.x.boundary.Batch;
@@ -26,6 +24,7 @@ import com.qxotic.jinfer.x.boundary.Config;
 import com.qxotic.jinfer.x.boundary.EmbeddingModel;
 import com.qxotic.jinfer.x.boundary.LanguageModel;
 import com.qxotic.jinfer.x.kernels.Activations;
+import com.qxotic.jinfer.x.kernels.Convert;
 import com.qxotic.jinfer.x.kernels.FlashAttention;
 import com.qxotic.jinfer.x.kernels.MatMul;
 import com.qxotic.jinfer.x.kernels.ModelLoader;
@@ -114,6 +113,9 @@ public final class Qwen3
                 ids = seq.tokens().ids();
                 nPieces = cutPieces(seq.seqLen(), from, n, s);
             }
+            case Batch.Input.Embeddings ignored ->
+                    throw new UnsupportedOperationException(
+                            "x Qwen3 does not support embedding inputs");
         }
         if (n == 1)
             Parallel.onDecodePool(
@@ -488,8 +490,7 @@ public final class Qwen3
                 1,
                 1,
                 dim);
-        Views.Raw r = Views.rawF32(s.logits, "logits");
-        return Segments.readFloat(r.vseg(), r.vbase());
+        return Views.getFloat(s.logits, 0, "logits");
     }
 
     /**

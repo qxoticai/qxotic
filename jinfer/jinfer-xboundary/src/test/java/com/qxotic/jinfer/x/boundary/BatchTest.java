@@ -5,6 +5,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import com.qxotic.jinfer.x.PanamaMemoryArena;
+import com.qxotic.jinfer.x.Views;
+import com.qxotic.jota.Shape;
+import java.lang.foreign.Arena;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -64,6 +68,21 @@ class BatchTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> Batch.prepare(List.of(Batch.prefill(ids(1))), 0));
+    }
+
+    @Test
+    void embeddingBlocksAreAtomic() {
+        try (Arena arena = Arena.ofConfined()) {
+            var rows = Views.allocateF32(new PanamaMemoryArena(arena), 24).view(Shape.flat(6, 4));
+            Batch bidirectional = Batch.embeddings(rows, 6);
+            assertSame(bidirectional, Batch.prepare(List.of(bidirectional), 6).get(0));
+            assertThrows(
+                    IllegalArgumentException.class, () -> Batch.prepare(List.of(bidirectional), 5));
+
+            Batch causal = Batch.embeddings(rows, 6, false);
+            assertSame(causal, Batch.prepare(List.of(causal), 5).get(0));
+            assertEquals(6, causal.count());
+        }
     }
 
     @Test
@@ -153,6 +172,8 @@ class BatchTest {
                             ((Batch.Input.Sequences) a.input()).seqLen(),
                             what + ": seqLen at " + i);
                 }
+                case Batch.Input.Embeddings ignored ->
+                        throw new AssertionError("reference inputs never contain embeddings");
             }
         }
     }

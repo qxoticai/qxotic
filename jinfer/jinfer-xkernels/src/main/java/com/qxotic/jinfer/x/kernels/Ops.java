@@ -6,8 +6,7 @@ import static com.qxotic.jinfer.x.Segments.readFloat;
 import static com.qxotic.jinfer.x.Segments.writeFloat;
 
 import com.oracle.svm.shared.AlwaysInline;
-import com.qxotic.jinfer.x.Views;
-import com.qxotic.jinfer.x.Views.Raw;
+import com.qxotic.jinfer.x.Parallel;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteOrder;
@@ -18,8 +17,8 @@ import jdk.incubator.vector.VectorOperators;
 /**
  * Elementwise FP32 kernels over views — the migration of {@code F32FloatTensor}'s {@code *InPlace}
  * virtuals into dtype-checked statics. Bodies are byte-for-byte the old vectorized overrides
- * (scalar fallbacks now read raw FP32, sound because {@link Views#rawF32} verified the dtype at
- * entry). All operands must be dense FP32 views.
+ * (scalar fallbacks now read raw FP32, sound because {@link Raw#f32} verified the dtype at entry).
+ * All operands must be dense FP32 views.
  */
 public final class Ops {
 
@@ -33,7 +32,7 @@ public final class Ops {
 
     public static void fillInPlace(
             MemoryView<MemorySegment> view, long thisOffset, int size, float value) {
-        Raw r = Views.rawF32(view, "view");
+        Raw r = Raw.f32(view, "view");
         if (USE_VECTOR_API) {
             FloatVector fill = FloatVector.broadcast(F_SPECIES, value);
             int upperBound = F_SPECIES.loopBound(size);
@@ -54,9 +53,37 @@ public final class Ops {
         }
     }
 
+    /** Clamp {@code view[thisOffset..thisOffset+size)} to {@code [lo, hi]} in place. */
+    public static void clampInPlace(
+            MemoryView<MemorySegment> view, long thisOffset, int size, float lo, float hi) {
+        Raw r = Raw.f32(view, "view");
+        if (USE_VECTOR_API) {
+            int upperBound = F_SPECIES.loopBound(size);
+            int i = 0;
+            for (; i < upperBound; i += F_SPECIES.length()) {
+                long byteOff = r.vbase() + (thisOffset + i) * Float.BYTES;
+                FloatVector.fromMemorySegment(F_SPECIES, r.vseg(), byteOff, ByteOrder.LITTLE_ENDIAN)
+                        .max(lo)
+                        .min(hi)
+                        .intoMemorySegment(r.vseg(), byteOff, ByteOrder.LITTLE_ENDIAN);
+            }
+            for (; i < size; i++) {
+                long byteOff = r.vbase() + (thisOffset + i) * Float.BYTES;
+                float value = readFloat(r.vseg(), byteOff);
+                writeFloat(r.vseg(), byteOff, value < lo ? lo : value > hi ? hi : value);
+            }
+            return;
+        }
+        for (int i = 0; i < size; i++) {
+            long byteOff = r.vbase() + (thisOffset + i) * Float.BYTES;
+            float value = readFloat(r.vseg(), byteOff);
+            writeFloat(r.vseg(), byteOff, value < lo ? lo : value > hi ? hi : value);
+        }
+    }
+
     public static void divideInPlace(
             MemoryView<MemorySegment> view, long thisOffset, int size, float value) {
-        Raw r = Views.rawF32(view, "view");
+        Raw r = Raw.f32(view, "view");
         if (USE_VECTOR_API) {
             int upperBound = F_SPECIES.loopBound(size);
             int i = 0;
@@ -78,14 +105,144 @@ public final class Ops {
         }
     }
 
+    /** Multiply {@code view[thisOffset..thisOffset+size)} by a scalar, in place. */
+    public static void multiplyInPlace(
+            MemoryView<MemorySegment> view, long thisOffset, int size, float value) {
+        Raw r = Raw.f32(view, "view");
+        if (USE_VECTOR_API) {
+            int upperBound = F_SPECIES.loopBound(size);
+            int i = 0;
+            for (; i < upperBound; i += F_SPECIES.length()) {
+                long byteOff = r.vbase() + (thisOffset + i) * Float.BYTES;
+                FloatVector.fromMemorySegment(F_SPECIES, r.vseg(), byteOff, ByteOrder.LITTLE_ENDIAN)
+                        .mul(value)
+                        .intoMemorySegment(r.vseg(), byteOff, ByteOrder.LITTLE_ENDIAN);
+            }
+            for (; i < size; i++) {
+                long byteOff = r.vbase() + (thisOffset + i) * Float.BYTES;
+                writeFloat(r.vseg(), byteOff, readFloat(r.vseg(), byteOff) * value);
+            }
+            return;
+        }
+        for (int i = 0; i < size; i++) {
+            long byteOff = r.vbase() + (thisOffset + i) * Float.BYTES;
+            writeFloat(r.vseg(), byteOff, readFloat(r.vseg(), byteOff) * value);
+        }
+    }
+
+    /**
+     * Channel-major → channel-last flatten: {@code dst[t][f*channels + c] = src[c][t][f]}, the
+     * conv2d output flatten (a [channels][rows][width] plane stack becomes [rows] rows of
+     * width*channels vectors).
+     */
+    public static void channelLastCopy(
+            MemoryView<MemorySegment> src,
+            int channels,
+            int rows,
+            int width,
+            MemoryView<MemorySegment> dst) {
+        Raw s = Raw.f32(src, "src");
+        Raw d = Raw.f32(dst, "dst");
+        Parallel.forRows(
+                rows,
+                t -> {
+                    for (int f = 0; f < width; f++) {
+                        for (int c = 0; c < channels; c++) {
+                            writeFloat(
+                                    d.vseg(),
+                                    d.vbase()
+                                            + ((long) t * width * channels + f * channels + c)
+                                                    * Float.BYTES,
+                                    readFloat(
+                                            s.vseg(),
+                                            s.vbase()
+                                                    + ((long) c * rows * width
+                                                                    + (long) t * width
+                                                                    + f)
+                                                            * Float.BYTES));
+                        }
+                    }
+                });
+    }
+
+    /**
+     * Spatial merge-window mean pool over [patchesY][patchesX][dim] rows: each output row averages
+     * the valid (in-bounds) window of {@code merge x merge} input rows. Output rows are {@code
+     * max(1, patchesX/merge) * max(1, patchesY/merge)}.
+     */
+    public static void windowedMeanPool(
+            MemoryView<MemorySegment> src,
+            int patchesX,
+            int patchesY,
+            int merge,
+            int dim,
+            MemoryView<MemorySegment> dst) {
+        Raw s = Raw.f32(src, "src");
+        Raw d = Raw.f32(dst, "dst");
+        int outputX = Math.max(1, patchesX / merge), outputY = Math.max(1, patchesY / merge);
+        Parallel.forRows(
+                Math.multiplyExact(outputX, outputY),
+                row -> {
+                    int outputYIndex = row / outputX, outputXIndex = row % outputX, samples = 0;
+                    long destinationBase = (long) row * dim;
+                    for (int my = 0; my < merge; my++) {
+                        int y = outputYIndex * merge + my;
+                        if (y >= patchesY) continue;
+                        for (int mx = 0; mx < merge; mx++) {
+                            int x = outputXIndex * merge + mx;
+                            if (x >= patchesX) continue;
+                            long sourceBase = ((long) y * patchesX + x) * dim;
+                            for (int i = 0; i < dim; i++) {
+                                long destinationOffset =
+                                        d.vbase() + (destinationBase + i) * Float.BYTES;
+                                writeFloat(
+                                        d.vseg(),
+                                        destinationOffset,
+                                        readFloat(d.vseg(), destinationOffset)
+                                                + readFloat(
+                                                        s.vseg(),
+                                                        s.vbase()
+                                                                + (sourceBase + i) * Float.BYTES));
+                            }
+                            samples++;
+                        }
+                    }
+                    divideInPlace(dst, destinationBase, dim, samples);
+                });
+    }
+
+    /**
+     * Add separable 2D grid positions to every token row: {@code values[patch] += positions[x] +
+     * positions[positionSize + y]} with {@code x = patch % patchesX, y = patch / patchesX}. The
+     * position table holds the X rows first, then {@code positionSize} padding rows, then Y rows.
+     */
+    public static void addGridPositions(
+            MemoryView<MemorySegment> values,
+            MemoryView<MemorySegment> positions,
+            int count,
+            int patchesX,
+            int dim,
+            int positionSize) {
+        Raw.f32(values, "values");
+        Raw.f32(positions, "positions");
+        Parallel.forRows(
+                count,
+                patch -> {
+                    int x = patch % patchesX, y = patch / patchesX;
+                    long tokenBase = (long) patch * dim;
+                    addInPlace(values, tokenBase, positions, (long) x * dim, dim);
+                    addInPlace(values, tokenBase, positions, (long) (positionSize + y) * dim, dim);
+                });
+    }
+
     public static void addInPlace(
             MemoryView<MemorySegment> view,
             long thisOffset,
             MemoryView<MemorySegment> that,
             long thatOffset,
             int size) {
-        Raw a = Views.rawF32(view, "view");
-        Raw b = Views.rawF32(that, "that");
+        Raw a = Raw.f32(view, "view");
+        Raw b = Raw.f32(that, "that");
         if (USE_VECTOR_API) {
             int upperBound = F_SPECIES.loopBound(size);
             int i = 0;
@@ -126,12 +283,51 @@ public final class Ops {
         }
     }
 
+    /** Add one {@code cols}-element bias row to each of {@code rows} dense rows in place. */
+    public static void addRowBiasInPlace(
+            MemoryView<MemorySegment> view,
+            long viewOffset,
+            MemoryView<MemorySegment> bias,
+            long biasOffset,
+            int rows,
+            int cols) {
+        Raw x = Raw.f32(view, "view");
+        Raw b = Raw.f32(bias, "bias");
+        int upperBound = USE_VECTOR_API ? F_SPECIES.loopBound(cols) : 0;
+        for (int row = 0; row < rows; row++) {
+            long rowOffset = viewOffset + (long) row * cols;
+            int col = 0;
+            for (; col < upperBound; col += F_SPECIES.length()) {
+                long xb = x.vbase() + (rowOffset + col) * Float.BYTES;
+                FloatVector xv =
+                        FloatVector.fromMemorySegment(
+                                F_SPECIES, x.vseg(), xb, ByteOrder.LITTLE_ENDIAN);
+                FloatVector bv =
+                        FloatVector.fromMemorySegment(
+                                F_SPECIES,
+                                b.vseg(),
+                                b.vbase() + (biasOffset + col) * Float.BYTES,
+                                ByteOrder.LITTLE_ENDIAN);
+                xv.add(bv).intoMemorySegment(x.vseg(), xb, ByteOrder.LITTLE_ENDIAN);
+            }
+            for (; col < cols; col++) {
+                long xb = x.vbase() + (rowOffset + col) * Float.BYTES;
+                writeFloat(
+                        x.vseg(),
+                        xb,
+                        readFloat(x.vseg(), xb)
+                                + readFloat(
+                                        b.vseg(), b.vbase() + (biasOffset + col) * Float.BYTES));
+            }
+        }
+    }
+
     /**
      * Scalar elementwise map (the old base-class path; ports use it for cheap one-off scalings).
      */
     public static void mapInPlace(
             MemoryView<MemorySegment> view, long thisOffset, int size, MapFunction mapFunction) {
-        Raw r = Views.rawF32(view, "view");
+        Raw r = Raw.f32(view, "view");
         for (int i = 0; i < size; i++) {
             long byteOff = r.vbase() + (thisOffset + i) * Float.BYTES;
             writeFloat(r.vseg(), byteOff, mapFunction.apply(readFloat(r.vseg(), byteOff)));
@@ -159,9 +355,9 @@ public final class Ops {
             MemoryView<MemorySegment> add,
             int n,
             float scale) {
-        Raw o = Views.rawF32(out, "out");
-        Raw b = Views.rawF32(base, "base");
-        Raw a = Views.rawF32(add, "add");
+        Raw o = Raw.f32(out, "out");
+        Raw b = Raw.f32(base, "base");
+        Raw a = Raw.f32(add, "add");
         for (int i = 0; i < n; i++) {
             writeFloat(
                     o.vseg(),
@@ -171,8 +367,47 @@ public final class Ops {
         }
     }
 
+    /** Dot product of two dense FP32 spans. */
+    public static float dot(
+            MemoryView<MemorySegment> a,
+            long aOffset,
+            MemoryView<MemorySegment> b,
+            long bOffset,
+            int size) {
+        Raw ar = Raw.f32(a, "a");
+        Raw br = Raw.f32(b, "b");
+        int i = 0;
+        float result = 0;
+        if (USE_VECTOR_API) {
+            int upperBound = F_SPECIES.loopBound(size);
+            FloatVector sum = FloatVector.zero(F_SPECIES);
+            for (; i < upperBound; i += F_SPECIES.length()) {
+                FloatVector av =
+                        FloatVector.fromMemorySegment(
+                                F_SPECIES,
+                                ar.vseg(),
+                                ar.vbase() + (aOffset + i) * Float.BYTES,
+                                ByteOrder.LITTLE_ENDIAN);
+                FloatVector bv =
+                        FloatVector.fromMemorySegment(
+                                F_SPECIES,
+                                br.vseg(),
+                                br.vbase() + (bOffset + i) * Float.BYTES,
+                                ByteOrder.LITTLE_ENDIAN);
+                sum = av.fma(bv, sum);
+            }
+            result = sum.reduceLanes(VectorOperators.ADD);
+        }
+        for (; i < size; i++) {
+            result +=
+                    readFloat(ar.vseg(), ar.vbase() + (aOffset + i) * Float.BYTES)
+                            * readFloat(br.vseg(), br.vbase() + (bOffset + i) * Float.BYTES);
+        }
+        return result;
+    }
+
     public static void siluInPlace(MemoryView<MemorySegment> view, long thisOffset, int size) {
-        Raw r = Views.rawF32(view, "view");
+        Raw r = Raw.f32(view, "view");
         if (USE_VECTOR_API) {
             int upperBound = F_SPECIES.loopBound(size);
             int i = 0;
@@ -204,8 +439,8 @@ public final class Ops {
             MemoryView<MemorySegment> up,
             long thatOffset,
             int size) {
-        Raw g = Views.rawF32(gate, "gate");
-        Raw u = Views.rawF32(up, "up");
+        Raw g = Raw.f32(gate, "gate");
+        Raw u = Raw.f32(up, "up");
         if (USE_VECTOR_API) {
             // silu(g)*u, fully vectorized. silu(g)=g*(0.5+0.5*tanh(g/2)) via the Pade(7,7)
             // rational tanh below: only mul/add/div (no exp), so it vectorizes on GraalVM/jvmci
@@ -264,7 +499,7 @@ public final class Ops {
 
     /** In-place ReLU-squared over {@code size} elements: {@code max(0,x)^2} (Nemotron-H FFN). */
     public static void reluSqrInPlace(MemoryView<MemorySegment> view, long thisOffset, int size) {
-        Raw r = Views.rawF32(view, "view");
+        Raw r = Raw.f32(view, "view");
         if (USE_VECTOR_API) {
             int upperBound = F_SPECIES.loopBound(size);
             int i = 0;
@@ -346,7 +581,7 @@ public final class Ops {
      */
     public static int argmax(MemoryView<MemorySegment> view, long thisOffset, int size) {
         assert size > 0;
-        Raw r = Views.rawF32(view, "view");
+        Raw r = Raw.f32(view, "view");
         long maxIndex = thisOffset;
         float maxValue = readFloat(r.vseg(), r.vbase() + maxIndex * Float.BYTES);
         long endIndex = thisOffset + size;
@@ -372,8 +607,8 @@ public final class Ops {
             long thatOffset,
             int size,
             float a) {
-        Raw xr = Views.rawF32(x, "x");
-        Raw yr = Views.rawF32(that, "that");
+        Raw xr = Raw.f32(x, "x");
+        Raw yr = Raw.f32(that, "that");
         if (USE_VECTOR_API) {
             FloatVector va = FloatVector.broadcast(F_SPECIES, a);
             int upperBound = F_SPECIES.loopBound(size);
@@ -420,7 +655,7 @@ public final class Ops {
      * sum / divide} — NOT the approximation (faithful to the old floor).
      */
     public static void softmaxInPlace(MemoryView<MemorySegment> view, long thisOffset, int size) {
-        Raw r = Views.rawF32(view, "view");
+        Raw r = Raw.f32(view, "view");
         if (!USE_VECTOR_API) {
             float maxVal = Float.NEGATIVE_INFINITY;
             for (long i = thisOffset; i < thisOffset + size; i++) {

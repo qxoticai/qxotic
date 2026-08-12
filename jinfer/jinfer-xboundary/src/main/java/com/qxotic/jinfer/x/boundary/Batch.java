@@ -1,16 +1,16 @@
 package com.qxotic.jinfer.x.boundary;
 
+import com.qxotic.jota.DataType;
+import com.qxotic.jota.memory.MemoryView;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * One forward call's worth of work: what to feed ({@link Input}) and which final hidden states to
  * retain ({@link Outputs}). Position-agnostic: a batch is always ingested at the state's cursor
  * ({@link RuntimeState#position()}), which then advances by {@link #count()}.
- *
- * <p>The slice's minimal clone of jinfer-core {@code Batch}: text only — {@link Input.Embeddings}
- * (the multi-modal seam) lands with the cycle that needs it.
  */
 public record Batch(Input input, Outputs outputs) {
 
@@ -22,9 +22,46 @@ public record Batch(Input input, Outputs outputs) {
         ALL
     }
 
-    /** Text inputs: token ids (embedded internally), or packed ragged multi-sequence text. */
+    /** Token ids, encoder-projected rows, or packed ragged multi-sequence text. */
     public sealed interface Input {
         record Tokens(int[] ids) implements Input {}
+
+        /**
+         * Dense FP32 {@code [count, modelDim]} encoder output. A bidirectional block is one atomic
+         * attention group. A null content key fingerprints row bits; a non-null key identifies the
+         * source content and preprocessing options instead. The rows and their backing memory are
+         * borrowed and must remain alive and unchanged through ingestion.
+         */
+        record Embeddings(MemoryView<?> rows, int count, boolean bidirectional, byte[] contentKey)
+                implements Input {
+            public Embeddings {
+                Objects.requireNonNull(rows, "rows");
+                if (rows.dataType() != DataType.FP32)
+                    throw new IllegalArgumentException("embedding rows must be FP32");
+                if (!rows.shape().isFlat() || rows.shape().rank() != 2)
+                    throw new IllegalArgumentException(
+                            "embedding rows must have shape [count, dim]");
+                if (count <= 0 || rows.shape().flatAt(0) != count || rows.shape().flatAt(1) <= 0)
+                    throw new IllegalArgumentException(
+                            "embedding count " + count + " does not match shape " + rows.shape());
+                if (!rows.isRowMajorContiguous())
+                    throw new IllegalArgumentException("embedding rows must be dense row-major");
+                if (contentKey != null) {
+                    if (contentKey.length == 0)
+                        throw new IllegalArgumentException("contentKey must not be empty");
+                    contentKey = contentKey.clone();
+                }
+            }
+
+            public Embeddings(MemoryView<?> rows, int count, boolean bidirectional) {
+                this(rows, count, bidirectional, null);
+            }
+
+            @Override
+            public byte[] contentKey() {
+                return contentKey == null ? null : contentKey.clone();
+            }
+        }
 
         /**
          * Packed (ragged) multi-sequence text: {@code tokens.ids()} is this chunk's slice of the
@@ -50,6 +87,23 @@ public record Batch(Input input, Outputs outputs) {
         return new Batch(new Input.Tokens(ids), Outputs.ALL);
     }
 
+    /** Ingest a bidirectional block of encoder-projected rows. */
+    public static Batch embeddings(MemoryView<?> rows, int count) {
+        return embeddings(rows, count, true);
+    }
+
+    /** Ingest encoder-projected rows, optionally as one bidirectional attention group. */
+    public static Batch embeddings(MemoryView<?> rows, int count, boolean bidirectional) {
+        return new Batch(new Input.Embeddings(rows, count, bidirectional), Outputs.LAST);
+    }
+
+    /** As {@link #embeddings(MemoryView, int, boolean)} with a source-content cache key. */
+    public static Batch embeddings(
+            MemoryView<?> rows, int count, boolean bidirectional, byte[] contentKey) {
+        return new Batch(
+                new Input.Embeddings(rows, count, bidirectional, contentKey), Outputs.LAST);
+    }
+
     /**
      * Pack ragged sequences into one batch (concatenate ids, record per-sequence lengths); retains
      * every row so each sequence's pooled position is addressable. No padding.
@@ -71,10 +125,9 @@ public record Batch(Input input, Outputs outputs) {
     /**
      * Normalizes a batch list for ingestion at {@code batchCapacity} (the old {@code
      * Batch.prepare}, output-identical): adjacent LAST-output token batches merge into the largest
-     * legal prefill, oversized ones split at the capacity, anything else passes through unchanged -
-     * a {@link Input.Sequences} batch is one attention group and must never be split. (The old
-     * {@code Input.Embeddings} guard is absent: the multi-modal seam lands with a later cycle, its
-     * guard with it.)
+     * legal prefill, oversized ones split at the capacity, anything else passes through unchanged.
+     * Embedding blocks stay atomic; an oversized bidirectional block is rejected, while causal
+     * embedding blocks pass through for now.
      *
      * <p>Same output, less copying than the old {@code flushRun}: a single already-legal batch
      * passes through with NO new array (ponytail: aliased, not defensively copied - the contract is
@@ -93,6 +146,15 @@ public record Batch(Input input, Outputs outputs) {
                 continue;
             }
             flushRun(run, batchCapacity, out);
+            if (b.input() instanceof Input.Embeddings e
+                    && e.bidirectional()
+                    && e.count() > batchCapacity) {
+                throw new IllegalArgumentException(
+                        "bidirectional media block of "
+                                + e.count()
+                                + " rows exceeds batchCapacity "
+                                + batchCapacity);
+            }
             out.add(b);
         }
         flushRun(run, batchCapacity, out);
@@ -167,6 +229,7 @@ public record Batch(Input input, Outputs outputs) {
     public int count() {
         return switch (input) {
             case Input.Tokens t -> t.ids().length;
+            case Input.Embeddings e -> e.count();
             case Input.Sequences s -> s.tokens().ids().length;
         };
     }

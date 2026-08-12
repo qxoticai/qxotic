@@ -2,8 +2,6 @@ package com.qxotic.jinfer.x.kernels;
 
 import static com.qxotic.jinfer.x.Segments.readFloat;
 
-import com.qxotic.jinfer.x.Views;
-import com.qxotic.jinfer.x.Views.Raw;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.MemorySegment;
 
@@ -29,7 +27,7 @@ public final class Trace {
     /** Prints the span's sum and first three elements, tagged with {@code name}. */
     public static void sum(String name, MemoryView<MemorySegment> t, int n) {
         if (!ENABLED) return;
-        Raw r = Views.rawF32(t, "trace");
+        Raw r = Raw.f32(t, "trace");
         double s = 0;
         for (int i = 0; i < n; i++) s += readFloat(r.vseg(), r.vbase() + (long) i * Float.BYTES);
         System.err.printf(

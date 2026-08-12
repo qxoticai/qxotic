@@ -383,6 +383,35 @@ public abstract class FloatTensor {
         gemv(that, 0, out, 0, dim0, dim1, 0);
     }
 
+    /** Full offset/stride matmul entry for MemoryView adapters. */
+    public void matmul(
+            long thisOffset,
+            int thisStride,
+            FloatTensor that,
+            long thatOffset,
+            int thatStride,
+            FloatTensor out,
+            long outOffset,
+            int outStride,
+            int dim0,
+            int rows,
+            int dim1) {
+        MatMul.instance()
+                .mm(
+                        this,
+                        thisOffset,
+                        thisStride,
+                        that,
+                        thatOffset,
+                        thatStride,
+                        out,
+                        outOffset,
+                        outStride,
+                        dim0,
+                        rows,
+                        dim1);
+    }
+
     // gemv/gemm are thin entry points onto MatMul, which dispatches on this.type() (the weight) to
     // the
     // fastest applicable backend and falls to the ScalarMatMul floor. No subclass overrides these.
