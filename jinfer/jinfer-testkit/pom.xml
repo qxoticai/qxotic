@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.qxotic</groupId>
+    <artifactId>jinfer-parent</artifactId>
+    <version>0.1.0</version>
+  </parent>
+
+  <artifactId>jinfer-testkit</artifactId>
+  <packaging>jar</packaging>
+
+  <name>jinfer-testkit</name>
+  <description>Shared test fixtures: checkpoint acquisition via jinfer-hub, never a download</description>
+
+  <properties>
+    <!-- a jar so its dependencies resolve transitively (a test-jar's do not); test-scope in every
+         consumer, so it never lands in a shipped artifact -->
+    <maven.deploy.skip>true</maven.deploy.skip>
+  </properties>
+
+  <dependencies>
+    <!-- model resolution: a ref in, a cached path out, never the network -->
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-hub</artifactId>
+    </dependency>
+    <!-- COMPILE scope on purpose (the inherited one is test): TestAbortedException lives in the
+         MAIN sources, so the abort semantics ride along to consumers' test classpaths -->
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>compile</scope>
+    </dependency>
+  </dependencies>
+</project>
