@@ -55,6 +55,12 @@
       <artifactId>jinfer-llm</artifactId>
       <scope>test</scope>
     </dependency>
+    <!-- test-only: checkpoint acquisition by ref (lookup only, never a download) -->
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-testkit</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>

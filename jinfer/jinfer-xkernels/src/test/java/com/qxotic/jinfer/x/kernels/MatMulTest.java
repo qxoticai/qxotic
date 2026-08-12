@@ -9,9 +9,11 @@ import static com.qxotic.jinfer.x.kernels.Oracles.q8;
 import static com.qxotic.jinfer.x.kernels.Oracles.q8View;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import com.qxotic.format.gguf.GGMLType;
 import com.qxotic.jinfer.F32FloatTensor;
 import com.qxotic.jinfer.FloatTensor;
 import com.qxotic.jinfer.x.Views;
+import com.qxotic.jota.BFloat16;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryView;
@@ -98,6 +100,107 @@ class MatMulTest {
     }
 
     @Test
+    void mxfp4Parity() {
+        int m = 64, n = 3, k = 96;
+        MemorySegment w = Oracles.mxfp4(arena, m, k, 17);
+        MemorySegment a = f32(arena, n * k, 18);
+        MemorySegment expected = arena.allocate(4L * n * m, 64);
+        MemorySegment actual = arena.allocate(4L * n * m, 64);
+        Oracles.oldMxfp4(w, (long) m * k)
+                .gemm(oldF32(a, (long) n * k), k, oldF32(expected, (long) n * m), m, n, m, k);
+        MatMul.gemm(
+                Oracles.mxfp4View(w, (long) m * k),
+                f32View(a, (long) n * k),
+                k,
+                f32View(actual, (long) n * m),
+                m,
+                m,
+                n,
+                k);
+        assertClose(expected, actual, n * m, "MXFP4 gemm", Oracles.DOT_ABS_TOL);
+    }
+
+    @Test
+    void bf16Parity() {
+        int m = 32, n = 3, k = 64;
+        MemorySegment w = arena.allocate(2L * m * k, 64);
+        MemorySegment a = f32(arena, n * k, 12);
+        MemorySegment expected = arena.allocate(4L * n * m, 64);
+        MemorySegment actual = arena.allocate(4L * n * m, 64);
+        for (int i = 0; i < m * k; i++)
+            w.set(
+                    java.lang.foreign.ValueLayout.JAVA_SHORT_UNALIGNED,
+                    2L * i,
+                    BFloat16.fromFloat((float) Math.sin(i * 0.17)));
+        FloatTensor old = FloatTensor.create(com.qxotic.format.gguf.GGMLType.BF16, (long) m * k, w);
+        old.gemm(oldF32(a, (long) n * k), k, oldF32(expected, (long) n * m), m, n, m, k);
+        MatMul.mm(
+                Views.wrap(w, DataType.BF16, Shape.flat((long) m * k)),
+                0,
+                k,
+                f32View(a, (long) n * k),
+                0,
+                k,
+                f32View(actual, (long) n * m),
+                0,
+                m,
+                m,
+                n,
+                k);
+        assertClose(expected, actual, n * m, "BF16 gemm", Oracles.DOT_ABS_TOL);
+    }
+
+    @Test
+    void legacyQuantParity() {
+        GGMLType[] types = {
+            GGMLType.Q4_0,
+            GGMLType.Q4_1,
+            GGMLType.Q5_1,
+            GGMLType.Q4_K,
+            GGMLType.Q5_K,
+            GGMLType.Q6_K,
+            GGMLType.NVFP4,
+            GGMLType.Q1_0
+        };
+        for (GGMLType type : types) {
+            int m = 5, n = 2, k = type.getElementsPerBlock();
+            MemorySegment weights = arena.allocate(type.byteSizeFor((long) m * k), 64);
+            weights.fill((byte) 0x12);
+            MemorySegment activations = f32(arena, n * k, type.ordinal());
+            MemorySegment expected = arena.allocate(4L * n * m, 64);
+            MemorySegment actual = arena.allocate(4L * n * m, 64);
+            FloatTensor.create(type, (long) m * k, weights)
+                    .gemm(
+                            oldF32(activations, (long) n * k),
+                            k,
+                            oldF32(expected, (long) n * m),
+                            m,
+                            n,
+                            m,
+                            k);
+            MemoryView<MemorySegment> view =
+                    Views.wrap(
+                            weights,
+                            GGMLDataTypes.toDataType(type),
+                            Shape.flat((long) m * k / type.getElementsPerBlock()));
+            MatMul.mm(
+                    view,
+                    0,
+                    k,
+                    f32View(activations, (long) n * k),
+                    0,
+                    k,
+                    f32View(actual, (long) n * m),
+                    0,
+                    m,
+                    m,
+                    n,
+                    k);
+            assertClose(expected, actual, n * m, type + " gemm", Oracles.DOT_ABS_TOL);
+        }
+    }
+
+    @Test
     void gemvInPlaceParity() {
         // a == c: the temp-buffer path on both sides. The OLD side must pass the SAME tensor
         // object for a and c — aliasing through two objects is outside the old contract.
@@ -124,22 +227,5 @@ class MatMulTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> MatMul.mm(wv, 0, 64, f16, 0, 64, f32View(out, 4), 0, 4, 4, 1, 64));
-        // FP16 weights: unsupported weight dtype
-        assertThrows(
-                UnsupportedOperationException.class,
-                () ->
-                        MatMul.mm(
-                                f16,
-                                0,
-                                64,
-                                f32View(x, 64),
-                                0,
-                                64,
-                                f32View(out, 4),
-                                0,
-                                4,
-                                4,
-                                1,
-                                64));
     }
 }

@@ -5,8 +5,6 @@ import static com.qxotic.jinfer.x.Segments.writeFloat;
 
 import com.qxotic.jinfer.x.Parallel;
 import com.qxotic.jinfer.x.Segments;
-import com.qxotic.jinfer.x.Views;
-import com.qxotic.jinfer.x.Views.Raw;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteOrder;
@@ -15,12 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.VectorSpecies;
 
-/**
- * 1-D convolution kernels over channel-major activations - {@code rows[channel][time]}, one
- * contiguous row per channel. Ported byte-for-byte from jinfer-core {@code Convolutions}: in/out
- * are FP32-checked views extracted to {@link Raw}; {@code bias} (nullable) is an FP32 view read per
- * channel (the old virtual {@code getFloat}).
- */
+/** Convolution kernels over dense FP32 views. */
 public final class Convolutions {
     private Convolutions() {}
 
@@ -31,6 +24,195 @@ public final class Convolutions {
      * once; the inputs a single vector step touches are a few KB, so they stay in L1 regardless.
      */
     private static final int TILE = 4096;
+
+    /**
+     * 3x3 stride-2, pad-1 convolution over channel-major {@code [channel][time][frequency]} data.
+     * Taps are {@code [outChannel][inChannel][3][3]}; output dimensions are ceilings of halves.
+     * Input and output must not alias.
+     */
+    public static void conv2dStride2Pad1(
+            MemoryView<MemorySegment> in,
+            int timeIn,
+            int frequencyIn,
+            int inChannels,
+            float[] taps,
+            int outChannels,
+            MemoryView<MemorySegment> out) {
+        Raw x = Raw.f32(in, "in");
+        Raw y = Raw.f32(out, "out");
+        int timeOut = (timeIn - 1) / 2 + 1;
+        int frequencyOut = (frequencyIn - 1) / 2 + 1;
+        Parallel.parallelFor(
+                0,
+                outChannels,
+                oc -> {
+                    for (int ot = 0; ot < timeOut; ot++) {
+                        for (int of = 0; of < frequencyOut; of++) {
+                            float sum = 0f;
+                            for (int ic = 0; ic < inChannels; ic++) {
+                                int tapBase = (oc * inChannels + ic) * 9;
+                                for (int ky = 0; ky < 3; ky++) {
+                                    int it = 2 * ot - 1 + ky;
+                                    if (it < 0 || it >= timeIn) continue;
+                                    for (int kx = 0; kx < 3; kx++) {
+                                        int inf = 2 * of - 1 + kx;
+                                        if (inf < 0 || inf >= frequencyIn) continue;
+                                        sum +=
+                                                taps[tapBase + ky * 3 + kx]
+                                                        * readFloat(
+                                                                x.vseg(),
+                                                                x.vbase()
+                                                                        + ((long) ic
+                                                                                                * timeIn
+                                                                                                * frequencyIn
+                                                                                        + (long) it
+                                                                                                * frequencyIn
+                                                                                        + inf)
+                                                                                * Float.BYTES);
+                                    }
+                                }
+                            }
+                            writeFloat(
+                                    y.vseg(),
+                                    y.vbase()
+                                            + ((long) oc * timeOut * frequencyOut
+                                                            + (long) ot * frequencyOut
+                                                            + of)
+                                                    * Float.BYTES,
+                                    sum);
+                        }
+                    }
+                });
+    }
+
+    /**
+     * Left-padded depthwise convolution over time-major {@code [time][channel]} data. Taps are
+     * {@code [channel][kernel]}, with the newest sample aligned to the last tap. Input and output
+     * must not alias.
+     */
+    public static void causalDepthwise1d(
+            MemoryView<MemorySegment> in,
+            MemoryView<MemorySegment> taps,
+            MemoryView<MemorySegment> out,
+            int time,
+            int channels,
+            int kernel) {
+        Raw x = Raw.f32(in, "in");
+        Raw w = Raw.f32(taps, "taps");
+        Raw y = Raw.f32(out, "out");
+        Parallel.forRows(
+                time,
+                t -> {
+                    for (int c = 0; c < channels; c++) {
+                        float sum = 0f;
+                        for (int k = 0; k < kernel; k++) {
+                            int source = t - kernel + 1 + k;
+                            if (source < 0) continue;
+                            sum +=
+                                    readFloat(
+                                                    w.vseg(),
+                                                    w.vbase()
+                                                            + ((long) c * kernel + k) * Float.BYTES)
+                                            * readFloat(
+                                                    x.vseg(),
+                                                    x.vbase()
+                                                            + ((long) source * channels + c)
+                                                                    * Float.BYTES);
+                        }
+                        writeFloat(
+                                y.vseg(), y.vbase() + ((long) t * channels + c) * Float.BYTES, sum);
+                    }
+                });
+    }
+
+    /**
+     * Stateful causal depthwise convolution for Qwen3.5. History is {@code [kernel-1][channels]};
+     * every output row is computed against the history as it stood at entry, then history is rolled
+     * from the concatenation of old history and the complete input chunk.
+     */
+    public static void causalDepthwiseSilu(
+            MemoryView<MemorySegment> input,
+            MemoryView<MemorySegment> taps,
+            MemoryView<MemorySegment> history,
+            MemoryView<MemorySegment> output,
+            int rows,
+            int channels,
+            int kernel) {
+        causalDepthwiseSilu(input, taps, null, history, output, rows, channels, kernel);
+    }
+
+    /** Stateful causal depthwise convolution with an optional per-channel bias. */
+    public static void causalDepthwiseSilu(
+            MemoryView<MemorySegment> input,
+            MemoryView<MemorySegment> taps,
+            MemoryView<MemorySegment> bias,
+            MemoryView<MemorySegment> history,
+            MemoryView<MemorySegment> output,
+            int rows,
+            int channels,
+            int kernel) {
+        Raw x = Raw.f32(input, "input");
+        Raw w = Raw.f32(taps, "taps");
+        Raw b = bias == null ? null : Raw.f32(bias, "bias");
+        Raw state = Raw.f32(history, "history");
+        Raw out = Raw.f32(output, "output");
+        int hist = kernel - 1;
+        Parallel.parallelFor(
+                0,
+                channels,
+                c -> {
+                    for (int row = 0; row < rows; row++) {
+                        float sum =
+                                b == null
+                                        ? 0f
+                                        : readFloat(b.vseg(), b.vbase() + (long) c * Float.BYTES);
+                        for (int k = 0; k < kernel; k++) {
+                            int pos = row - hist + k;
+                            float value =
+                                    pos < 0
+                                            ? readFloat(
+                                                    state.vseg(),
+                                                    state.vbase()
+                                                            + ((long) (pos + hist) * channels + c)
+                                                                    * Float.BYTES)
+                                            : readFloat(
+                                                    x.vseg(),
+                                                    x.vbase()
+                                                            + ((long) pos * channels + c)
+                                                                    * Float.BYTES);
+                            sum +=
+                                    readFloat(
+                                                    w.vseg(),
+                                                    w.vbase()
+                                                            + ((long) c * kernel + k) * Float.BYTES)
+                                            * value;
+                        }
+                        writeFloat(
+                                out.vseg(),
+                                out.vbase() + ((long) row * channels + c) * Float.BYTES,
+                                sum * (1.0f / (1.0f + (float) Math.exp(-sum))));
+                    }
+                    for (int k = 0; k < hist; k++) {
+                        int pos = rows - hist + k;
+                        float value =
+                                pos < 0
+                                        ? readFloat(
+                                                state.vseg(),
+                                                state.vbase()
+                                                        + ((long) (pos + hist) * channels + c)
+                                                                * Float.BYTES)
+                                        : readFloat(
+                                                x.vseg(),
+                                                x.vbase()
+                                                        + ((long) pos * channels + c)
+                                                                * Float.BYTES);
+                        writeFloat(
+                                state.vseg(),
+                                state.vbase() + ((long) k * channels + c) * Float.BYTES,
+                                value);
+                    }
+                });
+    }
 
     /**
      * Opt-in shape census ({@code -Djinfer.convProfile}): tally every call by shape and dump it at
@@ -110,9 +292,9 @@ public final class Convolutions {
             float[] taps,
             MemoryView<MemorySegment> bias) {
         if (PROFILE) tally(inChannels, outChannels, time, kernel, dilation);
-        Raw inRaw = Views.rawF32(in, "in");
-        Raw outRaw = Views.rawF32(out, "out");
-        Raw biasRaw = bias != null ? Views.rawF32(bias, "bias") : null;
+        Raw inRaw = Raw.f32(in, "in");
+        Raw outRaw = Raw.f32(out, "out");
+        Raw biasRaw = bias != null ? Raw.f32(bias, "bias") : null;
         int pad = ((kernel - 1) * dilation) / 2;
         int tapsPerOutput = kernel * inChannels;
         int tiles = (time + TILE - 1) / TILE;
@@ -170,6 +352,10 @@ public final class Convolutions {
                                     outRow,
                                     bodyFrom,
                                     bodyTo);
+                        // Clamp both edge spans to the tile's [from, to): when pad >= the tile
+                        // span (pad > time is the extreme) bodyFrom overshoots `to`, and an
+                        // unclamped edge would write outputs past the row - through GLOBAL_SEGMENT
+                        // that is an unchecked wild write.
                         edge(
                                 inRaw,
                                 inChannels,
@@ -183,7 +369,7 @@ public final class Convolutions {
                                 biasValue,
                                 outRow,
                                 from,
-                                bodyFrom);
+                                Math.min(bodyFrom, to));
                         edge(
                                 inRaw,
                                 inChannels,
@@ -196,7 +382,7 @@ public final class Convolutions {
                                 tapRow,
                                 biasValue,
                                 outRow,
-                                bodyTo,
+                                Math.max(bodyTo, from),
                                 to);
                     }
                 });
@@ -613,6 +799,128 @@ public final class Convolutions {
                 }
             }
             writeFloat(out.vseg(), out.vbase() + (outRow + t) * Float.BYTES, acc);
+        }
+    }
+
+    /**
+     * Causal short-convolution as a dConv-tap FIR over bx = B∘x rows (ported verbatim from {@code
+     * Lfm2.shortConvScan}). {@code packed} holds [seqLen][parts*dim] rows with B in block 0, the C
+     * gate in block 1 and x in block 2; bx is materialized in place over block 0. For each channel:
+     * {@code out[s] = C_gate[s] * (Σ_{k<hist} state[k]·kernel[k] + bx[s]·kernel[hist])}, where
+     * {@code state} ([hist][dim], hist = dConv-1) holds the previous bx values; the newest bx rolls
+     * into {@code state}. Per-channel taps at {@code kernel[c*dConv + k]}.
+     */
+    public static void shortConvScan(
+            MemoryView<MemorySegment> kernel,
+            MemoryView<MemorySegment> convState,
+            MemoryView<MemorySegment> packed,
+            MemoryView<MemorySegment> out,
+            int seqLen,
+            int dim,
+            int dConv,
+            int parts) {
+        Raw kernelRaw = Raw.f32(kernel, "kernel");
+        Raw convRaw = Raw.f32(convState, "convState");
+        Raw tmpRaw = Raw.f32(packed, "packed");
+        Raw outRaw = Raw.f32(out, "out");
+        MemorySegment ks = kernelRaw.vseg(),
+                cs = convRaw.vseg(),
+                ts = tmpRaw.vseg(),
+                os = outRaw.vseg();
+        long kb = kernelRaw.vbase(), cb = convRaw.vbase(), tb = tmpRaw.vbase(), ob = outRaw.vbase();
+        int hist = dConv - 1;
+        for (int s = 0; s < seqLen; s++) {
+            int tmpOff = s * parts * dim, outOff = s * dim;
+            for (int c = 0; c < dim; c++) {
+                float b = readFloat(ts, tb + 4L * (tmpOff + c));
+                float cg = readFloat(ts, tb + 4L * (tmpOff + dim + c));
+                float xv = readFloat(ts, tb + 4L * (tmpOff + 2 * dim + c));
+                float bx = b * xv;
+                writeFloat(ts, tb + 4L * (tmpOff + c), bx);
+                int kBase = c * dConv;
+                float sum = 0f;
+                for (int k = 0; k < hist; k++)
+                    sum +=
+                            readFloat(cs, cb + 4L * ((long) k * dim + c))
+                                    * readFloat(ks, kb + 4L * (kBase + k));
+                sum += bx * readFloat(ks, kb + 4L * (kBase + dConv - 1));
+                writeFloat(os, ob + 4L * (outOff + c), cg * sum);
+                for (int k = 0; k < hist - 1; k++)
+                    writeFloat(
+                            cs,
+                            cb + 4L * ((long) k * dim + c),
+                            readFloat(cs, cb + 4L * ((long) (k + 1) * dim + c)));
+                if (hist > 0) writeFloat(cs, cb + 4L * ((long) (hist - 1) * dim + c), bx);
+            }
+        }
+    }
+
+    /**
+     * The centered-window twin of {@link #shortConvScan} for segmented sequences (ported verbatim
+     * from {@code Lfm2}'s segmented path): bx = B∘x is materialized in place over block 0 of {@code
+     * packed} (block 1 = C gate, block 2 = x) FIRST, since the centered window reads neighbour
+     * rows; then each segment {@code [segRow0[g], segRow0[g]+segLen[g])} is convolved with
+     * "same"-padding that zeroes beyond the SEGMENT's own edges and gated: {@code out[s] =
+     * C_gate[s] * Σ_k bx[s-pad+k]·kernel[k]}, pad = (dConv-1)/2.
+     */
+    public static void segmentedShortConv(
+            MemoryView<MemorySegment> kernel,
+            MemoryView<MemorySegment> packed,
+            MemoryView<MemorySegment> out,
+            int[] segRow0,
+            int[] segLen,
+            int seqLen,
+            int dim,
+            int dConv,
+            int parts) {
+        Raw kernelRaw = Raw.f32(kernel, "kernel");
+        Raw tmp = Raw.f32(packed, "packed");
+        Raw outRaw = Raw.f32(out, "out");
+        int pad = (dConv - 1) / 2;
+        for (int s = 0; s < seqLen; s++) {
+            int tmpOff = s * parts * dim;
+            for (int c = 0; c < dim; c++) {
+                writeFloat(
+                        tmp.vseg(),
+                        tmp.vbase() + (long) (tmpOff + c) * Float.BYTES,
+                        readFloat(tmp.vseg(), tmp.vbase() + (long) (tmpOff + c) * Float.BYTES)
+                                * readFloat(
+                                        tmp.vseg(),
+                                        tmp.vbase() + (long) (tmpOff + 2 * dim + c) * Float.BYTES));
+            }
+        }
+        for (int g = 0; g < segLen.length; g++) {
+            int r0 = segRow0[g], rEnd = r0 + segLen[g];
+            for (int s = r0; s < rEnd; s++) {
+                int tmpOff = s * parts * dim, outOff = s * dim;
+                for (int c = 0; c < dim; c++) {
+                    float cg =
+                            readFloat(
+                                    tmp.vseg(),
+                                    tmp.vbase() + (long) (tmpOff + dim + c) * Float.BYTES);
+                    int kBase = c * dConv;
+                    float sum = 0f;
+                    for (int k = 0; k < dConv; k++) {
+                        int row = s - pad + k; // zero beyond this sequence's own edges
+                        if (row >= r0 && row < rEnd) {
+                            sum +=
+                                    readFloat(
+                                                    tmp.vseg(),
+                                                    tmp.vbase()
+                                                            + ((long) row * parts * dim + c)
+                                                                    * Float.BYTES)
+                                            * readFloat(
+                                                    kernelRaw.vseg(),
+                                                    kernelRaw.vbase()
+                                                            + (long) (kBase + k) * Float.BYTES);
+                        }
+                    }
+                    writeFloat(
+                            outRaw.vseg(),
+                            outRaw.vbase() + (long) (outOff + c) * Float.BYTES,
+                            cg * sum);
+                }
+            }
         }
     }
 }

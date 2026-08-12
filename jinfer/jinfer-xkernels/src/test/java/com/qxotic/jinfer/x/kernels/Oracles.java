@@ -78,6 +78,17 @@ final class Oracles {
         return seg;
     }
 
+    static MemorySegment mxfp4(Arena arena, int m, int k, long seed) {
+        Random rng = new Random(seed);
+        MemorySegment seg = arena.allocate((long) m * k / 32 * 17, 64);
+        for (long block = 0; block < seg.byteSize() / 17; block++) {
+            seg.set(ValueLayout.JAVA_BYTE, block * 17, (byte) 127);
+            for (int i = 0; i < 16; i++)
+                seg.set(ValueLayout.JAVA_BYTE, block * 17 + 1 + i, (byte) rng.nextInt(256));
+        }
+        return seg;
+    }
+
     static F32FloatTensor oldF32(MemorySegment seg, long n) {
         return (F32FloatTensor) FloatTensor.create(GGMLType.F32, n, seg);
     }
@@ -86,11 +97,19 @@ final class Oracles {
         return FloatTensor.create(GGMLType.Q8_0, n, seg);
     }
 
+    static FloatTensor oldMxfp4(MemorySegment seg, long n) {
+        return FloatTensor.create(GGMLType.MXFP4, n, seg);
+    }
+
     static MemoryView<MemorySegment> f32View(MemorySegment seg, long n) {
         return Views.wrap(seg, DataType.FP32, Shape.flat(n));
     }
 
     static MemoryView<MemorySegment> q8View(MemorySegment seg, long n) {
         return Views.wrap(seg, DataType.Q8_0, Shape.flat(n / 32)); // shape counts BLOCKS
+    }
+
+    static MemoryView<MemorySegment> mxfp4View(MemorySegment seg, long n) {
+        return Views.wrap(seg, DataType.MXFP4, Shape.flat(n / 32));
     }
 }

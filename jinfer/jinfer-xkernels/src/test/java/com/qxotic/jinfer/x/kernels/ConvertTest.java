@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.qxotic.format.gguf.GGMLType;
 import com.qxotic.jinfer.FloatTensor;
-import com.qxotic.jinfer.x.Convert;
 import com.qxotic.jinfer.x.Views;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Shape;
@@ -17,8 +16,8 @@ import java.util.Random;
 import org.junit.jupiter.api.Test;
 
 /**
- * Differential oracles for the span converters: x.Convert against the old tensor copy paths on
- * identical inputs. F32→F16 and Q8_0→F32 are deterministic scalar on both sides (bit-equal);
+ * Differential oracles for the span converters: kernels.Convert against the old tensor copy paths
+ * on identical inputs. F32→F16 and Q8_0→F32 are deterministic scalar on both sides (bit-equal);
  * F16→F32 uses the same exact vector converter both sides (ulp-bound for tier noise).
  */
 class ConvertTest {
@@ -27,6 +26,10 @@ class ConvertTest {
 
     private MemoryView<MemorySegment> f16View(MemorySegment seg, long n) {
         return Views.wrap(seg, DataType.FP16, Shape.flat(n));
+    }
+
+    private MemoryView<MemorySegment> bf16View(MemorySegment seg, long n) {
+        return Views.wrap(seg, DataType.BF16, Shape.flat(n));
     }
 
     private float getF32(MemorySegment seg, long i) {
@@ -76,6 +79,24 @@ class ConvertTest {
     }
 
     @Test
+    void bf16ToF32Parity() {
+        for (int n : new int[] {1, 7, 16, 17, 64, 1000}) {
+            MemorySegment bf16 = arena.allocate(2L * n, 64);
+            Random rng = new Random(n);
+            for (int i = 0; i < n; i++)
+                bf16.set(
+                        ValueLayout.JAVA_SHORT_UNALIGNED,
+                        2L * i,
+                        com.qxotic.jota.BFloat16.fromFloat(rng.nextFloat() * 4 - 2));
+            FloatTensor old = FloatTensor.create(GGMLType.BF16, n, bf16);
+            MemorySegment dst = arena.allocate(4L * n, 64);
+            Convert.bf16ToF32(bf16View(bf16, n), 0, Oracles.f32View(dst, n), 0, n);
+            for (int i = 0; i < n; i++)
+                assertEquals(old.getFloat(i), getF32(dst, i), "bf16ToF32 n=" + n + " at " + i);
+        }
+    }
+
+    @Test
     void dequantQ8_0Parity() {
         int m = 4, k = 2048;
         MemorySegment q8 = Oracles.q8(arena, m, k, 5);
@@ -97,6 +118,49 @@ class ConvertTest {
                 Oracles.q8View(q8, (long) m * k), off, Oracles.f32View(dNew, count), 0, count);
         for (int i = 0; i < count; i++) {
             assertEquals(getF32(dOld, i), getF32(dNew, i), "dequant offset at " + i);
+        }
+    }
+
+    @Test
+    void dequantMxfp4Parity() {
+        int n = 96, offset = 17, count = 63;
+        MemorySegment weights = Oracles.mxfp4(arena, 1, n, 13);
+        MemorySegment expected = arena.allocate(4L * count, 64);
+        MemorySegment actual = arena.allocate(4L * count, 64);
+        Oracles.oldMxfp4(weights, n).copyTo(offset, Oracles.oldF32(expected, count), 0, count);
+        Convert.dequantMxfp4(
+                Oracles.mxfp4View(weights, n), offset, Oracles.f32View(actual, count), 0, count);
+        for (int i = 0; i < count; i++)
+            assertEquals(getF32(expected, i), getF32(actual, i), "MXFP4 at " + i);
+    }
+
+    @Test
+    void legacyQuantParity() {
+        GGMLType[] types = {
+            GGMLType.Q4_0,
+            GGMLType.Q4_1,
+            GGMLType.Q5_1,
+            GGMLType.Q4_K,
+            GGMLType.Q5_K,
+            GGMLType.Q6_K,
+            GGMLType.NVFP4,
+            GGMLType.Q1_0
+        };
+        for (GGMLType type : types) {
+            int n = type.getElementsPerBlock() * 2;
+            MemorySegment weights = arena.allocate(type.byteSizeFor(n), 64);
+            weights.fill((byte) 0x12);
+            MemorySegment expected = arena.allocate(4L * n, 64);
+            MemorySegment actual = arena.allocate(4L * n, 64);
+            FloatTensor.create(type, n, weights).copyTo(0, Oracles.oldF32(expected, n), 0, n);
+            MemoryView<MemorySegment> view =
+                    Views.wrap(
+                            weights,
+                            GGMLDataTypes.toDataType(type),
+                            Shape.flat(n / type.getElementsPerBlock()));
+            Convert.copyToF32(view, 0, Oracles.f32View(actual, n), 0, n);
+            for (int i = 0; i < n; i++)
+                assertEquals(getF32(expected, i), getF32(actual, i), type + " at " + i);
         }
     }
 
@@ -125,6 +189,18 @@ class ConvertTest {
         Convert.copyToF32(f16View(f16, n), 0, Oracles.f32View(dstRouted, n), 0, n);
         for (int i = 0; i < n; i++)
             assertEquals(getF32(dstArm, i), getF32(dstRouted, i), "routed FP16 at " + i);
+
+        // BF16 -> bf16ToF32
+        MemorySegment bf16 = arena.allocate(2L * n, 64);
+        for (int i = 0; i < n; i++)
+            bf16.set(
+                    ValueLayout.JAVA_SHORT_UNALIGNED,
+                    2L * i,
+                    com.qxotic.jota.BFloat16.fromFloat(i * 0.25f - 8));
+        Convert.bf16ToF32(bf16View(bf16, n), 0, Oracles.f32View(dstArm, n), 0, n);
+        Convert.copyToF32(bf16View(bf16, n), 0, Oracles.f32View(dstRouted, n), 0, n);
+        for (int i = 0; i < n; i++)
+            assertEquals(getF32(dstArm, i), getF32(dstRouted, i), "routed BF16 at " + i);
 
         // FP32 -> copyF32
         MemorySegment f32 = Oracles.f32(arena, n, 11);

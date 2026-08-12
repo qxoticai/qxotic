@@ -10,6 +10,7 @@ import com.qxotic.format.gguf.GGMLType;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.FloatTensor;
 import com.qxotic.jinfer.kernels.GGMLTensorEntry;
+import com.qxotic.jinfer.testkit.TestModels;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryView;
@@ -18,53 +19,22 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.channels.FileChannel;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
-import java.util.stream.Stream;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 /**
  * Differential oracle over the REAL cycle-1 model (LFM2.5-2.6B-Q8_0.gguf, pulled in Phase 0): the x
  * loader vs jinfer-kernels ModelLoader on the same file — same tensor set, dtype mapping, logical
  * shapes (GGUF dims reversed), byte sizes, and spot-checked dequantized values. Skipped when the
- * model is not in the HF cache.
+ * model is not cached.
  */
 class ModelLoaderTest {
 
-    private static final Path HF_CACHE =
-            Path.of(System.getProperty("user.home"), ".cache/huggingface/hub");
-
-    private static Path model;
-
-    @BeforeAll
-    static void findModel() throws IOException {
-        Path repo = HF_CACHE.resolve("models--LiquidAI--LFM2.5-2.6B-GGUF/snapshots");
-        if (Files.isDirectory(repo)) {
-            try (Stream<Path> snaps = Files.list(repo)) {
-                model =
-                        snaps.flatMap(
-                                        s -> {
-                                            try {
-                                                return Files.list(s);
-                                            } catch (IOException e) {
-                                                return Stream.empty();
-                                            }
-                                        })
-                                .filter(
-                                        p ->
-                                                p.getFileName()
-                                                        .toString()
-                                                        .equals("LFM2.5-2.6B-Q8_0.gguf"))
-                                .findFirst()
-                                .orElse(null);
-            }
-        }
-    }
+    private static final String MODEL = "hf.co/LiquidAI/LFM2.5-2.6B-GGUF:Q8_0";
 
     private void withLoaders(LoaderCheck check) throws IOException {
-        assumeTrue(model != null, "LFM2.5-2.6B-Q8_0.gguf not in the HF cache");
+        Path model = TestModels.require(MODEL);
         Arena oldArena = Arena.ofAuto(), newArena = Arena.ofAuto(); // GC-owned, not closeable
         try (FileChannel channel = FileChannel.open(model)) {
             GGUF gguf = ModelLoader.readGguf(channel, "lfm2.5");

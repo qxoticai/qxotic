@@ -1,7 +1,6 @@
 package com.qxotic.jinfer.x.models.lfm2;
 
 import com.qxotic.format.gguf.GGUF;
-import com.qxotic.jinfer.x.Segments;
 import com.qxotic.jinfer.x.Views;
 import com.qxotic.jinfer.x.boundary.Model;
 import com.qxotic.jinfer.x.boundary.Reranker;
@@ -162,7 +161,7 @@ public final class Lfm2Colbert implements Reranker<Lfm2.State> {
      */
     private float[] copyRow(Lfm2.State state, int row) {
         MemoryView<?> view = model.colbertRow(state, row);
-        Views.rawF32(view, "colbertRow"); // requireDense: the F32 + contiguity gate
+        Views.requireDense(view, com.qxotic.jota.DataType.FP32, "colbertRow");
         int outDim = model.config().embeddingLengthOut();
         float[] dst = new float[outDim];
         MemoryView<MemorySegment> src = Views.castToSegmentBacked(view, "colbertRow");
@@ -175,8 +174,9 @@ public final class Lfm2Colbert implements Reranker<Lfm2.State> {
 
     /**
      * {@code Σ_q max_d (q·d)} over L2-normalized rows; skiplisted DOCUMENT tokens drop out. Each
-     * document row is projected ONCE ({@link Lfm2#colbertRow}) and dotted against every query row
-     * while it sits in the reused buffer - the loop order that needs no document-side copy.
+     * document row is projected ONCE ({@link Lfm2#colbertRow}) and dotted against every query row;
+     * the row is copied out of the reused buffer via {@link #copyRow} (checked copy - kernels never
+     * see heap-array operands), and the dot itself is a plain auto-vectorizing array loop.
      */
     private double maxSim(float[][] queryRows, Lfm2.State state, int rowStart, int[] docIds) {
         int outDim = model.config().embeddingLengthOut();
@@ -184,16 +184,12 @@ public final class Lfm2Colbert implements Reranker<Lfm2.State> {
         Arrays.fill(best, Double.NEGATIVE_INFINITY);
         for (int d = 0; d < docIds.length; d++) {
             if (skiplist.contains(docIds[d])) continue;
-            // rawF32's requireDense is the F32 gate; the dot below reads raw floats
-            Views.Raw row = Views.rawF32(model.colbertRow(state, rowStart + d), "colbertRow");
+            float[] docRow = copyRow(state, rowStart + d);
             for (int q = 0; q < queryRows.length; q++) {
                 float[] qr = queryRows[q];
                 double dot = 0;
                 for (int i = 0; i < outDim; i++) {
-                    dot +=
-                            qr[i]
-                                    * Segments.readFloat(
-                                            row.vseg(), row.vbase() + (long) i * Float.BYTES);
+                    dot += qr[i] * docRow[i];
                 }
                 if (dot > best[q]) best[q] = dot;
             }

@@ -8,6 +8,7 @@ import com.qxotic.jota.memory.MemoryAllocator;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.memory.impl.MemoryFactory;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 
 /**
  * View factories and the entry-check helpers every xcore kernel runs first.
@@ -40,6 +41,50 @@ public final class Views {
     public static MemoryView<MemorySegment> allocateF16(
             MemoryAllocator<MemorySegment> allocator, long... dims) {
         return allocate(allocator, DataType.FP16, dims);
+    }
+
+    /** Fresh FP32 view holding a copy of {@code values} (constants baked at load time). */
+    public static MemoryView<MemorySegment> fromFloatArray(
+            MemoryAllocator<MemorySegment> allocator, float[] values) {
+        MemoryView<MemorySegment> view = allocateF32(allocator, values.length);
+        view.memory()
+                .base()
+                .asSlice(view.byteOffset(), (long) values.length * Float.BYTES)
+                .copyFrom(MemorySegment.ofArray(values));
+        return view;
+    }
+
+    /**
+     * Checked bulk write of {@code values[from..from+count)} into {@code view} at {@code
+     * elementOffset} (preprocessing fills a native view from decoded heap arrays). Same guarantees
+     * as {@link #getFloat}: plain segment copy with JDK bounds and liveness checks.
+     */
+    public static void copyFromArray(
+            MemoryView<MemorySegment> view,
+            long elementOffset,
+            float[] values,
+            int from,
+            int count,
+            String name) {
+        requireF32(view, name);
+        requireContiguous(view, name);
+        checkAlive(view, name);
+        if (elementOffset < 0 || elementOffset + count > view.shape().size()) {
+            throw new IndexOutOfBoundsException(
+                    name
+                            + ": ["
+                            + elementOffset
+                            + ", "
+                            + (elementOffset + count)
+                            + ") out of "
+                            + view.shape().size());
+        }
+        view.memory()
+                .base()
+                .asSlice(view.byteOffset() + elementOffset * Float.BYTES)
+                .copyFrom(
+                        MemorySegment.ofArray(values)
+                                .asSlice((long) from * Float.BYTES, (long) count * Float.BYTES));
     }
 
     private static MemoryView<MemorySegment> allocate(
@@ -96,6 +141,39 @@ public final class Views {
     }
 
     /**
+     * Checked scalar FP32 read, for model code that needs ONE element (a logit, a learned scalar).
+     * Unlike kernel access this keeps the JDK's bounds and liveness checks (plain {@code
+     * segment.get} on the real segment, never {@link Segments#GLOBAL_SEGMENT}); it is deliberately
+     * not the hot-path idiom - kernels use {@link #rawF32}.
+     */
+    public static float getFloat(MemoryView<MemorySegment> view, long elementOffset, String name) {
+        requireF32(view, name);
+        requireContiguous(view, name);
+        checkAlive(view, name);
+        if (elementOffset < 0 || elementOffset >= view.shape().size()) {
+            throw new IndexOutOfBoundsException(
+                    name + ": element offset " + elementOffset + " out of " + view.shape().size());
+        }
+        return view.memory()
+                .base()
+                .get(ValueLayout.JAVA_FLOAT, view.byteOffset() + elementOffset * Float.BYTES);
+    }
+
+    /**
+     * Checked FP32 readback to a heap array (decode heads, parity tests). Same guarantees as {@link
+     * #getFloat}.
+     */
+    public static float[] toFloatArray(MemoryView<MemorySegment> view, String name) {
+        requireF32(view, name);
+        requireContiguous(view, name);
+        checkAlive(view, name);
+        return view.memory()
+                .base()
+                .asSlice(view.byteOffset(), view.shape().size() * Float.BYTES)
+                .toArray(ValueLayout.JAVA_FLOAT);
+    }
+
+    /**
      * Checked CAST of an opaque boundary view ({@code MemoryView<?>}) to its segment-backed reality
      * — same reference, no wrap, no copy, fail-fast. The wildcard at the boundary exists for a
      * future non-segment backing (a GPU buffer); today every weight mmap and state scratch in the
@@ -112,29 +190,5 @@ public final class Views {
                             + view.memory().base().getClass().getName());
         }
         return (MemoryView<MemorySegment>) view;
-    }
-
-    /**
-     * The {@code (vseg, vbase)} pair a kernel runs on — the exact idiom of the old {@code
-     * SegmentFloatTensor} fields: with {@link Segments#GLOBAL_SEGMENT}, {@code vseg} is the
-     * all-of-memory segment and {@code vbase} the absolute byte base (view's {@code byteOffset}
-     * folded in); without it, the segment itself and its plain byte offset. Valid for BOTH vector
-     * loads ({@code FloatVector.fromMemorySegment(F_SPECIES, vseg, vbase + i*4, LE)}) and scalar
-     * tails ({@code Segments.readFloat(vseg, vbase + i*4)}).
-     */
-    public record Raw(MemorySegment vseg, long vbase) {}
-
-    /** Entry check (FP32 + row-major contiguous) + extraction, in one call. */
-    public static Raw rawF32(MemoryView<?> view, String name) {
-        return raw(view, DataType.FP32, name);
-    }
-
-    /** Entry check (dtype + row-major contiguous) + extraction, in one call. */
-    public static Raw raw(MemoryView<?> view, DataType expected, String name) {
-        requireDense(view, expected, name);
-        MemoryView<MemorySegment> v = castToSegmentBacked(view, name);
-        MemorySegment segment = v.memory().base();
-        return new Raw(
-                Segments.vectorSegment(segment), Segments.vectorBase(segment) + v.byteOffset());
     }
 }

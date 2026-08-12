@@ -1,22 +1,26 @@
 package com.qxotic.jinfer.x.kernels;
 
 import static com.qxotic.jinfer.x.Segments.F_SPECIES;
+import static com.qxotic.jinfer.x.Segments.I_SPECIES;
+import static com.qxotic.jinfer.x.Segments.S_SPECIES_HALF;
 import static com.qxotic.jinfer.x.Segments.USE_VECTOR_API;
 import static com.qxotic.jinfer.x.Segments.readByte;
 import static com.qxotic.jinfer.x.Segments.readFloat;
 import static com.qxotic.jinfer.x.Segments.readFloat16;
+import static com.qxotic.jinfer.x.Segments.readShort;
 import static com.qxotic.jinfer.x.Segments.writeFloat;
 
 import com.qxotic.jam.JAM;
 import com.qxotic.jinfer.x.Parallel;
 import com.qxotic.jinfer.x.Views;
-import com.qxotic.jinfer.x.Views.Raw;
+import com.qxotic.jota.BFloat16;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteOrder;
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.FloatVector;
+import jdk.incubator.vector.ShortVector;
 import jdk.incubator.vector.VectorOperators;
 
 /**
@@ -26,8 +30,9 @@ import jdk.incubator.vector.VectorOperators;
  * row loop.
  *
  * <p>Contract: activations {@code a} and result {@code c} are dense FP32; weights {@code w} are
- * dense, dtype dispatched (cycle 1: {@code Q8_0}, {@code FP32}). Offsets/strides are in ELEMENTS
- * (weights: quant elements, block-aligned) exactly as the old {@code MatMul.mm}.
+ * dense, dtype dispatched ({@code Q8_0}, {@code MXFP4}, {@code BF16}, {@code FP32}).
+ * Offsets/strides are in ELEMENTS (weights: quant elements, block-aligned) exactly as the old
+ * {@code MatMul.mm}.
  *
  * <p>Computes {@code C = W · Aᵀ}: for output row {@code s} and weight row {@code row}, {@code
  * C[s*cStride + cOff + row] = dot(W[row], A[s])}.
@@ -50,6 +55,10 @@ public final class MatMul {
 
     private static final int Q8_BLOCK = 32; // Q8_0 elements per block
     private static final int Q8_BLOCK_BYTES = 34; // f16 scale + 32 int8
+    private static final int MXFP4_BLOCK_BYTES = 17;
+    private static final byte[] MXFP4_VALUES = {
+        0, 1, 2, 3, 4, 6, 8, 12, 0, -1, -2, -3, -4, -6, -8, -12
+    };
 
     // === gemm/gemv entry shims: one place that owns the model-side matmul contract ===
     // NOT BLAS dgemm: this is llama.cpp's ggml_mul_mat(w, a) worldview, c = w · aᵀ, with
@@ -115,8 +124,8 @@ public final class MatMul {
             int m,
             int n,
             int k) {
-        Raw av = Views.rawF32(a, "a");
-        Raw cv = Views.rawF32(c, "c");
+        Raw av = Raw.f32(a, "a");
+        Raw cv = Raw.f32(c, "c");
         boolean inPlace = a == c && aOff == cOff;
         DataType dt = w.dataType();
         Views.requireContiguous(w, "w");
@@ -141,9 +150,58 @@ public final class MatMul {
         if (dt == DataType.Q8_0) {
             long wByte = wBase + wOff / Q8_BLOCK * Q8_BLOCK_BYTES;
             long rowBytes = (long) wStride / Q8_BLOCK * Q8_BLOCK_BYTES;
-            run(ws, wByte, rowBytes, av, aOff, aStride, cv, cOff, cStride, m, n, k, true, inPlace);
+            run(
+                    ws,
+                    wByte,
+                    rowBytes,
+                    av,
+                    aOff,
+                    aStride,
+                    cv,
+                    cOff,
+                    cStride,
+                    m,
+                    n,
+                    k,
+                    DataType.Q8_0,
+                    inPlace);
+        } else if (dt == DataType.MXFP4) {
+            long wByte = wBase + wOff / Q8_BLOCK * MXFP4_BLOCK_BYTES;
+            long rowBytes = (long) wStride / Q8_BLOCK * MXFP4_BLOCK_BYTES;
+            run(
+                    ws,
+                    wByte,
+                    rowBytes,
+                    av,
+                    aOff,
+                    aStride,
+                    cv,
+                    cOff,
+                    cStride,
+                    m,
+                    n,
+                    k,
+                    DataType.MXFP4,
+                    inPlace);
+        } else if (dt == DataType.BF16) {
+            Raw wv = Raw.of(w, DataType.BF16, "w");
+            run(
+                    wv.vseg(),
+                    wv.vbase() + wOff * 2L,
+                    (long) wStride * 2,
+                    av,
+                    aOff,
+                    aStride,
+                    cv,
+                    cOff,
+                    cStride,
+                    m,
+                    n,
+                    k,
+                    DataType.BF16,
+                    inPlace);
         } else if (dt == DataType.FP32) {
-            Raw wv = Views.rawF32(w, "w");
+            Raw wv = Raw.f32(w, "w");
             run(
                     wv.vseg(),
                     wv.vbase() + wOff * 4L,
@@ -157,8 +215,22 @@ public final class MatMul {
                     m,
                     n,
                     k,
-                    false,
+                    DataType.FP32,
                     inPlace);
+        } else if (isLegacyWeight(dt)) {
+            ModelLoader.floatTensor(w, "w")
+                    .matmul(
+                            wOff,
+                            wStride,
+                            ModelLoader.floatTensor(a, "a"),
+                            aOff,
+                            aStride,
+                            ModelLoader.floatTensor(c, "c"),
+                            cOff,
+                            cStride,
+                            m,
+                            n,
+                            k);
         } else {
             throw new UnsupportedOperationException("matmul weight dtype " + dt);
         }
@@ -178,7 +250,7 @@ public final class MatMul {
             int m,
             int n,
             int k,
-            boolean q8,
+            DataType weightType,
             boolean inPlace) {
         MemorySegment as = av.vseg(), cs = cv.vseg();
         long aBase = av.vbase() + aOff * 4L, cBase = cv.vbase() + cOff * 4L;
@@ -188,7 +260,7 @@ public final class MatMul {
                     writeFloat(
                             cs,
                             cBase + (long) i * 4,
-                            dot(ws, wByte + (long) i * wRowBytes, as, aBase, k, q8));
+                            dot(ws, wByte + (long) i * wRowBytes, as, aBase, k, weightType));
                 }
             } else if (inPlace) {
                 // in-place must avoid read-after-write races under parallel execution
@@ -196,7 +268,15 @@ public final class MatMul {
                 Parallel.parallelFor(
                         0,
                         m,
-                        i -> tmp[i] = dot(ws, wByte + (long) i * wRowBytes, as, aBase, k, q8));
+                        i ->
+                                tmp[i] =
+                                        dot(
+                                                ws,
+                                                wByte + (long) i * wRowBytes,
+                                                as,
+                                                aBase,
+                                                k,
+                                                weightType));
                 for (int i = 0; i < m; i++) {
                     writeFloat(cs, cBase + (long) i * 4, tmp[i]);
                 }
@@ -208,7 +288,13 @@ public final class MatMul {
                                 writeFloat(
                                         cs,
                                         cBase + (long) i * 4,
-                                        dot(ws, wByte + (long) i * wRowBytes, as, aBase, k, q8)));
+                                        dot(
+                                                ws,
+                                                wByte + (long) i * wRowBytes,
+                                                as,
+                                                aBase,
+                                                k,
+                                                weightType)));
             }
             return;
         }
@@ -228,7 +314,7 @@ public final class MatMul {
                                         as,
                                         aBase + (long) s * aRowBytes,
                                         k,
-                                        q8);
+                                        weightType);
                     });
             for (int s = 0; s < n; s++) {
                 for (int row = 0; row < m; row++) {
@@ -250,17 +336,108 @@ public final class MatMul {
                                         as,
                                         aBase + (long) s * aRowBytes,
                                         k,
-                                        q8));
+                                        weightType));
                     });
         }
     }
 
     private static float dot(
-            MemorySegment w, long wByte, MemorySegment x, long xByte, int k, boolean q8) {
+            MemorySegment w, long wByte, MemorySegment x, long xByte, int k, DataType weightType) {
+        if (weightType == DataType.BF16) return dotBF16(w, wByte, x, xByte, k);
+        if (weightType == DataType.MXFP4) return dotMxfp4(w, wByte, x, xByte, k);
+        boolean q8 = weightType == DataType.Q8_0;
         if (!USE_VECTOR_API) {
             return q8 ? scalarDotQ8(w, wByte, x, xByte, k) : scalarDotF32(w, wByte, x, xByte, k);
         }
         return q8 ? dotQ8(w, wByte, x, xByte, k) : dotF32(w, wByte, x, xByte, k);
+    }
+
+    private static float dotBF16(MemorySegment w, long wByte, MemorySegment x, long xByte, int k) {
+        if (!USE_VECTOR_API) return scalarDotBF16(w, wByte, x, xByte, k);
+        FloatVector sum = FloatVector.zero(F_SPECIES);
+        int bound = F_SPECIES.loopBound(k);
+        for (int i = 0; i < bound; i += F_SPECIES.length()) {
+            FloatVector weights =
+                    ShortVector.fromMemorySegment(
+                                    S_SPECIES_HALF,
+                                    w,
+                                    wByte + (long) i * Short.BYTES,
+                                    ByteOrder.LITTLE_ENDIAN)
+                            .castShape(I_SPECIES, 0)
+                            .lanewise(VectorOperators.LSHL, 16)
+                            .reinterpretAsFloats();
+            sum =
+                    weights.fma(
+                            FloatVector.fromMemorySegment(
+                                    F_SPECIES,
+                                    x,
+                                    xByte + (long) i * Float.BYTES,
+                                    ByteOrder.LITTLE_ENDIAN),
+                            sum);
+        }
+        float result = sum.reduceLanes(VectorOperators.ADD);
+        for (int i = bound; i < k; i++)
+            result +=
+                    BFloat16.toFloat(readShort(w, wByte + (long) i * Short.BYTES))
+                            * readFloat(x, xByte + (long) i * Float.BYTES);
+        return result;
+    }
+
+    private static float dotMxfp4(MemorySegment w, long wByte, MemorySegment x, long xByte, int k) {
+        if (USE_VECTOR_API && k % Q8_BLOCK == 0) {
+            FloatVector acc = FloatVector.zero(F_SPECIES);
+            ByteVector table = ByteVector.fromArray(ByteVector.SPECIES_128, MXFP4_VALUES, 0);
+            for (int block = 0; block < k; block += Q8_BLOCK, wByte += MXFP4_BLOCK_BYTES) {
+                float scale = mxfp4Scale(Byte.toUnsignedInt(readByte(w, wByte)));
+                ByteVector packed =
+                        ByteVector.fromMemorySegment(
+                                ByteVector.SPECIES_128, w, wByte + 1, ByteOrder.LITTLE_ENDIAN);
+                ByteVector low = table.rearrange(packed.and((byte) 15).toShuffle());
+                ByteVector high =
+                        table.rearrange(packed.lanewise(VectorOperators.LSHR, 4).toShuffle());
+                int parts = 512 / F_SPECIES.vectorBitSize();
+                for (int part = 0; part < parts; part++) {
+                    int offset = part * F_SPECIES.length();
+                    acc =
+                            ((FloatVector) low.castShape(F_SPECIES, part))
+                                    .mul(scale)
+                                    .fma(
+                                            floatsAt(x, xByte + (long) (block + offset) * 4),
+                                            ((FloatVector) high.castShape(F_SPECIES, part))
+                                                    .mul(scale)
+                                                    .fma(
+                                                            floatsAt(
+                                                                    x,
+                                                                    xByte
+                                                                            + (long)
+                                                                                            (block
+                                                                                                    + 16
+                                                                                                    + offset)
+                                                                                    * 4),
+                                                            acc));
+                }
+            }
+            return acc.reduceLanes(VectorOperators.ADD);
+        }
+        float sum = 0f;
+        for (int block = 0; block < k; block += Q8_BLOCK, wByte += MXFP4_BLOCK_BYTES) {
+            int count = Math.min(Q8_BLOCK, k - block);
+            float scale = mxfp4Scale(Byte.toUnsignedInt(readByte(w, wByte)));
+            for (int lane = 0; lane < count; lane++) {
+                int packed = Byte.toUnsignedInt(readByte(w, wByte + 1 + (lane & 15)));
+                int code = lane < 16 ? packed & 15 : packed >>> 4;
+                sum +=
+                        MXFP4_VALUES[code]
+                                * scale
+                                * readFloat(x, xByte + (long) (block + lane) * Float.BYTES);
+            }
+        }
+        return sum;
+    }
+
+    private static float mxfp4Scale(int value) {
+        int bits = value < 2 ? 0x00200000 << value : (value - 1) << 23;
+        return Float.intBitsToFloat(bits);
     }
 
     // ------------------------------------------------------------------
@@ -484,6 +661,16 @@ public final class MatMul {
         return sum;
     }
 
+    private static float scalarDotBF16(
+            MemorySegment w, long wByte, MemorySegment x, long xByte, int k) {
+        float sum = 0f;
+        for (int i = 0; i < k; i++)
+            sum +=
+                    BFloat16.toFloat(readShort(w, wByte + (long) i * Short.BYTES))
+                            * readFloat(x, xByte + (long) i * Float.BYTES);
+        return sum;
+    }
+
     // ------------------------------------------------------------------
     // JAM backends — the port of JamMatMul + Dispatch's provider loading. Raw(vseg, vbase) IS
     // jam's (segment, byte operand offset) contract, so the handoff is zero-copy; element
@@ -579,7 +766,17 @@ public final class MatMul {
      * the k-quants/MXFP4/NVFP4/Q1_0 land with their jota DataTypes in cycle 2.
      */
     private static boolean jamApplies(DataType dt, int k, long wOff) {
-        if (dt != DataType.Q8_0 && dt != DataType.FP32 && dt != DataType.FP16) return false;
+        if (dt != DataType.Q8_0
+                && dt != DataType.Q4_0
+                && dt != DataType.Q4_K
+                && dt != DataType.Q5_K
+                && dt != DataType.Q6_K
+                && dt != DataType.MXFP4
+                && dt != DataType.NVFP4
+                && dt != DataType.Q1_0
+                && dt != DataType.FP32
+                && dt != DataType.FP16
+                && dt != DataType.BF16) return false;
         long epb = dt.elementsPerBlock();
         return k % epb == 0 && wOff % epb == 0;
     }
@@ -587,8 +784,28 @@ public final class MatMul {
     /** jota DataType -> jam dtype tag (== ggml_type value, mapped explicitly to stay honest). */
     private static int jamTag(DataType dt) {
         if (dt == DataType.Q8_0) return JAM.Q8_0;
+        if (dt == DataType.Q4_0) return JAM.Q4_0;
+        if (dt == DataType.Q4_K) return JAM.Q4_K;
+        if (dt == DataType.Q5_K) return JAM.Q5_K;
+        if (dt == DataType.Q6_K) return JAM.Q6_K;
+        if (dt == DataType.MXFP4) return JAM.MXFP4;
+        if (dt == DataType.NVFP4) return JAM.NVFP4;
+        if (dt == DataType.Q1_0) return JAM.Q1_0;
         if (dt == DataType.FP32) return JAM.F32;
         if (dt == DataType.FP16) return JAM.F16;
+        if (dt == DataType.BF16) return JAM.BF16;
         throw new IllegalArgumentException("jam has no kernel for " + dt);
+    }
+
+    private static boolean isLegacyWeight(DataType dt) {
+        return dt == DataType.FP16
+                || dt == DataType.Q4_0
+                || dt == DataType.Q4_1
+                || dt == DataType.Q5_1
+                || dt == DataType.Q4_K
+                || dt == DataType.Q5_K
+                || dt == DataType.Q6_K
+                || dt == DataType.NVFP4
+                || dt == DataType.Q1_0;
     }
 }
