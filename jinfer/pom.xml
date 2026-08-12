@@ -17,11 +17,16 @@
 
   <modules>
     <module>jinfer-core</module>
+    <module>jinfer-testkit</module>
     <module>jinfer-xcore</module>
     <module>jinfer-xkernels</module>
     <module>jinfer-xboundary</module>
     <module>jinfer-xlfm2</module>
     <module>jinfer-xqwen3</module>
+    <module>jinfer-xqwen35</module>
+    <module>jinfer-xgemma4</module>
+    <module>jinfer-xgptoss</module>
+    <module>jinfer-xnemotronh</module>
     <module>jinfer-xbench</module>
     <module>jinfer-llm</module>
     <module>jinfer-chat</module>
@@ -136,6 +141,26 @@
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
+        <artifactId>jinfer-xqwen35</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>jinfer-xgemma4</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>jinfer-xgptoss</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>jinfer-xnemotronh</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
         <artifactId>jinfer-xbench</artifactId>
         <version>${project.version}</version>
       </dependency>
@@ -152,6 +177,11 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-hub</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>jinfer-testkit</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
