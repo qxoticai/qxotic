@@ -12,11 +12,10 @@
   <packaging>jar</packaging>
 
   <name>jinfer-xbench</name>
-  <description>A/B bench for the FloatTensor migration (cycle 1): JinferBench's harness verbatim,
-    driving BOTH the old com.qxotic.jinfer.models.lfm2.Lfm2 and the x port
-    (com.qxotic.jinfer.x.models.lfm2.Lfm2) behind one --impl flag, so old vs x pp/tg is measured
-    by ONE timing loop in ONE JVM. A consumer of both trees, not an x-module: the "x never deps
-    on old" rule does not apply here — comparing them is the whole point.</description>
+  <description>A/B bench for the MemoryView ports: JinferBench's harness verbatim, driving both old
+    and x LFM2/Gemma 4 implementations behind one --impl flag, so old vs x pp/tg is measured by one
+    timing loop in one JVM. A consumer of both trees, not an x-module: the "x never deps on old"
+    rule does not apply here - comparing them is the whole point.</description>
 
   <properties>
     <maven.deploy.skip>true</maven.deploy.skip>
@@ -43,6 +42,10 @@
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-xqwen3</artifactId>
     </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-xgemma4</artifactId>
+    </dependency>
     <!-- the old tree, benchmarked against the x port -->
     <dependency>
       <groupId>com.qxotic</groupId>
@@ -51,6 +54,10 @@
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-qwen3</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-gemma4</artifactId>
     </dependency>
     <!-- the native JAM backend BOTH trees route prefill gemm to (ServiceLoader-discovered);
          the whole point of the A/B -->

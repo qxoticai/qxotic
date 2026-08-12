@@ -1,11 +1,12 @@
 package com.qxotic.jinfer.x.bench;
 
-import com.qxotic.jinfer.x.Segments;
 import com.qxotic.jinfer.x.Views;
 import java.io.PrintStream;
 import java.lang.foreign.Arena;
+import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -15,12 +16,12 @@ import java.util.concurrent.ForkJoinPool;
  * A/B twin of {@code com.qxotic.jinfer.bench.JinferBench}: the SAME llama-bench-parity harness
  * (defaults, adaptive warmup, per-rep fresh state, synthetic ids, one vocab projection per pp batch
  * / tg step, NO argmax in the timed loop, same thread pinning and JAM warning), driving both LFM2
- * implementations behind {@code --impl old,x} so old vs x is one timing loop in one JVM. The only
- * deliberate deltas from JinferBench:
+ * and Gemma 4 implementations behind {@code --impl old,x} so old vs x is one timing loop in one
+ * JVM. The only deliberate deltas from JinferBench:
  *
  * <ul>
- *   <li>loading is direct ({@code Lfm2.loadModel}) on both sides — the slice has no ServiceLoader
- *       {@code Models} front, and load time is not measured anyway
+ *   <li>loading is direct ({@code loadModel}) on both sides - the slice has no ServiceLoader {@code
+ *       Models} front, and load time is not measured anyway
  *   <li>the model seam is abstracted ({@link BenchModel}) instead of {@code LoadedModel<S>}
  * </ul>
  *
@@ -221,17 +222,103 @@ public final class XJinferBench {
 
         @Override
         float logits0() {
-            Views.Raw r = Views.rawF32(model.logits(s), "logits");
-            return Segments.readFloat(r.vseg(), r.vbase());
+            return Views.getFloat(
+                    Views.castToSegmentBacked(model.logits(s), "logits"), 0, "logits");
+        }
+    }
+
+    private static final class OldGemma4BenchModel extends BenchModel {
+        private final com.qxotic.jinfer.models.gemma4.Gemma4 model;
+        private com.qxotic.jinfer.models.gemma4.Gemma4.State s;
+
+        OldGemma4BenchModel(Path path) throws Exception {
+            this.model = com.qxotic.jinfer.models.gemma4.Gemma4.loadModel(path, Arena.ofAuto());
+        }
+
+        @Override
+        int vocab() {
+            return model.config().vocabularySize();
+        }
+
+        @Override
+        void newState(int ctx) {
+            s = model.newState(ctx);
+        }
+
+        @Override
+        void ingestPrefill(int[] prompt) {
+            for (com.qxotic.jinfer.Batch b :
+                    com.qxotic.jinfer.Batch.prepare(
+                            List.of(com.qxotic.jinfer.Batch.prefill(prompt)), s.batchCapacity())) {
+                model.ingest(s, b);
+            }
+        }
+
+        @Override
+        void ingestStep(int tok) {
+            model.ingest(s, com.qxotic.jinfer.Batch.step(tok));
+        }
+
+        @Override
+        float logits0() {
+            return model.logits(s).getFloat(0);
+        }
+    }
+
+    private static final class XGemma4BenchModel extends BenchModel {
+        private final com.qxotic.jinfer.x.models.gemma4.Gemma4 model;
+        private com.qxotic.jinfer.x.models.gemma4.Gemma4.State s;
+
+        XGemma4BenchModel(Path path) throws Exception {
+            this.model = com.qxotic.jinfer.x.models.gemma4.Gemma4.loadModel(path, Arena.ofAuto());
+        }
+
+        @Override
+        int vocab() {
+            return model.config().vocabularySize();
+        }
+
+        @Override
+        void newState(int ctx) {
+            s = model.newState(ctx);
+        }
+
+        @Override
+        void ingestPrefill(int[] prompt) {
+            for (com.qxotic.jinfer.x.boundary.Batch b :
+                    com.qxotic.jinfer.x.boundary.Batch.prepare(
+                            List.of(com.qxotic.jinfer.x.boundary.Batch.prefill(prompt)),
+                            s.batchCapacity())) {
+                model.ingest(s, b);
+            }
+        }
+
+        @Override
+        void ingestStep(int tok) {
+            model.ingest(s, com.qxotic.jinfer.x.boundary.Batch.step(tok));
+        }
+
+        @Override
+        float logits0() {
+            return Views.getFloat(
+                    Views.castToSegmentBacked(model.logits(s), "logits"), 0, "logits");
         }
     }
 
     private static BenchModel load(Path path, String impl) throws Exception {
-        return switch (impl) {
-            case "old" -> new OldBenchModel(path);
-            case "x" -> new XBenchModel(path);
+        String architecture;
+        try (FileChannel channel = FileChannel.open(path, StandardOpenOption.READ)) {
+            architecture =
+                    com.qxotic.jinfer.x.kernels.ModelLoader.readGguf(channel, path.toString())
+                            .getString("general.architecture");
+        }
+        return switch (architecture + ":" + impl) {
+            case "lfm2:old" -> new OldBenchModel(path);
+            case "lfm2:x" -> new XBenchModel(path);
+            case "gemma4:old" -> new OldGemma4BenchModel(path);
+            case "gemma4:x" -> new XGemma4BenchModel(path);
             default -> {
-                System.err.println("unknown impl: " + impl + " (expected old|x)");
+                System.err.println("unsupported architecture/impl: " + architecture + ":" + impl);
                 System.exit(2);
                 throw new AssertionError();
             }
@@ -380,10 +467,10 @@ public final class XJinferBench {
     private static void usage(PrintStream out) {
         out.println(
                 """
-                jinfer-xbench — JinferBench's harness A/B-ing old Lfm2 vs the x port
+                jinfer-xbench — JinferBench's harness A/B-ing old vs x ports
 
                 usage: jinfer-xbench -m <model.gguf> [-m ...] [options]
-                  -m, --model <path>      model to benchmark (repeatable)
+                  -m, --model <path>      LFM2 or Gemma 4 model to benchmark (repeatable)
                       --impl <old,x>      which tree(s) to run (default old,x)
                   -p, --n-prompt <N>      prefill tokens (default 512; 0 to skip pp)
                   -n, --n-gen <N>         decode tokens  (default 128; 0 to skip tg)

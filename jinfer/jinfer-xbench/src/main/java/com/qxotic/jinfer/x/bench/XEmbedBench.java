@@ -1,6 +1,5 @@
 package com.qxotic.jinfer.x.bench;
 
-import com.qxotic.jinfer.x.Segments;
 import com.qxotic.jinfer.x.Views;
 import java.io.PrintStream;
 import java.lang.foreign.Arena;
@@ -224,8 +223,9 @@ public final class XEmbedBench {
                     new com.qxotic.jinfer.x.boundary.Batch.Input.Sequences(
                             new com.qxotic.jinfer.x.boundary.Batch.Input.Tokens(ids), seqLen),
                     e -> {
-                        Views.Raw r = Views.rawF32(e, "embedding");
-                        sink += Segments.readFloat(r.vseg(), r.vbase());
+                        sink +=
+                                Views.getFloat(
+                                        Views.castToSegmentBacked(e, "embedding"), 0, "embedding");
                         got[0]++;
                     });
             return got[0];
@@ -291,8 +291,9 @@ public final class XEmbedBench {
                     new com.qxotic.jinfer.x.boundary.Batch.Input.Sequences(
                             new com.qxotic.jinfer.x.boundary.Batch.Input.Tokens(ids), seqLen),
                     e -> {
-                        Views.Raw r = Views.rawF32(e, "embedding");
-                        sink += Segments.readFloat(r.vseg(), r.vbase());
+                        sink +=
+                                Views.getFloat(
+                                        Views.castToSegmentBacked(e, "embedding"), 0, "embedding");
                         got[0]++;
                     });
             return got[0];

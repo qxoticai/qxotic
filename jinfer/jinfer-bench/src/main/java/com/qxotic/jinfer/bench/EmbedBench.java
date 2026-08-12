@@ -127,7 +127,7 @@ public final class EmbedBench {
                 state,
                 seqs,
                 e -> {
-                    sink += e.get(0);
+                    sink += e.getFloat(0);
                     got[0]++;
                 });
         double tps = total / ((System.nanoTime() - t0) / 1e9);
