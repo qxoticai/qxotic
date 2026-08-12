@@ -2,6 +2,7 @@
 # Layout on disk: <models-root>/{source}/{user}/{repo}/{file}
 # Kept identical to testkit ModelFixture by ModelFixtureManifestTest.
 hf.co LiquidAI LFM2.5-8B-A1B-GGUF LFM2.5-8B-A1B-Q8_0.gguf
+hf.co LiquidAI LFM2-8B-A1B-GGUF LFM2-8B-A1B-Q8_0.gguf
 hf.co LiquidAI LFM2.5-2.6B-GGUF LFM2.5-2.6B-Q8_0.gguf
 hf.co LiquidAI LFM2.5-350M-GGUF LFM2.5-350M-Q8_0.gguf
 hf.co LiquidAI LFM2.5-Embedding-350M-GGUF LFM2.5-Embedding-350M-Q8_0.gguf
@@ -10,6 +11,7 @@ hf.co unsloth gemma-4-E2B-it-GGUF gemma-4-E2B-it-Q8_0.gguf
 hf.co unsloth gemma-4-E2B-it-GGUF mmproj-F32.gguf
 hf.co unsloth gemma-4-E2B-it-GGUF mtp-gemma-4-E2B-it.gguf
 hf.co unsloth gemma-4-E2B-it-qat-GGUF gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf
+hf.co unsloth gemma-4-E4B-it-GGUF gemma-4-E4B-it-Q8_0.gguf
 hf.co google gemma-4-E2B-it-qat-q4_0-gguf gemma-4-E2B_q4_0-it.gguf
 hf.co unsloth gemma-4-12b-it-GGUF gemma-4-12b-it-Q8_0.gguf
 hf.co unsloth gemma-4-12b-it-GGUF mmproj-F32.gguf

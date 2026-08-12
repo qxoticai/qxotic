@@ -53,6 +53,8 @@ public final class ModelFixture {
 
     public static final Gguf LFM25_8B_Q8 =
             hf("LiquidAI", "LFM2.5-8B-A1B-GGUF", "LFM2.5-8B-A1B-Q8_0.gguf");
+    public static final Gguf LFM2_8B_A1B_Q8 =
+            hf("LiquidAI", "LFM2-8B-A1B-GGUF", "LFM2-8B-A1B-Q8_0.gguf");
     public static final Gguf LFM25_26B_Q8 =
             hf("LiquidAI", "LFM2.5-2.6B-GGUF", "LFM2.5-2.6B-Q8_0.gguf");
     public static final Gguf LFM25_350M_Q8 =
@@ -70,6 +72,8 @@ public final class ModelFixture {
             hf("unsloth", "gemma-4-E2B-it-GGUF", "mtp-gemma-4-E2B-it.gguf");
     public static final Gguf GEMMA4_E2B_QAT_Q4 =
             hf("unsloth", "gemma-4-E2B-it-qat-GGUF", "gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf");
+    public static final Gguf GEMMA4_E4B_Q8 =
+            hf("unsloth", "gemma-4-E4B-it-GGUF", "gemma-4-E4B-it-Q8_0.gguf");
     public static final Gguf GEMMA4_E2B_GOOGLE_Q4 =
             hf("google", "gemma-4-E2B-it-qat-q4_0-gguf", "gemma-4-E2B_q4_0-it.gguf");
     public static final Gguf GEMMA4_12B_Q8 =
