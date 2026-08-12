@@ -158,6 +158,10 @@ public final class Convolutions {
                                     outRow,
                                     bodyFrom,
                                     bodyTo);
+                        // Clamp both edge spans to the tile's [from, to): when pad >= the tile
+                        // span (pad > time is the extreme) bodyFrom overshoots `to`, and an
+                        // unclamped edge would write outputs past the row - through GLOBAL_SEGMENT
+                        // that is an unchecked wild write.
                         edge(
                                 in,
                                 inChannels,
@@ -171,7 +175,7 @@ public final class Convolutions {
                                 biasValue,
                                 outRow,
                                 from,
-                                bodyFrom);
+                                Math.min(bodyFrom, to));
                         edge(
                                 in,
                                 inChannels,
@@ -184,7 +188,7 @@ public final class Convolutions {
                                 tapRow,
                                 biasValue,
                                 outRow,
-                                bodyTo,
+                                Math.max(bodyTo, from),
                                 to);
                     }
                 });

@@ -650,7 +650,22 @@ public final class Gemma4
             int startPos,
             int seqLen,
             boolean bidirectional) {
-        int dim = configuration.embeddingLength();
+        Configuration config = configuration;
+        RoPE.fill(
+                state.ropeCosFull,
+                state.ropeSinFull,
+                startPos,
+                seqLen,
+                config.headSizeFull() / 2,
+                weights.ropeFull);
+        RoPE.fill(
+                state.ropeCosSWA,
+                state.ropeSinSWA,
+                startPos,
+                seqLen,
+                config.headSizeSWA() / 2,
+                weights.ropeSWA);
+        int dim = config.embeddingLength();
         rows.copyTo(0, state.residual, 0, seqLen * dim);
         int[] ple = new int[seqLen];
         Arrays.fill(ple, pleToken);
@@ -660,7 +675,7 @@ public final class Gemma4
         // every image token sees every other, so the LLM sees the whole image at once. Audio
         // (GEMMA4UA) is
         // causal, so the caller passes bidirectional=false for it.
-        for (int l = 0; l < configuration.numberOfLayers(); l++)
+        for (int l = 0; l < config.numberOfLayers(); l++)
             layer(state, l, startPos, seqLen, bidirectional);
         commitKv(state, startPos, seqLen);
     }
