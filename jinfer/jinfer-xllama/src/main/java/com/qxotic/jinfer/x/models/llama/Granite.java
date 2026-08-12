@@ -6,7 +6,6 @@
 package com.qxotic.jinfer.x.models.llama;
 
 import com.qxotic.format.gguf.GGUF;
-import com.qxotic.jinfer.x.Convert;
 import com.qxotic.jinfer.x.Parallel;
 import com.qxotic.jinfer.x.Views;
 import com.qxotic.jinfer.x.boundary.BaseState;
@@ -14,6 +13,7 @@ import com.qxotic.jinfer.x.boundary.Batch;
 import com.qxotic.jinfer.x.boundary.Config;
 import com.qxotic.jinfer.x.boundary.LanguageModel;
 import com.qxotic.jinfer.x.kernels.Activations;
+import com.qxotic.jinfer.x.kernels.Convert;
 import com.qxotic.jinfer.x.kernels.FlashAttention;
 import com.qxotic.jinfer.x.kernels.MatMul;
 import com.qxotic.jinfer.x.kernels.ModelLoader;
@@ -100,6 +100,9 @@ public final class Granite
                     throw new UnsupportedOperationException(
                             "Granite is generative: packed sequences (batched embedding) not"
                                     + " supported");
+            case Batch.Input.Embeddings ignored ->
+                    throw new UnsupportedOperationException(
+                            "Granite is text-only: embedding input is not supported");
         }
         s.advance(n, batch.outputs());
     }
