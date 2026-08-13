@@ -131,7 +131,12 @@ public final class Views {
      */
     public static void checkAlive(MemoryView<MemorySegment> view, String name) {
         if (!view.memory().base().scope().isAlive()) {
-            throw new IllegalStateException(name + ": backing memory already released");
+            throw new IllegalStateException(
+                    name
+                            + ": backing memory already freed - the arena holding these weights"
+                            + " was closed while the model is still borrowing them (close your"
+                            + " arena LAST). This canary catches the sequential mistake; freeing"
+                            + " DURING a request stays a data race.");
         }
     }
 
@@ -171,6 +176,44 @@ public final class Views {
                 .base()
                 .asSlice(view.byteOffset(), view.shape().size() * Float.BYTES)
                 .toArray(ValueLayout.JAVA_FLOAT);
+    }
+
+    /**
+     * Checked bulk read of {@code view[elementOffset..elementOffset+count)} into {@code
+     * dst[dstOff..dstOff+count)} (conv tap staging, stats readback). Companion of {@link
+     * #copyFromArray}; same guarantees as {@link #getFloat}.
+     */
+    public static void copyToArray(
+            MemoryView<MemorySegment> view,
+            long elementOffset,
+            float[] dst,
+            int dstOff,
+            int count,
+            String name) {
+        requireF32(view, name);
+        requireContiguous(view, name);
+        checkAlive(view, name);
+        if (elementOffset < 0 || elementOffset + count > view.shape().size()) {
+            throw new IndexOutOfBoundsException(
+                    name
+                            + ": ["
+                            + elementOffset
+                            + ", "
+                            + (elementOffset + count)
+                            + ") out of "
+                            + view.shape().size());
+        }
+        if (dstOff < 0 || dstOff + count > dst.length) {
+            throw new IndexOutOfBoundsException(
+                    name + ": dst [" + dstOff + ", " + (dstOff + count) + ") out of " + dst.length);
+        }
+        MemorySegment.copy(
+                view.memory().base(),
+                ValueLayout.JAVA_FLOAT,
+                view.byteOffset() + elementOffset * Float.BYTES,
+                dst,
+                dstOff,
+                count);
     }
 
     /**
