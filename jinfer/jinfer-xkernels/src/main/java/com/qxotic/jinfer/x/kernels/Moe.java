@@ -111,23 +111,6 @@ public final class Moe {
         void apply(int e, int n, MemoryView<MemorySegment> gather, MemoryView<MemorySegment> out);
     }
 
-    /** Same-dtype F32 row copy (the old F32→F32 {@code copyTo}: one raw MemorySegment.copy). */
-    private static void copyRows(
-            MemoryView<MemorySegment> src,
-            long srcElemOff,
-            MemoryView<MemorySegment> dst,
-            long dstElemOff,
-            long elems) {
-        Raw s = Raw.f32(src, "src");
-        Raw d = Raw.f32(dst, "dst");
-        MemorySegment.copy(
-                s.vseg(),
-                s.vbase() + srcElemOff * Float.BYTES,
-                d.vseg(),
-                d.vbase() + dstElemOff * Float.BYTES,
-                elems * Float.BYTES);
-    }
-
     /**
      * CSR-grouped MoE dispatch: build the per-expert row buckets from {@code r}, gather each
      * expert's rows out of {@code input}, run its {@code kernel}, and scatter-add the result into
@@ -175,7 +158,7 @@ public final class Moe {
             Parallel.forRows(
                     n,
                     j ->
-                            copyRows(
+                            Convert.copyF32(
                                     input,
                                     (long) r.rowByExpert[start + j] * dim,
                                     gather,
