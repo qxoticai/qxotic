@@ -34,7 +34,19 @@
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-xllm</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-xchat</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
       <artifactId>gguf</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>json</artifactId>
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
@@ -53,6 +65,11 @@
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-llm</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-jinja</artifactId>
       <scope>test</scope>
     </dependency>
     <!-- test-only: checkpoint acquisition by ref (lookup only, never a download) -->

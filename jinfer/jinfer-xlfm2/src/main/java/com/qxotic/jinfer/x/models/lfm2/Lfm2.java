@@ -13,6 +13,7 @@ import com.qxotic.jinfer.x.boundary.Batch;
 import com.qxotic.jinfer.x.boundary.Config;
 import com.qxotic.jinfer.x.boundary.EmbeddingModel;
 import com.qxotic.jinfer.x.boundary.LanguageModel;
+import com.qxotic.jinfer.x.boundary.StateCodec;
 import com.qxotic.jinfer.x.kernels.Activations;
 import com.qxotic.jinfer.x.kernels.Convert;
 import com.qxotic.jinfer.x.kernels.Convolutions;
@@ -38,6 +39,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.function.Consumer;
 
 public final class Lfm2
@@ -72,6 +74,11 @@ public final class Lfm2
 
     public Tokenizer tokenizer() {
         return tokenizer;
+    }
+
+    @Override
+    public Optional<StateCodec<State>> stateCodec() {
+        return Optional.of(new Lfm2StateCodec(configuration));
     }
 
     @Override

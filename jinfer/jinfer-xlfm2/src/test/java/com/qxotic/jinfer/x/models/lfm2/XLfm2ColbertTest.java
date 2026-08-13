@@ -92,4 +92,35 @@ class XLfm2ColbertTest {
             }
         }
     }
+
+    @Test
+    void aNonColbertCheckpointIsRefusedBeforeTokenizerUse() {
+        Lfm2.Configuration config =
+                new Lfm2.Configuration(
+                        4,
+                        new int[] {8},
+                        1,
+                        1,
+                        new int[] {1},
+                        16,
+                        8,
+                        1e-5f,
+                        10_000f,
+                        4,
+                        0,
+                        3,
+                        0,
+                        0,
+                        0,
+                        1,
+                        1,
+                        true,
+                        0,
+                        0);
+        Lfm2 model = new Lfm2(config, null, new Lfm2.Weights(null, null, null, null, null, null));
+
+        IllegalArgumentException error =
+                assertThrows(IllegalArgumentException.class, () -> new Lfm2Colbert(model, 1, 0));
+        assertTrue(error.getMessage().contains("ColBERT"), error.getMessage());
+    }
 }

@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.x.models.lfm2;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.format.gguf.GGUF;
@@ -9,6 +10,7 @@ import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.jinfer.testkit.TestModels;
 import com.qxotic.jinfer.x.Views;
 import com.qxotic.jinfer.x.boundary.Batch;
+import com.qxotic.jinfer.x.boundary.StateCodec;
 import com.qxotic.jinfer.x.kernels.ModelLoader;
 import com.qxotic.jinfer.x.kernels.Ops;
 import com.qxotic.jota.memory.MemoryView;
@@ -27,8 +29,8 @@ import org.junit.jupiter.api.Test;
  * shared tokenizer instance fed to both loaders, greedy N=64 — strict token-id parity at every step
  * plus a logits max-abs-diff check on the prefill and final steps (both trees route gemm/gemv to
  * the same dot-based Java floor: the JAM backends are surefire-excluded). Two legs:
- * LFM2.5-2.6B-Q8_0 (fully dense) and LFM2-8B-A1B-Q8_0 (lfm2moe: 32 experts top-4, sigmoid gating —
- * the ONLY gate the x MoE path has). Floor-only on purpose: discrete top-k routing amplifies
+ * LFM2.5-2.6B-Q8_0 (fully dense) and LFM2.5-8B-A1B-Q8_0 (lfm2moe: 32 experts top-4, sigmoid gating
+ * - the ONLY gate the x MoE path has). Floor-only on purpose: discrete top-k routing amplifies
  * backend-mix noise into argmax flips even when both trees are individually correct, so jam-on MoE
  * divergence is NOT a correctness signal (see XParityRun's javadoc). Skipped per leg when the
  * checkpoint is not cached.
@@ -45,7 +47,7 @@ class XLfm2Test {
 
     @Test
     void greedyParityMoe() throws Exception {
-        assertGreedyParity(TestModels.require("hf.co/LiquidAI/LFM2-8B-A1B-GGUF:Q8_0"));
+        assertGreedyParity(TestModels.require("hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF:Q8_0"));
     }
 
     private static void assertGreedyParity(Path model) throws Exception {
@@ -88,11 +90,14 @@ class XLfm2Test {
             float[] xFirst, xLast;
             var xm = Lfm2.loadModel(channel, gguf, Arena.ofAuto(), tokenizer);
             var xc = xm.config();
-            try (var xs =
-                    xm.newState(
-                            Math.min(xc.contextLength(), ids.length + N_TOKENS + 16),
-                            Math.max(16, ids.length))) {
+            int context = Math.min(xc.contextLength(), ids.length + N_TOKENS + 16);
+            try (var xs = xm.newState(context, Math.max(16, ids.length));
+                    var restored = xm.newState(context, Math.max(16, ids.length));
+                    Arena cache = Arena.ofConfined()) {
+                StateCodec<Lfm2.State> codec = xm.stateCodec().orElseThrow();
                 xm.ingest(xs, Batch.prefill(ids));
+                MemorySegment prefix = cache.allocate(codec.checkpointBytes(ids.length), 64);
+                codec.saveCheckpoint(xs, 0, ids.length, prefix);
                 xIds = new int[N_TOKENS];
                 MemoryView<MemorySegment> logits =
                         Views.castToSegmentBacked(xm.logits(xs), "logits");
@@ -105,6 +110,43 @@ class XLfm2Test {
                     tok = Ops.argmax(logits, 0, vocab);
                 }
                 xLast = snapshotX(logits, vocab);
+
+                MemorySegment suffix =
+                        cache.allocate(codec.checkpointBytes(xs.position() - ids.length), 64);
+                codec.saveCheckpoint(xs, ids.length, xs.position(), suffix);
+                codec.restoreCheckpoint(restored, 0, ids.length, prefix);
+                codec.restoreCheckpoint(restored, ids.length, xs.position(), suffix);
+                restored.resumeAt(xs.position());
+                xm.ingest(xs, Batch.step(tok));
+                xm.ingest(restored, Batch.step(tok));
+                float resumeDiff =
+                        maxAbsDiff(
+                                snapshotX(
+                                        Views.castToSegmentBacked(xm.logits(xs), "logits"), vocab),
+                                snapshotX(
+                                        Views.castToSegmentBacked(
+                                                xm.logits(restored), "restored logits"),
+                                        vocab));
+                assertTrue(resumeDiff < LOGIT_TOLERANCE, "restored state diverged: " + resumeDiff);
+
+                xs.reset();
+                xm.ingest(xs, Batch.prefill(ids));
+                float resetDiff =
+                        maxAbsDiff(
+                                xFirst,
+                                snapshotX(
+                                        Views.castToSegmentBacked(xm.logits(xs), "reset logits"),
+                                        vocab));
+                assertTrue(resetDiff < LOGIT_TOLERANCE, "reset state diverged: " + resetDiff);
+
+                assertThrows(
+                        UnsupportedOperationException.class,
+                        () ->
+                                xm.embed(
+                                        xs,
+                                        (Batch.Input.Sequences)
+                                                Batch.pack(new int[][] {ids}).input(),
+                                        ignored -> {}));
             }
 
             float firstDiff = maxAbsDiff(oldFirst, xFirst);
