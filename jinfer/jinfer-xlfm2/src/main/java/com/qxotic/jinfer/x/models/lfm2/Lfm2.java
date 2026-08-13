@@ -1,8 +1,9 @@
 // LFM2.5 (Liquid Foundation Model 2.5) against the MemoryView boundary: a call-site-by-call-site
 // port of jinfer-lfm2's Lfm2 (cycle 1 of the FloatTensor migration). Each layer is EITHER GQA
 // attention (kv-heads > 0) OR a gated short-convolution mixer (kv-heads == 0); the FFN is EITHER
-// dense SwiGLU OR top-k MoE. Text-only. Weights/state/KV are MemoryView<MemorySegment>; kernels
-// are the x statics; gemm/gemv entry shims resolve to x.MatMul.mm here (the old virtuals').
+// dense SwiGLU OR top-k MoE. Weights/state/KV are MemoryView<MemorySegment>; kernels are the x
+// statics; gemm/gemv entry shims resolve to x.MatMul.mm here (the old virtuals'). An optional
+// LFM2-VL sidecar projects images directly into the same residual stream.
 package com.qxotic.jinfer.x.models.lfm2;
 
 import com.qxotic.format.gguf.GGUF;
@@ -11,8 +12,11 @@ import com.qxotic.jinfer.x.Views;
 import com.qxotic.jinfer.x.boundary.BaseState;
 import com.qxotic.jinfer.x.boundary.Batch;
 import com.qxotic.jinfer.x.boundary.Config;
+import com.qxotic.jinfer.x.boundary.Embedder;
 import com.qxotic.jinfer.x.boundary.EmbeddingModel;
 import com.qxotic.jinfer.x.boundary.LanguageModel;
+import com.qxotic.jinfer.x.boundary.Media;
+import com.qxotic.jinfer.x.boundary.MultiModal;
 import com.qxotic.jinfer.x.boundary.StateCodec;
 import com.qxotic.jinfer.x.kernels.Activations;
 import com.qxotic.jinfer.x.kernels.Convert;
@@ -40,11 +44,13 @@ import java.util.Arrays;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Consumer;
 
 public final class Lfm2
         implements LanguageModel<Lfm2.Configuration, Lfm2.Weights, Lfm2.State>,
-                EmbeddingModel<Lfm2.Configuration, Lfm2.Weights, Lfm2.State> {
+                EmbeddingModel<Lfm2.Configuration, Lfm2.Weights, Lfm2.State>,
+                MultiModal {
 
     /** llama.cpp's pooling_type enum value for CLS - pool the sequence's FIRST row (its BOS). */
     static final int POOLING_CLS = 2;
@@ -55,11 +61,18 @@ public final class Lfm2
     private final Configuration configuration;
     private final Tokenizer tokenizer;
     private final Weights weights;
+    private final Lfm2Vision vision;
 
     Lfm2(Configuration configuration, Tokenizer tokenizer, Weights weights) {
+        this(configuration, tokenizer, weights, null);
+    }
+
+    private Lfm2(
+            Configuration configuration, Tokenizer tokenizer, Weights weights, Lfm2Vision vision) {
         this.configuration = configuration;
         this.tokenizer = tokenizer;
         this.weights = weights;
+        this.vision = vision;
     }
 
     @Override
@@ -74,6 +87,28 @@ public final class Lfm2
 
     public Tokenizer tokenizer() {
         return tokenizer;
+    }
+
+    @Override
+    public Set<Class<? extends Media>> modalities() {
+        return vision == null ? Set.of() : Set.of(Media.Image.class);
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public <R extends Media> Optional<Embedder<R>> embedder(Class<R> modality) {
+        if (modality == Media.Image.class && vision != null)
+            return Optional.of((Embedder<R>) vision);
+        return Optional.empty();
+    }
+
+    Lfm2Vision vision() {
+        return vision;
+    }
+
+    @Override
+    public String encodePlanId() {
+        return vision == null ? "" : "lfm2-media-v1 " + vision.planId();
     }
 
     @Override
@@ -121,9 +156,22 @@ public final class Lfm2
                                     + " false)");
                 forwardSegmented(s, seq.tokens().ids(), seq.seqLen(), n);
             }
-            case Batch.Input.Embeddings ignored ->
-                    throw new UnsupportedOperationException(
-                            "x LFM2 does not support embedding inputs");
+            case Batch.Input.Embeddings e -> {
+                if (vision == null)
+                    throw new UnsupportedOperationException("no media encoder loaded");
+                if (e.rows().shape().flatAt(1) != configuration.embeddingLength)
+                    throw new IllegalArgumentException(
+                            "embedding width "
+                                    + e.rows().shape().flatAt(1)
+                                    + " != model width "
+                                    + configuration.embeddingLength);
+                forwardEmbeddings(
+                        s,
+                        Views.castToSegmentBacked(e.rows(), "embedding rows"),
+                        from,
+                        n,
+                        e.bidirectional());
+            }
         }
         s.advance(n, batch.outputs());
     }
@@ -165,7 +213,27 @@ public final class Lfm2
                 configuration.headSize / 2,
                 weights.rope());
         embedTokens(state, tokens, tokenOffset, seqLen);
-        for (int l = 0; l < configuration.numberOfLayers; l++) layer(state, l, startPos, seqLen);
+        for (int l = 0; l < configuration.numberOfLayers; l++)
+            layer(state, l, startPos, seqLen, false);
+        commitKv(state, startPos, seqLen);
+    }
+
+    private void forwardEmbeddings(
+            State state,
+            MemoryView<MemorySegment> rows,
+            int startPos,
+            int seqLen,
+            boolean bidirectional) {
+        RoPE.fill(
+                state.ropeCos,
+                state.ropeSin,
+                startPos,
+                seqLen,
+                configuration.headSize / 2,
+                weights.rope());
+        Convert.copyF32(rows, 0, state.residual, 0, (long) seqLen * configuration.embeddingLength);
+        for (int l = 0; l < configuration.numberOfLayers; l++)
+            layer(state, l, startPos, seqLen, bidirectional);
         commitKv(state, startPos, seqLen);
     }
 
@@ -187,9 +255,9 @@ public final class Lfm2
     }
 
     /** One block: short-conv mixer OR attention, then the FFN, in place on the residual. */
-    private void layer(State state, int l, int startPos, int seqLen) {
+    private void layer(State state, int l, int startPos, int seqLen, boolean bidirectional) {
         if (configuration.isRecurrentLayer(l)) shortConvMixer(state, l, seqLen);
-        else attention(state, l, startPos, seqLen);
+        else attention(state, l, startPos, seqLen, bidirectional);
         feedForward(state, l, seqLen);
         if (Trace.ENABLED)
             Trace.sum("l_out-" + l, state.residual, seqLen * configuration.embeddingLength);
@@ -234,7 +302,7 @@ public final class Lfm2
      * {@code scale = 1/sqrt(headSize)}, output projection, optional post-norm, added to the
      * residual.
      */
-    private void attention(State state, int l, int startPos, int seqLen) {
+    private void attention(State state, int l, int startPos, int seqLen, boolean bidirectional) {
         Configuration config = configuration;
         int headSize = config.headSize;
         int queryDim = config.queryDim(), kvDim = config.kvDim(l);
@@ -261,7 +329,8 @@ public final class Lfm2
                     scale,
                     0,
                     0,
-                    null);
+                    null,
+                    bidirectional);
         } else {
             FlashAttention.flashDecode(
                     state.query,
@@ -1077,6 +1146,33 @@ public final class Lfm2
         try (FileChannel fileChannel = FileChannel.open(ggufPath, StandardOpenOption.READ)) {
             GGUF gguf = ModelLoader.readGguf(fileChannel, ggufPath.toString());
             return loadModel(fileChannel, gguf, arena);
+        }
+    }
+
+    /** Loads the text backbone and its LFM2 vision sidecar into {@code arena}. */
+    public static Lfm2 loadModel(Path textPath, Path mmprojPath, Arena arena) throws IOException {
+        return loadModel(textPath, arena).withMedia(mmprojPath, arena);
+    }
+
+    /** Returns a model sharing this backbone's weights with a validated vision sidecar attached. */
+    public Lfm2 withMedia(Path mmprojPath, Arena arena) throws IOException {
+        Objects.requireNonNull(mmprojPath, "mmprojPath");
+        Objects.requireNonNull(arena, "arena");
+        try (FileChannel channel = FileChannel.open(mmprojPath, StandardOpenOption.READ)) {
+            GGUF gguf = ModelLoader.readGguf(channel, mmprojPath.toString());
+            int projectionDim = gguf.getValueOrDefault(int.class, "clip.vision.projection_dim", 0);
+            if (projectionDim != configuration.embeddingLength)
+                throw new IllegalArgumentException(
+                        "'"
+                                + mmprojPath.getFileName()
+                                + "' projector width "
+                                + projectionDim
+                                + " does not match model width "
+                                + configuration.embeddingLength);
+            Lfm2Vision encoder =
+                    Lfm2Vision.loadModel(
+                            mmprojPath, gguf, ModelLoader.loadTensors(channel, gguf, arena));
+            return new Lfm2(configuration, tokenizer, weights, encoder);
         }
     }
 

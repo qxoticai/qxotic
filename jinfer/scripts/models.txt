@@ -7,6 +7,8 @@ hf.co LiquidAI LFM2.5-2.6B-GGUF LFM2.5-2.6B-Q8_0.gguf
 hf.co LiquidAI LFM2.5-350M-GGUF LFM2.5-350M-Q8_0.gguf
 hf.co LiquidAI LFM2.5-Embedding-350M-GGUF LFM2.5-Embedding-350M-Q8_0.gguf
 hf.co LiquidAI LFM2.5-ColBERT-350M-GGUF LFM2.5-ColBERT-350M-Q8_0.gguf
+hf.co LiquidAI LFM2.5-VL-3B-GGUF LFM2.5-VL-3B-Q4_K_M.gguf
+hf.co LiquidAI LFM2.5-VL-3B-GGUF mmproj-LFM2.5-VL-3B-Q8_0.gguf
 hf.co unsloth gemma-4-E2B-it-GGUF gemma-4-E2B-it-Q8_0.gguf
 hf.co unsloth gemma-4-E2B-it-GGUF mmproj-F32.gguf
 hf.co unsloth gemma-4-E2B-it-GGUF mtp-gemma-4-E2B-it.gguf

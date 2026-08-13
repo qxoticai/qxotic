@@ -4,6 +4,7 @@ import static com.qxotic.jinfer.x.chat.ReplyLanguage.mark;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.x.boundary.Batch;
+import com.qxotic.jinfer.x.boundary.Media;
 import com.qxotic.jinfer.x.chat.ChatTemplate;
 import com.qxotic.jinfer.x.chat.Content;
 import com.qxotic.jinfer.x.chat.Conversation;
@@ -23,7 +24,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Consumer;
 
-/** Token-exact native codec for the text-only LFM 2.5 ChatML template. */
+/** Token-exact native codec for the LFM 2.5 ChatML template. */
 public final class Lfm2ChatTemplate implements ChatTemplate {
     private static final String THINK_OPEN = "<think>";
     private static final String THINK_CLOSE = "</think>";
@@ -31,6 +32,7 @@ public final class Lfm2ChatTemplate implements ChatTemplate {
     private static final String CALL_CLOSE = "<|tool_call_end|>";
 
     private final Tokenizer tokenizer;
+    private final Lfm2Vision vision;
     private final boolean promptOpensThinking;
     private final int bos;
     private final int turnOpen;
@@ -49,7 +51,16 @@ public final class Lfm2ChatTemplate implements ChatTemplate {
     }
 
     public Lfm2ChatTemplate(Tokenizer tokenizer, boolean promptOpensThinking) {
+        this(tokenizer, null, promptOpensThinking);
+    }
+
+    public Lfm2ChatTemplate(Lfm2 model, boolean promptOpensThinking) {
+        this(model.tokenizer(), model.vision(), promptOpensThinking);
+    }
+
+    Lfm2ChatTemplate(Tokenizer tokenizer, Lfm2Vision vision, boolean promptOpensThinking) {
         this.tokenizer = Objects.requireNonNull(tokenizer, "tokenizer");
+        this.vision = vision;
         this.promptOpensThinking = promptOpensThinking;
         bos = SpecialTokens.require(tokenizer, "<|startoftext|>");
         turnOpen = SpecialTokens.require(tokenizer, "<|im_start|>");
@@ -102,7 +113,7 @@ public final class Lfm2ChatTemplate implements ChatTemplate {
         for (int i = first; i < messages.size(); i++) {
             Message message = messages.get(i);
             if (spliceable(message)) splice(out, message);
-            else writeTurn(out, message, i > lastUser);
+            else writeTurn(out, message, i > lastUser, batchCapacity);
             out.flush();
         }
 
@@ -145,7 +156,8 @@ public final class Lfm2ChatTemplate implements ChatTemplate {
         return Optional.of(replyLanguage.forcedCall(callableTools, tool -> "[" + tool.name()));
     }
 
-    private void writeTurn(PromptWriter out, Message message, boolean afterLastUser) {
+    private void writeTurn(
+            PromptWriter out, Message message, boolean afterLastUser, int batchCapacity) {
         out.id(turnOpen).text(message.role().name()).text("\n");
         if (message.role().equals(Role.ASSISTANT)) {
             boolean typedReasoning =
@@ -160,9 +172,50 @@ public final class Lfm2ChatTemplate implements ChatTemplate {
                 out.id(callOpen).text(Lfm2ToolCodec.renderCalls(calls)).id(callClose);
             }
         } else {
-            out.text(text(message));
+            for (Content part : message.content()) {
+                switch (part) {
+                    case Content.Text value -> out.text(value.text());
+                    case Content.ToolResult value -> out.text(value.text());
+                    case Content.Media value -> writeMedia(out, value, batchCapacity);
+                    default -> throw new IllegalStateException("unsupported " + part);
+                }
+            }
         }
         out.id(turnClose).text("\n");
+    }
+
+    private void writeMedia(PromptWriter out, Content.Media content, int batchCapacity) {
+        if (!(content.value() instanceof Media.Image image) || vision == null)
+            throw new IllegalStateException("unsupported media after validation");
+        Lfm2VisionPreprocess.Plan plan = vision.plan(image);
+        out.id(require("<|image_start|>"));
+        for (Lfm2VisionPreprocess.Part part : plan.parts()) {
+            String marker =
+                    part.thumbnail()
+                            ? "<|img_thumbnail|>"
+                            : "<|img_row_" + part.row() + "_col_" + part.column() + "|>";
+            out.id(require(marker));
+            vision.embed(
+                    part,
+                    batchCapacity,
+                    rows ->
+                            out.batch(
+                                    Batch.embeddings(
+                                            rows,
+                                            Math.toIntExact(rows.shape().flatAt(0)),
+                                            true,
+                                            content.contentKey())));
+        }
+        out.id(require("<|image_end|>"));
+    }
+
+    @Override
+    public int mediaPositions(Media media) {
+        if (vision == null)
+            throw new UnsupportedOperationException("image input needs an mmproj sidecar");
+        if (media instanceof Media.Image image) return vision.positions(image);
+        throw new UnsupportedOperationException(
+                media.getClass().getSimpleName() + " is not supported by LFM2-VL");
     }
 
     private void writeReasoning(PromptWriter out, Message message) {
@@ -222,7 +275,7 @@ public final class Lfm2ChatTemplate implements ChatTemplate {
         return true;
     }
 
-    private static void requireSupported(Message message, boolean exactReplay) {
+    private void requireSupported(Message message, boolean exactReplay) {
         for (Content part : message.content()) {
             boolean supported =
                     part instanceof Content.Text
@@ -230,10 +283,18 @@ public final class Lfm2ChatTemplate implements ChatTemplate {
                                     && (part instanceof Content.Reasoning
                                             || part instanceof Content.ToolCall))
                             || (message.role().equals(Role.TOOL)
-                                    && part instanceof Content.ToolResult);
+                                    && part instanceof Content.ToolResult)
+                            || (message.role().equals(Role.USER)
+                                    && part instanceof Content.Media media
+                                    && media.value() instanceof Media.Image
+                                    && vision != null);
             if (!supported)
                 throw new UnsupportedConversation(
-                        message.role().name() + " turn: " + part.getClass().getSimpleName());
+                        part instanceof Content.Media && vision == null
+                                ? "media on a text-only load"
+                                : message.role().name()
+                                        + " turn: "
+                                        + part.getClass().getSimpleName());
             if (!exactReplay && part instanceof Content.Reasoning reasoning)
                 reasoningText(reasoning);
         }
@@ -276,6 +337,10 @@ public final class Lfm2ChatTemplate implements ChatTemplate {
     private static String stripThinking(String content) {
         int close = content.lastIndexOf(THINK_CLOSE);
         return close < 0 ? content : content.substring(close + THINK_CLOSE.length()).strip();
+    }
+
+    private int require(String spelling) {
+        return SpecialTokens.require(tokenizer, spelling);
     }
 
     private int requireThinkOpen() {

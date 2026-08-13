@@ -63,6 +63,10 @@ public final class ModelFixture {
             hf("LiquidAI", "LFM2.5-Embedding-350M-GGUF", "LFM2.5-Embedding-350M-Q8_0.gguf");
     public static final Gguf LFM25_COLBERT_350M_Q8 =
             hf("LiquidAI", "LFM2.5-ColBERT-350M-GGUF", "LFM2.5-ColBERT-350M-Q8_0.gguf");
+    public static final Gguf LFM25_VL_3B_Q4 =
+            hf("LiquidAI", "LFM2.5-VL-3B-GGUF", "LFM2.5-VL-3B-Q4_K_M.gguf");
+    public static final Gguf LFM25_VL_3B_MMPROJ_Q8 =
+            hf("LiquidAI", "LFM2.5-VL-3B-GGUF", "mmproj-LFM2.5-VL-3B-Q8_0.gguf");
 
     public static final Gguf GEMMA4_E2B_Q8 =
             hf("unsloth", "gemma-4-E2B-it-GGUF", "gemma-4-E2B-it-Q8_0.gguf");
@@ -87,10 +91,8 @@ public final class ModelFixture {
     public static final Gguf GEMMA4_26B_MOE_Q8 =
             hf("unsloth", "gemma-4-26B-A4B-it-GGUF", "gemma-4-26B-A4B-it-Q8_0.gguf");
 
-    public static final Gguf QWEN35_2B_Q8 =
-            hf("unsloth", "Qwen3.5-2B-GGUF", "Qwen3.5-2B-Q8_0.gguf");
-    public static final Gguf QWEN35_4B_Q8 =
-            hf("unsloth", "Qwen3.5-4B-GGUF", "Qwen3.5-4B-Q8_0.gguf");
+    public static final Gguf QWEN35_2B_Q8 = hf("unsloth", "Qwen3.5-2B-GGUF", "Qwen3.5-2B-Q8_0.gguf");
+    public static final Gguf QWEN35_4B_Q8 = hf("unsloth", "Qwen3.5-4B-GGUF", "Qwen3.5-4B-Q8_0.gguf");
 
     public static final Gguf GPTOSS_20B_Q8 =
             hf("unsloth", "gpt-oss-20b-GGUF", "gpt-oss-20b-Q8_0.gguf");
@@ -99,10 +101,7 @@ public final class ModelFixture {
             hf("unsloth", "Llama-3.2-1B-Instruct-GGUF", "Llama-3.2-1B-Instruct-Q8_0.gguf");
 
     public static final Gguf MINISTRAL_3B_Q8 =
-            hf(
-                    "unsloth",
-                    "Ministral-3-3B-Instruct-2512-GGUF",
-                    "Ministral-3-3B-Instruct-2512-Q8_0.gguf");
+            hf("unsloth", "Ministral-3-3B-Instruct-2512-GGUF", "Ministral-3-3B-Instruct-2512-Q8_0.gguf");
 
     public static final Gguf MINICPM5_1B_Q8 =
             hf("openbmb", "MiniCPM5-1B-GGUF", "MiniCPM5-1B-Q8_0.gguf");
@@ -152,9 +151,7 @@ public final class ModelFixture {
         if (env != null && !env.isBlank()) return Path.of(env);
         for (Path dir = Path.of("").toAbsolutePath(); dir != null; dir = dir.getParent()) {
             if (Files.exists(dir.resolve(".git"))) { // a FILE in worktrees, a directory otherwise
-                return dir.getParent() == null
-                        ? dir.resolve("models")
-                        : dir.getParent().resolve("models");
+                return dir.getParent() == null ? dir.resolve("models") : dir.getParent().resolve("models");
             }
         }
         return Path.of(System.getProperty("user.home"), "models");

@@ -12,6 +12,8 @@ import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.jinja.JinjaRenderer;
 import com.qxotic.jinfer.llm.Tokenizers;
 import com.qxotic.jinfer.testkit.TestModels;
+import com.qxotic.jinfer.x.PanamaMemoryArena;
+import com.qxotic.jinfer.x.Views;
 import com.qxotic.jinfer.x.boundary.Batch;
 import com.qxotic.jinfer.x.boundary.Media;
 import com.qxotic.jinfer.x.chat.Channel;
@@ -27,6 +29,7 @@ import com.qxotic.jinfer.x.llm.SpecialTokens;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
+import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -286,6 +289,69 @@ final class Lfm2ChatTemplateTest {
     }
 
     @Test
+    void visionFramingKeepsTilesStructuralAndOrdered() throws Exception {
+        Path text = TestModels.require("hf.co/LiquidAI/LFM2.5-VL-3B-GGUF:Q4_K_M");
+        Tokenizer current;
+        try (FileChannel file = FileChannel.open(text)) {
+            GGUF gguf = ModelLoader.readGguf(file, text.toString());
+            current = GGUFTokenizerLoader.createBuilderWithBuiltins().build().fromGGUF(gguf);
+        }
+
+        byte[] key = {1, 2, 3};
+        Media.Image image = new Media.Image(new float[2000 * 1000 * 3], 1000, 2000, 3);
+        try (Arena arena = Arena.ofShared()) {
+            Lfm2Vision vision = tinyVision(new PanamaMemoryArena(arena));
+            Lfm2ChatTemplate template = new Lfm2ChatTemplate(current, vision, false);
+            IntSequence.Builder tokens = IntSequence.newBuilder();
+            List<Integer> embeddingRows = new ArrayList<>();
+            template.encode(
+                    new Conversation(
+                            List.of(
+                                    new Message(
+                                            Role.USER,
+                                            List.of(
+                                                    new Content.Text("look "),
+                                                    new Content.Media(image, key),
+                                                    new Content.Text(" done"))))),
+                    256,
+                    batch -> {
+                        switch (batch.input()) {
+                            case Batch.Input.Tokens value ->
+                                    tokens.addAll(IntSequence.of(value.ids()));
+                            case Batch.Input.Embeddings value -> {
+                                assertTrue(value.bidirectional());
+                                assertArrayEquals(key, value.contentKey());
+                                embeddingRows.add(value.count());
+                            }
+                            default -> throw new AssertionError("unexpected batch input");
+                        }
+                    });
+
+            assertEquals(List.of(256, 256, 256, 256, 256, 256, 256, 256, 242), embeddingRows);
+            assertEquals(2290, template.mediaPositions(image));
+
+            IntSequence.Builder expected = IntSequence.newBuilder();
+            expected.add(SpecialTokens.require(current, "<|startoftext|>"));
+            expected.add(SpecialTokens.require(current, "<|im_start|>"));
+            expected.addAll(current.encode("user\nlook "));
+            expected.add(SpecialTokens.require(current, "<|image_start|>"));
+            for (int row = 1; row <= 2; row++)
+                for (int column = 1; column <= 4; column++)
+                    expected.add(
+                            SpecialTokens.require(
+                                    current, "<|img_row_" + row + "_col_" + column + "|>"));
+            expected.add(SpecialTokens.require(current, "<|img_thumbnail|>"));
+            expected.add(SpecialTokens.require(current, "<|image_end|>"));
+            expected.addAll(current.encode(" done"));
+            expected.add(SpecialTokens.require(current, "<|im_end|>"));
+            expected.addAll(current.encode("\n"));
+            expected.add(SpecialTokens.require(current, "<|im_start|>"));
+            expected.addAll(current.encode("assistant\n"));
+            assertArrayEquals(expected.build().toArray(), tokens.build().toArray());
+        }
+    }
+
+    @Test
     void exposesConstrainedAndForcedSelectionsWithoutInventingAnEmptyCall() {
         Lfm2ChatTemplate template = new Lfm2ChatTemplate(tokenizer, false);
         assertTrue(template.constrainedReply("root ::= \"ok\"", List.of()).isPresent());
@@ -300,6 +366,39 @@ final class Lfm2ChatTemplateTest {
         definition.put("name", "get_weather");
         definition.put("parameters", Map.of("type", "object"));
         return new Tool("get_weather", definition);
+    }
+
+    private static Lfm2Vision tinyVision(PanamaMemoryArena arena) {
+        int patchVector = 3 * 16 * 16;
+        return new Lfm2Vision(
+                16,
+                1,
+                1,
+                1,
+                2,
+                1,
+                1,
+                16,
+                1e-6f,
+                Views.allocateF32(arena, 1, patchVector),
+                Views.allocateF32(arena, 1),
+                new float[16 * 16],
+                one(arena),
+                Views.allocateF32(arena, 1),
+                null,
+                null,
+                new Lfm2Vision.Linear(
+                        Views.allocateF32(arena, 1, 4), Views.allocateF32(arena, 1), 1, 4),
+                new Lfm2Vision.Linear(
+                        Views.allocateF32(arena, 1, 1), Views.allocateF32(arena, 1), 1, 1),
+                new Lfm2Vision.Layer[0]);
+    }
+
+    private static com.qxotic.jota.memory.MemoryView<java.lang.foreign.MemorySegment> one(
+            PanamaMemoryArena arena) {
+        var value = Views.allocateF32(arena, 1);
+        Views.copyFromArray(value, 0, new float[] {1}, 0, 1, "test weight");
+        return value;
     }
 
     private static ChatTemplate.ReplyState state(

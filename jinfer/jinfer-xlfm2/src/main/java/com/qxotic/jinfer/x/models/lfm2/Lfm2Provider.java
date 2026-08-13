@@ -30,6 +30,11 @@ public final class Lfm2Provider implements ModelProvider {
     }
 
     @Override
+    public Map<String, String> companionFiles() {
+        return Map.of("media", "mmproj");
+    }
+
+    @Override
     public LoadedModel<?> load(
             FileChannel fileChannel,
             GGUF gguf,
@@ -38,6 +43,8 @@ public final class Lfm2Provider implements ModelProvider {
             Tokenizer tokenizer)
             throws IOException {
         Lfm2 model = Lfm2.loadModel(fileChannel, gguf, arena, tokenizer);
+        Path media = companions.get("media");
+        if (media != null) model = model.withMedia(media, arena);
         // a retrieval checkpoint "loads" as a chat model and then generates noise - refuse by name
         if (!model.config().causalAttention()) {
             throw new IllegalArgumentException(
@@ -57,7 +64,7 @@ public final class Lfm2Provider implements ModelProvider {
                 SpecialTokens.stops(
                         tok, -1, "<|im_end|>", "<eos>", "<|endoftext|>", "<end_of_turn>"),
                 Models.modelSeed(fileChannel),
-                Optional.of(new Lfm2ChatTemplate(tok, opensThink)),
+                Optional.of(new Lfm2ChatTemplate(model, opensThink)),
                 LoadedModel.SamplingDefaults.NONE);
     }
 
