@@ -52,6 +52,11 @@ public final class Segments {
 
     public static final boolean USE_VECTOR_API = VECTOR_BIT_SIZE != 0;
 
+    /** The Vector API width in bits actually in use; 0 means the scalar fallback. */
+    public static int vectorBits() {
+        return VECTOR_BIT_SIZE;
+    }
+
     /** Bytes per F16 element (the old package-private {@code Float16.BYTES}) — the one owner. */
     public static final int F16_BYTES = 2;
 
