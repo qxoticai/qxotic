@@ -144,6 +144,21 @@ class OpsActivationsTest {
     }
 
     @Test
+    void geluInPlaceParity() {
+        for (int n : SIZES) {
+            MemorySegment expected = filled(n, 121), actual = filled(n, 121);
+            MemorySegment ones = arena.allocate(4L * n, 64);
+            oldTensor(ones, n).fillInPlace(0, n, 1f);
+            com.qxotic.jinfer.Activations.geluMultiply(
+                    oldTensor(expected, n), 0, oldTensor(ones, n), 0, n);
+
+            Activations.geluInPlace(newView(actual, n), 0, n);
+
+            assertBitEqual(expected, actual, n, "gelu n=" + n);
+        }
+    }
+
+    @Test
     void clampedSwigluMultiplyParity() {
         for (int n : SIZES) {
             MemorySegment g1 = filled(n, 14), g2 = filled(n, 14), u = filled(n, 15);
