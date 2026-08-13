@@ -1,0 +1,511 @@
+package com.qxotic.jinfer.x.cli;
+
+import com.qxotic.jinfer.hub.ModelStore;
+import com.qxotic.jinfer.x.chat.LoadedModel;
+import com.qxotic.jinfer.x.llm.Sampling;
+import java.io.IOException;
+import java.io.PrintStream;
+import java.io.UncheckedIOException;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.TreeSet;
+
+/**
+ * The parsed command line: every flag, exactly as typed, with the four sampling knobs still
+ * nullable because "the user said nothing" is information the model's own recommendations need.
+ * {@link #parse} is the only way argv becomes one of these, and {@link #printUsage} documents the
+ * same flags, so a new flag and its help line are added in the same file or noticed missing.
+ *
+ * @param maxOutputTokens tokens GENERATED per turn, -1 = as many as the context allows
+ * @param contextCapacity the size of a session's state, and the ceiling on every one-shot. Refused
+ *     above the model's own context length
+ */
+public record Options(
+        Path modelPath,
+        Map<String, Path> companions,
+        Path tokenizerPath,
+        String prompt,
+        String systemPrompt,
+        boolean interactive,
+        Float temperature,
+        Float topp,
+        Integer topk,
+        Float minp,
+        Long seed,
+        int maxOutputTokens,
+        int contextCapacity,
+        boolean stream,
+        boolean echo,
+        boolean think,
+        boolean thinkInline,
+        boolean colors,
+        boolean rawPrompt,
+        Path promptCache,
+        boolean promptCacheReadOnly) {
+
+    public Options {
+        // never null and never the caller's copy: every reader can iterate it without a guard, and
+        // "no companions" and "an empty map" stop being two states that behave differently
+        companions = companions == null ? Map.of() : Map.copyOf(companions);
+        require(modelPath != null, "Missing argument: --model <path> is required");
+        require(
+                interactive || prompt != null,
+                "Missing argument: --prompt is required in --instruct mode e.g. --prompt \"Why is"
+                        + " the sky blue?\"");
+        require(
+                temperature == null || 0 <= temperature,
+                "Invalid argument: --temperature must be non-negative");
+        require(
+                topp == null || (0 < topp && topp <= 1),
+                "Invalid argument: --top-p must be within (0, 1] (1 disables it)");
+        require(
+                topk == null || topk >= 0,
+                "Invalid argument: --top-k must be non-negative (0 disables it)");
+        require(
+                minp == null || (0 <= minp && minp <= 1),
+                "Invalid argument: --min-p must be within [0, 1]");
+        require(contextCapacity >= 1, "Invalid argument: --context-capacity must be at least 1");
+        require(
+                maxOutputTokens >= -1,
+                "Invalid argument: --max-output-tokens must be -1 (fill the context) or"
+                        + " non-negative");
+        // the chat loop keeps its own state and never consults the prompt cache; accepting the
+        // flag there would make it do nothing
+        require(
+                promptCache == null || !interactive,
+                "Invalid argument: --cache/--cache-ro apply to instruct mode; the chat loop keeps"
+                        + " its own state, so there is nothing for the cache to serve");
+        // defining a cache entry goes through the native codec's conversation encoding, which a
+        // raw prompt deliberately bypasses. Read-only is fine: the raw batch is served as-is
+        require(
+                promptCache == null || promptCacheReadOnly || !rawPrompt,
+                "Invalid argument: --cache with --raw-prompt cannot append (there is no"
+                        + " conversation to define) - use --cache-ro to serve an existing cache");
+    }
+
+    /**
+     * Refuses a capacity larger than the model was trained for - which needs the model, so it is
+     * checked once, right after the load, rather than in the compact constructor with the flags
+     * that stand on their own.
+     */
+    public void requireFitsModel(LoadedModel<?> model) {
+        int trained = model.model().config().contextLength();
+        require(
+                contextCapacity <= trained,
+                "Invalid argument: --context-capacity %d exceeds what %s was trained for (%d)",
+                contextCapacity,
+                modelPath.getFileName(),
+                trained);
+    }
+
+    /**
+     * The sampling stack these flags describe, over the model's own recommendations: an explicit
+     * flag wins, then the container's {@code general.sampling.*}, then the engine baseline.
+     */
+    public Sampling sampling(LoadedModel.SamplingDefaults defaults) {
+        return defaults.resolve(temperature, topp, topk, minp, seed);
+    }
+
+    /**
+     * Rejects a bad COMMAND LINE. The message is printed next to the usage block and the process
+     * exits 1, which is why it names flags.
+     */
+    public static void require(boolean condition, String messageFormat, Object... args) {
+        if (!condition) {
+            throw new IllegalArgumentException(messageFormat.formatted(args));
+        }
+    }
+
+    public static boolean parseBooleanOption(String optionName, String value) {
+        return switch (value.toLowerCase(Locale.ROOT)) {
+            case "true", "on" -> true;
+            case "false", "off" -> false;
+            default -> {
+                require(
+                        false,
+                        "Invalid argument for %s: expected true|false|on|off, got %s",
+                        optionName,
+                        value);
+                yield false;
+            }
+        };
+    }
+
+    // number parsing that names the flag: a raw NumberFormatException surfaces as
+    // 'For input string: "abc"', which tells the user neither which flag nor what it expected
+    private static int parseInt(String optionName, String value) {
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(
+                    "Invalid argument for %s: expected an integer, got %s"
+                            .formatted(optionName, value));
+        }
+    }
+
+    private static long parseLong(String optionName, String value) {
+        try {
+            return Long.parseLong(value);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(
+                    "Invalid argument for %s: expected an integer, got %s"
+                            .formatted(optionName, value));
+        }
+    }
+
+    private static float parseFloat(String optionName, String value) {
+        try {
+            return Float.parseFloat(value);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(
+                    "Invalid argument for %s: expected a number, got %s"
+                            .formatted(optionName, value));
+        }
+    }
+
+    public static boolean supportsAnsiColors(String colorMode) {
+        return switch (colorMode) {
+            case "on" -> true;
+            case "off" -> false;
+            case "auto" -> {
+                // isTerminal(), NOT console() != null: since JDK 22 a Console is handed out even
+                // when output is redirected, and ANSI escapes in a piped file are corruption
+                if (System.console() == null || !System.console().isTerminal()) {
+                    yield false;
+                }
+                String noColor = System.getenv("NO_COLOR");
+                if (noColor != null) {
+                    yield false;
+                }
+                String term = System.getenv("TERM");
+                yield term == null || !"dumb".equalsIgnoreCase(term);
+            }
+            default -> false;
+        };
+    }
+
+    /** llama.cpp's default too: big enough for real work, small enough to allocate blind. */
+    static final int DEFAULT_CONTEXT_CAPACITY = 4096;
+
+    /** A model ref that could not be resolved: the cause already says what to do about it. */
+    static final class ResolveFailure extends RuntimeException {
+        ResolveFailure(RuntimeException cause) {
+            super(cause.getMessage(), cause); // the cause's own words, not its class name
+        }
+    }
+
+    /** The remedy a failure carries, unwrapping the plumbing around it. */
+    static String rootMessage(Throwable failure) {
+        Throwable root = failure;
+        while (root.getMessage() == null && root.getCause() != null) {
+            root = root.getCause();
+        }
+        return root.getMessage();
+    }
+
+    static Options parse(String[] args) {
+        String prompt = null;
+        String systemPrompt = null;
+        Float temperature = null; // unset = the model's recommended value, else 0.8
+        Float topp = null; // unset = the model's recommended value, else 0.95
+        Integer topk = null; // unset = the model's recommended value, else 40
+        Float minp = null; // unset = the model's recommended value, else 0.05
+        // paths or hub refs; resolved (and downloaded, if needed) once parsing has succeeded
+        String modelRef = null;
+        String tokenizerRef = null;
+        // capability -> path or ref; resolved once parsing has succeeded
+        Map<String, String> companionRefs = new LinkedHashMap<>();
+        Long seed = null; // unset = a fresh random seed per request
+        int maxOutputTokens = -1;
+        int contextCapacity = DEFAULT_CONTEXT_CAPACITY;
+        boolean interactive = false;
+        boolean stream = true;
+        boolean echo = false;
+        boolean think = true;
+        boolean thinkInline = false;
+        String colorMode = "auto";
+        boolean rawPrompt = false;
+        Path promptCache = null;
+        boolean promptCacheReadOnly = false;
+
+        for (int i = 0; i < args.length; i++) {
+            String optionName = args[i];
+            require(optionName.startsWith("-"), "Invalid option %s", optionName);
+            switch (optionName) {
+                case "--interactive", "--chat", "-i" -> interactive = true;
+                case "--instruct" -> interactive = false;
+                case "--raw-prompt" -> rawPrompt = true;
+                case "--help", "-h" -> {
+                    printUsage(System.out);
+                    System.exit(0);
+                }
+                default -> {
+                    String nextArg;
+                    if (optionName.contains("=")) {
+                        String[] parts = optionName.split("=", 2);
+                        optionName = parts[0];
+                        nextArg = parts[1];
+                    } else {
+                        require(i + 1 < args.length, "Missing argument for option %s", optionName);
+                        nextArg = args[i + 1];
+                        i += 1;
+                    }
+                    switch (optionName) {
+                        case "--prompt", "-p" -> prompt = nextArg;
+                        case "--system-prompt", "-sp" -> systemPrompt = nextArg;
+                        case "--temperature", "--temp" ->
+                                temperature = parseFloat(optionName, nextArg);
+                        case "--top-p" -> topp = parseFloat(optionName, nextArg);
+                        case "--top-k" -> topk = parseInt(optionName, nextArg);
+                        case "--min-p" -> minp = parseFloat(optionName, nextArg);
+                        case "--model", "-m" -> modelRef = nextArg;
+                        case "--mmproj" -> companionRefs.put("media", nextArg);
+                        case "--with" -> {
+                            int eq = nextArg.indexOf('=');
+                            require(
+                                    eq > 0 && eq < nextArg.length() - 1,
+                                    "--with takes <role>=<path|ref>, got %s",
+                                    nextArg);
+                            String role = nextArg.substring(0, eq);
+                            String value = nextArg.substring(eq + 1);
+                            // ONE attachment syntax; two roles are RESERVED and route to their
+                            // own seams (the model anchors the load, the tokenizer is a typed
+                            // load argument), everything else is a companion capability that the
+                            // model's port validates
+                            switch (role) {
+                                case "model" -> modelRef = value;
+                                case "tokenizer" -> tokenizerRef = value;
+                                default -> companionRefs.put(role, value);
+                            }
+                        }
+                        case "--seed", "-s" -> seed = parseLong(optionName, nextArg);
+                        // -n is llama.cpp's spelling for the same knob, and this CLI already
+                        // honours its muscle memory for -m/-p/-c/-s/--temp
+                        case "--max-output-tokens", "-n" ->
+                                maxOutputTokens = parseInt(optionName, nextArg);
+                        case "--context-capacity", "-c" ->
+                                contextCapacity = parseInt(optionName, nextArg);
+                        case "--stream" -> stream = parseBooleanOption(optionName, nextArg);
+                        case "--echo" -> echo = parseBooleanOption(optionName, nextArg);
+                        case "--color" -> colorMode = nextArg.toLowerCase(Locale.ROOT);
+                        case "--cache" -> promptCache = Path.of(nextArg);
+                        case "--cache-ro" -> {
+                            promptCache = Path.of(nextArg);
+                            promptCacheReadOnly = true;
+                        }
+                        case "--think" -> {
+                            String thinkMode = nextArg.toLowerCase(Locale.ROOT);
+                            thinkInline = List.of("inline", "stdout").contains(thinkMode);
+                            switch (thinkMode) {
+                                case "on", "true", "inline", "stdout" -> think = true;
+                                case "off", "false" -> think = false;
+                                default ->
+                                        require(
+                                                false,
+                                                "Invalid argument for %s: expected off|on|inline"
+                                                        + " (or false|true|stdout), got %s",
+                                                optionName,
+                                                nextArg);
+                            }
+                        }
+                        default -> require(false, "Unknown option: %s", optionName);
+                    }
+                }
+            }
+        }
+        require(
+                List.of("on", "off", "auto").contains(colorMode),
+                "Invalid argument: --color must be one of on|off|auto");
+        boolean color = supportsAnsiColors(colorMode);
+        // BEFORE any resolution: a companion or tokenizer without a model would otherwise reach
+        // the model-header read with a null path and die on the NPE instead of naming the flag
+        require(modelRef != null, "Missing argument: --model <path> is required");
+        // AFTER the loop, so --help and a bad flag never trigger a download first
+        Path modelPath;
+        Path tokenizerPath;
+        Map<String, Path> companions = new LinkedHashMap<>();
+        try {
+            // EVERYTHING in one concurrent batch - a cold start pays the slowest download,
+            // not the sum. The --with capability check needs the MODEL's header, so it runs the
+            // moment the model lands; the trade is honest: a mistyped knob now costs a cached
+            // extra file (almost always the very file the fixed knob would use), not gigabytes
+            // of wasted WAITING. "auto" never reaches the resolver - its curated refusal below
+            // beats "no such model file: 'auto'".
+            List<String> wanted = new ArrayList<>();
+            if (modelRef != null) wanted.add(modelRef);
+            if (tokenizerRef != null) wanted.add(tokenizerRef);
+            for (String value : companionRefs.values()) {
+                if (!"auto".equals(value)) wanted.add(value);
+            }
+            List<Path> resolved = ModelStore.resolveAll(wanted);
+            int at = 0;
+            modelPath = modelRef == null ? null : resolved.get(at++);
+            tokenizerPath = tokenizerRef == null ? null : resolved.get(at++);
+            if (!companionRefs.isEmpty()) {
+                // ONE header read at most (none when the model is preloaded - AOT answers from
+                // its baked header)
+                Map<String, String> offered;
+                try {
+                    offered = AOT.companionFiles(modelPath);
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+                for (var w : companionRefs.entrySet()) {
+                    requireCompanion(offered, w.getKey(), w.getValue());
+                }
+                for (String capability : companionRefs.keySet()) {
+                    companions.put(capability, resolved.get(at++));
+                }
+            }
+        } catch (RuntimeException e) {
+            // a ref that cannot be resolved carries its own remedy (gated repo, unknown quant,
+            // no such repository); the usage block would only bury it
+            throw new ResolveFailure(e);
+        }
+        return new Options(
+                modelPath,
+                Map.copyOf(companions),
+                tokenizerPath,
+                prompt,
+                systemPrompt,
+                interactive,
+                temperature,
+                topp,
+                topk,
+                minp,
+                seed,
+                maxOutputTokens,
+                contextCapacity,
+                stream,
+                echo,
+                think,
+                thinkInline,
+                color,
+                rawPrompt,
+                promptCache,
+                promptCacheReadOnly);
+    }
+
+    /**
+     * One companion, named EXPLICITLY. There is no "find it for me": a companion changes what the
+     * model produces - a projector is in the media cache key - so which file it is belongs in the
+     * command line where it can be read, reproduced and pinned.
+     */
+    private static void requireCompanion(
+            Map<String, String> offered, String capability, String value) {
+        String fileName = offered.get(capability);
+        require(
+                fileName != null,
+                "this model has no '%s' capability. It offers: %s",
+                capability,
+                offered.isEmpty() ? "none" : new TreeSet<>(offered.keySet()));
+        require(
+                !"auto".equals(value),
+                "name the '%s' file rather than 'auto' - it is usually called %s*, and browsing"
+                        + " the model's repository shows which precisions it ships",
+                capability,
+                fileName);
+    }
+
+    static void printUsage(PrintStream out) {
+        out.println("Usage:  java -jar xjinfer.jar [options]");
+        out.println(
+                "        java -jar xjinfer.jar pull [--force] <ref>...  download models, print"
+                        + " paths");
+        out.println();
+        out.println(
+                "A remote model is a URL without the scheme: "
+                        + " <host>/<owner>/<repo>[@rev][/path][:quant]");
+        out.println(
+                "  hf.co/unsloth/gemma-4-E2B-it-GGUF:Q4_K_M     "
+                        + " modelscope.cn/Qwen/Qwen3-0.6B-GGUF:Q8_0");
+        out.println(
+                "Hosts: hf.co, modelscope.cn. Quant defaults to Q4_K_M. Anything else is a local"
+                        + " file path.");
+        out.println(
+                "Cache: $JINFER_MODELS, else the platform cache dir. HF_TOKEN for gated repos,"
+                        + " JINFER_OFFLINE=1 to never fetch.");
+        out.println();
+        out.println("Options:");
+        out.println(
+                "  --model, -m <path|ref>        required, a .gguf file or a remote model -"
+                        + " downloaded on first use");
+        out.println("  --mmproj <path|ref>           shorthand for --with media=<...>");
+        out.println(
+                "  --with <role>=<path|ref>      attach a file by role. model= (same as -m) and"
+                        + " tokenizer= (use another GGUF's tokenizer; id-space checked) are"
+                        + " reserved; any other role is a COMPANION capability of the"
+                        + " architecture, e.g. gemma4: media (vision/audio encoders)");
+        out.println("  --interactive, --chat, -i     run in chat mode");
+        out.println("  --instruct                    run in instruct (once) mode, default mode");
+        out.println("  --prompt, -p <string>         input prompt");
+        out.println("  --system-prompt, -sp <string> system prompt for chat/instruct mode");
+        out.println(
+                "  --temperature, --temp <float> temperature in [0,inf]; default: the model's"
+                        + " recommended value, else 0.8");
+        out.println(
+                "  --top-p <float>               top-p (nucleus) mass in [0,1]; default: the"
+                        + " model's recommended value, else 0.95");
+        out.println(
+                "  --top-k <int>                 top-k cutoff, 0 disables; default: the model's"
+                        + " recommended value, else 40");
+        out.println(
+                "  --min-p <float>               min-p cutoff relative to the top token, in"
+                        + " [0,1]; default: the model's recommended value, else 0.05");
+        out.println(
+                "  --seed, -s <long>             pins the sampling seed; default: a fresh random"
+                        + " seed per request");
+        out.println(
+                "  --context-capacity, -c <int>  how much the model can remember, in tokens;"
+                        + " default "
+                        + DEFAULT_CONTEXT_CAPACITY
+                        + ", refused above the model's own context length");
+        out.println(
+                "  --max-output-tokens, -n <int> how much it may produce in one turn; -1 (the"
+                        + " default) = whatever the remaining context allows");
+        out.println(
+                "  --stream <boolean>            print tokens during generation; accepts"
+                        + " true|false|on|off, default true");
+        out.println(
+                "  --echo <boolean>              print ALL tokens to stderr; accepts"
+                        + " true|false|on|off, default false");
+        out.println(
+                "  --color <on|off|auto>         colorize thinking output in terminal (default:"
+                        + " auto)");
+        out.println(
+                "  --think <off|on|inline>       on: show thinking (default), off: hide thinking"
+                        + " from output (model still generates it), inline: thoughts to stdout");
+        out.println(
+                "  --raw-prompt                  bypass chat template and tokenize --prompt"
+                        + " directly");
+        out.println(
+                "  --cache <file>                persistent prompt cache (instruct) - serves"
+                        + " matching prefixes, appends new prompts");
+        out.println(
+                "  --cache-ro <file>             like --cache but read-only - serves matching"
+                        + " prefixes, never writes");
+        out.println();
+        out.println("Interactive commands:");
+        out.println("  /quit, /exit                  exit the chat");
+        out.println("  /context                      show context token usage");
+        out.println();
+        out.println("Examples:");
+        out.println("  java -jar xjinfer.jar --model hf.co/unsloth/gemma-4-E2B-it-GGUF --chat");
+        out.println(
+                "  java -jar xjinfer.jar --model hf.co/unsloth/gemma-4-E2B-it-GGUF --mmproj"
+                        + " hf.co/unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf --chat");
+        out.println("  java -jar xjinfer.jar pull hf.co/ggml-org/stories15M_MOE:Q8_0");
+        out.println(
+                "  java -jar xjinfer.jar --model"
+                    + " hf.co/LiquidAI/LFM2.5-350M-GGUF:LFM2.5-350M-Q8_0.gguf --prompt \"Tell me a"
+                    + " joke\"");
+        out.println(
+                "  java -jar xjinfer.jar --model"
+                        + " hf.co/LiquidAI/LFM2.5-350M-GGUF:LFM2.5-350M-Q8_0.gguf --chat"
+                        + " --system-prompt \"You are a helpful assistant\"");
+    }
+}
