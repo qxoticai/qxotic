@@ -37,6 +37,7 @@ class JinferChatModelTckIT extends AbstractChatModelIT {
                                             Path.of(
                                                     "hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF/LFM2.5-8B-A1B-Q8_0.gguf"))
                                     .toString()));
+    static final String MEDIA = System.getProperty("jinfer.testMedia", "");
 
     static boolean modelAvailable() {
         return Files.exists(MODEL);
@@ -74,7 +75,7 @@ class JinferChatModelTckIT extends AbstractChatModelIT {
         // wrapper is deliberately NOT AutoCloseable, so JUnit has nothing to close; @AfterAll
         // closes the real model once.
         if (model == null) {
-            model =
+            var builder =
                     JinferChatModel.builder()
                             .modelPath(MODEL)
                             .contextLength(8192)
@@ -86,8 +87,9 @@ class JinferChatModelTckIT extends AbstractChatModelIT {
                             // not sampling quality.
                             .temperature(0.0)
                             .thinking(tckThinking())
-                            .seed(7L)
-                            .build();
+                            .seed(7L);
+            if (mediaAvailable()) builder.companion("media", Path.of(MEDIA));
+            model = builder.build();
         }
         JinferChatModel m = model;
         return List.of(
@@ -212,7 +214,7 @@ class JinferChatModelTckIT extends AbstractChatModelIT {
 
     @Override
     protected ChatModel createModelWith(ChatRequestParameters parameters) {
-        JinferChatModel m =
+        var builder =
                 JinferChatModel.builder()
                         .modelPath(MODEL)
                         .contextLength(8192)
@@ -220,8 +222,9 @@ class JinferChatModelTckIT extends AbstractChatModelIT {
                         // same reason as models(); the kit's own parameters override where set
                         .temperature(0.0)
                         .thinking(tckThinking())
-                        .seed(7L)
-                        .build();
+                        .seed(7L);
+        if (mediaAvailable()) builder.companion("media", Path.of(MEDIA));
+        JinferChatModel m = builder.build();
         created.add(m);
         return m;
     }
@@ -246,11 +249,20 @@ class JinferChatModelTckIT extends AbstractChatModelIT {
 
     @Override
     protected boolean supportsSingleImageInputAsBase64EncodedString() {
-        return false; // LFM2 is text-only (gemma4 does media; it lacks tool support for the TCK)
+        return mediaAvailable();
+    }
+
+    @Override
+    protected boolean supportsMultipleImageInputsAsBase64EncodedStrings() {
+        return mediaAvailable();
     }
 
     @Override
     protected boolean supportsSingleImageInputAsPublicURL() {
         return false; // this library never fetches over the network
+    }
+
+    private static boolean mediaAvailable() {
+        return !MEDIA.isBlank() && Files.isRegularFile(Path.of(MEDIA));
     }
 }
