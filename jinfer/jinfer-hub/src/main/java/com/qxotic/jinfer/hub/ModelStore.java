@@ -749,8 +749,10 @@ public final class ModelStore {
         if (Files.isRegularFile(branch)) {
             revision = Files.readString(branch, StandardCharsets.UTF_8).strip();
         }
-        Path snapshot = repo.resolve("snapshots").resolve(revision).resolve(ref.location());
-        return Files.isDirectory(snapshot) ? snapshot : null;
+        Path snapshot = repo.resolve("snapshots").resolve(revision);
+        Path located = snapshot.resolve(ref.location());
+        if (Files.isRegularFile(located)) return located.getParent();
+        return Files.isDirectory(located) ? located : null;
     }
 
     private static Path huggingFaceCache() {
