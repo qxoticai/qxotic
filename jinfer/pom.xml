@@ -34,6 +34,7 @@
     <module>jinfer-xinflect2</module>
     <module>jinfer-xmodels-all</module>
     <module>jinfer-xchat</module>
+    <module>jinfer-xcli</module>
     <module>jinfer-xbench</module>
     <module>jinfer-llm</module>
     <module>jinfer-chat</module>
@@ -200,6 +201,11 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-xbench</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>jinfer-xcli</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>

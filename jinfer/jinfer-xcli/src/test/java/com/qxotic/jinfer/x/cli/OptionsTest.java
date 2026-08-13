@@ -1,0 +1,214 @@
+package com.qxotic.jinfer.x.cli;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import com.qxotic.jinfer.x.chat.LoadedModel;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+/** The command line's own rules - the ones whose failure prints usage and exits 1. */
+final class OptionsTest {
+
+    private static Options options(String prompt) {
+        return new Options(
+                Path.of("model.gguf"),
+                null,
+                null,
+                prompt,
+                null,
+                false,
+                null,
+                null,
+                null,
+                null,
+                null,
+                128,
+                4096,
+                true,
+                false,
+                true,
+                false,
+                false,
+                false,
+                null,
+                false);
+    }
+
+    /**
+     * --with media=x.gguf and no --model used to reach the companion header read with a null model
+     * path and print the raw NPE; the remedy is the flag's name, before any resolution.
+     */
+    @Test
+    void aCompanionWithoutAModelNamesTheModelFlag(@TempDir Path dir) throws IOException {
+        Path mmproj = Files.createFile(dir.resolve("mmproj.gguf"));
+        IllegalArgumentException e =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> Options.parse(new String[] {"--with", "media=" + mmproj}));
+        assertTrue(e.getMessage().contains("--model"), e.getMessage());
+    }
+
+    @Test
+    void cacheInChatModeIsRefused(@TempDir Path dir) throws IOException {
+        // a flag that does nothing is refused, not ignored - the chat loop keeps its own state
+        // and never consults the prompt cache
+        Path model = Files.createFile(dir.resolve("m.gguf"));
+        IllegalArgumentException e =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                Options.parse(
+                                        new String[] {
+                                            "--model",
+                                            model.toString(),
+                                            "--chat",
+                                            "--cache",
+                                            dir.resolve("c.jkv").toString()
+                                        }));
+        assertTrue(e.getMessage().contains("--cache"), e.getMessage());
+    }
+
+    /** A prompt is required unless something else will supply one. */
+    @Test
+    void instructModeNeedsAPrompt() {
+        assertThrows(IllegalArgumentException.class, () -> options(null));
+    }
+
+    @Test
+    void aTransposedTemperatureAndTopPIsRejectedBeforeTheModelLoads() {
+        IllegalArgumentException e =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                new Options(
+                                        Path.of("model.gguf"),
+                                        null,
+                                        null,
+                                        "hi",
+                                        null,
+                                        false,
+                                        0.95f,
+                                        1.7f,
+                                        null,
+                                        null,
+                                        null,
+                                        128,
+                                        4096,
+                                        true,
+                                        false,
+                                        true,
+                                        false,
+                                        false,
+                                        false,
+                                        null,
+                                        false));
+        assertTrue(e.getMessage().contains("--top-p"), e.getMessage());
+    }
+
+    /** Unset flags become the model's recommendations, then the engine baseline. */
+    @Test
+    void unsetSamplingResolvesToTheBaseline() {
+        var sampling = options("hi").sampling(LoadedModel.SamplingDefaults.NONE);
+        assertEquals(0.8f, sampling.temperature());
+        assertEquals(0.95f, sampling.topP());
+        assertEquals(40, sampling.topK());
+    }
+
+    // ---- parse: argv to Options ----
+
+    private static Path model(Path dir) throws IOException {
+        return Files.writeString(dir.resolve("model.gguf"), "not really a model");
+    }
+
+    @Test
+    void parseReadsFlagsInBothSpellings(@TempDir Path dir) throws IOException {
+        String m = model(dir).toString();
+        Options options =
+                Options.parse(
+                        new String[] {
+                            "-m", m, "-p", "hi", "--temp", "0.5", "--context-capacity=512"
+                        });
+        assertEquals(0.5f, options.temperature());
+        assertEquals(512, options.contextCapacity(), "--flag=value works like --flag value");
+    }
+
+    /**
+     * A bad number names its flag; 'For input string: \"x\"' named neither flag nor expectation.
+     */
+    @Test
+    void aBadNumberNamesItsFlag(@TempDir Path dir) throws IOException {
+        String m = model(dir).toString();
+        var failure =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> Options.parse(new String[] {"-m", m, "-p", "hi", "--top-k", "many"}));
+        assertTrue(failure.getMessage().contains("--top-k"), failure.getMessage());
+        assertTrue(failure.getMessage().contains("many"), failure.getMessage());
+    }
+
+    /** model= and tokenizer= are RESERVED --with roles: they route to their own seams. */
+    @Test
+    void reservedWithRolesRouteToTheirSeams(@TempDir Path dir) throws IOException {
+        Path m = model(dir);
+        Path t = Files.writeString(dir.resolve("other.gguf"), "another model");
+        Options options =
+                Options.parse(
+                        new String[] {
+                            "--with", "model=" + m, "--with", "tokenizer=" + t, "-p", "hi"
+                        });
+        assertEquals(m, options.modelPath(), "--with model= is -m by another spelling");
+        assertEquals(t, options.tokenizerPath());
+        assertEquals(0, options.companions().size(), "reserved roles are not companions");
+    }
+
+    @Test
+    void writableCacheWithRawPromptIsRefused(@TempDir Path dir) throws IOException {
+        // definePrompt goes through the native codec's conversation encoding, which a raw prompt
+        // deliberately bypasses - accepting the flag would silently never append
+        Path model = Files.createFile(dir.resolve("m.gguf"));
+        IllegalArgumentException e =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                Options.parse(
+                                        new String[] {
+                                            "--model",
+                                            model.toString(),
+                                            "--raw-prompt",
+                                            "-p",
+                                            "hi",
+                                            "--cache",
+                                            dir.resolve("c.jkv").toString()
+                                        }));
+        assertTrue(e.getMessage().contains("--cache-ro"), e.getMessage());
+        // read-only is fine: the raw batch is served as-is
+        Files.writeString(dir.resolve("c.jkv"), "");
+        Options ok =
+                Options.parse(
+                        new String[] {
+                            "--model",
+                            model.toString(),
+                            "--raw-prompt",
+                            "-p",
+                            "hi",
+                            "--cache-ro",
+                            dir.resolve("c.jkv").toString()
+                        });
+        assertTrue(ok.promptCacheReadOnly());
+    }
+
+    @Test
+    void anUnknownFlagIsRefusedByName(@TempDir Path dir) throws IOException {
+        String m = model(dir).toString();
+        var failure =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> Options.parse(new String[] {"-m", m, "--frobnicate", "on"}));
+        assertTrue(failure.getMessage().contains("--frobnicate"), failure.getMessage());
+    }
+}
