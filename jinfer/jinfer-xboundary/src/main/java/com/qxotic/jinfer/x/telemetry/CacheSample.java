@@ -1,0 +1,10 @@
+package com.qxotic.jinfer.x.telemetry;
+
+/**
+ * The prompt cache's health reading, as telemetry sees it. Telemetry owns this record - rather than
+ * naming the cache's domain type - so events never force a module dependency: the engine maps its
+ * {@code PromptCache.Sample} onto this vocabulary once, in the gauge lambda, and the event stream
+ * stays acyclic. An exporter is a rename table, starting here.
+ */
+public record CacheSample(
+        int blocks, long bytes, long budgetBytes, long hits, long misses, long evictions) {}
