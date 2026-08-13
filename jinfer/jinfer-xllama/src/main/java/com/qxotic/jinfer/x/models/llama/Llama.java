@@ -1,17 +1,10 @@
-// The standard Llama transformer (RoPE GQA attention + SwiGLU FFN + RMSNorm) against the x
-// boundary: a port of jinfer-llama's Llama (cycle 3 of the FloatTensor migration), covering the
-// "llama" GGUF architecture and its same-graph relatives (all distinguished by GGUF metadata, no
-// extra classes):
+// Llama's RoPE GQA transformer and metadata-compatible variants:
 //   - Llama 3.x: "llama3" RoPE frequency scaling (rope_freqs.weight).
 //   - MiniCPM:   embedding_scale / residual_scale / logit_scale (default 1.0 -> plain Llama).
 //   - Mistral-3: YaRN RoPE scaling + Llama-4-style attention temperature tuning.
 //   - SmolLM3:   NoPE - RoPE is skipped on every 4th layer (noRopeLayerStep); otherwise plain
 //     Llama.
-//   - Granite (dense): the MiniCPM scalars plus a custom QK attention scale (see Granite.java).
-// Interleaved RoPE (the GGUF "llama" pair convention), KV written to the cache before a
-// causalPrefill / flashDecode read, and a scalar residual scale on each sublayer output.
-// Text-only, dense FFN. Chat templates, stop tokens, and the cache codec are OUT of slice (the
-// chat/cache cycles) - this is the headless generative backbone.
+// Text-only with interleaved RoPE, an F16 KV cache, and a lazy last-layer tail.
 package com.qxotic.jinfer.x.models.llama;
 
 import com.qxotic.format.gguf.GGUF;
@@ -21,6 +14,7 @@ import com.qxotic.jinfer.x.boundary.BaseState;
 import com.qxotic.jinfer.x.boundary.Batch;
 import com.qxotic.jinfer.x.boundary.Config;
 import com.qxotic.jinfer.x.boundary.LanguageModel;
+import com.qxotic.jinfer.x.boundary.StateCodec;
 import com.qxotic.jinfer.x.kernels.Activations;
 import com.qxotic.jinfer.x.kernels.Convert;
 import com.qxotic.jinfer.x.kernels.FlashAttention;
@@ -42,6 +36,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 
 public final class Llama implements LanguageModel<Llama.Configuration, Llama.Weights, Llama.State> {
 
@@ -70,6 +65,11 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
     }
 
     @Override
+    public Optional<StateCodec<State>> stateCodec() {
+        return Optional.of(new LlamaStateCodec(configuration));
+    }
+
+    @Override
     public State newState(int contextCapacity, int batchCapacity, Arena arena) {
         return new State(configuration, contextCapacity, batchCapacity, arena);
     }
@@ -77,6 +77,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
     @Override
     public void forward(State s, Batch batch) {
         int n = batch.count();
+        if (n <= 0) throw new IllegalArgumentException("Llama token batch must not be empty");
         if (n > s.batchCapacity) {
             throw new IllegalArgumentException(
                     "batch " + n + " exceeds batchCapacity " + s.batchCapacity);
@@ -91,32 +92,35 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                             + " exceeds contextCapacity "
                             + s.contextCapacity);
         }
-        switch (batch.input()) {
-            case Batch.Input.Tokens t -> {
-                int[] ids = t.ids();
-                if (n == 1) {
-                    Parallel.onDecodePool(
-                            () -> {
-                                forward(s, ids, 0, from, n);
-                                return null;
-                            });
-                } else {
-                    forward(s, ids, 0, from, n);
-                }
-            }
-            case Batch.Input.Sequences seq ->
-                    throw new UnsupportedOperationException(
-                            "Llama is generative: packed sequences (batched embedding) not"
-                                    + " supported");
-            case Batch.Input.Embeddings ignored ->
-                    throw new UnsupportedOperationException(
-                            "Llama is text-only: embedding input is not supported");
-        }
+        int[] ids =
+                switch (batch.input()) {
+                    case Batch.Input.Tokens t -> t.ids();
+                    case Batch.Input.Sequences seq ->
+                            throw new UnsupportedOperationException(
+                                    "Llama is generative: packed sequences (batched embedding) not"
+                                            + " supported");
+                    case Batch.Input.Embeddings ignored ->
+                            throw new UnsupportedOperationException(
+                                    "Llama is text-only: embedding input is not supported");
+                };
+        for (int id : ids)
+            if (id < 0 || id >= configuration.vocabularySize)
+                throw new IllegalArgumentException(
+                        "token id " + id + " outside [0," + configuration.vocabularySize + ")");
+        if (n == 1)
+            Parallel.onDecodePool(
+                    () -> {
+                        forward(s, ids, from, n);
+                        return null;
+                    });
+        else forward(s, ids, from, n);
         s.advance(n, batch.outputs());
     }
 
     @Override
     public MemoryView<?> head(State s, int output) {
+        if (output < 0 || output >= s.outputCount)
+            throw new IllegalArgumentException("output " + output + " outside retained outputs");
         int dim = configuration.embeddingLength;
         int row = s.lastChunkLen - s.outputCount + output;
         return Parallel.onDecodePool(
@@ -134,7 +138,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                             weights.wcls(), s.normed, s.logits, configuration.vocabularySize, dim);
                     float ls = configuration.logitScale;
                     if (ls != 1.0f) {
-                        Ops.mapInPlace(s.logits, 0, configuration.vocabularySize, v -> v / ls);
+                        Ops.divideInPlace(s.logits, 0, configuration.vocabularySize, ls);
                     }
                     return s.logits;
                 });
@@ -142,7 +146,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
 
     // === Forward ===
 
-    void forward(State state, int[] tokens, int tokenOffset, int startPos, int seqLen) {
+    void forward(State state, int[] tokens, int startPos, int seqLen) {
         Configuration config = configuration;
         Weights w = weights;
         // ONCE for the batch: an angle depends on the position and the schedule, never on the
@@ -156,13 +160,13 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
         for (int s = 0; s < seqLen; s++) {
             Convert.copyToF32(
                     w.tokenEmbeddings(),
-                    (long) tokens[tokenOffset + s] * dim,
+                    (long) tokens[s] * dim,
                     state.residual,
                     (long) s * dim,
                     dim);
         }
         if (embScale != 1.0f) {
-            Ops.mapInPlace(state.residual, 0, seqLen * dim, v -> v * embScale);
+            Ops.multiplyInPlace(state.residual, 0, Math.multiplyExact(seqLen, dim), embScale);
         }
 
         int lastLayer = config.numberOfLayers - 1;
@@ -194,13 +198,10 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
      */
     private void commitKv(State state, int l, int startPos, int seqLen) {
         int kvDim = configuration.kvDim();
-        for (int s = 0; s < seqLen; s++) {
-            long kvPos = startPos + s;
-            Convert.f32ToF16(
-                    state.batchK, (long) s * kvDim, state.keyCache[l], kvPos * kvDim, kvDim);
-            Convert.f32ToF16(
-                    state.batchV, (long) s * kvDim, state.valueCache[l], kvPos * kvDim, kvDim);
-        }
+        int count = Math.multiplyExact(seqLen, kvDim);
+        long cacheOffset = Math.multiplyExact((long) startPos, kvDim);
+        Convert.f32ToF16(state.batchK, 0, state.keyCache[l], cacheOffset, count);
+        Convert.f32ToF16(state.batchV, 0, state.valueCache[l], cacheOffset, count);
     }
 
     /**
@@ -279,7 +280,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
         }
         float aScale = config.attnTemp(pos);
         if (aScale != 1.0f) {
-            Ops.mapInPlace(state.query, 0, queryDim, v -> v * aScale);
+            Ops.multiplyInPlace(state.query, 0, queryDim, aScale);
         }
         // Single causal query over cache[0..pos] INCLUSIVE (batchK/batchV = null): row i's own
         // K/V is already in the F16 cache from writeKv, read like every other position.
@@ -356,7 +357,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                     }
                     float aScale = config.attnTemp(startPos + s);
                     if (aScale != 1.0f) {
-                        Ops.mapInPlace(state.query, (long) s * queryDim, queryDim, v -> v * aScale);
+                        Ops.multiplyInPlace(state.query, (long) s * queryDim, queryDim, aScale);
                     }
                 });
 
@@ -413,15 +414,8 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
         LayerWeights lw = weights.layers()[l];
         MatMul.gemm(lw.w1(), state.normed, dim, state.hidden, hiddenDim, hiddenDim, seqLen, dim);
         MatMul.gemm(lw.w3(), state.normed, dim, state.hidden2, hiddenDim, hiddenDim, seqLen, dim);
-        Parallel.forRows(
-                seqLen,
-                s ->
-                        Activations.siluMultiply(
-                                state.hidden,
-                                s * hiddenDim,
-                                state.hidden2,
-                                s * hiddenDim,
-                                hiddenDim));
+        Activations.siluMultiply(
+                state.hidden, 0, state.hidden2, 0, Math.multiplyExact(seqLen, hiddenDim));
         MatMul.gemm(lw.w2(), state.hidden, hiddenDim, state.normed, dim, dim, seqLen, hiddenDim);
     }
 
@@ -563,16 +557,19 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
         @SuppressWarnings("unchecked")
         State(Configuration config, int contextCapacity, int batchCapacity, Arena arena) {
             super(arena);
-            if (contextCapacity > config.contextLength()) {
+            if (contextCapacity <= 0 || contextCapacity > config.contextLength()) {
                 throw new IllegalArgumentException(
                         "contextCapacity "
                                 + contextCapacity
-                                + " exceeds model contextLength "
-                                + config.contextLength());
+                                + " outside [1,"
+                                + config.contextLength()
+                                + "]");
             }
+            if (batchCapacity <= 0)
+                throw new IllegalArgumentException("batchCapacity " + batchCapacity);
             this.contextCapacity = contextCapacity;
-            int c = Math.max(1, batchCapacity);
-            this.batchCapacity = c;
+            this.batchCapacity = batchCapacity;
+            int c = batchCapacity;
             int dim = config.embeddingLength;
             int queryDim = config.queryDim();
             int kvDim = config.kvDim();

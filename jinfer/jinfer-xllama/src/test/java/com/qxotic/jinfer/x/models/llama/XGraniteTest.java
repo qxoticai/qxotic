@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.FloatTensor;
-import com.qxotic.jinfer.x.Segments;
 import com.qxotic.jinfer.x.Views;
 import com.qxotic.jinfer.x.boundary.Batch;
 import com.qxotic.jinfer.x.kernels.ModelLoader;
@@ -169,10 +168,8 @@ class XGraniteTest {
     }
 
     private static float[] snapshotX(MemoryView<MemorySegment> logits, int vocab) {
-        Views.Raw r = Views.rawF32(logits, "logits");
         float[] out = new float[vocab];
-        for (int i = 0; i < vocab; i++)
-            out[i] = Segments.readFloat(r.vseg(), r.vbase() + (long) i * Float.BYTES);
+        for (int i = 0; i < vocab; i++) out[i] = Views.getFloat(logits, i, "logits");
         return out;
     }
 

@@ -12,10 +12,7 @@
   <packaging>jar</packaging>
 
   <name>jinfer-xllama</name>
-  <description>MemoryView port of the Llama family (Llama 3.x, Mistral/Ministral, MiniCPM, SmolLM3
-    via metadata flags, plus Granite's own class) — cycle 3 of the FloatTensor migration (see
-    qxotic/.opencode/plans/memoryview-migration.md). The boundary cone lives in
-    jinfer-xboundary.</description>
+  <description>MemoryView inference for Llama, Mistral, MiniCPM, SmolLM3, and Granite models.</description>
 
   <dependencies>
     <dependency>
@@ -33,6 +30,10 @@
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-xboundary</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-xchat</artifactId>
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
@@ -55,6 +56,12 @@
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-llm</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-kernels</artifactId>
+      <type>test-jar</type>
       <scope>test</scope>
     </dependency>
   </dependencies>

@@ -1,8 +1,5 @@
-// Granite (dense) against the x boundary: a port of jinfer-llama's Granite (cycle 3). The Llama
-// graph minus the lazy last-layer tail, attention temperature, NoPE and YaRN - plus Granite's
-// four metadata scalars (embedding / residual / logit / attention scale). Full forward (every
-// layer runs; no deferred tail), head reads the residual directly. Text-only, dense FFN. Chat
-// templates, stop tokens, and the cache codec are OUT of slice (the chat/cache cycles).
+// Dense Granite transformer with metadata-defined embedding, residual, logit, and attention
+// scales. Text-only with interleaved RoPE, an F16 KV cache, and eager full-layer evaluation.
 package com.qxotic.jinfer.x.models.llama;
 
 import com.qxotic.format.gguf.GGUF;
@@ -12,6 +9,7 @@ import com.qxotic.jinfer.x.boundary.BaseState;
 import com.qxotic.jinfer.x.boundary.Batch;
 import com.qxotic.jinfer.x.boundary.Config;
 import com.qxotic.jinfer.x.boundary.LanguageModel;
+import com.qxotic.jinfer.x.boundary.StateCodec;
 import com.qxotic.jinfer.x.kernels.Activations;
 import com.qxotic.jinfer.x.kernels.Convert;
 import com.qxotic.jinfer.x.kernels.FlashAttention;
@@ -33,6 +31,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 
 public final class Granite
         implements LanguageModel<Granite.Configuration, Granite.Weights, Granite.State> {
@@ -53,6 +52,12 @@ public final class Granite
     }
 
     @Override
+    public Optional<StateCodec<State>> stateCodec() {
+        // uniform full attention: per-position K/V rows resume on their own
+        return Optional.of(new GraniteStateCodec(configuration));
+    }
+
+    @Override
     public Weights weights() {
         return weights;
     }
@@ -69,6 +74,7 @@ public final class Granite
     @Override
     public void forward(State s, Batch batch) {
         int n = batch.count();
+        if (n <= 0) throw new IllegalArgumentException("Granite token batch must not be empty");
         if (n > s.batchCapacity) {
             throw new IllegalArgumentException(
                     "batch " + n + " exceeds batchCapacity " + s.batchCapacity);
@@ -83,32 +89,35 @@ public final class Granite
                             + " exceeds contextCapacity "
                             + s.contextCapacity);
         }
-        switch (batch.input()) {
-            case Batch.Input.Tokens t -> {
-                int[] ids = t.ids();
-                if (n == 1) {
-                    Parallel.onDecodePool(
-                            () -> {
-                                forward(s, ids, 0, from, n);
-                                return null;
-                            });
-                } else {
-                    forward(s, ids, 0, from, n);
-                }
-            }
-            case Batch.Input.Sequences seq ->
-                    throw new UnsupportedOperationException(
-                            "Granite is generative: packed sequences (batched embedding) not"
-                                    + " supported");
-            case Batch.Input.Embeddings ignored ->
-                    throw new UnsupportedOperationException(
-                            "Granite is text-only: embedding input is not supported");
-        }
+        int[] ids =
+                switch (batch.input()) {
+                    case Batch.Input.Tokens t -> t.ids();
+                    case Batch.Input.Sequences seq ->
+                            throw new UnsupportedOperationException(
+                                    "Granite is generative: packed sequences (batched embedding)"
+                                            + " not supported");
+                    case Batch.Input.Embeddings ignored ->
+                            throw new UnsupportedOperationException(
+                                    "Granite is text-only: embedding input is not supported");
+                };
+        for (int id : ids)
+            if (id < 0 || id >= configuration.vocabularySize)
+                throw new IllegalArgumentException(
+                        "token id " + id + " outside [0," + configuration.vocabularySize + ")");
+        if (n == 1)
+            Parallel.onDecodePool(
+                    () -> {
+                        forward(s, ids, from, n);
+                        return null;
+                    });
+        else forward(s, ids, from, n);
         s.advance(n, batch.outputs());
     }
 
     @Override
     public MemoryView<?> head(State s, int output) {
+        if (output < 0 || output >= s.outputCount)
+            throw new IllegalArgumentException("output " + output + " outside retained outputs");
         int dim = configuration.embeddingLength;
         int row = s.lastChunkLen - s.outputCount + output;
         return Parallel.onDecodePool(
@@ -125,7 +134,7 @@ public final class Granite
                             weights.wcls(), s.normed, s.logits, configuration.vocabularySize, dim);
                     float ls = configuration.logitScale;
                     if (ls != 1.0f) {
-                        Ops.mapInPlace(s.logits, 0, configuration.vocabularySize, v -> v / ls);
+                        Ops.divideInPlace(s.logits, 0, configuration.vocabularySize, ls);
                     }
                     return s.logits;
                 });
@@ -133,7 +142,7 @@ public final class Granite
 
     // === Forward ===
 
-    void forward(State state, int[] tokens, int tokenOffset, int startPos, int seqLen) {
+    void forward(State state, int[] tokens, int startPos, int seqLen) {
         Configuration config = configuration;
         Weights w = weights;
         // ONCE for the batch: an angle never depends on the layer, so all of them read these rows
@@ -146,13 +155,13 @@ public final class Granite
         for (int s = 0; s < seqLen; s++) {
             Convert.copyToF32(
                     w.tokenEmbeddings(),
-                    (long) tokens[tokenOffset + s] * dim,
+                    (long) tokens[s] * dim,
                     state.residual,
                     (long) s * dim,
                     dim);
         }
         if (embScale != 1.0f) {
-            Ops.mapInPlace(state.residual, 0, seqLen * dim, v -> v * embScale);
+            Ops.multiplyInPlace(state.residual, 0, Math.multiplyExact(seqLen, dim), embScale);
         }
 
         for (int l = 0; l < config.numberOfLayers; l++) {
@@ -268,13 +277,10 @@ public final class Granite
      */
     private void commitKv(State state, int l, int startPos, int seqLen) {
         int kvDim = configuration.kvDim();
-        for (int s = 0; s < seqLen; s++) {
-            long kvPos = startPos + s;
-            Convert.f32ToF16(
-                    state.batchK, (long) s * kvDim, state.keyCache[l], kvPos * kvDim, kvDim);
-            Convert.f32ToF16(
-                    state.batchV, (long) s * kvDim, state.valueCache[l], kvPos * kvDim, kvDim);
-        }
+        int count = Math.multiplyExact(seqLen, kvDim);
+        long cacheOffset = Math.multiplyExact((long) startPos, kvDim);
+        Convert.f32ToF16(state.batchK, 0, state.keyCache[l], cacheOffset, count);
+        Convert.f32ToF16(state.batchV, 0, state.valueCache[l], cacheOffset, count);
     }
 
     /** Dense SwiGLU FFN over the pre-normed rows in {@code state.normed}, written back in place. */
@@ -283,15 +289,8 @@ public final class Granite
         LayerWeights lw = weights.layers()[l];
         MatMul.gemm(lw.w1(), state.normed, dim, state.hidden, hiddenDim, hiddenDim, seqLen, dim);
         MatMul.gemm(lw.w3(), state.normed, dim, state.hidden2, hiddenDim, hiddenDim, seqLen, dim);
-        Parallel.forRows(
-                seqLen,
-                s ->
-                        Activations.siluMultiply(
-                                state.hidden,
-                                s * hiddenDim,
-                                state.hidden2,
-                                s * hiddenDim,
-                                hiddenDim));
+        Activations.siluMultiply(
+                state.hidden, 0, state.hidden2, 0, Math.multiplyExact(seqLen, hiddenDim));
         MatMul.gemm(lw.w2(), state.hidden, hiddenDim, state.normed, dim, dim, seqLen, hiddenDim);
     }
 
@@ -396,16 +395,19 @@ public final class Granite
         @SuppressWarnings("unchecked")
         State(Configuration config, int contextCapacity, int batchCapacity, Arena arena) {
             super(arena);
-            if (contextCapacity > config.contextLength()) {
+            if (contextCapacity <= 0 || contextCapacity > config.contextLength()) {
                 throw new IllegalArgumentException(
                         "contextCapacity "
                                 + contextCapacity
-                                + " exceeds model contextLength "
-                                + config.contextLength());
+                                + " outside [1,"
+                                + config.contextLength()
+                                + "]");
             }
+            if (batchCapacity <= 0)
+                throw new IllegalArgumentException("batchCapacity " + batchCapacity);
             this.contextCapacity = contextCapacity;
-            int c = Math.max(1, batchCapacity);
-            this.batchCapacity = c;
+            this.batchCapacity = batchCapacity;
+            int c = batchCapacity;
             int dim = config.embeddingLength;
             int queryDim = config.queryDim();
             int kvDim = config.kvDim();
