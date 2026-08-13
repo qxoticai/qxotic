@@ -37,7 +37,7 @@ class XCliIT {
                 model, Map.of(), null, "Say hi", null, false,
                 0f, // greedy: the reply is deterministic
                 null, null, null, 42L, 32, 512, false, // stream off: the reply lands in Turn's text
-                false, true, false, false, false, cache, readOnly);
+                false, true, false, false, false, cache, readOnly, 4);
     }
 
     private static ChatEngine engine(Options options) throws IOException {
@@ -100,7 +100,8 @@ class XCliIT {
                         false,
                         true,
                         null,
-                        false);
+                        false,
+                        4);
         PrintStream realErr = System.err;
         ByteArrayOutputStream err = new ByteArrayOutputStream();
         System.setErr(new PrintStream(err, true, StandardCharsets.UTF_8));
@@ -120,7 +121,7 @@ class XCliIT {
         Options options =
                 new Options(
                         model, Map.of(), null, null, null, true, 0f, null, null, null, 42L, 16, 512,
-                        false, false, true, false, false, false, null, false);
+                        false, false, true, false, false, false, null, false, 4);
         InputStream realIn = System.in;
         PrintStream realErr = System.err;
         ByteArrayOutputStream err = new ByteArrayOutputStream();

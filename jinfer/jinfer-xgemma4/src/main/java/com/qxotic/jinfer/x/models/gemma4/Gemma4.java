@@ -22,13 +22,21 @@ import com.qxotic.jinfer.x.kernels.Norms;
 import com.qxotic.jinfer.x.kernels.Ops;
 import com.qxotic.jinfer.x.kernels.RoPE;
 import com.qxotic.jinfer.x.kernels.Trace;
+import com.qxotic.jinfer.x.llm.Generator.Constraints;
+import com.qxotic.jinfer.x.llm.Generator.GenerationListener;
+import com.qxotic.jinfer.x.llm.Sampler;
+import com.qxotic.jinfer.x.llm.SpeculativeDecoding;
+import com.qxotic.jinfer.x.llm.SpeculativeDecoding.SpeculationAudit;
+import com.qxotic.jinfer.x.llm.SpeculativeDecoding.SpeculationResult;
 import com.qxotic.jota.DataType;
+import com.qxotic.jota.memory.MemoryAllocator;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.lang.ref.Reference;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -40,12 +48,15 @@ import java.util.Set;
 
 /** Gemma4 inference against the MemoryView boundary. */
 public final class Gemma4
-        implements LanguageModel<Gemma4.Configuration, Gemma4.Weights, Gemma4.State>, MultiModal {
+        implements LanguageModel<Gemma4.Configuration, Gemma4.Weights, Gemma4.State>,
+                MultiModal,
+                SpeculativeDecoding<Gemma4.State> {
     private final Configuration configuration;
     private final Tokenizer tokenizer;
     private final Weights weights;
     private final Embedder<Media.Image> vision;
     private final Embedder<Media.Audio> audio;
+    private Gemma4Mtp mtp; // MTP draft sidecar; null unless attachMtp loaded one
 
     Gemma4(Configuration configuration, Tokenizer tokenizer, Weights weights) {
         this(configuration, tokenizer, weights, null, null);
@@ -150,6 +161,7 @@ public final class Gemma4
         switch (batch.input()) {
             case Batch.Input.Tokens t -> {
                 int[] ids = t.ids();
+                state.lastTokens = ids; // row->token map for the MTP draft seam
                 for (int id : ids)
                     if (id < 0 || id >= configuration.vocabularySize)
                         throw new IllegalArgumentException("token id out of range: " + id);
@@ -213,6 +225,35 @@ public final class Gemma4
                             configuration.logitSoftcapping);
                     return state.logits;
                 });
+    }
+
+    /**
+     * Every retained row's logits in one head GEMM: {@code dst} holds {@code outputCount x vocab},
+     * row-major, softcapped in place. The speculative verify walk is the consumer (per-row {@code
+     * head} calls would re-stream the whole head weight per draft row).
+     */
+    public void logitsAll(State state, MemoryView<MemorySegment> dst) {
+        int dim = configuration.embeddingLength;
+        int vocab = configuration.vocabularySize;
+        int n = state.outputCount;
+        int first = state.lastChunkLen - n;
+        Parallel.onDecodePool(
+                () -> {
+                    for (int r = 0; r < n; r++) {
+                        Norms.rmsnorm(
+                                state.normed,
+                                (long) r * dim,
+                                state.residual,
+                                (long) (first + r) * dim,
+                                weights.finalNorm,
+                                dim,
+                                configuration.rmsNormEps);
+                    }
+                    MatMul.gemm(weights.classifier, state.normed, dim, dst, vocab, vocab, n, dim);
+                    Activations.softcap(dst, 0, n * vocab, configuration.logitSoftcapping);
+                    return null;
+                });
+        Reference.reachabilityFence(state);
     }
 
     void forward(State state, int[] tokens, int tokenOffset, int startPos, int seqLen) {
@@ -739,6 +780,16 @@ public final class Gemma4
         final float[] moeRowTopP;
         final Moe.Routing moeRouting;
 
+        // speculation scratch, lazily allocated from this state's arena and reused per
+        // generation; freed with the state (see Gemma4Speculative.Scratch)
+        Gemma4Speculative.Scratch specScratch;
+        int[] lastTokens; // ids of the last ingested token batch (row->token, MTP draft seam)
+
+        /** The speculation scratch's allocator (the state's own arena); State-internal seam. */
+        MemoryAllocator<MemorySegment> specArena() {
+            return memoryArena();
+        }
+
         @SuppressWarnings("unchecked")
         State(Configuration c, int contextCapacity, int batchCapacity, Arena arena) {
             super(arena);
@@ -832,6 +883,88 @@ public final class Gemma4
     /** Loads the text backbone and its paired Gemma 4 media sidecar into {@code arena}. */
     public static Gemma4 loadModel(Path textPath, Path mmprojPath, Arena arena) throws IOException {
         return loadModel(textPath, arena).withMedia(mmprojPath, arena);
+    }
+
+    /**
+     * MTP load: the text model plus the {@code gemma4-assistant} draft sidecar, which enables
+     * self-speculative decoding: the sidecar is attached and {@link #mtpDecoder} can mint a
+     * per-generation draft decoder over it.
+     */
+    public static Gemma4 loadWithMtp(Path textGguf, Path mtpSidecar, Arena arena)
+            throws IOException {
+        return loadModel(textGguf, arena).attachMtp(mtpSidecar, arena);
+    }
+
+    /**
+     * Attaches the {@code speculation} companion: the MTP draft sidecar, into {@code arena}. The
+     * PAIRING is enforced here, like the mmproj's: the sidecar consumes this backbone's hidden
+     * state, so its {@code embedding_length_out} must equal this model's embedding width - an E2B
+     * head on an E4B backbone refuses with both numbers rather than failing in a GEMM later. (A
+     * same-width wrong head cannot be detected from headers; it is still SAFE - verification keeps
+     * only tokens the backbone confirms - just slow, visible as near-zero acceptance.)
+     */
+    public Gemma4 attachMtp(Path mtpSidecar, Arena arena) throws IOException {
+        Gemma4Mtp sidecar = Gemma4Mtp.loadSidecar(mtpSidecar, config().vocabularySize(), arena);
+        if (sidecar.config().backboneDim() != config().embeddingLength()) {
+            throw new IllegalArgumentException(
+                    mtpSidecar.getFileName()
+                            + " drafts for a backbone with hidden width "
+                            + sidecar.config().backboneDim()
+                            + ", but this model's is "
+                            + config().embeddingLength()
+                            + " - it is the MTP head of a different gemma-4 size; use the sidecar"
+                            + " published for this exact model");
+        }
+        this.mtp = sidecar;
+        return this;
+    }
+
+    @Override
+    public boolean speculationReady() {
+        return mtp != null;
+    }
+
+    @Override
+    public SpeculationResult speculate(
+            State state,
+            Sampler sampler,
+            Constraints constraints,
+            int depth,
+            GenerationListener listener,
+            SpeculationAudit audit) {
+        int capacity = state.contextCapacity();
+        int budget =
+                constraints.maxTokens() == Constraints.UNLIMITED
+                        ? capacity - state.position()
+                        : Math.min(constraints.maxTokens(), capacity - state.position());
+        long timeoutNanos = constraints.timeout().isZero() ? 0 : constraints.timeout().toNanos();
+        state.enter(); // the single-pipeline claim, held across the whole pass (as Generator)
+        try {
+            return Gemma4Speculative.generate(
+                    this,
+                    state,
+                    budget,
+                    timeoutNanos,
+                    constraints.stopTokens(),
+                    depth,
+                    sampler,
+                    listener,
+                    audit);
+        } finally {
+            state.exit();
+            Reference.reachabilityFence(this);
+        }
+    }
+
+    /**
+     * A fresh MTP draft forward over {@code allocator}, or null when no sidecar is loaded. The
+     * decoder is pure per-generation scratch over the immutable {@link Gemma4Mtp} weights - mint
+     * one per speculative generation in the state's arena (a model-level singleton was shared
+     * mutable state: concurrent speculative decodes on two states would corrupt each other's draft
+     * buffers). {@link Gemma4Speculative} is the decode loop over it.
+     */
+    Gemma4MtpDecoder mtpDecoder(MemoryAllocator<MemorySegment> allocator) {
+        return mtp == null ? null : new Gemma4MtpDecoder(mtp, this, allocator);
     }
 
     /** Returns a model sharing this backbone's weights with a validated media sidecar attached. */

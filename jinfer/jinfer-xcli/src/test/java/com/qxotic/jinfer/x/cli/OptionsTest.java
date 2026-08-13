@@ -36,7 +36,8 @@ final class OptionsTest {
                 false,
                 false,
                 null,
-                false);
+                false,
+                4);
     }
 
     /**
@@ -106,7 +107,8 @@ final class OptionsTest {
                                         false,
                                         false,
                                         null,
-                                        false));
+                                        false,
+                                        4));
         assertTrue(e.getMessage().contains("--top-p"), e.getMessage());
     }
 
