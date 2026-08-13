@@ -54,16 +54,21 @@ public interface SpeechModel<C extends Config, W, S extends SpeechState> {
     }
 
     /**
-     * Scratch the state OWNS: an internal {@code ofShared} that {@code state.close()} frees. Warm
-     * scratch - reuse it across utterances; the first call sizes it and later calls allocate
-     * nothing.
+     * Scratch the state OWNS: an internal cross-thread arena that {@code state.close()} frees (an
+     * {@code ofShared} on the JVM, degrading to {@code ofAuto} in a native image - see {@link
+     * Arenas}). Warm scratch - reuse it across utterances; the first call sizes it and later calls
+     * allocate nothing.
      */
     default S newState() {
-        Arena arena = Arena.ofShared();
+        Arena arena = Arenas.newShared();
         try {
             return newState(arena, true);
         } catch (RuntimeException | Error e) {
-            arena.close(); // a leaked ofShared arena has no backstop: free before failing
+            try {
+                arena.close(); // a leaked ofShared arena has no backstop: free before failing
+            } catch (UnsupportedOperationException ignored) {
+                // ofAuto (native image) frees at GC
+            }
             throw e;
         }
     }
