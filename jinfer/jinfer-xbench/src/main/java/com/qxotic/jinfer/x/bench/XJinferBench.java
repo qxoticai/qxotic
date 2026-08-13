@@ -13,32 +13,56 @@ import java.util.List;
 import java.util.concurrent.ForkJoinPool;
 
 /**
- * A/B twin of {@code com.qxotic.jinfer.bench.JinferBench}: the SAME llama-bench-parity harness
- * (defaults, adaptive warmup, per-rep fresh state, synthetic ids, one vocab projection per pp batch
- * / tg step, NO argmax in the timed loop, same thread pinning and JAM warning), driving both LFM2
- * and Gemma 4 implementations behind {@code --impl old,x} so old vs x is one timing loop in one
- * JVM. The only deliberate deltas from JinferBench:
+ * A/B twin of {@code com.qxotic.jinfer.bench.JinferBench}: a llama-bench-parity harness (this
+ * repo's {@code tools/llama-bench/llama-bench.cpp}) driving both LFM2 and Gemma 4 implementations
+ * behind {@code --impl old,x} so old vs x is one timing loop in one JVM. The llama-bench approach,
+ * point by point:
  *
  * <ul>
- *   <li>loading is direct ({@code loadModel}) on both sides - the slice has no ServiceLoader {@code
- *       Models} front, and load time is not measured anyway
- *   <li>the model seam is abstracted ({@link BenchModel}) instead of {@code LoadedModel<S>}
+ *   <li>pp512 / tg128 are SEPARATE tests, each with its own context sized exactly to the work
+ *       ({@code n_ctx = n_prompt} for pp, {@code n_ctx = n_gen} for tg - llama-bench derives {@code
+ *       n_prompt + n_gen + n_depth} per instance, and each instance sets the other count to 0);
+ *       {@code --ctx} overrides both
+ *   <li>ONE state per test, {@code reset()} before every warmup pass and every timed rep -
+ *       llama-bench's {@code llama_memory_clear} per rep on a reused context. No allocation or
+ *       page-fault cost inside the timed region
+ *   <li>pp: the full prompt ingested in chunks of 512 - llama-bench's compute-graph width ({@code
+ *       -ub 512}; its {@code -b 2048} only caps tokens per decode CALL, ggml still computes 512-row
+ *       ubatches). One vocab projection for the last token, charged inside the timed region, as
+ *       llama_decode does
+ *   <li>tg: from a CLEARED (empty) state, {@code n} single-token decodes at positions 0..n-1, all
+ *       timed - the first token goes in INSIDE the timed loop, like llama-bench's {@code test_gen}.
+ *       Logits projected every step, never argmaxed: llama-bench feeds back {@code rand() %
+ *       n_vocab}, this feeds a cheap LCG successor (throughput is content-independent for dense
+ *       models; MoE routing sees pseudo-random tokens either way)
+ *   <li>threads: physical cores by default ({@code common_cpu_get_num_math}), the SAME count for pp
+ *       and tg ({@code llama_set_n_threads(ctx, t, t)}), plus the JAM thread-count guard
+ *   <li>reporting: mean ± stddev of per-rep tokens/second - llama-bench's avg_ts / stdev_ts
  * </ul>
  *
- * Both sides drive the CLAIMING public API ({@code ingest}/{@code logits} — per-call claim,
- * reachability fence) and chunk prefill through their own {@code Batch.prepare} — identical chunk
- * sequences (equivalence is property-tested in {@code BatchTest}); the x prepare skips the old
- * one's concat copy on a legal single batch, a few hundred ns inside the timed region, immaterial
- * against ~3ms of forward.
+ * Deliberate deltas, all JVM-necessitated or immaterial: warmup is ADAPTIVE (full-test passes until
+ * throughput settles within 3% over a window of 3, min {@code -w}, max 30) instead of llama-bench's
+ * single warmup run - native code needs one pass, the JIT needs several; {@code --no-warmup} skips
+ * it. Tokens are synthetic in-range ids, not real BOS/rand. Threadpool priority/polling ({@code
+ * poll=50}) has no Java analog. Loading is direct ({@code loadModel}) on both sides and never
+ * timed.
  *
  * <pre>jinfer-xbench -m model.gguf [--impl old,x] [-p 512] [-n 128] [-r 5] [-w 2] [--ctx N]</pre>
  */
 public final class XJinferBench {
 
+    /**
+     * Compute-graph width for prefill chunks - llama-bench's {@code -ub 512}. Pinned here rather
+     * than inherited from {@code RuntimeFlags.BATCH_CAPACITY} so an ambient {@code
+     * -Djinfer.batchCapacity} cannot silently change what both sides measure.
+     */
+    private static final int UBATCH = 512;
+
     public static void main(String[] args) throws Exception {
         List<String> models = new ArrayList<>();
         List<String> impls = new ArrayList<>();
         int p = 512, n = 128, reps = 5, warmup = 2, ctx = 0, threads = 0;
+        boolean noWarmup = false;
         for (int i = 0; i < args.length; i++) {
             switch (args[i]) {
                 case "-m", "--model" -> models.add(args[++i]);
@@ -47,6 +71,7 @@ public final class XJinferBench {
                 case "-n", "--n-gen" -> n = Integer.parseInt(args[++i]);
                 case "-r", "--repetitions" -> reps = Integer.parseInt(args[++i]);
                 case "-w", "--warmup" -> warmup = Integer.parseInt(args[++i]);
+                case "--no-warmup" -> noWarmup = true;
                 case "--ctx" -> ctx = Integer.parseInt(args[++i]);
                 case "-t", "--threads" -> threads = Integer.parseInt(args[++i]);
                 case "-h", "--help" -> {
@@ -65,7 +90,6 @@ public final class XJinferBench {
             System.exit(2);
         }
         if (impls.isEmpty()) impls = List.of("old", "x");
-        if (ctx == 0) ctx = Math.max(p, 1) + n + 64;
 
         // THREAD PARITY, verbatim from JinferBench (both trees read the same
         // jinfer.decodeThreads property and pin the same common pool).
@@ -98,9 +122,11 @@ public final class XJinferBench {
         List<Row> rows = new ArrayList<>();
         for (String path : models) {
             for (String implName : impls) {
-                System.err.printf("loading %s (ctx=%d) impl=%s ...%n", path, ctx, implName);
+                System.err.printf("loading %s impl=%s ...%n", path, implName);
                 BenchModel impl = load(Path.of(path), implName);
                 String name = name(path) + " [" + implName + "]";
+                // llama-bench: pp and tg are separate tests on separate contexts sized to the
+                // work (n_ctx = n_prompt resp. n_gen; --ctx overrides both).
                 if (p > 0)
                     rows.add(
                             measure(
@@ -110,9 +136,10 @@ public final class XJinferBench {
                                     "pp" + p,
                                     p,
                                     true,
-                                    ctx,
+                                    ctx != 0 ? ctx : p,
                                     warmup,
-                                    reps));
+                                    reps,
+                                    noWarmup));
                 if (n > 0)
                     rows.add(
                             measure(
@@ -122,24 +149,27 @@ public final class XJinferBench {
                                     "tg" + n,
                                     n,
                                     false,
-                                    ctx,
+                                    ctx != 0 ? ctx : n,
                                     warmup,
-                                    reps));
+                                    reps,
+                                    noWarmup));
             }
         }
         printTable(rows);
     }
 
     /**
-     * One impl = load + the four operations {@code runOnce} times, each a verbatim transliteration
-     * of what JinferBench's {@code runOnce} calls on the old seam. State is per-rep and owned by
-     * the bench loop, so the seam is stateful: {@link #newState}/{@link #ingestPrefill}/ {@link
-     * #ingestStep}/{@link #logits0}.
+     * One impl = load + the operations {@code runOnce} times, each a transliteration of what
+     * llama-bench's {@code test_prompt}/{@code test_gen} do on the llama.cpp context. One state per
+     * test, {@link #reset()} per pass - llama-bench's per-rep {@code llama_memory_clear}.
      */
     private abstract static class BenchModel {
         abstract int vocab();
 
         abstract void newState(int ctx);
+
+        /** llama_memory_clear: KV/conv state back to empty, same buffers. */
+        abstract void reset();
 
         abstract void ingestPrefill(int[] prompt);
 
@@ -148,7 +178,7 @@ public final class XJinferBench {
         abstract float logits0();
     }
 
-    /** Old tree: exactly JinferBench's calls on a directly-loaded old Lfm2. */
+    /** Old tree: exactly llama-bench's calls transliterated to a directly-loaded old Lfm2. */
     private static final class OldBenchModel extends BenchModel {
         private final com.qxotic.jinfer.models.lfm2.Lfm2 model;
         private com.qxotic.jinfer.models.lfm2.Lfm2.State s;
@@ -164,7 +194,12 @@ public final class XJinferBench {
 
         @Override
         void newState(int ctx) {
-            s = model.newState(ctx); // owned arena, GC/Cleaner-freed — as JinferBench
+            s = model.newState(ctx, UBATCH); // owned arena, GC/Cleaner-freed
+        }
+
+        @Override
+        void reset() {
+            s.reset();
         }
 
         @Override
@@ -202,7 +237,12 @@ public final class XJinferBench {
 
         @Override
         void newState(int ctx) {
-            s = model.newState(ctx); // owned arena, GC/Cleaner-freed — as JinferBench
+            s = model.newState(ctx, UBATCH); // owned arena, GC/Cleaner-freed
+        }
+
+        @Override
+        void reset() {
+            s.reset();
         }
 
         @Override
@@ -242,7 +282,12 @@ public final class XJinferBench {
 
         @Override
         void newState(int ctx) {
-            s = model.newState(ctx);
+            s = model.newState(ctx, UBATCH);
+        }
+
+        @Override
+        void reset() {
+            s.reset();
         }
 
         @Override
@@ -280,7 +325,12 @@ public final class XJinferBench {
 
         @Override
         void newState(int ctx) {
-            s = model.newState(ctx);
+            s = model.newState(ctx, UBATCH);
+        }
+
+        @Override
+        void reset() {
+            s.reset();
         }
 
         @Override
@@ -346,7 +396,11 @@ public final class XJinferBench {
         }
     }
 
-    /** Verbatim JinferBench.measure: adaptive warmup to a stable window, then timed reps. */
+    /**
+     * One llama-bench test: ONE state sized to the work, adaptive warmup (llama-bench's single
+     * warmup pass is not enough for the JIT), then timed reps. Every pass starts with {@code
+     * reset()} - llama-bench's per-rep {@code llama_memory_clear}.
+     */
     private static Row measure(
             BenchModel model,
             String name,
@@ -356,52 +410,60 @@ public final class XJinferBench {
             boolean prefill,
             int ctx,
             int minWarmup,
-            int reps) {
+            int reps,
+            boolean noWarmup) {
         int vocab = model.vocab();
-        int[] prompt = fillerTokens(vocab, prefill ? count : 1);
+        int[] prompt = prefill ? fillerTokens(vocab, count) : null;
+        model.newState(ctx);
+        System.err.printf("  %-6s state: ctx=%d batch=%d%n", test, ctx, UBATCH);
 
-        final double TOL = 0.03;
-        final int WINDOW = 3, MAX = Math.max(minWarmup, 30);
-        double[] recent = new double[WINDOW];
-        int passes = 0;
-        while (passes < MAX) {
-            double t = runOnce(model, ctx, prompt, count, prefill, vocab);
-            recent[passes % WINDOW] = t;
-            passes++;
-            System.err.printf("  %-6s [warmup %2d] %8.2f t/s%n", test, passes, t);
-            if (passes >= Math.max(minWarmup, WINDOW)) {
-                double lo = Double.MAX_VALUE, hi = 0;
-                for (double v : recent) {
-                    lo = Math.min(lo, v);
-                    hi = Math.max(hi, v);
+        if (noWarmup) {
+            System.err.printf("  %-6s warmup skipped (--no-warmup)%n", test);
+        } else {
+            final double TOL = 0.03;
+            final int WINDOW = 3, MAX = Math.max(minWarmup, 30);
+            double[] recent = new double[WINDOW];
+            int passes = 0;
+            while (passes < MAX) {
+                double t = runOnce(model, prompt, count, prefill, vocab);
+                recent[passes % WINDOW] = t;
+                passes++;
+                System.err.printf("  %-6s [warmup %2d] %8.2f t/s%n", test, passes, t);
+                if (passes >= Math.max(minWarmup, WINDOW)) {
+                    double lo = Double.MAX_VALUE, hi = 0;
+                    for (double v : recent) {
+                        lo = Math.min(lo, v);
+                        hi = Math.max(hi, v);
+                    }
+                    if ((hi - lo) / lo < TOL) break;
                 }
-                if ((hi - lo) / lo < TOL) break;
             }
+            System.err.printf("  %-6s stabilized after %d warmup passes%n", test, passes);
         }
-        System.err.printf("  %-6s stabilized after %d warmup passes%n", test, passes);
 
         double[] tps = new double[reps];
         for (int i = 0; i < reps; i++) {
-            tps[i] = runOnce(model, ctx, prompt, count, prefill, vocab);
+            tps[i] = runOnce(model, prompt, count, prefill, vocab);
             System.err.printf("  %-6s [rep    %2d] %8.2f t/s%n", test, i, tps[i]);
         }
         return new Row(name, threads, test, mean(tps), stddev(tps));
     }
 
-    /** Verbatim JinferBench.runOnce, on the abstracted seam. */
+    /**
+     * One pass, timed exactly as llama-bench times: the clock spans the prompt processing (pp)
+     * resp. the full generation loop from an EMPTY state (tg), nothing else. Both include the vocab
+     * projection llama_decode computes for the last token of a batch / each step.
+     */
     private static double runOnce(
-            BenchModel model, int ctx, int[] prompt, int count, boolean prefill, int vocab) {
-        model.newState(ctx);
+            BenchModel model, int[] prompt, int count, boolean prefill, int vocab) {
+        model.reset(); // llama_memory_clear, outside the timed region
         if (prefill) {
             long t0 = System.nanoTime();
             model.ingestPrefill(prompt);
-            // llama_decode projects the LAST token of a batch to logits, so pp pays one vocab
-            // projection — charged explicitly, as JinferBench does.
             sink += model.logits0();
             return count / ((System.nanoTime() - t0) / 1e9);
         }
-        model.ingestPrefill(prompt);
-        int tok = nextToken(prompt[0], vocab);
+        int tok = nextToken(1, vocab); // llama-bench's BOS-or-rand first token, fed inside the loop
         long t0 = System.nanoTime();
         for (int g = 0; g < count; g++) {
             model.ingestStep(tok);
@@ -467,7 +529,7 @@ public final class XJinferBench {
     private static void usage(PrintStream out) {
         out.println(
                 """
-                jinfer-xbench — JinferBench's harness A/B-ing old vs x ports
+                jinfer-xbench — llama-bench-parity harness A/B-ing old vs x ports
 
                 usage: jinfer-xbench -m <model.gguf> [-m ...] [options]
                   -m, --model <path>      LFM2 or Gemma 4 model to benchmark (repeatable)
@@ -476,7 +538,10 @@ public final class XJinferBench {
                   -n, --n-gen <N>         decode tokens  (default 128; 0 to skip tg)
                   -r, --repetitions <N>   timed reps     (default 5)
                   -w, --warmup <N>        min warmup passes; warms adaptively until throughput settles (default 2)
-                      --ctx <N>           context size   (default p + n + 64)\
+                      --no-warmup         skip warmup runs before benchmarking
+                  -t, --threads <N>       pp and tg threads (default physical cores)
+                      --ctx <N>           override context size for both tests
+                                          (default per test, as llama-bench: p for pp, n for tg)\
                 """);
     }
 }
