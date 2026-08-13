@@ -11,6 +11,7 @@ import com.qxotic.jinfer.x.boundary.Embedder;
 import com.qxotic.jinfer.x.boundary.LanguageModel;
 import com.qxotic.jinfer.x.boundary.Media;
 import com.qxotic.jinfer.x.boundary.MultiModal;
+import com.qxotic.jinfer.x.boundary.StateCodec;
 import com.qxotic.jinfer.x.kernels.Activations;
 import com.qxotic.jinfer.x.kernels.Convert;
 import com.qxotic.jinfer.x.kernels.FlashAttention;
@@ -66,6 +67,11 @@ public final class Gemma4
     @Override
     public Configuration config() {
         return configuration;
+    }
+
+    @Override
+    public Optional<StateCodec<State>> stateCodec() {
+        return Optional.of(new Gemma4StateCodec(configuration));
     }
 
     @Override
