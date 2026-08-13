@@ -22,7 +22,7 @@ public final class TestModels {
     /** The cached path for {@code ref}, or the test aborts - with the fix in the message. */
     public static Path require(String ref) {
         requirePinned(ref);
-        return ModelStore.find(ref)
+        return find(ref)
                 .orElseThrow(
                         () ->
                                 new TestAbortedException(
@@ -33,6 +33,12 @@ public final class TestModels {
                                                 + " missing), with any HuggingFace client into"
                                                 + " the hub cache, or point -Djinfer.models /"
                                                 + " JINFER_MODELS at a cache that has it"));
+    }
+
+    /** The cached path for {@code ref}, or empty - the non-aborting form, for presence probes. */
+    public static java.util.Optional<Path> find(String ref) {
+        requirePinned(ref);
+        return ModelStore.find(ref);
     }
 
     /** A test ref pins its quant or names an exact file - anything else is a guess. */
