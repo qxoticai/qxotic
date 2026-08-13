@@ -96,6 +96,8 @@ public interface DataType {
     DataType MXFP4 = blockType("mxfp4", 32, 17);
     DataType NVFP4 = blockType("nvfp4", 64, 36);
     DataType Q1_0 = blockType("q1_0", 128, 18);
+    DataType TQ1_0 = blockType("tq1_0", 256, 54);
+    DataType TQ2_0 = blockType("tq2_0", 256, 66);
 
     private static DataType blockType(String name, long elements, long bytes) {
         return new DataTypeImpl(
