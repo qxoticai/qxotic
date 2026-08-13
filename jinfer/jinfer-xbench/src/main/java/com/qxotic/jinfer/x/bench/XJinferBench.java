@@ -363,8 +363,8 @@ public final class XJinferBench {
                             .getString("general.architecture");
         }
         return switch (architecture + ":" + impl) {
-            case "lfm2:old" -> new OldBenchModel(path);
-            case "lfm2:x" -> new XBenchModel(path);
+            case "lfm2:old", "lfm2moe:old" -> new OldBenchModel(path);
+            case "lfm2:x", "lfm2moe:x" -> new XBenchModel(path);
             case "gemma4:old" -> new OldGemma4BenchModel(path);
             case "gemma4:x" -> new XGemma4BenchModel(path);
             default -> {
