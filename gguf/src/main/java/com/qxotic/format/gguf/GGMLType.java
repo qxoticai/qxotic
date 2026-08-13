@@ -229,9 +229,8 @@ public enum GGMLType {
     Q4_0_8_8(0, 0),
 
     /**
-     * Layout: [{qs: uint8[50], qh: uint8[4], d: fp16}]. Ternary {-1, 0, +1} quantization: 252
-     * elements packed as 5 per byte (3^5 = 243 < 256) in qs, 4 elements packed 1 bit each in qh, 1
-     * fp16 scale. 1.6875 bpw.
+     * Layout: [{qs: uint8[48], qh: uint8[4], d: fp16}]. Ternary {-1, 0, +1} quantization: 240
+     * elements packed 5 per byte in qs, 16 packed 4 per byte in qh, and one fp16 scale. 1.6875 bpw.
      */
     TQ1_0(54, 256),
 
