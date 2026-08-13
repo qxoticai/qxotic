@@ -60,6 +60,34 @@ public final class Activations {
         return x * 0.5f * (1.0f + Ops.tanhApprox(inner));
     }
 
+    /** In-place tanh-approximation GELU over {@code n} FP32 elements. */
+    public static void geluInPlace(MemoryView<MemorySegment> value, int offset, int n) {
+        Raw raw = Raw.f32(value, "value");
+        if (USE_VECTOR_API) {
+            VectorSpecies<Float> sp = F_SPECIES;
+            int bound = sp.loopBound(n);
+            for (int i = 0; i < bound; i += sp.length()) {
+                long base = raw.vbase() + (long) (offset + i) * Float.BYTES;
+                FloatVector x =
+                        FloatVector.fromMemorySegment(
+                                sp, raw.vseg(), base, ByteOrder.LITTLE_ENDIAN);
+                FloatVector inner = x.mul(x).mul(x).mul(0.044715f).add(x).mul(GELU_C);
+                x.mul(0.5f)
+                        .mul(Ops.tanhVec(inner).add(1.0f))
+                        .intoMemorySegment(raw.vseg(), base, ByteOrder.LITTLE_ENDIAN);
+            }
+            for (int i = bound; i < n; i++) {
+                long base = raw.vbase() + (long) (offset + i) * Float.BYTES;
+                writeFloat(raw.vseg(), base, geluApprox(readFloat(raw.vseg(), base)));
+            }
+            return;
+        }
+        for (int i = 0; i < n; i++) {
+            long base = raw.vbase() + (long) (offset + i) * Float.BYTES;
+            writeFloat(raw.vseg(), base, gelu(readFloat(raw.vseg(), base)));
+        }
+    }
+
     /**
      * Fused {@code gate[i] = gelu(gate[i]) * up[i]} over {@code n} elements (minimax-rational
      * {@code tanhVec}); mutates {@code gate}. Callers parallelize across rows.
