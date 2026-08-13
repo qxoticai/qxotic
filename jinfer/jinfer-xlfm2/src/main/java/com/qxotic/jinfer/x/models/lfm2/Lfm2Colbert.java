@@ -14,6 +14,7 @@ import java.lang.foreign.MemorySegment;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.DoubleConsumer;
 
@@ -58,7 +59,12 @@ public final class Lfm2Colbert implements Reranker<Lfm2.State> {
     private final Set<Integer> skiplist;
 
     public Lfm2Colbert(Lfm2 model, int bos, int pad) {
-        this.model = model;
+        this.model = Objects.requireNonNull(model, "model");
+        if (!model.config().isColbert() || model.weights().dense2() == null) {
+            throw new IllegalArgumentException(
+                    "this checkpoint is not LFM2.5-ColBERT (non-causal attention with a dense_2"
+                            + " projection)");
+        }
         this.tokenizer = model.tokenizer();
         this.bos = bos;
         this.pad = pad;
