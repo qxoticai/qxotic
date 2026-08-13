@@ -2,6 +2,7 @@ package com.qxotic.jinfer.x.boundary;
 
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.ref.Reference;
+import java.util.Optional;
 
 /**
  * An LLM: a {@link Model} backbone whose head projects retained hidden states to a vocabulary
@@ -13,6 +14,11 @@ import java.lang.ref.Reference;
  * next head call.
  */
 public interface LanguageModel<C extends Config, W, S extends RuntimeState> extends Model<C, W, S> {
+
+    /** Model-specific resumable-history copier, when block caching is supported. */
+    default Optional<StateCodec<S>> stateCodec() {
+        return Optional.empty();
+    }
 
     /** Vocabulary logits for the {@code output}-th retained hidden state (0 .. outputCount()-1). */
     default MemoryView<?> logits(S state, int output) {

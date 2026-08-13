@@ -35,9 +35,9 @@ public interface Model<C extends Config, W, S extends RuntimeState> {
      * Allocate a state from {@code arena} (BORROWED: the caller owns the arena's lifetime; {@code
      * state.close()} never touches it): a KV ring sized to {@code contextCapacity} and scratch for
      * batches up to {@code batchCapacity} rows. {@code contextCapacity} must not exceed {@code
-     * config.maxContextLength()}. Use {@link Arenas#newCrossThread()} when another thread may
-     * compute on the state (a streaming driver) - {@code Arena.ofShared()} directly breaks
-     * native-image builds (see {@link Arenas}); a confined arena fails loudly there.
+     * config.contextLength()}. Use {@link Arenas#newCrossThread()} when another thread may compute
+     * on the state (a streaming driver) - {@code Arena.ofShared()} directly breaks native-image
+     * builds (see {@link Arenas}); a confined arena fails loudly there.
      */
     S newState(int contextCapacity, int batchCapacity, Arena arena);
 
@@ -87,6 +87,11 @@ public interface Model<C extends Config, W, S extends RuntimeState> {
     /** As {@link #newState(int)} over a caller-owned (borrowed) arena. */
     default S newState(int contextCapacity, Arena arena) {
         return newState(contextCapacity, RuntimeFlags.BATCH_CAPACITY, arena);
+    }
+
+    /** As {@link #newState(int, Arena)} with the state ADOPTING the arena (see the 4-arg form). */
+    default S newState(int contextCapacity, Arena arena, boolean adopt) {
+        return newState(contextCapacity, RuntimeFlags.BATCH_CAPACITY, arena, adopt);
     }
 
     /**
