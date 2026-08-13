@@ -1,12 +1,13 @@
 package com.qxotic.jinfer.x.models.llama;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.FloatTensor;
-import com.qxotic.jinfer.x.Segments;
+import com.qxotic.jinfer.testkit.ModelFixture;
 import com.qxotic.jinfer.x.Views;
 import com.qxotic.jinfer.x.boundary.Batch;
 import com.qxotic.jinfer.x.kernels.ModelLoader;
@@ -21,6 +22,7 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeAll;
@@ -106,6 +108,105 @@ class XLlamaTest {
                         + " Exposition Universelle in Paris. The tower was",
                 48,
                 16);
+    }
+
+    /**
+     * The prompt-cache law end to end on a real checkpoint: blocks are captured at ingestion
+     * boundaries (the only moments a save is legal), replayed into a fresh state one token short,
+     * and the final token is re-ingested - the restored state must then be byte-identical to the
+     * live one and continue greedily in lockstep.
+     */
+    @Test
+    void exactStateRestore() throws Exception {
+        try (FileChannel channel = FileChannel.open(ModelFixture.LLAMA32_1B_Q8.require())) {
+            GGUF gguf = ModelLoader.readGguf(channel, "llama");
+            Tokenizer tokenizer =
+                    GGUFTokenizerLoader.createBuilderWithBuiltins().build().fromGGUF(gguf);
+            List<Integer> prompt = new ArrayList<>();
+            prompt.add(gguf.getValueOrDefault(int.class, "tokenizer.ggml.bos_token_id", 1));
+            for (int id :
+                    tokenizer.encodeToArray(
+                            "Cache this exact Llama state across more than one physical history"
+                                    + " chunk.")) prompt.add(id);
+            int[] ids = prompt.stream().mapToInt(Integer::intValue).toArray();
+            int[] prefix = Arrays.copyOf(ids, ids.length - 1);
+            int lastToken = ids[ids.length - 1];
+
+            Llama model = Llama.loadModel(channel, gguf, Arena.ofAuto(), tokenizer);
+            var codec = new LlamaStateCodec(model.config());
+            int capacity = ids.length + 2;
+
+            List<int[]> spans = new ArrayList<>();
+            List<MemorySegment> blocks = new ArrayList<>();
+            MemorySegment wholeSpan;
+            float[] liveLogits;
+            try (Arena arena = Arena.ofConfined();
+                    var live = model.newState(capacity, 8)) {
+                int from = 0;
+                for (Batch chunk : Batch.prepare(List.of(Batch.prefill(prefix)), 8)) {
+                    model.ingest(live, chunk);
+                    int to = live.position();
+                    MemorySegment block = arena.allocate(codec.checkpointBytes(to - from), 64);
+                    codec.saveCheckpoint(live, from, to, block);
+                    spans.add(new int[] {from, to});
+                    blocks.add(block);
+                    from = to;
+                }
+                wholeSpan = arena.allocate(codec.checkpointBytes(prefix.length), 64);
+                codec.saveCheckpoint(live, 0, prefix.length, wholeSpan);
+
+                model.ingest(live, Batch.step(lastToken));
+                liveLogits =
+                        Views.toFloatArray(
+                                Views.castToSegmentBacked(model.logits(live), "live logits"),
+                                "live logits");
+
+                try (var restored = model.newState(capacity, 8)) {
+                    for (int i = 0; i < spans.size(); i++) {
+                        codec.restoreCheckpoint(
+                                restored, spans.get(i)[0], spans.get(i)[1], blocks.get(i));
+                    }
+                    restored.resumeAt(prefix.length);
+
+                    MemorySegment resaved =
+                            arena.allocate(codec.checkpointBytes(prefix.length), 64);
+                    codec.saveCheckpoint(restored, 0, prefix.length, resaved);
+                    assertEquals(-1, wholeSpan.mismatch(resaved), "re-saved history bytes");
+
+                    model.ingest(restored, Batch.step(lastToken));
+                    assertEquals(ids.length, restored.position());
+                    assertEquals(1, restored.outputCount());
+                    float[] restoredLogits =
+                            Views.toFloatArray(
+                                    Views.castToSegmentBacked(
+                                            model.logits(restored), "restored logits"),
+                                    "restored logits");
+                    assertArrayEquals(
+                            liveLogits, restoredLogits, 1e-4f, "restored endpoint logits");
+
+                    int token =
+                            Ops.argmax(
+                                    Views.castToSegmentBacked(model.logits(live), "live logits"),
+                                    0,
+                                    model.config().vocabularySize());
+                    model.ingest(live, Batch.step(token));
+                    model.ingest(restored, Batch.step(token));
+                    int liveToken =
+                            Ops.argmax(
+                                    Views.castToSegmentBacked(
+                                            model.logits(live), "live continuation"),
+                                    0,
+                                    model.config().vocabularySize());
+                    int restoredToken =
+                            Ops.argmax(
+                                    Views.castToSegmentBacked(
+                                            model.logits(restored), "restored continuation"),
+                                    0,
+                                    model.config().vocabularySize());
+                    assertEquals(liveToken, restoredToken, "continued greedy token");
+                }
+            }
+        }
     }
 
     @Test
@@ -206,10 +307,8 @@ class XLlamaTest {
     }
 
     private static float[] snapshotX(MemoryView<MemorySegment> logits, int vocab) {
-        Views.Raw r = Views.rawF32(logits, "logits");
         float[] out = new float[vocab];
-        for (int i = 0; i < vocab; i++)
-            out[i] = Segments.readFloat(r.vseg(), r.vbase() + (long) i * Float.BYTES);
+        for (int i = 0; i < vocab; i++) out[i] = Views.getFloat(logits, i, "logits");
         return out;
     }
 
