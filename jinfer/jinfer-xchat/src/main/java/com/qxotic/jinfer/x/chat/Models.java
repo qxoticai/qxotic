@@ -185,7 +185,15 @@ public final class Models {
      * architecture does not have BEFORE fetching anything for it.
      */
     public static Map<String, String> companionFiles(Path path) throws IOException {
-        return open(path, (fc, gguf) -> provider(gguf).companionFiles());
+        return open(path, (fc, gguf) -> companionFiles(gguf));
+    }
+
+    /**
+     * As {@link #companionFiles(Path)} over an ALREADY-PARSED header - the AOT preload's bypass, so
+     * a baked model is not re-parsed just to validate a {@code --with} flag.
+     */
+    public static Map<String, String> companionFiles(GGUF gguf) {
+        return provider(gguf).companionFiles();
     }
 
     /**
