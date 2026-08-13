@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/POM/4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.qxotic</groupId>
+    <artifactId>jinfer-parent</artifactId>
+    <version>0.1.0</version>
+  </parent>
+
+  <artifactId>jinfer-xcache</artifactId>
+  <packaging>jar</packaging>
+
+  <name>jinfer-xcache</name>
+  <description>The x prompt cache (FloatTensor migration): the model-agnostic KV cache over the
+    xboundary seam - hot sessions, content-keyed blocks with a RAM budget, and the JKVF catalog
+    artifact that survives restarts. Models contribute only a StateCodec (xboundary); seeds are
+    ContentKeys. Ported from jinfer-core/cache with the seed type unified on ContentKey and the
+    modelSeed hashing law left to xchat Models.</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jota</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-xcore</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-xboundary</artifactId>
+    </dependency>
+  </dependencies>
+</project>
