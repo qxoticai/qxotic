@@ -34,6 +34,16 @@
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-xchat</artifactId>
+      <!-- ModelProvider + the retrieval load path (ServiceLoader cargo) -->
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-xllm</artifactId>
+      <!-- SpecialTokens: the embedder's trailing-EOS lookup -->
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
       <artifactId>gguf</artifactId>
     </dependency>
     <dependency>

@@ -23,6 +23,7 @@ import com.qxotic.jinfer.x.boundary.Batch;
 import com.qxotic.jinfer.x.boundary.Config;
 import com.qxotic.jinfer.x.boundary.EmbeddingModel;
 import com.qxotic.jinfer.x.boundary.LanguageModel;
+import com.qxotic.jinfer.x.boundary.StateCodec;
 import com.qxotic.jinfer.x.kernels.Activations;
 import com.qxotic.jinfer.x.kernels.Convert;
 import com.qxotic.jinfer.x.kernels.FlashAttention;
@@ -45,6 +46,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 
 public final class Qwen3
         implements LanguageModel<Qwen3.Configuration, Qwen3.Weights, Qwen3.State>,
@@ -72,6 +74,11 @@ public final class Qwen3
 
     public Tokenizer tokenizer() {
         return tokenizer;
+    }
+
+    @Override
+    public Optional<StateCodec<State>> stateCodec() {
+        return Optional.of(new Qwen3StateCodec(configuration));
     }
 
     @Override
