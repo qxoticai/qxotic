@@ -28,10 +28,6 @@
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-core</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
       <artifactId>gguf</artifactId>
     </dependency>
     <dependency>

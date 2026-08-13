@@ -147,20 +147,24 @@ class ConvertTest {
             GGMLType.Q1_0
         };
         for (GGMLType type : types) {
-            int n = type.getElementsPerBlock() * 2;
-            MemorySegment weights = arena.allocate(type.byteSizeFor(n), 64);
-            weights.fill((byte) 0x12);
-            MemorySegment expected = arena.allocate(4L * n, 64);
-            MemorySegment actual = arena.allocate(4L * n, 64);
-            FloatTensor.create(type, n, weights).copyTo(0, Oracles.oldF32(expected, n), 0, n);
-            MemoryView<MemorySegment> view =
-                    Views.wrap(
-                            weights,
-                            GGMLDataTypes.toDataType(type),
-                            Shape.flat(n / type.getElementsPerBlock()));
-            Convert.copyToF32(view, 0, Oracles.f32View(actual, n), 0, n);
-            for (int i = 0; i < n; i++)
-                assertEquals(getF32(expected, i), getF32(actual, i), type + " at " + i);
+            long n = type.getElementsPerBlock() * 2L;
+            MemorySegment weights = Oracles.legacy(arena, type, n, type.ordinal());
+            FloatTensor old = FloatTensor.create(type, n, weights);
+            MemoryView<MemorySegment> view = Oracles.legacyView(weights, type, n);
+            // whole span, plus an unaligned start crossing block boundaries
+            for (long off : new long[] {0, 7}) {
+                int count = (int) (n - off);
+                MemorySegment expected = arena.allocate(4L * count, 64);
+                MemorySegment actual = arena.allocate(4L * count, 64);
+                old.copyTo(off, Oracles.oldF32(expected, count), 0, count);
+                Convert.copyToF32(view, off, Oracles.f32View(actual, count), 0, count);
+                for (int i = 0; i < count; i++) {
+                    assertEquals(
+                            getF32(expected, i),
+                            getF32(actual, i),
+                            type + " off=" + off + " at " + i);
+                }
+            }
         }
     }
 

@@ -53,6 +53,94 @@ public final class Ops {
         }
     }
 
+    /** Leaky ReLU in place: negative lanes scale by {@code slope} (HiFi-GAN vocoder). */
+    public static void leakyReluInPlace(
+            MemoryView<MemorySegment> view, long thisOffset, int size, float slope) {
+        Raw r = Raw.f32(view, "view");
+        if (USE_VECTOR_API) {
+            int upperBound = F_SPECIES.loopBound(size);
+            int i = 0;
+            for (; i < upperBound; i += F_SPECIES.length()) {
+                long byteOff = r.vbase() + (thisOffset + i) * Float.BYTES;
+                var v =
+                        FloatVector.fromMemorySegment(
+                                F_SPECIES, r.vseg(), byteOff, ByteOrder.LITTLE_ENDIAN);
+                v.mul(slope)
+                        .blend(v, v.compare(VectorOperators.GE, 0f))
+                        .intoMemorySegment(r.vseg(), byteOff, ByteOrder.LITTLE_ENDIAN);
+            }
+            for (; i < size; i++) {
+                long byteOff = r.vbase() + (thisOffset + i) * Float.BYTES;
+                float value = readFloat(r.vseg(), byteOff);
+                writeFloat(r.vseg(), byteOff, value < 0f ? value * slope : value);
+            }
+            return;
+        }
+        for (int i = 0; i < size; i++) {
+            long byteOff = r.vbase() + (thisOffset + i) * Float.BYTES;
+            float value = readFloat(r.vseg(), byteOff);
+            writeFloat(r.vseg(), byteOff, value < 0f ? value * slope : value);
+        }
+    }
+
+    /** {@code view[i] = tanh(view[i])} over {@code size} elements - the waveform soft-clip. */
+    public static void tanhInPlace(MemoryView<MemorySegment> view, long thisOffset, int size) {
+        mapInPlace(view, thisOffset, size, FastMath::tanh);
+    }
+
+    /** Plain 2D transpose copy: {@code dst[c][t] = src[t][c]} over [rows][cols] (layout flip). */
+    public static void transposeCopy(
+            MemoryView<MemorySegment> src, int rows, int cols, MemoryView<MemorySegment> dst) {
+        Raw s = Raw.f32(src, "src");
+        Raw d = Raw.f32(dst, "dst");
+        Parallel.forRows(
+                cols,
+                c -> {
+                    for (int t = 0; t < rows; t++) {
+                        writeFloat(
+                                d.vseg(),
+                                d.vbase() + ((long) c * rows + t) * Float.BYTES,
+                                readFloat(
+                                        s.vseg(), s.vbase() + ((long) t * cols + c) * Float.BYTES));
+                    }
+                });
+    }
+
+    /** Reverse the channel order of every row in place ([frames][channels]) - the flow's Flip. */
+    public static void reverseChannelsInPlace(
+            MemoryView<MemorySegment> view, int channels, int frames) {
+        Raw r = Raw.f32(view, "view");
+        for (int t = 0; t < frames; t++) {
+            for (int c = 0; c < channels / 2; c++) {
+                long low = r.vbase() + ((long) t * channels + c) * Float.BYTES;
+                long high = r.vbase() + ((long) t * channels + (channels - 1 - c)) * Float.BYTES;
+                float swap = readFloat(r.vseg(), low);
+                writeFloat(r.vseg(), low, readFloat(r.vseg(), high));
+                writeFloat(r.vseg(), high, swap);
+            }
+        }
+    }
+
+    /**
+     * Strided scatter copy: {@code dst[dstOff + j*dstStride] = src[srcOff + j]} for count elements.
+     */
+    public static void copyStrided(
+            MemoryView<MemorySegment> dst,
+            long dstOff,
+            int dstStride,
+            MemoryView<MemorySegment> src,
+            long srcOff,
+            int count) {
+        Raw d = Raw.f32(dst, "dst");
+        Raw s = Raw.f32(src, "src");
+        for (int j = 0; j < count; j++) {
+            writeFloat(
+                    d.vseg(),
+                    d.vbase() + (dstOff + (long) j * dstStride) * Float.BYTES,
+                    readFloat(s.vseg(), s.vbase() + (srcOff + j) * Float.BYTES));
+        }
+    }
+
     /** Clamp {@code view[thisOffset..thisOffset+size)} to {@code [lo, hi]} in place. */
     public static void clampInPlace(
             MemoryView<MemorySegment> view, long thisOffset, int size, float lo, float hi) {

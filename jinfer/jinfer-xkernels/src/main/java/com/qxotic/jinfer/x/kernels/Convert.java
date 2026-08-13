@@ -251,6 +251,27 @@ public final class Convert {
     }
 
     /**
+     * Legacy-quant -> F32 over an element span: the old per-element {@code copyTo} (getFloat per
+     * element, any alignment), sharing MatMul's scalar decoders.
+     */
+    public static void dequantLegacy(
+            MemoryView<MemorySegment> src,
+            long srcElemOff,
+            MemoryView<MemorySegment> dst,
+            long dstElemOff,
+            int count) {
+        Raw s = Raw.of(src, src.dataType(), "src");
+        Raw d = Raw.f32(dst, "dst");
+        DataType dt = src.dataType();
+        for (int i = 0; i < count; i++) {
+            writeFloat(
+                    d.vseg(),
+                    d.vbase() + (dstElemOff + i) * Float.BYTES,
+                    MatMul.getLegacy(s.vseg(), s.vbase(), srcElemOff + i, dt));
+        }
+    }
+
+    /**
      * The static heir of the old virtual {@code copyTo} for the ->F32 direction: one dtype switch
      * per span, routed to the arms above (Q8_0 dequant / F16 vector / F32 raw copy). The dispatch
      * table lives here, next to the arms it selects — a model never re-encodes it, and a cycle-2
@@ -273,9 +294,10 @@ public final class Convert {
             bf16ToF32(src, srcElemOff, dst, dstElemOff, count);
         } else if (dt == DataType.FP32) {
             copyF32(src, srcElemOff, dst, dstElemOff, count);
+        } else if (dt.elementsPerBlock() > 1) {
+            dequantLegacy(src, srcElemOff, dst, dstElemOff, count);
         } else {
-            ModelLoader.floatTensor(src, "src")
-                    .copyTo(srcElemOff, ModelLoader.floatTensor(dst, "dst"), dstElemOff, count);
+            throw new UnsupportedOperationException("copyToF32 dtype " + dt);
         }
     }
 }

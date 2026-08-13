@@ -6,8 +6,6 @@ package com.qxotic.jinfer.x.kernels;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.format.gguf.TensorEntry;
-import com.qxotic.jinfer.FloatTensor;
-import com.qxotic.jinfer.x.Views;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
@@ -28,15 +26,6 @@ import java.util.Map;
 public final class ModelLoader {
 
     private ModelLoader() {}
-
-    static FloatTensor floatTensor(MemoryView<MemorySegment> view, String name) {
-        Views.requireContiguous(view, name);
-        MemoryView<MemorySegment> v = Views.castToSegmentBacked(view, name);
-        return FloatTensor.create(
-                GGMLDataTypes.toGGMLType(v.dataType()),
-                v.logicalSize(),
-                v.memory().base().asSlice(v.byteOffset(), v.dataType().byteSizeFor(v.shape())));
-    }
 
     /**
      * Parses the GGUF metadata (com.qxotic:gguf) from the channel, leaving its position past the
