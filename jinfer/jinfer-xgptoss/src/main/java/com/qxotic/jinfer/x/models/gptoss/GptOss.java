@@ -7,6 +7,7 @@ import com.qxotic.jinfer.x.boundary.BaseState;
 import com.qxotic.jinfer.x.boundary.Batch;
 import com.qxotic.jinfer.x.boundary.Config;
 import com.qxotic.jinfer.x.boundary.LanguageModel;
+import com.qxotic.jinfer.x.boundary.StateCodec;
 import com.qxotic.jinfer.x.kernels.Activations;
 import com.qxotic.jinfer.x.kernels.Convert;
 import com.qxotic.jinfer.x.kernels.FlashAttention;
@@ -29,6 +30,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 
 /** GPT-OSS inference against the MemoryView boundary. */
 public final class GptOss
@@ -55,6 +57,11 @@ public final class GptOss
 
     public Tokenizer tokenizer() {
         return tokenizer;
+    }
+
+    @Override
+    public Optional<StateCodec<State>> stateCodec() {
+        return Optional.of(new GptOssStateCodec(configuration));
     }
 
     @Override
