@@ -248,6 +248,12 @@ class ModelRefTest {
                 ModelStore.huggingFaceSnapshot(
                         ModelRef.parse("hf.co/ggml-org/stories15M_MOE@abc123def"), hub),
                 "a pinned commit needs no indirection");
+        assertEquals(
+                repo.resolve("snapshots/abc123def"),
+                ModelStore.huggingFaceSnapshot(
+                        ModelRef.parse("hf.co/ggml-org/stories15M_MOE/stories15M_MOE-Q8_0.gguf"),
+                        hub),
+                "an explicit file resolves to the directory cachedIn searches");
         assertNull(
                 ModelStore.huggingFaceSnapshot(ModelRef.parse("hf.co/who/else"), hub),
                 "a repository that is not there is not a hit");
