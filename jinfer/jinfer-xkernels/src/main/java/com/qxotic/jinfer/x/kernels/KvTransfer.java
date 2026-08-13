@@ -25,11 +25,39 @@ public final class KvTransfer {
             long byteOff,
             long elems,
             boolean out) {
-        DataType dtype = t.dataType();
-        Views.requireDatatype(t, DataType.FP16, "kv"); // cycle-1 scope: FP16 KV
+        return transfer(t, DataType.FP16, elemOff, blob, byteOff, elems, out);
+    }
+
+    /** Dense view elements ↔ blob bytes at the view's native encoding. */
+    public static long transfer(
+            MemoryView<MemorySegment> t,
+            DataType dtype,
+            long elemOff,
+            MemorySegment blob,
+            long byteOff,
+            long elems,
+            boolean out) {
+        Views.requireDense(t, dtype, "state");
+        Views.checkAlive(t, "state");
+        if (elemOff < 0 || elems < 0 || elemOff > t.shape().size() - elems)
+            throw new IndexOutOfBoundsException(
+                    "state elements ["
+                            + elemOff
+                            + ","
+                            + Math.addExact(elemOff, elems)
+                            + ") out of "
+                            + t.shape().size());
         long elemBytes = dtype.byteSize();
-        long srcByte = t.byteOffset() + elemOff * elemBytes;
-        long bytes = elems * elemBytes;
+        long srcByte = Math.addExact(t.byteOffset(), Math.multiplyExact(elemOff, elemBytes));
+        long bytes = Math.multiplyExact(elems, elemBytes);
+        if (byteOff < 0 || byteOff > blob.byteSize() - bytes)
+            throw new IndexOutOfBoundsException(
+                    "blob bytes ["
+                            + byteOff
+                            + ","
+                            + Math.addExact(byteOff, bytes)
+                            + ") out of "
+                            + blob.byteSize());
         if (out) {
             MemorySegment.copy(t.memory().base(), srcByte, blob, byteOff, bytes);
         } else {

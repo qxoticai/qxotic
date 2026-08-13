@@ -151,6 +151,36 @@ class MatMulTest {
     }
 
     @Test
+    void f16Parity() {
+        int m = 32, n = 3, k = 96; // multi-of-16 k: vector body + tail on the F16 dot
+        MemorySegment w = arena.allocate(2L * m * k, 64);
+        MemorySegment a = f32(arena, n * k, 21);
+        MemorySegment expected = arena.allocate(4L * n * m, 64);
+        MemorySegment actual = arena.allocate(4L * n * m, 64);
+        for (int i = 0; i < m * k; i++)
+            w.set(
+                    java.lang.foreign.ValueLayout.JAVA_SHORT_UNALIGNED,
+                    2L * i,
+                    Float.floatToFloat16((float) Math.sin(i * 0.13)));
+        FloatTensor.create(GGMLType.F16, (long) m * k, w)
+                .gemm(oldF32(a, (long) n * k), k, oldF32(expected, (long) n * m), m, n, m, k);
+        MatMul.mm(
+                Views.wrap(w, DataType.FP16, Shape.flat((long) m * k)),
+                0,
+                k,
+                f32View(a, (long) n * k),
+                0,
+                k,
+                f32View(actual, (long) n * m),
+                0,
+                m,
+                m,
+                n,
+                k);
+        assertClose(expected, actual, n * m, "F16 gemm", Oracles.DOT_ABS_TOL);
+    }
+
+    @Test
     void legacyQuantParity() {
         GGMLType[] types = {
             GGMLType.Q4_0,
@@ -163,41 +193,56 @@ class MatMulTest {
             GGMLType.Q1_0
         };
         for (GGMLType type : types) {
-            int m = 5, n = 2, k = type.getElementsPerBlock();
-            MemorySegment weights = arena.allocate(type.byteSizeFor((long) m * k), 64);
-            weights.fill((byte) 0x12);
-            MemorySegment activations = f32(arena, n * k, type.ordinal());
-            MemorySegment expected = arena.allocate(4L * n * m, 64);
-            MemorySegment actual = arena.allocate(4L * n * m, 64);
-            FloatTensor.create(type, (long) m * k, weights)
-                    .gemm(
-                            oldF32(activations, (long) n * k),
-                            k,
-                            oldF32(expected, (long) n * m),
-                            m,
-                            n,
-                            m,
-                            k);
-            MemoryView<MemorySegment> view =
-                    Views.wrap(
-                            weights,
-                            GGMLDataTypes.toDataType(type),
-                            Shape.flat((long) m * k / type.getElementsPerBlock()));
-            MatMul.mm(
-                    view,
-                    0,
-                    k,
-                    f32View(activations, (long) n * k),
-                    0,
-                    k,
-                    f32View(actual, (long) n * m),
-                    0,
-                    m,
-                    m,
-                    n,
-                    k);
-            assertClose(expected, actual, n * m, type + " gemm", Oracles.DOT_ABS_TOL);
+            int epb = type.getElementsPerBlock();
+            legacyGemmParity(type, 5, 2, 2 * epb, type.ordinal()); // prefill floor, multi-block
+            legacyGemvParity(type, 64, 2 * epb, type.ordinal() + 100); // decode floor
+            legacyGemvParity(type, 33, 3 * epb, type.ordinal() + 200); // serial tiny path
         }
+    }
+
+    private void legacyGemmParity(GGMLType type, int m, int n, int k, long seed) {
+        MemorySegment w = Oracles.legacy(arena, type, (long) m * k, seed);
+        MemorySegment a = f32(arena, n * k, seed + 1);
+        MemorySegment expected = arena.allocate(4L * n * m, 64);
+        MemorySegment actual = arena.allocate(4L * n * m, 64);
+        FloatTensor.create(type, (long) m * k, w)
+                .gemm(oldF32(a, (long) n * k), k, oldF32(expected, (long) n * m), m, n, m, k);
+        MatMul.mm(
+                Oracles.legacyView(w, type, (long) m * k),
+                0,
+                k,
+                f32View(a, (long) n * k),
+                0,
+                k,
+                f32View(actual, (long) n * m),
+                0,
+                m,
+                m,
+                n,
+                k);
+        assertClose(expected, actual, n * m, type + " gemm", Oracles.DOT_ABS_TOL);
+    }
+
+    private void legacyGemvParity(GGMLType type, int m, int k, long seed) {
+        MemorySegment w = Oracles.legacy(arena, type, (long) m * k, seed);
+        MemorySegment x = f32(arena, k, seed + 1);
+        MemorySegment expected = arena.allocate(4L * m, 64);
+        MemorySegment actual = arena.allocate(4L * m, 64);
+        FloatTensor.create(type, (long) m * k, w).matmul(oldF32(x, k), oldF32(expected, m), m, k);
+        MatMul.mm(
+                Oracles.legacyView(w, type, (long) m * k),
+                0,
+                k,
+                f32View(x, k),
+                0,
+                k,
+                f32View(actual, m),
+                0,
+                m,
+                m,
+                1,
+                k);
+        assertClose(expected, actual, m, type + " gemv", Oracles.DOT_ABS_TOL);
     }
 
     @Test

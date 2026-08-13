@@ -89,6 +89,41 @@ final class Oracles {
         return seg;
     }
 
+    /**
+     * Legacy-quant weights: random payload (every byte pattern is a valid encoding), with every f16
+     * scale field pinned to a small sane value so random bits can't produce inf/NaN scales. NVFP4's
+     * ue4m3 scales decode to a finite float for any byte.
+     */
+    static MemorySegment legacy(Arena arena, GGMLType type, long elements, long seed) {
+        Random rng = new Random(seed);
+        MemorySegment seg = arena.allocate(type.byteSizeFor(elements), 64);
+        for (long i = 0; i < seg.byteSize(); i++) {
+            seg.set(ValueLayout.JAVA_BYTE, i, (byte) rng.nextInt(256));
+        }
+        long bs = type.getBlockByteSize();
+        short d = Float.floatToFloat16(0.015625f), dmin = Float.floatToFloat16(0.0078125f);
+        for (long b = 0; b < elements / type.getElementsPerBlock(); b++) {
+            long bo = b * bs;
+            switch (type) {
+                case Q4_0, Q1_0 -> seg.set(ValueLayout.JAVA_SHORT_UNALIGNED, bo, d);
+                case Q4_1, Q5_1, Q4_K, Q5_K -> {
+                    seg.set(ValueLayout.JAVA_SHORT_UNALIGNED, bo, d);
+                    seg.set(ValueLayout.JAVA_SHORT_UNALIGNED, bo + 2, dmin);
+                }
+                case Q6_K -> seg.set(ValueLayout.JAVA_SHORT_UNALIGNED, bo + 208, d);
+                default -> {} // NVFP4: ue4m3 is finite for every byte
+            }
+        }
+        return seg;
+    }
+
+    static MemoryView<MemorySegment> legacyView(MemorySegment seg, GGMLType type, long elements) {
+        return Views.wrap(
+                seg,
+                GGMLDataTypes.toDataType(type),
+                Shape.flat(elements / type.getElementsPerBlock())); // shape counts BLOCKS
+    }
+
     static F32FloatTensor oldF32(MemorySegment seg, long n) {
         return (F32FloatTensor) FloatTensor.create(GGMLType.F32, n, seg);
     }

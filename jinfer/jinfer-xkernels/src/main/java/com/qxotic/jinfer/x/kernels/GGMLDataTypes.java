@@ -19,7 +19,9 @@ public final class GGMLDataTypes {
         new Pair(GGMLType.Q6_K, DataType.Q6_K),
         new Pair(GGMLType.MXFP4, DataType.MXFP4),
         new Pair(GGMLType.NVFP4, DataType.NVFP4),
-        new Pair(GGMLType.Q1_0, DataType.Q1_0)
+        new Pair(GGMLType.Q1_0, DataType.Q1_0),
+        new Pair(GGMLType.TQ1_0, DataType.TQ1_0),
+        new Pair(GGMLType.TQ2_0, DataType.TQ2_0)
     };
 
     private GGMLDataTypes() {}

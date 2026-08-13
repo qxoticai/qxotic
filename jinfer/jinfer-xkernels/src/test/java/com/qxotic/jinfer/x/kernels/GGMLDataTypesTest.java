@@ -24,7 +24,9 @@ class GGMLDataTypesTest {
             GGMLType.Q6_K,
             GGMLType.MXFP4,
             GGMLType.NVFP4,
-            GGMLType.Q1_0
+            GGMLType.Q1_0,
+            GGMLType.TQ1_0,
+            GGMLType.TQ2_0
         };
         for (GGMLType type : types) {
             DataType dataType = GGMLDataTypes.toDataType(type);
