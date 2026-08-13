@@ -7,6 +7,7 @@ import com.qxotic.jinfer.x.boundary.BaseState;
 import com.qxotic.jinfer.x.boundary.Batch;
 import com.qxotic.jinfer.x.boundary.Config;
 import com.qxotic.jinfer.x.boundary.LanguageModel;
+import com.qxotic.jinfer.x.boundary.StateCodec;
 import com.qxotic.jinfer.x.kernels.Activations;
 import com.qxotic.jinfer.x.kernels.Convert;
 import com.qxotic.jinfer.x.kernels.Convolutions;
@@ -31,6 +32,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 
 /** Text-only MemoryView port of the hybrid Qwen3.5 gated-delta/full-attention decoder. */
 public final class Qwen35
@@ -57,6 +59,11 @@ public final class Qwen35
 
     public Tokenizer tokenizer() {
         return tokenizer;
+    }
+
+    @Override
+    public Optional<StateCodec<State>> stateCodec() {
+        return Optional.of(new Qwen35StateCodec(configuration));
     }
 
     @Override
