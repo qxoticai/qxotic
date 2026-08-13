@@ -102,7 +102,8 @@ public class Main {
                         .withContextCapacity(options.contextCapacity())
                         .withCatalog(options.promptCache(), options.promptCacheReadOnly());
         ChatEngine engine =
-                new ChatEngine(model, options.modelPath().getFileName().toString(), cacheOptions);
+                new ChatEngine(model, options.modelPath().getFileName().toString(), cacheOptions)
+                        .speculationDepth(options.speculationDepth());
         try {
             if (options.interactive()) {
                 Chat.run(engine, sampling, options);

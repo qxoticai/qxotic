@@ -29,7 +29,7 @@ public final class Gemma4Provider implements ModelProvider {
 
     @Override
     public Map<String, String> companionFiles() {
-        return Map.of("media", "mmproj");
+        return Map.of("media", "mmproj", "speculation", "mtp");
     }
 
     @Override
@@ -44,6 +44,10 @@ public final class Gemma4Provider implements ModelProvider {
         Path media = companions.get("media");
         if (media != null) {
             model = model.withMedia(media, arena);
+        }
+        Path speculation = companions.get("speculation");
+        if (speculation != null) {
+            model = model.attachMtp(speculation, arena);
         }
         Tokenizer tok = model.tokenizer();
         String source = gguf.getStringOrDefault("tokenizer.chat_template", "");

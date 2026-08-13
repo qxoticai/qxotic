@@ -12,6 +12,7 @@ import com.qxotic.jinfer.x.llm.Generator;
 import com.qxotic.jinfer.x.llm.Sampler;
 import com.qxotic.jinfer.x.llm.Sampling;
 import com.qxotic.jinfer.x.llm.SpecialTokens;
+import com.qxotic.jinfer.x.llm.SpeculativeDecoding;
 import com.qxotic.jinfer.x.telemetry.CacheSample;
 import com.qxotic.jinfer.x.telemetry.InferenceEvent;
 import com.qxotic.jinfer.x.telemetry.Telemetry;
@@ -83,6 +84,9 @@ public final class ChatEngine {
                     r -> new Thread(r, "jinfer-stream"));
     private final AtomicReference<Thread> streamThread = new AtomicReference<>();
     private volatile boolean closed;
+    // self-speculation drafts per verify block when the model carries a draft head: 0 disables,
+    // 4 is the llama.cpp-default-shaped sweet spot; only read on the generation path
+    private volatile int speculationDepth = 4;
     // owned: freed at close(), never shared. null when the CALLER loaded the model and keeps the
     // arena - then close() quiesces and frees this engine's own memory, and nothing else
     private final Arena weights;
@@ -217,6 +221,20 @@ public final class ChatEngine {
 
     public String modelName() {
         return modelName;
+    }
+
+    /** Drafts per verify block for self-speculation, 0 = off; inert without a draft head. */
+    public int speculationDepth() {
+        return speculationDepth;
+    }
+
+    /** Sets the self-speculation depth, 0..8 (0 disables); returns this engine. */
+    public ChatEngine speculationDepth(int depth) {
+        if (depth < 0 || depth > 8) {
+            throw new IllegalArgumentException("speculation depth " + depth + " outside 0..8");
+        }
+        this.speculationDepth = depth;
+        return this;
     }
 
     /**
@@ -678,7 +696,16 @@ public final class ChatEngine {
      * restores nothing at all). It is the difference worth tuning the hot-session count on.
      */
     public record Outcome(
-            Generator.GenerationResult result, int restoredTokens, PromptCache.Tier tier) {}
+            Generator.GenerationResult result,
+            int restoredTokens,
+            PromptCache.Tier tier,
+            SpeculativeDecoding.SpeculationResult speculation) {
+
+        /** Non-null when the pass ran self-speculation - carries the acceptance counters. */
+        public Optional<SpeculativeDecoding.SpeculationResult> speculated() {
+            return Optional.ofNullable(speculation);
+        }
+    }
 
     /**
      * One streamed fragment: the channel it belongs to, UTF-8-safe text, and the verbatim tokens
@@ -725,11 +752,17 @@ public final class ChatEngine {
             Generator.GenerationResult result,
             boolean stopped,
             int restoredTokens,
-            PromptCache.Tier tier) {
+            PromptCache.Tier tier,
+            SpeculativeDecoding.SpeculationResult speculation) {
 
         /** A cancelled pass has no reply; that is the whole of it. */
         public boolean cancelled() {
             return reply == null;
+        }
+
+        /** Non-null when the pass ran self-speculation - carries the acceptance counters. */
+        public Optional<SpeculativeDecoding.SpeculationResult> speculated() {
+            return Optional.ofNullable(speculation);
         }
     }
 
@@ -849,7 +882,12 @@ public final class ChatEngine {
         if (out.cancelled()) {
             // a cancelled pass ends silently: no reply, no completion callback upstream
             return new Completion(
-                    null, outcome.result(), false, outcome.restoredTokens(), outcome.tier());
+                    null,
+                    outcome.result(),
+                    false,
+                    outcome.restoredTokens(),
+                    outcome.tier(),
+                    outcome.speculation());
         }
         watch.flush(); // release held-back chars (a stopped watch emits nothing past the cut)
         Generator.GenerationResult result = outcome.result();
@@ -871,7 +909,8 @@ public final class ChatEngine {
                 result,
                 watch.stopped(),
                 outcome.restoredTokens(),
-                outcome.tier());
+                outcome.tier(),
+                outcome.speculation());
     }
 
     /** The finished reply, from the same parse that streamed - or the raw lane's plain text. */
@@ -929,28 +968,65 @@ public final class ChatEngine {
         // the facade validates the prompt (non-empty, fits the context) before any ingest
         return c.serve(
                 prompt,
-                (state, serving) ->
-                        new Outcome(
-                                Generator.generate(
-                                        model,
-                                        state,
-                                        List.of(),
-                                        sampler,
-                                        new Generator.Constraints(
-                                                maxTokens, timeout, loaded.stopTokens()),
-                                        new Generator.GenerationListener() {
-                                            @Override
-                                            public boolean onToken(int token) {
-                                                return listener.onToken(token);
-                                            }
+                (state, serving) -> {
+                    Generator.Constraints constraints =
+                            new Generator.Constraints(maxTokens, timeout, loaded.stopTokens());
+                    Generator.GenerationListener hook =
+                            new Generator.GenerationListener() {
+                                @Override
+                                public boolean onToken(int token) {
+                                    return listener.onToken(token);
+                                }
 
-                                            @Override
-                                            public void onIngested(int token) {
-                                                serving.tail(token);
-                                            }
-                                        }),
-                                serving.restored(),
-                                serving.tier()));
+                                @Override
+                                public void onIngested(int token) {
+                                    serving.tail(token);
+                                }
+                            };
+                    // a model with a draft head decodes through its own verify loop instead of
+                    // the plain one. Cache accounting differs: the plain loop ingests step-wise,
+                    // so the per-token tail hook keeps the hot stream in lockstep; speculation
+                    // verifies and ingests a whole BLOCK at once (the state is already past the
+                    // tail when the listener runs), so its tokens join the cache in one bulk
+                    // adopt after the pass - Serving.adopt exists for exactly this shape
+                    SpeculativeDecoding.SpeculationResult speculation = null;
+                    Generator.GenerationResult result;
+                    if (model instanceof SpeculativeDecoding<?>
+                            && ((SpeculativeDecoding<?>) model).speculationReady()
+                            && speculationDepth > 0) {
+                        Generator.GenerationListener tokenOnly =
+                                new Generator.GenerationListener() {
+                                    @Override
+                                    public boolean onToken(int token) {
+                                        return listener.onToken(token);
+                                    }
+
+                                    @Override
+                                    public void onIngested(int token) {}
+                                };
+                        speculation =
+                                ((SpeculativeDecoding<S>) model)
+                                        .speculate(
+                                                state,
+                                                sampler,
+                                                constraints,
+                                                speculationDepth,
+                                                tokenOnly);
+                        serving.adopt(speculation.committed().toArray());
+                        result =
+                                new Generator.GenerationResult(
+                                        speculation.emitted().toArray(),
+                                        speculation.stopToken(),
+                                        speculation.finishReason(),
+                                        Duration.ZERO,
+                                        speculation.decodeTime());
+                    } else {
+                        result =
+                                Generator.generate(
+                                        model, state, List.of(), sampler, constraints, hook);
+                    }
+                    return new Outcome(result, serving.restored(), serving.tier(), speculation);
+                });
     }
 
     // ---- cached prompts: define / freeze / save on the one PromptCache ----

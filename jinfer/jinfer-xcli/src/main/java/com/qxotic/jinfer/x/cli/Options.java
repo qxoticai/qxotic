@@ -45,7 +45,8 @@ public record Options(
         boolean colors,
         boolean rawPrompt,
         Path promptCache,
-        boolean promptCacheReadOnly) {
+        boolean promptCacheReadOnly,
+        int speculationDepth) {
 
     public Options {
         // never null and never the caller's copy: every reader can iterate it without a guard, and
@@ -85,6 +86,9 @@ public record Options(
                 promptCache == null || promptCacheReadOnly || !rawPrompt,
                 "Invalid argument: --cache with --raw-prompt cannot append (there is no"
                         + " conversation to define) - use --cache-ro to serve an existing cache");
+        require(
+                0 <= speculationDepth && speculationDepth <= 8,
+                "Invalid argument: --speculation-depth must be within [0, 8] (0 disables it)");
     }
 
     /**
@@ -231,6 +235,7 @@ public record Options(
         boolean rawPrompt = false;
         Path promptCache = null;
         boolean promptCacheReadOnly = false;
+        int speculationDepth = 4;
 
         for (int i = 0; i < args.length; i++) {
             String optionName = args[i];
@@ -289,6 +294,8 @@ public record Options(
                                 maxOutputTokens = parseInt(optionName, nextArg);
                         case "--context-capacity", "-c" ->
                                 contextCapacity = parseInt(optionName, nextArg);
+                        case "--speculation-depth" ->
+                                speculationDepth = parseInt(optionName, nextArg);
                         case "--stream" -> stream = parseBooleanOption(optionName, nextArg);
                         case "--echo" -> echo = parseBooleanOption(optionName, nextArg);
                         case "--color" -> colorMode = nextArg.toLowerCase(Locale.ROOT);
@@ -387,7 +394,8 @@ public record Options(
                 color,
                 rawPrompt,
                 promptCache,
-                promptCacheReadOnly);
+                promptCacheReadOnly,
+                speculationDepth);
     }
 
     /**
@@ -488,6 +496,10 @@ public record Options(
         out.println(
                 "  --cache-ro <file>             like --cache but read-only - serves matching"
                         + " prefixes, never writes");
+        out.println(
+                "  --speculation-depth <int>     drafts per verify block for a model with a"
+                        + " draft head (gemma4's MTP sidecar, attached with --with"
+                        + " speculation=<file>); 0 disables, default 4");
         out.println();
         out.println("Interactive commands:");
         out.println("  /quit, /exit                  exit the chat");

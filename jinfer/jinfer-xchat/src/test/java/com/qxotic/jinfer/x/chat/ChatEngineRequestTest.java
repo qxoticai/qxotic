@@ -279,11 +279,16 @@ final class ChatEngineRequestTest {
     @Test
     void aCancelledCompletionIsExactlyOneWithoutAReply() {
         assertTrue(
-                new ChatEngine.Completion(null, null, false, 0, PromptCache.Tier.FRESH)
+                new ChatEngine.Completion(null, null, false, 0, PromptCache.Tier.FRESH, null)
                         .cancelled());
         assertFalse(
                 new ChatEngine.Completion(
-                                Message.assistant("hi"), null, false, 0, PromptCache.Tier.FRESH)
+                                Message.assistant("hi"),
+                                null,
+                                false,
+                                0,
+                                PromptCache.Tier.FRESH,
+                                null)
                         .cancelled());
     }
 }

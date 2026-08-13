@@ -6,6 +6,7 @@ import com.qxotic.jinfer.x.boundary.Model;
 import com.qxotic.jinfer.x.boundary.RuntimeState;
 import com.qxotic.jinfer.x.boundary.StateCodec;
 import com.qxotic.jota.memory.MemoryView;
+import com.qxotic.toknroll.IntSequence;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.security.MessageDigest;
@@ -332,11 +333,17 @@ public final class CachedSession<S extends RuntimeState> {
      * - a trailing stop or budget-final token is sampled but never ingested); {@code commit}'s
      * position check enforces the accounting.
      */
-    public void adopt(int[] ingested) {
-        if (ingested.length == 0) return;
+    public void adopt(IntSequence ingested) {
+        int n = ingested.length();
+        if (n == 0) return;
         int off = len;
-        for (int id : ingested) append(id);
+        for (int i = 0; i < n; i++) append(ingested.intAt(i));
         commitSpan(off, len - off);
+    }
+
+    /** As {@link #adopt(IntSequence)} over a plain array (zero-copy wrap). */
+    public void adopt(int[] ingested) {
+        adopt(IntSequence.wrap(ingested));
     }
 
     /**

@@ -117,7 +117,7 @@ final class Turn implements ChatEngine.ReplySink {
             String suffix = options.colors() ? ANSI_RESET : "";
             System.err.printf(
                     "%n%scontext: %d/%d prompt: %.2f tokens/s (%d) generation: %.2f tokens/s (%d)"
-                            + " cache: %s, %d restored%s%n",
+                            + " cache: %s, %d restored%s%s%n",
                     prefix,
                     promptTokens + generated,
                     contextCapacity,
@@ -127,11 +127,28 @@ final class Turn implements ChatEngine.ReplySink {
                     generated,
                     completion.tier().name().toLowerCase(Locale.ROOT),
                     completion.restoredTokens(),
+                    acceptance(completion),
                     suffix);
         }
         if (!options.stream()) {
             System.out.println(text);
         }
+    }
+
+    /** " accept: A/D (P%)" when the pass speculated, "" otherwise. */
+    private static String acceptance(ChatEngine.Completion completion) {
+        return completion
+                .speculated()
+                .map(
+                        s ->
+                                s.drafted() == 0
+                                        ? " accept: -"
+                                        : String.format(
+                                                " accept: %d/%d (%.0f%%)",
+                                                s.accepted(),
+                                                s.drafted(),
+                                                100.0 * s.accepted() / s.drafted()))
+                .orElse("");
     }
 
     /** Every token of this delta is special - a control fragment the raw lane must not display. */
