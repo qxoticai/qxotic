@@ -4,6 +4,7 @@ import java.lang.foreign.MemorySegment;
 import java.util.Comparator;
 import java.util.List;
 import java.util.ServiceLoader;
+import java.util.function.Function;
 
 /**
  * jam - fast multithreaded CPU matmul ({@code R = W @ Aᵀ}) with quantized weights.
@@ -35,10 +36,26 @@ public interface JAM {
         JAM create();
     }
 
-    /** Available JAM providers, highest priority first. */
+    /**
+     * Available JAM providers, highest priority first.
+     *
+     * <p>A provider can be turned off from the command line: {@code -Djam.<id>.disabled=true}
+     * (system property only; only {@code true} disables). The flag names a provider {@link
+     * Provider#id() id} - an id no installed provider carries is a silent no-op, and disabling
+     * every provider yields an empty list (consumers fall back to their own floor).
+     */
     static List<Provider> providers() {
-        return ServiceLoader.load(Provider.class).stream()
-                .map(ServiceLoader.Provider::get)
+        return select(
+                ServiceLoader.load(Provider.class).stream()
+                        .map(ServiceLoader.Provider::get)
+                        .toList(),
+                System::getProperty);
+    }
+
+    /** The disabled filter + availability + priority sort, factored out for in-memory tests. */
+    static List<Provider> select(List<Provider> discovered, Function<String, String> property) {
+        return discovered.stream()
+                .filter(p -> !Boolean.parseBoolean(property.apply("jam." + p.id() + ".disabled")))
                 .filter(JAM::available)
                 .sorted(Comparator.comparingInt(Provider::priority).reversed())
                 .toList();
