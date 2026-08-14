@@ -48,8 +48,9 @@ import jdk.incubator.vector.VectorOperators;
  * compute-bound) tries native jam, then Vector-API jam, then the floor — jam is only offered a call
  * when the dtype has a kernel AND k and the weight offset are block-aligned ({@code Dispatch.f32io}
  * collapses to {@code !inPlace}: {@code a}/{@code c} are FP32 by construction). A runtime decline
- * (EBUSY, older libjam) falls to the next rung. With no jam backend on the classpath the path is
- * bit-identical to the floor.
+ * (EBUSY, older libjam) falls to the next rung. A backend can be switched off with {@code
+ * -Djam.<id>.disabled=true} ({@code native}, {@code vector}, {@code scalar}). With no jam backend
+ * enabled or on the classpath the path is bit-identical to the floor.
  */
 public final class MatMul {
 
