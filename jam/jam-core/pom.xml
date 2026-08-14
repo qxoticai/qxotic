@@ -12,5 +12,18 @@
   <packaging>jar</packaging>
 
   <!-- The matmul contract: the JAM interface (dtype/status int tags, the strided + contiguous mm) and
-       GGMLType (the block geometry every backend needs for bounds/decode). Pure Java, zero dependencies. -->
+       GGMLType (the block geometry every backend needs for bounds/decode). Pure Java, zero dependencies.
+       Test scope only: jota-core, to pin the int tags / block geometry against jota's DataType. -->
+  <dependencies>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jota-core</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
 </project>
