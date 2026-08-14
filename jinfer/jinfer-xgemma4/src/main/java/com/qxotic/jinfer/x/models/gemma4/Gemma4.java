@@ -232,7 +232,7 @@ public final class Gemma4
      * row-major, softcapped in place. The speculative verify walk is the consumer (per-row {@code
      * head} calls would re-stream the whole head weight per draft row).
      */
-    public void logitsAll(State state, MemoryView<MemorySegment> dst) {
+    void logitsAll(State state, MemoryView<MemorySegment> dst) {
         int dim = configuration.embeddingLength;
         int vocab = configuration.vocabularySize;
         int n = state.outputCount;
@@ -896,12 +896,18 @@ public final class Gemma4
     }
 
     /**
-     * Attaches the {@code speculation} companion: the MTP draft sidecar, into {@code arena}. The
-     * PAIRING is enforced here, like the mmproj's: the sidecar consumes this backbone's hidden
-     * state, so its {@code embedding_length_out} must equal this model's embedding width - an E2B
-     * head on an E4B backbone refuses with both numbers rather than failing in a GEMM later. (A
-     * same-width wrong head cannot be detected from headers; it is still SAFE - verification keeps
-     * only tokens the backbone confirms - just slow, visible as near-zero acceptance.)
+     * Attaches the {@code speculation} companion: the MTP draft sidecar, into {@code arena}. A
+     * load-time wiring call, before the model is published - pass the WEIGHTS arena so the sidecar
+     * dies with the backbone.
+     *
+     * <p>The PAIRING is enforced here, like the mmproj's: the sidecar consumes this backbone's
+     * hidden state, so its {@code embedding_length_out} must equal this model's embedding width,
+     * and its draft Q heads attend this backbone's KV rings (SWA drafts at layer {@code ownKv-2},
+     * the full draft at {@code ownKv-1}), so the draft head sizes must equal the KV head sizes at
+     * those layers - an E2B head on an E4B backbone refuses with both numbers rather than failing
+     * in a GEMM or attending garbage later. (A same-geometry wrong head cannot be detected from
+     * headers; it is still SAFE - verification keeps only tokens the backbone confirms - just slow,
+     * visible as near-zero acceptance.)
      */
     public Gemma4 attachMtp(Path mtpSidecar, Arena arena) throws IOException {
         Gemma4Mtp sidecar = Gemma4Mtp.loadSidecar(mtpSidecar, config().vocabularySize(), arena);
@@ -915,8 +921,31 @@ public final class Gemma4
                             + " - it is the MTP head of a different gemma-4 size; use the sidecar"
                             + " published for this exact model");
         }
+        int ownKv = config().ownKvLayers();
+        int swaHead = ownKv >= 2 ? kvHeadSize(ownKv - 2) : -1;
+        int fullHead = ownKv >= 1 ? kvHeadSize(ownKv - 1) : -1;
+        if (ownKv < 2
+                || sidecar.config().headSizeSWA() != swaHead
+                || sidecar.config().headSizeFull() != fullHead) {
+            throw new IllegalArgumentException(
+                    mtpSidecar.getFileName()
+                            + " drafts with head sizes "
+                            + sidecar.config().headSizeSWA()
+                            + "/"
+                            + sidecar.config().headSizeFull()
+                            + " (swa/full), but this backbone's KV heads at the shared layers are "
+                            + swaHead
+                            + "/"
+                            + fullHead
+                            + " - it is the MTP head of a different gemma-4 size; use the sidecar"
+                            + " published for this exact model");
+        }
         this.mtp = sidecar;
         return this;
+    }
+
+    private int kvHeadSize(int layer) {
+        return config().kvDim(layer) / config().numberOfKeyValueHeadsPerLayer()[layer];
     }
 
     @Override

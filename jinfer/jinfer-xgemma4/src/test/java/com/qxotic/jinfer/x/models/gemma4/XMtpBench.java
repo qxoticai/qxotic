@@ -17,7 +17,6 @@ import com.qxotic.toknroll.Tokenizer;
 import java.lang.foreign.Arena;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -34,7 +33,14 @@ class XMtpBench {
     @Tag("bench")
     void run() throws Exception {
         String argv = System.getProperty("jinfer.args", "");
-        String[] args = argv.isBlank() ? new String[0] : argv.trim().split("\\s+");
+        main(argv.isBlank() ? new String[0] : argv.trim().split("\\s+"));
+    }
+
+    /**
+     * Direct entry, e.g. a hand-built classpath that includes the JAM backends (surefire's excludes
+     * exist for the differential oracles, not for measurement).
+     */
+    public static void main(String[] args) throws Exception {
         int maxTokens = args.length > 0 ? Integer.parseInt(args[0]) : 128;
         int reps = args.length > 1 ? Integer.parseInt(args[1]) : 3;
         int[] depths = args.length > 2 ? depths(args[2]) : new int[] {1, 2, 3};
@@ -134,9 +140,5 @@ class XMtpBench {
             depths[i] = Integer.parseInt(parts[i].trim());
         }
         return depths;
-    }
-
-    static int[] withBos(int bos, List<Integer> enc) {
-        return XGemma4MtpIdentityTest.withBos(bos, enc);
     }
 }

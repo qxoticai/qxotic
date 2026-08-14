@@ -64,19 +64,6 @@ public final class Gemma4Speculative {
         }
     }
 
-    /** The production call: no audit tap. */
-    public static SpeculationResult generate(
-            Gemma4 model,
-            Gemma4.State s,
-            int maxTokens,
-            long timeoutNanos,
-            Set<Integer> stops,
-            int depth,
-            Sampler sampler,
-            GenerationListener listener) {
-        return generate(model, s, maxTokens, timeoutNanos, stops, depth, sampler, listener, null);
-    }
-
     public static SpeculationResult generate(
             Gemma4 model,
             Gemma4.State s,
@@ -87,6 +74,9 @@ public final class Gemma4Speculative {
             Sampler sampler,
             GenerationListener listener,
             SpeculationAudit audit) {
+        if (depth < 1 || depth > 8) {
+            throw new IllegalArgumentException("speculation depth " + depth + " outside 1..8");
+        }
         int vocab = model.config().vocabularySize();
         if (!model.speculationReady())
             throw new IllegalStateException(
@@ -135,7 +125,10 @@ public final class Gemma4Speculative {
             Scratch scratch,
             int vocab,
             long startNanos) {
-        long deadline = timeoutNanos > 0 ? startNanos + timeoutNanos : Long.MAX_VALUE;
+        long deadline =
+                timeoutNanos > 0 && timeoutNanos <= Long.MAX_VALUE - startNanos
+                        ? startNanos + timeoutNanos
+                        : Long.MAX_VALUE;
         IntSequence.Builder emitted = IntSequence.newBuilder();
         IntSequence.Builder committed = IntSequence.newBuilder();
         int drafted = 0, acceptedTotal = 0, forwards = 0;
@@ -226,7 +219,10 @@ public final class Gemma4Speculative {
                 if (audit != null) {
                     audit.onEmit(cand[i], i == 0 ? pending : rowArgmax[i - 1]);
                 }
-                if (listener != null && !listener.onToken(cand[i])) aborted = true;
+                if (listener != null && !listener.onToken(cand[i])) {
+                    aborted = true; // the aborting token is the LAST emitted (Generator's law)
+                    break;
+                }
                 if (emitted.size() >= maxTokens) {
                     return result(
                             emitted,
@@ -240,6 +236,17 @@ public final class Gemma4Speculative {
                 }
             }
             if (audit != null) pending = rowArgmax[accepted]; // the row that produced `next`
+            if (aborted) {
+                return result(
+                        emitted,
+                        committed,
+                        OptionalInt.empty(),
+                        FinishReason.ABORT,
+                        startNanos,
+                        drafted,
+                        acceptedTotal,
+                        forwards);
+            }
             if (stopIdx >= 0) {
                 if (listener != null)
                     listener.onToken(cand[stopIdx]); // the stop is seen, not emitted
@@ -248,17 +255,6 @@ public final class Gemma4Speculative {
                         committed,
                         OptionalInt.of(cand[stopIdx]),
                         FinishReason.STOP,
-                        startNanos,
-                        drafted,
-                        acceptedTotal,
-                        forwards);
-            }
-            if (aborted) {
-                return result(
-                        emitted,
-                        committed,
-                        OptionalInt.empty(),
-                        FinishReason.ABORT,
                         startNanos,
                         drafted,
                         acceptedTotal,

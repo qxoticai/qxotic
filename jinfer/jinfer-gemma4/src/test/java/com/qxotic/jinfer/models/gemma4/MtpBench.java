@@ -40,7 +40,7 @@ public final class MtpBench {
             System.out.println("MtpBench: model/sidecar absent, skipping");
             return;
         }
-        Gemma4 m = Gemma4.loadModel(model, Arena.ofAuto());
+        Gemma4 m = Gemma4.loadWithMtp(model, sidecar, Arena.ofAuto());
         var tk = m.tokenizer();
         int bos = SpecialTokens.find(tk, "<bos>").orElse(2);
         Set<Integer> stops = m.stopTokens();
