@@ -348,7 +348,10 @@ public final class Server {
         if (Http.requireMethod(exchange, "POST")) return;
         // read on the handler thread: a stalled upload must not block the generation worker
         byte[] body = Http.readBody(exchange, config.limits().maxBodyBytes());
-        if (body == null) return;
+        if (body == null) {
+            metrics.record(Metrics.Outcome.INVALID_REQUEST);
+            return;
+        }
         Map<String, Object> request;
         try {
             request =
@@ -356,6 +359,7 @@ public final class Server {
                             JsonCodec.parse(body), "request");
             validator.accept(request);
         } catch (RuntimeException e) {
+            metrics.record(Metrics.Outcome.INVALID_REQUEST);
             Http.sendError(exchange, 400, Http.errorMessage(e));
             return;
         }
@@ -368,13 +372,16 @@ public final class Server {
                     } catch (IllegalArgumentException | UnsupportedOperationException e) {
                         // the request is genuinely at fault: a bad parameter, or input this model
                         // cannot frame (media on a text-only model, a shape with no codec)
+                        metrics.record(Metrics.Outcome.INVALID_REQUEST);
                         Http.sendErrorQuietly(exchange, 400, Http.errorMessage(e));
                     } catch (IOException e) {
+                        metrics.record(Metrics.Outcome.CLIENT_DISCONNECTED);
                         Log.LOG.log(System.Logger.Level.DEBUG, "client connection lost", e);
                     } catch (Throwable t) {
                         // Anything else is OURS. Catching RuntimeException as 400 here reported
                         // server defects as client errors - an NPE came back as a 400 quoting the
                         // null field - so they neither showed up as failures nor were actionable.
+                        metrics.record(Metrics.Outcome.FAILED);
                         Log.LOG.log(System.Logger.Level.ERROR, "request " + id + " failed", t);
                         Http.sendErrorQuietly(exchange, 500, "Internal server error");
                     }
@@ -478,6 +485,7 @@ public final class Server {
         try (Sse.Stream sse = Sse.begin(exchange, config.limits().writeTimeout())) {
             Sse.guarded(
                     sse,
+                    metrics,
                     () -> {
                         long created = System.currentTimeMillis() / 1000;
                         sse.emit(
@@ -583,6 +591,7 @@ public final class Server {
         try (Sse.Stream sse = Sse.begin(exchange, config.limits().writeTimeout())) {
             Sse.guarded(
                     sse,
+                    metrics,
                     () -> {
                         long created = System.currentTimeMillis() / 1000;
                         Consumer<String> sink =
@@ -614,6 +623,7 @@ public final class Server {
         try (Sse.Stream sse = Sse.begin(exchange, config.limits().writeTimeout())) {
             Sse.guardedResponses(
                     sse,
+                    metrics,
                     () -> {
                         long created = System.currentTimeMillis() / 1000;
                         String itemId = "msg_" + id;
@@ -820,6 +830,10 @@ public final class Server {
     private void runQueued(HttpExchange exchange, Runnable work) throws IOException {
         Worker.Result result = worker.submitAndWait(work);
         if (result != Worker.Result.COMPLETED) {
+            metrics.record(
+                    result == Worker.Result.INTERRUPTED
+                            ? Metrics.Outcome.CANCELLED
+                            : Metrics.Outcome.REJECTED);
             // a shed request never reaches the engine, so nothing else would report it - and going
             // silent exactly when the server is saturated is the worst possible time to do so
             InferenceEvent rejected =
@@ -850,6 +864,7 @@ public final class Server {
         }
         // a job that finished without ever answering (escaped exception) must not hang the client
         if (exchange.getResponseCode() == -1) {
+            metrics.record(Metrics.Outcome.FAILED);
             Http.sendErrorQuietly(exchange, 500, "Internal server error");
         }
     }
