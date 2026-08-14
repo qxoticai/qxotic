@@ -28,7 +28,8 @@ import jdk.jfr.StackTrace;
 @Label("Prompt Cache")
 @Category({"jinfer", "Memory"})
 @Description(
-        "Prompt cache health: retained sessions, state allocation, block reuse and memory pressure.")
+        "Prompt cache health: retained sessions, state allocation, block reuse and memory"
+                + " pressure.")
 @Period("1 s")
 @StackTrace(false)
 public final class PromptCacheEvent extends Event {

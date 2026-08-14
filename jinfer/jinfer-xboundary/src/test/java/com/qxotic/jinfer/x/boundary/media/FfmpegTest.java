@@ -31,9 +31,7 @@ class FfmpegTest {
         IOException failure =
                 assertThrows(
                         IOException.class,
-                        () ->
-                                Ffmpeg.run(
-                                        command("sleep"), null, Duration.ofMillis(50), 1024));
+                        () -> Ffmpeg.run(command("sleep"), null, Duration.ofMillis(50), 1024));
         assertTrue(failure.getMessage().contains("timed out"), failure.getMessage());
         assertTrue(Duration.ofNanos(System.nanoTime() - start).toSeconds() < 3);
     }

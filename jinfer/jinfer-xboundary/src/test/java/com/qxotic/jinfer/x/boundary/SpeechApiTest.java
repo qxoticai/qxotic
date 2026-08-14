@@ -57,4 +57,14 @@ final class SpeechApiTest {
         assertNull(SpeechOptions.NONE.speed(), "NONE overrides nothing");
         assertEquals(1.25, SpeechOptions.speed(1.25).speed());
     }
+
+    @Test
+    void aRateThatCannotMultiplyDurationsIsRefused() {
+        assertThrows(IllegalArgumentException.class, () -> SpeechOptions.speed(0));
+        assertThrows(IllegalArgumentException.class, () -> SpeechOptions.speed(-1.5));
+        assertThrows(IllegalArgumentException.class, () -> SpeechOptions.speed(Double.NaN));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> SpeechOptions.speed(Double.POSITIVE_INFINITY));
+    }
 }

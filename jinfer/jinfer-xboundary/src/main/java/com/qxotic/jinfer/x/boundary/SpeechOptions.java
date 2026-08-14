@@ -25,6 +25,11 @@ public interface SpeechOptions {
     SpeechOptions NONE = () -> null;
 
     static SpeechOptions speed(double speed) {
+        // the one knob both frameworks pass through blind, so the funnel is where it is bounded:
+        // a non-positive or non-finite rate multiplies predicted durations into garbage
+        if (!Double.isFinite(speed) || speed <= 0)
+            throw new IllegalArgumentException(
+                    "speed must be a positive finite number, got " + speed);
         return () -> speed;
     }
 }
