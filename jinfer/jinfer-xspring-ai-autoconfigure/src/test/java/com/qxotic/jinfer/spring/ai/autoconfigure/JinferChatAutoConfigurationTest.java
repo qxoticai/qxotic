@@ -44,7 +44,8 @@ class JinferChatAutoConfigurationTest {
                 .withPropertyValues(
                         "spring.ai.jinfer.chat.model=/x.gguf",
                         "spring.ai.jinfer.chat.companions.media=/mmproj.gguf",
-                        "spring.ai.jinfer.chat.cached-prompts=/personas.jkv",
+                        "spring.ai.jinfer.chat.prompt-cache=/personas.jkv",
+                        "spring.ai.jinfer.chat.retained-sessions=0",
                         "spring.ai.jinfer.chat.context-length=8192",
                         "spring.ai.jinfer.chat.temperature=0.7",
                         "spring.ai.jinfer.chat.top-p=0.9",
@@ -58,7 +59,8 @@ class JinferChatAutoConfigurationTest {
                             JinferChatProperties p = context.getBean(JinferChatProperties.class);
                             assertThat(p.model()).isEqualTo("/x.gguf");
                             assertThat(p.companions()).containsEntry("media", "/mmproj.gguf");
-                            assertThat(p.cachedPrompts()).isEqualTo("/personas.jkv");
+                            assertThat(p.promptCache()).isEqualTo("/personas.jkv");
+                            assertThat(p.retainedSessions()).isZero();
                             assertThat(p.contextLength()).isEqualTo(8192);
                             assertThat(p.temperature()).isEqualTo(0.7);
                             assertThat(p.topP()).isEqualTo(0.9);
@@ -67,6 +69,44 @@ class JinferChatAutoConfigurationTest {
                             assertThat(p.thinking()).isFalse();
                             assertThat(p.timeout()).hasSeconds(30);
                             assertThat(p.speculationDepth()).isEqualTo(3);
+                            var options = p.toOptions();
+                            assertThat(options.getTemperature()).isEqualTo(0.7);
+                            assertThat(options.getTopP()).isEqualTo(0.9);
+                            assertThat(options.getMaxTokens()).isEqualTo(512);
+                            assertThat(options.getSeed()).isEqualTo(7L);
+                            assertThat(options.getThinking()).isFalse();
+                            assertThat(options.getTimeout()).hasSeconds(30);
+                        });
+    }
+
+    @Test
+    void oneSessionIsRetainedByDefault() {
+        new ApplicationContextRunner()
+                .withUserConfiguration(PropsOnly.class)
+                .withPropertyValues("spring.ai.jinfer.chat.model=/x.gguf")
+                .run(
+                        context ->
+                                assertThat(
+                                                context.getBean(JinferChatProperties.class)
+                                                        .retainedSessions())
+                                        .isOne());
+    }
+
+    @Test
+    void absentGenerationPropertiesStayUnset() {
+        new ApplicationContextRunner()
+                .withUserConfiguration(PropsOnly.class)
+                .withPropertyValues("spring.ai.jinfer.chat.model=/x.gguf")
+                .run(
+                        context -> {
+                            var options =
+                                    context.getBean(JinferChatProperties.class).toOptions();
+                            assertThat(options.getTemperature()).isNull();
+                            assertThat(options.getTopP()).isNull();
+                            assertThat(options.getMaxTokens()).isNull();
+                            assertThat(options.getSeed()).isNull();
+                            assertThat(options.getThinking()).isNull();
+                            assertThat(options.getTimeout()).isNull();
                         });
     }
 

@@ -24,7 +24,11 @@ class JinferLifecycleIT {
             TestModels.require("hf.co/LiquidAI/LFM2.5-350M-GGUF/LFM2.5-350M-Q8_0.gguf");
 
     private static JinferChatModel load() {
-        return JinferChatModel.builder().modelPath(SMALL).contextLength(2048).maxTokens(8).build();
+        return JinferChatModel.builder()
+                .modelPath(SMALL)
+                .contextLength(2048)
+                .options(JinferChatOptions.builder().maxTokens(8).build())
+                .build();
     }
 
     @Test

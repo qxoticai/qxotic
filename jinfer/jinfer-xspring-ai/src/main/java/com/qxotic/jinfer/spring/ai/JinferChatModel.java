@@ -14,6 +14,7 @@ import com.qxotic.jinfer.x.llm.Grammar;
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationRegistry;
 import io.micrometer.observation.contextpropagation.ObservationThreadLocalAccessor;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -52,17 +53,16 @@ import reactor.core.publisher.FluxSink;
  * <p>Concurrency contract: an instance is ONE serial inference pipeline - concurrent requests queue
  * fairly on it. For a second pipeline, load the weights once into YOUR arena ({@code
  * Models.load(path, arena)}), build with {@code model(loaded)}, and {@code fork()} pipelines for
- * the price of a context each. Footprint: an instance holds its weights, ONE full-context state
- * reused for every request (extended on a prefix hit when {@code cachedSessions} is set, reset
- * otherwise - never re-allocated per request), plus the block layer's KV (every served
- * conversation, best-effort, bounded by {@code jinfer.promptCacheMB}; defined prompts are pinned
- * intent within it).
+ * the price of a context each. Footprint: an instance holds its weights, up to the configured
+ * number of retained full-context states, plus the block layer's KV (every served conversation,
+ * best-effort, bounded by {@code jinfer.promptCacheMB}; defined prompts are pinned intent within
+ * it).
  *
- * <p>Three caching tiers, near-homonyms with distinct jobs: {@code withCachedPrompt} defines a LIVE
- * shared prefix (prefilled once, restored per request - the system-prompt/tools/few-shot case);
- * {@code Builder.cachedSessions} keeps finished CONVERSATION states warm for append-only multi-turn
- * reuse (in-RAM, gone at close); {@code saveCachedPrompts}/{@code Builder.loadCachedPrompts}
- * persist the defined prompts as an immutable ARTIFACT that mounts zero-prefill in later processes.
+ * <p>Three cache controls with distinct jobs: {@code withCachedPrompt} defines a shared prefix
+ * (prefilled once, restored per request - the system-prompt/tools/few-shot case);
+ * {@code Builder.retainSessions} keeps finished CONVERSATION states warm for append-only multi-turn
+ * reuse (in-RAM, gone at close); {@code saveCachedPrompts}/{@code Builder.promptCache}
+ * persist the defined prompts as an immutable artifact that mounts zero-prefill in later processes.
  * None changes output - byte-identity to a cold run is the law.
  *
  * <p>Run with jinfer's JVM flags: {@code --enable-preview --add-modules jdk.incubator.vector
@@ -71,6 +71,8 @@ import reactor.core.publisher.FluxSink;
 public final class JinferChatModel implements ChatModel, AutoCloseable {
 
     private static final String PROVIDER = "jinfer";
+    private static final org.slf4j.Logger LOG =
+            org.slf4j.LoggerFactory.getLogger(JinferChatModel.class);
     private static final ChatModelObservationConvention DEFAULT_CONVENTION =
             new DefaultChatModelObservationConvention();
 
@@ -81,7 +83,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     static final String IS_THOUGHT_KEY = "isThought";
 
     final ChatEngine engine;
-    final JinferChatOptions defaultOptions;
+    final JinferChatOptions options;
     final ObservationRegistry observationRegistry;
     final ChatModelObservationConvention observationConvention; // null = the default convention
     // cached-prompt view state: EMPTY for the base model. Converted to jinfer types ONCE at view
@@ -100,22 +102,18 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
      * application did not ask it to write.
      */
     private static PromptCache.Options cacheOptions(
-            Path cachedPrompts, int cachedSessions, int contextLength) {
+            Path promptCache, int retainedSessions, int contextLength) {
         var defaults = PromptCache.Options.DEFAULTS;
-        return defaults.withHotSessions(cachedSessions)
+        return defaults.withRetainedSessions(retainedSessions)
                 .withContextCapacity(Math.max(0, contextLength)) // 0 = model max, engine-resolved
-                .withCatalog(cachedPrompts, true);
+                .withCatalog(promptCache, true);
     }
 
     private JinferChatModel(Builder b) {
-        if (b.defaultOptions != null && hasKnobs(b)) {
-            throw new IllegalArgumentException(
-                    "defaultOptions and individual knobs are mutually exclusive");
-        }
         this.cacheOptions =
                 cacheOptions(
-                        b.cachedPrompts,
-                        b.cachedSessions,
+                        b.promptCache,
+                        b.retainedSessions,
                         b.contextLength == null ? 4096 : b.contextLength);
         this.ownsWeights = b.loaded == null;
         this.engine =
@@ -140,42 +138,12 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                             ? ObservationRegistry.NOOP
                             : b.observationRegistry;
             this.observationConvention = b.observationConvention;
-            // precedence: request > builder > the container's recommendation (general.sampling.*)
+            // precedence: request > options > the container's recommendation (general.sampling.*)
             // > port author recommendation > the engine baseline (SamplingDefaults.DEFAULT_*)
-            var recommended = engine.loaded().samplingDefaults();
-            JinferChatOptions knobs =
-                    JinferChatOptions.builder()
-                            .model(engine.modelName())
-                            .temperature(
-                                    b.temperature != null
-                                            ? b.temperature
-                                            : recommended.temperature() == null
-                                                    ? null
-                                                    : recommended.temperature().doubleValue())
-                            .topP(
-                                    b.topP != null
-                                            ? b.topP
-                                            : recommended.topP() == null
-                                                    ? null
-                                                    : recommended.topP().doubleValue())
-                            .topK(b.topK != null ? b.topK : recommended.topK())
-                            .minP(
-                                    b.minP != null
-                                            ? b.minP
-                                            : recommended.minP() == null
-                                                    ? null
-                                                    : recommended.minP().doubleValue())
-                            .maxTokens(b.maxTokens)
-                            .seed(b.seed)
-                            .thinking(b.thinking)
-                            .timeout(b.timeout)
-                            .build();
-            if (b.defaultOptions != null) {
-                validate(b.defaultOptions);
-                this.defaultOptions = b.defaultOptions;
-            } else {
-                this.defaultOptions = knobs;
-            }
+            this.options =
+                    resolveDefaults(
+                            engine.modelName(), engine.loaded().samplingDefaults(), b.options);
+            validate(this.options);
         } catch (RuntimeException | Error e) {
             close(
                     engine::close,
@@ -193,9 +161,26 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         }
     }
 
+    static JinferChatOptions resolveDefaults(
+            String model, LoadedModel.SamplingDefaults recommended, JinferChatOptions configured) {
+        JinferChatOptions.Builder effective =
+                JinferChatOptions.builder()
+                        .model(model)
+                        .temperature(toDouble(recommended.temperature()))
+                        .topP(toDouble(recommended.topP()))
+                        .topK(recommended.topK())
+                        .minP(toDouble(recommended.minP()));
+        if (configured != null) effective.combineWith(configured.mutate());
+        return effective.build();
+    }
+
+    private static Double toDouble(Float value) {
+        return value == null ? null : value.doubleValue();
+    }
+
     private JinferChatModel(JinferChatModel base, CachedPrompt prefix) {
         this.engine = base.engine;
-        this.defaultOptions = base.defaultOptions;
+        this.options = base.options;
         this.observationRegistry = base.observationRegistry;
         this.observationConvention = base.observationConvention;
         this.videoSampler = base.videoSampler;
@@ -207,7 +192,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     /** The fork constructor: a fresh engine over the same borrowed weights, every knob carried. */
     private JinferChatModel(JinferChatModel base, ChatEngine engine) {
         this.engine = engine;
-        this.defaultOptions = base.defaultOptions;
+        this.options = base.options;
         this.observationRegistry = base.observationRegistry;
         this.observationConvention = base.observationConvention;
         this.videoSampler = base.videoSampler;
@@ -278,14 +263,16 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     public JinferChatModel withCachedPrompt(
             List<org.springframework.ai.chat.messages.Message> prefixMessages,
             List<ToolCallback> tools) {
+        Objects.requireNonNull(prefixMessages, "prefixMessages");
+        Objects.requireNonNull(tools, "tools");
         return withPrefix(
                 prefix.merge(
                         JinferMappings.toMessages(prefixMessages, videoSampler),
-                        tools == null ? List.of() : JinferMappings.toTools(tools)));
+                        JinferMappings.toTools(tools)));
     }
 
     private JinferChatModel withPrefix(CachedPrompt merged) {
-        engine.definePrompt(merged.conversation(defaultOptions.getThinking() != Boolean.FALSE));
+        engine.definePrompt(merged.conversation(options.getThinking() != Boolean.FALSE));
         return new JinferChatModel(this, merged);
     }
 
@@ -294,23 +281,15 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         engine.freezePrompts(out);
     }
 
-    private static boolean hasKnobs(Builder b) {
-        return b.temperature != null
-                || b.topP != null
-                || b.maxTokens != null
-                || b.seed != null
-                || b.thinking != null
-                || b.timeout != null;
-    }
-
     @Override
     public JinferChatOptions getOptions() {
-        return defaultOptions;
+        return options;
     }
 
     /** Framework types mapped away; every policy below this line lives in {@link ChatEngine}. */
     private ChatEngine.Prepared prepare(Prompt prompt) {
-        JinferChatOptions options = resolveOptions(prompt.getOptions());
+        JinferChatOptions options = JinferChatOptions.from(prompt.getOptions());
+        validate(options);
         List<ToolCallback> callbacks = options.getToolCallbacks();
         // request > view default (CachedPrompt.resolveTools, THE precedence rule): an override
         // is served correctly (byte-identical to the base model) at full prefill - a cache
@@ -322,7 +301,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                                 : JinferMappings.toTools(callbacks));
         boolean cached = prefix.serves(tools);
         if (!cached && !prefix.isEmpty() && warnedToolsOverride.compareAndSet(false, true)) {
-            System.err.println(prefix.toolsOverrideWarning(tools));
+            LOG.warn(prefix.toolsOverrideWarning(tools));
         }
         List<Message> messages = new ArrayList<>(prefix.messages());
         messages.addAll(JinferMappings.toMessages(prompt.getInstructions(), videoSampler));
@@ -376,10 +355,10 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
 
     @Override
     public ChatResponse call(Prompt prompt) {
-        Prompt requestPrompt = buildRequestPrompt(prompt);
+        Prompt effective = effectivePrompt(prompt, options);
         ChatModelObservationContext observationContext =
                 ChatModelObservationContext.builder()
-                        .prompt(requestPrompt)
+                        .prompt(effective)
                         .provider(PROVIDER)
                         .streaming(false)
                         .build();
@@ -391,20 +370,22 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                         observationRegistry)
                 .observe(
                         () -> {
-                            ChatResponse response = doCall(requestPrompt);
+                            ChatResponse response = doCall(effective);
                             observationContext.setResponse(response);
                             return response;
                         });
     }
 
-    /**
-     * The provider pattern: a request with no options runs on the model's defaults, so the
-     * observation span (and any options-reading consumer) sees the effective request, not nulls.
-     */
-    private Prompt buildRequestPrompt(Prompt prompt) {
-        return prompt.getOptions() == null
-                ? new Prompt(prompt.getInstructions(), defaultOptions)
-                : prompt;
+    /** The complete request seen by observation, validation and execution. */
+    static Prompt effectivePrompt(Prompt requestedPrompt, JinferChatOptions defaults) {
+        ChatOptions requested = requestedPrompt.getOptions();
+        JinferChatOptions effective =
+                requested == null
+                        ? defaults
+                        : defaults.mutate()
+                                .combineWith(JinferChatOptions.from(requested).mutate())
+                                .build();
+        return new Prompt(requestedPrompt.getInstructions(), effective);
     }
 
     private ChatResponse doCall(Prompt prompt) {
@@ -446,10 +427,10 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
      */
     @Override
     public Flux<ChatResponse> stream(Prompt prompt) {
-        Prompt requestPrompt = buildRequestPrompt(prompt);
+        Prompt effective = effectivePrompt(prompt, options);
         // invalid requests throw here, not on the thread: prepare once eagerly (a Prepared is
         // single-use in this engine, so each subscription re-prepares below)
-        try (ChatEngine.Prepared validated = prepare(requestPrompt)) {
+        try (ChatEngine.Prepared validated = prepare(effective)) {
             // validation only
         }
         // per-subscription observation state: a flux is re-subscribable, and a shared
@@ -458,7 +439,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                 view -> {
                     ChatModelObservationContext observationContext =
                             ChatModelObservationContext.builder()
-                                    .prompt(requestPrompt)
+                                    .prompt(effective)
                                     .provider(PROVIDER)
                                     .streaming(true)
                                     .build();
@@ -478,7 +459,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                                             engine.stream(
                                                     () -> {
                                                         try (ChatEngine.Prepared p =
-                                                                prepare(requestPrompt)) {
+                                                                prepare(effective)) {
                                                             streamInto(p, sink);
                                                         }
                                                     }));
@@ -541,16 +522,6 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             b.properties(Map.of(IS_THOUGHT_KEY, true));
         }
         return new ChatResponse(List.of(new Generation(b.build())));
-    }
-
-    private JinferChatOptions resolveOptions(ChatOptions runtime) {
-        if (runtime == null) return defaultOptions;
-        // runtime options MERGE over the defaults field-by-field, jinfer-typed or foreign -
-        // taking jinfer-typed options as-is silently discarded every builder default (an
-        // outputSchema-only request ran with an unlimited completion budget)
-        JinferChatOptions resolved = JinferChatOptions.copyOnto(defaultOptions, runtime);
-        validate(resolved);
-        return resolved;
     }
 
     // topK is NOT rejected here: it is a supported sampling knob (the builder exposes it, the
@@ -658,18 +629,10 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         private String modelName;
         private final Map<String, String> companions = new LinkedHashMap<>();
         private VideoSampler videoSampler = VideoSampler.UNIFORM;
-        private Path cachedPrompts;
-        private int cachedSessions;
+        private Path promptCache;
+        private int retainedSessions = 1;
         private Integer contextLength; // null = unset -> 4096; the loaded path rejects sets
-        private Double temperature;
-        private Double topP;
-        private Integer topK;
-        private Double minP;
-        private Integer maxTokens;
-        private Long seed;
-        private Boolean thinking;
-        private Duration timeout;
-        private JinferChatOptions defaultOptions;
+        private JinferChatOptions options;
         private Integer speculationDepth;
         private ObservationRegistry observationRegistry;
         private ChatModelObservationConvention observationConvention;
@@ -742,12 +705,11 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         }
 
         /**
-         * Mounts a cached-prompt artifact read-only; model-seed-checked. An incompatible file fails
-         * the build loudly; a MISSING file degrades to serving without it (stderr warning) - check
-         * the path if TTFT looks cold.
+         * Mounts one existing cached-prompt artifact read-only; missing or incompatible artifacts
+         * fail the build loudly.
          */
-        public Builder loadCachedPrompts(Path cachedPrompts) {
-            this.cachedPrompts = cachedPrompts;
+        public Builder promptCache(Path promptCache) {
+            this.promptCache = Objects.requireNonNull(promptCache, "promptCache");
             return this;
         }
 
@@ -756,12 +718,14 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
          * request's conversation strictly extends one (the multi-turn zero-restore tier). Each kept
          * conversation holds a full context of KV.
          *
-         * <p>0 (default) keeps the model stateless between requests - its state is wiped the moment
-         * a reply ends - but the ALLOCATION is still reused: a pipeline allocates its context once
-         * and never per request, whatever this is set to. This knob buys warmth, not memory reuse.
+         * <p>The default is 1. Zero retains no completed state: every request's state is closed
+         * when the request ends and the next request allocates a fresh one. This does not disable
+         * the separate block cache.
          */
-        public Builder cachedSessions(int cachedSessions) {
-            this.cachedSessions = cachedSessions;
+        public Builder retainSessions(int retainedSessions) {
+            if (retainedSessions < 0)
+                throw new IllegalArgumentException("retainedSessions " + retainedSessions);
+            this.retainedSessions = retainedSessions;
             return this;
         }
 
@@ -775,85 +739,11 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         }
 
         /**
-         * Sampling temperature; default: the model's recommended value (the GGUF's {@code
-         * general.sampling.temp}, or the model author's recommendation shipped with the port), else
-         * 0.8. Per-request options override; pass 0 for greedy argmax.
+         * Model-wide generation defaults. Requests override them through Spring AI's standard
+         * {@link ChatOptions} precedence; unset sampling fields use the GGUF/port defaults.
          */
-        public Builder temperature(Double temperature) {
-            this.temperature = temperature;
-            return this;
-        }
-
-        /**
-         * Nucleus sampling mass, effective only at temperature &gt; 0; default: the model's
-         * recommended value (the GGUF's {@code general.sampling.top_p}, or the port's), else 0.95.
-         */
-        public Builder topP(Double topP) {
-            this.topP = topP;
-            return this;
-        }
-
-        /**
-         * Top-k cutoff (0 disables); default: the model's recommended value, else 40. Per-request
-         * options override.
-         */
-        public Builder topK(Integer topK) {
-            this.topK = topK;
-            return this;
-        }
-
-        /**
-         * Min-p cutoff relative to the top token, in [0,1] (0 disables); default: the model's
-         * recommended value, else 0.05. Per-request options override.
-         */
-        public Builder minP(Double minP) {
-            this.minP = minP;
-            return this;
-        }
-
-        /**
-         * Completion budget; default unlimited (the context bounds it). Values below 16 also
-         * disable thinking - a think span cannot fit such a budget, and silently spending it on
-         * scaffold would return empty text.
-         */
-        public Builder maxTokens(Integer maxTokens) {
-            this.maxTokens = maxTokens;
-            return this;
-        }
-
-        /**
-         * RNG seed for temperature sampling; default: a fresh random seed per request. Set one to
-         * pin sampling; per-request options override. Same seed does NOT guarantee byte-identical
-         * replay at temperature &gt; 0: the CPU backend's run-to-run FP jitter flips near-tie
-         * samples.
-         */
-        public Builder seed(Long seed) {
-            this.seed = seed;
-            return this;
-        }
-
-        /**
-         * The model's reasoning scaffold toggle (templates without one ignore it). Default on.
-         * Completion budgets below 16 tokens disable it per request regardless - the budget cannot
-         * fit a think span.
-         */
-        public Builder thinking(Boolean thinking) {
-            this.thinking = thinking;
-            return this;
-        }
-
-        /** Wall-clock deadline per request; unset = none. Exceeding it finishes with LENGTH. */
-        public Builder timeout(Duration timeout) {
-            this.timeout = timeout;
-            return this;
-        }
-
-        /**
-         * Default options for requests that carry none. Mutually exclusive with the individual
-         * knobs above; unsupported parameters are rejected eagerly at build.
-         */
-        public Builder defaultOptions(JinferChatOptions defaultOptions) {
-            this.defaultOptions = defaultOptions;
+        public Builder options(JinferChatOptions options) {
+            this.options = Objects.requireNonNull(options, "options");
             return this;
         }
 
@@ -888,6 +778,9 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                 throw new IllegalArgumentException(
                         "a model is required: model(\"hf.co/owner/repo:Q4_K_M\"),"
                                 + " modelPath(...) or model(LoadedModel)");
+            if (promptCache != null && !Files.isRegularFile(promptCache)) {
+                throw new IllegalArgumentException("prompt cache does not exist: " + promptCache);
+            }
             if (source instanceof LoadedModel<?> l) {
                 // contextLength stays legal here: state capacity is an ENGINE setting resolved
                 // from cacheOptions, not a load-time one - a forked 32k pipeline needs it

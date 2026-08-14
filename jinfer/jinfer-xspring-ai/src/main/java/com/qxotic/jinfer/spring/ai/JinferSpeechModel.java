@@ -49,13 +49,13 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
     // to serialize. close() takes the WRITE lock, which is what makes it wait for every in-flight
     // synthesis before freeing the weights arena those syntheses are reading.
     private final ReentrantReadWriteLock lifecycle = new ReentrantReadWriteLock();
-    private final SpeechOptions defaults;
+    private final TextToSpeechOptions defaultOptions;
     private final int maxInputChars;
     private volatile boolean closed;
 
     @SuppressWarnings("unchecked") // the state below comes from this very model, so it IS S
     private JinferSpeechModel(Builder b) {
-        this.defaults = b.speed == null ? SpeechOptions.NONE : SpeechOptions.speed(b.speed);
+        this.defaultOptions = TextToSpeechOptions.builder().speed(b.speed).build();
         this.maxInputChars = b.maxInputChars;
         // an arena this instance creates is this instance's to free on EVERY path out of here,
         // including a state allocation that fails after the weights are already mapped
@@ -81,7 +81,7 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
     @Override
     public TextToSpeechResponse call(TextToSpeechPrompt prompt) {
         String text = text(prompt);
-        SpeechOptions options = options(prompt);
+        SpeechOptions options = resolveOptions(prompt.getOptions());
         lifecycle.readLock().lock(); // shared: concurrent requests proceed in parallel
         try {
             checkOpen();
@@ -108,7 +108,7 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
     @Override
     public Flux<TextToSpeechResponse> stream(TextToSpeechPrompt prompt) {
         String text = text(prompt);
-        SpeechOptions options = options(prompt);
+        SpeechOptions options = resolveOptions(prompt.getOptions());
         // The state is scoped to the SUBSCRIPTION, not to this method: a Flux may be subscribed
         // late, more than once, or never, and each subscription is its own synthesis.
         return Flux.<TextToSpeechResponse>create(
@@ -165,13 +165,18 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
      * and {@code format} name choices this instance does not have, and a caller who set one and
      * silently got the default has been lied to.
      */
-    private SpeechOptions options(TextToSpeechPrompt prompt) {
-        TextToSpeechOptions requested = prompt.getOptions();
-        if (requested == null) return defaults;
-        reject("voice", requested.getVoice(), "this model has one voice");
-        reject("model", requested.getModel(), "the GGUF this instance loaded is the model");
-        reject("format", requested.getFormat(), "output is WAV");
-        return requested.getSpeed() == null ? defaults : SpeechOptions.speed(requested.getSpeed());
+    private SpeechOptions resolveOptions(TextToSpeechOptions requested) {
+        Double speed = defaultOptions.getSpeed();
+        if (requested != null) {
+            reject(
+                    "voice",
+                    requested.getVoice(),
+                    "the voice is fixed by the loaded GGUF; load the desired voice model instead");
+            reject("model", requested.getModel(), "this instance is bound to the loaded GGUF");
+            reject("format", requested.getFormat(), "call returns WAV and stream returns PCM16");
+            if (requested.getSpeed() != null) speed = requested.getSpeed();
+        }
+        return speed == null ? SpeechOptions.NONE : SpeechOptions.speed(speed);
     }
 
     private static void reject(String knob, String value, String why) {
@@ -182,6 +187,11 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
 
     private void checkOpen() {
         if (closed) throw new IllegalStateException("this model is closed");
+    }
+
+    @Override
+    public TextToSpeechOptions getOptions() {
+        return defaultOptions;
     }
 
     /**

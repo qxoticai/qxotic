@@ -11,7 +11,7 @@ import org.springframework.ai.tool.ToolCallback;
 
 /**
  * {@link ChatOptions} for {@link JinferChatModel}: the Spring AI common options plus jinfer's
- * extras ({@code seed}, {@code thinking}, {@code timeout}). Implements {@link
+ * extras ({@code seed}, {@code minP}, {@code thinking}, {@code timeout}). Implements {@link
  * ToolCallingChatOptions} - required, or the framework's ToolCallingAdvisor silently skips tool
  * execution - and {@link StructuredOutputChatOptions}, the native structured-output hook (the
  * schema is enforced token-level via grammar-constrained decoding).
@@ -109,41 +109,24 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
                 .outputSchema(outputSchema);
     }
 
-    /**
-     * Copies a (possibly foreign) {@link ChatOptions} onto {@code base}: common fields by getters,
-     * tool plumbing when it is a {@link ToolCallingChatOptions}, jinfer extras only from another
-     * {@code JinferChatOptions}. Foreign options are typically sparse, so only their NON-NULL
-     * fields override - a null must not wipe a configured default.
-     */
-    static JinferChatOptions copyOnto(JinferChatOptions base, ChatOptions o) {
-        Builder b = base.mutate();
-        if (o.getModel() != null) b.model(o.getModel());
-        if (o.getFrequencyPenalty() != null) b.frequencyPenalty(o.getFrequencyPenalty());
-        if (o.getMaxTokens() != null) b.maxTokens(o.getMaxTokens());
-        if (o.getPresencePenalty() != null) b.presencePenalty(o.getPresencePenalty());
-        if (o.getStopSequences() != null) b.stopSequences(o.getStopSequences());
-        if (o.getTemperature() != null) b.temperature(o.getTemperature());
-        if (o.getTopK() != null) b.topK(o.getTopK());
-        if (o.getTopP() != null) b.topP(o.getTopP());
+    /** Adapts portable Spring options without inventing a second defaults-merge policy. */
+    static JinferChatOptions from(ChatOptions o) {
+        if (o instanceof JinferChatOptions j) return j;
+        Builder b =
+                builder()
+                        .model(o.getModel())
+                        .frequencyPenalty(o.getFrequencyPenalty())
+                        .maxTokens(o.getMaxTokens())
+                        .presencePenalty(o.getPresencePenalty())
+                        .stopSequences(o.getStopSequences())
+                        .temperature(o.getTemperature())
+                        .topK(o.getTopK())
+                        .topP(o.getTopP());
         if (o instanceof ToolCallingChatOptions t) {
-            // empty means UNSTATED, like everywhere in the precedence story: an explicitly-empty
-            // list must not wipe standing default callbacks. (Unset is null in Spring AI 2.x -
-            // this guards the explicit-empty path some framework code may hand over.)
-            if (t.getToolCallbacks() != null && !t.getToolCallbacks().isEmpty()) {
-                b.toolCallbacks(t.getToolCallbacks());
-            }
-            if (t.getToolContext() != null && !t.getToolContext().isEmpty()) {
-                b.toolContext(t.getToolContext());
-            }
+            b.toolCallbacks(t.getToolCallbacks()).toolContext(t.getToolContext());
         }
         if (o instanceof StructuredOutputChatOptions s && s.getOutputSchema() != null) {
             b.outputSchema(s.getOutputSchema());
-        }
-        if (o instanceof JinferChatOptions j) {
-            if (j.seed != null) b.seed(j.seed);
-            if (j.minP != null) b.minP(j.minP);
-            if (j.thinking != null) b.thinking(j.thinking);
-            if (j.timeout != null) b.timeout(j.timeout);
         }
         return b.build();
     }
@@ -181,6 +164,23 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
         @Override
         public Builder outputSchema(String outputSchema) {
             this.outputSchema = outputSchema;
+            return this;
+        }
+
+        /**
+         * Spring ChatClient's precedence seam: values from {@code other} override this builder;
+         * inherited fields and tools are handled by Spring, Jinfer fields here.
+         */
+        @Override
+        public Builder combineWith(ChatOptions.Builder<?> other) {
+            super.combineWith(other);
+            if (other instanceof Builder j) {
+                if (j.seed != null) seed = j.seed;
+                if (j.minP != null) minP = j.minP;
+                if (j.thinking != null) thinking = j.thinking;
+                if (j.timeout != null) timeout = j.timeout;
+                if (j.outputSchema != null) outputSchema = j.outputSchema;
+            }
             return this;
         }
 

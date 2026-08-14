@@ -52,7 +52,7 @@ class JinferChatModelIT {
                 JinferChatModel.builder()
                         .modelPath(MODEL)
                         .contextLength(4096)
-                        .maxTokens(512)
+                        .options(JinferChatOptions.builder().maxTokens(512).build())
                         .observationRegistry(observations)
                         .build();
     }
@@ -314,7 +314,7 @@ class JinferChatModelIT {
                 JinferChatModel.builder()
                         .modelPath(TestModels.require(SMALL_REF))
                         .contextLength(1024)
-                        .maxTokens(24)
+                        .options(JinferChatOptions.builder().maxTokens(24).build())
                         .build()) {
             Prompt fixed =
                     new Prompt(

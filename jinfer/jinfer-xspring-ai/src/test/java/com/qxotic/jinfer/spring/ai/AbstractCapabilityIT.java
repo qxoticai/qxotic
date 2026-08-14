@@ -58,7 +58,7 @@ abstract class AbstractCapabilityIT {
                 JinferChatModel.builder()
                         .modelPath(com.qxotic.jinfer.testkit.TestModels.require(modelRef()))
                         .contextLength(4096)
-                        .maxTokens(512)
+                        .options(JinferChatOptions.builder().maxTokens(512).build())
                         .build();
     }
 
