@@ -125,19 +125,19 @@ final class AOT {
 
     /**
      * The old stack's {@code -Djinfer.preTokenizer.*} escape hatch, detected so its presence is
-     * never silent: the x tokenizer path has no override facade yet (the ports build through
-     * toknroll directly), so an override changes nothing anywhere - the bake included - and the
-     * user must hear that once.
+     * never silent: the hatch moved into toknroll as {@code -Dtoknroll.gguf.pre.<name>=...}
+     * (honored by every tokenizer build, this bake included - the flag applies at bake time, not at
+     * run time), so a leftover old flag is told its new name once.
      */
     private static void warnIfPropertyOverrides() {
         for (String key : System.getProperties().stringPropertyNames()) {
             if (key.startsWith("jinfer.preTokenizer.")) {
                 LOG.log(
                         System.Logger.Level.WARNING,
-                        "-D{0} is set, but the x tokenizer path does not honor"
-                                + " jinfer.preTokenizer.* overrides yet - the GGUF's own scheme is"
-                                + " used",
-                        key);
+                        "-D{0} is set, but jinfer.preTokenizer.* moved into toknroll - rename it"
+                                + " to -Dtoknroll.gguf.pre.{1}=<same value>",
+                        key,
+                        key.substring("jinfer.preTokenizer.".length()));
                 return;
             }
         }
