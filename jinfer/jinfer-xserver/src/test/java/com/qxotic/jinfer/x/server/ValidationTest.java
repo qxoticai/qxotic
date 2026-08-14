@@ -22,7 +22,8 @@ class ValidationTest {
 
     @Test
     void rejectsEmptyTextAndUnknownRoles() {
-        assertThrows(IllegalArgumentException.class, () -> Validation.validateChatRequest(user(" ")));
+        assertThrows(
+                IllegalArgumentException.class, () -> Validation.validateChatRequest(user(" ")));
         Map<String, Object> bad =
                 Map.of("messages", List.of(Map.of("role", "wizard", "content", "hi")));
         assertTrue(
@@ -167,5 +168,87 @@ class ValidationTest {
                 "tool_choice",
                 Map.of("type", "function", "function", Map.of("name", "missing")));
         assertThrows(IllegalArgumentException.class, () -> Validation.validateChatRequest(named));
+    }
+
+    @Test
+    void acceptsEverySupportedMediaInputWithoutKnowingTheModel() {
+        Map<String, Object> request =
+                Map.of(
+                        "messages",
+                        List.of(
+                                Map.of(
+                                        "role",
+                                        "user",
+                                        "content",
+                                        List.of(
+                                                Map.of(
+                                                        "type",
+                                                        "input_image",
+                                                        "image_url",
+                                                        "data:image/png;base64,AA=="),
+                                                Map.of(
+                                                        "type",
+                                                        "input_audio",
+                                                        "input_audio",
+                                                        Map.of("data", "AA==", "format", "wav")),
+                                                Map.of(
+                                                        "type",
+                                                        "video_url",
+                                                        "video_url",
+                                                        "data:video/mp4;base64,AA==")))));
+
+        Validation.validateChatRequest(request);
+
+        Map<String, Object> unknown =
+                Map.of(
+                        "messages",
+                        List.of(
+                                Map.of(
+                                        "role",
+                                        "user",
+                                        "content",
+                                        List.of(Map.of("type", "input_file")))));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> Validation.validateChatRequest(unknown));
+    }
+
+    @Test
+    void rejectsChatOptionsWhoseSemanticsAreNotImplemented() {
+        Validation.validateChatOptions(Map.of());
+        Validation.validateChatOptions(Map.of("modalities", List.of("text")));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> Validation.validateChatOptions(Map.of("modalities", List.of("audio"))));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> Validation.validateChatOptions(Map.of("audio", Map.of())));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> Validation.validateChatOptions(Map.of("prediction", Map.of())));
+    }
+
+    @Test
+    void rejectsResponsesOptionsWhoseSemanticsAreNotImplemented() {
+        Validation.validateResponseOptions(
+                Map.of(
+                        "background", false,
+                        "store", false,
+                        "truncation", "disabled",
+                        "include", List.of()));
+
+        for (Map<String, Object> request :
+                List.<Map<String, Object>>of(
+                        Map.of("previous_response_id", "resp_1"),
+                        Map.of("reasoning", Map.of("effort", "low")),
+                        Map.of("background", true),
+                        Map.of("store", true),
+                        Map.of("truncation", "auto"),
+                        Map.of("include", List.of("message.input_image.image_url")))) {
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> Validation.validateResponseOptions(request),
+                    request.toString());
+        }
     }
 }

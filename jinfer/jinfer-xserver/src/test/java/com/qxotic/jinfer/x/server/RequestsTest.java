@@ -29,6 +29,16 @@ class RequestsTest {
                                                 image,
                                                 Map.of(
                                                         "type",
+                                                        "input_audio",
+                                                        "input_audio",
+                                                        Map.of("data", "AA==", "format", "wav")),
+                                                Map.of(
+                                                        "type",
+                                                        "video_url",
+                                                        "video_url",
+                                                        "data:video/mp4;base64,AA=="),
+                                                Map.of(
+                                                        "type",
                                                         "input_text",
                                                         "text",
                                                         "describe")))));
@@ -37,7 +47,9 @@ class RequestsTest {
         List<?> content = (List<?>) message.get("content");
 
         assertEquals(image, content.getFirst());
-        assertEquals(Map.of("type", "text", "text", "describe"), content.get(1));
+        assertEquals("input_audio", ((Map<?, ?>) content.get(1)).get("type"));
+        assertEquals("video_url", ((Map<?, ?>) content.get(2)).get("type"));
+        assertEquals(Map.of("type", "text", "text", "describe"), content.get(3));
     }
 
     @Test

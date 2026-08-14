@@ -167,8 +167,7 @@ final class Generation {
                                     case LENGTH -> "length";
                                     default -> "stop";
                                 };
-        metrics.recordPromptCache(
-                completion.tier() == PromptCache.Tier.SESSION, completion.restoredTokens());
+        metrics.recordPromptCache(completion.tier(), completion.restoredTokens());
         return new Reply(
                 completion.result(),
                 completion.promptTokens(),

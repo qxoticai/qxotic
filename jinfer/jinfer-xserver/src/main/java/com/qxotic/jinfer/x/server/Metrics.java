@@ -1,5 +1,7 @@
 package com.qxotic.jinfer.x.server;
 
+import com.qxotic.jinfer.x.cache.PromptCache;
+
 /**
  * One server's observability: generation/token counters and the Prometheus text exposition
  * (llama.cpp-style {@code /metrics}).
@@ -27,7 +29,8 @@ final class Metrics {
     private long completedGenerations, promptTokens, completionTokens;
     private long invalidRequests, rejectedRequests, cancelledRequests, failedRequests;
     private long clientDisconnects;
-    private long sessionPoolHits, cachedTokens;
+    private long sessionCacheRequests, blockCacheRequests, freshCacheRequests;
+    private long sessionCachedTokens, blockCachedTokens;
     private long speculationRequests, draftedTokens, acceptedTokens, verifyForwards;
 
     /**
@@ -61,16 +64,24 @@ final class Metrics {
     }
 
     /**
-     * Record one prompt-cache serve (worker thread): tier 1 = append-only on a pooled live session,
-     * otherwise a tier-2 block restore; {@code restored} positions were reused.
+     * Record one prompt-cache serve (worker thread); {@code restored} positions were reused.
      */
-    synchronized void recordPromptCache(boolean tier1, int restored) {
-        if (tier1) sessionPoolHits++;
-        cachedTokens += restored;
+    synchronized void recordPromptCache(PromptCache.Tier tier, int restored) {
+        switch (tier) {
+            case SESSION -> {
+                sessionCacheRequests++;
+                sessionCachedTokens += restored;
+            }
+            case BLOCKS -> {
+                blockCacheRequests++;
+                blockCachedTokens += restored;
+            }
+            case FRESH -> freshCacheRequests++;
+        }
     }
 
     /** Prometheus exposition: generation outcomes, token totals, queue + worker gauges. */
-    synchronized String exposition(Worker worker) {
+    synchronized String exposition(Worker worker, PromptCache.Sample cache) {
         StringBuilder sb = new StringBuilder();
         metric(sb, "jinfer_uptime_seconds", "gauge", (System.nanoTime() - startNanos) / 1e9);
         metric(sb, "jinfer_generations_completed_total", "counter", completedGenerations);
@@ -81,8 +92,79 @@ final class Metrics {
         metric(sb, "jinfer_client_disconnects_total", "counter", clientDisconnects);
         metric(sb, "jinfer_prompt_tokens_total", "counter", promptTokens);
         metric(sb, "jinfer_completion_tokens_total", "counter", completionTokens);
-        metric(sb, "jinfer_session_pool_hits_total", "counter", sessionPoolHits);
-        metric(sb, "jinfer_cached_tokens_total", "counter", cachedTokens);
+        type(sb, "jinfer_prompt_cache_requests_total", "counter");
+        labeled(
+                sb,
+                "jinfer_prompt_cache_requests_total",
+                "source",
+                "session",
+                sessionCacheRequests);
+        labeled(
+                sb,
+                "jinfer_prompt_cache_requests_total",
+                "source",
+                "block",
+                blockCacheRequests);
+        labeled(
+                sb,
+                "jinfer_prompt_cache_requests_total",
+                "source",
+                "fresh",
+                freshCacheRequests);
+        type(sb, "jinfer_prompt_cache_tokens_total", "counter");
+        labeled(
+                sb,
+                "jinfer_prompt_cache_tokens_total",
+                "source",
+                "session",
+                sessionCachedTokens);
+        labeled(
+                sb,
+                "jinfer_prompt_cache_tokens_total",
+                "source",
+                "block",
+                blockCachedTokens);
+        metric(sb, "jinfer_prompt_cache_session_count", "gauge", cache.retainedSessions());
+        metric(sb, "jinfer_prompt_cache_session_limit", "gauge", cache.retainedSessionLimit());
+        metric(
+                sb,
+                "jinfer_prompt_cache_state_allocations_total",
+                "counter",
+                cache.stateAllocations());
+        metric(sb, "jinfer_prompt_cache_block_count", "gauge", cache.blocks());
+        metric(sb, "jinfer_prompt_cache_memory_usage_bytes", "gauge", cache.bytes());
+        metric(sb, "jinfer_prompt_cache_memory_limit_bytes", "gauge", cache.budgetBytes());
+        type(sb, "jinfer_prompt_cache_block_lookups_total", "counter");
+        labeled(
+                sb,
+                "jinfer_prompt_cache_block_lookups_total",
+                "result",
+                "hit",
+                cache.blockHits());
+        labeled(
+                sb,
+                "jinfer_prompt_cache_block_lookups_total",
+                "result",
+                "miss",
+                cache.blockMisses());
+        type(sb, "jinfer_prompt_cache_block_removals_total", "counter");
+        labeled(
+                sb,
+                "jinfer_prompt_cache_block_removals_total",
+                "reason",
+                "evicted",
+                cache.blockEvictions());
+        labeled(
+                sb,
+                "jinfer_prompt_cache_block_removals_total",
+                "reason",
+                "discarded",
+                cache.blockDiscards());
+        metric(
+                sb,
+                "jinfer_prompt_cache_block_refusals_total",
+                "counter",
+                cache.blockRefusals());
         metric(sb, "jinfer_speculation_requests_total", "counter", speculationRequests);
         metric(sb, "jinfer_speculation_drafted_tokens_total", "counter", draftedTokens);
         metric(sb, "jinfer_speculation_accepted_tokens_total", "counter", acceptedTokens);
@@ -93,13 +175,26 @@ final class Metrics {
     }
 
     private static void metric(StringBuilder sb, String name, String type, Number value) {
-        sb.append("# TYPE ")
-                .append(name)
-                .append(' ')
-                .append(type)
-                .append('\n')
-                .append(name)
-                .append(' ')
+        type(sb, name, type);
+        sb.append(name).append(' ').append(value).append('\n');
+    }
+
+    private static void type(StringBuilder sb, String name, String type) {
+        sb.append("# TYPE ").append(name).append(' ').append(type).append('\n');
+    }
+
+    private static void labeled(
+            StringBuilder sb,
+            String name,
+            String label,
+            String labelValue,
+            Number value) {
+        sb.append(name)
+                .append('{')
+                .append(label)
+                .append("=\"")
+                .append(labelValue)
+                .append("\"} ")
                 .append(value)
                 .append('\n');
     }
