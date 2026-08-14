@@ -45,7 +45,9 @@ class ServerIntegrationTest {
             HttpClient client = HttpClient.newHttpClient();
 
             assertEquals(200, get(client, base + "/health").statusCode());
-            assertTrue(get(client, base + "/props").body().contains("\"speculation\""));
+            String props = get(client, base + "/props").body();
+            assertTrue(props.contains("\"speculation\""));
+            assertTrue(props.contains("\"n_ctx\":256"), props);
             assertEquals(
                     200,
                     post(client, base + "/tokenize", "{\"content\":\"hello\"}")
@@ -61,6 +63,15 @@ class ServerIntegrationTest {
             assertTrue(completion.body().contains("\"text_completion\""), completion.body());
             assertTrue(completion.body().contains("\"prompt_tokens\""), completion.body());
 
+            HttpResponse<String> constrained =
+                    post(
+                            client,
+                            base + "/v1/completions",
+                            "{\"prompt\":\"Once\",\"max_tokens\":4,\"temperature\":0,"
+                                    + "\"grammar\":\"root ::= \\\"OK\\\"\"}");
+            assertEquals(200, constrained.statusCode(), constrained.body());
+            assertTrue(constrained.body().contains("\"text\":\"OK\""), constrained.body());
+
             HttpResponse<String> stream =
                     post(
                             client,
@@ -71,7 +82,7 @@ class ServerIntegrationTest {
             assertTrue(stream.body().contains("data: [DONE]"), stream.body());
 
             String metrics = get(client, base + "/metrics").body();
-            assertTrue(metrics.contains("jinfer_requests_total 2"), metrics);
+            assertTrue(metrics.contains("jinfer_requests_total 3"), metrics);
             assertTrue(metrics.contains("jinfer_speculation_accepted_tokens_total 0"), metrics);
         }
     }

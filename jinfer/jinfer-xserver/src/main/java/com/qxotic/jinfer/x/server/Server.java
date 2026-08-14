@@ -185,7 +185,7 @@ public final class Server {
                                 "model", servedModel,
                                 // what a request may actually use, not what the model was
                                 // trained for: a client sizing to the latter gets refused
-                                "n_ctx", model.model().config().contextLength(),
+                                "n_ctx", engine.contextCapacity(),
                                 "n_ctx_train", model.model().config().contextLength(),
                                 "n_vocab", model.model().config().vocabularySize(),
                                 "speculation",

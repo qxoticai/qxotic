@@ -517,6 +517,11 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
         return tree != null;
     }
 
+    /** Maximum positions accepted by one served request. */
+    public int contextCapacity() {
+        return contextCapacity;
+    }
+
     /** The whole cache in one reading - hot and blocks; block fields are zero when hot-only. */
     public record Sample(
             int hotSessions,
