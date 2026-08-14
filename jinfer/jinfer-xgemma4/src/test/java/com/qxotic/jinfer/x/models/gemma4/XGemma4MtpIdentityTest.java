@@ -23,6 +23,8 @@ import com.qxotic.jinfer.x.cache.CacheStore;
 import com.qxotic.jinfer.x.cache.CachedSession;
 import com.qxotic.jinfer.x.kernels.Ops;
 import com.qxotic.jinfer.x.llm.Generator.Constraints;
+import com.qxotic.jinfer.x.llm.Generator.FinishReason;
+import com.qxotic.jinfer.x.llm.Generator.GenerationListener;
 import com.qxotic.jinfer.x.llm.Sampler;
 import com.qxotic.jinfer.x.llm.SpecialTokens;
 import com.qxotic.jinfer.x.llm.SpeculativeDecoding.SpeculationResult;
@@ -109,6 +111,37 @@ class XGemma4MtpIdentityTest {
                             ss.position(),
                             "d=" + depth + " committed==KV: " + prompt);
                 }
+            }
+        }
+
+        // listener abort: ends the pass at block granularity, the aborting token is the LAST
+        // emitted, committed may run past it, and the KV holds exactly committed
+        {
+            int[] ids = withBos(bos, tk.encode(PROMPTS[0]).toList());
+            try (Gemma4.State ss = m.newState(4096, Math.max(16, ids.length))) {
+                m.ingest(ss, Batch.prefill(ids));
+                int abortAt = 7;
+                int[] seen = {0};
+                SpeculationResult r =
+                        m.speculate(
+                                ss,
+                                Sampler.ARGMAX,
+                                new Constraints(maxTokens, Duration.ZERO, stops),
+                                2,
+                                new GenerationListener() {
+                                    @Override
+                                    public boolean onToken(int token) {
+                                        return ++seen[0] < abortAt;
+                                    }
+                                },
+                                null);
+                assertEquals(FinishReason.ABORT, r.finishReason(), "abort finish reason");
+                assertEquals(abortAt, r.emitted().length(), "aborting token is the last emitted");
+                assertTrue(
+                        r.committed().length() >= r.emitted().length(),
+                        "committed runs at least as far as emitted");
+                assertEquals(
+                        ids.length + r.committed().length(), ss.position(), "abort: committed==KV");
             }
         }
 
