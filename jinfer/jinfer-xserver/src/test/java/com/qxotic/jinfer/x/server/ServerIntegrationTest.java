@@ -1,19 +1,27 @@
 package com.qxotic.jinfer.x.server;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.testkit.TestModels;
 import com.qxotic.jinfer.x.cache.PromptCache;
 import com.qxotic.jinfer.x.chat.ChatEngine;
+import com.qxotic.jinfer.x.chat.LoadedModel;
+import com.qxotic.jinfer.x.chat.Models;
+import java.lang.foreign.Arena;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import jdk.jfr.Recording;
+import jdk.jfr.consumer.RecordingFile;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -45,6 +53,11 @@ class ServerIntegrationTest {
             assertEquals(
                     200,
                     post(client, base + "/tokenize", "{\"content\":\"hello\"}")
+                            .statusCode());
+            assertEquals(400, post(client, base + "/tokenize", "{}").statusCode());
+            assertEquals(
+                    400,
+                    post(client, base + "/detokenize", "{\"tokens\":[1.5]}")
                             .statusCode());
 
             HttpResponse<String> completion =
@@ -135,9 +148,174 @@ class ServerIntegrationTest {
                     failedResponseStream.body());
 
             String metrics = get(client, base + "/metrics").body();
-            assertTrue(metrics.contains("jinfer_requests_total 5"), metrics);
+            assertTrue(metrics.contains("jinfer_generations_completed_total 5"), metrics);
+            assertTrue(metrics.contains("jinfer_generation_requests_invalid_total 1"), metrics);
             assertTrue(metrics.contains("jinfer_speculation_accepted_tokens_total 0"), metrics);
         }
+    }
+
+    @Test
+    void grammarRefusalAndTransportRestartAreRealLifecycleBoundaries() throws Exception {
+        Path path = TestModels.require(MODEL);
+        try (ChatEngine engine = engine(path, PromptCache.Options.DEFAULTS)) {
+            ServerConfig local = ServerConfig.local(0);
+            ServerConfig noGrammar = local.withLimits(local.limits().withGrammar(false));
+            try (Server.Running first = Server.start(engine, noGrammar)) {
+                HttpResponse<String> refused =
+                        post(
+                                HttpClient.newHttpClient(),
+                                base(first) + "/v1/completions",
+                                "{\"prompt\":\"x\",\"max_tokens\":1,"
+                                        + "\"grammar\":\"root ::= \\\"x\\\"\"}");
+                assertEquals(400, refused.statusCode(), refused.body());
+            }
+            // Running owns only the transport: the same engine starts a fresh listener and works.
+            try (Server.Running second = Server.start(engine, ServerConfig.local(0))) {
+                assertEquals(
+                        200,
+                        post(
+                                        HttpClient.newHttpClient(),
+                                        base(second) + "/v1/completions",
+                                        "{\"prompt\":\"Once\",\"max_tokens\":1,"
+                                                + "\"temperature\":0}")
+                                .statusCode());
+            }
+        }
+    }
+
+    @Test
+    void writableCatalogRestoresAfterRestart() throws Exception {
+        Path path = TestModels.require(MODEL);
+        Path catalog = Files.createTempDirectory("xjinfer-server-cache").resolve("prompts.jkvf");
+        PromptCache.Options options =
+                PromptCache.Options.DEFAULTS
+                        .withContextCapacity(256)
+                        .withCatalog(catalog, false);
+        String body =
+                "{\"messages\":[{\"role\":\"user\",\"content\":"
+                        + "\"The capital of France is Paris. Reply with one word.\"}],"
+                        + "\"max_tokens\":2,\"temperature\":0}";
+        HttpClient client = HttpClient.newHttpClient();
+
+        try (ChatEngine first = engine(path, options)) {
+            try (Server.Running server = Server.start(first, ServerConfig.local(0))) {
+                assertEquals(
+                        200,
+                        post(client, base(server) + "/v1/chat/completions", body).statusCode());
+            }
+            first.savePrompts();
+        }
+        assertTrue(Files.size(catalog) > 0, "writable catalog stayed empty");
+
+        try (ChatEngine second = engine(path, options.withCatalog(catalog, true));
+                Server.Running server = Server.start(second, ServerConfig.local(0))) {
+            HttpResponse<String> response =
+                    post(client, base(server) + "/v1/chat/completions", body);
+            assertEquals(200, response.statusCode(), response.body());
+            assertTrue(cachedTokens(response.body()) > 0, response.body());
+        }
+    }
+
+    @Test
+    void metricsArePerServerAndTelemetryIsEmittedOnce() throws Exception {
+        Path path = TestModels.require(MODEL);
+        Path recordingFile = Files.createTempFile("xjinfer-server", ".jfr");
+        try (ChatEngine engine = engine(path, PromptCache.Options.DEFAULTS);
+                Server.Running busy = Server.start(engine, ServerConfig.local(0));
+                Server.Running idle = Server.start(engine, ServerConfig.local(0));
+                Recording recording = new Recording()) {
+            recording.enable("jinfer.Inference");
+            recording.start();
+            assertEquals(
+                    200,
+                    post(
+                                    HttpClient.newHttpClient(),
+                                    base(busy) + "/v1/completions",
+                                    "{\"prompt\":\"Once\",\"max_tokens\":1,"
+                                            + "\"temperature\":0}")
+                            .statusCode());
+            recording.stop();
+            recording.dump(recordingFile);
+
+            assertEquals(
+                    1,
+                    counter(
+                            get(base(busy) + "/metrics").body(),
+                            "jinfer_generations_completed_total"));
+            assertEquals(
+                    0,
+                    counter(
+                            get(base(idle) + "/metrics").body(),
+                            "jinfer_generations_completed_total"));
+        }
+        int events = 0;
+        try (RecordingFile recording = new RecordingFile(recordingFile)) {
+            while (recording.hasMoreEvents()) {
+                if (recording.readEvent().getEventType().getName().equals("jinfer.Inference")) {
+                    events++;
+                }
+            }
+        }
+        assertEquals(1, events);
+    }
+
+    @Test
+    void seedlessJinjaFallbackAnswers() throws Exception {
+        Path path = TestModels.require(MODEL);
+        try (Arena weights = Arena.ofShared()) {
+            LoadedModel<?> nativeModel = Models.load(path, weights);
+            LoadedModel<?> jinjaModel =
+                    new LoadedModel<>(
+                            nativeModel.model(),
+                            nativeModel.tokenizer(),
+                            nativeModel.chatTemplateSource(),
+                            nativeModel.stopTokens(),
+                            nativeModel.seed(),
+                            Optional.empty(),
+                            nativeModel.samplingDefaults());
+            try (ChatEngine engine =
+                            new ChatEngine(
+                                    jinjaModel,
+                                    path.getFileName().toString(),
+                                    PromptCache.Options.DEFAULTS.withContextCapacity(256));
+                    Server.Running server = Server.start(engine, ServerConfig.local(0))) {
+                HttpResponse<String> response =
+                        post(
+                                HttpClient.newHttpClient(),
+                                base(server) + "/v1/chat/completions",
+                                "{\"messages\":[{\"role\":\"user\","
+                                        + "\"content\":\"Say hi\"}],\"max_tokens\":2}");
+                assertEquals(200, response.statusCode(), response.body());
+                assertFalse(response.body().isBlank());
+            }
+        }
+    }
+
+    private static ChatEngine engine(Path path, PromptCache.Options options) {
+        return new ChatEngine(path, Map.of(), options.withContextCapacity(256));
+    }
+
+    private static String base(Server.Running server) {
+        return "http://127.0.0.1:" + server.address().getPort();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static long cachedTokens(String body) {
+        Map<String, Object> usage =
+                (Map<String, Object>) ((Map<String, Object>) JsonCodec.parse(body)).get("usage");
+        return usage.get("prompt_tokens_details") instanceof Map<?, ?> details
+                        && details.get("cached_tokens") instanceof Number cached
+                ? cached.longValue()
+                : 0;
+    }
+
+    private static long counter(String exposition, String name) {
+        for (String line : exposition.split("\\n")) {
+            if (line.startsWith(name + " ")) {
+                return (long) Double.parseDouble(line.substring(name.length() + 1));
+            }
+        }
+        throw new AssertionError("missing " + name + " in:\n" + exposition);
     }
 
     private static List<String> eventItemIds(String body, String event) {
@@ -170,6 +348,10 @@ class ServerIntegrationTest {
         return client.send(
                 HttpRequest.newBuilder(URI.create(uri)).GET().build(),
                 HttpResponse.BodyHandlers.ofString());
+    }
+
+    private static HttpResponse<String> get(String uri) throws Exception {
+        return get(HttpClient.newHttpClient(), uri);
     }
 
     private static HttpResponse<String> post(HttpClient client, String uri, String body)

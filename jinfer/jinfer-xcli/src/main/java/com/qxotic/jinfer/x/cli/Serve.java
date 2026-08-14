@@ -23,7 +23,20 @@ final class Serve {
                 "speculation %s (depth %d)%n",
                 engine.speculationReady() ? "ready" : "unavailable", engine.speculationDepth());
         Server.Running running = Server.start(engine, options.serverConfig(sampling));
-        Runtime.getRuntime().addShutdownHook(new Thread(running::close, "xjinfer-server-shutdown"));
+        final class Stop implements Runnable {
+            private boolean done;
+
+            @Override
+            public synchronized void run() {
+                if (done) return;
+                running.close();
+                engine.savePrompts();
+                done = true;
+            }
+        }
+        Stop stop = new Stop();
+        Thread shutdown = new Thread(stop, "xjinfer-server-shutdown");
+        Runtime.getRuntime().addShutdownHook(shutdown);
         System.out.printf(
                 "listening   http://%s:%d  (OpenAI-compatible)%n",
                 options.host(), running.address().getPort());
@@ -31,7 +44,13 @@ final class Serve {
             running.await();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            running.close();
+        } finally {
+            stop.run();
+            try {
+                Runtime.getRuntime().removeShutdownHook(shutdown);
+            } catch (IllegalStateException ignored) {
+                // Already shutting down; the hook either performed stop or waited for it.
+            }
         }
     }
 }
