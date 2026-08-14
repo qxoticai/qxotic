@@ -39,7 +39,7 @@ import java.util.zip.CRC32C;
  * errors, same results, observably different only in speed. The CLI's rule is that path-based
  * Models entries the preload can serve are called through here; nothing else in the CLI knows the
  * preload exists. The one policy this class owns is precedence: a runtime {@code
- * -Djinfer.preTokenizer.*} override outranks the baked tokenizer.
+ * -Dtoknroll.gguf.pre.*} override outranks the baked tokenizer.
  *
  * <p>A preloaded header is used only when PROVEN to describe the candidate file's bytes, through
  * three layers of trust: the file SIZE gates for free - the only layer that saves work - then one
@@ -212,7 +212,7 @@ final class AOT {
 
     /**
      * The tokenizer another GGUF describes ({@code --with tokenizer=...}): served from the bake
-     * when the file is a proven preload, built fresh otherwise. {@code -Djinfer.preTokenizer.*}
+     * when the file is a proven preload, built fresh otherwise. {@code -Dtoknroll.gguf.pre.*}
      * properties apply while BUILDING any tokenizer, so they compose with the override rather than
      * fight it.
      */
@@ -230,7 +230,7 @@ final class AOT {
      * The CLI's one load path: the model consults the preload, companions pass through untouched
      * (their ports parse them), and {@code tokenizerOverride} - the file named by {@code --with
      * tokenizer=} - outranks everything when present. Otherwise the baked tokenizer serves, unless
-     * a runtime {@code -Djinfer.preTokenizer.*} override makes it rebuild so the escape hatch
+     * a runtime {@code -Dtoknroll.gguf.pre.*} override makes it rebuild so the escape hatch
      * applies. That precedence - explicit file, then properties, then bake, then the GGUF's own -
      * is this caller's policy, not the library's.
      */
