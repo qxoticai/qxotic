@@ -79,6 +79,24 @@ GGUFTokenizerLoader loader = GGUFTokenizerLoader.createBuilderWithBuiltins()
 
 Use `createEmptyBuilder()` to start with an empty registry and register only what you need.
 
+### Aliases
+
+`aliasPreTokenizer("my-pre", "llama-bpe")` makes a name follow another scheme.
+Aliases are symbolic: they may be declared before their target, and they track later re-registrations of the target.
+Cycles and dangling targets fail `build()` with the chain or the known names in the message.
+A name is either concrete or an alias; the latest registration call decides.
+
+### Overriding Without a Rebuild
+
+The system property `-Dtoknroll.gguf.pre.<name>=...` is applied last inside `build()`, so it outranks builtins and code registrations:
+
+- `=alias:<known-name>` - follow an existing scheme (most "new" pre-tokenizers are an existing scheme under a new name)
+- `=regex:<pattern>` - supply a splitter regex, compiled with `UNICODE_CHARACTER_CLASS` and an identity normalizer
+- `=file:<path>` - one regex per line, blank lines and `#` comments skipped; multiple lines form a staged split
+
+Every property is validated eagerly at `build()`: a malformed value, an uncompilable regex, an unreadable file, or an alias to an unknown name fails even when no GGUF selects it.
+A property that replaces a registered name is logged, naming the aliases that follow it.
+
 ### Factory Signatures
 
 ```java
