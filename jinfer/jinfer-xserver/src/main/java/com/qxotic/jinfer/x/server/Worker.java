@@ -57,15 +57,31 @@ final class Worker implements AutoCloseable {
     }
 
     Result submitAndWait(Runnable work) {
-        if (closed) return Result.CLOSED;
         Job job = new Job(work);
-        if (!queue.offer(job)) return closed ? Result.CLOSED : Result.FULL;
+        synchronized (this) {
+            if (closed) return Result.CLOSED;
+            if (!queue.offer(job)) return Result.FULL;
+        }
         try {
             job.done.await();
             return job.completed ? Result.COMPLETED : Result.CLOSED;
         } catch (InterruptedException e) {
+            if (queue.remove(job)) {
+                job.finish(false);
+                Thread.currentThread().interrupt();
+                return Result.INTERRUPTED;
+            }
+            // The worker already owns this response. Let that one writer finish instead of
+            // returning to a handler that would race it with a second response on the exchange.
+            while (job.done.getCount() != 0) {
+                try {
+                    job.done.await();
+                } catch (InterruptedException ignored) {
+                    // Preserve the signal below; there is still no safe way to cancel inference.
+                }
+            }
             Thread.currentThread().interrupt();
-            return Result.INTERRUPTED;
+            return job.completed ? Result.COMPLETED : Result.CLOSED;
         }
     }
 

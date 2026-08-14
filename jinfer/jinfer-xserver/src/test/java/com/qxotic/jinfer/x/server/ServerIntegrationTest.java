@@ -6,12 +6,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.qxotic.jinfer.testkit.TestModels;
 import com.qxotic.jinfer.x.cache.PromptCache;
 import com.qxotic.jinfer.x.chat.ChatEngine;
-import com.qxotic.jinfer.x.llm.Sampling;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -19,7 +20,8 @@ import org.junit.jupiter.api.Test;
 @Tag("integration")
 class ServerIntegrationTest {
 
-    private static final String MODEL = "hf.co/ggml-org/stories15M_MOE:Q8_0";
+    private static final String MODEL =
+            "hf.co/LiquidAI/LFM2.5-350M-GGUF/LFM2.5-350M-Q8_0.gguf";
 
     @Test
     void openAiTransportRunsAgainstARealMemoryViewModel() throws Exception {
@@ -32,15 +34,7 @@ class ServerIntegrationTest {
                 Server.Running server =
                         Server.start(
                                 engine,
-                                new ServerConfig(
-                                        ServerConfig.local(0).bind(),
-                                        new ServerConfig.Defaults(
-                                                new Sampling(0f, 1f, 0, 0f, 42L),
-                                                4,
-                                                false,
-                                                false),
-                                        ServerConfig.Limits.DEFAULTS,
-                                        ServerConfig.Access.LOCAL))) {
+                                ServerConfig.local(0))) {
             String base = "http://127.0.0.1:" + server.address().getPort();
             HttpClient client = HttpClient.newHttpClient();
 
@@ -81,10 +75,95 @@ class ServerIntegrationTest {
             assertEquals(200, stream.statusCode(), stream.body());
             assertTrue(stream.body().contains("data: [DONE]"), stream.body());
 
+            HttpResponse<String> toolStream =
+                    post(
+                            client,
+                            base + "/v1/responses",
+                            "{\"input\":\"Use the weather tool for Zurich\",\"stream\":true,"
+                                    + "\"temperature\":0,\"max_output_tokens\":32,"
+                                    + "\"tools\":[{\"type\":\"function\",\"name\":\"weather\","
+                                    + "\"parameters\":{\"type\":\"object\",\"properties\":{"
+                                    + "\"city\":{\"type\":\"string\"}},\"required\":[\"city\"]}}],"
+                                    + "\"tool_choice\":{\"type\":\"function\","
+                                    + "\"name\":\"weather\"}}");
+            assertEquals(200, toolStream.statusCode(), toolStream.body());
+            assertEquals(
+                    eventItemIds(toolStream.body(), "response.output_item.added"),
+                    eventItemIds(toolStream.body(), "response.output_item.done"),
+                    toolStream.body());
+            assertTrue(
+                    toolStream.body().contains("event: response.function_call_arguments.done"),
+                    toolStream.body());
+            assertEquals(
+                    eventResponseCreatedAt(toolStream.body(), "response.created"),
+                    eventResponseCreatedAt(toolStream.body(), "response.completed"),
+                    toolStream.body());
+
+            HttpResponse<String> responseStream =
+                    post(
+                            client,
+                            base + "/v1/responses",
+                            "{\"input\":\"Say OK\",\"stream\":true,\"temperature\":0,"
+                                    + "\"max_output_tokens\":4}");
+            assertEquals(200, responseStream.statusCode(), responseStream.body());
+            assertTrue(
+                    responseStream.body().contains("event: response.content_part.added"),
+                    responseStream.body());
+            assertTrue(
+                    responseStream.body().contains("event: response.content_part.done"),
+                    responseStream.body());
+            assertTrue(responseStream.body().contains("\"sequence_number\":0"));
+
+            HttpResponse<String> failedResponseStream =
+                    post(
+                            client,
+                            base + "/v1/responses",
+                            JsonCodec.stringify(
+                                    Map.of(
+                                            "input",
+                                            "x".repeat(10_000),
+                                            "stream",
+                                            true,
+                                            "max_output_tokens",
+                                            1)));
+            assertEquals(200, failedResponseStream.statusCode(), failedResponseStream.body());
+            assertTrue(
+                    failedResponseStream.body().contains("event: error"),
+                    failedResponseStream.body());
+            assertTrue(
+                    failedResponseStream.body().contains("\"type\":\"error\""),
+                    failedResponseStream.body());
+
             String metrics = get(client, base + "/metrics").body();
-            assertTrue(metrics.contains("jinfer_requests_total 3"), metrics);
+            assertTrue(metrics.contains("jinfer_requests_total 5"), metrics);
             assertTrue(metrics.contains("jinfer_speculation_accepted_tokens_total 0"), metrics);
         }
+    }
+
+    private static List<String> eventItemIds(String body, String event) {
+        List<String> ids = new ArrayList<>();
+        for (String frame : body.split("\\n\\n")) {
+            if (!frame.startsWith("event: " + event + "\n")) continue;
+            int data = frame.indexOf("data: ");
+            Map<String, Object> payload =
+                    Values.asObject(JsonCodec.parse(frame.substring(data + 6)), "event");
+            Map<String, Object> item = Values.asObject(payload.get("item"), "event.item");
+            ids.add(Values.stringValue(item.get("id"), ""));
+        }
+        return ids;
+    }
+
+    private static long eventResponseCreatedAt(String body, String event) {
+        for (String frame : body.split("\\n\\n")) {
+            if (!frame.startsWith("event: " + event + "\n")) continue;
+            int data = frame.indexOf("data: ");
+            Map<String, Object> payload =
+                    Values.asObject(JsonCodec.parse(frame.substring(data + 6)), "event");
+            Map<String, Object> response =
+                    Values.asObject(payload.get("response"), "event.response");
+            return Values.longValue(response.get("created_at"), -1);
+        }
+        throw new AssertionError("Missing event " + event);
     }
 
     private static HttpResponse<String> get(HttpClient client, String uri) throws Exception {

@@ -9,7 +9,6 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -132,7 +131,7 @@ public final class Server {
 
     private Running serve(ChatEngine engine, ServerConfig config) throws IOException {
         LoadedModel<?> model = engine.loaded();
-        Sampling sampling = config.defaults().sampling();
+        Sampling sampling = generation.defaults();
         HttpServer server = HttpServer.create(config.bind(), 0);
         String servedId = servedModel;
         Map<String, Object> modelCard =
@@ -298,8 +297,7 @@ public final class Server {
                         try {
                             request =
                                     Values.asObject(
-                                            JsonCodec.parse(
-                                                    new String(raw, StandardCharsets.UTF_8)),
+                                            JsonCodec.parse(raw),
                                             "request");
                         } catch (RuntimeException e) {
                             Http.sendError(exchange, 400, Http.errorMessage(e));
@@ -355,7 +353,7 @@ public final class Server {
         try {
             request =
                     Values.asObject(
-                            JsonCodec.parse(new String(body, StandardCharsets.UTF_8)), "request");
+                            JsonCodec.parse(body), "request");
             validator.accept(request);
         } catch (RuntimeException e) {
             Http.sendError(exchange, 400, Http.errorMessage(e));
@@ -441,7 +439,7 @@ public final class Server {
         handleGenerationPost(
                 exchange,
                 "/v1/responses",
-                "resp-",
+                "resp_",
                 request -> {
                     Requests.normalizeResponse(request);
                     Validation.validateGenerationParams(request, servedModel, config);
@@ -481,9 +479,14 @@ public final class Server {
             Sse.guarded(
                     sse,
                     () -> {
+                        long created = System.currentTimeMillis() / 1000;
                         sse.emit(
                                 OpenAiSchema.chatCompletionChunk(
-                                        id, modelId, Map.of("role", "assistant"), null));
+                                        id,
+                                        modelId,
+                                        created,
+                                        Map.of("role", "assistant"),
+                                        null));
                         // A forced tool call streams no live channels (the turn is seeded
                         // straight into the tool-call block; the calls are parsed from the result
                         // and emitted once below); otherwise content and reasoning stream live.
@@ -500,6 +503,7 @@ public final class Server {
                                                                 OpenAiSchema.chatCompletionChunk(
                                                                         id,
                                                                         modelId,
+                                                                        created,
                                                                         Map.of("content", t),
                                                                         null)),
                                                 deltaSink(
@@ -508,6 +512,7 @@ public final class Server {
                                                                 OpenAiSchema.chatCompletionChunk(
                                                                         id,
                                                                         modelId,
+                                                                        created,
                                                                         Map.of(
                                                                                 "reasoning_content",
                                                                                 t),
@@ -518,6 +523,7 @@ public final class Server {
                                     OpenAiSchema.chatCompletionChunk(
                                             id,
                                             modelId,
+                                            created,
                                             Map.of(
                                                     "tool_calls",
                                                     ToolCalls.toolCallDeltas(
@@ -529,8 +535,9 @@ public final class Server {
                                 request,
                                 result,
                                 OpenAiSchema.chatCompletionChunk(
-                                        id, modelId, Map.of(), result.finishReason()),
-                                OpenAiSchema.chatCompletionChunk(id, modelId, Map.of(), null));
+                                        id, modelId, created, Map.of(), result.finishReason()),
+                                OpenAiSchema.chatCompletionChunk(
+                                        id, modelId, created, Map.of(), null));
                     });
         }
     }
@@ -577,18 +584,22 @@ public final class Server {
             Sse.guarded(
                     sse,
                     () -> {
+                        long created = System.currentTimeMillis() / 1000;
                         Consumer<String> sink =
                                 deltaSink(
                                         sse,
-                                        t -> OpenAiSchema.completionChunk(id, modelId, t, null));
+                                        t ->
+                                                OpenAiSchema.completionChunk(
+                                                        id, modelId, created, t, null));
                         Reply result = generation.completion(request, prompt, Sinks.text(sink));
                         endStream(
                                 sse,
                                 request,
                                 result,
                                 OpenAiSchema.completionChunk(
-                                        id, modelId, "", result.finishReason()),
-                                OpenAiSchema.completionChunk(id, modelId, "", null));
+                                        id, modelId, created, "", result.finishReason()),
+                                OpenAiSchema.completionChunk(
+                                        id, modelId, created, "", null));
                     });
         }
     }
@@ -601,9 +612,10 @@ public final class Server {
             String id)
             throws IOException {
         try (Sse.Stream sse = Sse.begin(exchange, config.limits().writeTimeout())) {
-            Sse.guarded(
+            Sse.guardedResponses(
                     sse,
                     () -> {
+                        long created = System.currentTimeMillis() / 1000;
                         String itemId = "msg_" + id;
                         sse.emit(
                                 "response.created",
@@ -612,27 +624,38 @@ public final class Server {
                                         "response.created",
                                         "response",
                                         OpenAiSchema.responseEnvelope(
-                                                id, modelId, "in_progress", List.of(), null)));
-                        sse.emit(
-                                "response.output_item.added",
-                                Map.of(
-                                        "type",
-                                        "response.output_item.added",
-                                        "output_index",
-                                        0,
-                                        "item",
-                                        OpenAiSchema.responseMessageItem(
-                                                itemId, "in_progress", "")));
+                                                id,
+                                                modelId,
+                                                created,
+                                                "in_progress",
+                                                List.of(),
+                                                null)));
+                        boolean mayCallTools = ToolUse.offered(request);
+                        if (!mayCallTools) responseMessageAdded(sse, itemId);
                         Consumer<String> sink =
-                                deltaSink(
-                                        sse,
-                                        "response.output_text.delta",
-                                        t -> OpenAiSchema.responseTextDelta(itemId, t));
-                        Reply result = generation.chat(request, messages, Sinks.text(sink));
-                        // a tool-call turn produced no text, so there is no text item to finish -
-                        // emitting one anyway announced a COMPLETED message holding "" and left
-                        // the call visible only in the final envelope
+                                mayCallTools
+                                        ? null
+                                        : deltaSink(
+                                                sse,
+                                                "response.output_text.delta",
+                                                t ->
+                                                        OpenAiSchema.responseTextDelta(
+                                                                itemId, t));
+                        Reply result =
+                                generation.chat(
+                                        request,
+                                        messages,
+                                        sink == null ? Sinks.NONE : Sinks.text(sink));
                         if (result.toolCalls().isEmpty()) {
+                            if (mayCallTools) {
+                                responseMessageAdded(sse, itemId);
+                                if (!result.text().isEmpty()) {
+                                    sse.emit(
+                                            "response.output_text.delta",
+                                            OpenAiSchema.responseTextDelta(
+                                                    itemId, result.text()));
+                                }
+                            }
                             sse.emit(
                                     "response.output_text.done",
                                     Map.of(
@@ -646,10 +669,52 @@ public final class Server {
                                             0,
                                             "text",
                                             result.text()));
+                            sse.emit(
+                                    "response.content_part.done",
+                                    Map.of(
+                                            "type",
+                                            "response.content_part.done",
+                                            "item_id",
+                                            itemId,
+                                            "output_index",
+                                            0,
+                                            "content_index",
+                                            0,
+                                            "part",
+                                            OpenAiSchema.outputText(result.text())));
                         }
                         List<Map<String, Object>> items =
                                 OpenAiSchema.responseOutputItems(id, result);
                         for (int i = 0; i < items.size(); i++) {
+                            if (!result.toolCalls().isEmpty()) {
+                                Map<String, Object> started =
+                                        new LinkedHashMap<>(items.get(i));
+                                started.put("status", "in_progress");
+                                started.put("arguments", "");
+                                sse.emit(
+                                        "response.output_item.added",
+                                        Map.of(
+                                                "type",
+                                                "response.output_item.added",
+                                                "output_index",
+                                                i,
+                                                "item",
+                                                started));
+                                sse.emit(
+                                        "response.function_call_arguments.done",
+                                        Map.of(
+                                                "type",
+                                                "response.function_call_arguments.done",
+                                                "item_id",
+                                                Values.stringValue(started.get("id"), ""),
+                                                "output_index",
+                                                i,
+                                                "name",
+                                                Values.stringValue(started.get("name"), ""),
+                                                "arguments",
+                                                Values.stringValue(
+                                                        items.get(i).get("arguments"), "{}")));
+                            }
                             sse.emit(
                                     "response.output_item.done",
                                     Map.of(
@@ -668,10 +733,36 @@ public final class Server {
                                         "response",
                                         // the SAME items just emitted, not a rebuild: see the
                                         // overload's note on clock-minted call ids
-                                        OpenAiSchema.responseResponse(id, modelId, result, items)));
+                                        OpenAiSchema.responseResponse(
+                                                id, modelId, created, result, items)));
                         sse.done();
                     });
         }
+    }
+
+    private static void responseMessageAdded(Sse.Stream sse, String itemId) {
+        sse.emit(
+                "response.output_item.added",
+                Map.of(
+                        "type",
+                        "response.output_item.added",
+                        "output_index",
+                        0,
+                        "item",
+                        OpenAiSchema.responseMessageItem(itemId, "in_progress", "")));
+        sse.emit(
+                "response.content_part.added",
+                Map.of(
+                        "type",
+                        "response.content_part.added",
+                        "item_id",
+                        itemId,
+                        "output_index",
+                        0,
+                        "content_index",
+                        0,
+                        "part",
+                        OpenAiSchema.outputText("")));
     }
 
     /**
@@ -733,7 +824,12 @@ public final class Server {
             // silent exactly when the server is saturated is the worst possible time to do so
             InferenceEvent rejected =
                     InferenceEvent.started(servedModel, InferenceEvent.CHAT, InferenceEvent.TEXT);
-            rejected.errorType = "queue-full";
+            rejected.errorType =
+                    switch (result) {
+                        case FULL -> "queue-full";
+                        case INTERRUPTED -> "interrupted";
+                        default -> "shutdown";
+                    };
             rejected.end();
             rejected.commit();
             if (result == Worker.Result.FULL) {
@@ -741,11 +837,14 @@ public final class Server {
                         .set("Retry-After", String.valueOf(config.limits().retryAfterSeconds()));
             }
             String message =
-                    result == Worker.Result.FULL
-                            ? "Server busy: "
-                                    + config.limits().queueCapacity()
-                                    + " requests already queued"
-                            : "Server is shutting down";
+                    switch (result) {
+                        case FULL ->
+                                "Server busy: "
+                                        + config.limits().queueCapacity()
+                                        + " requests already queued";
+                        case INTERRUPTED -> "Request interrupted";
+                        default -> "Server is shutting down";
+                    };
             Http.sendError(exchange, 503, message);
             return;
         }

@@ -94,7 +94,10 @@ final class Http {
     static byte[] readBody(HttpExchange exchange, long maxBodyBytes) throws IOException {
         // clamp before narrowing: (int) of a limit >= 2 GiB wrapped negative, and readNBytes then
         // threw IllegalArgumentException instead of reading anything
-        int probe = (int) Math.min(maxBodyBytes + 1, Integer.MAX_VALUE);
+        int probe =
+                maxBodyBytes >= Integer.MAX_VALUE
+                        ? Integer.MAX_VALUE
+                        : Math.toIntExact(maxBodyBytes + 1);
         byte[] body = exchange.getRequestBody().readNBytes(probe);
         if (body.length > maxBodyBytes) {
             // bytes, not ">> 20": a sub-megabyte limit reported "exceeds 0 MB"
@@ -159,6 +162,10 @@ final class Http {
     }
 
     static String errorMessage(Throwable e) {
-        return e.getMessage() == null ? e.toString() : e.getMessage();
+        String message = e.getMessage() == null ? e.toString() : e.getMessage();
+        int newline = message.indexOf('\n');
+        if (newline >= 0) message = message.substring(0, newline);
+        if (message.endsWith("\r")) message = message.substring(0, message.length() - 1);
+        return message.length() <= 512 ? message : message.substring(0, 509) + "...";
     }
 }

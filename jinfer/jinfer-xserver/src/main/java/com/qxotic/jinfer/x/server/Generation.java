@@ -54,6 +54,10 @@ final class Generation {
         return engine.blockCaching();
     }
 
+    Sampling defaults() {
+        return defaults;
+    }
+
     String forcedTool(Map<String, Object> request) {
         return ToolUse.forced(request);
     }
