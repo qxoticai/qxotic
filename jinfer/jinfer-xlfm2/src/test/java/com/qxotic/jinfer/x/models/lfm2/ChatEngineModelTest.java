@@ -90,7 +90,7 @@ final class ChatEngineModelTest {
             deltas.forEach(d -> d.tokens().forEachInt(all::add));
             assertEquals(streamedText, engine.loaded().tokenizer().decode(all.build().toArray()));
 
-            // a follow-up turn strictly extends the hot session: nothing recomputes
+            // a follow-up turn strictly extends the retained session: nothing recomputes
             ChatEngine.Request followUp =
                     request(
                             List.of(
