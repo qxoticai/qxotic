@@ -2,12 +2,12 @@ package com.qxotic.jinfer.x.server;
 
 import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
-import java.io.FilterOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -47,17 +47,42 @@ final class Sse {
      * so the client stops.
      */
     static void guarded(Stream sse, Runnable body) throws IOException {
+        guarded(sse, body, false);
+    }
+
+    static void guardedResponses(Stream sse, Runnable body) throws IOException {
+        guarded(sse, body, true);
+    }
+
+    private static void guarded(Stream sse, Runnable body, boolean responses) throws IOException {
         try {
             body.run();
         } catch (UncheckedIOException e) {
             throw e.getCause();
         } catch (IllegalArgumentException | UnsupportedOperationException e) {
-            sse.emit(Map.of("error", Http.errorPayload(400, Http.errorMessage(e))));
-            sse.done();
+            terminal(sse, 400, Http.errorMessage(e), responses);
         } catch (RuntimeException e) {
             Log.LOG.log(System.Logger.Level.ERROR, "streaming request failed", e);
-            sse.emit(Map.of("error", Http.errorPayload(500, "Internal server error")));
+            terminal(sse, 500, "Internal server error", responses);
+        }
+    }
+
+    private static void terminal(Stream sse, int status, String message, boolean responses)
+            throws IOException {
+        try {
+            if (responses) {
+                Map<String, Object> error = new LinkedHashMap<>();
+                error.put("type", "error");
+                error.put("code", status >= 500 ? "server_error" : "invalid_request_error");
+                error.put("message", message);
+                error.put("param", null);
+                sse.emit("error", error);
+            } else {
+                sse.emit(Map.of("error", Http.errorPayload(status, message)));
+            }
             sse.done();
+        } catch (UncheckedIOException disconnected) {
+            throw disconnected.getCause();
         }
     }
 
@@ -78,7 +103,7 @@ final class Sse {
                         () -> {
                             while (true) {
                                 try {
-                                    Thread.sleep(5_000);
+                                    Thread.sleep(1_000);
                                 } catch (InterruptedException e) {
                                     return;
                                 }
@@ -110,22 +135,12 @@ final class Sse {
         private final OutputStream out;
         private final long writeStallNanos;
         private volatile long writeStartNanos; // 0 = no write in flight
+        private int sequence;
 
         private Stream(HttpExchange exchange, long writeStallNanos) {
             this.exchange = exchange;
             this.writeStallNanos = writeStallNanos;
-            this.out =
-                    new FilterOutputStream(exchange.getResponseBody()) {
-                        @Override
-                        public void write(byte[] b, int off, int len) throws IOException {
-                            writeStartNanos = System.nanoTime();
-                            try {
-                                super.out.write(b, off, len);
-                            } finally {
-                                writeStartNanos = 0;
-                            }
-                        }
-                    };
+            this.out = exchange.getResponseBody();
         }
 
         /** A {@code data:} frame carrying one JSON value. */
@@ -135,6 +150,11 @@ final class Sse {
 
         /** A named SSE event ({@code event:} line + {@code data:} frame) — the Responses API. */
         void emit(String event, Object value) {
+            if (value instanceof Map<?, ?> map) {
+                Map<Object, Object> numbered = new LinkedHashMap<>(map);
+                numbered.putIfAbsent("sequence_number", sequence++);
+                value = numbered;
+            }
             frame("event: " + event + "\ndata: " + JsonCodec.stringify(value) + "\n\n");
         }
 
@@ -144,11 +164,14 @@ final class Sse {
         }
 
         private void frame(String text) {
+            writeStartNanos = System.nanoTime();
             try {
                 out.write(text.getBytes(StandardCharsets.UTF_8));
                 out.flush();
             } catch (IOException e) {
                 throw new UncheckedIOException(e); // client gone; unwound by guarded()
+            } finally {
+                writeStartNanos = 0;
             }
         }
 

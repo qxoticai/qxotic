@@ -74,7 +74,11 @@ final class OpenAiSchema {
     }
 
     static Map<String, Object> chatCompletionChunk(
-            String id, String modelId, Map<String, Object> delta, String finishReason) {
+            String id,
+            String modelId,
+            long created,
+            Map<String, Object> delta,
+            String finishReason) {
         Map<String, Object> choice = new LinkedHashMap<>();
         choice.put("index", 0);
         choice.put("delta", delta);
@@ -82,7 +86,7 @@ final class OpenAiSchema {
         Map<String, Object> chunk = new LinkedHashMap<>();
         chunk.put("id", id);
         chunk.put("object", "chat.completion.chunk");
-        chunk.put("created", System.currentTimeMillis() / 1000);
+        chunk.put("created", created);
         chunk.put("model", modelId);
         chunk.put("choices", List.of(choice));
         return chunk;
@@ -114,7 +118,7 @@ final class OpenAiSchema {
     }
 
     static Map<String, Object> completionChunk(
-            String id, String modelId, String text, String finishReason) {
+            String id, String modelId, long created, String text, String finishReason) {
         Map<String, Object> choice = new LinkedHashMap<>();
         choice.put("text", text);
         choice.put("index", 0);
@@ -122,7 +126,7 @@ final class OpenAiSchema {
         Map<String, Object> chunk = new LinkedHashMap<>();
         chunk.put("id", id);
         chunk.put("object", "text_completion");
-        chunk.put("created", System.currentTimeMillis() / 1000);
+        chunk.put("created", created);
         chunk.put("model", modelId);
         chunk.put("choices", List.of(choice));
         return chunk;
@@ -168,19 +172,30 @@ final class OpenAiSchema {
      */
     static Map<String, Object> responseResponse(
             String id, String modelId, Reply result, List<Map<String, Object>> output) {
-        return responseEnvelope(id, modelId, "completed", output, responseUsage(result));
+        return responseResponse(
+                id, modelId, System.currentTimeMillis() / 1000, result, output);
+    }
+
+    static Map<String, Object> responseResponse(
+            String id,
+            String modelId,
+            long created,
+            Reply result,
+            List<Map<String, Object>> output) {
+        return responseEnvelope(id, modelId, created, "completed", output, responseUsage(result));
     }
 
     static Map<String, Object> responseEnvelope(
             String id,
             String modelId,
+            long created,
             String status,
             List<Map<String, Object>> output,
             Map<String, Object> usage) {
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("id", id);
         response.put("object", "response");
-        response.put("created_at", System.currentTimeMillis() / 1000);
+        response.put("created_at", created);
         response.put("status", status);
         response.put("model", modelId);
         response.put("output", output);
@@ -201,7 +216,13 @@ final class OpenAiSchema {
                 "role",
                 "assistant",
                 "content",
-                List.of(Map.of("type", "output_text", "text", text, "annotations", List.of())));
+                "in_progress".equals(status)
+                        ? List.of()
+                        : List.of(outputText(text)));
+    }
+
+    static Map<String, Object> outputText(String text) {
+        return Map.of("type", "output_text", "text", text, "annotations", List.of());
     }
 
     private static Map<String, Object> responseUsage(Reply result) {

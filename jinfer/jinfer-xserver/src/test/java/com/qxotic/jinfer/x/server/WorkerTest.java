@@ -10,6 +10,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
@@ -99,6 +100,75 @@ class WorkerTest {
         assertFalse(second.isAlive(), "queued caller was stranded");
         assertEquals(Worker.Result.CLOSED, queued.get());
         assertEquals(Worker.Result.CLOSED, worker.submitAndWait(() -> {}));
+    }
+
+    @Test
+    void interruptRemovesAQueuedJob() throws Exception {
+        try (Worker worker = new Worker(1)) {
+            worker.start();
+            CountDownLatch running = new CountDownLatch(1);
+            CountDownLatch release = new CountDownLatch(1);
+            Thread first =
+                    Thread.ofPlatform()
+                            .start(
+                                    () ->
+                                            worker.submitAndWait(
+                                                    () -> {
+                                                        running.countDown();
+                                                        await(release);
+                                                    }));
+            assertTrue(running.await(5, TimeUnit.SECONDS));
+            AtomicBoolean executed = new AtomicBoolean();
+            AtomicReference<Worker.Result> result = new AtomicReference<>();
+            Thread queued =
+                    Thread.ofPlatform()
+                            .start(
+                                    () ->
+                                            result.set(
+                                                    worker.submitAndWait(
+                                                            () -> executed.set(true))));
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            while (worker.queued() != 1 && System.nanoTime() < deadline) Thread.onSpinWait();
+
+            queued.interrupt();
+            queued.join(5_000);
+            release.countDown();
+            first.join(5_000);
+
+            assertEquals(Worker.Result.INTERRUPTED, result.get());
+            assertFalse(executed.get());
+            assertEquals(0, worker.queued());
+        }
+    }
+
+    @Test
+    void interruptDoesNotAbandonAnActiveJob() throws Exception {
+        try (Worker worker = new Worker(1)) {
+            worker.start();
+            CountDownLatch running = new CountDownLatch(1);
+            CountDownLatch release = new CountDownLatch(1);
+            AtomicReference<Worker.Result> result = new AtomicReference<>();
+            Thread submitter =
+                    Thread.ofPlatform()
+                            .start(
+                                    () ->
+                                            result.set(
+                                                    worker.submitAndWait(
+                                                            () -> {
+                                                                running.countDown();
+                                                                await(release);
+                                                            })));
+            assertTrue(running.await(5, TimeUnit.SECONDS));
+
+            submitter.interrupt();
+            submitter.join(50);
+            assertTrue(submitter.isAlive(), "active response must retain its handler");
+
+            release.countDown();
+            submitter.join(5_000);
+            assertEquals(Worker.Result.COMPLETED, result.get());
+            assertTrue(submitter.isInterrupted());
+        }
     }
 
     private static void await(CountDownLatch latch) {
