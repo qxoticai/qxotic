@@ -18,6 +18,22 @@ import org.junit.jupiter.api.Test;
 final class BuilderContractTest {
 
     @Test
+    void cacheSettingsRejectBeforeLoadingTheModel() {
+        assertThrows(
+                IllegalArgumentException.class, () -> JinferChatModel.builder().retainSessions(-1));
+        IllegalArgumentException missing =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                JinferChatModel.builder()
+                                        .modelPath(Path.of("/also-missing.gguf"))
+                                        .promptCache(Path.of("/missing-prompt-cache.jkv"))
+                                        .build());
+        assertTrue(missing.getMessage().contains("prompt cache does not exist"));
+        assertThrows(NullPointerException.class, () -> JinferChatModel.builder().promptCache(null));
+    }
+
+    @Test
     void unsupportedDefaultsRejectBeforeTheWeightsEverMap() {
         // core merges defaults UNDER each request, so a request can add what defaults lack but
         // can never unset an unsupported knob - build-fatal, and checked before the load. The
@@ -33,6 +49,85 @@ final class BuilderContractTest {
                                                 .frequencyPenalty(0.5)
                                                 .build())
                                 .build());
+    }
+
+    @Test
+    void defaultParametersOverrideModelRecommendations() {
+        var recommended = new LoadedModel.SamplingDefaults(0.8f, 0.95f, 40, 0.05f);
+        var builder =
+                JinferChatModel.builder()
+                        .defaultRequestParameters(
+                                JinferChatRequestParameters.builder()
+                                        .temperature(0.6)
+                                        .topP(0.9)
+                                        .topK(20)
+                                        .minP(0.1)
+                                        .maxOutputTokens(128)
+                                        .seed(3L)
+                                        .build());
+
+        var resolved = JinferChatModel.resolveDefaults("model.gguf", recommended, builder);
+
+        assertEquals("model.gguf", resolved.modelName());
+        assertEquals(0.6, resolved.temperature());
+        assertEquals(0.9, resolved.topP());
+        assertEquals(20, resolved.topK());
+        assertEquals(0.1, resolved.minP());
+        assertEquals(128, resolved.maxOutputTokens());
+        assertEquals(3L, resolved.seed());
+    }
+
+    @Test
+    void explicitBuilderSettersOverrideDefaultParameters() {
+        var recommended = new LoadedModel.SamplingDefaults(0.8f, 0.95f, 40, 0.05f);
+        var builder =
+                JinferChatModel.builder()
+                        .defaultRequestParameters(
+                                JinferChatRequestParameters.builder()
+                                        .temperature(0.6)
+                                        .topP(0.9)
+                                        .topK(20)
+                                        .minP(0.1)
+                                        .maxOutputTokens(128)
+                                        .seed(3L)
+                                        .build())
+                        .temperature(0.0)
+                        .topP(0.7)
+                        .topK(1)
+                        .minP(0.0)
+                        .maxOutputTokens(16)
+                        .seed(7L);
+
+        var resolved = JinferChatModel.resolveDefaults("model.gguf", recommended, builder);
+
+        assertEquals(0.0, resolved.temperature());
+        assertEquals(0.7, resolved.topP());
+        assertEquals(1, resolved.topK());
+        assertEquals(0.0, resolved.minP());
+        assertEquals(16, resolved.maxOutputTokens());
+        assertEquals(7L, resolved.seed());
+    }
+
+    @Test
+    void requestParametersStillOverrideEveryBuilderProvenance() {
+        var defaults =
+                JinferChatModel.resolveDefaults(
+                        "model.gguf",
+                        LoadedModel.SamplingDefaults.NONE,
+                        JinferChatModel.builder()
+                                .defaultRequestParameters(
+                                        JinferChatRequestParameters.builder()
+                                                .temperature(0.6)
+                                                .seed(3L)
+                                                .build())
+                                .temperature(0.2)
+                                .seed(7L));
+        var request = JinferChatRequestParameters.builder().temperature(1.0).seed(11L).build();
+
+        var resolved = defaults.overrideWith(request);
+
+        assertEquals(1.0, resolved.temperature());
+        assertEquals(11L, resolved.seed());
     }
 
     @Test

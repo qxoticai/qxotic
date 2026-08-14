@@ -12,13 +12,6 @@ class MiniCpm5ToolIT extends AbstractToolIT {
 
     @Override
     Path modelPath() {
-        return Path.of(
-                System.getProperty(
-                        "jinfer.minicpmModel",
-                        TestModels.find("hf.co/openbmb/MiniCPM5-1B-GGUF/MiniCPM5-1B-Q8_0.gguf")
-                                .orElse(
-                                        Path.of(
-                                                "hf.co/openbmb/MiniCPM5-1B-GGUF/MiniCPM5-1B-Q8_0.gguf"))
-                                .toString()));
+        return TestModels.require("hf.co/openbmb/MiniCPM5-1B-GGUF/MiniCPM5-1B-Q8_0.gguf");
     }
 }

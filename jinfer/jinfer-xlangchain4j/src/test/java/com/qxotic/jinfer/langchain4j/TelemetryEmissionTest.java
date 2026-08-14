@@ -189,8 +189,10 @@ class TelemetryEmissionTest {
         assertTrue(!samples.isEmpty(), "a live engine's cache must be sampled");
         RecordedEvent sample = samples.get(0);
         assertTrue(sample.getString("model").endsWith(".gguf"));
+        assertEquals(1, sample.getInt("retainedSessionLimit"));
+        assertTrue(sample.getInt("retainedSessions") >= 0);
         assertTrue(sample.getLong("budgetBytes") > 0, "the budget is a real bound");
-        assertTrue(sample.getLong("evictions") >= 0, "deltas are never negative");
+        assertTrue(sample.getLong("blockEvictions") >= 0, "deltas are never negative");
     }
 
     /** Every event of {@code name} in the recording - the package's one JFR extraction. */

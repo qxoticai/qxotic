@@ -7,11 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.qxotic.jinfer.testkit.TestModels;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.output.Response;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
 import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -24,31 +21,16 @@ import org.junit.jupiter.api.Test;
 @Tag("integration")
 class JinferScoringModelIT {
 
+    private static final String REF =
+            "hf.co/mradermacher/Qwen3-Reranker-0.6B-GGUF/Qwen3-Reranker-0.6B.Q8_0.gguf";
+
     static JinferScoringModel scorer;
 
     @BeforeAll
     static void load() {
-        Assumptions.assumeTrue(
-                Files.exists(
-                        TestModels.find(
-                                        "hf.co/mradermacher/Qwen3-Reranker-0.6B-GGUF/Qwen3-Reranker-0.6B.Q8_0.gguf")
-                                .orElse(
-                                        Path.of(
-                                                "hf.co/mradermacher/Qwen3-Reranker-0.6B-GGUF/Qwen3-Reranker-0.6B.Q8_0.gguf"))),
-                "model not found: "
-                        + TestModels.find(
-                                        "hf.co/mradermacher/Qwen3-Reranker-0.6B-GGUF/Qwen3-Reranker-0.6B.Q8_0.gguf")
-                                .orElse(
-                                        Path.of(
-                                                "hf.co/mradermacher/Qwen3-Reranker-0.6B-GGUF/Qwen3-Reranker-0.6B.Q8_0.gguf")));
         scorer =
                 JinferScoringModel.builder()
-                        .modelPath(
-                                TestModels.find(
-                                                "hf.co/mradermacher/Qwen3-Reranker-0.6B-GGUF/Qwen3-Reranker-0.6B.Q8_0.gguf")
-                                        .orElse(
-                                                Path.of(
-                                                        "hf.co/mradermacher/Qwen3-Reranker-0.6B-GGUF/Qwen3-Reranker-0.6B.Q8_0.gguf")))
+                        .modelPath(TestModels.require(REF))
                         .contextLength(2048)
                         .build();
     }
@@ -74,13 +56,7 @@ class JinferScoringModelIT {
     void sharedWeightsForkScoresTheSameRanking() throws Exception {
         try (java.lang.foreign.Arena arena = java.lang.foreign.Arena.ofShared()) {
             var loaded =
-                    com.qxotic.jinfer.x.chat.Models.loadReranker(
-                            TestModels.find(
-                                            "hf.co/mradermacher/Qwen3-Reranker-0.6B-GGUF/Qwen3-Reranker-0.6B.Q8_0.gguf")
-                                    .orElse(
-                                            Path.of(
-                                                    "hf.co/mradermacher/Qwen3-Reranker-0.6B-GGUF/Qwen3-Reranker-0.6B.Q8_0.gguf")),
-                            arena);
+                    com.qxotic.jinfer.x.chat.Models.loadReranker(TestModels.require(REF), arena);
             JinferScoringModel a =
                     JinferScoringModel.builder().model(loaded).contextLength(2048).build();
             JinferScoringModel b = a.fork();
@@ -100,6 +76,53 @@ class JinferScoringModelIT {
                 b.close();
             }
         }
+    }
+
+    @Test
+    void matchesLlamaCppGoldenScores() {
+        // goldens from llama.cpp running the card's exact judge prompt through /completion and
+        // softmaxing the {yes, no} logprobs (0.9489251140 / 0.9659344859). The mradermacher GGUF
+        // carries no rerank template or classifier labels, so llama.cpp's /rerank endpoint CANNOT
+        // be the oracle (it scores a bare query+doc concat off a whole-vocab softmax - garbage);
+        // the logprob route reproduces the card recipe token-for-token. Cross-engine kernels and
+        // llama.cpp's own prompt-cache wobble move the logits a few centilogprobs, so the gate is
+        // 3 centiscores - a framing, seam, or verdict-token regression swings the score by tens
+        // of those. Distractors sit so deep in the tail that "yes" never reaches llama.cpp's
+        // top-64; the gate there is the contract bound itself.
+        List<Double> reset =
+                scorer.scoreAll(
+                                List.of(
+                                        TextSegment.from(
+                                                "The reset portal is https://acme.example/reset."),
+                                        TextSegment.from("Bananas are rich in potassium.")),
+                                "Where do I reset my password?")
+                        .content();
+        assertTrue(
+                Math.abs(reset.get(0) - 0.9489251140) < 0.03,
+                "reset golden drifted: " + reset.get(0));
+        assertTrue(reset.get(1) < 1e-3, "distractor must sit deep in the tail: " + reset.get(1));
+
+        List<Double> eiffel =
+                scorer.scoreAll(
+                                List.of(
+                                        TextSegment.from(
+                                                "The Eiffel Tower is a wrought-iron lattice tower"
+                                                        + " in Paris, completed in 1889 as the"
+                                                        + " entrance to the World's Fair."),
+                                        TextSegment.from(
+                                                "Photosynthesis converts light energy into"
+                                                        + " chemical energy in plants, producing"
+                                                        + " oxygen as a byproduct."),
+                                        TextSegment.from(
+                                                "The recipe calls for two cups of flour, a pinch"
+                                                        + " of salt and three eggs, whisked until"
+                                                        + " smooth.")),
+                                "When was the Eiffel Tower built?")
+                        .content();
+        assertTrue(
+                Math.abs(eiffel.get(0) - 0.9659344859) < 0.03,
+                "eiffel golden drifted: " + eiffel.get(0));
+        assertTrue(eiffel.get(1) < 1e-3 && eiffel.get(2) < 1e-3, "distractors: " + eiffel);
     }
 
     @Test
@@ -198,12 +221,7 @@ class JinferScoringModelIT {
     void useAfterCloseFailsLoudly() {
         JinferScoringModel closed =
                 JinferScoringModel.builder()
-                        .modelPath(
-                                TestModels.find(
-                                                "hf.co/mradermacher/Qwen3-Reranker-0.6B-GGUF/Qwen3-Reranker-0.6B.Q8_0.gguf")
-                                        .orElse(
-                                                Path.of(
-                                                        "hf.co/mradermacher/Qwen3-Reranker-0.6B-GGUF/Qwen3-Reranker-0.6B.Q8_0.gguf")))
+                        .modelPath(TestModels.require(REF))
                         .contextLength(512)
                         .build();
         closed.close();

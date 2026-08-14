@@ -13,6 +13,7 @@ import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.request.ToolChoice;
 import dev.langchain4j.model.chat.request.json.JsonArraySchema;
+import dev.langchain4j.model.chat.request.json.JsonEnumSchema;
 import dev.langchain4j.model.chat.request.json.JsonIntegerSchema;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 import dev.langchain4j.model.chat.request.json.JsonStringSchema;
@@ -147,6 +148,81 @@ abstract class AbstractToolIT {
             ToolSpecification.builder()
                     .name("refresh_cache")
                     .description("Refresh the server-side cache")
+                    .build();
+
+    // ---- the argument-shape matrix (langchain4j's AbstractAiServiceWithToolsIT failure modes,
+    // pinned at the wire: complex shapes must arrive as real JSON structure) ----
+
+    static final ToolSpecification VISIT =
+            ToolSpecification.builder()
+                    .name("schedule_visit")
+                    .description("Schedule a visit for a registered visitor")
+                    .parameters(
+                            JsonObjectSchema.builder()
+                                    .addStringProperty(
+                                            "visitor_id",
+                                            "The visitor's UUID, e.g."
+                                                    + " 123e4567-e89b-12d3-a456-426614174000")
+                                    .required("visitor_id")
+                                    .build())
+                    .build();
+
+    static final ToolSpecification ROSTER =
+            ToolSpecification.builder()
+                    .name("assign_seats")
+                    .description("Assign seats to attendees")
+                    .parameters(
+                            JsonObjectSchema.builder()
+                                    .addProperty(
+                                            "attendees",
+                                            JsonArraySchema.builder()
+                                                    .description("The attendees to seat")
+                                                    .items(
+                                                            JsonObjectSchema.builder()
+                                                                    .addStringProperty("name")
+                                                                    .addIntegerProperty("age")
+                                                                    .required("name")
+                                                                    .build())
+                                                    .build())
+                                    .required("attendees")
+                                    .build())
+                    .build();
+
+    static final ToolSpecification TAGS =
+            ToolSpecification.builder()
+                    .name("tag_ticket")
+                    .description("Tag a support ticket")
+                    .parameters(
+                            JsonObjectSchema.builder()
+                                    .addProperty(
+                                            "priorities",
+                                            JsonArraySchema.builder()
+                                                    .description("Applicable priority labels")
+                                                    .items(
+                                                            JsonEnumSchema.builder()
+                                                                    .enumValues(
+                                                                            "low", "medium", "high")
+                                                                    .build())
+                                                    .build())
+                                    .required("priorities")
+                                    .build())
+                    .build();
+
+    static final ToolSpecification LEDGER =
+            ToolSpecification.builder()
+                    .name("record_expenses")
+                    .description("Record a free-form map of expense category to amount")
+                    .parameters(
+                            JsonObjectSchema.builder()
+                                    .addProperty(
+                                            "amounts",
+                                            JsonObjectSchema.builder()
+                                                    .description(
+                                                            "Category name to amount, e.g."
+                                                                    + " {\"travel\": 120.5}")
+                                                    .build())
+                                    .required("amounts")
+                                    .build())
                     .build();
 
     JinferChatModel model;
@@ -552,5 +628,109 @@ abstract class AbstractToolIT {
                 "forced call must name an offered tool: " + name);
         // isBlank, not isEmpty: whitespace around a family's call block is framing, not content
         assertTrue(r.text().isBlank(), "a forced call streams no content: '" + r.text() + "'");
+    }
+
+    @Test
+    void uuidArgumentKeepsItsShape() {
+        ChatResponse r =
+                ask(
+                        "Schedule a visit for visitor 123e4567-e89b-12d3-a456-426614174000. Use"
+                                + " the tool.",
+                        VISIT);
+        ToolExecutionRequest call = assumeCall(r);
+        assertEquals("schedule_visit", call.name());
+        // a UUID is a string with hyphens: the classic breakage is a model (or a parser)
+        // treating it as a number or stripping the dashes
+        String id = String.valueOf(args(call).get("visitor_id"));
+        assertTrue(
+                id.matches("(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"),
+                "UUID mangled on the wire: " + call.arguments());
+    }
+
+    @Test
+    void arrayOfObjectsArgument() {
+        ChatResponse r =
+                ask("Assign seats to Ada (age 36) and Grace (age 85). Use the tool.", ROSTER);
+        ToolExecutionRequest call = assumeCall(r);
+        assertEquals("assign_seats", call.name());
+        Object attendees = args(call).get("attendees");
+        assertTrue(
+                attendees instanceof List, "attendees must be a JSON array: " + call.arguments());
+        for (Object entry : (List<?>) attendees) {
+            assertTrue(
+                    entry instanceof Map,
+                    "each attendee must be a real JSON object, not stringified: "
+                            + call.arguments());
+            assertNotNull(((Map<?, ?>) entry).get("name"), call.arguments());
+        }
+        assertTrue(((List<?>) attendees).size() >= 2, call.arguments());
+    }
+
+    @Test
+    void arrayOfEnumsArgument() {
+        ChatResponse r = ask("Tag the ticket as both high and low priority. Use the tool.", TAGS);
+        ToolExecutionRequest call = assumeCall(r);
+        assertEquals("tag_ticket", call.name());
+        Object priorities = args(call).get("priorities");
+        assertTrue(
+                priorities instanceof List, "priorities must be a JSON array: " + call.arguments());
+        // every element must be one of the DECLARED labels - a value outside the enum means the
+        // declaration's constraints did not reach the model intact
+        for (Object p : (List<?>) priorities) {
+            assertTrue(
+                    Set.of("low", "medium", "high").contains(String.valueOf(p)),
+                    "undeclared enum value on the wire: " + call.arguments());
+        }
+    }
+
+    @Test
+    void freeFormMapArgument() {
+        ChatResponse r = ask("Record expenses: travel 120.5, meals 42. Use the tool.", LEDGER);
+        ToolExecutionRequest call = assumeCall(r);
+        assertEquals("record_expenses", call.name());
+        Object amounts = args(call).get("amounts");
+        assertTrue(
+                amounts instanceof Map,
+                "a free-form map must arrive as a JSON object: " + call.arguments());
+        assertTrue(!((Map<?, ?>) amounts).isEmpty(), call.arguments());
+    }
+
+    @Test
+    void blankToolResultKeepsTheLoopAlive() {
+        // langchain4j allows empty/blank tool results; the wire must frame one without breaking
+        // the follow-up turn (an empty payload is where hand-rolled renderers drop tags)
+        ChatResponse first = ask("Please refresh the cache now using the tool.", REFRESH);
+        ToolExecutionRequest call = assumeCall(first);
+        ChatResponse second =
+                chat(
+                        List.of(
+                                UserMessage.from("Please refresh the cache now using the tool."),
+                                first.aiMessage(),
+                                ToolExecutionResultMessage.from(call.id(), call.name(), "")),
+                        REFRESH);
+        assertNotNull(second.aiMessage());
+        assertNotNull(second.finishReason());
+        String text = second.aiMessage().text();
+        if (text != null) assertNoCallSyntax(text);
+    }
+
+    @Test
+    void forcedCallCarriesNoContent() {
+        // the llama.cpp-class response shape (content:null + tool_calls), pinned on the blocking
+        // path: a forced call yields null or blank text - never an NPE downstream, never leaked
+        // call syntax
+        ChatResponse r =
+                model.chat(
+                        ChatRequest.builder()
+                                .messages(UserMessage.from("Say hello."))
+                                .toolSpecifications(WEATHER)
+                                .toolChoice(ToolChoice.REQUIRED)
+                                .build());
+        assertTrue(r.aiMessage().hasToolExecutionRequests(), "REQUIRED must force a call");
+        String text = r.aiMessage().text();
+        assertTrue(
+                text == null || text.isBlank(),
+                "a tool-only turn carries no content: '" + text + "'");
+        if (text != null) assertNoCallSyntax(text);
     }
 }

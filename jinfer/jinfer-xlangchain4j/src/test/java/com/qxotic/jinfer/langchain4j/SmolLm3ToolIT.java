@@ -13,14 +13,7 @@ class SmolLm3ToolIT extends AbstractToolIT {
 
     @Override
     Path modelPath() {
-        return Path.of(
-                System.getProperty(
-                        "jinfer.smollm3Model",
-                        TestModels.find("hf.co/ggml-org/SmolLM3-3B-GGUF/SmolLM3-Q4_K_M.gguf")
-                                .orElse(
-                                        Path.of(
-                                                "hf.co/ggml-org/SmolLM3-3B-GGUF/SmolLM3-Q4_K_M.gguf"))
-                                .toString()));
+        return TestModels.require("hf.co/ggml-org/SmolLM3-3B-GGUF/SmolLM3-Q4_K_M.gguf");
     }
 
     /**

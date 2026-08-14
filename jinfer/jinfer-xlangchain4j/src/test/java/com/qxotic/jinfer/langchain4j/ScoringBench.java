@@ -21,13 +21,10 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -40,42 +37,20 @@ public final class ScoringBench {
         "How do plants convert sunlight into chemical energy?",
     };
 
+    private static final String REF =
+            "hf.co/mradermacher/Qwen3-Reranker-0.6B-GGUF/Qwen3-Reranker-0.6B.Q8_0.gguf";
+
     @Test
     @Tag("bench")
     void run() throws Exception {
-        Assumptions.assumeTrue(
-                Files.exists(
-                        TestModels.find(
-                                        "hf.co/mradermacher/Qwen3-Reranker-0.6B-GGUF/Qwen3-Reranker-0.6B.Q8_0.gguf")
-                                .orElse(
-                                        Path.of(
-                                                "hf.co/mradermacher/Qwen3-Reranker-0.6B-GGUF/Qwen3-Reranker-0.6B.Q8_0.gguf"))),
-                "model not found: "
-                        + TestModels.find(
-                                        "hf.co/mradermacher/Qwen3-Reranker-0.6B-GGUF/Qwen3-Reranker-0.6B.Q8_0.gguf")
-                                .orElse(
-                                        Path.of(
-                                                "hf.co/mradermacher/Qwen3-Reranker-0.6B-GGUF/Qwen3-Reranker-0.6B.Q8_0.gguf")));
         String url = System.getProperty("jinfer.args", "").trim();
 
         JinferScoringModel reuse =
                 JinferScoringModel.builder()
-                        .modelPath(
-                                TestModels.find(
-                                                "hf.co/mradermacher/Qwen3-Reranker-0.6B-GGUF/Qwen3-Reranker-0.6B.Q8_0.gguf")
-                                        .orElse(
-                                                Path.of(
-                                                        "hf.co/mradermacher/Qwen3-Reranker-0.6B-GGUF/Qwen3-Reranker-0.6B.Q8_0.gguf")))
+                        .modelPath(TestModels.require(REF))
                         .contextLength(2048)
                         .build();
-        LoadedReranker<?> naive =
-                Models.loadReranker(
-                        TestModels.find(
-                                        "hf.co/mradermacher/Qwen3-Reranker-0.6B-GGUF/Qwen3-Reranker-0.6B.Q8_0.gguf")
-                                .orElse(
-                                        Path.of(
-                                                "hf.co/mradermacher/Qwen3-Reranker-0.6B-GGUF/Qwen3-Reranker-0.6B.Q8_0.gguf")),
-                        Arena.ofAuto());
+        LoadedReranker<?> naive = Models.loadReranker(TestModels.require(REF), Arena.ofAuto());
 
         for (int k : K) {
             List<TextSegment> docs = corpus(k);
@@ -128,22 +103,7 @@ public final class ScoringBench {
     @Test
     @Tag("bench")
     void phases() throws Exception {
-        Assumptions.assumeTrue(
-                Files.exists(
-                        TestModels.find(
-                                        "hf.co/mradermacher/Qwen3-Reranker-0.6B-GGUF/Qwen3-Reranker-0.6B.Q8_0.gguf")
-                                .orElse(
-                                        Path.of(
-                                                "hf.co/mradermacher/Qwen3-Reranker-0.6B-GGUF/Qwen3-Reranker-0.6B.Q8_0.gguf"))),
-                "model not found");
-        phases(
-                Models.loadReranker(
-                        TestModels.find(
-                                        "hf.co/mradermacher/Qwen3-Reranker-0.6B-GGUF/Qwen3-Reranker-0.6B.Q8_0.gguf")
-                                .orElse(
-                                        Path.of(
-                                                "hf.co/mradermacher/Qwen3-Reranker-0.6B-GGUF/Qwen3-Reranker-0.6B.Q8_0.gguf")),
-                        Arena.ofAuto()));
+        phases(Models.loadReranker(TestModels.require(REF), Arena.ofAuto()));
     }
 
     static <S extends RuntimeState> void phases(LoadedReranker<S> loaded) {

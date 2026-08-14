@@ -25,7 +25,9 @@ import dev.langchain4j.store.embedding.inmemory.InMemoryEmbeddingStore;
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.lang.foreign.Arena;
+import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.Executors;
 import org.junit.jupiter.api.AfterAll;
@@ -65,6 +67,42 @@ class JinferEmbeddingModelIT {
         if (model != null) {
             model.close();
             model.close(); // idempotency pin: a second close must be a no-op, never ISE
+        }
+    }
+
+    @Test
+    void matchesLlamaCppGoldenVectors() throws Exception {
+        // goldens from llama.cpp llama-embedding (bN, same GGUF, bare prompt - the suite's own
+        // path). Cross-engine kernels drift, so the gate is the suite's identity tolerance:
+        // cosine > 0.999 (measured 0.99962 / 0.99965) and no element off by more than a
+        // cent (measured maxAbsDiff 0.0039 / 0.0036). A tokenizer, layout, or pooling
+        // regression blows both gates wide open; kernel noise never touches them.
+        assertGolden(
+                "The quick brown fox jumps over the lazy dog, twice.",
+                "golden-embeddings/qwen3-fox.txt");
+        assertGolden("A kitten was sitting by the window.", "golden-embeddings/qwen3-kitten.txt");
+    }
+
+    private static void assertGolden(String text, String resource) throws Exception {
+        float[] golden = readGolden(resource);
+        Embedding actual = model.embed(TextSegment.from(text)).content();
+        assertEquals(golden.length, actual.vector().length, resource);
+        double cos = cosine(actual, Embedding.from(golden));
+        assertTrue(cos > 0.999, resource + ": cosine vs llama.cpp golden " + cos);
+        double maxAbsDiff = 0;
+        for (int i = 0; i < golden.length; i++) {
+            maxAbsDiff = Math.max(maxAbsDiff, Math.abs(actual.vector()[i] - golden[i]));
+        }
+        assertTrue(maxAbsDiff < 0.01, resource + ": maxAbsDiff vs golden " + maxAbsDiff);
+    }
+
+    private static float[] readGolden(String resource) throws Exception {
+        try (var in = JinferEmbeddingModelIT.class.getClassLoader().getResourceAsStream(resource)) {
+            if (in == null) throw new IllegalStateException("missing test resource " + resource);
+            String[] parts = new String(in.readAllBytes()).trim().split("\\s+");
+            float[] out = new float[parts.length];
+            for (int i = 0; i < parts.length; i++) out[i] = Float.parseFloat(parts[i]);
+            return out;
         }
     }
 
@@ -124,15 +162,13 @@ class JinferEmbeddingModelIT {
 
     @Test
     void generativeArchitectureFailsLoudly() {
+        // resolve BEFORE assertThrows: an abort inside the lambda would surface as a failure
+        Path generative =
+                TestModels.require("hf.co/unsloth/gemma-4-E2B-it-GGUF/gemma-4-E2B-it-Q8_0.gguf");
         UnsupportedOperationException e =
                 assertThrows(
                         UnsupportedOperationException.class,
-                        () ->
-                                JinferEmbeddingModel.builder()
-                                        .modelPath(
-                                                TestModels.require(
-                                                        "hf.co/unsloth/gemma-4-E2B-it-GGUF/gemma-4-E2B-it-Q8_0.gguf"))
-                                        .build());
+                        () -> JinferEmbeddingModel.builder().modelPath(generative).build());
         assertTrue(e.getMessage().contains("not an embedding"), e.getMessage());
     }
 
@@ -228,13 +264,89 @@ class JinferEmbeddingModelIT {
     }
 
     @Test
-    void unsupportedParametersRejectLoudly() {
+    void dimensionsAreValidatedTruncatedAndNormalized() {
         assertEquals(
-                java.util.Set.of(EmbeddingRequestParameters.INPUT_TYPE),
+                java.util.Set.of(
+                        EmbeddingRequestParameters.INPUT_TYPE,
+                        EmbeddingRequestParameters.DIMENSIONS),
                 model.supportedParameters());
-        assertThrows(
-                UnsupportedFeatureException.class,
-                () -> model.embed(EmbeddingRequest.builder().input("x").dimensions(64).build()));
+        String text = "A kitten was sitting by the window.";
+        Embedding nativeWidth =
+                model.embed(EmbeddingRequest.builder().input(text).build()).embeddings().get(0);
+        Embedding truncated =
+                model.embed(EmbeddingRequest.builder().input(text).dimensions(64).build())
+                        .embeddings()
+                        .get(0);
+
+        assertEquals(64, truncated.dimension());
+        assertEquals(1, norm(truncated.vector()), 1e-5);
+        float[] expected = Arrays.copyOf(nativeWidth.vector(), 64);
+        normalize(expected);
+        assertTrue(
+                cosine(truncated, Embedding.from(expected)) > 0.999,
+                "truncated output must be the normalized native prefix");
+
+        for (int invalid : new int[] {-1, 0, 31, model.dimension() + 1}) {
+            IllegalArgumentException failure =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () ->
+                                    model.embed(
+                                            EmbeddingRequest.builder()
+                                                    .input(text)
+                                                    .dimensions(invalid)
+                                                    .build()));
+            assertTrue(failure.getMessage().contains("32.."), failure.getMessage());
+        }
+        assertEquals(
+                32,
+                model.embed(EmbeddingRequest.builder().input(text).dimensions(32).build())
+                        .embeddings()
+                        .get(0)
+                        .dimension());
+        assertEquals(
+                model.dimension(),
+                model.embed(
+                                EmbeddingRequest.builder()
+                                        .input(text)
+                                        .dimensions(model.dimension())
+                                        .build())
+                        .embeddings()
+                        .get(0)
+                        .dimension());
+        for (Embedding embedding :
+                model.embed(
+                                EmbeddingRequest.builder()
+                                        .inputs("one", "two", "three")
+                                        .dimensions(64)
+                                        .build())
+                        .embeddings()) {
+            assertEquals(64, embedding.dimension());
+        }
+    }
+
+    @Test
+    void fixedWidthModelDoesNotAdvertiseDimensions() {
+        try (JinferEmbeddingModel fixed =
+                JinferEmbeddingModel.builder()
+                        .modelPath(
+                                TestModels.require(
+                                        "hf.co/LiquidAI/LFM2.5-Embedding-350M-GGUF/LFM2.5-Embedding-350M-Q8_0.gguf"))
+                        .contextLength(256)
+                        .build()) {
+            assertEquals(
+                    java.util.Set.of(EmbeddingRequestParameters.INPUT_TYPE),
+                    fixed.supportedParameters());
+            assertEquals(1024, fixed.embed("native").content().dimension());
+            assertThrows(
+                    UnsupportedFeatureException.class,
+                    () ->
+                            fixed.embed(
+                                    EmbeddingRequest.builder()
+                                            .input("custom")
+                                            .dimensions(512)
+                                            .build()));
+        }
     }
 
     @Test
@@ -385,5 +497,16 @@ class JinferEmbeddingModelIT {
             ny += (double) y[i] * y[i];
         }
         return dot / (Math.sqrt(nx) * Math.sqrt(ny));
+    }
+
+    private static double norm(float[] vector) {
+        double squared = 0;
+        for (float value : vector) squared += (double) value * value;
+        return Math.sqrt(squared);
+    }
+
+    private static void normalize(float[] vector) {
+        double scale = 1 / norm(vector);
+        for (int i = 0; i < vector.length; i++) vector[i] *= (float) scale;
     }
 }

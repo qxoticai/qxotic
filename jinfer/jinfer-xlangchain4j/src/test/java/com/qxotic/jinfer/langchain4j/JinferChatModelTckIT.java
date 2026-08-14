@@ -27,20 +27,11 @@ import org.junit.jupiter.api.condition.EnabledIf;
 @EnabledIf("com.qxotic.jinfer.langchain4j.JinferChatModelTckIT#modelAvailable")
 class JinferChatModelTckIT extends AbstractChatModelIT {
 
-    static final Path MODEL =
-            Path.of(
-                    System.getProperty(
-                            "jinfer.testModel",
-                            TestModels.find(
-                                            "hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF/LFM2.5-8B-A1B-Q8_0.gguf")
-                                    .orElse(
-                                            Path.of(
-                                                    "hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF/LFM2.5-8B-A1B-Q8_0.gguf"))
-                                    .toString()));
+    static final String REF = "hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF/LFM2.5-8B-A1B-Q8_0.gguf";
     static final String MEDIA = System.getProperty("jinfer.testMedia", "");
 
     static boolean modelAvailable() {
-        return Files.exists(MODEL);
+        return TestModels.find(REF).isPresent();
     }
 
     /**
@@ -51,7 +42,7 @@ class JinferChatModelTckIT extends AbstractChatModelIT {
      * thinking-ON path keeps its coverage from the other seven families.
      */
     static boolean tckThinking() {
-        return !MODEL.toString().contains("SmolLM3");
+        return !TestModels.require(REF).toString().contains("SmolLM3");
     }
 
     private static JinferChatModel model;
@@ -77,7 +68,7 @@ class JinferChatModelTckIT extends AbstractChatModelIT {
         if (model == null) {
             var builder =
                     JinferChatModel.builder()
-                            .modelPath(MODEL)
+                            .modelPath(TestModels.require(REF))
                             .contextLength(8192)
                             .maxOutputTokens(512) // bound unconstrained TCK requests
                             // pinned GREEDY: a compliance suite must not flake. A seed alone is
@@ -121,7 +112,7 @@ class JinferChatModelTckIT extends AbstractChatModelIT {
      * Gemma4ToolIT}, {@code SmolLm3ToolIT}). Every other model stays strict.
      */
     static void assumeNotBareSpecMarginal() {
-        String model = MODEL.toString();
+        String model = TestModels.require(REF).toString();
         org.junit.jupiter.api.Assumptions.assumeFalse(
                 model.contains("gemma-4-E2B") || model.contains("SmolLM3"),
                 "small-checkpoint bare-spec round-2 near-tie (capability; see the family battery)");
@@ -136,7 +127,7 @@ class JinferChatModelTckIT extends AbstractChatModelIT {
      */
     static void assumeReasoningFitsTheBudget() {
         org.junit.jupiter.api.Assumptions.assumeFalse(
-                MODEL.toString().contains("gpt-oss"),
+                TestModels.require(REF).toString().contains("gpt-oss"),
                 "gpt-oss: a 5-token budget cannot surface final-channel text on an"
                         + " always-reasoning family");
     }
@@ -148,7 +139,7 @@ class JinferChatModelTckIT extends AbstractChatModelIT {
      */
     static void assumeParallelCallsRepresentable() {
         org.junit.jupiter.api.Assumptions.assumeFalse(
-                MODEL.toString().contains("gpt-oss"),
+                TestModels.require(REF).toString().contains("gpt-oss"),
                 "gpt-oss: Harmony renders at most one call per assistant message");
     }
 
@@ -216,7 +207,7 @@ class JinferChatModelTckIT extends AbstractChatModelIT {
     protected ChatModel createModelWith(ChatRequestParameters parameters) {
         var builder =
                 JinferChatModel.builder()
-                        .modelPath(MODEL)
+                        .modelPath(TestModels.require(REF))
                         .contextLength(8192)
                         .defaultRequestParameters(parameters)
                         // same reason as models(); the kit's own parameters override where set
@@ -262,7 +253,32 @@ class JinferChatModelTckIT extends AbstractChatModelIT {
         return false; // this library never fetches over the network
     }
 
-    private static boolean mediaAvailable() {
+    /**
+     * The kit's two photos, vendored as test resources: its defaults pull them from wikimedia over
+     * the network per invocation, which would make a COMPLIANCE suite depend on uptime. The bytes
+     * are byte-identical to the kit's URLs (the assertion vocabulary - "cat", "dice" - is semantic,
+     * so the images must be the real ones).
+     */
+    @Override
+    protected dev.langchain4j.data.message.ImageContent catImageContentBase64() {
+        return dev.langchain4j.data.message.ImageContent.from(kitImage("cat.png"), "image/png");
+    }
+
+    @Override
+    protected dev.langchain4j.data.message.ImageContent diceImageContentBase64() {
+        return dev.langchain4j.data.message.ImageContent.from(kitImage("dice.png"), "image/png");
+    }
+
+    static String kitImage(String name) {
+        try (var in = JinferChatModelTckIT.class.getResourceAsStream("/kit-images/" + name)) {
+            if (in == null) throw new IllegalStateException("missing test resource " + name);
+            return java.util.Base64.getEncoder().encodeToString(in.readAllBytes());
+        } catch (java.io.IOException e) {
+            throw new java.io.UncheckedIOException(e);
+        }
+    }
+
+    static boolean mediaAvailable() {
         return !MEDIA.isBlank() && Files.isRegularFile(Path.of(MEDIA));
     }
 }

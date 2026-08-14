@@ -13,7 +13,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -25,13 +24,11 @@ import org.junit.jupiter.api.Test;
 @Tag("integration")
 class Qwen35CoarseCacheIT extends AbstractCoarseCacheIT {
 
-    static final Path MODEL =
-            TestModels.find("hf.co/unsloth/Qwen3.5-2B-GGUF/Qwen3.5-2B-Q8_0.gguf")
-                    .orElse(Path.of("hf.co/unsloth/Qwen3.5-2B-GGUF/Qwen3.5-2B-Q8_0.gguf"));
+    private static final String REF = "hf.co/unsloth/Qwen3.5-2B-GGUF/Qwen3.5-2B-Q8_0.gguf";
 
     @Override
     Path modelPath() {
-        return MODEL;
+        return TestModels.require(REF);
     }
 
     /**
@@ -40,7 +37,7 @@ class Qwen35CoarseCacheIT extends AbstractCoarseCacheIT {
      */
     private static JinferChatModel.Builder deterministic() {
         return JinferChatModel.builder()
-                .modelPath(MODEL)
+                .modelPath(TestModels.require(REF))
                 .contextLength(4096)
                 .maxOutputTokens(32)
                 .temperature(0.0)
@@ -50,7 +47,6 @@ class Qwen35CoarseCacheIT extends AbstractCoarseCacheIT {
     /** The artifact round trip: export the defined prompt, remount it, still byte-identical. */
     @Test
     void frozenArtifactRoundTrips() throws Exception {
-        Assumptions.assumeTrue(Files.exists(MODEL), "model not found: " + MODEL);
         Path artifact = Files.createTempDirectory("qwen35-coarse").resolve("prefix.jkvf");
         String question = "Name one primary color.";
         String direct;
@@ -63,7 +59,7 @@ class Qwen35CoarseCacheIT extends AbstractCoarseCacheIT {
             base.close();
         }
 
-        JinferChatModel mounted = deterministic().loadCachedPrompts(artifact).build();
+        JinferChatModel mounted = deterministic().promptCache(artifact).build();
         try {
             JinferChatModel view = mounted.withCachedPrompt(PREFIX, List.of());
             String restored = view.chat(UserMessage.from(question)).aiMessage().text();
@@ -85,7 +81,6 @@ class Qwen35CoarseCacheIT extends AbstractCoarseCacheIT {
      */
     @Test
     void longChunkedPrefixStaysIdentical() {
-        Assumptions.assumeTrue(Files.exists(MODEL), "model not found: " + MODEL);
         StringBuilder manual = new StringBuilder("You are the AcmeCloud support agent.");
         for (int i = 1; i <= 90; i++) {
             manual.append(" Rule ")

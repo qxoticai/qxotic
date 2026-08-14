@@ -17,7 +17,6 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -28,19 +27,11 @@ import org.junit.jupiter.api.Test;
 @Tag("integration")
 class JinferLifecycleIT {
 
-    static final Path SMALL =
-            Path.of(
-                    System.getProperty(
-                            "jinfer.testModelSmall",
-                            TestModels.find("hf.co/LiquidAI/LFM2.5-350M-GGUF/LFM2.5-350M-Q8_0.gguf")
-                                    .orElse(
-                                            Path.of(
-                                                    "hf.co/LiquidAI/LFM2.5-350M-GGUF/LFM2.5-350M-Q8_0.gguf"))
-                                    .toString()));
+    private static final String REF = "hf.co/LiquidAI/LFM2.5-350M-GGUF/LFM2.5-350M-Q8_0.gguf";
 
     private static JinferChatModel load() {
         return JinferChatModel.builder()
-                .modelPath(SMALL)
+                .modelPath(TestModels.require(REF))
                 .contextLength(2048)
                 .maxOutputTokens(8)
                 // GREEDY, which the state-independence assertion below states but the builder
@@ -52,7 +43,6 @@ class JinferLifecycleIT {
 
     @Test
     void closeGuardsEveryEntryPointAndIsIdempotent() throws Exception {
-        Assumptions.assumeTrue(Files.exists(SMALL), "model not found: " + SMALL);
         JinferChatModel m = load();
         m.chat(UserMessage.from("hi")); // proves the model worked before close
         m.close();
@@ -88,7 +78,6 @@ class JinferLifecycleIT {
         // the arena law made executable: close() must not free state memory while the stream
         // driver is mid-generation - it blocks (engine lock + driver await), the stream finishes
         // or fails cleanly, and only then the pooled states' arenas die
-        Assumptions.assumeTrue(Files.exists(SMALL), "model not found: " + SMALL);
         JinferChatModel m = load();
         var done = new CountDownLatch(1);
         var failure = new AtomicReference<Throwable>();
@@ -131,31 +120,46 @@ class JinferLifecycleIT {
     }
 
     @Test
-    void requestsReuseOneContextInsteadOfAllocatingPerGeneration() {
+    void theDefaultRetainsAndRecyclesOneContext() {
         // the pool IS the allocator: the first request allocates this pipeline's context, every
         // later one reuses it (reset between requests). N requests cost ONE context, and the
-        // stateless default never keeps a conversation across them.
-        Assumptions.assumeTrue(Files.exists(SMALL), "model not found: " + SMALL);
+        // default retains at most one completed conversation.
         try (JinferChatModel model = load()) {
             for (int i = 0; i < 5; i++) {
                 model.chat(UserMessage.from("say hi to guest " + i));
             }
             String stats = model.engine.sessionStats();
             assertTrue(stats.contains("allocations=1"), "one context for five requests: " + stats);
-            assertTrue(stats.contains("hits=0"), "the default matches nothing: " + stats);
-            // the allocation survives as the pool's wiped spare, not as a live session: the
-            // stateless default keeps the memory and none of the conversation
-            assertTrue(stats.contains("sessions=0"), "the default pools no conversation: " + stats);
+            assertTrue(stats.contains("hits=0"), "unrelated requests do not match: " + stats);
+            assertTrue(stats.contains("sessions=1"), "the default retains one session: " + stats);
         }
     }
 
     @Test
-    void theStatelessDefaultKeepsNoConversationBetweenRequests() {
-        // the POOL keeps nothing: the allocation is wiped when its reply ends, so an unrelated
+    void zeroRetainsNoStateAndAllocatesPerRequest() {
+        try (JinferChatModel model =
+                JinferChatModel.builder()
+                        .modelPath(TestModels.require(REF))
+                        .contextLength(2048)
+                        .maxOutputTokens(1)
+                        .temperature(0.0)
+                        .retainSessions(0)
+                        .build()) {
+            model.chat(UserMessage.from("say hi"));
+            model.chat(UserMessage.from("say bye"));
+            String stats = model.engine.sessionStats();
+            assertTrue(stats.contains("allocations=2"), stats);
+            assertTrue(stats.contains("sessions=0"), stats);
+            assertTrue(stats.contains("hits=0"), stats);
+        }
+    }
+
+    @Test
+    void retainedStateNeverChangesAnUnrelatedRequest() {
+        // A retained state is recycled when the prompt does not extend it, so an unrelated
         // request cannot see the previous conversation, and an identical request is never an
         // append-only EXTENSION of live state. (It may still restore KV from the block tree -
         // that is the separate jinfer.promptCache tier, byte-identical by law.)
-        Assumptions.assumeTrue(Files.exists(SMALL), "model not found: " + SMALL);
         try (JinferChatModel model = load()) {
             String first = model.chat(UserMessage.from("name a colour")).aiMessage().text();
             model.chat(UserMessage.from("name a country"));
@@ -163,7 +167,7 @@ class JinferLifecycleIT {
             assertEquals(first, again, "a greedy request must not depend on what ran before it");
             assertTrue(
                     model.engine.sessionStats().contains("hits=0"),
-                    "the stateless default must never serve from a kept conversation");
+                    "unrelated prompts must never serve from a retained conversation");
         }
     }
 
@@ -171,7 +175,6 @@ class JinferLifecycleIT {
     void repeatedLoadChatCloseIsFootprintBounded() throws Exception {
         // the leak gate that would have caught the 51GB battery OOM: every cycle frees its
         // states deterministically at close, so N cycles cost ~one model, not N
-        Assumptions.assumeTrue(Files.exists(SMALL), "model not found: " + SMALL);
         long before = rssKb();
         for (int i = 0; i < 6; i++) {
             JinferChatModel m = load();
@@ -195,7 +198,6 @@ class JinferLifecycleIT {
 
     @Test
     void closingTheBaseClosesViews() {
-        Assumptions.assumeTrue(Files.exists(SMALL), "model not found: " + SMALL);
         JinferChatModel m = load();
         JinferChatModel view =
                 m.withCachedPrompt(List.of(SystemMessage.from("You are terse.")), List.of());

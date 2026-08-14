@@ -3,18 +3,16 @@ package com.qxotic.jinfer.langchain4j;
 import com.qxotic.jinfer.testkit.TestModels;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.response.ChatResponse;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
  * Model-level prefill TTFT: a ~2k-token prompt, 1 output token, median of 3. The kernel-tier knob
- * is jam's own {@code JAM_ISA} env (e.g. {@code JAM_ISA=avx2} prices the pre-VNNI path); {@code
- * -Djinfer.benchModel} switches the GGUF (default LFM2.5-8B; pass a K-quant model to exercise the
- * K-quant bands).
+ * is jam's own {@code JAM_ISA} env (e.g. {@code JAM_ISA=avx2} prices the pre-VNNI path); the GGUF
+ * is LFM2.5-8B, overridable via {@code -Djinfer.testModel.LFM2.5-8B-A1B-Q8_0.gguf=<path>} (pass a
+ * K-quant model to exercise the K-quant bands).
  */
 @Tag("bench")
 class PrefillBench {
@@ -22,14 +20,7 @@ class PrefillBench {
     @Test
     void prefillTtft() {
         Path model =
-                System.getProperty("jinfer.benchModel") != null
-                        ? Path.of(System.getProperty("jinfer.benchModel"))
-                        : TestModels.find(
-                                        "hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF/LFM2.5-8B-A1B-Q8_0.gguf")
-                                .orElse(
-                                        Path.of(
-                                                "hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF/LFM2.5-8B-A1B-Q8_0.gguf"));
-        Assumptions.assumeTrue(Files.exists(model));
+                TestModels.require("hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF/LFM2.5-8B-A1B-Q8_0.gguf");
         String para =
                 "The river carves the valley and the valley steers the river; silt remembers"
                         + " every flood and the terraces record the argument between water and"

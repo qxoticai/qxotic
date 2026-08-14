@@ -18,14 +18,11 @@ import dev.langchain4j.service.TokenStream;
 import dev.langchain4j.service.UserMessage;
 import dev.langchain4j.service.V;
 import dev.langchain4j.service.tool.ToolExecution;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -39,19 +36,17 @@ import org.junit.jupiter.api.Test;
 @Tag("integration")
 class AiServicesPatternsIT {
 
-    static final Path MODEL =
-            TestModels.find("hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF/LFM2.5-8B-A1B-Q8_0.gguf")
-                    .orElse(Path.of("hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF/LFM2.5-8B-A1B-Q8_0.gguf"));
+    private static final String MODEL_REF =
+            "hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF/LFM2.5-8B-A1B-Q8_0.gguf";
 
     static JinferChatModel model;
     static JinferStreamingChatModel streaming; // a view over the SAME engine: one GGUF load
 
     @BeforeAll
     static void load() {
-        Assumptions.assumeTrue(Files.exists(MODEL), "model not found: " + MODEL);
         model =
                 JinferChatModel.builder()
-                        .modelPath(MODEL)
+                        .modelPath(TestModels.require(MODEL_REF))
                         .contextLength(4096)
                         .maxOutputTokens(256)
                         .thinking(false)
@@ -246,5 +241,167 @@ class AiServicesPatternsIT {
                 result.tokenUsage() instanceof JinferTokenUsage,
                 "aggregated usage lost the jinfer accounting: " + result.tokenUsage());
         assertTrue(result.tokenUsage().totalTokenCount() > 0);
+    }
+
+    // ---- the tool-error lanes (langchain4j's AbstractAiServicesWithToolErrorHandler matrix) ----
+
+    static class FragileSensor {
+        @Tool("Reads the reactor core sensor, in Celsius")
+        String read() {
+            // hostile content on purpose: quotes, a newline, JSON-ish braces - the error text
+            // becomes a tool RESULT, and the wire must frame it without breaking the turn
+            throw new IllegalStateException(
+                    "sensor \"RX-7\" blew up:\ncheck {\"fuse\": 3} before retrying");
+        }
+    }
+
+    interface Operator {
+        String ask(String question);
+    }
+
+    @Test
+    void aThrowingToolRecoversByDefault() {
+        // langchain4j's DEFAULT execution error handler returns the exception's message to the
+        // model as the tool result (it does NOT propagate) - pin that the hostile bytes arrive
+        // intact with zero configuration
+        MessageWindowChatMemory memory = MessageWindowChatMemory.withMaxMessages(10);
+        Operator operator =
+                AiServices.builder(Operator.class)
+                        .chatModel(model)
+                        .tools(new FragileSensor())
+                        .chatMemory(memory)
+                        .build();
+        String answer =
+                operator.ask(
+                        "Read the reactor core sensor now using the tool. If it fails, report"
+                                + " the failure in one sentence.");
+        assertFalse(answer.isBlank(), "the default handler must keep the loop alive");
+        assertTrue(
+                memory.messages().stream()
+                        .filter(
+                                dev.langchain4j.data.message.ToolExecutionResultMessage.class
+                                        ::isInstance)
+                        .map(dev.langchain4j.data.message.ToolExecutionResultMessage.class::cast)
+                        .anyMatch(r -> r.text().contains("sensor \"RX-7\" blew up")),
+                "the raw failure text rides the tool result by default: " + memory.messages());
+    }
+
+    @Test
+    void aThrowingToolBecomesAnErrorResultTheModelReads() {
+        MessageWindowChatMemory memory = MessageWindowChatMemory.withMaxMessages(10);
+        Operator operator =
+                AiServices.builder(Operator.class)
+                        .chatModel(model)
+                        .tools(new FragileSensor())
+                        .chatMemory(memory)
+                        .toolExecutionErrorHandler(
+                                (error, context) ->
+                                        dev.langchain4j.service.tool.ToolErrorHandlerResult.text(
+                                                "Tool failed: " + error.getMessage()))
+                        .build();
+
+        String answer =
+                operator.ask(
+                        "Read the reactor core sensor now using the tool. If it fails, report"
+                                + " the failure in one sentence.");
+        assertFalse(answer.isBlank(), "the loop must recover from the tool failure");
+
+        // the wire pin: the hostile error text landed as a well-formed tool result in memory -
+        // quotes, newline and braces framed intact (hand-rolled renderers break the turn here)
+        var results =
+                memory.messages().stream()
+                        .filter(
+                                dev.langchain4j.data.message.ToolExecutionResultMessage.class
+                                        ::isInstance)
+                        .map(dev.langchain4j.data.message.ToolExecutionResultMessage.class::cast)
+                        .toList();
+        assertTrue(
+                results.stream().anyMatch(r -> r.text().contains("sensor \"RX-7\" blew up")),
+                "the error text must ride the tool result verbatim: " + results);
+    }
+
+    // ---- service-level failure + custom RAG injection (the AiServiceThrowingExceptionIT and
+    // AiServicesWithCustomContentInjectorTest lanes, over a real engine instead of mocks) ----
+
+    @Test
+    void aFailingModelSurfacesItsExceptionUnwrappedThroughTheProxy() {
+        // the upstream test pins that HttpException subtypes map and propagate through the
+        // service proxy; jinfer's equivalent failure is a CLOSED model - the IllegalStateException
+        // must reach the caller AS-IS: not wrapped, not swallowed, not retried into oblivion
+        JinferChatModel closed =
+                JinferChatModel.builder()
+                        .modelPath(TestModels.require(MODEL_REF))
+                        .contextLength(512)
+                        .build();
+        closed.close();
+        Chat chat = AiServices.builder(Chat.class).chatModel(closed).build();
+        IllegalStateException e =
+                org.junit.jupiter.api.Assertions.assertThrows(
+                        IllegalStateException.class, () -> chat.chat("hello"));
+        assertTrue(
+                e.getClass() == IllegalStateException.class,
+                "exactly the engine's exception, never a proxy wrapper: " + e.getClass());
+    }
+
+    @Test
+    void aCustomContentInjectorPutsRetrievedTextWhereTheModelReadsIt() {
+        // the upstream mock pins the injector's output shape; the jinfer lane pins that an
+        // injected multi-part user message survives lowering and the model actually grounds its
+        // answer in the injected content (a fact it cannot know otherwise)
+        dev.langchain4j.rag.content.injector.ContentInjector injector =
+                (contents, message) ->
+                        dev.langchain4j.data.message.UserMessage.from(
+                                dev.langchain4j.data.message.TextContent.from(
+                                        "Context: the codeword for today is ZEBRA."),
+                                dev.langchain4j.data.message.TextContent.from(
+                                        ((dev.langchain4j.data.message.UserMessage) message)
+                                                .singleText()));
+        var augmentor =
+                dev.langchain4j.rag.DefaultRetrievalAugmentor.builder()
+                        .contentRetriever(query -> java.util.Collections.emptyList())
+                        .contentInjector(injector)
+                        .build();
+        Chat chat =
+                AiServices.builder(Chat.class)
+                        .chatModel(model)
+                        .retrievalAugmentor(augmentor)
+                        .build();
+        String answer = chat.chat("What is the codeword for today? One word.");
+        assertTrue(answer.toLowerCase().contains("zebra"), "injected content not read: " + answer);
+    }
+
+    @Test
+    void tightMemoryWindowEvictsToolRoundsWhole() {
+        // the langchain4j-eviction / jinfer-orphan-law handshake, end to end: a window smaller
+        // than one tool round (user + call + result + answer = 4) forces eviction mid-round; the
+        // framework must evict BOTH sides or jinfer's Conversation refuses the orphan loudly
+        // (that refusal is this test's canary - before the law, the ghost turn silently polluted)
+        MessageWindowChatMemory memory = MessageWindowChatMemory.withMaxMessages(4);
+        Operator operator =
+                AiServices.builder(Operator.class)
+                        .chatModel(model)
+                        .tools(new ServerRoom())
+                        .chatMemory(memory)
+                        .build();
+
+        String first = operator.ask("What is the server room temperature? One sentence.");
+        assertFalse(first.isBlank());
+        String second = operator.ask("And now? One sentence.");
+        assertFalse(second.isBlank(), "eviction must not strand the loop");
+
+        // the law, directly on the memory: no result without its call anywhere in the window
+        var messages = memory.messages();
+        var callIds = new java.util.HashSet<String>();
+        for (var m : messages) {
+            if (m instanceof dev.langchain4j.data.message.AiMessage ai
+                    && ai.hasToolExecutionRequests()) {
+                ai.toolExecutionRequests().forEach(r -> callIds.add(r.id()));
+            }
+            if (m instanceof dev.langchain4j.data.message.ToolExecutionResultMessage r) {
+                assertTrue(
+                        callIds.contains(r.id()),
+                        "orphan tool result survived eviction: " + r.id() + " in " + messages);
+            }
+        }
     }
 }

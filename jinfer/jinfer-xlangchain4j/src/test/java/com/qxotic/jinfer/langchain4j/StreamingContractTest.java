@@ -1,9 +1,11 @@
 package com.qxotic.jinfer.langchain4j;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.testkit.TestModels;
+import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.chat.response.PartialResponse;
 import dev.langchain4j.model.chat.response.PartialResponseContext;
@@ -33,11 +35,12 @@ class StreamingContractTest {
 
     private static JinferChatModel model;
 
+    private static final String MODEL_REF =
+            "hf.co/unsloth/Llama-3.2-1B-Instruct-GGUF/Llama-3.2-1B-Instruct-Q8_0.gguf";
+
     @BeforeAll
     void load() {
-        Path gguf =
-                TestModels.require(
-                        "hf.co/unsloth/Llama-3.2-1B-Instruct-GGUF/Llama-3.2-1B-Instruct-Q8_0.gguf");
+        Path gguf = TestModels.require(MODEL_REF);
         model = JinferChatModel.builder().modelPath(gguf).maxOutputTokens(12).seed(7L).build();
     }
 
@@ -117,6 +120,79 @@ class StreamingContractTest {
      * alternative - aborting mid-generation on a transient handler fault - is a tempting change
      * that would silently drop work.
      */
+    @Test
+    void cancellationEndsTheStreamSilently() throws Exception {
+        // the cancel law (jinfer's analog of a client disconnecting mid-stream): deltas stop
+        // soon after cancel(), and NEITHER complete NOR error fires - a cancelled stream has
+        // nothing to report. Asserting "no terminal event" needs a settle window, not a latch.
+        Recorder r =
+                new Recorder() {
+                    @Override
+                    public void onPartialResponse(
+                            PartialResponse partial, PartialResponseContext context) {
+                        super.onPartialResponse(partial, context);
+                        if (events.size() == 2) context.streamingHandle().cancel();
+                    }
+                };
+        model.streaming().chat("Name ten colours, one per line, with a sentence about each.", r);
+        Thread.sleep(3000); // past any in-flight decode window on this model
+        assertTrue(r.events.size() >= 2, "partials flowed before cancel: " + r.events);
+        assertTrue(
+                !r.events.contains("complete") && !r.events.contains("error"),
+                "a cancelled stream ends silently: " + r.events);
+    }
+
+    @Test
+    void theTwinsShareOneLifecycle() {
+        // the twin half of the shared-lifecycle law: close() on either face closes both - and the
+        // streaming face rejects afterwards SYNCHRONOUSLY, like every invalid request. Each
+        // direction needs its own engine: a closed one stays closed.
+        JinferChatModel blockingFirst =
+                JinferChatModel.builder()
+                        .modelPath(TestModels.require(MODEL_REF))
+                        .maxOutputTokens(4)
+                        .build();
+        JinferStreamingChatModel streamingOfFirst = blockingFirst.streaming();
+        blockingFirst.close();
+        assertThrows(
+                IllegalStateException.class, () -> streamingOfFirst.chat("hi", new Recorder()));
+
+        JinferChatModel blockingSecond =
+                JinferChatModel.builder()
+                        .modelPath(TestModels.require(MODEL_REF))
+                        .maxOutputTokens(4)
+                        .build();
+        blockingSecond.streaming().close();
+        assertThrows(
+                IllegalStateException.class, () -> blockingSecond.chat(UserMessage.from("hi")));
+    }
+
+    @Test
+    void hittingTheContextWallMidStreamKeepsThePartialsAndFinishesLength() throws Exception {
+        // the mid-stream-exhaustion law: where a hosted provider would fail the stream, jinfer
+        // stops gracefully at the wall - every delta already delivered stays delivered, the
+        // terminal event is a COMPLETE with finishReason LENGTH, and onError never fires. A
+        // consumer that renders partials live is never left with an unterminated reply.
+        try (JinferChatModel tiny =
+                JinferChatModel.builder()
+                        .modelPath(TestModels.require(MODEL_REF))
+                        .contextLength(64) // prompt ~22 tokens: ~40 fit before the wall
+                        .temperature(0.0)
+                        .build()) {
+            Recorder r = new Recorder();
+            tiny.streaming().chat("Count from 1 to 500, separated by commas.", r);
+            r.awaitCompletion();
+
+            assertEquals(null, r.error.get(), "the wall is not an error: " + r.error.get());
+            assertTrue(r.events.size() > 10, "partials must flow before the wall: " + r.events);
+            assertEquals("complete", r.events.get(r.events.size() - 1), r.events.toString());
+            assertEquals(
+                    dev.langchain4j.model.output.FinishReason.LENGTH,
+                    r.response.get().finishReason(),
+                    "the wall ends as LENGTH: " + r.response.get().finishReason());
+        }
+    }
+
     @Test
     void aThrowingHandlerIsReportedWithoutKillingTheStream() throws Exception {
         AtomicInteger deltas = new AtomicInteger();
