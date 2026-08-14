@@ -4,6 +4,7 @@ import com.qxotic.jinfer.x.boundary.Media;
 import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Path;
 import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.AudioInputStream;
@@ -19,6 +20,7 @@ import javax.sound.sampled.UnsupportedAudioFileException;
 public final class JavaSoundAudioDecoder implements AudioDecoder {
 
     private static final int SR = FfmpegAudioDecoder.SAMPLE_RATE; // 16000
+    private static final int MAX_PCM_BYTES = FfmpegAudioDecoder.MAX_SAMPLES * 2;
     private final FfmpegAudioDecoder fallback = new FfmpegAudioDecoder();
 
     @Override
@@ -53,7 +55,7 @@ public final class JavaSoundAudioDecoder implements AudioDecoder {
                 new AudioFormat(AudioFormat.Encoding.PCM_SIGNED, SR, 16, 1, 2, SR, false);
         byte[] bytes;
         try (AudioInputStream conv = AudioSystem.getAudioInputStream(target, in)) {
-            bytes = conv.readAllBytes();
+            bytes = readBounded(conv, MAX_PCM_BYTES);
         }
         int n = bytes.length / 2;
         float[] pcm = new float[n];
@@ -62,5 +64,12 @@ public final class JavaSoundAudioDecoder implements AudioDecoder {
             pcm[i] = s / 32768f;
         }
         return new Media.Audio(pcm, SR, 1);
+    }
+
+    static byte[] readBounded(InputStream input, int maxBytes) throws IOException {
+        byte[] bytes = input.readNBytes(maxBytes + 1);
+        if (bytes.length > maxBytes)
+            throw new IOException("decoded audio exceeds the " + maxBytes + "-byte limit");
+        return bytes;
     }
 }

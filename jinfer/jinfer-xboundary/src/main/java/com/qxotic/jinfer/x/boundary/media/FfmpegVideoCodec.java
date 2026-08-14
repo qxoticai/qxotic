@@ -8,7 +8,6 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
-import java.util.concurrent.TimeUnit;
 
 /**
  * The {@link VideoCodec} primitives via ffmpeg/ffprobe on PATH: {@code totalDuration} and {@code
@@ -127,26 +126,11 @@ public final class FfmpegVideoCodec implements VideoCodec {
         List<String> cmd = new ArrayList<>(List.of("ffprobe", "-v", "error"));
         cmd.addAll(List.of(entries));
         cmd.addAll(List.of("-of", "csv=p=0", video.toString()));
-        ProcessBuilder pb = new ProcessBuilder(cmd);
-        pb.redirectErrorStream(true);
-        try {
-            Process p = pb.start();
-            // US_ASCII, not the platform default: csv=p=0 output is digits and dots, and the
-            // default charset differs across Linux/macOS/Windows
-            String out =
-                    new String(p.getInputStream().readAllBytes(), StandardCharsets.US_ASCII)
-                            .strip();
-            if (!p.waitFor(30, TimeUnit.SECONDS)) {
-                p.destroyForcibly(); // a timed-out probe must not leak a process holding the file
-                throw new IOException("ffprobe timed out for " + video);
-            }
-            if (p.exitValue() != 0) {
-                throw new IOException("ffprobe failed for " + video + ": " + out);
-            }
-            return out;
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IOException("interrupted probing " + video, e);
-        }
+        // US_ASCII, not the platform default: csv=p=0 output is digits and dots, and the default
+        // charset differs across Linux/macOS/Windows.
+        return new String(
+                        Ffmpeg.run(cmd, null, Duration.ofSeconds(30), 64 << 10),
+                        StandardCharsets.US_ASCII)
+                .strip();
     }
 }

@@ -6,6 +6,8 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.file.Path;
 import javax.imageio.ImageIO;
+import javax.imageio.ImageReader;
+import javax.imageio.stream.ImageInputStream;
 
 /**
  * The {@code javax.imageio} decoder, and the JVM default: no external process. Never referenced
@@ -21,21 +23,42 @@ public final class ImageIoDecoder implements ImageDecoder {
 
     @Override
     public Media.Image load(Path path) throws IOException {
-        return fromBuffered(ImageIO.read(path.toFile()), path.toString());
+        try (ImageInputStream input = ImageIO.createImageInputStream(path.toFile())) {
+            return read(input, path.toString());
+        }
     }
 
     @Override
     public Media.Image decode(byte[] encoded) throws IOException {
-        return fromBuffered(
-                ImageIO.read(new ByteArrayInputStream(encoded)), "<" + encoded.length + " bytes>");
+        try (ImageInputStream input =
+                ImageIO.createImageInputStream(new ByteArrayInputStream(encoded))) {
+            return read(input, "<" + encoded.length + " bytes>");
+        }
     }
 
-    private static Media.Image fromBuffered(BufferedImage bi, String src) throws IOException {
-        if (bi == null) {
+    private static Media.Image read(ImageInputStream input, String src) throws IOException {
+        if (input == null) {
             throw new IOException(
                     "javax.imageio could not decode " + src + " (unsupported format?)");
         }
+        var readers = ImageIO.getImageReaders(input);
+        if (!readers.hasNext()) {
+            throw new IOException(
+                    "javax.imageio could not decode " + src + " (unsupported format?)");
+        }
+        ImageReader reader = readers.next();
+        try {
+            reader.setInput(input, true, true);
+            ImageCodec.checkDimensions(reader.getWidth(0), reader.getHeight(0));
+            return fromBuffered(reader.read(0));
+        } finally {
+            reader.dispose();
+        }
+    }
+
+    private static Media.Image fromBuffered(BufferedImage bi) throws IOException {
         int h = bi.getHeight(), w = bi.getWidth();
+        ImageCodec.checkDimensions(w, h);
         float[] v = new float[h * w * 3];
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
