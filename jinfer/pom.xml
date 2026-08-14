@@ -54,6 +54,9 @@
     <module>jinfer-models-all</module>
     <module>jinfer-langchain4j</module>
     <module>jinfer-xlangchain4j</module>
+    <module>jinfer-xspring-ai</module>
+    <module>jinfer-xspring-ai-autoconfigure</module>
+    <module>jinfer-xspring-ai-spring-boot-starter</module>
     <module>jinfer-spring-ai</module>
     <module>jinfer-spring-ai-autoconfigure</module>
     <module>jinfer-spring-ai-spring-boot-starter</module>
