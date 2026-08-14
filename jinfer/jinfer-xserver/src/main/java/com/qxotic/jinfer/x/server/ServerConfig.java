@@ -26,6 +26,18 @@ public record ServerConfig(
                 Access.LOCAL);
     }
 
+    public ServerConfig withDefaults(Defaults defaults) {
+        return new ServerConfig(bind, defaults, limits, access);
+    }
+
+    public ServerConfig withLimits(Limits limits) {
+        return new ServerConfig(bind, defaults, limits, access);
+    }
+
+    public ServerConfig withAccess(Access access) {
+        return new ServerConfig(bind, defaults, limits, access);
+    }
+
     /** Request values clients may override. Null sampling means the model's own defaults. */
     public record Defaults(
             Sampling sampling, int maxOutputTokens, boolean think, boolean rawPrompt) {
@@ -69,6 +81,50 @@ public record ServerConfig(
 
         int retryAfterSeconds() {
             return Math.max(1, 2 * (queueCapacity + 1));
+        }
+
+        public Limits withThreads(int threads) {
+            return new Limits(
+                    threads,
+                    queueCapacity,
+                    maxBodyBytes,
+                    grammar,
+                    writeTimeout,
+                    requestTimeout,
+                    shutdownTimeout);
+        }
+
+        public Limits withQueueCapacity(int queueCapacity) {
+            return new Limits(
+                    threads,
+                    queueCapacity,
+                    maxBodyBytes,
+                    grammar,
+                    writeTimeout,
+                    requestTimeout,
+                    shutdownTimeout);
+        }
+
+        public Limits withGrammar(boolean grammar) {
+            return new Limits(
+                    threads,
+                    queueCapacity,
+                    maxBodyBytes,
+                    grammar,
+                    writeTimeout,
+                    requestTimeout,
+                    shutdownTimeout);
+        }
+
+        public Limits withRequestTimeout(Duration requestTimeout) {
+            return new Limits(
+                    threads,
+                    queueCapacity,
+                    maxBodyBytes,
+                    grammar,
+                    writeTimeout,
+                    requestTimeout,
+                    shutdownTimeout);
         }
 
         private static void requirePositive(Duration value, String name) {
