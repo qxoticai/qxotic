@@ -225,6 +225,9 @@ public final class JinferDocumentPostProcessor implements DocumentPostProcessor,
 
         /** Keep only the {@code topK} best documents; 0 (default) keeps all of them. */
         public Builder topK(int topK) {
+            // 0 is the documented "keep all" sentinel; a negative is a caller bug, not a synonym
+            if (topK < 0)
+                throw new IllegalArgumentException("topK must be >= 0 (0 keeps all): " + topK);
             this.topK = topK;
             return this;
         }
