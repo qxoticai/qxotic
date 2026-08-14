@@ -17,7 +17,6 @@ import com.qxotic.jinfer.x.llm.Sampling;
 import com.qxotic.jinfer.x.llm.SpecialTokens;
 import com.qxotic.toknroll.IntSequence;
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
@@ -344,7 +343,8 @@ final class Generation {
             Media.Video video = VideoSampler.UNIFORM.sample(temporary);
             return new Content.Media(video, digest(bytes));
         } catch (IOException failure) {
-            throw new UncheckedIOException("video could not be decoded", failure);
+            throw new IllegalArgumentException(
+                    "video could not be decoded: " + failure.getMessage());
         } finally {
             if (temporary != null) {
                 try {
