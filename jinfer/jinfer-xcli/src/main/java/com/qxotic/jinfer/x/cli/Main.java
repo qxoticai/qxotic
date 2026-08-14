@@ -105,7 +105,9 @@ public class Main {
                 new ChatEngine(model, options.modelPath().getFileName().toString(), cacheOptions)
                         .speculationDepth(options.speculationDepth());
         try {
-            if (options.interactive()) {
+            if (options.server()) {
+                Serve.run(engine, model, sampling, options);
+            } else if (options.interactive()) {
                 Chat.run(engine, sampling, options);
             } else {
                 Instruct.run(engine, sampling, options);

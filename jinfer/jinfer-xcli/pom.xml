@@ -41,6 +41,10 @@
       <artifactId>jinfer-xcache</artifactId>
     </dependency>
     <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-xserver</artifactId>
+    </dependency>
+    <dependency>
       <!-- the AOT preload reads GGUF headers itself (it must, to bake them) -->
       <groupId>com.qxotic</groupId>
       <artifactId>gguf</artifactId>
