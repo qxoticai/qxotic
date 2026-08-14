@@ -12,14 +12,6 @@ class GraniteToolIT extends AbstractToolIT {
 
     @Override
     Path modelPath() {
-        return Path.of(
-                System.getProperty(
-                        "jinfer.graniteModel",
-                        TestModels.find(
-                                        "hf.co/ibm-granite/granite-4.1-3b-GGUF/granite-4.1-3b-Q8_0.gguf")
-                                .orElse(
-                                        Path.of(
-                                                "hf.co/ibm-granite/granite-4.1-3b-GGUF/granite-4.1-3b-Q8_0.gguf"))
-                                .toString()));
+        return TestModels.require("hf.co/ibm-granite/granite-4.1-3b-GGUF/granite-4.1-3b-Q8_0.gguf");
     }
 }

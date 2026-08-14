@@ -23,7 +23,6 @@ import java.util.Base64;
 import java.util.List;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -39,18 +38,12 @@ import org.junit.jupiter.api.Test;
 @Tag("integration")
 class LocalAgentIT {
 
-    static final Path BRAIN =
-            TestModels.find("hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF/LFM2.5-8B-A1B-Q8_0.gguf")
-                    .orElse(Path.of("hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF/LFM2.5-8B-A1B-Q8_0.gguf"));
-    static final Path EYES =
-            TestModels.find(
-                            "hf.co/unsloth/gemma-4-12B-it-qat-GGUF/gemma-4-12B-it-qat-UD-Q4_K_XL.gguf")
-                    .orElse(
-                            Path.of(
-                                    "hf.co/unsloth/gemma-4-12B-it-qat-GGUF/gemma-4-12B-it-qat-UD-Q4_K_XL.gguf"));
-    static final Path EYES_MMPROJ =
-            TestModels.find("hf.co/unsloth/gemma-4-12B-it-qat-GGUF/mmproj-F32.gguf")
-                    .orElse(Path.of("hf.co/unsloth/gemma-4-12B-it-qat-GGUF/mmproj-F32.gguf"));
+    private static final String BRAIN_REF =
+            "hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF/LFM2.5-8B-A1B-Q8_0.gguf";
+    private static final String EYES_REF =
+            "hf.co/unsloth/gemma-4-12B-it-qat-GGUF/gemma-4-12B-it-qat-UD-Q4_K_XL.gguf";
+    private static final String EYES_MMPROJ_REF =
+            "hf.co/unsloth/gemma-4-12B-it-qat-GGUF/mmproj-F32.gguf";
 
     /** Gemma 4 behind two tools: the brain never sees pixels or samples, only descriptions. */
     static class Senses {
@@ -117,19 +110,16 @@ class LocalAgentIT {
 
     @BeforeAll
     static void wire() {
-        for (Path p : List.of(BRAIN, EYES, EYES_MMPROJ)) {
-            Assumptions.assumeTrue(Files.exists(p), "model not found: " + p);
-        }
         brain =
                 JinferChatModel.builder()
-                        .modelPath(BRAIN)
+                        .modelPath(TestModels.require(BRAIN_REF))
                         .contextLength(8192)
                         .maxOutputTokens(512)
                         .build();
         eyes =
                 JinferChatModel.builder()
-                        .modelPath(EYES)
-                        .companion("media", EYES_MMPROJ)
+                        .modelPath(TestModels.require(EYES_REF))
+                        .companion("media", TestModels.require(EYES_MMPROJ_REF))
                         .contextLength(4096)
                         .maxOutputTokens(256)
                         .build();

@@ -2,6 +2,7 @@ package com.qxotic.jinfer.langchain4j;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -35,6 +36,24 @@ import org.junit.jupiter.api.Test;
 
 /** The mapping seam, model-free: typed messages, fallback maps, tools, replies, finish reasons. */
 class MappingsTest {
+
+    @Test
+    void customMessageIsRefusedLoudly() {
+        // the Ollama custom-role passthrough (a "context" role for guardian models) has no
+        // jinfer equivalent: no family template has a slot for caller-invented roles, so a
+        // CustomMessage must refuse loudly instead of being silently dropped from the prompt
+        UnsupportedFeatureException e =
+                assertThrows(
+                        UnsupportedFeatureException.class,
+                        () ->
+                                Mappings.toMessages(
+                                        List.of(
+                                                UserMessage.from("hi"),
+                                                dev.langchain4j.data.message.CustomMessage.from(
+                                                        Map.of("role", "context", "content", "x"))),
+                                        VideoSampler.UNIFORM));
+        assertTrue(e.getMessage().contains("CUSTOM"), e.getMessage());
+    }
 
     @Test
     void conversationRoundTrip() {
@@ -136,6 +155,44 @@ class MappingsTest {
         AiMessage ai = Mappings.toAiMessage(reply);
         assertEquals("pondering", ai.thinking());
         assertEquals("answer", ai.text());
+    }
+
+    @Test
+    void theSplitPreservesWhitespaceVerbatim() {
+        // the GPULlama3 splitter laws at jinfer's structural boundary: NOTHING is trimmed or
+        // re-spaced crossing the reasoning/content seam - downstream code (AiServices parsers,
+        // user output) sees exactly the model's bytes
+        Message reply =
+                new Message(
+                        Role.ASSISTANT,
+                        List.of(
+                                new Content.Reasoning(
+                                        List.of(new Content.Text("  r\n\n r2  ", null)), null),
+                                new Content.Text("line1\nline2\n\n  indented", null)));
+        AiMessage ai = Mappings.toAiMessage(reply);
+        assertEquals("  r\n\n r2  ", ai.thinking(), "thinking keeps its exact whitespace");
+        assertEquals(
+                "line1\nline2\n\n  indented",
+                ai.text(),
+                "text after a thinking block is not trimmed");
+
+        // no reasoning: the text passes through byte-identical, padding included
+        AiMessage plain =
+                Mappings.toAiMessage(
+                        new Message(Role.ASSISTANT, List.of(new Content.Text("  padded  ", null))));
+        assertEquals("  padded  ", plain.text());
+        assertNull(plain.thinking(), "no reasoning lane, no thinking field");
+
+        // reasoning only: text stays absent (never an empty string inventing content)
+        AiMessage thoughtsOnly =
+                Mappings.toAiMessage(
+                        new Message(
+                                Role.ASSISTANT,
+                                List.of(
+                                        new Content.Reasoning(
+                                                List.of(new Content.Text("hmm", null)), null))));
+        assertNull(thoughtsOnly.text());
+        assertEquals("hmm", thoughtsOnly.thinking());
     }
 
     @Test

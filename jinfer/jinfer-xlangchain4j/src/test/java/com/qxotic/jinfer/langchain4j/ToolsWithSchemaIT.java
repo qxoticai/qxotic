@@ -16,10 +16,8 @@ import dev.langchain4j.model.chat.request.ResponseFormatType;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 import dev.langchain4j.model.chat.request.json.JsonSchema;
 import dev.langchain4j.model.output.FinishReason;
-import java.nio.file.Path;
 import java.util.Map;
 import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -37,18 +35,11 @@ class ToolsWithSchemaIT {
 
     @BeforeAll
     static void load() {
-        Assumptions.assumeTrue(
-                TestModels.find("hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF/LFM2.5-8B-A1B-Q8_0.gguf")
-                        .isPresent(),
-                "model not found");
         model =
                 JinferChatModel.builder()
                         .modelPath(
-                                TestModels.find(
-                                                "hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF/LFM2.5-8B-A1B-Q8_0.gguf")
-                                        .orElse(
-                                                Path.of(
-                                                        "hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF/LFM2.5-8B-A1B-Q8_0.gguf")))
+                                TestModels.require(
+                                        "hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF/LFM2.5-8B-A1B-Q8_0.gguf"))
                         .contextLength(4096)
                         .maxOutputTokens(512)
                         .temperature(0.0)

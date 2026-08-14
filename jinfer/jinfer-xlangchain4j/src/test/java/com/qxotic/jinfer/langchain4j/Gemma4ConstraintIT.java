@@ -10,14 +10,7 @@ class Gemma4ConstraintIT extends AbstractConstraintIT {
 
     @Override
     Path modelPath() {
-        return Path.of(
-                System.getProperty(
-                        "jinfer.gemma4Model",
-                        TestModels.find(
-                                        "hf.co/unsloth/gemma-4-E2B-it-qat-GGUF/gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf")
-                                .orElse(
-                                        Path.of(
-                                                "hf.co/unsloth/gemma-4-E2B-it-qat-GGUF/gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf"))
-                                .toString()));
+        return TestModels.require(
+                "hf.co/unsloth/gemma-4-E2B-it-qat-GGUF/gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf");
     }
 }

@@ -40,16 +40,7 @@ import org.junit.jupiter.api.Test;
 @Tag("integration")
 class CachedPromptIT {
 
-    static final Path MODEL =
-            Path.of(
-                    System.getProperty(
-                            "jinfer.testModel",
-                            TestModels.find(
-                                            "hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF/LFM2.5-8B-A1B-Q8_0.gguf")
-                                    .orElse(
-                                            Path.of(
-                                                    "hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF/LFM2.5-8B-A1B-Q8_0.gguf"))
-                                    .toString()));
+    private static final String REF = "hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF/LFM2.5-8B-A1B-Q8_0.gguf";
 
     static final List<ChatMessage> SUPPORT =
             List.of(
@@ -61,10 +52,9 @@ class CachedPromptIT {
 
     @BeforeAll
     static void load() {
-        Assumptions.assumeTrue(Files.exists(MODEL), "model not found: " + MODEL);
         base =
                 JinferChatModel.builder()
-                        .modelPath(MODEL)
+                        .modelPath(TestModels.require(REF))
                         .contextLength(4096)
                         .maxOutputTokens(128)
                         .build();
@@ -76,8 +66,8 @@ class CachedPromptIT {
     }
 
     @Test
-    void cachedSessionsMultiTurn() {
-        // cachedSessions(1): turn 2 strictly extends turn 1's pooled state (the echoed reply
+    void retainedSessionsResumeMultiTurn() {
+        // retainSessions(1): turn 2 strictly extends turn 1's retained state (the echoed reply
         // restores its verbatim ids through the wire attribute, so the re-encode is the exact
         // generated tokens). BYTE-IDENTITY LAW, proven on ONE engine: the same turn-2 request
         // served from the pool (hit) and cold (the pool no longer matches after it grew past
@@ -87,10 +77,10 @@ class CachedPromptIT {
         // spend the whole budget on a think span (null text)
         JinferChatModel warm =
                 JinferChatModel.builder()
-                        .modelPath(MODEL)
+                        .modelPath(TestModels.require(REF))
                         .contextLength(4096)
                         .maxOutputTokens(128)
-                        .cachedSessions(1)
+                        .retainSessions(1)
                         .seed(7L)
                         .build();
         UserMessage first = UserMessage.from("Remember the codeword PELICAN. Acknowledge briefly.");
@@ -124,7 +114,7 @@ class CachedPromptIT {
         // argmax near-tie. Self-contained, the comparison tests the law, not test order.
         JinferChatModel fresh =
                 JinferChatModel.builder()
-                        .modelPath(MODEL)
+                        .modelPath(TestModels.require(REF))
                         .contextLength(4096)
                         .maxOutputTokens(128)
                         .seed(7L)
@@ -174,10 +164,10 @@ class CachedPromptIT {
         // beyond the unavoidable tail), and answers still flow
         JinferChatModel base2 =
                 JinferChatModel.builder()
-                        .modelPath(MODEL)
+                        .modelPath(TestModels.require(REF))
                         .contextLength(4096)
                         .maxOutputTokens(64)
-                        .loadCachedPrompts(artifact)
+                        .promptCache(artifact)
                         .build();
         JinferChatModel a2 =
                 base2.withCachedPrompt(
@@ -195,7 +185,7 @@ class CachedPromptIT {
         // ONE load in the USER's arena; fork() mints a second pipeline for the price of a
         // context. The arena's block structure IS the ownership story: weights die at the brace.
         try (Arena arena = Arena.ofShared()) {
-            var loaded = Models.load(MODEL, arena);
+            var loaded = Models.load(TestModels.require(REF), arena);
             // contextLength is a load-time setting on the LoadedModel path - the builder
             // refuses it here by design; a generous budget keeps the echo assertion off luck
             JinferChatModel a =
@@ -288,7 +278,10 @@ class CachedPromptIT {
         // a second model. Both generate CONCURRENTLY (forbidden on one instance - StateGuard
         // would reject shared-state misuse; here each owns its state) and answer coherently.
         JinferChatModel twin =
-                JinferChatModel.builder().modelPath(MODEL).contextLength(2048).build();
+                JinferChatModel.builder()
+                        .modelPath(TestModels.require(REF))
+                        .contextLength(2048)
+                        .build();
         var pool = Executors.newFixedThreadPool(2);
         try {
             var a =
@@ -450,19 +443,15 @@ class CachedPromptIT {
         base.saveCachedPrompts(artifact);
 
         Path other =
-                TestModels.find(
-                                "hf.co/unsloth/gemma-4-E2B-it-qat-GGUF/gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf")
-                        .orElse(
-                                Path.of(
-                                        "hf.co/unsloth/gemma-4-E2B-it-qat-GGUF/gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf"));
-        Assumptions.assumeTrue(Files.exists(other), "second model not found");
+                TestModels.require(
+                        "hf.co/unsloth/gemma-4-E2B-it-qat-GGUF/gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf");
         assertThrows(
                 Exception.class,
                 () ->
                         JinferChatModel.builder()
                                 .modelPath(other)
                                 .contextLength(2048)
-                                .loadCachedPrompts(artifact)
+                                .promptCache(artifact)
                                 .build());
     }
 }

@@ -13,14 +13,7 @@ class NemotronToolIT extends AbstractToolIT {
 
     @Override
     Path modelPath() {
-        return Path.of(
-                System.getProperty(
-                        "jinfer.nemotronModel",
-                        TestModels.find(
-                                        "hf.co/bartowski/nvidia_Nemotron-Cascade-2-30B-A3B-GGUF/nvidia_Nemotron-Cascade-2-30B-A3B-Q8_0.gguf")
-                                .orElse(
-                                        Path.of(
-                                                "hf.co/bartowski/nvidia_Nemotron-Cascade-2-30B-A3B-GGUF/nvidia_Nemotron-Cascade-2-30B-A3B-Q8_0.gguf"))
-                                .toString()));
+        return TestModels.require(
+                "hf.co/bartowski/nvidia_Nemotron-Cascade-2-30B-A3B-GGUF/nvidia_Nemotron-Cascade-2-30B-A3B-Q8_0.gguf");
     }
 }

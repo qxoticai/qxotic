@@ -2,6 +2,7 @@ package com.qxotic.jinfer.langchain4j;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.testkit.TestModels;
@@ -18,8 +19,6 @@ import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
 import dev.langchain4j.model.output.FinishReason;
 import dev.langchain4j.service.AiServices;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -38,25 +37,20 @@ import org.junit.jupiter.api.Test;
 @Tag("integration")
 class JinferChatModelIT {
 
-    static final Path MODEL =
-            Path.of(
-                    System.getProperty(
-                            "jinfer.testModel",
-                            TestModels.find(
-                                            "hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF/LFM2.5-8B-A1B-Q8_0.gguf")
-                                    .orElse(
-                                            Path.of(
-                                                    "hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF/LFM2.5-8B-A1B-Q8_0.gguf"))
-                                    .toString()));
+    private static final String MODEL_REF =
+            "hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF/LFM2.5-8B-A1B-Q8_0.gguf";
 
     static JinferChatModel model;
 
+    /** The tiny LFM2 for tests that load their OWN engine (never the shared 8B above). */
+    private static final String TINY_MODEL_REF =
+            "hf.co/LiquidAI/LFM2.5-350M-GGUF/LFM2.5-350M-Q8_0.gguf";
+
     @BeforeAll
     static void load() {
-        Assumptions.assumeTrue(Files.exists(MODEL), "model not found: " + MODEL);
         model =
                 JinferChatModel.builder()
-                        .modelPath(MODEL)
+                        .modelPath(TestModels.require(MODEL_REF))
                         .contextLength(4096)
                         .maxOutputTokens(512)
                         .build();
@@ -112,6 +106,26 @@ class JinferChatModelIT {
         ChatResponse r = done.get(5, TimeUnit.MINUTES);
         // the streamed fragments and the final message agree
         assertEquals(r.aiMessage().text(), streamed.toString());
+    }
+
+    @Test
+    void orphanToolResultIsRefusedLoudly() {
+        // the memory-trim artifact: a ToolExecutionResultMessage whose call was evicted (or
+        // never sent) must NOT silently render as a ghost exchange - the engine's Conversation
+        // refuses it at construction with the recipe, and the failure surfaces from chat()
+        IllegalArgumentException e =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                model.chat(
+                                        ChatRequest.builder()
+                                                .messages(
+                                                        UserMessage.from("What is 2+2?"),
+                                                        ToolExecutionResultMessage.from(
+                                                                "ghost-call", "calculator", "4"))
+                                                .build()));
+        assertTrue(e.getMessage().contains("ghost-call"), e.getMessage());
+        assertTrue(e.getMessage().contains("no tool call"), e.getMessage());
     }
 
     @Test
@@ -225,7 +239,7 @@ class JinferChatModelIT {
 
         try (JinferChatModel quiet =
                 JinferChatModel.builder()
-                        .modelPath(MODEL)
+                        .modelPath(TestModels.require(MODEL_REF))
                         .contextLength(2048)
                         .maxOutputTokens(128)
                         .thinking(false)
@@ -248,9 +262,7 @@ class JinferChatModelIT {
                 };
         try (JinferChatModel listened =
                 JinferChatModel.builder()
-                        .modelPath(
-                                TestModels.require(
-                                        "hf.co/LiquidAI/LFM2.5-350M-GGUF/LFM2.5-350M-Q8_0.gguf"))
+                        .modelPath(TestModels.require(TINY_MODEL_REF))
                         .contextLength(1024)
                         .maxOutputTokens(32)
                         .listeners(List.of(listener))
@@ -260,6 +272,58 @@ class JinferChatModelIT {
             assertTrue(seen.get().tokenUsage().totalTokenCount() > 0);
             assertNotNull(seen.get().finishReason());
         }
+    }
+
+    @Test
+    void closingAViewClosesTheBaseTheSiblingAndTheTwin() {
+        // the shared-lifecycle law (the class doc's Lifecycle paragraph): ONE engine - close() on
+        // ANY of base/view/sibling/twin closes ALL. Pinned so a future ownership refactor cannot
+        // quietly change it. Local 350M load: this test must not kill the class's shared model.
+        JinferChatModel base =
+                JinferChatModel.builder()
+                        .modelPath(TestModels.require(TINY_MODEL_REF))
+                        .contextLength(1024)
+                        .maxOutputTokens(8)
+                        .build();
+        JinferChatModel view =
+                base.withCachedPrompt(
+                        List.of(dev.langchain4j.data.message.SystemMessage.from("be brief")),
+                        List.of());
+        JinferChatModel sibling =
+                base.withCachedPrompt(
+                        List.of(dev.langchain4j.data.message.SystemMessage.from("be loud")),
+                        List.of());
+        JinferStreamingChatModel twin = base.streaming();
+
+        view.close();
+
+        assertThrows(IllegalStateException.class, () -> base.chat(UserMessage.from("hi")));
+        assertThrows(IllegalStateException.class, () -> sibling.chat(UserMessage.from("hi")));
+        assertThrows(
+                IllegalStateException.class,
+                () ->
+                        twin.chat(
+                                "hi",
+                                new StreamingChatResponseHandler() {
+                                    @Override
+                                    public void onPartialResponse(String partialResponse) {}
+
+                                    @Override
+                                    public void onCompleteResponse(ChatResponse completeResponse) {}
+
+                                    @Override
+                                    public void onError(Throwable error) {}
+                                }));
+        // a dead engine also refuses NEW views
+        assertThrows(
+                IllegalStateException.class,
+                () ->
+                        base.withCachedPrompt(
+                                List.of(
+                                        dev.langchain4j.data.message.SystemMessage.from(
+                                                "too late")),
+                                List.of()));
+        base.close(); // idempotent: reclosing through another instance is a no-op
     }
 
     @Test

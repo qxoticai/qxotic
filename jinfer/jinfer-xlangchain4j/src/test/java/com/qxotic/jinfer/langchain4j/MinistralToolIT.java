@@ -13,14 +13,7 @@ class MinistralToolIT extends AbstractToolIT {
 
     @Override
     Path modelPath() {
-        return Path.of(
-                System.getProperty(
-                        "jinfer.ministralModel",
-                        TestModels.find(
-                                        "hf.co/unsloth/Ministral-3-3B-Instruct-2512-GGUF/Ministral-3-3B-Instruct-2512-Q8_0.gguf")
-                                .orElse(
-                                        Path.of(
-                                                "hf.co/unsloth/Ministral-3-3B-Instruct-2512-GGUF/Ministral-3-3B-Instruct-2512-Q8_0.gguf"))
-                                .toString()));
+        return TestModels.require(
+                "hf.co/unsloth/Ministral-3-3B-Instruct-2512-GGUF/Ministral-3-3B-Instruct-2512-Q8_0.gguf");
     }
 }

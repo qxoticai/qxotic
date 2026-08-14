@@ -15,14 +15,7 @@ class GptOssToolIT extends AbstractToolIT {
 
     @Override
     Path modelPath() {
-        return Path.of(
-                System.getProperty(
-                        "jinfer.gptossModel",
-                        TestModels.find("hf.co/unsloth/gpt-oss-20b-GGUF/gpt-oss-20b-Q8_0.gguf")
-                                .orElse(
-                                        Path.of(
-                                                "hf.co/unsloth/gpt-oss-20b-GGUF/gpt-oss-20b-Q8_0.gguf"))
-                                .toString()));
+        return TestModels.require("hf.co/unsloth/gpt-oss-20b-GGUF/gpt-oss-20b-Q8_0.gguf");
     }
 
     /**

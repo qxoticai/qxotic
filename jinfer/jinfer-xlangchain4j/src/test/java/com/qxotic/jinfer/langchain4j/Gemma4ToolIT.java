@@ -12,14 +12,6 @@ class Gemma4ToolIT extends AbstractToolIT {
 
     @Override
     Path modelPath() {
-        return Path.of(
-                System.getProperty(
-                        "jinfer.gemma4Model",
-                        TestModels.find(
-                                        "hf.co/unsloth/gemma-4-E2B-it-GGUF/gemma-4-E2B-it-Q8_0.gguf")
-                                .orElse(
-                                        Path.of(
-                                                "hf.co/unsloth/gemma-4-E2B-it-GGUF/gemma-4-E2B-it-Q8_0.gguf"))
-                                .toString()));
+        return TestModels.require("hf.co/unsloth/gemma-4-E2B-it-GGUF/gemma-4-E2B-it-Q8_0.gguf");
     }
 }

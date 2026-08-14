@@ -36,45 +36,27 @@ class NmtProbe {
 
     record Cycle(String name, Path path) {}
 
+    private static final String LFM2_8B =
+            "hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF/LFM2.5-8B-A1B-Q8_0.gguf";
+    private static final String GRANITE_3B =
+            "hf.co/ibm-granite/granite-4.1-3b-GGUF/granite-4.1-3b-Q8_0.gguf";
+    private static final String QWEN35_2B = "hf.co/unsloth/Qwen3.5-2B-GGUF/Qwen3.5-2B-Q8_0.gguf";
+
     @Test
     void loadChatCloseRotation() throws Throwable {
         List<Cycle> rotation =
                 List.of(
-                        new Cycle(
-                                "lfm2-8b-moe",
-                                TestModels.find(
-                                                "hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF/LFM2.5-8B-A1B-Q8_0.gguf")
-                                        .orElse(
-                                                Path.of(
-                                                        "hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF/LFM2.5-8B-A1B-Q8_0.gguf"))),
-                        new Cycle(
-                                "granite-3b",
-                                TestModels.find(
-                                                "hf.co/ibm-granite/granite-4.1-3b-GGUF/granite-4.1-3b-Q8_0.gguf")
-                                        .orElse(
-                                                Path.of(
-                                                        "hf.co/ibm-granite/granite-4.1-3b-GGUF/granite-4.1-3b-Q8_0.gguf"))),
-                        new Cycle(
-                                "qwen35-2b",
-                                TestModels.find(
-                                                "hf.co/unsloth/Qwen3.5-2B-GGUF/Qwen3.5-2B-Q8_0.gguf")
-                                        .orElse(
-                                                Path.of(
-                                                        "hf.co/unsloth/Qwen3.5-2B-GGUF/Qwen3.5-2B-Q8_0.gguf"))),
+                        new Cycle("lfm2-8b-moe", TestModels.require(LFM2_8B)),
+                        new Cycle("granite-3b", TestModels.require(GRANITE_3B)),
+                        new Cycle("qwen35-2b", TestModels.require(QWEN35_2B)),
                         new Cycle(
                                 "minicpm5-1b",
-                                TestModels.find(
-                                                "hf.co/openbmb/MiniCPM5-1B-GGUF/MiniCPM5-1B-Q8_0.gguf")
-                                        .orElse(
-                                                Path.of(
-                                                        "hf.co/openbmb/MiniCPM5-1B-GGUF/MiniCPM5-1B-Q8_0.gguf"))),
+                                TestModels.require(
+                                        "hf.co/openbmb/MiniCPM5-1B-GGUF/MiniCPM5-1B-Q8_0.gguf")),
                         new Cycle(
                                 "lfm2-350m",
-                                TestModels.find(
-                                                "hf.co/LiquidAI/LFM2.5-350M-GGUF/LFM2.5-350M-Q8_0.gguf")
-                                        .orElse(
-                                                Path.of(
-                                                        "hf.co/LiquidAI/LFM2.5-350M-GGUF/LFM2.5-350M-Q8_0.gguf"))));
+                                TestModels.require(
+                                        "hf.co/LiquidAI/LFM2.5-350M-GGUF/LFM2.5-350M-Q8_0.gguf")));
         System.out.printf(
                 "%-14s %9s %9s %9s %9s %9s %9s %9s%n",
                 "cycle",
@@ -88,10 +70,6 @@ class NmtProbe {
         snapshot("baseline", 0);
         for (int round = 0; round < 2; round++) {
             for (Cycle c : rotation) {
-                if (!Files.exists(c.path())) {
-                    System.out.println(c.name() + ": model absent, skipped");
-                    continue;
-                }
                 try (JinferChatModel m =
                         JinferChatModel.builder()
                                 .modelPath(c.path())
@@ -120,56 +98,16 @@ class NmtProbe {
         // Residue is measured AFTER GC + malloc_trim, so arenas and glibc are out of the picture.
         List<Cycle> order =
                 List.of(
-                        new Cycle(
-                                "lfm2-8b-moe",
-                                TestModels.find(
-                                                "hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF/LFM2.5-8B-A1B-Q8_0.gguf")
-                                        .orElse(
-                                                Path.of(
-                                                        "hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF/LFM2.5-8B-A1B-Q8_0.gguf"))),
-                        new Cycle(
-                                "lfm2-8b-AGAIN",
-                                TestModels.find(
-                                                "hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF/LFM2.5-8B-A1B-Q8_0.gguf")
-                                        .orElse(
-                                                Path.of(
-                                                        "hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF/LFM2.5-8B-A1B-Q8_0.gguf"))),
-                        new Cycle(
-                                "lfm2-8b-3RD",
-                                TestModels.find(
-                                                "hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF/LFM2.5-8B-A1B-Q8_0.gguf")
-                                        .orElse(
-                                                Path.of(
-                                                        "hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF/LFM2.5-8B-A1B-Q8_0.gguf"))),
-                        new Cycle(
-                                "granite-3b",
-                                TestModels.find(
-                                                "hf.co/ibm-granite/granite-4.1-3b-GGUF/granite-4.1-3b-Q8_0.gguf")
-                                        .orElse(
-                                                Path.of(
-                                                        "hf.co/ibm-granite/granite-4.1-3b-GGUF/granite-4.1-3b-Q8_0.gguf"))),
-                        new Cycle(
-                                "granite-3b-AGAIN",
-                                TestModels.find(
-                                                "hf.co/ibm-granite/granite-4.1-3b-GGUF/granite-4.1-3b-Q8_0.gguf")
-                                        .orElse(
-                                                Path.of(
-                                                        "hf.co/ibm-granite/granite-4.1-3b-GGUF/granite-4.1-3b-Q8_0.gguf"))),
-                        new Cycle(
-                                "qwen35-2b",
-                                TestModels.find(
-                                                "hf.co/unsloth/Qwen3.5-2B-GGUF/Qwen3.5-2B-Q8_0.gguf")
-                                        .orElse(
-                                                Path.of(
-                                                        "hf.co/unsloth/Qwen3.5-2B-GGUF/Qwen3.5-2B-Q8_0.gguf"))));
+                        new Cycle("lfm2-8b-moe", TestModels.require(LFM2_8B)),
+                        new Cycle("lfm2-8b-AGAIN", TestModels.require(LFM2_8B)),
+                        new Cycle("lfm2-8b-3RD", TestModels.require(LFM2_8B)),
+                        new Cycle("granite-3b", TestModels.require(GRANITE_3B)),
+                        new Cycle("granite-3b-AGAIN", TestModels.require(GRANITE_3B)),
+                        new Cycle("qwen35-2b", TestModels.require(QWEN35_2B)));
         System.out.printf("%-18s %12s %12s%n", "model", "residueMB", "fileGB");
         settle();
         long prev = rss("RssAnon") / 1024;
         for (Cycle c : order) {
-            if (!Files.exists(c.path())) {
-                System.out.println(c.name() + ": absent, skipped");
-                continue;
-            }
             try (JinferChatModel m =
                     JinferChatModel.builder()
                             .modelPath(c.path())

@@ -3,6 +3,7 @@ package com.qxotic.jinfer.langchain4j;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 
+import com.qxotic.jinfer.testkit.TestModels;
 import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.chat.common.AbstractStreamingChatModelIT;
 import dev.langchain4j.model.chat.listener.ChatModelListener;
@@ -11,7 +12,6 @@ import dev.langchain4j.model.chat.request.ChatRequestParameters;
 import dev.langchain4j.model.chat.request.DefaultChatRequestParameters;
 import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
 import dev.langchain4j.model.output.TokenUsage;
-import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -31,7 +31,7 @@ import org.mockito.Mockito;
 class JinferStreamingChatModelTckIT extends AbstractStreamingChatModelIT {
 
     static boolean modelAvailable() {
-        return Files.exists(JinferChatModelTckIT.MODEL);
+        return TestModels.find(JinferChatModelTckIT.REF).isPresent();
     }
 
     private static JinferChatModel shared;
@@ -146,17 +146,19 @@ class JinferStreamingChatModelTckIT extends AbstractStreamingChatModelIT {
 
     @Override
     protected StreamingChatModel createModelWith(ChatRequestParameters parameters) {
-        return track(
-                        JinferChatModel.builder()
-                                .modelPath(JinferChatModelTckIT.MODEL)
-                                .contextLength(8192)
-                                .defaultRequestParameters(parameters)
-                                // same greedy pinning as models(); kit parameters override
-                                .temperature(0.0)
-                                .thinking(JinferChatModelTckIT.tckThinking())
-                                .seed(7L)
-                                .build())
-                .streaming();
+        var builder =
+                JinferChatModel.builder()
+                        .modelPath(TestModels.require(JinferChatModelTckIT.REF))
+                        .contextLength(8192)
+                        .defaultRequestParameters(parameters)
+                        // same greedy pinning as models(); kit parameters override
+                        .temperature(0.0)
+                        .thinking(JinferChatModelTckIT.tckThinking())
+                        .seed(7L);
+        if (JinferChatModelTckIT.mediaAvailable()) {
+            builder.companion("media", java.nio.file.Path.of(JinferChatModelTckIT.MEDIA));
+        }
+        return track(builder.build()).streaming();
     }
 
     @Override
@@ -165,17 +167,22 @@ class JinferStreamingChatModelTckIT extends AbstractStreamingChatModelIT {
     }
 
     private static JinferChatModel blocking(List<ChatModelListener> listeners) {
-        return JinferChatModel.builder()
-                .modelPath(JinferChatModelTckIT.MODEL)
-                .contextLength(8192)
-                .maxOutputTokens(512)
-                // pinned GREEDY like the blocking TCK's models(): a compliance suite must not
-                // flake, and a temperature draw at a near-tie flips with cache-state drift
-                .temperature(0.0)
-                .thinking(JinferChatModelTckIT.tckThinking())
-                .seed(7L)
-                .listeners(listeners)
-                .build();
+        var builder =
+                JinferChatModel.builder()
+                        .modelPath(TestModels.require(JinferChatModelTckIT.REF))
+                        .contextLength(8192)
+                        .maxOutputTokens(512)
+                        // pinned GREEDY like the blocking TCK's models(): a compliance suite must
+                        // not flake, and a temperature draw at a near-tie flips with cache-state
+                        // drift
+                        .temperature(0.0)
+                        .thinking(JinferChatModelTckIT.tckThinking())
+                        .seed(7L)
+                        .listeners(listeners);
+        if (JinferChatModelTckIT.mediaAvailable()) {
+            builder.companion("media", java.nio.file.Path.of(JinferChatModelTckIT.MEDIA));
+        }
+        return builder.build();
     }
 
     // ---- same capability map as the blocking TCK ----
@@ -246,11 +253,29 @@ class JinferStreamingChatModelTckIT extends AbstractStreamingChatModelIT {
 
     @Override
     protected boolean supportsSingleImageInputAsBase64EncodedString() {
-        return false;
+        return JinferChatModelTckIT.mediaAvailable();
+    }
+
+    @Override
+    protected boolean supportsMultipleImageInputsAsBase64EncodedStrings() {
+        return JinferChatModelTckIT.mediaAvailable();
     }
 
     @Override
     protected boolean supportsSingleImageInputAsPublicURL() {
         return false;
+    }
+
+    // the kit's photos vendored locally - see the blocking TCK's note
+    @Override
+    protected dev.langchain4j.data.message.ImageContent catImageContentBase64() {
+        return dev.langchain4j.data.message.ImageContent.from(
+                JinferChatModelTckIT.kitImage("cat.png"), "image/png");
+    }
+
+    @Override
+    protected dev.langchain4j.data.message.ImageContent diceImageContentBase64() {
+        return dev.langchain4j.data.message.ImageContent.from(
+                JinferChatModelTckIT.kitImage("dice.png"), "image/png");
     }
 }
