@@ -70,12 +70,11 @@ class GGUFTokenizerLoaderApiTest {
     }
 
     @Test
-    void aliasPreTokenizerRejectsUnknownTarget() {
+    void aliasPreTokenizerWithUnknownTargetFailsAtBuild() {
+        // aliases are symbolic: declaring one never throws, but build() validates every target
         GGUFTokenizerLoader.Builder builder = GGUFTokenizerLoader.createBuilderWithBuiltins();
-        IllegalArgumentException e =
-                assertThrows(
-                        IllegalArgumentException.class,
-                        () -> builder.aliasPreTokenizer("yi", "no-such-scheme"));
+        builder.aliasPreTokenizer("yi", "no-such-scheme");
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class, builder::build);
         assertTrue(e.getMessage().contains("llama-bpe"));
     }
 
