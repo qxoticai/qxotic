@@ -57,4 +57,13 @@ public final class CacheStoreTest {
         store.close();
         other.close();
     }
+
+    @Test
+    void aClosedStoreRefusesToAllocate() {
+        // post-close the backstop has already fired: a blob allocated here would leak with no
+        // sweep left to cover it - so the door is shut, like every sibling lifecycle
+        CacheStore store = CacheStore.inMemory();
+        store.close();
+        assertThrows(IllegalStateException.class, () -> store.allocate(64));
+    }
 }

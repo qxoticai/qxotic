@@ -49,8 +49,9 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
 
     /**
      * @param retainedSessions live conversations retained; 0 closes the state after every request
-     * @param blockBudgetBytes RAM bound for the block layer; 0 = blocks disabled (sessions-only) - an
-     *     explicit {@code catalog} still mounts, read-only in spirit if the budget refuses growth
+     * @param blockBudgetBytes RAM bound for the block layer; 0 = blocks disabled (sessions-only) -
+     *     an explicit {@code catalog} still mounts, read-only in spirit if the budget refuses
+     *     growth
      * @param catalog the block layer's file, opened if present and CREATED OTHERWISE (so {@link
      *     #save} is always an append - never a rewrite of a mounted mapping); null = RAM only
      * @param readOnly the catalog is served, never written: {@link #save} is a no-op; missing or
@@ -169,12 +170,16 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
         if (seed == null) throw new IllegalArgumentException("null seed");
         StateCodec<S> codec = model.stateCodec().orElse(null);
         if (codec == null && o.catalog() != null) {
-            // never silently ignore a file the caller pointed at
-            LOG.log(
-                    System.Logger.Level.WARNING,
-                    "catalog {0} ignored: {1} has no state codec",
-                    o.catalog(),
-                    model.getClass().getSimpleName());
+            // never silently ignore a file the caller pointed at: without a codec nothing can
+            // ever be written to it, so the configured cache would degrade into an unnoticed
+            // cold start - the exact failure openCatalog refuses for a missing artifact
+            throw new IllegalArgumentException(
+                    "catalog "
+                            + o.catalog()
+                            + " configured but "
+                            + model.getClass().getSimpleName()
+                            + " has no state codec - drop the catalog or load a model that can"
+                            + " freeze state");
         }
         boolean wantBlocks = codec != null && (o.blockBudgetBytes() > 0 || o.catalog() != null);
         if (!wantBlocks) {
@@ -204,9 +209,9 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
     /**
      * Opens the catalog, creating an EMPTY artifact first when a read-write file is missing - the
      * cache knows its file from birth, so {@link #save} is always an append against a mounted base.
-     * Read-write problems fail the boot loudly (silently recreating would destroy the old
-     * catalog). A missing or incompatible read-only artifact also fails: an explicitly configured
-     * cache must never degrade into an unnoticed cold start.
+     * Read-write problems fail the boot loudly (silently recreating would destroy the old catalog).
+     * A missing or incompatible read-only artifact also fails: an explicitly configured cache must
+     * never degrade into an unnoticed cold start.
      */
     private static FrozenBlocks openCatalog(ContentKey seed, Options o) {
         if (o.catalog() == null) return null;
@@ -574,8 +579,8 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
     // ---- retained-session internals ---------------------------------------------------------
 
     /**
-     * The retained session with the LONGEST stream strictly prefixing the prompt, removed while
-     * in use; null = no match.
+     * The retained session with the LONGEST stream strictly prefixing the prompt, removed while in
+     * use; null = no match.
      */
     private CachedSession<S> sessionAcquire(long[] fingerprints) {
         CachedSession<S> best = null;

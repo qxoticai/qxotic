@@ -365,8 +365,8 @@ public final class CachedSession<S extends RuntimeState> {
 
     /**
      * True when this session's WHOLE stream is a strict prefix of {@code req} - the append-only
-     * reuse test (the facade's retained layer): the live state can continue with the remainder, nothing
-     * to rewind, and at least one position is left to ingest.
+     * reuse test (the facade's retained layer): the live state can continue with the remainder,
+     * nothing to rewind, and at least one position is left to ingest.
      */
     boolean streamIsStrictPrefixOf(long[] req) {
         return len < req.length && Arrays.equals(fp, 0, len, req, 0, len);

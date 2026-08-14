@@ -36,6 +36,7 @@ public final class CacheStore implements AutoCloseable {
     private final Cleaner.Cleanable backstop = CLEANER.register(this, sweepOf(blobs));
     private final Runnable leakWatch = LeakWatch.arm(this, "in-memory CacheStore");
     private volatile long used;
+    private volatile boolean closed;
 
     private CacheStore() {}
 
@@ -55,6 +56,9 @@ public final class CacheStore implements AutoCloseable {
 
     /** Allocates a zero-filled writable blob of {@code bytes}. */
     public MemorySegment allocate(long bytes) {
+        // post-close the backstop has already fired: a blob allocated here would have NO sweep
+        // left to cover it - refuse like every sibling lifecycle does
+        if (closed) throw new IllegalStateException("this store is closed");
         Arena arena = Arenas.newCrossThread();
         MemorySegment blob;
         try {
@@ -88,6 +92,7 @@ public final class CacheStore implements AutoCloseable {
 
     @Override
     public void close() {
+        closed = true;
         used = 0;
         leakWatch.run(); // disarm: this store was closed properly
         backstop.clean(); // at-most-once: frees every remaining blob now, not at GC

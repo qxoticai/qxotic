@@ -27,10 +27,10 @@ import org.junit.jupiter.api.Test;
  * PromptCache#serve} exactly as the engine drives it - a fake model whose "generation" is the pass
  * bumping the state and reporting each token through {@link PromptCache.Serving#tail}.
  *
- * <p>The map of behaviors under test: SESSIONS (live extension, LRU, recycling,
- * desync discard), BLOCKS (echo resume, the one-short law, the per-position tail, define +
- * full-hit, budget refusal), COARSE (define-only writes), SESSIONS-ONLY (no codec / blocks disabled),
- * and the CATALOG (create, save, reopen, read-only, export).
+ * <p>The map of behaviors under test: SESSIONS (live extension, LRU, recycling, desync discard),
+ * BLOCKS (echo resume, the one-short law, the per-position tail, define + full-hit, budget
+ * refusal), COARSE (define-only writes), SESSIONS-ONLY (no codec / blocks disabled), and the
+ * CATALOG (create, save, reopen, read-only, export).
  */
 public final class PromptCacheTest {
 
@@ -261,10 +261,7 @@ public final class PromptCacheTest {
         try (var cache = cache(fine(), 0, 0)) {
             List<FakeState> states = new ArrayList<>();
             for (int i = 0; i < 3; i++) {
-                states.add(
-                        cache.serve(
-                                turns(new int[] {1, 2, 10 + i}),
-                                (state, serving) -> state));
+                states.add(cache.serve(turns(new int[] {1, 2, 10 + i}), (state, serving) -> state));
             }
             PromptCache.Sample s = cache.sample();
             assertEquals(3, s.stateAllocations());
@@ -281,9 +278,7 @@ public final class PromptCacheTest {
             generate(cache, turns(new int[] {1, 2}), 7);
             generate(cache, turns(new int[] {5, 6}), 8); // unrelated: recycles A's state
             assertEquals(
-                    1,
-                    cache.sample().stateAllocations(),
-                    "a full retained layer never allocates");
+                    1, cache.sample().stateAllocations(), "a full retained layer never allocates");
         }
     }
 
@@ -399,9 +394,7 @@ public final class PromptCacheTest {
         try (var cache = cache(fine(), 2, 1 << 20)) {
             generate(cache, turns(new int[] {1, 2, 3}, new int[] {GEN}), 7);
             assertEquals(
-                    0,
-                    cache.sample().sessionSnapshotBytes(),
-                    "snapshots are the coarse-codec fix");
+                    0, cache.sample().sessionSnapshotBytes(), "snapshots are the coarse-codec fix");
         }
         try (var cache = cache(coarse(), 2, 1 << 20)) {
             generate(cache, turns(new int[] {1, 2, 3}, new int[] {GEN}), 7);
@@ -445,9 +438,7 @@ public final class PromptCacheTest {
         // session pools and tier-1 keeps working off the live KV
         try (var cache = cache(fine(), 1, 24)) { // 3 positions
             generate(cache, turns(new int[] {1, 2, 3}), 7, 8);
-            assertTrue(
-                    cache.sample().blockRefusals() > 0,
-                    "the refusal is counted, not silent");
+            assertTrue(cache.sample().blockRefusals() > 0, "the refusal is counted, not silent");
             Served turn2 = generate(cache, turns(new int[] {1, 2, 3}, new int[] {7, 8, 4}));
             assertEquals(PromptCache.Tier.SESSION, turn2.tier(), "hot survives the detach");
         }
@@ -653,8 +644,7 @@ public final class PromptCacheTest {
                 PromptCache.of(model, SEED, new PromptCache.Options(0, CTX, 0, catalog, false))) {
             Served hit = generate(frozen, turns(new int[] {1, 2, 3, 4}, new int[] {9}), 7);
             assertEquals(PromptCache.Tier.BLOCKS, hit.tier(), "the mount serves");
-            assertTrue(
-                    frozen.sample().blockRefusals() > 0, "growth is refused, and counted");
+            assertTrue(frozen.sample().blockRefusals() > 0, "growth is refused, and counted");
             assertThrows(IllegalStateException.class, () -> frozen.define(prompt(8, 9)));
             frozen.save();
         }
@@ -731,6 +721,20 @@ public final class PromptCacheTest {
                                 new FakeModel(null),
                                 null,
                                 new PromptCache.Options(0, CTX, 0, null, false)));
+    }
+
+    @Test
+    void aCatalogWithoutAStateCodecIsRefused() {
+        // nothing could ever be written to the file: silently ignoring it would degrade the
+        // configured cache into an unnoticed cold start
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        PromptCache.of(
+                                new FakeModel(null),
+                                SEED,
+                                new PromptCache.Options(
+                                        0, CTX, 0, Path.of("never-created.jcache"), false)));
     }
 
     @Test
