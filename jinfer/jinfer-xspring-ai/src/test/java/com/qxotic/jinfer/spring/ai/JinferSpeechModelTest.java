@@ -75,9 +75,11 @@ final class JinferSpeechModelTest {
     }
 
     @Test
-    void speedIsTheOneRequestKnobThatSurvivesTranslation() {
+    void configuredAndRequestSpeedsAreReportedAndApplied() {
         ToyModel model = new ToyModel();
         try (var speech = JinferSpeechModel.builder().model(model).speed(1.1).build()) {
+            assertEquals(1.1, speech.getOptions().getSpeed());
+
             speech.call(new TextToSpeechPrompt("hello"));
             assertEquals(1.1, model.lastOptions.speed(), "the builder default when none is asked");
 
@@ -85,13 +87,16 @@ final class JinferSpeechModelTest {
                     new TextToSpeechPrompt(
                             "hello", TextToSpeechOptions.builder().speed(1.5).build()));
             assertEquals(1.5, model.lastOptions.speed(), "the request wins over the default");
+            assertEquals(1.1, speech.getOptions().getSpeed(), "a request cannot mutate defaults");
         }
     }
 
     @Test
-    void aRequestWithoutOptionsFallsBackToTheModelsOwnDefaults() {
+    void absentSpeedLeavesTheModelsOwnDefaultAlone() {
         ToyModel model = new ToyModel();
         try (var speech = JinferSpeechModel.builder().model(model).build()) {
+            assertNull(speech.getOptions().getSpeed());
+
             speech.call(new TextToSpeechPrompt("hello"));
             assertNull(model.lastOptions.speed(), "nothing configured means nothing overridden");
         }
@@ -101,7 +106,8 @@ final class JinferSpeechModelTest {
     void knobsThisInstanceDoesNotHaveAreRefusedRatherThanIgnored() {
         try (var speech = JinferSpeechModel.builder().model(new ToyModel()).build()) {
             assertTrue(
-                    rejected(speech, TextToSpeechOptions.builder().voice("nova")).contains("nova"));
+                    rejected(speech, TextToSpeechOptions.builder().voice("nova"))
+                            .contains("fixed by the loaded GGUF"));
             assertTrue(
                     rejected(speech, TextToSpeechOptions.builder().format("mp3")).contains("mp3"));
             assertTrue(

@@ -37,13 +37,8 @@ public class JinferChatAutoConfiguration {
                 JinferChatModel.builder()
                         .model(properties.model())
                         .contextLength(properties.contextLength())
-                        .cachedSessions(properties.cachedSessions())
-                        .temperature(properties.temperature())
-                        .topP(properties.topP())
-                        .maxTokens(properties.maxTokens())
-                        .seed(properties.seed())
-                        .thinking(properties.thinking())
-                        .timeout(properties.timeout())
+                        .retainSessions(properties.retainedSessions())
+                        .options(properties.toOptions())
                         .speculationDepth(properties.speculationDepth());
         observationRegistry.ifAvailable(builder::observationRegistry);
         observationConvention.ifAvailable(builder::observationConvention);
@@ -51,8 +46,8 @@ public class JinferChatAutoConfiguration {
         if (properties.companions() != null) {
             properties.companions().forEach(builder::companion); // path-or-ref, like model
         }
-        if (StringUtils.hasText(properties.cachedPrompts())) {
-            builder.loadCachedPrompts(Path.of(properties.cachedPrompts()));
+        if (StringUtils.hasText(properties.promptCache())) {
+            builder.promptCache(Path.of(properties.promptCache()));
         }
         return builder.build();
     }

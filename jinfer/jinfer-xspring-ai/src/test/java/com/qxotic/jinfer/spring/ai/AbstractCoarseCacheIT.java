@@ -32,13 +32,16 @@ abstract class AbstractCoarseCacheIT {
                 JinferChatModel.builder()
                         .modelPath(com.qxotic.jinfer.testkit.TestModels.require(modelRef()))
                         .contextLength(4096)
-                        .maxTokens(48)
                         // pinned decode like the langchain4j twin: greedy, seeded, no think span -
                         // the model's recommended sampled temperature would make "contains Paris"
                         // a coin toss, and a think span eats the 48-token budget before the answer
-                        .temperature(0.0)
-                        .seed(7L)
-                        .thinking(false)
+                        .options(
+                                JinferChatOptions.builder()
+                                        .maxTokens(48)
+                                        .temperature(0.0)
+                                        .seed(7L)
+                                        .thinking(false)
+                                        .build())
                         .build();
         try {
             // JIT-warm the kernels before the baseline (cold passes differ by ~1 LSB)

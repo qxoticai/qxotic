@@ -49,7 +49,7 @@ class CachedPromptIT {
                 JinferChatModel.builder()
                         .modelPath(MODEL)
                         .contextLength(4096)
-                        .maxTokens(128)
+                        .options(JinferChatOptions.builder().maxTokens(128).build())
                         .build();
     }
 
@@ -73,17 +73,23 @@ class CachedPromptIT {
                 JinferChatModel.builder()
                         .modelPath(MODEL)
                         .contextLength(2048)
-                        .maxTokens(128)
-                        .thinking(false)
-                        .seed(1L)
+                        .options(
+                                JinferChatOptions.builder()
+                                        .maxTokens(128)
+                                        .thinking(false)
+                                        .seed(1L)
+                                        .build())
                         .build();
         JinferChatModel twin =
                 JinferChatModel.builder()
                         .modelPath(MODEL)
                         .contextLength(2048)
-                        .maxTokens(128)
-                        .thinking(false)
-                        .seed(2L)
+                        .options(
+                                JinferChatOptions.builder()
+                                        .maxTokens(128)
+                                        .thinking(false)
+                                        .seed(2L)
+                                        .build())
                         .build();
         var pool = Executors.newFixedThreadPool(2);
         try {
@@ -111,8 +117,8 @@ class CachedPromptIT {
     }
 
     @Test
-    void cachedSessionsMultiTurn() {
-        // cachedSessions(1): turn 2 strictly extends turn 1's pooled state - possible only
+    void retainedSessionsResumeMultiTurn() {
+        // retainSessions(1): turn 2 strictly extends turn 1's retained state - possible only
         // because the echoed reply restores its verbatim ids through REPLY_KEY metadata, so
         // the re-encode is the exact generated tokens (the round-trip law, spring edition)
         // pinned seed: an unlucky random seed can spend the whole budget on a think span
@@ -120,9 +126,9 @@ class CachedPromptIT {
                 JinferChatModel.builder()
                         .modelPath(MODEL)
                         .contextLength(4096)
-                        .maxTokens(128)
-                        .cachedSessions(1)
-                        .seed(7L)
+                        .retainSessions(1)
+                        .options(
+                                JinferChatOptions.builder().maxTokens(128).seed(7L).build())
                         .build();
         try {
             UserMessage first =
@@ -154,8 +160,8 @@ class CachedPromptIT {
                 JinferChatModel.builder()
                         .modelPath(MODEL)
                         .contextLength(4096)
-                        .maxTokens(128)
-                        .seed(7L)
+                        .options(
+                                JinferChatOptions.builder().maxTokens(128).seed(7L).build())
                         .build();
         try {
             String question = "Where do I reset my password?";
@@ -227,8 +233,8 @@ class CachedPromptIT {
                 JinferChatModel.builder()
                         .modelPath(MODEL)
                         .contextLength(4096)
-                        .maxTokens(64)
-                        .loadCachedPrompts(artifact)
+                        .options(JinferChatOptions.builder().maxTokens(64).build())
+                        .promptCache(artifact)
                         .build();
         JinferChatModel a2 =
                 base2.withCachedPrompt(
@@ -280,7 +286,7 @@ class CachedPromptIT {
                         JinferChatModel.builder()
                                 .modelPath(other)
                                 .contextLength(2048)
-                                .loadCachedPrompts(artifact)
+                                .promptCache(artifact)
                                 .build());
     }
 }
