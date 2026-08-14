@@ -23,6 +23,15 @@ public interface ChatTemplate {
      */
     ReplyState encode(Conversation conversation, int batchCapacity, Consumer<Batch> sink);
 
+    /** As {@link #encode(Conversation, int, Consumer)}, with a caller-owned projected-media LRU. */
+    default ReplyState encode(
+            Conversation conversation,
+            int batchCapacity,
+            MediaEncodingCache mediaCache,
+            Consumer<Batch> sink) {
+        return encode(conversation, batchCapacity, sink);
+    }
+
     /**
      * A fresh, UNSEEDED parser over this family's reply grammar - consulted only when framing fell
      * back to the whole-render (a native {@link #encode} co-produces its seeded parser in {@link

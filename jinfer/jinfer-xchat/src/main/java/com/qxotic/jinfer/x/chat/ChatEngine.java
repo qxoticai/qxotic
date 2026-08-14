@@ -71,6 +71,7 @@ public final class ChatEngine implements AutoCloseable {
     // THE cache: hot sessions + block tree + optional catalog, one front door (all access
     // under the generation lock - the facade is single-threaded by design, like the tree)
     private final PromptCache<?> cache;
+    private final MediaEncodingCache mediaCache = new MediaEncodingCache();
     // the streaming driver: at most ONE lazy platform thread, reused while streams keep coming,
     // gone after an idle minute. One is enough - generations serialize on the engine lock anyway,
     // and a fresh thread per request would just park extras on that lock
@@ -265,6 +266,7 @@ public final class ChatEngine implements AutoCloseable {
             leakWatch.run(); // disarm: this engine was closed properly
             Telemetry.unregister(cacheGauge); // stop sampling a cache that is about to be freed
             cache.close(); // every hot state, the spare, and the block blobs - NOW
+            mediaCache.clear();
         } finally {
             lock.unlock();
         }
@@ -711,6 +713,7 @@ public final class ChatEngine implements AutoCloseable {
                                 .encode(
                                         conversation,
                                         ENCODE_BATCH,
+                                        mediaCache,
                                         b -> prompt.add(own(b, mediaRows)));
                 return new Encoded(List.copyOf(prompt), state.parser(), state.replyPrefix());
             } catch (UnsupportedConversation punt) {

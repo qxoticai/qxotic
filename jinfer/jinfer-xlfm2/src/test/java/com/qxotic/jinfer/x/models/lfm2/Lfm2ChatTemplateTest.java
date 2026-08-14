@@ -21,6 +21,7 @@ import com.qxotic.jinfer.x.chat.ChatTemplate;
 import com.qxotic.jinfer.x.chat.Content;
 import com.qxotic.jinfer.x.chat.Conversation;
 import com.qxotic.jinfer.x.chat.Message;
+import com.qxotic.jinfer.x.chat.MediaEncodingCache;
 import com.qxotic.jinfer.x.chat.Role;
 import com.qxotic.jinfer.x.chat.Tool;
 import com.qxotic.jinfer.x.chat.UnsupportedConversation;
@@ -302,6 +303,7 @@ final class Lfm2ChatTemplateTest {
         try (Arena arena = Arena.ofShared()) {
             Lfm2Vision vision = tinyVision(new PanamaMemoryArena(arena));
             Lfm2ChatTemplate template = new Lfm2ChatTemplate(current, vision, false);
+            MediaEncodingCache mediaCache = new MediaEncodingCache();
             IntSequence.Builder tokens = IntSequence.newBuilder();
             List<Integer> embeddingRows = new ArrayList<>();
             template.encode(
@@ -314,6 +316,7 @@ final class Lfm2ChatTemplateTest {
                                                     new Content.Media(image, key),
                                                     new Content.Text(" done"))))),
                     256,
+                    mediaCache,
                     batch -> {
                         switch (batch.input()) {
                             case Batch.Input.Tokens value ->
@@ -348,6 +351,24 @@ final class Lfm2ChatTemplateTest {
             expected.add(SpecialTokens.require(current, "<|im_start|>"));
             expected.addAll(current.encode("assistant\n"));
             assertArrayEquals(expected.build().toArray(), tokens.build().toArray());
+
+            // Same source key with a deliberately different tiny image must replay the first
+            // tiled projection. A miss would plan only one small thumbnail block.
+            Media.Image sentinel = new Media.Image(new float[] {1, 1, 1}, 1, 1, 3);
+            List<Integer> replayRows = new ArrayList<>();
+            template.encode(
+                    new Conversation(
+                            List.of(
+                                    new Message(
+                                            Role.USER,
+                                            List.of(new Content.Media(sentinel, key))))),
+                    256,
+                    mediaCache,
+                    batch -> {
+                        if (batch.input() instanceof Batch.Input.Embeddings value)
+                            replayRows.add(value.count());
+                    });
+            assertEquals(embeddingRows, replayRows);
         }
     }
 

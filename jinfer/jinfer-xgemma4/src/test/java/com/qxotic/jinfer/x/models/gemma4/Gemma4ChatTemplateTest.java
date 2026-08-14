@@ -18,6 +18,7 @@ import com.qxotic.jinfer.x.chat.ChatTemplate;
 import com.qxotic.jinfer.x.chat.Content;
 import com.qxotic.jinfer.x.chat.Conversation;
 import com.qxotic.jinfer.x.chat.Message;
+import com.qxotic.jinfer.x.chat.MediaEncodingCache;
 import com.qxotic.jinfer.x.chat.Role;
 import com.qxotic.jinfer.x.kernels.ModelLoader;
 import com.qxotic.jinfer.x.llm.SpecialTokens;
@@ -32,6 +33,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 final class Gemma4ChatTemplateTest {
@@ -108,6 +110,28 @@ final class Gemma4ChatTemplateTest {
     }
 
     @Test
+    void repeatedImageReplaysProjectedRows() throws Exception {
+        Tokenizer tokenizer = tokenizer();
+        byte[] key = {9, 8, 7};
+        Message message =
+                new Message(
+                        Role.USER,
+                        List.of(
+                                new Content.Media(
+                                        new Media.Image(new float[] {0, 0, 0}, 1, 1, 3), key)));
+        AtomicInteger projections = new AtomicInteger();
+        try (Arena arena = Arena.ofConfined()) {
+            Gemma4ChatTemplate template =
+                    new Gemma4ChatTemplate(tokenizer, new TestMedia(arena, projections), false);
+            MediaEncodingCache cache = new MediaEncodingCache();
+            for (int pass = 0; pass < 2; pass++) {
+                template.encode(new Conversation(List.of(message)), 4, cache, ignored -> {});
+            }
+        }
+        assertEquals(1, projections.get());
+    }
+
+    @Test
     void nonThinkingScaffoldAndReplySeedStayTogether() throws Exception {
         Tokenizer tokenizer = tokenizer();
         Message message = Message.user("answer directly");
@@ -170,7 +194,11 @@ final class Gemma4ChatTemplateTest {
         }
     }
 
-    private record TestMedia(Arena arena) implements MultiModal {
+    private record TestMedia(Arena arena, AtomicInteger projections) implements MultiModal {
+        private TestMedia(Arena arena) {
+            this(arena, new AtomicInteger());
+        }
+
         @Override
         public Set<Class<? extends Media>> modalities() {
             return Set.of(Media.Image.class, Media.Audio.class);
@@ -182,8 +210,10 @@ final class Gemma4ChatTemplateTest {
             if (!modalities().contains(modality)) return Optional.empty();
             int rows = modality == Media.Image.class ? 2 : 1;
             Embedder<R> embedder =
-                    (source, maxChunkSize, sink) ->
-                            sink.accept(Views.allocateF32(new PanamaMemoryArena(arena), rows, 3));
+                    (source, maxChunkSize, sink) -> {
+                        projections.incrementAndGet();
+                        sink.accept(Views.allocateF32(new PanamaMemoryArena(arena), rows, 3));
+                    };
             return Optional.of(embedder);
         }
     }
