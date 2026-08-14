@@ -81,7 +81,20 @@ final class JinjaChatTemplate {
         vars.put("enable_thinking", enableThinking);
         vars.put("preserve_thinking", false);
         if (kwargs != null) vars.putAll(kwargs);
-        return specials.encode(tokenizer, tpl.render(vars));
+        String rendered = tpl.render(vars);
+        // Prompt-opened thinking for whole-render families: a /think scaffold that does NOT open
+        // the span itself leaves the model to mint <think> from a bare role header - and a
+        // degenerate checkpoint instead closes the turn on its FIRST token (SmolLM3 Q4_K_M,
+        // greedy: one <|im_end|>, an empty reply). Open it for them; the engine arms the thinking
+        // cap and seeds the parser from exactly this tail. Skip when the render already left a
+        // span open (Qwen3-style scaffolds end with "<think>\n").
+        if (enableThinking
+                && addGenerationPrompt
+                && SpecialTokens.find(tokenizer, Thinking.OPEN).isPresent()
+                && rendered.lastIndexOf(Thinking.OPEN) <= rendered.lastIndexOf(Thinking.CLOSE)) {
+            rendered += Thinking.OPEN;
+        }
+        return specials.encode(tokenizer, rendered);
     }
 
     /**

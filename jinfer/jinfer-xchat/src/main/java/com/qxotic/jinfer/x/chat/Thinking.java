@@ -35,13 +35,17 @@ final class Thinking {
     }
 
     /**
-     * Caps the think span: once {@code budget} tokens have been sampled inside {@code <think>}, the
-     * close marker is forced so the remaining completion budget always goes to content (thinking
-     * models otherwise starve the answer under tight max_tokens). Cumulative across spans; the
-     * forced token consumes no RNG draw. Negative = uncapped. {@code startInThink} starts INSIDE
-     * the think span - for templates whose generation prompt opens {@code <think>} itself: the open
-     * token never passes through the sampler, so without this the budget silently never arms and a
-     * long reasoning run can starve the visible answer to LENGTH.
+     * Caps the think span: once {@code budget} tokens have been sampled inside {@code <think>}, a
+     * paragraph break and then the close marker are forced, so the remaining completion budget
+     * always goes to content (thinking models otherwise starve the answer under tight max_tokens).
+     * The break matters: a close forced MID-SENTENCE is off-training-distribution, and a small
+     * model's continuation is then a fabricated turn header - a turn-guard stop and an EMPTY answer
+     * (SmolLM3 bake-off, tight budget: hard close 2/6 empty, boundary-seeking close 6/6, paragraph
+     * break 0/6). Cumulative across spans; forced tokens consume no RNG draw. Negative = uncapped.
+     * {@code startInThink} starts INSIDE the think span - for templates whose generation prompt
+     * opens {@code <think>} itself: the open token never passes through the sampler, so without
+     * this the budget silently never arms and a long reasoning run can starve the visible answer to
+     * LENGTH.
      */
     static Sampler capBudget(Sampler inner, Tokenizer tokenizer, int budget, boolean startInThink) {
         Integer open = boxed(SpecialTokens.find(tokenizer, OPEN));
@@ -50,15 +54,28 @@ final class Thinking {
             return inner;
         }
         int openToken = open, closeToken = close;
+        int[] filler = encode(tokenizer, "\n\n"); // empty = a tokenizer that cannot: close hard
         Sampler markersBanned = Sampler.banning(inner, Set.of(open, close));
         return new Sampler() {
             boolean inThink = startInThink;
             int thought;
+            int[] pending = new int[0]; // forced filler + close, one id per draw
+            int pendingPos;
 
             @Override
             public int sampleToken(com.qxotic.jota.memory.MemoryView<?> logits) {
+                if (pendingPos < pending.length) {
+                    return pending[pendingPos++];
+                }
                 if (inThink && thought >= budget) {
                     inThink = false;
+                    if (filler.length > 0) {
+                        pending = new int[filler.length + 1];
+                        System.arraycopy(filler, 0, pending, 0, filler.length);
+                        pending[pending.length - 1] = closeToken;
+                        pendingPos = 1;
+                        return pending[0];
+                    }
                     return closeToken;
                 }
                 // a SPENT budget bans BOTH markers: a model force-closed mid-thought
@@ -77,6 +94,14 @@ final class Thinking {
                 return token;
             }
         };
+    }
+
+    private static int[] encode(Tokenizer tokenizer, String text) {
+        try {
+            return tokenizer.encodeToArray(text);
+        } catch (RuntimeException unsupported) {
+            return new int[0];
+        }
     }
 
     private static Integer boxed(OptionalInt id) {

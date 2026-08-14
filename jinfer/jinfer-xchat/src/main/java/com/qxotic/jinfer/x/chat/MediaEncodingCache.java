@@ -17,8 +17,7 @@ import java.util.function.Consumer;
 public final class MediaEncodingCache {
 
     static final long DEFAULT_BUDGET_BYTES =
-            Math.multiplyExact(
-                    Math.max(0, Long.getLong("jinfer.mediaCacheMB", 192L)), 1L << 20);
+            Math.multiplyExact(Math.max(0, Long.getLong("jinfer.mediaCacheMB", 192L)), 1L << 20);
 
     private record Key(String content, int batchCapacity) {}
 
@@ -55,7 +54,8 @@ public final class MediaEncodingCache {
                                 DataType.FP32,
                                 Shape.flat(count, dimension));
                 return new Batch(
-                        new Batch.Input.Embeddings(view, count, bidirectional, contentKey), outputs);
+                        new Batch.Input.Embeddings(view, count, bidirectional, contentKey),
+                        outputs);
             }
 
             @Override
