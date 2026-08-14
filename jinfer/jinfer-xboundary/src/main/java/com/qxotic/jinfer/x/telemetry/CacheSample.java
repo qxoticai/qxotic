@@ -7,4 +7,16 @@ package com.qxotic.jinfer.x.telemetry;
  * stays acyclic. An exporter is a rename table, starting here.
  */
 public record CacheSample(
-        int blocks, long bytes, long budgetBytes, long hits, long misses, long evictions) {}
+        int retainedSessions,
+        int retainedSessionLimit,
+        long sessionHits,
+        long stateAllocations,
+        long sessionSnapshotBytes,
+        int blocks,
+        long bytes,
+        long budgetBytes,
+        long blockHits,
+        long blockMisses,
+        long blockEvictions,
+        long blockDiscards,
+        long blockRefusals) {}

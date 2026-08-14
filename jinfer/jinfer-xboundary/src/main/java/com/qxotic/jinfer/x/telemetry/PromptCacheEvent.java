@@ -10,8 +10,8 @@ import jdk.jfr.Period;
 import jdk.jfr.StackTrace;
 
 /**
- * Prompt cache health, sampled. {@link InferenceEvent#cachedTokens} says the cache did not help;
- * this says WHY, and the two causes want opposite fixes:
+ * Prompt cache health, sampled. {@link InferenceEvent#cachedTokens} says how much the cache helped;
+ * this says why it did or did not, and the two causes want opposite fixes:
  *
  * <ul>
  *   <li>evictions near zero and hits low - the prompts genuinely diverge early, so fix the prompt
@@ -28,13 +28,29 @@ import jdk.jfr.StackTrace;
 @Label("Prompt Cache")
 @Category({"jinfer", "Memory"})
 @Description(
-        "Block cache health: rising evictions with falling hits means the budget is too small.")
+        "Prompt cache health: retained sessions, state allocation, block reuse and memory pressure.")
 @Period("1 s")
 @StackTrace(false)
 public final class PromptCacheEvent extends Event {
 
     @Label("Model")
     public String model;
+
+    @Label("Retained Sessions")
+    public int retainedSessions;
+
+    @Label("Retained Session Limit")
+    public int retainedSessionLimit;
+
+    @Label("Session Hits")
+    public long sessionHits;
+
+    @Label("State Allocations")
+    public long stateAllocations;
+
+    @Label("Session Snapshots")
+    @DataAmount(DataAmount.BYTES)
+    public long sessionSnapshotBytes;
 
     @Label("Blocks")
     public int blocks;
@@ -47,12 +63,18 @@ public final class PromptCacheEvent extends Event {
     @DataAmount(DataAmount.BYTES)
     public long budgetBytes;
 
-    @Label("Hits")
-    public long hits;
+    @Label("Block Hits")
+    public long blockHits;
 
-    @Label("Misses")
-    public long misses;
+    @Label("Block Misses")
+    public long blockMisses;
 
-    @Label("Evictions")
-    public long evictions;
+    @Label("Block Evictions")
+    public long blockEvictions;
+
+    @Label("Block Discards")
+    public long blockDiscards;
+
+    @Label("Block Refusals")
+    public long blockRefusals;
 }

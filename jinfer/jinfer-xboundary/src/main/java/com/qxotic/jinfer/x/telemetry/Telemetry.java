@@ -26,10 +26,9 @@ import jdk.jfr.FlightRecorder;
  * - running out of context - already surfaces per request as {@code finishReason=length}.
  *
  * <p>Consequently native memory is attributed only as far as {@link ModelLoadEvent}'s weights.
- * Per-state cost is not reported, because nothing exposes a state's footprint. The useful event
- * would be a rare {@code StateAllocated} - state allocation is expensive and should happen once per
- * engine, so every repeat is a signal that the session pool is not working - but it needs that
- * accessor first, and is worth adding deliberately rather than approximating.
+ * Per-state cost is not reported because nothing exposes a state's footprint. Allocation count is
+ * reported by {@link PromptCacheEvent}; approximating its bytes would be less useful than admitting
+ * they are unknown.
  */
 public final class Telemetry {
 
@@ -78,7 +77,9 @@ public final class Telemetry {
     public static final class CacheGauge {
         private final String model;
         private final Supplier<CacheSample> source;
-        private long lastHits, lastMisses, lastEvictions;
+        private long lastSessionHits, lastStateAllocations;
+        private long lastBlockHits, lastBlockMisses, lastBlockEvictions;
+        private long lastBlockDiscards, lastBlockRefusals;
 
         public CacheGauge(String model, Supplier<CacheSample> source) {
             this.model = model;
@@ -96,15 +97,26 @@ public final class Telemetry {
             CacheSample now = source.get();
             if (now == null) return;
             event.model = model;
+            event.retainedSessions = now.retainedSessions();
+            event.retainedSessionLimit = now.retainedSessionLimit();
+            event.sessionHits = now.sessionHits() - lastSessionHits;
+            event.stateAllocations = now.stateAllocations() - lastStateAllocations;
+            event.sessionSnapshotBytes = now.sessionSnapshotBytes();
             event.blocks = now.blocks();
             event.bytes = now.bytes();
             event.budgetBytes = now.budgetBytes();
-            event.hits = now.hits() - lastHits;
-            event.misses = now.misses() - lastMisses;
-            event.evictions = now.evictions() - lastEvictions;
-            lastHits = now.hits();
-            lastMisses = now.misses();
-            lastEvictions = now.evictions();
+            event.blockHits = now.blockHits() - lastBlockHits;
+            event.blockMisses = now.blockMisses() - lastBlockMisses;
+            event.blockEvictions = now.blockEvictions() - lastBlockEvictions;
+            event.blockDiscards = now.blockDiscards() - lastBlockDiscards;
+            event.blockRefusals = now.blockRefusals() - lastBlockRefusals;
+            lastSessionHits = now.sessionHits();
+            lastStateAllocations = now.stateAllocations();
+            lastBlockHits = now.blockHits();
+            lastBlockMisses = now.blockMisses();
+            lastBlockEvictions = now.blockEvictions();
+            lastBlockDiscards = now.blockDiscards();
+            lastBlockRefusals = now.blockRefusals();
             event.commit();
         }
     }

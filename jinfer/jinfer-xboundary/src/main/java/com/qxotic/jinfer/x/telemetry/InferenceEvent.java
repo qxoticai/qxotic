@@ -111,7 +111,7 @@ public final class InferenceEvent extends Event {
      * Which source served the prompt: {@code session} (append-only reuse, nothing restored), {@code
      * blocks} (a restore from the block tree), or {@code fresh}. Cut from an earlier draft as
      * "server internals" - wrongly: the two reuse paths cost very differently, and the ratio is
-     * what tells you whether the hot-session count is set high enough.
+     * what tells you whether the retained-session limit is set high enough.
      */
     @Label("Cache Tier")
     public String cacheTier;

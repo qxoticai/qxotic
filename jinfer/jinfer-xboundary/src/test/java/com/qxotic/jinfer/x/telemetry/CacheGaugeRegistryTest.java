@@ -19,7 +19,8 @@ import org.junit.jupiter.api.Test;
 class CacheGaugeRegistryTest {
 
     private static Telemetry.CacheGauge gauge(String model) {
-        return new Telemetry.CacheGauge(model, () -> new CacheSample(1, 2, 3, 4, 5, 6));
+        return new Telemetry.CacheGauge(
+                model, () -> new CacheSample(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13));
     }
 
     @Test
