@@ -9,22 +9,21 @@ import java.time.Duration;
 import java.util.OptionalInt;
 
 /**
- * A model that can decode with its OWN draft-and-verify loop - self-speculation via an attached
- * draft head (gemma4's MTP sidecar). The prompt is ingested by the ordinary path first; a caller
- * that finds this capability ready may then decode through {@link #speculate} instead of {@link
- * Generator#generate}.
+ * A model that can decode with its own draft-and-verify loop. The prompt is ingested by the
+ * ordinary path first; a caller that finds this capability ready may then decode through {@link
+ * #speculate} instead of {@link Generator#generate}. The draft weights may be attached or embedded;
+ * that storage detail is deliberately outside this API.
  *
  * <p>Deliberately narrow: one capability check and one decode call, mirroring {@link Generator}'s
  * contract with the SAME vocabulary (Constraints, GenerationListener, FinishReason) - the general
- * multi-implementation seam (llama.cpp's begin/process/draft/accept with a {@code --spec-type}
- * selector) waits for a second draft family; this interface is what lets a caller that must not
- * name port classes dispatch on the capability instead.
+ * multi-implementation machinery stays behind each model; this interface lets callers dispatch on
+ * the capability without naming model classes.
  *
  * @param <S> the implementing model's state type
  */
 public interface SpeculativeDecoding<S extends RuntimeState> {
 
-    /** Whether a draft head is attached, so {@link #speculate} may be called. */
+    /** Whether this model has usable draft weights, so {@link #speculate} may be called. */
     boolean speculationReady();
 
     /** As the 6-arg form without an audit tap (the production call). */
@@ -34,6 +33,10 @@ public interface SpeculativeDecoding<S extends RuntimeState> {
             Constraints constraints,
             int depth,
             GenerationListener listener) {
+        // the 1..8 contract enforced at the door every caller uses, so a port cannot fake it;
+        // the 7-arg audit door is guarded inside each port
+        if (depth < 1 || depth > 8)
+            throw new IllegalArgumentException("speculation depth " + depth + " outside 1..8");
         return speculate(state, sampler, constraints, depth, listener, null);
     }
 
