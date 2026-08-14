@@ -9,6 +9,7 @@ import com.qxotic.jinfer.x.chat.ChatTemplate;
 import com.qxotic.jinfer.x.chat.Content;
 import com.qxotic.jinfer.x.chat.Conversation;
 import com.qxotic.jinfer.x.chat.Message;
+import com.qxotic.jinfer.x.chat.MediaEncodingCache;
 import com.qxotic.jinfer.x.chat.PromptWriter;
 import com.qxotic.jinfer.x.chat.ReplyLanguage;
 import com.qxotic.jinfer.x.chat.ReplyParser;
@@ -86,11 +87,20 @@ public final class Lfm2ChatTemplate implements ChatTemplate {
 
     @Override
     public ReplyState encode(Conversation conversation, int batchCapacity, Consumer<Batch> sink) {
+        return encode(conversation, batchCapacity, null, sink);
+    }
+
+    @Override
+    public ReplyState encode(
+            Conversation conversation,
+            int batchCapacity,
+            MediaEncodingCache mediaCache,
+            Consumer<Batch> sink) {
         Objects.requireNonNull(conversation, "conversation");
         for (Message message : conversation.messages())
             requireSupported(message, spliceable(message));
 
-        PromptWriter out = new PromptWriter(tokenizer, batchCapacity, sink);
+        PromptWriter out = new PromptWriter(tokenizer, batchCapacity, mediaCache, sink);
         List<Message> messages = conversation.messages();
         int first = 0;
         String system = "";
@@ -187,26 +197,35 @@ public final class Lfm2ChatTemplate implements ChatTemplate {
     private void writeMedia(PromptWriter out, Content.Media content, int batchCapacity) {
         if (!(content.value() instanceof Media.Image image) || vision == null)
             throw new IllegalStateException("unsupported media after validation");
-        Lfm2VisionPreprocess.Plan plan = vision.plan(image);
-        out.id(require("<|image_start|>"));
-        for (Lfm2VisionPreprocess.Part part : plan.parts()) {
-            String marker =
-                    part.thumbnail()
-                            ? "<|img_thumbnail|>"
-                            : "<|img_row_" + part.row() + "_col_" + part.column() + "|>";
-            out.id(require(marker));
-            vision.embed(
-                    part,
-                    batchCapacity,
-                    rows ->
-                            out.batch(
-                                    Batch.embeddings(
-                                            rows,
-                                            Math.toIntExact(rows.shape().flatAt(0)),
-                                            true,
-                                            content.contentKey())));
-        }
-        out.id(require("<|image_end|>"));
+        byte[] contentKey = content.contentKey();
+        out.cachedMedia(
+                contentKey,
+                encoded -> {
+                    Lfm2VisionPreprocess.Plan plan = vision.plan(image);
+                    encoded.id(require("<|image_start|>"));
+                    for (Lfm2VisionPreprocess.Part part : plan.parts()) {
+                        String marker =
+                                part.thumbnail()
+                                        ? "<|img_thumbnail|>"
+                                        : "<|img_row_"
+                                                + part.row()
+                                                + "_col_"
+                                                + part.column()
+                                                + "|>";
+                        encoded.id(require(marker));
+                        vision.embed(
+                                part,
+                                batchCapacity,
+                                rows ->
+                                        encoded.batch(
+                                                Batch.embeddings(
+                                                        rows,
+                                                        Math.toIntExact(rows.shape().flatAt(0)),
+                                                        true,
+                                                        contentKey)));
+                    }
+                    encoded.id(require("<|image_end|>"));
+                });
     }
 
     @Override

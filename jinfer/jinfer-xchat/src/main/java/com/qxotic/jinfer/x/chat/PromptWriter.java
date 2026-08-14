@@ -16,16 +16,26 @@ public final class PromptWriter {
     private final Tokenizer tokenizer;
     private final int batchCapacity;
     private final Consumer<Batch> sink;
+    private final MediaEncodingCache mediaCache;
     private final Set<String> specialSpellings;
     private final StringBuilder text = new StringBuilder();
     private IntSequence.Builder tokens = IntSequence.newBuilder();
     private boolean finished;
 
     public PromptWriter(Tokenizer tokenizer, int batchCapacity, Consumer<Batch> sink) {
+        this(tokenizer, batchCapacity, null, sink);
+    }
+
+    public PromptWriter(
+            Tokenizer tokenizer,
+            int batchCapacity,
+            MediaEncodingCache mediaCache,
+            Consumer<Batch> sink) {
         this.tokenizer = Objects.requireNonNull(tokenizer, "tokenizer");
         if (batchCapacity <= 0)
             throw new IllegalArgumentException("batchCapacity " + batchCapacity);
         this.batchCapacity = batchCapacity;
+        this.mediaCache = mediaCache;
         this.sink = Objects.requireNonNull(sink, "sink");
         this.specialSpellings = SpecialTokens.spellings(tokenizer);
     }
@@ -115,6 +125,27 @@ public final class PromptWriter {
                                         + batchCapacity);
                     sink.accept(Batch.embeddings(rows, count, bidirectional, contentKey));
                 });
+        return this;
+    }
+
+    /** Emits one structural media item, replaying its projected batches when source-keyed. */
+    public PromptWriter cachedMedia(byte[] contentKey, Consumer<PromptWriter> projection) {
+        checkOpen();
+        Objects.requireNonNull(projection, "projection");
+        if (contentKey == null || mediaCache == null) {
+            projection.accept(this);
+            return this;
+        }
+        flushTokens();
+        mediaCache.replayOrRecord(
+                contentKey,
+                batchCapacity,
+                recorded -> {
+                    PromptWriter media = new PromptWriter(tokenizer, batchCapacity, null, recorded);
+                    projection.accept(media);
+                    media.finish();
+                },
+                sink);
         return this;
     }
 

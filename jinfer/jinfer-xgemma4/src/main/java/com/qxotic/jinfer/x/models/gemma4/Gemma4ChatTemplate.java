@@ -8,6 +8,7 @@ import com.qxotic.jinfer.x.chat.ChatTemplate;
 import com.qxotic.jinfer.x.chat.Content;
 import com.qxotic.jinfer.x.chat.Conversation;
 import com.qxotic.jinfer.x.chat.Message;
+import com.qxotic.jinfer.x.chat.MediaEncodingCache;
 import com.qxotic.jinfer.x.chat.PromptWriter;
 import com.qxotic.jinfer.x.chat.ReplyLanguage;
 import com.qxotic.jinfer.x.chat.ReplyParser;
@@ -84,9 +85,18 @@ public final class Gemma4ChatTemplate implements ChatTemplate {
 
     @Override
     public ReplyState encode(Conversation conversation, int batchCapacity, Consumer<Batch> sink) {
+        return encode(conversation, batchCapacity, null, sink);
+    }
+
+    @Override
+    public ReplyState encode(
+            Conversation conversation,
+            int batchCapacity,
+            MediaEncodingCache mediaCache,
+            Consumer<Batch> sink) {
         Objects.requireNonNull(conversation, "conversation");
         requireSupported(conversation);
-        PromptWriter out = new PromptWriter(tokenizer, batchCapacity, sink);
+        PromptWriter out = new PromptWriter(tokenizer, batchCapacity, mediaCache, sink);
         out.id(bos);
         List<Message> msgs = conversation.messages();
         boolean systemFirst = !msgs.isEmpty() && msgs.get(0).role().equals(Role.SYSTEM);
@@ -360,7 +370,9 @@ public final class Gemma4ChatTemplate implements ChatTemplate {
         if (embedder == null)
             throw new UnsupportedConversation(
                     type.getSimpleName().toLowerCase() + " input is not supported by this model");
-        out.id(open).media(value, contentKey, embedder, bidirectional).id(close);
+        out.cachedMedia(
+                contentKey,
+                encoded -> encoded.id(open).media(value, contentKey, embedder, bidirectional).id(close));
     }
 
     /** Best-effort media positions via the modality's embedder plan (no encoding). */
