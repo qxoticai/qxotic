@@ -19,15 +19,17 @@ final class Instruct {
             int[] tokens =
                     SpecialTokens.encode(engine.loaded().tokenizer(), options.prompt()).toArray();
             Turn turn = Turn.startRaw(engine.loaded().tokenizer(), tokens, options);
-            ChatEngine.Prepared prepared =
+            ChatEngine.Completion completion;
+            try (ChatEngine.Prepared prepared =
                     ChatEngine.Prepared.raw(
                             tokens,
                             sampling.sampler(engine.loaded().model().config().vocabularySize()),
                             options.maxOutputTokens(),
                             Duration.ZERO,
-                            List.of());
-            ChatEngine.Completion completion = engine.complete(prepared, turn);
-            turn.finish(completion, tokens.length, options.contextCapacity());
+                            List.of())) {
+                completion = engine.complete(prepared, turn);
+            }
+            turn.finish(completion, options.contextCapacity());
             return;
         }
 
@@ -59,10 +61,13 @@ final class Instruct {
             }
         }
 
-        ChatEngine.Prepared prepared =
-                engine.prepare(Requests.of(conversation.messages(), sampling, options));
-        Turn turn = Turn.start(engine.loaded().tokenizer(), prepared, options);
-        ChatEngine.Completion completion = engine.complete(prepared, turn);
-        turn.finish(completion, prepared.promptTokens(), options.contextCapacity());
+        ChatEngine.Completion completion;
+        Turn turn;
+        try (ChatEngine.Prepared prepared =
+                engine.prepare(Requests.of(conversation.messages(), sampling, options))) {
+            turn = Turn.start(engine.loaded().tokenizer(), prepared, options);
+            completion = engine.complete(prepared, turn);
+        }
+        turn.finish(completion, options.contextCapacity());
     }
 }

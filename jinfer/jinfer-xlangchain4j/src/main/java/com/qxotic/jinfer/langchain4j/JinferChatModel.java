@@ -301,13 +301,14 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
 
     @Override
     public ChatResponse doChat(ChatRequest request) {
-        ChatEngine.Prepared p = prepare(request);
-        ChatEngine.Completion done = engine.complete(p, ChatEngine.ReplySink.NONE);
-        AiMessage ai = Mappings.toAiMessage(done.reply());
-        if (done.stopped()) {
-            ai = Mappings.withText(ai, TextStops.apply(ai.text(), p.stops()).text());
+        try (ChatEngine.Prepared p = prepare(request)) {
+            ChatEngine.Completion done = engine.complete(p, ChatEngine.ReplySink.NONE);
+            AiMessage ai = Mappings.toAiMessage(done.reply());
+            if (done.stopped()) {
+                ai = Mappings.withText(ai, TextStops.apply(ai.text(), p.stops()).text());
+            }
+            return Mappings.response(engine.modelName(), ai, done.promptTokens(), done);
         }
-        return Mappings.response(engine.modelName(), ai, p.promptTokens(), done);
     }
 
     /**

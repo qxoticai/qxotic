@@ -50,7 +50,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * <p>Everything here speaks jinfer types - no framework classes, no cache internals (the cache's
  * content addressing stays its own law).
  */
-public final class ChatEngine {
+public final class ChatEngine implements AutoCloseable {
 
     /**
      * The smallest completion budget a think span fits: below it, thinking is disabled per request
@@ -243,6 +243,7 @@ public final class ChatEngine {
      * and frees the tree's blobs; later use fails loudly. Returning is the quiescence certificate:
      * no kernel of this engine touches state memory afterwards.
      */
+    @Override
     public void close() {
         if (Thread.currentThread() == streamThread.get()) {
             throw new IllegalStateException(
@@ -406,14 +407,44 @@ public final class ChatEngine {
         return null;
     }
 
-    /** A request lowered to everything a generation pass needs; see {@link #prepare}. */
+    /**
+     * Lowers an already-tokenized completion prompt through the same sampling, grammar, timeout,
+     * stop, cache and telemetry path as chat, without inventing a synthetic conversation.
+     */
+    public Prepared prepareRaw(
+            int[] promptTokens,
+            Sampling sampling,
+            int maxTokens,
+            Duration timeout,
+            String contentGbnf,
+            List<String> stops) {
+        if (promptTokens == null || promptTokens.length == 0) {
+            throw new IllegalArgumentException("a raw prompt needs at least one token");
+        }
+        Sampler sampler = sampling.sampler(loaded.model().config().vocabularySize());
+        if (contentGbnf != null) {
+            ReplyLanguage.Walk walk =
+                    ReplyLanguage.Selection.of(
+                                    ReplyLanguage.gbnf(contentGbnf), loaded.tokenizer())
+                            .walk();
+            sampler = walk.sampler(sampler, endTurn());
+        }
+        return Prepared.raw(promptTokens, sampler, maxTokens, timeout, stops);
+    }
+
+    /**
+     * A request lowered to everything a generation pass needs; see {@link #prepare}. Close it
+     * after completion: multimodal prompts own their copied projector rows here.
+     */
     public record Prepared(
             Encoded encoded,
             Sampler sampler,
             int maxTokens,
             Duration timeout,
             int promptTokens,
-            List<String> stops) {
+            List<String> stops,
+            Arena memory)
+            implements AutoCloseable {
 
         /**
          * A pre-encoded prompt (raw completions: the caller already tokenized) lowered directly -
@@ -432,7 +463,18 @@ public final class ChatEngine {
                     maxTokens,
                     timeout,
                     promptTokens.length,
-                    stops);
+                    stops,
+                    null);
+        }
+
+        @Override
+        public void close() {
+            if (memory == null || !memory.scope().isAlive()) return;
+            try {
+                memory.close();
+            } catch (UnsupportedOperationException ignored) {
+                // Native-image may provide an ofAuto arena; GC owns that fallback.
+            }
         }
     }
 
@@ -451,13 +493,30 @@ public final class ChatEngine {
      * </ul>
      */
     public Prepared prepare(Request request) {
+        lock.lock();
+        try {
+            checkOpen();
+            Arena memory = Arenas.newCrossThread();
+            try {
+                return prepare(request, memory);
+            } catch (RuntimeException | Error failure) {
+                closeArena(memory);
+                throw failure;
+            }
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private Prepared prepare(Request request, Arena memory) {
         boolean think =
                 request.thinking()
                         && request.forcedTool() == ForcedTool.NONE
                         && (request.maxTokens() < 0 || request.maxTokens() >= THINK_FLOOR);
         Conversation conversation =
                 new Conversation(request.messages(), request.tools(), think, "");
-        Encoded encoded = encode(conversation, request.templateKwargs());
+        Encoded encoded =
+                encode(conversation, request.templateKwargs(), new PanamaMemoryArena(memory));
         Sampler sampler =
                 sampler(
                         request.sampling(),
@@ -510,7 +569,16 @@ public final class ChatEngine {
                 request.maxTokens(),
                 request.timeout(),
                 Batch.positions(encoded.prompt()),
-                request.stops());
+                request.stops(),
+                memory);
+    }
+
+    private static void closeArena(Arena arena) {
+        try {
+            arena.close();
+        } catch (UnsupportedOperationException ignored) {
+            // Native-image ofAuto fallback.
+        }
     }
 
     /**
@@ -599,11 +667,11 @@ public final class ChatEngine {
      * batches are ingested after {@code ChatTemplate#encode} returns. Non-media batches pass
      * through.
      */
-    private static Batch own(Batch batch) {
+    private static Batch own(Batch batch, PanamaMemoryArena arena) {
         if (!(batch.input() instanceof Batch.Input.Embeddings e)) return batch;
         MemoryView<MemorySegment> rows = Views.castToSegmentBacked(e.rows(), "embedding rows");
         Views.requireDense(rows, DataType.FP32, "embedding rows");
-        MemoryView<MemorySegment> owned = Views.allocateF32(MEDIA_ROWS, rows.shape().toArray());
+        MemoryView<MemorySegment> owned = Views.allocateF32(arena, rows.shape().toArray());
         MemorySegment.copy(
                 rows.memory().base(),
                 rows.byteOffset(),
@@ -613,9 +681,6 @@ public final class ChatEngine {
         return Batch.embeddings(owned, e.count(), e.bidirectional(), e.contentKey());
     }
 
-    /** Owned arena for the sink-side media copies (GC-managed; the copies outlive the encode). */
-    private static final PanamaMemoryArena MEDIA_ROWS = new PanamaMemoryArena(Arena.ofAuto());
-
     /**
      * Native-first encode: the model's own codec when it can frame the conversation byte-exactly,
      * else the scrubbed Jinja whole-render over the OpenAI-shaped maps this engine derives itself.
@@ -624,6 +689,14 @@ public final class ChatEngine {
      * their framework's exception type.
      */
     public Encoded encode(Conversation conversation, Map<String, Object> templateKwargs) {
+        return encode(
+                conversation, templateKwargs, new PanamaMemoryArena(Arena.ofAuto()));
+    }
+
+    private Encoded encode(
+            Conversation conversation,
+            Map<String, Object> templateKwargs,
+            PanamaMemoryArena mediaRows) {
         Optional<ChatTemplate> template = loaded.template();
         UnsupportedConversation punted = null;
         // kwargs the codec has no equivalent for force the whole-render - taking the native path
@@ -633,7 +706,11 @@ public final class ChatEngine {
             try {
                 List<Batch> prompt = new ArrayList<>();
                 ChatTemplate.ReplyState state =
-                        template.get().encode(conversation, ENCODE_BATCH, b -> prompt.add(own(b)));
+                        template.get()
+                                .encode(
+                                        conversation,
+                                        ENCODE_BATCH,
+                                        b -> prompt.add(own(b, mediaRows)));
                 return new Encoded(List.copyOf(prompt), state.parser(), state.replyPrefix());
             } catch (UnsupportedConversation punt) {
                 punted = punt; // fall through; the parser (same reply grammar) stays usable
@@ -751,6 +828,7 @@ public final class ChatEngine {
             Message reply,
             Generator.GenerationResult result,
             boolean stopped,
+            int promptTokens,
             int restoredTokens,
             PromptCache.Tier tier,
             SpeculativeDecoding.SpeculationResult speculation) {
@@ -788,6 +866,13 @@ public final class ChatEngine {
         } finally {
             event.end();
             event.commit();
+        }
+    }
+
+    /** Prepares, completes, and releases one request's copied media rows. */
+    public Completion complete(Request request, ReplySink out) {
+        try (Prepared prepared = prepare(request)) {
+            return complete(prepared, out);
         }
     }
 
@@ -885,6 +970,7 @@ public final class ChatEngine {
                     null,
                     outcome.result(),
                     false,
+                    prepared.promptTokens(),
                     outcome.restoredTokens(),
                     outcome.tier(),
                     outcome.speculation());
@@ -908,6 +994,7 @@ public final class ChatEngine {
                 finishReply(parser, pending, rawText),
                 result,
                 watch.stopped(),
+                prepared.promptTokens(),
                 outcome.restoredTokens(),
                 outcome.tier(),
                 outcome.speculation());
@@ -966,11 +1053,19 @@ public final class ChatEngine {
         LanguageModel<?, ?, S> model = (LanguageModel<?, ?, S>) loaded.model();
         PromptCache<S> c = (PromptCache<S>) cache;
         // the facade validates the prompt (non-empty, fits the context) before any ingest
+        long started = System.nanoTime();
         return c.serve(
                 prompt,
                 (state, serving) -> {
+                    Duration remaining = timeout;
+                    if (!timeout.isZero()) {
+                        remaining = timeout.minusNanos(System.nanoTime() - started);
+                        if (remaining.isNegative() || remaining.isZero()) {
+                            remaining = Duration.ofNanos(1);
+                        }
+                    }
                     Generator.Constraints constraints =
-                            new Generator.Constraints(maxTokens, timeout, loaded.stopTokens());
+                            new Generator.Constraints(maxTokens, remaining, loaded.stopTokens());
                     Generator.GenerationListener hook =
                             new Generator.GenerationListener() {
                                 @Override
@@ -1025,6 +1120,13 @@ public final class ChatEngine {
                                 Generator.generate(
                                         model, state, List.of(), sampler, constraints, hook);
                     }
+                    result =
+                            new Generator.GenerationResult(
+                                    result.tokens(),
+                                    result.stopToken(),
+                                    result.finishReason(),
+                                    serving.promptTime(),
+                                    result.decodeTime());
                     return new Outcome(result, serving.restored(), serving.tier(), speculation);
                 });
     }
@@ -1037,6 +1139,10 @@ public final class ChatEngine {
      * native codec; integrations map it.
      */
     public Encoded encodeNative(Conversation conversation) {
+        return encodeNative(conversation, new PanamaMemoryArena(Arena.ofAuto()));
+    }
+
+    private Encoded encodeNative(Conversation conversation, PanamaMemoryArena mediaRows) {
         ChatTemplate template =
                 loaded.template()
                         .orElseThrow(
@@ -1048,7 +1154,8 @@ public final class ChatEngine {
         List<Batch> prompt = new ArrayList<>();
         try {
             ChatTemplate.ReplyState state =
-                    template.encode(conversation, ENCODE_BATCH, b -> prompt.add(own(b)));
+                    template.encode(
+                            conversation, ENCODE_BATCH, b -> prompt.add(own(b, mediaRows)));
             return new Encoded(List.copyOf(prompt), state.parser(), state.replyPrefix());
         } catch (UnsupportedConversation punt) {
             // a reply-codec-only family frames through the whole-render - no prefix stability
@@ -1064,14 +1171,15 @@ public final class ChatEngine {
      * blocks hold the KV.
      */
     public void definePrompt(Conversation prefix) {
-        List<Batch> prompt = encodeNative(prefix).prompt();
+        Arena memory = Arenas.newCrossThread();
         lock.lock();
         try {
             checkOpen();
-            cache.define(prompt);
+            cache.define(encodeNative(prefix, new PanamaMemoryArena(memory)).prompt());
             cacheSnapshot = cache.sample(); // a define changes blocks/bytes like a pass does
         } finally {
             lock.unlock();
+            closeArena(memory);
         }
     }
 
@@ -1148,5 +1256,11 @@ public final class ChatEngine {
     /** Whether the block layer exists for this model (codec present, blocks not disabled). */
     public boolean blockCaching() {
         return cache.blockCaching();
+    }
+
+    /** Whether this loaded model has an attached, ready self-speculation companion. */
+    public boolean speculationReady() {
+        return loaded.model() instanceof SpeculativeDecoding<?> capable
+                && capable.speculationReady();
     }
 }
