@@ -19,8 +19,7 @@ final class MediaEncodingCacheTest {
 
     @Test
     void repeatedImageAndVideoProjectOnlyOnce() {
-        assertProjectedOnce(
-                new Media.Image(new float[] {0, 0, 0}, 1, 1, 3), new byte[] {1});
+        assertProjectedOnce(new Media.Image(new float[] {0, 0, 0}, 1, 1, 3), new byte[] {1});
         Media.Image frame = new Media.Image(new float[] {0, 0, 0}, 1, 1, 3);
         assertProjectedOnce(
                 new Media.Video(List.of(new Media.Video.Frame(frame, Duration.ZERO))),

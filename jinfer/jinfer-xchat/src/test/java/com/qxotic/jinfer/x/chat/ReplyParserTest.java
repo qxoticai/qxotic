@@ -24,9 +24,28 @@ public final class ReplyParserTest {
 
     // ids:            0          1           2         3          4        5       6      7
     static final String[] W = {
-        "<think>", "</think>", "<|call|>", "<|/call|>", "<|end|>", "Hello", " world", "[f(x=1)]"
+        "<think>",
+        "</think>",
+        "<|call|>",
+        "<|/call|>",
+        "<|end|>",
+        "Hello",
+        " world",
+        "[f(x=1)]",
+        "é-h1",
+        "é-h2",
+        "bad",
+        "[f(",
+        "x",
+        " ",
+        "=1)]",
+        "{\"name\": \"f\",",
+        " \"arguments\": {\"x\": 1",
+        ",},}"
     };
-    // 8, 9: the two halves of a split two-byte UTF-8 code point (é = 0xC3 0xA9); 10: malformed
+    // 8, 9: the two halves of a split two-byte UTF-8 code point (é = 0xC3 0xA9); 10: malformed;
+    // 11-14: one call payload fragmented four ways, incl. a whitespace-only fragment;
+    // 15-17: a JSON envelope with trailing commas (the salvage lane's payload, fragmented)
     static final byte[][] BYTES = {
         b("<think>"),
         b("</think>"),
@@ -38,7 +57,14 @@ public final class ReplyParserTest {
         b("[f(x=1)]"),
         new byte[] {(byte) 0xC3},
         new byte[] {(byte) 0xA9},
-        new byte[] {(byte) 0xFF}
+        new byte[] {(byte) 0xFF},
+        b("[f("),
+        b("x"),
+        b(" "),
+        b("=1)]"),
+        b("{\"name\": \"f\","),
+        b(" \"arguments\": {\"x\": 1"),
+        b(",},}")
     };
     static final int SPECIALS = 5; // ids 0..4 are special
 
@@ -191,6 +217,63 @@ public final class ReplyParserTest {
         Message streamed = ReplyParser.parse(ReplyParser.spans(TOK), reply);
         Message oneshot = ReplyParser.parse(ReplyParser.spans(TOK), reply);
         check(streamed.equals(oneshot), "streamed == one-shot decode");
+    }
+
+    @Test
+    void sloppyJsonCallIsSalvagedThroughTheSpanParser() {
+        // the wiring pin, one level above ToolCallSyntaxTest: the JSON-envelope families (SmolLM3,
+        // Granite) hand ToolCallSyntax.parseBlock to the span parser with NO schema grammar on the
+        // arguments - a trailing-comma payload must still surface as a call, fragmented or not,
+        // where a strict parse would drop the span to visible text and the tool loop would die
+        ReplyParser p = ReplyParser.spans(TOK, "<|call|>", "<|/call|>", ToolCallSyntax::parseBlock);
+        List<Step> steps = run(p, 5, 2, 15, 16, 17, 3, 4);
+        check(
+                steps.equals(List.of(new Step("Hello", false))),
+                "the call span never streams: " + steps);
+        Message m = p.finish();
+        List<Content.ToolCall> calls = new ArrayList<>();
+        for (Content part : m.content()) if (part instanceof Content.ToolCall c) calls.add(c);
+        check(calls.size() == 1, "one call salvaged, not dropped: " + m.content());
+        check("f".equals(calls.get(0).name()), "the envelope name survives: " + calls.get(0));
+        check(
+                calls.get(0).arguments().get("x") instanceof Number n && n.intValue() == 1,
+                "trailing commas salvaged to {x: 1}: " + calls.get(0).arguments());
+        check(
+                calls.get(0).verbatim().toList().equals(List.of(15, 16, 17)),
+                "the salvaged call keeps its sloppy payload verbatim for exact replay");
+    }
+
+    @Test
+    void fragmentedCallSpanDeliversThePayloadVerbatim() {
+        // a call payload fragmented across many tokens - a whitespace-only fragment included -
+        // must reach the call parser as the EXACT concatenation, with nothing streamed mid-span
+        // (langchain4j's blank-partial-arguments case, at jinfer's boundary: spans are atomic)
+        java.util.concurrent.atomic.AtomicReference<String> received =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        ReplyParser p =
+                ReplyParser.spans(
+                        TOK,
+                        "<|call|>",
+                        "<|/call|>",
+                        payload -> {
+                            received.set(payload);
+                            return List.of(new Content.ToolCall("", "f", Map.of("x", 1)));
+                        });
+        List<Step> steps = run(p, 2, 11, 12, 13, 14, 3, 4);
+        check(steps.isEmpty(), "nothing streams from inside a call span: " + steps);
+        check(
+                "[f(x =1)]".equals(received.get()),
+                "payload is the exact fragment concatenation, whitespace kept: '"
+                        + received.get()
+                        + "'");
+        Message m = p.finish();
+        check(
+                m.content().size() == 1 && m.content().get(0) instanceof Content.ToolCall,
+                "exactly one call claimed: " + m.content());
+        Content.ToolCall call = (Content.ToolCall) m.content().get(0);
+        check(
+                call.verbatim() != null && call.verbatim().toList().equals(List.of(11, 12, 13, 14)),
+                "the call carries every fragment's verbatim ids");
     }
 
     private static final class FakeTokenizer implements Tokenizer {

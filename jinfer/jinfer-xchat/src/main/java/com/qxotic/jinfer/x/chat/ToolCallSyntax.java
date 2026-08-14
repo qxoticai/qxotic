@@ -34,10 +34,52 @@ public final class ToolCallSyntax {
         try {
             // JsonCodec, not raw Json: argument types must be the engine's value model
             // (double decimals, Java null) on EVERY family's wire
-            return fromJson(JsonCodec.parse(c));
+            return fromJson(parseLenient(c));
         } catch (RuntimeException notJson) {
             return List.of();
         }
+    }
+
+    /**
+     * Strict first, then one salvage pass with trailing commas removed: small models emit {@code
+     * {"city": "Paris",}} often enough that langchain4j's own tool layer strips them too - a
+     * strict-only parse DROPS the whole call here, silently.
+     */
+    private static Object parseLenient(String text) {
+        try {
+            return JsonCodec.parse(text);
+        } catch (RuntimeException strict) {
+            return JsonCodec.parse(stripTrailingCommas(text));
+        }
+    }
+
+    /** Commas immediately before a closing brace/bracket, removed outside string literals. */
+    static String stripTrailingCommas(String json) {
+        StringBuilder out = new StringBuilder(json.length());
+        boolean inString = false, escaped = false;
+        for (int i = 0; i < json.length(); i++) {
+            char ch = json.charAt(i);
+            if (inString) {
+                out.append(ch);
+                if (escaped) escaped = false;
+                else if (ch == '\\') escaped = true;
+                else if (ch == '"') inString = false;
+            } else if (ch == '"') {
+                inString = true;
+                out.append(ch);
+            } else if (ch == ',') {
+                int next = i + 1;
+                while (next < json.length() && Character.isWhitespace(json.charAt(next))) next++;
+                if (next < json.length()
+                        && (json.charAt(next) == '}' || json.charAt(next) == ']')) {
+                    continue; // trailing comma: drop
+                }
+                out.append(ch);
+            } else {
+                out.append(ch);
+            }
+        }
+        return out.toString();
     }
 
     /**
@@ -106,7 +148,7 @@ public final class ToolCallSyntax {
      */
     public static Map<String, Object> parseObject(String text) {
         try {
-            if (JsonCodec.parse(text) instanceof Map<?, ?> parsed) {
+            if (parseLenient(text) instanceof Map<?, ?> parsed) {
                 Map<String, Object> out = new LinkedHashMap<>();
                 for (Map.Entry<?, ?> e : parsed.entrySet()) {
                     out.put(String.valueOf(e.getKey()), e.getValue());

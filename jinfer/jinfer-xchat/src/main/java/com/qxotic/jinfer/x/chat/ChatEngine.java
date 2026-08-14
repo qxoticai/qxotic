@@ -43,7 +43,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * The framework-neutral provider runtime: one loaded model, the two-tier template stack (native
  * codec first, hardened Jinja whole-render fallback), the single-stream generation lock (a jinfer
  * model runs one generation at a time; concurrent calls queue), and the one {@link PromptCache} -
- * hot sessions, block tree and catalog behind definePrompt / freezePrompts / savePrompts.
+ * retained sessions, block tree and catalog behind definePrompt / freezePrompts / savePrompts.
  * Integrations adapt only what is genuinely theirs: message/tool mapping into {@link Conversation}s
  * and framework exception types.
  *
@@ -68,7 +68,7 @@ public final class ChatEngine implements AutoCloseable {
     private final String modelName;
     private final JinjaChatTemplate jinja;
     private final ReentrantLock lock = new ReentrantLock(true);
-    // THE cache: hot sessions + block tree + optional catalog, one front door (all access
+    // THE cache: retained sessions + block tree + optional catalog, one front door (all access
     // under the generation lock - the facade is single-threaded by design, like the tree)
     private final PromptCache<?> cache;
     private final MediaEncodingCache mediaCache = new MediaEncodingCache();
@@ -169,7 +169,7 @@ public final class ChatEngine implements AutoCloseable {
                 cacheOptions.withContextCapacity(capacity == 0 ? max : Math.min(capacity, max));
         PromptCache<?> built = null;
         try {
-            // PromptCache.of reads the model's capabilities itself (codec-less = hot-only,
+            // PromptCache.of reads the model's capabilities itself (codec-less = sessions-only,
             // coarse = define-only writes); a zero budget is the block layer's off-switch, and an
             // explicit catalog still mounts - the caller pointed at an artifact on purpose
             built = PromptCache.of(loaded.model(), loaded.seed(), cacheOptions);
@@ -188,9 +188,8 @@ public final class ChatEngine implements AutoCloseable {
         this.cacheSnapshot = cache.sample();
         // registered after the cache exists, and after every throwing step: publishing `this`
         // to a registry from a constructor that may still fail would hand out a half-built engine.
-        // Only block-caching engines register: a hot-only engine has no tree to sample.
         this.cacheGauge = new Telemetry.CacheGauge(modelName, () -> sample(cacheSnapshot));
-        if (cache.blockCaching()) Telemetry.register(cacheGauge);
+        Telemetry.register(cacheGauge);
         // armed last: a ctor throw already cleaned up above and must not read as a leak
         this.leakWatch =
                 LeakWatch.arm(
@@ -213,7 +212,19 @@ public final class ChatEngine implements AutoCloseable {
     /** Telemetry's vocabulary for the cache's own sample - mapped here, at the only seam. */
     private static CacheSample sample(PromptCache.Sample s) {
         return new CacheSample(
-                s.blocks(), s.bytes(), s.budgetBytes(), s.hits(), s.misses(), s.evictions());
+                s.retainedSessions(),
+                s.retainedSessionLimit(),
+                s.sessionHits(),
+                s.stateAllocations(),
+                s.sessionSnapshotBytes(),
+                s.blocks(),
+                s.bytes(),
+                s.budgetBytes(),
+                s.blockHits(),
+                s.blockMisses(),
+                s.blockEvictions(),
+                s.blockDiscards(),
+                s.blockRefusals());
     }
 
     public LoadedModel<?> loaded() {
@@ -265,7 +276,7 @@ public final class ChatEngine implements AutoCloseable {
             closed = true;
             leakWatch.run(); // disarm: this engine was closed properly
             Telemetry.unregister(cacheGauge); // stop sampling a cache that is about to be freed
-            cache.close(); // every hot state, the spare, and the block blobs - NOW
+            cache.close(); // every retained state and block blob - NOW
             mediaCache.clear();
         } finally {
             lock.unlock();
@@ -436,8 +447,8 @@ public final class ChatEngine implements AutoCloseable {
     }
 
     /**
-     * A request lowered to everything a generation pass needs; see {@link #prepare}. Close it
-     * after completion: multimodal prompts own their copied projector rows here.
+     * A request lowered to everything a generation pass needs; see {@link #prepare}. Close it after
+     * completion: multimodal prompts own their copied projector rows here.
      */
     public record Prepared(
             Encoded encoded,
@@ -692,8 +703,7 @@ public final class ChatEngine implements AutoCloseable {
      * their framework's exception type.
      */
     public Encoded encode(Conversation conversation, Map<String, Object> templateKwargs) {
-        return encode(
-                conversation, templateKwargs, new PanamaMemoryArena(Arena.ofAuto()));
+        return encode(conversation, templateKwargs, new PanamaMemoryArena(Arena.ofAuto()));
     }
 
     private Encoded encode(
@@ -1045,7 +1055,7 @@ public final class ChatEngine implements AutoCloseable {
      * thing that matches (a live session it strictly extends, else the longest block prefix, else
      * fresh compute on a recycled state) and the pass only generates - each decode token joins the
      * cache step-time through the {@code onIngested} hook, so the reply stays per-position
-     * resumable and the hot stream stays in lockstep. Which layers exist (hot-only, define-only
+     * resumable and the retained stream stays in lockstep. Which layers exist (sessions-only, define-only
      * coarse, full) was decided once, at construction, by what the model supports.
      */
     @SuppressWarnings("unchecked")
@@ -1159,8 +1169,7 @@ public final class ChatEngine implements AutoCloseable {
         List<Batch> prompt = new ArrayList<>();
         try {
             ChatTemplate.ReplyState state =
-                    template.encode(
-                            conversation, ENCODE_BATCH, b -> prompt.add(own(b, mediaRows)));
+                    template.encode(conversation, ENCODE_BATCH, b -> prompt.add(own(b, mediaRows)));
             return new Encoded(List.copyOf(prompt), state.parser(), state.replyPrefix());
         } catch (UnsupportedConversation punt) {
             // a reply-codec-only family frames through the whole-render - no prefix stability
@@ -1229,20 +1238,19 @@ public final class ChatEngine implements AutoCloseable {
     }
 
     /**
-     * Test seam: hot-layer occupancy, prefix-hit count, and how many contexts this engine ever
-     * allocated - the cache is the allocator, so a steady pipeline stays at {@code
-     * allocations=max(1, hotSessions)}.
+     * Test seam: retained-session occupancy, prefix-hit count, and how many contexts this engine
+     * ever allocated.
      */
     public String sessionStats() {
         lock.lock();
         try {
             PromptCache.Sample s = cache.sample();
             return "sessions="
-                    + s.hotSessions()
+                    + s.retainedSessions()
                     + " hits="
-                    + s.hotHits()
+                    + s.sessionHits()
                     + " allocations="
-                    + s.statesAllocated();
+                    + s.stateAllocations();
         } finally {
             lock.unlock();
         }
