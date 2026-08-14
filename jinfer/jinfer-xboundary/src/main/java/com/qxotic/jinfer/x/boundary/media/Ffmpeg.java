@@ -39,8 +39,7 @@ final class Ffmpeg {
         try {
             p = new ProcessBuilder(cmd).start();
         } catch (IOException e) {
-            throw new IOException(
-                    "failed to launch ffmpeg (is it on PATH?): " + e.getMessage(), e);
+            throw new IOException("failed to launch ffmpeg (is it on PATH?): " + e.getMessage(), e);
         }
         if (stdin != null) {
             daemon(
