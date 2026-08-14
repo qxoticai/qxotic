@@ -84,8 +84,8 @@ import java.util.concurrent.ConcurrentHashMap;
  *       grammars deliberately terminate the turn.
  *   <li><b>Caching:</b> specs cache per (source, vocabulary) — repeated compiles are free; masks
  *       cache per matcher state (capped, see {@code MASK_CACHE_CAP}).
- *   <li><b>Reasoning stays free:</b> driven through {@code RequestPolicy.constrained}, the grammar
- *       binds only the output channel — think spans sample unconstrained.
+ *   <li><b>Reasoning stays free:</b> driven through the chat engine's constrained path, the grammar
+ *       binds only the output channel - think spans sample unconstrained.
  * </ul>
  *
  * <h2>Known limitations</h2>
@@ -631,8 +631,8 @@ public final class Grammar {
      * cursor.advanceWith(token);                      // consume its bytes
      * }</pre>
      *
-     * <p>Most callers want the assembled path instead: {@code RequestPolicy.constrained} wires this
-     * into the chat sampling stack (think spans free, output bound, dead-end stop).
+     * <p>Most callers want the assembled path instead: the chat engine's constrained generation
+     * wires this into the sampling stack (think spans free, output bound, dead-end stop).
      */
     public static final class Spec {
         static final Spec DISABLED = new Spec(null, null);

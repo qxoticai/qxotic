@@ -149,7 +149,7 @@ public final class Views {
      * Checked scalar FP32 read, for model code that needs ONE element (a logit, a learned scalar).
      * Unlike kernel access this keeps the JDK's bounds and liveness checks (plain {@code
      * segment.get} on the real segment, never {@link Segments#GLOBAL_SEGMENT}); it is deliberately
-     * not the hot-path idiom - kernels use {@link #rawF32}.
+     * not the hot-path idiom - kernels use {@code Raw.f32} (jinfer-xkernels).
      */
     public static float getFloat(MemoryView<MemorySegment> view, long elementOffset, String name) {
         requireF32(view, name);
