@@ -97,6 +97,9 @@ public final class ModelFixture {
     public static final Gguf GPTOSS_20B_Q8 =
             hf("unsloth", "gpt-oss-20b-GGUF", "gpt-oss-20b-Q8_0.gguf");
 
+    public static final Gguf MAPLE_PREVIEW_TQ1_Q4_HEAD =
+            hf("deepgrove", "maple-preview-GGUF", "maple-preview-TQ1_0-head-Q4_K.gguf");
+
     public static final Gguf LLAMA32_1B_Q8 =
             hf("unsloth", "Llama-3.2-1B-Instruct-GGUF", "Llama-3.2-1B-Instruct-Q8_0.gguf");
 
