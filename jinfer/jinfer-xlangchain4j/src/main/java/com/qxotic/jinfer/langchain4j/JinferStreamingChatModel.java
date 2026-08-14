@@ -28,6 +28,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * content fragments to {@code onPartialResponse} (with a cancellation handle), reasoning fragments
  * to {@code onPartialThinking}. Models without a native parser stream raw decoded text.
  *
+ * <p>Lifecycle: the twin shares the blocking model's engine - {@code close()} on either closes
+ * both, and with them every cached-prompt view (see {@link JinferChatModel}'s Lifecycle paragraph).
+ *
  * <p>Contract details (the streaming compliance kit's): invalid requests throw synchronously from
  * {@code chat}; a cancelled handle stops generation and suppresses {@code onCompleteResponse};
  * exceptions thrown by user callbacks are forwarded to {@code onError} per occurrence while the

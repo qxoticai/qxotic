@@ -23,6 +23,7 @@ import dev.langchain4j.model.chat.request.ResponseFormat;
 import dev.langchain4j.model.chat.request.ResponseFormatType;
 import dev.langchain4j.model.chat.request.ToolChoice;
 import dev.langchain4j.model.chat.response.ChatResponse;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -44,29 +45,35 @@ import java.util.function.Supplier;
  * <p>Concurrency contract: an instance is ONE serial inference pipeline - concurrent requests queue
  * fairly on it. For a second pipeline, load the weights once into YOUR arena ({@code
  * Models.load(path, arena)}), build with {@code model(loaded)}, and {@code fork()} pipelines for
- * the price of a context each. Footprint: an instance holds its weights, ONE full-context state
- * reused for every request (extended on a prefix hit when {@code cachedSessions} is set, reset
- * otherwise - never re-allocated per request), plus the block layer's KV (every served
- * conversation, best-effort, bounded by {@code jinfer.promptCacheMB}; defined prompts are pinned
- * intent within it).
+ * the price of a context each. Footprint: an instance holds its weights, up to the configured
+ * number of retained full-context states, plus the block layer's KV (every served conversation,
+ * best-effort, bounded by {@code jinfer.promptCacheMB}; defined prompts are pinned intent within
+ * it).
  *
- * <p>Three caching tiers, near-homonyms with distinct jobs: {@code withCachedPrompt} defines a LIVE
- * shared prefix (prefilled once, restored per request - the system-prompt/tools/few-shot case);
- * {@code Builder.cachedSessions} keeps finished CONVERSATION states warm for append-only multi-turn
- * reuse (in-RAM, gone at close); {@code saveCachedPrompts}/{@code Builder.loadCachedPrompts}
- * persist the defined prompts as an immutable ARTIFACT that mounts zero-prefill in later processes.
- * None changes output - byte-identity to a cold run is the law. Every response accounts for what
- * the cache did: {@link JinferTokenUsage#cachedInputTokens} is the read, per request.
+ * <p>Lifecycle: base model, cached-prompt views and the streaming twin share ONE engine, so {@code
+ * close()} on ANY of them closes ALL - later use of any of them fails with IllegalStateException.
+ * The component that built the base model owns {@code close()}; code handed a view or a twin never
+ * calls it. ({@code fork()} is the exception: an independent pipeline with its own lifecycle.)
+ *
+ * <p>Three cache controls with distinct jobs: {@code withCachedPrompt} defines a shared prefix
+ * (prefilled once, restored per request - the system-prompt/tools/few-shot case); {@code
+ * Builder.retainSessions} keeps finished CONVERSATION states warm for append-only multi-turn reuse
+ * (in-RAM, gone at close); {@code saveCachedPrompts}/{@code Builder.promptCache} persist the
+ * defined prompts as an immutable artifact that mounts zero-prefill in later processes. None
+ * changes output - byte-identity to a cold run is the law. Every response accounts for what the
+ * cache did: {@link JinferTokenUsage#cachedInputTokens} is the read, per request.
  *
  * <p>Run with jinfer's JVM flags: {@code --enable-preview --add-modules jdk.incubator.vector
  * --enable-native-access=ALL-UNNAMED}.
  */
 public final class JinferChatModel implements ChatModel, AutoCloseable {
 
+    private static final org.slf4j.Logger LOG =
+            org.slf4j.LoggerFactory.getLogger(JinferChatModel.class);
+
     final ChatEngine engine;
     final ChatRequestParameters defaults;
     final boolean thinking;
-    final Long seed;
     final Duration timeout;
     final List<ChatModelListener> listeners;
     final VideoSampler videoSampler;
@@ -85,11 +92,11 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
      * application did not ask it to write.
      */
     private static PromptCache.Options cacheOptions(
-            Path cachedPrompts, int cachedSessions, int contextLength) {
+            Path promptCache, int retainedSessions, int contextLength) {
         var defaults = PromptCache.Options.DEFAULTS;
-        return defaults.withHotSessions(cachedSessions)
+        return defaults.withRetainedSessions(retainedSessions)
                 .withContextCapacity(Math.max(0, contextLength)) // 0 = model max, engine-resolved
-                .withCatalog(cachedPrompts, true);
+                .withCatalog(promptCache, true);
     }
 
     private JinferChatModel(Builder b) {
@@ -103,8 +110,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         }
         this.cacheOptions =
                 cacheOptions(
-                        b.cachedPrompts,
-                        b.cachedSessions,
+                        b.promptCache,
+                        b.retainedSessions,
                         b.contextLength == null ? 4096 : b.contextLength);
         this.ownsWeights = b.loaded == null;
         this.engine =
@@ -120,32 +127,16 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         // free it, or a failed build() leaks a GB-scale ofShared arena with no backstop
         try {
             this.thinking = b.thinking;
-            this.seed = b.seed;
             this.timeout = b.timeout == null ? Duration.ZERO : b.timeout;
             this.listeners = List.copyOf(b.listeners);
             this.videoSampler = b.videoSampler;
             this.prefix = CachedPrompt.NONE;
             // Jinfer-typed ALWAYS: ChatModel.chat merges defaults.overrideWith(request), and only a
             // jinfer-typed receiver preserves grammar/seed from either side of the merge
-            // precedence: request > builder > the container's recommendation (general.sampling.*)
-            // > port author recommendation > the engine baseline (SamplingDefaults.DEFAULT_*)
-            var recommended = engine.loaded().samplingDefaults();
-            JinferChatRequestParameters base =
-                    JinferChatRequestParameters.builder()
-                            .modelName(engine.modelName())
-                            .temperature(
-                                    b.temperature != null
-                                            ? b.temperature
-                                            : toDouble(recommended.temperature()))
-                            .topP(b.topP != null ? b.topP : toDouble(recommended.topP()))
-                            .topK(b.topK != null ? b.topK : recommended.topK())
-                            .minP(b.minP != null ? b.minP : toDouble(recommended.minP()))
-                            .maxOutputTokens(b.maxOutputTokens)
-                            .build();
-            // caller-supplied defaults win field-by-field (unsupported ones rejected above,
-            // before the load); a defaults modelName can only be checked against the LIVE engine
+            // precedence: request > explicit builder setter > defaultRequestParameters > the
+            // container's recommendation > port recommendation > engine baseline
             this.defaults =
-                    b.defaultParameters == null ? base : base.overrideWith(b.defaultParameters);
+                    resolveDefaults(engine.modelName(), engine.loaded().samplingDefaults(), b);
             rejectModelSwitch(engine, this.defaults);
         } catch (RuntimeException | Error e) {
             close(
@@ -164,12 +155,32 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         }
     }
 
+    static JinferChatRequestParameters resolveDefaults(
+            String model, LoadedModel.SamplingDefaults recommended, Builder b) {
+        JinferChatRequestParameters.Builder resolved =
+                JinferChatRequestParameters.builder()
+                        .modelName(model)
+                        .temperature(toDouble(recommended.temperature()))
+                        .topP(toDouble(recommended.topP()))
+                        .topK(recommended.topK())
+                        .minP(toDouble(recommended.minP()));
+        if (b.defaultParameters != null) resolved.overrideWith(b.defaultParameters);
+        // LangChain4j's provider builders expose both idiomatic convenience setters and a
+        // fallback parameters object. Explicit setters are the narrower, later provenance.
+        if (b.temperature != null) resolved.temperature(b.temperature);
+        if (b.topP != null) resolved.topP(b.topP);
+        if (b.topK != null) resolved.topK(b.topK);
+        if (b.minP != null) resolved.minP(b.minP);
+        if (b.maxOutputTokens != null) resolved.maxOutputTokens(b.maxOutputTokens);
+        if (b.seed != null) resolved.seed(b.seed);
+        return resolved.build();
+    }
+
     /** The fork constructor: a fresh engine over the same borrowed weights, every knob carried. */
     private JinferChatModel(JinferChatModel base, ChatEngine engine) {
         this.engine = engine;
         this.defaults = base.defaults;
         this.thinking = base.thinking;
-        this.seed = base.seed;
         this.timeout = base.timeout;
         this.listeners = base.listeners;
         this.videoSampler = base.videoSampler;
@@ -208,7 +219,6 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         this.engine = base.engine;
         this.defaults = base.defaults;
         this.thinking = base.thinking;
-        this.seed = base.seed;
         this.timeout = base.timeout;
         this.listeners = base.listeners;
         this.videoSampler = base.videoSampler;
@@ -222,7 +232,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
      * tools} as the view's DEFAULT tool set - both prefilled ONCE into the engine's block tree,
      * restored (not recomputed) on every chat. Composable: calling this on a view branches on its
      * prefix. Immutable, shares the base engine; a view's prefix is pinned intent, where the base
-     * model's traffic is cached best-effort.
+     * model's traffic is cached best-effort. Shares the base's lifecycle too: {@code close()} on
+     * either closes both (see the class doc's Lifecycle paragraph).
      *
      * <p>Tools follow the standard parameter precedence, request over defaults: a request that
      * states none offers the welded set (an AiServices agent re-stating the SAME set lands on the
@@ -251,10 +262,12 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
      */
     public JinferChatModel withCachedPrompt(
             List<ChatMessage> prefixMessages, List<ToolSpecification> tools) {
+        Objects.requireNonNull(prefixMessages, "prefixMessages");
+        Objects.requireNonNull(tools, "tools");
         return withPrefix(
                 prefix.merge(
                         Mappings.toMessages(prefixMessages, videoSampler),
-                        tools == null ? List.of() : Mappings.toTools(tools)));
+                        Mappings.toTools(tools)));
     }
 
     private JinferChatModel withPrefix(CachedPrompt merged) {
@@ -277,6 +290,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
      * GC-managed arena would free only at a GC a native-heavy JVM never runs. A model built with
      * {@code model(...)} borrows its weights instead - close YOUR arena after this, never before.
      */
+    // ponytail: shared engine - any close() closes the base, every view and the streaming twin;
+    // if independent closing is ever a demonstrated need, explicit engine owner + non-owning views
     @Override
     public void close() {
         engine.close();
@@ -358,7 +373,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         validate(p, tools);
         boolean cached = prefix.serves(tools);
         if (!cached && !prefix.isEmpty() && warnedToolsOverride.compareAndSet(false, true)) {
-            System.err.println(prefix.toolsOverrideWarning(tools));
+            LOG.warn(prefix.toolsOverrideWarning(tools));
         }
         List<Message> messages = new ArrayList<>(prefix.messages());
         // a schema constrains the SHAPE through the grammar below; stating says its MEANING,
@@ -391,7 +406,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                                         j == null || j.minP() == null
                                                 ? null
                                                 : j.minP().floatValue(),
-                                        j != null && j.seed() != null ? j.seed() : seed),
+                                        j == null ? null : j.seed()),
                         contentGbnf(p, j, schema, !tools.isEmpty()),
                         p.toolChoice() == ToolChoice.REQUIRED
                                 ? ChatEngine.ForcedTool.ANY
@@ -508,8 +523,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         private String modelName;
         private final Map<String, String> companions = new LinkedHashMap<>();
         private VideoSampler videoSampler = VideoSampler.UNIFORM;
-        private Path cachedPrompts;
-        private int cachedSessions;
+        private Path promptCache;
+        private int retainedSessions = 1;
         private Integer contextLength; // null = unset -> 4096
         private Double temperature;
         private Double topP;
@@ -561,12 +576,11 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         }
 
         /**
-         * Mounts a cached-prompt artifact read-only; model-seed-checked. An incompatible file fails
-         * the build loudly; a MISSING file degrades to serving without it (stderr warning) - check
-         * the path if TTFT looks cold.
+         * Mounts one existing cached-prompt artifact read-only; missing or incompatible artifacts
+         * fail the build loudly.
          */
-        public Builder loadCachedPrompts(Path cachedPrompts) {
-            this.cachedPrompts = cachedPrompts;
+        public Builder promptCache(Path promptCache) {
+            this.promptCache = Objects.requireNonNull(promptCache, "promptCache");
             return this;
         }
 
@@ -608,13 +622,14 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
          * is byte-identical to a cold run and nothing persists. Each kept conversation holds a full
          * context of KV.
          *
-         * <p>The default 0 keeps the model stateless between requests - its state is wiped the
-         * moment a reply ends, so no conversation survives the call - but the ALLOCATION is still
-         * reused: a pipeline allocates its context once and never per request, whatever this is set
-         * to. This knob buys warmth, not memory reuse.
+         * <p>The default is 1. Zero retains no completed state: every request's state is closed
+         * when the request ends and the next request allocates a fresh one. This does not disable
+         * the separate block cache.
          */
-        public Builder cachedSessions(int cachedSessions) {
-            this.cachedSessions = cachedSessions;
+        public Builder retainSessions(int retainedSessions) {
+            if (retainedSessions < 0)
+                throw new IllegalArgumentException("retainedSessions " + retainedSessions);
+            this.retainedSessions = retainedSessions;
             return this;
         }
 
@@ -682,8 +697,9 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         }
 
         /**
-         * Default request parameters, merged under each request's own (standard langchain4j
-         * semantics). Unsupported parameters are rejected eagerly at build.
+         * Fallback request parameters. Explicit builder setters override these, and each request
+         * overrides both (standard langchain4j semantics). Unsupported parameters are rejected
+         * eagerly at build.
          */
         public Builder defaultRequestParameters(ChatRequestParameters defaultParameters) {
             this.defaultParameters = defaultParameters;
@@ -724,6 +740,9 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                 throw new IllegalArgumentException(
                         "a model is required: model(\"hf.co/owner/repo:Q4_K_M\"),"
                                 + " modelPath(...) or model(LoadedModel)");
+            if (promptCache != null && !Files.isRegularFile(promptCache)) {
+                throw new IllegalArgumentException("prompt cache does not exist: " + promptCache);
+            }
             if (source instanceof LoadedModel<?> l) {
                 // contextLength stays legal here: state capacity is an ENGINE setting resolved
                 // from cacheOptions, not a load-time one - a forked 32k pipeline needs it

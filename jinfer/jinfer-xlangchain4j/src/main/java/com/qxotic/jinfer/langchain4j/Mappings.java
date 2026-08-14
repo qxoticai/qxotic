@@ -387,8 +387,7 @@ final class Mappings {
      * The attribute carrying the parsed reply {@link Message} - verbatim token ids included -
      * across the langchain4j wire. An unmodified echo restores it ({@link #assistant}), letting the
      * native codec's verbatim splice re-encode the turn to the EXACT generated tokens (the
-     * round-trip law; what makes {@code cachedSessions} hits deterministic instead of tokenization
-     * luck).
+     * round-trip law; what makes retained-session hits deterministic instead of tokenization luck).
      */
     static final String REPLY_ATTRIBUTE = "jinfer.reply";
 
@@ -402,7 +401,7 @@ final class Mappings {
         if (!thinking.isEmpty()) b.thinking(thinking.toString());
         if (!calls.isEmpty()) b.toolExecutionRequests(calls);
         // the parsed reply rides along whole: an unmodified echo restores verbatim ids instead of
-        // re-tokenizing (what makes cachedSessions extension hits byte-exact)
+        // re-tokenizing (what makes retained-session extension hits byte-exact)
         b.attributes(Map.of(REPLY_ATTRIBUTE, reply));
         return b.build();
     }
