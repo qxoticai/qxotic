@@ -1183,8 +1183,7 @@ public final class Lfm2
 
     /**
      * As above with a caller-supplied tokenizer; null = the GGUF's own (toknroll's builtin
-     * registrations; the jinfer-llm {@code -Djinfer.preTokenizer.*} override layer is NOT part of
-     * this slice).
+     * registrations, with the {@code -Dtoknroll.gguf.pre.*} escape hatch applied at build).
      */
     public static Lfm2 loadModel(
             FileChannel fileChannel, GGUF gguf, Arena arena, Tokenizer tokenizer)

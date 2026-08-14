@@ -61,7 +61,7 @@ final class Lfm2VisionAcceptanceDriver {
             var loaded = Models.load(text, weights, Map.of("media", projector));
             var cache =
                     PromptCache.Options.DEFAULTS
-                            .withHotSessions(0)
+                            .withRetainedSessions(0)
                             .withBlockBudget(0)
                             .withContextCapacity(8192);
             ChatEngine engine = new ChatEngine(loaded, "lfm2-vl-official", cache);
@@ -234,7 +234,7 @@ final class Lfm2VisionAcceptanceDriver {
             var loaded = Models.load(text, weights, Map.of("media", projector));
             var cache =
                     PromptCache.Options.DEFAULTS
-                            .withHotSessions(0)
+                            .withRetainedSessions(0)
                             .withBlockBudget(0)
                             .withContextCapacity(4096);
             ChatEngine engine = new ChatEngine(loaded, "lfm2-vl-acceptance", cache);
