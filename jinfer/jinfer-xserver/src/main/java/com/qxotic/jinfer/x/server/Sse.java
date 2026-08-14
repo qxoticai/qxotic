@@ -46,22 +46,25 @@ final class Sse {
      * the handler to log; any other error is delivered as a terminal in-band error event + [DONE]
      * so the client stops.
      */
-    static void guarded(Stream sse, Runnable body) throws IOException {
-        guarded(sse, body, false);
+    static void guarded(Stream sse, Metrics metrics, Runnable body) throws IOException {
+        guarded(sse, metrics, body, false);
     }
 
-    static void guardedResponses(Stream sse, Runnable body) throws IOException {
-        guarded(sse, body, true);
+    static void guardedResponses(Stream sse, Metrics metrics, Runnable body) throws IOException {
+        guarded(sse, metrics, body, true);
     }
 
-    private static void guarded(Stream sse, Runnable body, boolean responses) throws IOException {
+    private static void guarded(Stream sse, Metrics metrics, Runnable body, boolean responses)
+            throws IOException {
         try {
             body.run();
         } catch (UncheckedIOException e) {
             throw e.getCause();
         } catch (IllegalArgumentException | UnsupportedOperationException e) {
+            metrics.record(Metrics.Outcome.INVALID_REQUEST);
             terminal(sse, 400, Http.errorMessage(e), responses);
         } catch (RuntimeException e) {
+            metrics.record(Metrics.Outcome.FAILED);
             Log.LOG.log(System.Logger.Level.ERROR, "streaming request failed", e);
             terminal(sse, 500, "Internal server error", responses);
         }
