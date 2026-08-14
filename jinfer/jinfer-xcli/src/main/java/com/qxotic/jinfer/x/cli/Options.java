@@ -172,19 +172,10 @@ public record Options(
     }
 
     ServerConfig serverConfig(Sampling sampling) {
-        ServerConfig.Limits configured =
-                new ServerConfig.Limits(
-                        limits.threads(),
-                        limits.queueCapacity(),
-                        limits.maxBodyBytes(),
-                        !noGrammar,
-                        limits.writeTimeout(),
-                        limits.requestTimeout(),
-                        limits.shutdownTimeout());
         return new ServerConfig(
                 new InetSocketAddress(host, port),
                 new ServerConfig.Defaults(sampling, maxOutputTokens, think, rawPrompt),
-                configured,
+                limits.withGrammar(!noGrammar),
                 new ServerConfig.Access(apiKey, allowedOrigins));
     }
 

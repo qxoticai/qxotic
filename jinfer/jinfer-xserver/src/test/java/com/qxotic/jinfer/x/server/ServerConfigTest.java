@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.x.server;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -39,5 +40,26 @@ class ServerConfigTest {
                                 Duration.ofSeconds(1),
                                 Duration.ZERO,
                                 Duration.ZERO));
+    }
+
+    @Test
+    void namedCopiesAvoidPositionalReconstruction() {
+        ServerConfig config =
+                ServerConfig.local(0)
+                        .withLimits(
+                                ServerConfig.Limits.DEFAULTS
+                                        .withThreads(3)
+                                        .withQueueCapacity(1)
+                                        .withGrammar(false)
+                                        .withRequestTimeout(Duration.ofSeconds(2)))
+                        .withAccess(
+                                new ServerConfig.Access(
+                                        "secret", Set.of("https://example.test")));
+
+        assertEquals(3, config.limits().threads());
+        assertEquals(1, config.limits().queueCapacity());
+        assertFalse(config.limits().grammar());
+        assertEquals(Duration.ofSeconds(2), config.limits().requestTimeout());
+        assertEquals("secret", config.access().bearerToken());
     }
 }
