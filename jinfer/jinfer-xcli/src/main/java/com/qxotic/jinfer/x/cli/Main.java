@@ -70,6 +70,14 @@ public class Main {
             System.exit(1);
             return;
         }
+        if (System.getProperty("org.graalvm.nativeimage.imagecode") == null
+                && ModuleLayer.boot().findModule("jdk.incubator.vector").isEmpty()) {
+            System.err.println(
+                    "ERROR xjinfer needs the Vector API: run java --add-modules"
+                            + " jdk.incubator.vector -jar xjinfer.jar ...");
+            System.exit(1);
+            return;
+        }
         LoadedModel<?> model;
         try {
             // ONE load path: every file - model and companions - uses its preload when it has
