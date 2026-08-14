@@ -127,8 +127,7 @@ class CachedPromptIT {
                         .modelPath(MODEL)
                         .contextLength(4096)
                         .retainSessions(1)
-                        .options(
-                                JinferChatOptions.builder().maxTokens(128).seed(7L).build())
+                        .options(JinferChatOptions.builder().maxTokens(128).seed(7L).build())
                         .build();
         try {
             UserMessage first =
@@ -160,8 +159,7 @@ class CachedPromptIT {
                 JinferChatModel.builder()
                         .modelPath(MODEL)
                         .contextLength(4096)
-                        .options(
-                                JinferChatOptions.builder().maxTokens(128).seed(7L).build())
+                        .options(JinferChatOptions.builder().maxTokens(128).seed(7L).build())
                         .build();
         try {
             String question = "Where do I reset my password?";

@@ -194,8 +194,8 @@ final class JinferMappings {
     /**
      * Metadata key carrying the parsed reply {@link Message} whole. The round-trip law: an
      * UNMODIFIED assistant echo re-encodes to the exact tokens the model generated (verbatim ids),
-     * which is what makes retained-session extension hits deterministic; an edited echo fails
-     * the equality check and re-renders faithfully instead.
+     * which is what makes retained-session extension hits deterministic; an edited echo fails the
+     * equality check and re-renders faithfully instead.
      */
     static final String REPLY_KEY = "jinfer.reply";
 

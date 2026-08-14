@@ -17,8 +17,7 @@ class JinferChatModelTest {
     @Test
     void cacheSettingsRejectBeforeLoadingTheModel() {
         assertThrows(
-                IllegalArgumentException.class,
-                () -> JinferChatModel.builder().retainSessions(-1));
+                IllegalArgumentException.class, () -> JinferChatModel.builder().retainSessions(-1));
         IllegalArgumentException missing =
                 assertThrows(
                         IllegalArgumentException.class,
@@ -28,8 +27,7 @@ class JinferChatModelTest {
                                         .promptCache(Path.of("/missing-prompt-cache.jkv"))
                                         .build());
         assertTrue(missing.getMessage().contains("prompt cache does not exist"));
-        assertThrows(
-                NullPointerException.class, () -> JinferChatModel.builder().promptCache(null));
+        assertThrows(NullPointerException.class, () -> JinferChatModel.builder().promptCache(null));
     }
 
     @Test
@@ -63,7 +61,8 @@ class JinferChatModelTest {
                     "thinking",
                     "timeout"
                 }) {
-            assertFalse(methods.contains(removed), removed + " is a second generation-options door");
+            assertFalse(
+                    methods.contains(removed), removed + " is a second generation-options door");
         }
     }
 

@@ -59,11 +59,11 @@ import reactor.core.publisher.FluxSink;
  * it).
  *
  * <p>Three cache controls with distinct jobs: {@code withCachedPrompt} defines a shared prefix
- * (prefilled once, restored per request - the system-prompt/tools/few-shot case);
- * {@code Builder.retainSessions} keeps finished CONVERSATION states warm for append-only multi-turn
- * reuse (in-RAM, gone at close); {@code saveCachedPrompts}/{@code Builder.promptCache}
- * persist the defined prompts as an immutable artifact that mounts zero-prefill in later processes.
- * None changes output - byte-identity to a cold run is the law.
+ * (prefilled once, restored per request - the system-prompt/tools/few-shot case); {@code
+ * Builder.retainSessions} keeps finished CONVERSATION states warm for append-only multi-turn reuse
+ * (in-RAM, gone at close); {@code saveCachedPrompts}/{@code Builder.promptCache} persist the
+ * defined prompts as an immutable artifact that mounts zero-prefill in later processes. None
+ * changes output - byte-identity to a cold run is the law.
  *
  * <p>Run with jinfer's JVM flags: {@code --enable-preview --add-modules jdk.incubator.vector
  * --enable-native-access=ALL-UNNAMED}.
