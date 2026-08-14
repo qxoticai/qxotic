@@ -26,7 +26,6 @@ final class Turn implements ChatEngine.ReplySink {
     private final Options options;
     private final boolean rawLane;
     private final StringBuilder text = new StringBuilder();
-    private final long startedNanos = System.nanoTime();
     private boolean inReasoning;
 
     private Turn(Tokenizer tokenizer, Options options, boolean rawLane) {
@@ -96,22 +95,19 @@ final class Turn implements ChatEngine.ReplySink {
     /**
      * The stderr summary every turn ends with - context fill, the two speeds, and where the prompt
      * came from (a cache tier the old CLI never could see) - then the whole reply when nothing
-     * streamed. {@code promptTokens} is the prepared prompt's size, which the modes know and the
-     * {@link ChatEngine.Completion} does not carry.
+     * streamed.
      */
-    void finish(ChatEngine.Completion completion, int promptTokens, int contextCapacity) {
+    void finish(ChatEngine.Completion completion, int contextCapacity) {
         if (inReasoning) {
             onThinkingEnd();
             inReasoning = false;
         }
         Generator.GenerationResult result = completion.result();
         if (result != null) {
+            int promptTokens = completion.promptTokens();
+            int evaluated = Math.max(0, promptTokens - completion.restoredTokens());
             int generated = result.completionTokens() + (result.stopToken().isPresent() ? 1 : 0);
-            // the engine ingests the prompt INSIDE its cache serve (restore or compute), so the
-            // result's promptTime covers only the (often empty) generator-side prefill - wall
-            // clock minus decode is the honest prompt cost, restore included
-            long promptNanos =
-                    Math.max(1, System.nanoTime() - startedNanos - result.decodeTime().toNanos());
+            long promptNanos = Math.max(1, result.promptTime().toNanos());
             long decodeNanos = Math.max(1, result.decodeTime().toNanos());
             String prefix = options.colors() ? ANSI_CYAN : "";
             String suffix = options.colors() ? ANSI_RESET : "";
@@ -121,8 +117,8 @@ final class Turn implements ChatEngine.ReplySink {
                     prefix,
                     promptTokens + generated,
                     contextCapacity,
-                    promptTokens / (promptNanos / 1e9),
-                    promptTokens,
+                    evaluated / (promptNanos / 1e9),
+                    evaluated,
                     generated / (decodeNanos / 1e9),
                     generated,
                     completion.tier().name().toLowerCase(Locale.ROOT),

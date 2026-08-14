@@ -356,27 +356,28 @@ final class Lfm2VisionAcceptanceDriver {
                         List.of(),
                         null);
         long start = System.nanoTime();
-        ChatEngine.Prepared prepared = engine.prepare(request);
-        long preparedAt = System.nanoTime();
-        ChatEngine.Completion completion = engine.complete(prepared, ChatEngine.ReplySink.NONE);
-        long completedAt = System.nanoTime();
-        double prepareMs = (preparedAt - start) / 1_000_000.0;
-        double decodeMs = completion.result().decodeTime().toNanos() / 1_000_000.0;
-        double promptIngestMs = (completedAt - preparedAt) / 1_000_000.0 - decodeMs;
-        String answer = completion.reply().text().replace('\n', ' ').strip();
-        System.out.printf(
-                "ACCEPTANCE\t%s\timage=%s\tpromptPositions=%d\tcompletionTokens=%d\tprepareMs=%.1f"
-                        + "\tpromptIngestMs=%.1f\tdecodeMs=%.1f\ttotalMs=%.1f\t%s%n",
-                name,
-                media(messages),
-                prepared.promptTokens(),
-                completion.result().completionTokens(),
-                prepareMs,
-                promptIngestMs,
-                decodeMs,
-                (completedAt - start) / 1_000_000.0,
-                answer.isEmpty() ? completion.reply().content() : answer);
-        return new Answer(answer, completion.reply());
+        try (ChatEngine.Prepared prepared = engine.prepare(request)) {
+            long preparedAt = System.nanoTime();
+            ChatEngine.Completion completion = engine.complete(prepared, ChatEngine.ReplySink.NONE);
+            long completedAt = System.nanoTime();
+            double prepareMs = (preparedAt - start) / 1_000_000.0;
+            double decodeMs = completion.result().decodeTime().toNanos() / 1_000_000.0;
+            double promptIngestMs = (completedAt - preparedAt) / 1_000_000.0 - decodeMs;
+            String answer = completion.reply().text().replace('\n', ' ').strip();
+            System.out.printf(
+                    "ACCEPTANCE\t%s\timage=%s\tpromptPositions=%d\tcompletionTokens=%d\tprepareMs=%.1f"
+                            + "\tpromptIngestMs=%.1f\tdecodeMs=%.1f\ttotalMs=%.1f\t%s%n",
+                    name,
+                    media(messages),
+                    prepared.promptTokens(),
+                    completion.result().completionTokens(),
+                    prepareMs,
+                    promptIngestMs,
+                    decodeMs,
+                    (completedAt - start) / 1_000_000.0,
+                    answer.isEmpty() ? completion.reply().content() : answer);
+            return new Answer(answer, completion.reply());
+        }
     }
 
     private static String media(List<Message> messages) {

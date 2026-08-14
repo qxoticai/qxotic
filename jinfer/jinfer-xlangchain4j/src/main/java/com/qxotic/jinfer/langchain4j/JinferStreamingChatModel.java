@@ -89,14 +89,19 @@ public final class JinferStreamingChatModel implements StreamingChatModel, AutoC
         // the WHOLE preparation is synchronous: every request-shape rejection (unsupported
         // params, media the model cannot frame, remote URLs) throws raw from chat(), unwrapped
         ChatEngine.Prepared p = model.prepare(request);
-        model.engine.stream(
-                () -> {
-                    try {
-                        stream(p, handler);
-                    } catch (Throwable t) {
-                        handler.onError(t);
-                    }
-                });
+        try {
+            model.engine.stream(
+                    () -> {
+                        try (p) {
+                            stream(p, handler);
+                        } catch (Throwable t) {
+                            handler.onError(t);
+                        }
+                    });
+        } catch (RuntimeException | Error rejected) {
+            p.close();
+            throw rejected;
+        }
     }
 
     private void stream(ChatEngine.Prepared p, StreamingChatResponseHandler handler) {
@@ -157,7 +162,8 @@ public final class JinferStreamingChatModel implements StreamingChatModel, AutoC
                 safely(handler, () -> handler.onCompleteToolCall(call));
             }
         }
-        ChatResponse response = Mappings.response(engine.modelName(), ai, p.promptTokens(), done);
+        ChatResponse response =
+                Mappings.response(engine.modelName(), ai, done.promptTokens(), done);
         safely(handler, () -> handler.onCompleteResponse(response));
     }
 

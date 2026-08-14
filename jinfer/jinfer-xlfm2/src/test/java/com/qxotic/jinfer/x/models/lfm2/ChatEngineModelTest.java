@@ -60,7 +60,7 @@ final class ChatEngineModelTest {
 
             // blocking: a fresh prompt computes every position
             ChatEngine.Completion blocking =
-                    engine.complete(engine.prepare(request), ChatEngine.ReplySink.NONE);
+                    engine.complete(request, ChatEngine.ReplySink.NONE);
             assertFalse(blocking.cancelled());
             assertFalse(blocking.reply().text().isBlank());
             assertTrue(blocking.result().completionTokens() > 0);
@@ -72,7 +72,7 @@ final class ChatEngineModelTest {
             List<ChatEngine.Delta> deltas = new ArrayList<>();
             ChatEngine.Completion streaming =
                     engine.complete(
-                            engine.prepare(request),
+                            request,
                             new ChatEngine.ReplySink() {
                                 @Override
                                 public void on(ChatEngine.Delta delta) {
@@ -98,7 +98,7 @@ final class ChatEngineModelTest {
                                     Message.assistant(blocking.reply().text()),
                                     Message.user("And another?")));
             ChatEngine.Completion second =
-                    engine.complete(engine.prepare(followUp), ChatEngine.ReplySink.NONE);
+                    engine.complete(followUp, ChatEngine.ReplySink.NONE);
             assertFalse(second.cancelled());
             assertTrue(
                     second.restoredTokens() > 0,
@@ -116,14 +116,14 @@ final class ChatEngineModelTest {
             engine.definePrompt(prefix);
             ChatEngine.Completion fromBlocks =
                     engine.complete(
-                            engine.prepare(request(prefix.messages())), ChatEngine.ReplySink.NONE);
+                            request(prefix.messages()), ChatEngine.ReplySink.NONE);
             assertEquals(PromptCache.Tier.BLOCKS, fromBlocks.tier());
             assertTrue(fromBlocks.restoredTokens() > 0);
 
             // cancellation: the pass ends silently, no reply
             ChatEngine.Completion cancelled =
                     engine.complete(
-                            engine.prepare(request),
+                            request,
                             new ChatEngine.ReplySink() {
                                 @Override
                                 public boolean cancelled() {
@@ -140,7 +140,7 @@ final class ChatEngineModelTest {
                 IllegalStateException.class,
                 () ->
                         engine.complete(
-                                engine.prepare(request(List.of(Message.user("hi")))),
+                                request(List.of(Message.user("hi"))),
                                 ChatEngine.ReplySink.NONE));
         weights.close();
     }

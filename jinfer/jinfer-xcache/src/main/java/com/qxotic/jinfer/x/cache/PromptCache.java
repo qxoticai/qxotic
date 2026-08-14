@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -261,6 +262,9 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
         int restored();
 
         Tier tier();
+
+        /** Time spent selecting/restoring a state and ingesting the uncached prompt suffix. */
+        Duration promptTime();
     }
 
     /**
@@ -281,6 +285,7 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
      */
     public <R> R serve(List<Batch> prompt, Pass<S, R> pass) {
         checkOpen();
+        long promptStarted = System.nanoTime();
         long[] fingerprints = CachedSession.fingerprints(prompt);
         if (fingerprints.length == 0) {
             throw new IllegalArgumentException("empty prompt: nothing to serve");
@@ -314,6 +319,7 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
                 session.snapshotTail(codec);
             }
             session.ingestGroups(groups, fingerprints);
+            serving.promptTime = Duration.ofNanos(System.nanoTime() - promptStarted);
             result = pass.run(session.state(), serving);
         } catch (RuntimeException | Error e) {
             closeSession(session); // torn: never serves again; its committed blocks survive
@@ -333,6 +339,7 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
         private final Tier tier;
         private final List<Integer> reply = new ArrayList<>(); // buffered per-reply tail tokens
         private boolean live = true;
+        private Duration promptTime;
 
         Live(CachedSession<S> session, int restored, Tier tier) {
             this.session = session;
@@ -384,6 +391,14 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
         @Override
         public Tier tier() {
             return tier;
+        }
+
+        @Override
+        public Duration promptTime() {
+            if (promptTime == null) {
+                throw new IllegalStateException("prompt has not been served yet");
+            }
+            return promptTime;
         }
     }
 

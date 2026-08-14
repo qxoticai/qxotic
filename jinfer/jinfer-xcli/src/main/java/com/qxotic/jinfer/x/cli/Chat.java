@@ -44,11 +44,14 @@ final class Chat {
                     continue;
                 }
                 history.add(Message.user(userText));
-                ChatEngine.Prepared prepared =
-                        engine.prepare(Requests.of(List.copyOf(history), sampling, options));
-                Turn turn = Turn.start(engine.loaded().tokenizer(), prepared, options);
-                ChatEngine.Completion completion = engine.complete(prepared, turn);
-                turn.finish(completion, prepared.promptTokens(), options.contextCapacity());
+                ChatEngine.Completion completion;
+                Turn turn;
+                try (ChatEngine.Prepared prepared =
+                        engine.prepare(Requests.of(List.copyOf(history), sampling, options))) {
+                    turn = Turn.start(engine.loaded().tokenizer(), prepared, options);
+                    completion = engine.complete(prepared, turn);
+                }
+                turn.finish(completion, options.contextCapacity());
                 if (completion.reply() != null) {
                     // the parser's structured message (verbatim ids): the codec's verbatim splice
                     // keeps generated turns inside the cache's common prefix
