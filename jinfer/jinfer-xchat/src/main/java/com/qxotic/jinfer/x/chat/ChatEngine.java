@@ -425,7 +425,8 @@ public final class ChatEngine implements AutoCloseable {
         if (contentGbnf != null) {
             ReplyLanguage.Walk walk =
                     ReplyLanguage.Selection.of(
-                                    ReplyLanguage.gbnf(contentGbnf), loaded.tokenizer())
+                                    ReplyLanguage.content(ReplyLanguage.gbnf(contentGbnf)),
+                                    loaded.tokenizer())
                             .walk();
             sampler = walk.sampler(sampler, endTurn());
         }
@@ -927,6 +928,7 @@ public final class ChatEngine implements AutoCloseable {
                     public boolean onToken(int token) {
                         if (out.cancelled()) return false;
                         if (parser == null) {
+                            if (loaded.stopTokens().contains(token)) return true;
                             PendingUtf8.Fragment fragment =
                                     pending.add(
                                             loaded.tokenizer().decodeBytes(new int[] {token}),
@@ -1256,6 +1258,11 @@ public final class ChatEngine implements AutoCloseable {
     /** Whether the block layer exists for this model (codec present, blocks not disabled). */
     public boolean blockCaching() {
         return cache.blockCaching();
+    }
+
+    /** Maximum prompt plus completion positions this engine instance serves. */
+    public int contextCapacity() {
+        return cache.contextCapacity();
     }
 
     /** Whether this loaded model has an attached, ready self-speculation companion. */
