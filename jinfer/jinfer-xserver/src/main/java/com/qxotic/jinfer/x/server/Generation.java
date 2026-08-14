@@ -69,7 +69,7 @@ final class Generation {
                         maxTokens(request),
                         reasoningMax(request),
                         config.limits().requestTimeout(),
-                        sampling(request),
+                        sampling(request, defaults),
                         grammar(request),
                         forced(request),
                         stops(request.get("stop")),
@@ -85,7 +85,7 @@ final class Generation {
         try (ChatEngine.Prepared prepared =
                 engine.prepareRaw(
                         ids.toArray(),
-                        sampling(request),
+                        sampling(request, defaults),
                         maxTokens(request),
                         config.limits().requestTimeout(),
                         grammar(request),
@@ -387,8 +387,9 @@ final class Generation {
         }
     }
 
-    private Sampling sampling(Map<String, Object> request) {
-        Long seed = request.get("seed") == null ? defaults.seed() : Values.longValue(request.get("seed"), 0);
+    static Sampling sampling(Map<String, Object> request, Sampling defaults) {
+        Long seed = defaults.seed();
+        if (request.get("seed") != null) seed = Values.longValue(request.get("seed"), 0);
         return defaults.override(
                 number(request.get("temperature")),
                 number(request.get("top_p")),
