@@ -118,23 +118,32 @@ final class Requests {
             return;
         }
         String role = Values.stringValue(map.get("role"), "user");
-        messages.add(Map.of("role", role, "content", responseInputText(map.get("content"))));
+        messages.add(Map.of("role", role, "content", responseInputContent(map.get("content"))));
     }
 
-    private static String responseInputText(Object content) {
+    /** Normalize Responses text spellings while preserving media parts for the shared chat path. */
+    private static Object responseInputContent(Object content) {
         if (content instanceof List<?> parts) {
-            StringBuilder sb = new StringBuilder();
+            List<Object> normalized = new ArrayList<>(parts.size());
             for (Object part : parts) {
                 if (part instanceof String s) {
-                    sb.append(s);
-                } else if (part instanceof Map<?, ?> map) {
-                    Object text = map.get("text");
-                    if (text == null) text = map.get("input_text");
-                    if (text == null) text = map.get("output_text");
-                    if (text != null) sb.append(text);
+                    normalized.add(Map.of("type", "text", "text", s));
+                } else {
+                    Map<String, Object> value = Values.asObject(part, "content part");
+                    String type = Values.stringValue(value.get("type"), "");
+                    if ("input_text".equals(type) || "output_text".equals(type)) {
+                        normalized.add(
+                                Map.of(
+                                        "type",
+                                        "text",
+                                        "text",
+                                        Values.stringValue(value.get("text"), "")));
+                    } else {
+                        normalized.add(value);
+                    }
                 }
             }
-            return sb.toString();
+            return normalized;
         }
         return Values.stringValue(content, "");
     }
