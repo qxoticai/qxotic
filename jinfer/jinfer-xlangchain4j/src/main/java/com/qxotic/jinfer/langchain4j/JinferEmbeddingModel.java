@@ -1,15 +1,14 @@
 package com.qxotic.jinfer.langchain4j;
 
 import com.qxotic.jinfer.hub.ModelStore;
-import com.qxotic.jinfer.x.Views;
 import com.qxotic.jinfer.x.boundary.BaseState;
 import com.qxotic.jinfer.x.boundary.RuntimeState;
 import com.qxotic.jinfer.x.chat.LoadedEmbedder;
 import com.qxotic.jinfer.x.chat.Models;
-import com.qxotic.jota.memory.MemoryView;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.model.TokenCountEstimator;
 import dev.langchain4j.model.embedding.EmbeddingModel;
+import dev.langchain4j.model.embedding.listener.EmbeddingModelListener;
 import dev.langchain4j.model.embedding.request.EmbeddingParameter;
 import dev.langchain4j.model.embedding.request.EmbeddingRequest;
 import dev.langchain4j.model.embedding.request.EmbeddingRequestParameters;
@@ -20,7 +19,6 @@ import dev.langchain4j.model.output.TokenUsage;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.Arena;
-import java.lang.foreign.MemorySegment;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -35,6 +33,10 @@ import java.util.concurrent.locks.ReentrantLock;
  * bounded by the context - one forward pass embeds many segments under segmented attention - so RAG
  * ingestion of hundreds of chunks costs a handful of prefills, not hundreds.
  *
+ * <p>The standard request {@code dimensions} parameter is advertised only for Matryoshka-trained
+ * ports (Qwen3: 32 through native); truncated vectors are L2-normalized. Fixed-width ports reject
+ * it instead of returning an arbitrary prefix.
+ *
  * <p>Token counts in the returned usage are exact (the real tokenizer, not an estimate). Run with
  * jinfer's JVM flags: {@code --enable-preview --add-modules jdk.incubator.vector
  * --enable-native-access=ALL-UNNAMED}.
@@ -46,7 +48,10 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
     private final int contextLength;
     private final boolean ownsWeights; // false = the caller loaded the model and keeps the arena
     private final ReentrantLock lock = new ReentrantLock(true); // single-stream, like ChatEngine
+    private static final org.slf4j.Logger LOG =
+            org.slf4j.LoggerFactory.getLogger(JinferEmbeddingModel.class);
     private final AtomicBoolean hintedBareUse = new AtomicBoolean();
+    private final List<EmbeddingModelListener> listeners;
 
     private JinferEmbeddingModel(Builder b) {
         // ONE arena adopted by the state: state.close() frees everything this instance allocated
@@ -68,6 +73,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
                             b.contextLength <= 0 ? Integer.MAX_VALUE : b.contextLength,
                             loaded.model().config().contextLength());
             this.state = newState(loaded, contextLength, arena);
+            this.listeners = b.listeners == null ? List.of() : List.copyOf(b.listeners);
         } catch (RuntimeException | Error e) {
             arena.close(); // a leaked ofShared arena has no Cleaner: free before failing
             throw e;
@@ -135,10 +141,14 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
         return loaded.dimension();
     }
 
-    /** The one retrieval-relevant parameter; anything else present rejects loudly upstream. */
+    /** Retrieval framing always applies; Matryoshka dimensions only when the port declares them. */
     @Override
     public Set<EmbeddingParameter<?>> supportedParameters() {
-        return Set.of(EmbeddingRequestParameters.INPUT_TYPE);
+        return loaded.supportsCustomDimensions()
+                ? Set.of(
+                        EmbeddingRequestParameters.INPUT_TYPE,
+                        EmbeddingRequestParameters.DIMENSIONS)
+                : Set.of(EmbeddingRequestParameters.INPUT_TYPE);
     }
 
     /**
@@ -149,8 +159,19 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
      * their {@code embeddingInputType(...)} builder knob. A typeless request embeds raw text as
      * given.
      */
+    /**
+     * langchain4j listeners; core's default {@code embed(EmbeddingRequest)} dispatches
+     * onRequest/onResponse/onError around the call ({@code EmbeddingModelListenerUtils}) as long as
+     * this returns them.
+     */
+    @Override
+    public List<EmbeddingModelListener> listeners() {
+        return listeners;
+    }
+
     @Override
     public EmbeddingResponse doEmbed(EmbeddingRequest request) {
+        int outputDimension = loaded.resolveDimension(request.dimensions());
         String prefix =
                 switch (request.inputType()) {
                     case QUERY -> loaded.queryPrefix();
@@ -158,7 +179,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
                     case null -> hintBareUse();
                 };
         List<String> texts = request.inputs().stream().map(in -> prefix + in.text()).toList();
-        Response<List<Embedding>> response = embedTexts(texts);
+        Response<List<Embedding>> response = embedTexts(texts, outputDimension);
         return EmbeddingResponse.builder()
                 .embeddings(response.content())
                 .metadata(
@@ -169,13 +190,17 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
                 .build();
     }
 
-    private Response<List<Embedding>> embedTexts(List<String> texts) {
+    private Response<List<Embedding>> embedTexts(List<String> texts, int outputDimension) {
         List<Embedding> out = new ArrayList<>(texts.size());
-        int dim = loaded.dimension();
         int total;
         lock.lock();
         try {
-            total = loaded.embedAll(state, contextLength, texts, v -> out.add(toEmbedding(v, dim)));
+            total =
+                    loaded.embedAll(
+                            state,
+                            contextLength,
+                            texts,
+                            v -> out.add(Embedding.from(loaded.copyEmbedding(v, outputDimension))));
         } finally {
             lock.unlock();
         }
@@ -189,9 +214,8 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
      */
     private String hintBareUse() {
         if (loaded.prefixTrained() && hintedBareUse.compareAndSet(false, true)) {
-            System.err.println(
-                    "NOTE: "
-                            + loaded.name()
+            LOG.warn(
+                    loaded.name()
                             + " is prefix-trained for retrieval, but this request stated no input"
                             + " type, so raw text was embedded as given. For retrieval-quality"
                             + " vectors set .embeddingInputType(QUERY) on"
@@ -199,17 +223,6 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
                             + " EmbeddingStoreIngestor. (noted once per model)");
         }
         return "";
-    }
-
-    private static Embedding toEmbedding(MemoryView<?> view, int dim) {
-        // the pooled FP32 [dim] row, copied out of the (possibly reused) per-state buffer
-        MemoryView<MemorySegment> v = Views.castToSegmentBacked(view, "embedding");
-        float[] out =
-                v.memory()
-                        .base()
-                        .asSlice(v.byteOffset(), (long) dim * Float.BYTES)
-                        .toArray(java.lang.foreign.ValueLayout.JAVA_FLOAT);
-        return Embedding.from(out);
     }
 
     public static Builder builder() {
@@ -221,6 +234,13 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
         private Path modelPath; // derived from source at build()
         private LoadedEmbedder<?> loaded; // derived from source at build()
         private int contextLength = 2048;
+        private List<EmbeddingModelListener> listeners;
+
+        /** langchain4j listeners; dispatched around every {@code embed(EmbeddingRequest)}. */
+        public Builder listeners(List<EmbeddingModelListener> listeners) {
+            this.listeners = listeners;
+            return this;
+        }
 
         public Builder modelPath(Path modelPath) {
             this.source = modelPath;

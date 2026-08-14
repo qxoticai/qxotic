@@ -13,7 +13,7 @@ import java.util.Objects;
  * mirror spring-ai's {@code JinferUsage}, same names, same nanos.
  *
  * <p>{@link #cachedInputTokens()} is the ground truth: input tokens whose KV was RESTORED rather
- * than computed, whatever served them - a cached-prompt view's prefix, a {@code cachedSessions}
+ * than computed, whatever served them - a cached-prompt view's prefix, a retained-session
  * extension, or the block layer's best-effort reuse. Healthy traffic on a cached-prompt view
  * restores nearly everything but the newest turn; 0 on a view means the prefill was paid in full (a
  * tools override does this - a one-time stderr warning names it). {@link #servedFrom()} names the

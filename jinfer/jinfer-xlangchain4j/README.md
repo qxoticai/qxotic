@@ -232,6 +232,10 @@ EmbeddingModel embeddings = JinferEmbeddingModel.builder()
         .build();
 ```
 
+Qwen3 is Matryoshka-trained, so langchain4j's standard `dimensions` request parameter selects any
+width from 32 through the model's native width; the returned prefix is L2-normalized. Fixed-width
+models such as LFM2.5 reject that parameter instead of silently slicing their vectors.
+
 Retrieval-tuned embedders are trained with query/document framing (LFM2.5's `query: `/`document: ` pair, Qwen3's instructed query), and embedding bare text instead silently degrades retrieval.
 The provider speaks langchain4j's own vocabulary for this - `EmbeddingInputType` - so the framework knobs are all it takes:
 
@@ -295,14 +299,21 @@ base.saveCachedPrompts(Path.of("dist/personas.jkv"));
 // ...and mount it in the next process: re-declaring a stored prompt costs zero prefill
 JinferChatModel base2 = JinferChatModel.builder()
         .modelPath(gguf)
-        .loadCachedPrompts(Path.of("dist/personas.jkv"))   // model-seed-checked
+        .promptCache(Path.of("dist/personas.jkv"))        // read-only, model-checked
         .build();
 JinferChatModel support2 = base2.withCachedPrompt(
         List.of(SystemMessage.from(SUPPORT_INSTRUCTIONS)), supportTools);  // instant
 ```
 
-Rules: the base model never touches the tree (fully stateless by default); views are immutable
-and composable (`withCachedPrompt` on a view branches on its prefix).
+The model retains one completed conversation by default, so an append-only follow-up can resume its
+live state. Set `.retainSessions(0)` to close the state after every request; each subsequent request
+then starts with a fresh state and may still restore matching blocks. Values above one retain that
+many recent conversations. This is bounded process-local acceleration, not conversation identity:
+jinfer matches the rendered prompt content, so reconstructing equivalent messages still resumes.
+
+Cached-prompt views are immutable and composable (`withCachedPrompt` on a view branches on its
+prefix). `promptCache(path)` mounts exactly one read-only artifact; a missing, incompatible, or
+wrong-model artifact fails `build()` rather than silently running cold.
 A view's tools are its DEFAULT tool set, request over defaults like every other parameter: a request stating the same set (what AiServices does) serves from the cache, a different set (or `toolChoice NONE`) serves correctly at full prefill - byte-identical output either way, with a one-time stderr warning naming the override.
 Every response accounts for the cache: `((JinferTokenUsage) response.tokenUsage()).cachedInputTokens()` is the read, `servedFrom()` the tier - 0 and `FRESH` on a view mean you are paying full prefill, and the warning says why.
 An edited prompt matches to the divergence point and pays only the tail; a wrong-model artifact fails at `build()`.
