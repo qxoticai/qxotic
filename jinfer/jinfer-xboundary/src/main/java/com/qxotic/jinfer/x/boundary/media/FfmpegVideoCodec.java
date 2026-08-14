@@ -68,9 +68,8 @@ public final class FfmpegVideoCodec implements VideoCodec {
         List<String> cmd = new ArrayList<>(List.of("ffmpeg", "-hide_banner", "-loglevel", "error"));
         StringBuilder fc = new StringBuilder();
         for (int k = 0; k < n; k++) {
-            double seconds = timestamps[k].toNanos() / 1e9;
             cmd.add("-ss");
-            cmd.add(String.format(Locale.ROOT, "%.3f", seconds));
+            cmd.add(seekTime(timestamps[k]));
             cmd.add("-i");
             cmd.add(video.toString());
             fc.append('[').append(k).append(":v]trim=end_frame=1[f").append(k).append("];");
@@ -116,6 +115,11 @@ public final class FfmpegVideoCodec implements VideoCodec {
                     new Media.Video.Frame(FfmpegImageDecoder.parsePpm(ppms, pos), timestamps[k]));
         }
         return new Media.Video(frames);
+    }
+
+    /** Millisecond ffmpeg seek, floored so a final-frame timestamp is never rounded past EOF. */
+    static String seekTime(Duration timestamp) {
+        return String.format(Locale.ROOT, "%.3f", timestamp.toMillis() / 1000d);
     }
 
     /** One ffprobe field as text ({@code -of csv=p=0}); loud on failure. */
