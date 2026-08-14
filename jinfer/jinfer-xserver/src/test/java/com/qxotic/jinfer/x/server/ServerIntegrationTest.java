@@ -50,6 +50,12 @@ class ServerIntegrationTest {
             String props = get(client, base + "/props").body();
             assertTrue(props.contains("\"speculation\""));
             assertTrue(props.contains("\"n_ctx\":256"), props);
+            assertTrue(props.contains("\"retained_sessions\":"), props);
+            assertTrue(props.contains("\"retained_session_limit\":4"), props);
+            assertTrue(props.contains("\"state_allocations\":"), props);
+            assertTrue(props.contains("\"block_hits\":"), props);
+            assertFalse(props.contains("\"hot_sessions\":"), props);
+            assertFalse(props.contains("\"hot_hits\":"), props);
             assertEquals(
                     200,
                     post(client, base + "/tokenize", "{\"content\":\"hello\"}")

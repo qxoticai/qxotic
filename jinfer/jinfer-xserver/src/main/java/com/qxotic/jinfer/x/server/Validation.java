@@ -14,7 +14,7 @@ final class Validation {
      * request fails later with the precise "unsupported content part type" error instead of a
      * misleading "messages must not be empty".
      */
-    private static boolean hasImageItem(Object content) {
+    private static boolean hasMediaItem(Object content) {
         return content instanceof List<?> parts
                 && parts.stream()
                         .anyMatch(
@@ -57,7 +57,7 @@ final class Validation {
             substance |=
                     !Values.messageContent(content).isBlank()
                             || (m.get("tool_calls") instanceof List<?> calls && !calls.isEmpty())
-                            || hasImageItem(content);
+                            || hasMediaItem(content);
         }
         require(substance, "messages must contain at least one non-empty message");
         Object fmt = request.get("response_format");
@@ -117,6 +117,36 @@ final class Validation {
             require(toolNamed(tools, name), "tool_choice names an unoffered tool: %s", name);
         } else if (toolChoice != null) {
             throw new IllegalArgumentException("tool_choice must be a string or object");
+        }
+    }
+
+    /** Chat fields whose advertised behavior this text-output server cannot honor. */
+    static void validateChatOptions(Map<String, Object> request) {
+        if (present(request, "modalities")) {
+            require(
+                    Values.asArray(request.get("modalities"), "modalities")
+                            .equals(List.of("text")),
+                    "Only text output modality is supported");
+        }
+        require(!present(request, "audio"), "audio output is not supported");
+        require(!present(request, "prediction"), "prediction is not supported");
+    }
+
+    /** Responses fields that would otherwise be silently accepted without their semantics. */
+    static void validateResponseOptions(Map<String, Object> request) {
+        require(!present(request, "previous_response_id"), "previous_response_id is not supported");
+        require(!present(request, "reasoning"), "reasoning configuration is not supported");
+        require(
+                !Boolean.TRUE.equals(request.get("background")),
+                "background responses are not supported");
+        require(!Boolean.TRUE.equals(request.get("store")), "stored responses are not supported");
+        require(
+                !present(request, "truncation") || "disabled".equals(request.get("truncation")),
+                "Only truncation=disabled is supported");
+        if (present(request, "include")) {
+            require(
+                    Values.asArray(request.get("include"), "include").isEmpty(),
+                    "include is not supported");
         }
     }
 

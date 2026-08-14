@@ -12,9 +12,11 @@ import java.net.InetSocketAddress;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -114,18 +116,20 @@ public final class Server {
     private Map<String, Object> promptCacheProps() {
         var sample = generation.cacheSample();
         Map<String, Object> props = new LinkedHashMap<>();
-        props.put("enabled", generation.blockCaching());
-        props.put("hot_sessions", sample.hotSessions());
-        props.put("hot_hits", sample.hotHits());
-        props.put("allocations", sample.statesAllocated());
-        props.put("snapshot_bytes", sample.snapshotBytes());
+        props.put("retained_sessions", sample.retainedSessions());
+        props.put("retained_session_limit", sample.retainedSessionLimit());
+        props.put("session_hits", sample.sessionHits());
+        props.put("state_allocations", sample.stateAllocations());
+        props.put("session_snapshot_bytes", sample.sessionSnapshotBytes());
+        props.put("blocks_enabled", generation.blockCaching());
         props.put("blocks", sample.blocks());
         props.put("bytes", sample.bytes());
         props.put("budget_bytes", sample.budgetBytes());
-        props.put("hits", sample.hits());
-        props.put("misses", sample.misses());
-        props.put("evictions", sample.evictions());
-        props.put("refusals", sample.refusals());
+        props.put("block_hits", sample.blockHits());
+        props.put("block_misses", sample.blockMisses());
+        props.put("block_evictions", sample.blockEvictions());
+        props.put("block_discards", sample.blockDiscards());
+        props.put("block_refusals", sample.blockRefusals());
         return props;
     }
 
@@ -258,9 +262,7 @@ public final class Server {
                 });
         worker.start();
         Sse.startReaper();
-        // bounded pool: handlers only parse/validate and block on the generation queue latch,
-        // so a fixed pool also caps the threads slow-loris connections can pin
-        server.setExecutor(Executors.newFixedThreadPool(config.limits().threads()));
+        server.setExecutor(requestExecutor(config.limits().threads()));
         server.start();
         // no shutdown hook here: one per start() is a hook the embedder cannot unregister, and it
         // pins the engine for the life of the JVM. The CLI, which never closes the handle,
@@ -268,6 +270,17 @@ public final class Server {
         long stopDelay =
                 Math.ceilDiv(config.limits().shutdownTimeout().toNanos(), 1_000_000_000L);
         return new Running(server, worker, (int) Math.min(Integer.MAX_VALUE, stopDelay));
+    }
+
+    /** Bounds both active handlers and requests waiting to enter one. */
+    static ExecutorService requestExecutor(int threads) {
+        return new ThreadPoolExecutor(
+                threads,
+                threads,
+                0,
+                TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(threads),
+                new ThreadPoolExecutor.AbortPolicy());
     }
 
     /**
@@ -396,6 +409,7 @@ public final class Server {
                 "chatcmpl-",
                 request -> {
                     Validation.validateChatRequest(request);
+                    Validation.validateChatOptions(request);
                     Validation.validateGenerationParams(request, servedModel, config);
                 },
                 (request, id) -> {
@@ -448,6 +462,7 @@ public final class Server {
                 "/v1/responses",
                 "resp_",
                 request -> {
+                    Validation.validateResponseOptions(request);
                     Requests.normalizeResponse(request);
                     Validation.validateGenerationParams(request, servedModel, config);
                     List<Object> folded = Requests.responseInputMessages(request);
@@ -550,35 +565,38 @@ public final class Server {
         }
     }
 
-    /**
-     * Final stream sequence shared by chat and completions: finish chunk carrying usage, the
-     * stream_options usage-only chunk when requested, then [DONE].
-     */
+    /** Final stream sequence shared by chat and completions, followed by {@code [DONE]}. */
     private static void endStream(
             Sse.Stream sse,
             Map<String, Object> request,
             Reply result,
             Map<String, Object> finalChunk,
             Map<String, Object> usageOnlyChunk) {
-        Map<String, Object> usage = OpenAiSchema.usage(result);
-        finalChunk.put("usage", usage);
-        sse.emit(finalChunk);
-        if (includeUsage(request)) {
-            usageOnlyChunk.put("choices", List.of());
-            usageOnlyChunk.put("usage", usage);
-            sse.emit(usageOnlyChunk);
-        }
+        for (Map<String, Object> chunk :
+                streamEndChunks(request, result, finalChunk, usageOnlyChunk)) sse.emit(chunk);
         sse.done();
+    }
+
+    /** OpenAI's optional final usage-only chunk; all preceding chunks carry null usage. */
+    static List<Map<String, Object>> streamEndChunks(
+            Map<String, Object> request,
+            Reply result,
+            Map<String, Object> finalChunk,
+            Map<String, Object> usageOnlyChunk) {
+        if (!includeUsage(request)) return List.of(finalChunk);
+        finalChunk.put("usage", null);
+        usageOnlyChunk.put("choices", List.of());
+        usageOnlyChunk.put("usage", OpenAiSchema.usage(result));
+        return List.of(finalChunk, usageOnlyChunk);
     }
 
     /**
      * OpenAI stream_options: {"include_usage": true} requests an extra usage-only chunk after the
      * final chunk.
      */
-    @SuppressWarnings("unchecked")
     private static boolean includeUsage(Map<String, Object> request) {
         return request.get("stream_options") instanceof Map<?, ?> so
-                && Boolean.TRUE.equals(((Map<String, Object>) so).get("include_usage"));
+                && Boolean.TRUE.equals(so.get("include_usage"));
     }
 
     private void streamCompletion(
@@ -808,7 +826,11 @@ public final class Server {
             return;
         }
         if (Http.requireMethod(exchange, "GET")) return;
-        Http.sendText(exchange, 200, Metrics.CONTENT_TYPE, metrics.exposition(worker));
+        Http.sendText(
+                exchange,
+                200,
+                Metrics.CONTENT_TYPE,
+                metrics.exposition(worker, generation.cacheSample()));
     }
 
     private static void setTimingHeader(HttpExchange exchange, Reply result) {
