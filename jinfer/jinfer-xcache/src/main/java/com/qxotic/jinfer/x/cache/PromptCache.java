@@ -20,7 +20,7 @@ import java.util.List;
  * jinfer's KV cache - the one front door to every way caching happens. Two layers, one law:
  *
  * <ul>
- *   <li>HOT - the last N conversations stay live as ready-to-continue states; a prompt that
+ *   <li>SESSIONS - the last N conversations stay live as ready-to-continue states; a prompt that
  *       strictly extends one continues in place (ANY model, codec or not).
  *   <li>BLOCKS - everything computed is kept as content-keyed KV blocks (RAM, budget-bounded,
  *       optionally backed by a catalog file that survives restarts). Interior content commits at
@@ -34,7 +34,7 @@ import java.util.List;
  * <p>THE LAW, stated once: a resume always stops one position short, so the final token re-ingests
  * and the logits are always fresh - and a cached answer is byte-identical to a cold one.
  *
- * <p>{@link #of} reads the model's capabilities itself: no {@link StateCodec} = hot-only; a
+ * <p>{@link #of} reads the model's capabilities itself: no {@link StateCodec} = sessions-only; a
  * coarse-residue codec = blocks written by {@link #define} alone (a served turn would cost a ~90MB
  * residue per block); otherwise the full picture. Callers make zero routing decisions.
  *
@@ -48,18 +48,16 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
     private static final System.Logger LOG = System.getLogger("jinfer.cache");
 
     /**
-     * @param hotSessions live conversations retained; 0 = stateless between requests (the one
-     *     allocation is still recycled as a wiped spare)
-     * @param blockBudgetBytes RAM bound for the block layer; 0 = blocks disabled (hot-only) - an
+     * @param retainedSessions live conversations retained; 0 closes the state after every request
+     * @param blockBudgetBytes RAM bound for the block layer; 0 = blocks disabled (sessions-only) - an
      *     explicit {@code catalog} still mounts, read-only in spirit if the budget refuses growth
      * @param catalog the block layer's file, opened if present and CREATED OTHERWISE (so {@link
      *     #save} is always an append - never a rewrite of a mounted mapping); null = RAM only
-     * @param readOnly the catalog is served, never written: {@link #save} is a no-op, and a MISSING
-     *     file degrades to serving without it instead of failing the boot (an existing but
-     *     incompatible file fails loudly in both modes - see {@code openCatalog})
+     * @param readOnly the catalog is served, never written: {@link #save} is a no-op; missing or
+     *     incompatible artifacts fail the boot loudly
      */
     public record Options(
-            int hotSessions,
+            int retainedSessions,
             int contextCapacity,
             long blockBudgetBytes,
             Path catalog,
@@ -76,28 +74,33 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
 
         /** These options over {@code catalog}, read-only or accumulating. */
         public Options withCatalog(Path catalog, boolean readOnly) {
-            return new Options(hotSessions, contextCapacity, blockBudgetBytes, catalog, readOnly);
+            return new Options(
+                    retainedSessions, contextCapacity, blockBudgetBytes, catalog, readOnly);
         }
 
         /** These options with a different block-layer budget; 0 disables the block layer. */
         public Options withBlockBudget(long blockBudgetBytes) {
-            return new Options(hotSessions, contextCapacity, blockBudgetBytes, catalog, readOnly);
+            return new Options(
+                    retainedSessions, contextCapacity, blockBudgetBytes, catalog, readOnly);
         }
 
         /** These options with a different number of resident conversations. */
-        public Options withHotSessions(int hotSessions) {
-            return new Options(hotSessions, contextCapacity, blockBudgetBytes, catalog, readOnly);
+        public Options withRetainedSessions(int retainedSessions) {
+            return new Options(
+                    retainedSessions, contextCapacity, blockBudgetBytes, catalog, readOnly);
         }
 
         /** These options with a different state size; refused above the model's contextLength. */
         public Options withContextCapacity(int contextCapacity) {
-            return new Options(hotSessions, contextCapacity, blockBudgetBytes, catalog, readOnly);
+            return new Options(
+                    retainedSessions, contextCapacity, blockBudgetBytes, catalog, readOnly);
         }
 
         // ranges, not taste: int widens silently into the long slot, so transposed
-        // (budget, hotSessions) literals would compile and build a pathological cache
+        // (budget, retainedSessions) literals would compile and build a pathological cache
         public Options {
-            if (hotSessions < 0) throw new IllegalArgumentException("hotSessions " + hotSessions);
+            if (retainedSessions < 0)
+                throw new IllegalArgumentException("retainedSessions " + retainedSessions);
             // 0 is the documented sentinel "the model's maximum" - the engine resolves it after
             // the model loads; PromptCache itself still requires a resolved positive capacity
             if (contextCapacity < 0)
@@ -108,8 +111,8 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
     }
 
     private final LanguageModel<?, ?, S> model;
-    private final BlockTree<S> tree; // null = hot-only (no codec, or blocks disabled)
-    private final StateCodec<S> codec; // null = no codec (hot-only models)
+    private final BlockTree<S> tree; // null = sessions-only (no codec, or blocks disabled)
+    private final StateCodec<S> codec; // null = no codec (sessions-only models)
     private final boolean coarse; // blocks written by define() alone; serving restores read-only
     // The decode tail's granularity. Per-token singles keep EVERY reply position resumable, and
     // on a residue-free codec (dense rows, ring rows) they are free - a single stores just its
@@ -125,19 +128,17 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
     private final CacheStore store; // owned; freed at close
     private final Path writeBack; // save()'s append target; null = read-only or no catalog
 
-    // ---- the HOT layer: THE POOL IS THE ALLOCATOR ------------------------------------------
+    // ---- retained sessions: THE POOL IS THE ALLOCATOR --------------------------------------
     // A full context is the dominant per-pipeline allocation. At capacity the least-recent
     // session's state is recycled (reset() - every family has decided what a fresh sequence
-    // must clear); with hotSessions=0 one WIPED bare allocation is retained as the spare, so
-    // the stateless default still allocates its context once and keeps none of the content.
-    private final int hotCapacity;
+    // must clear). With retainedSessions=0 no state survives its request.
+    private final int retainedCapacity;
     // every state this cache allocates is this many positions; a prompt past it is refused
     private final int contextCapacity;
-    private final ArrayDeque<CachedSession<S>> hot = new ArrayDeque<>();
-    private S spare;
+    private final ArrayDeque<CachedSession<S>> retained = new ArrayDeque<>();
     private boolean closed;
-    private long hotHits;
-    private long statesAllocated; // steady state: max(1, hotSessions)
+    private long sessionHits;
+    private long statesAllocated;
 
     private PromptCache(
             LanguageModel<?, ?, S> model,
@@ -154,7 +155,7 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
         this.tailPerToken = tailPerToken;
         this.store = store;
         this.writeBack = writeBack;
-        this.hotCapacity = Math.max(0, options.hotSessions());
+        this.retainedCapacity = options.retainedSessions();
         this.contextCapacity = options.contextCapacity();
     }
 
@@ -203,21 +204,17 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
     /**
      * Opens the catalog, creating an EMPTY artifact first when a read-write file is missing - the
      * cache knows its file from birth, so {@link #save} is always an append against a mounted base.
-     * Read-write problems fail the boot loudly (silently recreating would destroy the old catalog).
-     * A MISSING read-only file degrades to serving without it; an EXISTING but incompatible file
-     * fails loudly in BOTH modes - the caller pointed at a real artifact, and silently ignoring it
-     * is worse than refusing to boot.
+     * Read-write problems fail the boot loudly (silently recreating would destroy the old
+     * catalog). A missing or incompatible read-only artifact also fails: an explicitly configured
+     * cache must never degrade into an unnoticed cold start.
      */
     private static FrozenBlocks openCatalog(ContentKey seed, Options o) {
         if (o.catalog() == null) return null;
         try {
             if (!Files.exists(o.catalog())) {
                 if (o.readOnly()) {
-                    LOG.log(
-                            System.Logger.Level.WARNING,
-                            "read-only cache missing ({0}): serving without it",
-                            o.catalog());
-                    return null;
+                    throw new IllegalArgumentException(
+                            "prompt cache does not exist: " + o.catalog());
                 }
                 FrozenBlocks.createEmpty(o.catalog(), seed);
             }
@@ -227,9 +224,9 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
         }
     }
 
-    /** Which source served a prompt; the difference worth tuning the hot-session count on. */
+    /** Which source served a prompt; the difference worth tuning retained sessions on. */
     public enum Tier {
-        /** A hot conversation the prompt strictly extends: zero restore, only the delta. */
+        /** A retained conversation the prompt strictly extends: zero restore, only the delta. */
         SESSION,
         /** The block layer's longest cached prefix, restored into a state. */
         BLOCKS,
@@ -245,7 +242,7 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
          * per-position block (token-exact echo resume, free - a single stores just its row); a
          * residue-carrying codec buffers the reply and commits it as ONE block when the pass ends
          * (one residue per reply, checkpoints at turn boundaries). A no-op lane when blocks are
-         * off, but ALWAYS keeps the hot stream in lockstep, so wiring it is not optional.
+         * off, but ALWAYS keeps the retained stream in lockstep, so wiring it is not optional.
          */
         void tail(int token);
 
@@ -276,12 +273,12 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
     }
 
     /**
-     * THE serving protocol - every model kind, one path, cheapest source first: a hot session the
-     * prompt strictly extends ({@link Tier#SESSION}), else the longest block prefix restored into a
-     * recycled-or-fresh state ({@link Tier#BLOCKS}), else full prefill ({@link Tier#FRESH}). The
-     * prompt is ingested (one block per batch, skip-restored) BEFORE the pass runs; the pass only
-     * generates. On success the finished state returns to the hot layer; if the pass throws, the
-     * session is discarded - a possibly-torn state must never serve again.
+     * THE serving protocol - every model kind, one path, cheapest source first: a retained session
+     * the prompt strictly extends ({@link Tier#SESSION}), else the longest block prefix restored
+     * into a recycled-or-fresh state ({@link Tier#BLOCKS}), else full prefill ({@link Tier#FRESH}).
+     * The prompt is ingested (one block per batch, skip-restored) BEFORE the pass runs; the pass
+     * only generates. On success the finished state returns to the retained layer; if the pass or
+     * reply commit throws, the session is discarded - a possibly-torn state must never serve again.
      */
     public <R> R serve(List<Batch> prompt, Pass<S, R> pass) {
         checkOpen();
@@ -291,17 +288,17 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
             throw new IllegalArgumentException("empty prompt: nothing to serve");
         }
         checkFitsContext(fingerprints.length);
-        CachedSession<S> hotHit = hotAcquire(fingerprints);
+        CachedSession<S> sessionHit = sessionAcquire(fingerprints);
         // COARSE REWIND: a thinking model whose template strips reasoning from echoed history
         // never strictly extends the generated stream, so the tail is unreachable by the plain
-        // hot match - but the session's TAIL SNAPSHOT (residue at the last prompt boundary) can
+        // session match - but the session's TAIL SNAPSHOT (residue at the last prompt boundary) can
         // rewind the state to exactly where the echo diverges, and only the stripped reply +
         // new turn re-ingest. Fine codecs never need this: their block layer serves the echo.
-        if (hotHit == null && coarse) hotHit = snapshotAcquire(fingerprints);
-        if (hotHit != null) hotHits++;
-        CachedSession<S> session = hotHit != null ? hotHit : attach(fingerprints);
+        if (sessionHit == null && coarse) sessionHit = snapshotAcquire(fingerprints);
+        if (sessionHit != null) sessionHits++;
+        CachedSession<S> session = sessionHit != null ? sessionHit : attach(fingerprints);
         int restored = session.position();
-        Tier tier = hotHit != null ? Tier.SESSION : restored > 0 ? Tier.BLOCKS : Tier.FRESH;
+        Tier tier = sessionHit != null ? Tier.SESSION : restored > 0 ? Tier.BLOCKS : Tier.FRESH;
         // one group per batch: the codec's turn boundaries ARE the block boundaries, so a
         // follow-up diverging after turn k still reuses turns 0..k-1
         List<List<Batch>> groups = new ArrayList<>(prompt.size());
@@ -321,13 +318,13 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
             session.ingestGroups(groups, fingerprints);
             serving.promptTime = Duration.ofNanos(System.nanoTime() - promptStarted);
             result = pass.run(session.state(), serving);
+            serving.flushReply(); // one block, saved at the state's frontier
         } catch (RuntimeException | Error e) {
             closeSession(session); // torn: never serves again; its committed blocks survive
             throw e;
         } finally {
             serving.live = false;
         }
-        serving.flushReply(); // per-reply tail: ONE block, saved at the frontier the state is at
         release(session);
         return result;
     }
@@ -349,8 +346,8 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
 
         @Override
         public void tail(int token) {
-            // a stashed handle used after the pass returned would poison the hot stream
-            // (silently, in hot-only mode) - fail loudly instead
+            // a stashed handle used after the pass returned would poison the retained stream
+            // (silently, in sessions-only mode) - fail loudly instead
             if (!live) {
                 throw new IllegalStateException(
                         "the serving is over: tail() is valid only until the pass returns");
@@ -408,7 +405,7 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
         S state = recycled(fingerprints.length);
         if (state == null) state = freshState();
         try {
-            if (tree == null) return CachedSession.hot(model, state);
+            if (tree == null) return CachedSession.fresh(model, state);
             // a coarse codec restores but never writes back: a residue per served block
             return CachedSession.resume(model, tree, state, fingerprints, cap, !coarse);
         } catch (RuntimeException | Error e) {
@@ -522,29 +519,31 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
         return contextCapacity;
     }
 
-    /** The whole cache in one reading - hot and blocks; block fields are zero when hot-only. */
+    /** The whole cache in one reading; block fields are zero when only sessions are enabled. */
     public record Sample(
-            int hotSessions,
-            long hotHits,
-            long statesAllocated,
-            long snapshotBytes,
+            int retainedSessions,
+            int retainedSessionLimit,
+            long sessionHits,
+            long stateAllocations,
+            long sessionSnapshotBytes,
             int blocks,
             long bytes,
             long budgetBytes,
-            long hits,
-            long misses,
-            long evictions,
-            long discards,
-            long refusals) {}
+            long blockHits,
+            long blockMisses,
+            long blockEvictions,
+            long blockDiscards,
+            long blockRefusals) {}
 
     public Sample sample() {
         checkOpen();
         BlockTree.Sample t = tree == null ? BlockTree.Sample.ZERO : tree.sample();
         long snapshotBytes = 0;
-        for (CachedSession<S> s : hot) snapshotBytes += s.snapshotBytes();
+        for (CachedSession<S> s : retained) snapshotBytes += s.snapshotBytes();
         return new Sample(
-                hot.size(),
-                hotHits,
+                retained.size(),
+                retainedCapacity,
+                sessionHits,
                 statesAllocated,
                 snapshotBytes,
                 t.blocks(),
@@ -563,44 +562,42 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
         return requireTree().stats();
     }
 
-    /** Frees every hot state, the spare, and the block blobs - deterministic, not GC-eventual. */
+    /** Frees every retained state and block blob - deterministic, not GC-eventual. */
     @Override
     public void close() {
         if (closed) return;
         closed = true;
-        while (!hot.isEmpty()) closeSession(hot.removeFirst());
-        if (spare != null) closeState(spare);
-        spare = null;
+        while (!retained.isEmpty()) closeSession(retained.removeFirst());
         store.close();
     }
 
-    // ---- hot-layer internals ----------------------------------------------------------------
+    // ---- retained-session internals ---------------------------------------------------------
 
     /**
-     * The hot session with the LONGEST stream strictly prefixing the prompt, removed while in use;
-     * null = no hot match.
+     * The retained session with the LONGEST stream strictly prefixing the prompt, removed while
+     * in use; null = no match.
      */
-    private CachedSession<S> hotAcquire(long[] fingerprints) {
+    private CachedSession<S> sessionAcquire(long[] fingerprints) {
         CachedSession<S> best = null;
-        for (CachedSession<S> s : hot) {
+        for (CachedSession<S> s : retained) {
             if (s.streamIsStrictPrefixOf(fingerprints)
                     && fingerprints.length <= s.state().contextCapacity()
                     && (best == null || s.length() > best.length())) {
                 best = s;
             }
         }
-        if (best != null) hot.remove(best);
+        if (best != null) retained.remove(best);
         return best;
     }
 
     /**
-     * The hot session whose TAIL SNAPSHOT stream (the last prompt boundary) strictly prefixes the
-     * prompt, rewound to that boundary and removed from the pool - the coarse-codec echo path.
+     * The retained session whose TAIL SNAPSHOT stream (the last prompt boundary) strictly prefixes
+     * the prompt, rewound to that boundary and removed from the pool - the coarse-codec echo path.
      * Longest snapshot wins; null = no match.
      */
     private CachedSession<S> snapshotAcquire(long[] fingerprints) {
         CachedSession<S> best = null;
-        for (CachedSession<S> s : hot) {
+        for (CachedSession<S> s : retained) {
             if (s.snapshotIsStrictPrefixOf(fingerprints)
                     && fingerprints.length <= s.state().contextCapacity()
                     && (best == null || s.length() > best.length())) {
@@ -608,15 +605,14 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
             }
         }
         if (best == null) return null;
-        hot.remove(best);
+        retained.remove(best);
         best.rewindToSnapshot(codec);
         return best;
     }
 
     /**
-     * Returns a finished session to the hot layer as most-recent; past capacity the least-recent is
-     * dropped. With hotSessions=0 the state is WIPED here, the moment the reply is done, and
-     * retained as the bare spare: nothing of the conversation lingers between requests.
+     * Returns a finished session to the retained layer as most-recent; past capacity the
+     * least-recent is dropped. With a zero capacity the state is closed here.
      */
     private void release(CachedSession<S> session) {
         if (session.length() != session.state().position()) {
@@ -630,40 +626,28 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
             closeSession(session);
             return;
         }
-        if (hotCapacity == 0) {
-            session.dropSnapshot();
-            S state = session.state();
-            if (spare == null) {
-                if (state.position() != 0) state.reset();
-                spare = state;
-            } else {
-                closeState(state);
-            }
+        if (retainedCapacity == 0) {
+            closeSession(session);
             return;
         }
-        hot.addLast(session);
-        while (hot.size() > hotCapacity) closeSession(hot.removeFirst());
+        retained.addLast(session);
+        while (retained.size() > retainedCapacity) closeSession(retained.removeFirst());
     }
 
     /**
-     * A recycled allocation for a miss: the LRU hot state once at capacity (only a hot layer with
-     * room left allocates), or the retained spare. Null = allocate.
+     * A recycled allocation for a miss: the least-recent state once the retained layer is full.
+     * Null means allocate.
      */
     private S recycled(int len) {
-        if (hotCapacity > 0 && hot.size() >= hotCapacity) {
-            CachedSession<S> oldest = hot.peekFirst();
+        if (retainedCapacity > 0 && retained.size() >= retainedCapacity) {
+            CachedSession<S> oldest = retained.peekFirst();
             if (oldest != null && oldest.state().contextCapacity() >= len) {
-                hot.removeFirst();
+                retained.removeFirst();
                 oldest.dropSnapshot();
                 S state = oldest.state();
                 if (state.position() != 0) state.reset();
                 return state;
             }
-        }
-        if (spare != null && spare.contextCapacity() >= len) {
-            S state = spare;
-            spare = null;
-            return state;
         }
         return null;
     }

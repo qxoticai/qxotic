@@ -415,7 +415,7 @@ public final class BlockTree<S extends RuntimeState> {
             long discards,
             long refusals) {
 
-        /** The hot-only reading: no block layer, every field zero. */
+        /** The sessions-only reading: no block layer, every field zero. */
         public static final Sample ZERO = new Sample(0, 0, 0, 0, 0, 0, 0, 0);
     }
 

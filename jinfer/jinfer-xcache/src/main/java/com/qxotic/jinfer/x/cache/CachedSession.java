@@ -18,7 +18,7 @@ import java.util.List;
  * The dual representation bound to a state: the exact ingested fingerprint stream (token ids)
  * alongside the KV. In its full mode a cache commit lands at every ingestion boundary, keeping the
  * committed chain contiguous - the cache's WRITE HANDLE. Two reduced modes exist for the facade:
- * HOT-ONLY (no tree: the stream still tracks every position, nothing commits or restores) and
+ * SESSIONS-ONLY (no tree: the stream still tracks every position, nothing commits or restores) and
  * READ-ONLY (coarse serving: restores, never writes). It is otherwise the write handle - it holds
  * the tip of the committed chain and extends it by exactly each ingested span. Ingestion chunks at
  * the state's batch capacity; each chunk is one block (large blocks), each decode {@link #step} is
@@ -45,7 +45,7 @@ public final class CachedSession<S extends RuntimeState> {
 
     private final Model<?, ?, S> model;
     private final S state;
-    private final BlockTree<S> cache; // null: HOT-ONLY (stream tracked, nothing committed)
+    private final BlockTree<S> cache; // null: SESSIONS-ONLY (stream tracked, nothing committed)
     private final boolean commits; // false: read-only serving (coarse codecs restore, never write)
     private BlockTree<S>.Block tip;
     private long[] fp;
@@ -78,7 +78,7 @@ public final class CachedSession<S extends RuntimeState> {
     }
 
     /**
-     * One commit site for every write path; a hot-only or read-only session records only the
+     * One commit site for every write path; a sessions-only or read-only session records only the
      * fingerprint stream - the state itself is the cache.
      */
     private void commitSpan(int off, int len) {
@@ -86,15 +86,15 @@ public final class CachedSession<S extends RuntimeState> {
     }
 
     /**
-     * A session over NO tree: the fingerprint stream still tracks every ingested position (hot
+     * A session over NO tree: the fingerprint stream still tracks every ingested position (session
      * matching needs it), but nothing is committed and nothing can be restored.
      */
-    static <S extends RuntimeState> CachedSession<S> hot(Model<?, ?, S> model, S state) {
+    static <S extends RuntimeState> CachedSession<S> fresh(Model<?, ?, S> model, S state) {
         // a non-zero position would seed a stream of zero fingerprints for content the state
         // actually holds - a false prefix match away from serving wrong bytes. Refuse.
         if (state.position() != 0) {
             throw new IllegalArgumentException(
-                    "hot session needs a wiped state (position " + state.position() + ")");
+                    "fresh session needs a wiped state (position " + state.position() + ")");
         }
         return new CachedSession<>(model, state, null, false, null, new long[256], 0);
     }
@@ -365,7 +365,7 @@ public final class CachedSession<S extends RuntimeState> {
 
     /**
      * True when this session's WHOLE stream is a strict prefix of {@code req} - the append-only
-     * reuse test (the facade's hot layer): the live state can continue with the remainder, nothing
+     * reuse test (the facade's retained layer): the live state can continue with the remainder, nothing
      * to rewind, and at least one position is left to ingest.
      */
     boolean streamIsStrictPrefixOf(long[] req) {

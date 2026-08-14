@@ -27,9 +27,9 @@ import org.junit.jupiter.api.Test;
  * PromptCache#serve} exactly as the engine drives it - a fake model whose "generation" is the pass
  * bumping the state and reporting each token through {@link PromptCache.Serving#tail}.
  *
- * <p>The map of behaviors under test: HOT (live extension, LRU, recycling, the wiped spare, the
+ * <p>The map of behaviors under test: SESSIONS (live extension, LRU, recycling,
  * desync discard), BLOCKS (echo resume, the one-short law, the per-position tail, define +
- * full-hit, budget refusal), COARSE (define-only writes), HOT-ONLY (no codec / blocks disabled),
+ * full-hit, budget refusal), COARSE (define-only writes), SESSIONS-ONLY (no codec / blocks disabled),
  * and the CATALOG (create, save, reopen, read-only, export).
  */
 public final class PromptCacheTest {
@@ -169,8 +169,9 @@ public final class PromptCacheTest {
         return new FakeModel(new FakeCodec(true));
     }
 
-    static PromptCache<FakeState> cache(FakeModel model, int hot, long budget) {
-        return PromptCache.of(model, SEED, new PromptCache.Options(hot, CTX, budget, null, false));
+    static PromptCache<FakeState> cache(FakeModel model, int retained, long budget) {
+        return PromptCache.of(
+                model, SEED, new PromptCache.Options(retained, CTX, budget, null, false));
     }
 
     static PromptCache<FakeState> onCatalog(FakeModel model, Path catalog, boolean readOnly) {
@@ -206,7 +207,7 @@ public final class PromptCacheTest {
                 });
     }
 
-    // ---- HOT: live conversations ------------------------------------------------------------
+    // ---- RETAINED SESSIONS: live conversations ----------------------------------------------
 
     @Test
     void aStrictExtensionContinuesTheHotConversation() {
@@ -244,25 +245,33 @@ public final class PromptCacheTest {
 
     @Test
     void hotIsBoundedLruAndTheColdestFallsOut() {
-        try (var cache = cache(fine(), 1, 0)) { // hot-only, cap 1
+        try (var cache = cache(fine(), 1, 0)) { // sessions-only, cap 1
             generate(cache, turns(new int[] {1, 2}), 7); // conversation A
             generate(cache, turns(new int[] {5, 6}), 8); // conversation B evicts A (cap 1)
             Served a2 = generate(cache, turns(new int[] {1, 2}, new int[] {7, 3}));
             assertNotEquals(PromptCache.Tier.SESSION, a2.tier(), "A's live state is gone");
-            assertEquals(1, cache.sample().hotSessions(), "the hot layer stays bounded");
+            assertEquals(1, cache.sample().retainedSessions(), "the session layer stays bounded");
         }
     }
 
     // ---- THE POOL IS THE ALLOCATOR ----------------------------------------------------------
 
     @Test
-    void theStatelessDefaultAllocatesItsContextOnce() {
+    void zeroClosesTheStateAfterEveryRequest() {
         try (var cache = cache(fine(), 0, 0)) {
-            for (int i = 0; i < 5; i++) generate(cache, turns(new int[] {1, 2, 10 + i}), 7);
+            List<FakeState> states = new ArrayList<>();
+            for (int i = 0; i < 3; i++) {
+                states.add(
+                        cache.serve(
+                                turns(new int[] {1, 2, 10 + i}),
+                                (state, serving) -> state));
+            }
             PromptCache.Sample s = cache.sample();
-            assertEquals(1, s.statesAllocated(), "five requests, ONE context: " + s);
-            assertEquals(0, s.hotSessions(), "and no conversation is retained");
-            assertEquals(0, s.hotHits(), "the wiped spare matches nothing");
+            assertEquals(3, s.stateAllocations());
+            assertEquals(0, s.retainedSessions());
+            assertEquals(0, s.sessionHits());
+            assertEquals(3, states.stream().distinct().count());
+            assertTrue(states.stream().allMatch(FakeState::isClosed));
         }
     }
 
@@ -271,7 +280,21 @@ public final class PromptCacheTest {
         try (var cache = cache(fine(), 1, 0)) {
             generate(cache, turns(new int[] {1, 2}), 7);
             generate(cache, turns(new int[] {5, 6}), 8); // unrelated: recycles A's state
-            assertEquals(1, cache.sample().statesAllocated(), "a full hot layer never allocates");
+            assertEquals(
+                    1,
+                    cache.sample().stateAllocations(),
+                    "a full retained layer never allocates");
+        }
+    }
+
+    @Test
+    void retainedStatesStayBoundedAndRecycleLru() {
+        try (var cache = cache(fine(), 2, 0)) {
+            generate(cache, turns(new int[] {1, 2}), 7);
+            generate(cache, turns(new int[] {3, 4}), 8);
+            generate(cache, turns(new int[] {5, 6}), 9);
+            assertEquals(2, cache.sample().stateAllocations());
+            assertEquals(2, cache.sample().retainedSessions());
         }
     }
 
@@ -375,11 +398,16 @@ public final class PromptCacheTest {
     void fineCodecsTakeNoSnapshot() {
         try (var cache = cache(fine(), 2, 1 << 20)) {
             generate(cache, turns(new int[] {1, 2, 3}, new int[] {GEN}), 7);
-            assertEquals(0, cache.sample().snapshotBytes(), "snapshots are the coarse-codec fix");
+            assertEquals(
+                    0,
+                    cache.sample().sessionSnapshotBytes(),
+                    "snapshots are the coarse-codec fix");
         }
         try (var cache = cache(coarse(), 2, 1 << 20)) {
             generate(cache, turns(new int[] {1, 2, 3}, new int[] {GEN}), 7);
-            assertTrue(cache.sample().snapshotBytes() > 0, "a served coarse turn holds a snapshot");
+            assertTrue(
+                    cache.sample().sessionSnapshotBytes() > 0,
+                    "a served coarse turn holds a snapshot");
         }
     }
 
@@ -417,7 +445,9 @@ public final class PromptCacheTest {
         // session pools and tier-1 keeps working off the live KV
         try (var cache = cache(fine(), 1, 24)) { // 3 positions
             generate(cache, turns(new int[] {1, 2, 3}), 7, 8);
-            assertTrue(cache.sample().refusals() > 0, "the refusal is counted, not silent");
+            assertTrue(
+                    cache.sample().blockRefusals() > 0,
+                    "the refusal is counted, not silent");
             Served turn2 = generate(cache, turns(new int[] {1, 2, 3}, new int[] {7, 8, 4}));
             assertEquals(PromptCache.Tier.SESSION, turn2.tier(), "hot survives the detach");
         }
@@ -433,7 +463,8 @@ public final class PromptCacheTest {
                         state.position += 2; // decode tokens never reported through tail()
                         return null;
                     });
-            assertEquals(0, cache.sample().hotSessions(), "a desynced session must never pool");
+            assertEquals(
+                    0, cache.sample().retainedSessions(), "a desynced session must never pool");
         }
     }
 
@@ -448,11 +479,29 @@ public final class PromptCacheTest {
                                     (state, serving) -> {
                                         throw new IllegalStateException("torn");
                                     }));
-            assertEquals(0, cache.sample().hotSessions(), "a torn state never serves again");
+            assertEquals(0, cache.sample().retainedSessions(), "a torn state never serves again");
             // the prompt chunk committed before the throw still serves an echo
             Served echo = generate(cache, turns(new int[] {1, 2, 3}, new int[] {4}));
             assertEquals(PromptCache.Tier.BLOCKS, echo.tier());
             assertEquals(3, echo.restored());
+        }
+    }
+
+    @Test
+    void zeroClosesAStateWhenThePassThrows() {
+        FakeState[] acquired = new FakeState[1];
+        try (var cache = cache(fine(), 0, 0)) {
+            assertThrows(
+                    IllegalStateException.class,
+                    () ->
+                            cache.serve(
+                                    prompt(1, 2),
+                                    (state, serving) -> {
+                                        acquired[0] = state;
+                                        throw new IllegalStateException("boom");
+                                    }));
+            assertTrue(acquired[0].isClosed());
+            assertEquals(0, cache.sample().retainedSessions());
         }
     }
 
@@ -486,7 +535,7 @@ public final class PromptCacheTest {
         }
     }
 
-    // ---- HOT-ONLY: no codec, or blocks disabled ---------------------------------------------
+    // ---- SESSIONS-ONLY: no codec, or blocks disabled ----------------------------------------
 
     @Test
     void aCodecLessModelStillGetsHotConversations() {
@@ -557,16 +606,16 @@ public final class PromptCacheTest {
     }
 
     @Test
-    void aMissingReadOnlyCatalogDegradesToServingWithoutIt() {
+    void aMissingReadOnlyCatalogFailsLoudly() {
         FakeModel model = fine();
         Path missing = Path.of("/nonexistent/jinfer/catalog.jkvf");
-        try (var cache =
-                PromptCache.of(
-                        model, SEED, new PromptCache.Options(1, CTX, 1 << 20, missing, true))) {
-            assertTrue(cache.blockCaching(), "RAM blocks still work");
-            generate(cache, turns(new int[] {1, 2}), 7);
-            cache.save(); // no-op, must not try to create the file
-        }
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        PromptCache.of(
+                                model,
+                                SEED,
+                                new PromptCache.Options(1, CTX, 1 << 20, missing, true)));
         assertFalse(Files.exists(missing));
     }
 
@@ -604,7 +653,8 @@ public final class PromptCacheTest {
                 PromptCache.of(model, SEED, new PromptCache.Options(0, CTX, 0, catalog, false))) {
             Served hit = generate(frozen, turns(new int[] {1, 2, 3, 4}, new int[] {9}), 7);
             assertEquals(PromptCache.Tier.BLOCKS, hit.tier(), "the mount serves");
-            assertTrue(frozen.sample().refusals() > 0, "growth is refused, and counted");
+            assertTrue(
+                    frozen.sample().blockRefusals() > 0, "growth is refused, and counted");
             assertThrows(IllegalStateException.class, () -> frozen.define(prompt(8, 9)));
             frozen.save();
         }
@@ -657,7 +707,7 @@ public final class PromptCacheTest {
                                     (state, serving) -> {
                                         throw new IllegalStateException("torn mid-hit");
                                     }));
-            assertEquals(0, cache.sample().hotSessions(), "the acquired session is gone");
+            assertEquals(0, cache.sample().retainedSessions(), "the acquired session is gone");
             Served echo = generate(cache, turns(new int[] {1, 2, 3}, new int[] {7, 8, 5}));
             assertEquals(PromptCache.Tier.BLOCKS, echo.tier(), "its committed blocks survive");
             assertEquals(5, echo.restored());
@@ -667,7 +717,7 @@ public final class PromptCacheTest {
     @Test
     void optionsRejectNonsenseInsteadOfBuildingAPathologicalCache() {
         // int widens silently into the long slot: a transposed (budget, hot) pair must not
-        // become a million-session hot layer with a 4-byte budget
+        // become a million-session retained layer with a 4-byte budget
         assertThrows(
                 IllegalArgumentException.class,
                 () -> new PromptCache.Options(-1, CTX, 1, null, false));
@@ -717,7 +767,7 @@ public final class PromptCacheTest {
     // ---- lifecycle --------------------------------------------------------------------------
 
     @Test
-    void closeReachesEveryHotStateAndTheSpare() {
+    void closeReachesEveryRetainedStateAndZeroAlreadyClosedItsState() {
         FakeModel model = fine();
         var warm = cache(model, 1, 1 << 20);
         FakeState pooled = warm.serve(turns(new int[] {1, 2}), (state, serving) -> state);
@@ -725,8 +775,9 @@ public final class PromptCacheTest {
         assertTrue(pooled.isClosed(), "close frees the pooled state deterministically");
 
         var stateless = cache(model, 0, 0);
-        FakeState spare = stateless.serve(turns(new int[] {1, 2}), (state, serving) -> state);
+        FakeState state = stateless.serve(turns(new int[] {1, 2}), (s, serving) -> s);
+        assertTrue(state.isClosed(), "zero closes the state as soon as the request completes");
         stateless.close();
-        assertTrue(spare.isClosed(), "close frees the spare too");
+        assertTrue(state.isClosed(), "cache close stays idempotent");
     }
 }
