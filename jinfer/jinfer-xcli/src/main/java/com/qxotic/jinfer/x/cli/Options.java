@@ -3,15 +3,19 @@ package com.qxotic.jinfer.x.cli;
 import com.qxotic.jinfer.hub.ModelStore;
 import com.qxotic.jinfer.x.chat.LoadedModel;
 import com.qxotic.jinfer.x.llm.Sampling;
+import com.qxotic.jinfer.x.server.ServerConfig;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.io.UncheckedIOException;
+import java.net.InetSocketAddress;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeSet;
 
 /**
@@ -46,15 +50,25 @@ public record Options(
         boolean rawPrompt,
         Path promptCache,
         boolean promptCacheReadOnly,
-        int speculationDepth) {
+        int speculationDepth,
+        boolean server,
+        String host,
+        int port,
+        String apiKey,
+        Set<String> allowedOrigins,
+        boolean noGrammar,
+        ServerConfig.Limits limits) {
 
     public Options {
         // never null and never the caller's copy: every reader can iterate it without a guard, and
         // "no companions" and "an empty map" stop being two states that behave differently
         companions = companions == null ? Map.of() : Map.copyOf(companions);
+        host = host == null ? "127.0.0.1" : host;
+        allowedOrigins = allowedOrigins == null ? Set.of("*") : Set.copyOf(allowedOrigins);
+        limits = limits == null ? ServerConfig.Limits.DEFAULTS : limits;
         require(modelPath != null, "Missing argument: --model <path> is required");
         require(
-                interactive || prompt != null,
+                server || interactive || prompt != null,
                 "Missing argument: --prompt is required in --instruct mode e.g. --prompt \"Why is"
                         + " the sky blue?\"");
         require(
@@ -70,6 +84,7 @@ public record Options(
                 minp == null || (0 <= minp && minp <= 1),
                 "Invalid argument: --min-p must be within [0, 1]");
         require(contextCapacity >= 1, "Invalid argument: --context-capacity must be at least 1");
+        require(0 <= port && port <= 65535, "Invalid argument: --port must be within [0, 65535]");
         require(
                 maxOutputTokens >= -1,
                 "Invalid argument: --max-output-tokens must be -1 (fill the context) or"
@@ -77,9 +92,10 @@ public record Options(
         // the chat loop keeps its own state and never consults the prompt cache; accepting the
         // flag there would make it do nothing
         require(
-                promptCache == null || !interactive,
-                "Invalid argument: --cache/--cache-ro apply to instruct mode; the chat loop keeps"
-                        + " its own state, so there is nothing for the cache to serve");
+                promptCache == null || !interactive || server,
+                "Invalid argument: --cache/--cache-ro apply to instruct and server modes; the"
+                        + " chat loop keeps its own state, so there is nothing for the cache to"
+                        + " serve");
         // defining a cache entry goes through the native codec's conversation encoding, which a
         // raw prompt deliberately bypasses. Read-only is fine: the raw batch is served as-is
         require(
@@ -89,6 +105,87 @@ public record Options(
         require(
                 0 <= speculationDepth && speculationDepth <= 8,
                 "Invalid argument: --speculation-depth must be within [0, 8] (0 disables it)");
+        require(!noGrammar || server, "Invalid argument: --no-grammar applies only to --server");
+        if (server) {
+            InetSocketAddress address = new InetSocketAddress(host, port);
+            require(
+                    address.getAddress() != null
+                            && (address.getAddress().isLoopbackAddress() || apiKey != null),
+                    "Invalid argument: a non-loopback --host requires --api-key");
+        }
+    }
+
+    /** Compatibility constructor for chat/instruct callers and tests. */
+    public Options(
+            Path modelPath,
+            Map<String, Path> companions,
+            Path tokenizerPath,
+            String prompt,
+            String systemPrompt,
+            boolean interactive,
+            Float temperature,
+            Float topp,
+            Integer topk,
+            Float minp,
+            Long seed,
+            int maxOutputTokens,
+            int contextCapacity,
+            boolean stream,
+            boolean echo,
+            boolean think,
+            boolean thinkInline,
+            boolean colors,
+            boolean rawPrompt,
+            Path promptCache,
+            boolean promptCacheReadOnly,
+            int speculationDepth) {
+        this(
+                modelPath,
+                companions,
+                tokenizerPath,
+                prompt,
+                systemPrompt,
+                interactive,
+                temperature,
+                topp,
+                topk,
+                minp,
+                seed,
+                maxOutputTokens,
+                contextCapacity,
+                stream,
+                echo,
+                think,
+                thinkInline,
+                colors,
+                rawPrompt,
+                promptCache,
+                promptCacheReadOnly,
+                speculationDepth,
+                false,
+                "127.0.0.1",
+                17341,
+                null,
+                Set.of("*"),
+                false,
+                ServerConfig.Limits.DEFAULTS);
+    }
+
+    ServerConfig serverConfig(Sampling sampling) {
+        ServerConfig.Limits configured =
+                new ServerConfig.Limits(
+                        limits.threads(),
+                        limits.queueCapacity(),
+                        limits.maxBodyBytes(),
+                        !noGrammar,
+                        limits.writeTimeout(),
+                        limits.requestTimeout(),
+                        limits.shutdownTimeout());
+        return new ServerConfig(
+                new InetSocketAddress(host, port),
+                new ServerConfig.Defaults(sampling, maxOutputTokens, think, rawPrompt),
+                configured,
+                new ServerConfig.Access(apiKey, allowedOrigins));
     }
 
     /**
@@ -171,6 +268,12 @@ public record Options(
         }
     }
 
+    private static Duration parseSeconds(String optionName, String value) {
+        long seconds = parseLong(optionName, value);
+        require(seconds >= 0, "Invalid argument for %s: must be non-negative", optionName);
+        return Duration.ofSeconds(seconds);
+    }
+
     public static boolean supportsAnsiColors(String colorMode) {
         return switch (colorMode) {
             case "on" -> true;
@@ -227,6 +330,18 @@ public record Options(
         int maxOutputTokens = -1;
         int contextCapacity = DEFAULT_CONTEXT_CAPACITY;
         boolean interactive = false;
+        boolean server = false;
+        String host = "127.0.0.1";
+        int port = 17341;
+        String apiKey = null;
+        Set<String> allowedOrigins = new TreeSet<>();
+        boolean noGrammar = false;
+        ServerConfig.Limits defaultLimits = ServerConfig.Limits.DEFAULTS;
+        int serverThreads = defaultLimits.threads();
+        int queueCapacity = defaultLimits.queueCapacity();
+        long maxBodyBytes = defaultLimits.maxBodyBytes();
+        Duration writeTimeout = defaultLimits.writeTimeout();
+        Duration requestTimeout = defaultLimits.requestTimeout();
         boolean stream = true;
         boolean echo = false;
         boolean think = true;
@@ -243,7 +358,9 @@ public record Options(
             switch (optionName) {
                 case "--interactive", "--chat", "-i" -> interactive = true;
                 case "--instruct" -> interactive = false;
+                case "--server" -> server = true;
                 case "--raw-prompt" -> rawPrompt = true;
+                case "--no-grammar" -> noGrammar = true;
                 case "--help", "-h" -> {
                     printUsage(System.out);
                     System.exit(0);
@@ -287,6 +404,19 @@ public record Options(
                                 default -> companionRefs.put(role, value);
                             }
                         }
+                        case "--host" -> host = nextArg;
+                        case "--port" -> port = parseInt(optionName, nextArg);
+                        case "--api-key" -> apiKey = nextArg;
+                        case "--cors-origin" -> allowedOrigins.add(nextArg);
+                        case "--threads" -> serverThreads = parseInt(optionName, nextArg);
+                        case "--queue-capacity" ->
+                                queueCapacity = parseInt(optionName, nextArg);
+                        case "--max-body-mb" ->
+                                maxBodyBytes = (long) parseInt(optionName, nextArg) << 20;
+                        case "--write-timeout" ->
+                                writeTimeout = parseSeconds(optionName, nextArg);
+                        case "--request-timeout" ->
+                                requestTimeout = parseSeconds(optionName, nextArg);
                         case "--seed", "-s" -> seed = parseLong(optionName, nextArg);
                         // -n is llama.cpp's spelling for the same knob, and this CLI already
                         // honours its muscle memory for -m/-p/-c/-s/--temp
@@ -395,7 +525,21 @@ public record Options(
                 rawPrompt,
                 promptCache,
                 promptCacheReadOnly,
-                speculationDepth);
+                speculationDepth,
+                server,
+                host,
+                port,
+                apiKey,
+                allowedOrigins.isEmpty() ? Set.of("*") : allowedOrigins,
+                noGrammar,
+                new ServerConfig.Limits(
+                        serverThreads,
+                        queueCapacity,
+                        maxBodyBytes,
+                        !noGrammar,
+                        writeTimeout,
+                        requestTimeout,
+                        defaultLimits.shutdownTimeout()));
     }
 
     /**
@@ -450,6 +594,17 @@ public record Options(
                         + " architecture, e.g. gemma4: media (vision/audio encoders)");
         out.println("  --interactive, --chat, -i     run in chat mode");
         out.println("  --instruct                    run in instruct (once) mode, default mode");
+        out.println("  --server                      run an OpenAI-compatible HTTP server");
+        out.println("  --host <host>                 bind host, default 127.0.0.1");
+        out.println("  --port <int>                  bind port, default 17341");
+        out.println("  --api-key <token>             require a bearer token; mandatory off loopback");
+        out.println("  --cors-origin <origin>        allowed browser origin; repeatable, default *");
+        out.println("  --threads <int>               HTTP handler threads, default 16");
+        out.println("  --queue-capacity <int>        waiting generations, default 4");
+        out.println("  --max-body-mb <int>           request body limit, default 32");
+        out.println("  --write-timeout <seconds>     stalled SSE write limit, default 30");
+        out.println("  --request-timeout <seconds>   generation deadline, default 300; 0 disables");
+        out.println("  --no-grammar                  reject grammar-constrained server requests");
         out.println("  --prompt, -p <string>         input prompt");
         out.println("  --system-prompt, -sp <string> system prompt for chat/instruct mode");
         out.println(

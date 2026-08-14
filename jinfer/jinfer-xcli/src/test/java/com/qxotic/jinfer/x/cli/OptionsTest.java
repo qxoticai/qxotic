@@ -213,4 +213,54 @@ final class OptionsTest {
                         () -> Options.parse(new String[] {"-m", m, "--frobnicate", "on"}));
         assertTrue(failure.getMessage().contains("--frobnicate"), failure.getMessage());
     }
+
+    @Test
+    void serverModeNeedsNoPromptAndOwnsOnlyTransportPolicy(@TempDir Path dir) throws IOException {
+        String model = model(dir).toString();
+        Options options =
+                Options.parse(
+                        new String[] {
+                            "-m",
+                            model,
+                            "--server",
+                            "--port",
+                            "0",
+                            "--queue-capacity",
+                            "2",
+                            "--speculation-depth",
+                            "6"
+                        });
+        assertTrue(options.server());
+        assertEquals(6, options.speculationDepth(), "MTP depth stays an engine option");
+        assertEquals(2, options.limits().queueCapacity());
+        assertEquals(
+                0,
+                options.serverConfig(options.sampling(LoadedModel.SamplingDefaults.NONE))
+                        .bind()
+                        .getPort());
+    }
+
+    @Test
+    void publicBindRequiresAuthentication(@TempDir Path dir) throws IOException {
+        String model = model(dir).toString();
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        Options.parse(
+                                new String[] {
+                                    "-m", model, "--server", "--host", "0.0.0.0"
+                                }));
+        Options secured =
+                Options.parse(
+                        new String[] {
+                            "-m",
+                            model,
+                            "--server",
+                            "--host",
+                            "0.0.0.0",
+                            "--api-key",
+                            "secret"
+                        });
+        assertEquals("secret", secured.apiKey());
+    }
 }
