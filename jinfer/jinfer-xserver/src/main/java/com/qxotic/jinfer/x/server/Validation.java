@@ -21,7 +21,8 @@ final class Validation {
                                 p ->
                                         p instanceof Map<?, ?> pm
                                                 && pm.get("type") != null
-                                                && !"text".equals(pm.get("type")));
+                                                && !List.of("text", "input_text", "output_text")
+                                                        .contains(pm.get("type")));
     }
 
     static void validateChatRequest(Map<String, Object> request) {
@@ -43,10 +44,20 @@ final class Validation {
                     List.of("system", "user", "assistant", "tool").contains(role),
                     "Invalid role: %s (must be system, user, assistant, or tool)",
                     role);
+            Object content = m.get("content");
+            require(
+                    content == null || content instanceof String || content instanceof List<?>,
+                    "message content must be a string, an array, or null");
+            if (content instanceof List<?> parts) {
+                for (Object part : parts) validateContentPart(part);
+            }
+            if (m.get("tool_calls") != null) {
+                Values.asArray(m.get("tool_calls"), "tool_calls");
+            }
             substance |=
-                    !Values.messageContent(m.get("content")).isBlank()
+                    !Values.messageContent(content).isBlank()
                             || (m.get("tool_calls") instanceof List<?> calls && !calls.isEmpty())
-                            || hasImageItem(m.get("content"));
+                            || hasImageItem(content);
         }
         require(substance, "messages must contain at least one non-empty message");
         Object fmt = request.get("response_format");
@@ -128,6 +139,9 @@ final class Validation {
         require(
                 function.get("name") instanceof String name && !name.isBlank(),
                 "tool.function.name is required");
+        if (function.get("parameters") != null) {
+            Values.asObject(function.get("parameters"), "tool.function.parameters");
+        }
     }
 
     /**
@@ -167,10 +181,44 @@ final class Validation {
                     name,
                     servedModel);
         }
-        if ((request.containsKey("grammar") || request.containsKey("response_format"))
-                && !config.limits().grammar()) {
-            require(false, "Grammar constraints disabled (--no-grammar)");
+        if (present(request, "stream")) {
+            require(request.get("stream") instanceof Boolean, "stream must be a boolean");
         }
+        if (present(request, "stream_options")) {
+            Map<String, Object> options =
+                    Values.asObject(request.get("stream_options"), "stream_options");
+            if (options.get("include_usage") != null) {
+                require(
+                        options.get("include_usage") instanceof Boolean,
+                        "stream_options.include_usage must be a boolean");
+            }
+        }
+        if (present(request, "grammar")) {
+            require(request.get("grammar") instanceof String, "grammar must be a string");
+        }
+        if (present(request, "response_format")) {
+            Values.asObject(request.get("response_format"), "response_format");
+        }
+        boolean usesGrammar =
+                request.get("grammar") instanceof String source && !source.isBlank();
+        if (request.get("response_format") instanceof Map<?, ?> format) {
+            usesGrammar |=
+                    "json_object".equals(format.get("type"))
+                            || "json_schema".equals(format.get("type"));
+        }
+        require(
+                !usesGrammar || config.limits().grammar(),
+                "Grammar constraints disabled (--no-grammar)");
+        if (present(request, "chat_template_kwargs")) {
+            Map<String, Object> kwargs =
+                    Values.asObject(request.get("chat_template_kwargs"), "chat_template_kwargs");
+            if (kwargs.get("enable_thinking") != null) {
+                require(
+                        kwargs.get("enable_thinking") instanceof Boolean,
+                        "chat_template_kwargs.enable_thinking must be a boolean");
+            }
+        }
+        validateStops(request.get("stop"));
         require(Values.intValue(request.get("n"), 1) == 1, "Only n=1 is supported");
         // Every range below is checked ONLY when the request carries the field. These are rules
         // about what a CLIENT may ask for (OpenAI's caps); the server's own defaults are the
@@ -212,12 +260,42 @@ final class Validation {
                 "Invalid argument: reasoning_max_tokens must be -1 (uncapped) or non-negative");
         Values.longValue(request.get("seed"), 0); // type check only
         require(
-                !request.containsKey("logprobs") && !request.containsKey("top_logprobs"),
+                !present(request, "logprobs") && !present(request, "top_logprobs"),
                 "logprobs is not supported");
-        require(!request.containsKey("logit_bias"), "logit_bias is not supported");
+        require(!present(request, "logit_bias"), "logit_bias is not supported");
         require(
-                !request.containsKey("frequency_penalty")
-                        && !request.containsKey("presence_penalty"),
+                !present(request, "frequency_penalty")
+                        && !present(request, "presence_penalty"),
                 "frequency_penalty and presence_penalty are not supported");
+    }
+
+    private static void validateStops(Object value) {
+        if (value == null || value instanceof String) return;
+        List<Object> stops = Values.asArray(value, "stop");
+        require(stops.size() <= 4, "stop supports at most 4 strings");
+        for (Object stop : stops) {
+            require(stop instanceof String, "stop array must contain only strings");
+        }
+    }
+
+    private static void validateContentPart(Object part) {
+        Map<String, Object> value = Values.asObject(part, "content part");
+        require(value.get("type") instanceof String, "content part type is required");
+        String type = (String) value.get("type");
+        require(
+                List.of(
+                                "text",
+                                "input_text",
+                                "image_url",
+                                "input_image",
+                                "input_audio",
+                                "video_url")
+                        .contains(type),
+                "unsupported content part type: %s",
+                type);
+        if ("text".equals(type) || "input_text".equals(type)) {
+            Object text = value.get("text") != null ? value.get("text") : value.get("input_text");
+            require(text instanceof String, "content part text must be a string");
+        }
     }
 }

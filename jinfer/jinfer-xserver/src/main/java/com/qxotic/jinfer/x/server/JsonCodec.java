@@ -1,6 +1,10 @@
 package com.qxotic.jinfer.x.server;
 
 import com.qxotic.format.json.Json;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -12,12 +16,27 @@ import java.util.Map;
  */
 final class JsonCodec {
     private static final Json.ParseOptions OPTIONS =
-            Json.ParseOptions.defaults().decimalsAsBigDecimal(false);
+            Json.ParseOptions.defaults().decimalsAsBigDecimal(false).failOnDuplicateKeys(true);
 
     private JsonCodec() {}
 
     static Object parse(String text) {
         return fromLibrary(Json.parse(text, OPTIONS));
+    }
+
+    static Object parse(byte[] bytes) {
+        try {
+            String text =
+                    StandardCharsets.UTF_8
+                            .newDecoder()
+                            .onMalformedInput(CodingErrorAction.REPORT)
+                            .onUnmappableCharacter(CodingErrorAction.REPORT)
+                            .decode(ByteBuffer.wrap(bytes))
+                            .toString();
+            return parse(text);
+        } catch (CharacterCodingException e) {
+            throw new IllegalArgumentException("request body is not valid UTF-8");
+        }
     }
 
     static String stringify(Object value) {
@@ -68,4 +87,3 @@ final class JsonCodec {
         return String.valueOf(value);
     }
 }
-

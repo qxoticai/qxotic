@@ -67,6 +67,86 @@ class ValidationTest {
     }
 
     @Test
+    void rejectsTypeConfusionAtTheHttpBoundary() {
+        ServerConfig config = ServerConfig.local(0);
+        for (String field : List.of("n", "top_k", "max_tokens", "seed")) {
+            Map<String, Object> request = new HashMap<>(user("hi"));
+            request.put(field, 1.5);
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> Validation.validateGenerationParams(request, "model", config),
+                    field);
+            request.put(field, true);
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> Validation.validateGenerationParams(request, "model", config),
+                    field);
+        }
+
+        Map<String, Object> temperature = new HashMap<>(user("hi"));
+        temperature.put("temperature", true);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> Validation.validateGenerationParams(temperature, "model", config));
+
+        Map<String, Object> stream = new HashMap<>(user("hi"));
+        stream.put("stream", "true");
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> Validation.validateGenerationParams(stream, "model", config));
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        Validation.validateChatRequest(
+                                Map.of(
+                                        "messages",
+                                        List.of(Map.of("role", "user", "content", 123)))));
+    }
+
+    @Test
+    void treatsExplicitNullOptionsAsUnset() {
+        Map<String, Object> request = new HashMap<>(user("hi"));
+        for (String field :
+                List.of(
+                        "grammar",
+                        "response_format",
+                        "logprobs",
+                        "top_logprobs",
+                        "logit_bias",
+                        "frequency_penalty",
+                        "presence_penalty")) {
+            request.put(field, null);
+        }
+        ServerConfig local = ServerConfig.local(0);
+        ServerConfig.Limits defaults = local.limits();
+        ServerConfig config =
+                new ServerConfig(
+                        local.bind(),
+                        local.defaults(),
+                        new ServerConfig.Limits(
+                                defaults.threads(),
+                                defaults.queueCapacity(),
+                                defaults.maxBodyBytes(),
+                                false,
+                                defaults.writeTimeout(),
+                                defaults.requestTimeout(),
+                                defaults.shutdownTimeout()),
+                        local.access());
+
+        Validation.validateGenerationParams(request, "model", config);
+
+        request.put("grammar", "");
+        request.put("response_format", Map.of("type", "text"));
+        Validation.validateGenerationParams(request, "model", config);
+
+        request.put("response_format", Map.of("type", "json_object"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> Validation.validateGenerationParams(request, "model", config));
+    }
+
+    @Test
     void forcedToolMustBeOffered() {
         Map<String, Object> required = new HashMap<>(user("hi"));
         required.put("tool_choice", "required");
