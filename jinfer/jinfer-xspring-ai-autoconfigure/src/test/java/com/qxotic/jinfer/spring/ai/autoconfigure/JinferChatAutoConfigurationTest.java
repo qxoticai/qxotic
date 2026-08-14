@@ -99,8 +99,7 @@ class JinferChatAutoConfigurationTest {
                 .withPropertyValues("spring.ai.jinfer.chat.model=/x.gguf")
                 .run(
                         context -> {
-                            var options =
-                                    context.getBean(JinferChatProperties.class).toOptions();
+                            var options = context.getBean(JinferChatProperties.class).toOptions();
                             assertThat(options.getTemperature()).isNull();
                             assertThat(options.getTopP()).isNull();
                             assertThat(options.getMaxTokens()).isNull();
