@@ -565,6 +565,7 @@ public record Options(
 
     static void printUsage(PrintStream out) {
         out.println("Usage:  java -jar xjinfer.jar [options]");
+        out.println("        JVM: --add-modules jdk.incubator.vector");
         out.println(
                 "        java -jar xjinfer.jar pull [--force] <ref>...  download models, print"
                         + " paths");
