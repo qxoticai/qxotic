@@ -1739,9 +1739,10 @@ public final class MatMul {
 
     /**
      * dtypes jam has a kernel for, with exact block alignment of k AND the weight offset (the union
-     * of Dispatch.jamSupports and gemmApplies' wOff check).
+     * of Dispatch.jamSupports and gemmApplies' wOff check). Package-visible for the jamTag parity
+     * test.
      */
-    private static boolean jamApplies(DataType dt, int k, long wOff) {
+    static boolean jamApplies(DataType dt, int k, long wOff) {
         if (dt != DataType.Q8_0
                 && dt != DataType.Q4_0
                 && dt != DataType.Q4_K
@@ -1758,7 +1759,7 @@ public final class MatMul {
     }
 
     /** jota DataType -> jam dtype tag (== ggml_type value, mapped explicitly to stay honest). */
-    private static int jamTag(DataType dt) {
+    static int jamTag(DataType dt) {
         if (dt == DataType.Q8_0) return JAM.Q8_0;
         if (dt == DataType.Q4_0) return JAM.Q4_0;
         if (dt == DataType.Q4_K) return JAM.Q4_K;
