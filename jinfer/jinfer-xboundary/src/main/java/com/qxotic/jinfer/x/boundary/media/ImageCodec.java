@@ -14,7 +14,24 @@ import java.nio.file.Path;
  */
 public final class ImageCodec {
 
+    /** 4096 x 4096 RGB already expands to 192 MiB as the public float representation. */
+    static final long MAX_PIXELS = 4096L * 4096;
+
     private ImageCodec() {}
+
+    static void checkDimensions(int width, int height) throws IOException {
+        long pixels = (long) width * height;
+        if (width <= 0 || height <= 0 || pixels > MAX_PIXELS) {
+            throw new IOException(
+                    "image dimensions "
+                            + width
+                            + "x"
+                            + height
+                            + " exceed the "
+                            + MAX_PIXELS
+                            + "-pixel limit");
+        }
+    }
 
     private static volatile ImageDecoder decoder;
 

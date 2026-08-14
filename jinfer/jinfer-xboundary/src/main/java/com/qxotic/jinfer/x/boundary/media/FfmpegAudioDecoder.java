@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 
 /**
@@ -17,14 +18,22 @@ public final class FfmpegAudioDecoder implements AudioDecoder {
     /** gemma4ua and every other speech encoder fix the input at 16 kHz mono. */
     public static final int SAMPLE_RATE = 16000;
 
+    /** Ten minutes of mono speech; the public float representation occupies about 37 MiB. */
+    static final int MAX_SAMPLES = SAMPLE_RATE * 60 * 10;
+
     @Override
     public Media.Audio load(Path path) throws IOException {
-        return toAudio(Ffmpeg.run(ffmpegArgs(path.toString()), null));
+        return toAudio(run(path.toString(), null));
     }
 
     @Override
     public Media.Audio decode(byte[] data) throws IOException {
-        return toAudio(Ffmpeg.run(ffmpegArgs("pipe:0"), data));
+        return toAudio(run("pipe:0", data));
+    }
+
+    private static byte[] run(String input, byte[] data) throws IOException {
+        return Ffmpeg.run(
+                ffmpegArgs(input), data, Duration.ofMinutes(2), Math.multiplyExact(MAX_SAMPLES, 4));
     }
 
     private static List<String> ffmpegArgs(String input) {

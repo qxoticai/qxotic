@@ -71,7 +71,13 @@ public final class FfmpegImageDecoder implements ImageDecoder {
             throw new IOException("expected 8-bit PPM (maxval 255), got " + maxval);
         }
         int base = pos[0]; // token() consumed exactly one whitespace after maxval
-        int need = Math.multiplyExact(Math.multiplyExact(w, h), 3);
+        ImageCodec.checkDimensions(w, h);
+        int need;
+        try {
+            need = Math.multiplyExact(Math.multiplyExact(w, h), 3);
+        } catch (ArithmeticException e) {
+            throw new IOException("PPM dimensions are too large: " + w + "x" + h, e);
+        }
         if (base + need > ppm.length) {
             throw new IOException(
                     "truncated PPM: need " + need + " pixel bytes, have " + (ppm.length - base));
