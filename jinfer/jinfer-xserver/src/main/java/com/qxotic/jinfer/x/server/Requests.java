@@ -41,9 +41,15 @@ final class Requests {
     /** The /v1/completions prompt: a string, or a string array joined by newlines. */
     static String completionPrompt(Map<String, Object> request) {
         Object promptValue = request.get("prompt");
-        return promptValue instanceof List<?> prompts
-                ? prompts.stream().map(String::valueOf).collect(Collectors.joining("\n"))
-                : Values.stringValue(promptValue, "");
+        if (promptValue instanceof String prompt) return prompt;
+        if (promptValue instanceof List<?> prompts) {
+            Validation.require(
+                    prompts.stream().allMatch(String.class::isInstance),
+                    "prompt array must contain only strings");
+            return prompts.stream().map(String.class::cast).collect(Collectors.joining("\n"));
+        }
+        if (promptValue == null) return "";
+        throw new IllegalArgumentException("prompt must be a string or an array of strings");
     }
 
     // ---- /v1/responses -----------------------------------------------------
@@ -57,11 +63,29 @@ final class Requests {
         if (!request.containsKey("max_tokens") && request.containsKey("max_output_tokens")) {
             request.put("max_tokens", request.get("max_output_tokens"));
         }
+        if (!request.containsKey("response_format") && request.get("text") != null) {
+            Map<String, Object> text = Values.asObject(request.get("text"), "text");
+            if (text.get("format") != null) {
+                request.put(
+                        "response_format",
+                        normalizeResponseFormat(
+                                Values.asObject(text.get("format"), "text.format")));
+            }
+        }
         Object tools = request.get("tools");
         if (tools instanceof List<?> values) {
             List<Object> normalized = new ArrayList<>();
             for (Object value : values) normalized.add(normalizeResponseTool(value));
             request.put("tools", normalized);
+        }
+        Object choice = request.get("tool_choice");
+        if (choice instanceof Map<?, ?> map
+                && "function".equals(map.get("type"))
+                && map.get("name") instanceof String name
+                && map.get("function") == null) {
+            request.put(
+                    "tool_choice",
+                    Map.of("type", "function", "function", Map.of("name", name)));
         }
     }
 
@@ -79,10 +103,25 @@ final class Requests {
         return tool;
     }
 
+    private static Map<String, Object> normalizeResponseFormat(Map<String, Object> format) {
+        if (!"json_schema".equals(format.get("type")) || format.get("json_schema") != null) {
+            return format;
+        }
+        Map<String, Object> schema = new LinkedHashMap<>();
+        for (String key : List.of("name", "description", "schema", "strict")) {
+            if (format.get(key) != null) schema.put(key, format.get(key));
+        }
+        return Map.of("type", "json_schema", "json_schema", schema);
+    }
+
     /** The Responses-API {@code instructions} + {@code input} folded into a chat-message list. */
     static List<Object> responseInputMessages(Map<String, Object> request) {
         List<Object> messages = new ArrayList<>();
-        String instructions = Values.stringValue(request.get("instructions"), null);
+        Object rawInstructions = request.get("instructions");
+        Validation.require(
+                rawInstructions == null || rawInstructions instanceof String,
+                "instructions must be a string");
+        String instructions = (String) rawInstructions;
         if (instructions != null && !instructions.isBlank()) {
             messages.add(Map.of("role", "system", "content", instructions));
         }
@@ -109,16 +148,66 @@ final class Requests {
         }
         Map<String, Object> map = Values.asObject(item, "input item");
         String type = Values.stringValue(map.get("type"), "message");
+        if ("function_call".equals(type)) {
+            Validation.require(
+                    map.get("call_id") instanceof String callId && !callId.isBlank(),
+                    "function_call.call_id is required");
+            Validation.require(
+                    map.get("name") instanceof String name && !name.isBlank(),
+                    "function_call.name is required");
+            Validation.require(
+                    map.get("arguments") instanceof String,
+                    "function_call.arguments must be a string");
+            String callId = (String) map.get("call_id");
+            String name = (String) map.get("name");
+            messages.add(
+                    Map.of(
+                            "role",
+                            "assistant",
+                            "content",
+                            "",
+                            "tool_calls",
+                            List.of(
+                                    Map.of(
+                                            "id",
+                                            callId,
+                                            "type",
+                                            "function",
+                                            "function",
+                                            Map.of(
+                                                    "name",
+                                                    name,
+                                                    "arguments",
+                                                    map.get("arguments"))))));
+            return;
+        }
         if ("function_call_output".equals(type)) {
+            Validation.require(
+                    map.get("call_id") instanceof String callId && !callId.isBlank(),
+                    "function_call_output.call_id is required");
+            String callId = (String) map.get("call_id");
             messages.add(
                     Map.of(
                             "role", "tool",
-                            "name", Values.stringValue(map.get("call_id"), "tool"),
-                            "content", Values.stringValue(map.get("output"), "")));
+                            "tool_call_id", callId,
+                            "content", responseToolOutput(map.get("output"))));
             return;
         }
         String role = Values.stringValue(map.get("role"), "user");
         messages.add(Map.of("role", role, "content", responseInputContent(map.get("content"))));
+    }
+
+    private static Object responseToolOutput(Object output) {
+        if (output instanceof String) return output;
+        Validation.require(output instanceof List<?>, "function_call_output.output is required");
+        Object normalized = responseInputContent(output);
+        for (Object part : (List<?>) normalized) {
+            Map<String, Object> value = Values.asObject(part, "function_call_output content");
+            Validation.require(
+                    "text".equals(value.get("type")),
+                    "media function_call_output is not supported");
+        }
+        return normalized;
     }
 
     /** Normalize Responses text spellings while preserving media parts for the shared chat path. */

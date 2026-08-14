@@ -29,7 +29,9 @@ final class Values {
     }
 
     static boolean booleanValue(Object value, boolean defaultValue) {
-        return value instanceof Boolean b ? b : defaultValue;
+        if (value == null) return defaultValue;
+        if (value instanceof Boolean b) return b;
+        throw new IllegalArgumentException("Invalid argument: '" + value + "' is not a boolean");
     }
 
     static int intValue(Object value, int defaultValue) {
@@ -45,7 +47,18 @@ final class Values {
     }
 
     static long longValue(Object value, long defaultValue) {
+        if (value == null) return defaultValue;
         if (value instanceof Number n) {
+            if (n instanceof Byte || n instanceof Short || n instanceof Integer || n instanceof Long)
+                return n.longValue();
+            double wide = n.doubleValue();
+            if (!Double.isFinite(wide)
+                    || wide != Math.rint(wide)
+                    || wide < -0x1p63
+                    || wide >= 0x1p63) {
+                throw new IllegalArgumentException(
+                        "Invalid argument: '" + n + "' is not an integer");
+            }
             return n.longValue();
         }
         if (value instanceof String s) { // tolerate string-encoded numbers (e.g. "seed": "42")
@@ -56,7 +69,8 @@ final class Values {
                         "Invalid argument: '" + s + "' is not an integer");
             }
         }
-        return defaultValue;
+        throw new IllegalArgumentException(
+                "Invalid argument: '" + value + "' is not an integer");
     }
 
     /**
@@ -67,8 +81,11 @@ final class Values {
         if (content instanceof List<?> parts) {
             StringBuilder sb = new StringBuilder();
             for (Object part : parts) {
-                if (part instanceof Map<?, ?> map && "text".equals(map.get("type"))) {
-                    Object text = map.get("text");
+                if (part instanceof Map<?, ?> map
+                        && List.of("text", "input_text", "output_text")
+                                .contains(map.get("type"))) {
+                    Object text =
+                            map.get("text") != null ? map.get("text") : map.get("input_text");
                     if (text != null) sb.append(text);
                 }
             }
@@ -78,6 +95,7 @@ final class Values {
     }
 
     static float floatValue(Object value, float defaultValue) {
+        if (value == null) return defaultValue;
         if (value instanceof Number n) {
             return n.floatValue();
         }
@@ -88,7 +106,7 @@ final class Values {
                 throw new IllegalArgumentException("Invalid argument: '" + s + "' is not a number");
             }
         }
-        return defaultValue;
+        throw new IllegalArgumentException(
+                "Invalid argument: '" + value + "' is not a number");
     }
 }
-
