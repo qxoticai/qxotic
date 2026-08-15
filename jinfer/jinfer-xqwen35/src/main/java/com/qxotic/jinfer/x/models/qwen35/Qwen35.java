@@ -124,13 +124,8 @@ public final class Qwen35
         if (weights.rope != null)
             RoPE.fill(state.ropeCos, state.ropeSin, startPos, rows, weights.ropeHalf, weights.rope);
         Views.checkAlive(weights.tokenEmbedding, "tokenEmbedding");
-        for (int row = 0; row < rows; row++)
-            Convert.copyToF32(
-                    weights.tokenEmbedding,
-                    (long) tokens[row] * c.embeddingLength,
-                    state.residual,
-                    (long) row * c.embeddingLength,
-                    c.embeddingLength);
+        Convert.gatherToF32(
+                weights.tokenEmbedding, tokens, 0, rows, state.residual, 0, c.embeddingLength);
         for (int layer = 0; layer < c.numberOfLayers; layer++)
             decoderBlock(state, layer, startPos, rows);
         if (c.hasMtp()) {

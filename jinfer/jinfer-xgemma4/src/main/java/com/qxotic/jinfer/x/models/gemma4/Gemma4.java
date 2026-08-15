@@ -305,13 +305,8 @@ public final class Gemma4
     private void embed(State state, int[] tokens, int tokenOffset, int seqLen) {
         int dim = configuration.embeddingLength;
         Views.checkAlive(weights.tokenEmbeddings, "tokenEmbeddings");
-        for (int s = 0; s < seqLen; s++)
-            Convert.copyToF32(
-                    weights.tokenEmbeddings,
-                    (long) tokens[tokenOffset + s] * dim,
-                    state.residual,
-                    (long) s * dim,
-                    dim);
+        Convert.gatherToF32(
+                weights.tokenEmbeddings, tokens, tokenOffset, seqLen, state.residual, 0, dim);
         float scale = (float) Math.sqrt(dim);
         Ops.mapInPlace(state.residual, 0, seqLen * dim, v -> v * scale);
     }

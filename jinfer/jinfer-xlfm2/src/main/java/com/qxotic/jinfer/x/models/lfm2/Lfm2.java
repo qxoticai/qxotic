@@ -240,18 +240,14 @@ public final class Lfm2
     /** Token-embedding lookup into the residual stream (no scaling, unlike Gemma4). */
     private void embedTokens(State state, int[] tokens, int tokenOffset, int seqLen) {
         Views.checkAlive(weights.tokenEmbeddings, "tokenEmbeddings"); // fail-fast on freed weights
-        int dim = configuration.embeddingLength;
-        // ponytail: per-row dispatch via Convert.copyToF32 (the cost profile of the old per-row
-        // virtual copyTo it replaces); the batched gather-dequant - dispatch hoisted once per
-        // table - is a planned, separately-benchmarked commit, not a polish
-        for (int s = 0; s < seqLen; s++) {
-            Convert.copyToF32(
-                    weights.tokenEmbeddings,
-                    (long) tokens[tokenOffset + s] * dim,
-                    state.residual,
-                    (long) s * dim,
-                    dim);
-        }
+        Convert.gatherToF32(
+                weights.tokenEmbeddings,
+                tokens,
+                tokenOffset,
+                seqLen,
+                state.residual,
+                0,
+                configuration.embeddingLength);
     }
 
     /** One block: short-conv mixer OR attention, then the FFN, in place on the residual. */

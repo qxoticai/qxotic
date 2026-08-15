@@ -1,8 +1,10 @@
 package com.qxotic.jinfer.x.kernels;
 
 import static com.qxotic.jinfer.x.Segments.F16_BYTES;
+import static com.qxotic.jinfer.x.Segments.F_SPECIES;
 import static com.qxotic.jinfer.x.Segments.I_SPECIES;
 import static com.qxotic.jinfer.x.Segments.S_SPECIES_HALF;
+import static com.qxotic.jinfer.x.Segments.USE_VECTOR_API;
 import static com.qxotic.jinfer.x.Segments.readByte;
 import static com.qxotic.jinfer.x.Segments.readFloat;
 import static com.qxotic.jinfer.x.Segments.readFloat16;
@@ -17,6 +19,7 @@ import com.qxotic.jota.DataType;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteOrder;
+import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.ShortVector;
 import jdk.incubator.vector.VectorOperators;
@@ -298,6 +301,80 @@ public final class Convert {
             dequantLegacy(src, srcElemOff, dst, dstElemOff, count);
         } else {
             throw new UnsupportedOperationException("copyToF32 dtype " + dt);
+        }
+    }
+
+    /**
+     * Batched embedding gather-dequant: {@code rows[rowsOff .. rowsOff+n)} name the table rows
+     * (each {@code rowLen} elements), dequantized consecutively into {@code dst} at {@code
+     * dstElemOff}. One dtype dispatch per table - the hoisted form of {@code n} per-row {@link
+     * #copyToF32} calls - and the Q8_0 arm additionally vectorizes the row dequant. Every other
+     * dtype falls back to the per-row spans (bit-identical either way).
+     */
+    public static void gatherToF32(
+            MemoryView<MemorySegment> table,
+            int[] rows,
+            int rowsOff,
+            int n,
+            MemoryView<MemorySegment> dst,
+            long dstElemOff,
+            int rowLen) {
+        if (table.dataType() == DataType.Q8_0 && rowLen % 32 == 0 && USE_VECTOR_API) {
+            dequantQ8_0Rows(table, rows, rowsOff, n, dst, dstElemOff, rowLen);
+            return;
+        }
+        for (int r = 0; r < n; r++) {
+            copyToF32(
+                    table,
+                    (long) rows[rowsOff + r] * rowLen,
+                    dst,
+                    dstElemOff + (long) r * rowLen,
+                    rowLen);
+        }
+    }
+
+    /**
+     * The Q8_0 gather arm: one scale read + one 32-byte vector dequant per block (B2I sign-extends,
+     * I2F is exact for a byte, the f32 multiply matches - bit-identical to {@link #dequantQ8_0}'s
+     * per-element {@code byte * scale}).
+     */
+    private static void dequantQ8_0Rows(
+            MemoryView<MemorySegment> table,
+            int[] rows,
+            int rowsOff,
+            int n,
+            MemoryView<MemorySegment> dst,
+            long dstElemOff,
+            int rowLen) {
+        Raw t = Raw.of(table, DataType.Q8_0, "table");
+        Raw d = Raw.f32(dst, "dst");
+        final int B = 32, BS = 34;
+        int blocksPerRow = rowLen / B;
+        int parts = B / F_SPECIES.length();
+        for (int r = 0; r < n; r++) {
+            long rowByte = t.vbase() + (long) rows[rowsOff + r] * blocksPerRow * BS;
+            long dstByte = d.vbase() + (dstElemOff + (long) r * rowLen) * Float.BYTES;
+            for (int blk = 0; blk < blocksPerRow; blk++) {
+                long bo = rowByte + (long) blk * BS;
+                FloatVector scale = FloatVector.broadcast(F_SPECIES, readFloat16(t.vseg(), bo));
+                ByteVector q =
+                        ByteVector.fromMemorySegment(
+                                ByteVector.SPECIES_256,
+                                t.vseg(),
+                                bo + F16_BYTES,
+                                ByteOrder.LITTLE_ENDIAN);
+                for (int p = 0; p < parts; p++) {
+                    q.convertShape(VectorOperators.B2I, I_SPECIES, p)
+                            .convert(VectorOperators.I2F, 0)
+                            .mul(scale)
+                            .intoMemorySegment(
+                                    d.vseg(),
+                                    dstByte
+                                            + (long) (blk * B + p * F_SPECIES.length())
+                                                    * Float.BYTES,
+                                    ByteOrder.LITTLE_ENDIAN);
+                }
+            }
         }
     }
 }
