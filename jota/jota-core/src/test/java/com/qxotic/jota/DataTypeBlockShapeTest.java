@@ -81,10 +81,28 @@ class DataTypeBlockShapeTest {
     }
 
     @Test
-    void scalarShapesAreIdentity() {
+    void denseScalarsAreIdentity() {
+        assertEquals(Shape.scalar(), DataType.FP32.physicalShape(Shape.scalar()));
+        assertEquals(Shape.scalar(), DataType.FP32.logicalShape(Shape.scalar()));
+        assertEquals(Shape.scalar(), DataType.BOOL.physicalShape(Shape.scalar()));
+    }
+
+    @Test
+    void blockDtypeScalarsAreNotRepresentable() {
+        // rank 0 has no innermost axis: one block holds epb elements, never 1 - reject, loudly
         for (DataType dt : BLOCK_DTYPES) {
-            assertEquals(Shape.scalar(), dt.physicalShape(Shape.scalar()), dt.name());
-            assertEquals(Shape.scalar(), dt.logicalShape(Shape.scalar()), dt.name());
+            IllegalArgumentException p =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () -> dt.physicalShape(Shape.scalar()),
+                            dt.name() + " physicalShape");
+            assertTrue(p.getMessage().contains(dt.name()), p.getMessage());
+            assertTrue(
+                    p.getMessage().contains(String.valueOf(dt.elementsPerBlock())), p.getMessage());
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> dt.logicalShape(Shape.scalar()),
+                    dt.name() + " logicalShape");
         }
     }
 
