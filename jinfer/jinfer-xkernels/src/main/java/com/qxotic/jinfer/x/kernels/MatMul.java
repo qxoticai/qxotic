@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.x.kernels;
 
+import static com.qxotic.jinfer.x.Segments.FAST_VECTOR_JIT;
 import static com.qxotic.jinfer.x.Segments.F_SPECIES;
 import static com.qxotic.jinfer.x.Segments.I_SPECIES;
 import static com.qxotic.jinfer.x.Segments.S_SPECIES_HALF;
@@ -43,14 +44,15 @@ import jdk.incubator.vector.VectorOperators;
  * C[s*cStride + cOff + row] = dot(W[row], A[s])}.
  *
  * <p>Routing is {@code Dispatch}'s measured policy, verbatim: <b>decode</b> ({@code n == 1},
- * bandwidth-bound) is always the Java floor (the dense dots beat jam's gemv there; the C2 {@code
- * slowDot} k-quant exception lands with cycle-2's dtypes); <b>prefill</b> ({@code n > 1},
- * compute-bound) tries native jam, then Vector-API jam, then the floor — jam is only offered a call
- * when the dtype has a kernel AND k and the weight offset are block-aligned ({@code Dispatch.f32io}
- * collapses to {@code !inPlace}: {@code a}/{@code c} are FP32 by construction). A runtime decline
- * (EBUSY, older libjam) falls to the next rung. A backend can be switched off with {@code
- * -Djam.<id>.disabled=true} ({@code native}, {@code vector}, {@code scalar}). With no jam backend
- * enabled or on the classpath the path is bit-identical to the floor.
+ * bandwidth-bound) is the Java floor (the dense dots beat jam's gemv there), except the C2 {@code
+ * slowDot} k-quant exception ({@code Q4_K}/{@code Q5_K}/{@code Q6_K} on a JIT that doesn't
+ * intrinsify the Vector API - those decode through jam) and the no-Vector-API case (every decode
+ * jams); <b>prefill</b> ({@code n > 1}, compute-bound) tries native jam, then Vector-API jam, then
+ * the floor — jam is only offered a call when the dtype has a kernel AND k and the weight offset
+ * are block-aligned ({@code Dispatch.f32io} collapses to {@code !inPlace}: {@code a}/{@code c} are
+ * FP32 by construction). A runtime decline (EBUSY, older libjam) falls to the next rung. A backend
+ * can be switched off with {@code -Djam.<id>.disabled=true} ({@code native}, {@code vector}, {@code
+ * scalar}). With no jam backend enabled or on the classpath the path is bit-identical to the floor.
  */
 public final class MatMul {
 
@@ -155,9 +157,15 @@ public final class MatMul {
         Views.requireContiguous(w, "w");
         MemorySegment ws = w.memory().base();
         long wBase = w.byteOffset();
-        // prefill rungs: native jam -> Vector-API jam -> floor (decode n==1 stays on the floor:
-        // the measured Dispatch policy for the dense dots)
-        if (n > 1 && !inPlace && jamApplies(dt, k, wOff)) {
+        // prefill rungs: native jam -> Vector-API jam -> floor. Decode (n==1) stays on the
+        // floor - its parallel dot() vectorizes, and the dense dots beat jam's gemv there -
+        // EXCEPT Dispatch's slowDot exception: C2 runs the byte-unpack k-quant dots largely
+        // un-intrinsified (Q4_K_M decode 11 t/s vs jam's 31), so on a slow-vector JIT those
+        // decode through jam too. (Legacy also jammed every decode when the Vector API was
+        // absent entirely.)
+        boolean slowDot = !FAST_VECTOR_JIT && bytePackedDot(dt);
+        boolean jamDecode = n == 1 && (!USE_VECTOR_API || slowDot);
+        if ((n > 1 || jamDecode) && !inPlace && jamApplies(dt, k, wOff)) {
             if (NATIVE != null
                     && NATIVE.mm(
                             ws, wBase, wOff, dt, wStride, av, aOff, aStride, cv, cOff, cStride, m,
@@ -1757,6 +1765,20 @@ public final class MatMul {
                 && dt != DataType.BF16) return false;
         long epb = dt.elementsPerBlock();
         return k % epb == 0 && wOff % epb == 0;
+    }
+
+    /**
+     * dtypes whose vector dot C2 executes largely un-intrinsified (the k-quants' byte shift/or/sub
+     * unpack chains; measured Q4_K_M decode collapse). Measured non-members (Dispatch.bytePackedDot
+     * verbatim): Q4_0's single-nibble unpack is fine on C2 (llama-1B tg 114 vs Graal's 118), and
+     * MXFP4 loses ~20% on C2 but jam routing loses more (gpt-oss-20b tg 22.8 Java dot vs 18.0 jam -
+     * MoE decode issues ~24k tiny expert gemvs per pass and each jam call pays the FFM boundary).
+     * NVFP4 is structurally exempt: its dot dequantizes with scalar code then runs a dense F32
+     * vector dot, so there is no byte-vector unpack for C2 to fall back on (kernel probe: 1.8x
+     * hot-cache gap, from the scalar decode loop's codegen).
+     */
+    private static boolean bytePackedDot(DataType dt) {
+        return dt == DataType.Q4_K || dt == DataType.Q5_K || dt == DataType.Q6_K;
     }
 
     /** jota DataType -> jam dtype tag (== ggml_type value, mapped explicitly to stay honest). */

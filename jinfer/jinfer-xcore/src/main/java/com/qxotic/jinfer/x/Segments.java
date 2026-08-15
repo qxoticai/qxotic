@@ -101,7 +101,7 @@ public final class Segments {
     // present" with "vectors fast" there. The active compiler must be read from the
     // UseJVMCICompiler VM option - java.vm.version says "jvmci" on GraalVM even when it runs C2
     // via -XX:-UseJVMCICompiler.
-    static final boolean FAST_VECTOR_JIT = USE_VECTOR_API && jitIntrinsifiesVectors();
+    public static final boolean FAST_VECTOR_JIT = USE_VECTOR_API && jitIntrinsifiesVectors();
 
     private static boolean jitIntrinsifiesVectors() {
         if (System.getProperty("org.graalvm.nativeimage.imagecode") != null) {
