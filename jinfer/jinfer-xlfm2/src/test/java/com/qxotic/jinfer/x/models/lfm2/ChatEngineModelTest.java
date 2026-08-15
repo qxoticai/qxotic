@@ -13,6 +13,7 @@ import com.qxotic.jinfer.x.chat.ChatEngine;
 import com.qxotic.jinfer.x.chat.Conversation;
 import com.qxotic.jinfer.x.chat.Message;
 import com.qxotic.jinfer.x.chat.Models;
+import com.qxotic.jinfer.x.llm.Generator;
 import com.qxotic.jinfer.x.llm.Sampling;
 import com.qxotic.toknroll.IntSequence;
 import java.lang.foreign.Arena;
@@ -34,18 +35,12 @@ final class ChatEngineModelTest {
     private static final Sampling GREEDY = new Sampling(0f, 1f, 0, 0f, null);
 
     private static ChatEngine.Request request(List<Message> messages) {
+        return request(messages, Duration.ZERO);
+    }
+
+    private static ChatEngine.Request request(List<Message> messages, Duration timeout) {
         return new ChatEngine.Request(
-                messages,
-                List.of(),
-                false,
-                32,
-                null,
-                Duration.ZERO,
-                GREEDY,
-                null,
-                null,
-                List.of(),
-                null);
+                messages, List.of(), false, 32, null, timeout, GREEDY, null, null, List.of(), null);
     }
 
     @Test
@@ -117,7 +112,7 @@ final class ChatEngineModelTest {
             assertEquals(PromptCache.Tier.BLOCKS, fromBlocks.tier());
             assertTrue(fromBlocks.restoredTokens() > 0);
 
-            // cancellation: the pass ends silently, no reply
+            // cancellation: the pass ends silently, no reply and no result
             ChatEngine.Completion cancelled =
                     engine.complete(
                             request,
@@ -129,6 +124,7 @@ final class ChatEngineModelTest {
                             });
             assertTrue(cancelled.cancelled());
             assertNull(cancelled.reply());
+            assertNull(cancelled.result());
         } finally {
             engine.close();
             engine.close(); // idempotent
@@ -138,6 +134,46 @@ final class ChatEngineModelTest {
                 () ->
                         engine.complete(
                                 request(List.of(Message.user("hi"))), ChatEngine.ReplySink.NONE));
+        weights.close();
+    }
+
+    @Test
+    void expiredDeadlineStopsPrefillBeforeAnyToken() throws Exception {
+        Path path = TestModels.require(REF);
+        Arena weights = Arenas.newCrossThread();
+        ChatEngine engine =
+                new ChatEngine(
+                        Models.load(path, weights), "lfm2-test", PromptCache.Options.DEFAULTS);
+        try {
+            List<ChatEngine.Delta> deltas = new ArrayList<>();
+            ChatEngine.Completion completion =
+                    engine.complete(
+                            request(List.of(Message.user("Name one color.")), Duration.ofNanos(1)),
+                            new ChatEngine.ReplySink() {
+                                @Override
+                                public void on(ChatEngine.Delta delta) {
+                                    deltas.add(delta);
+                                }
+                            });
+            assertTrue(deltas.isEmpty(), "no token is sampled past the deadline");
+            assertFalse(completion.cancelled());
+            assertEquals(Generator.FinishReason.TIMEOUT, completion.result().finishReason());
+            assertEquals(0, completion.result().completionTokens());
+            assertTrue(
+                    completion.result().promptTime().toNanos() > 0,
+                    "the interrupted prefill still reports its time");
+
+            // the interrupted session was discarded and committed nothing: the same prompt
+            // computes fresh, then generates normally
+            ChatEngine.Completion retry =
+                    engine.complete(
+                            request(List.of(Message.user("Name one color."))),
+                            ChatEngine.ReplySink.NONE);
+            assertEquals(PromptCache.Tier.FRESH, retry.tier());
+            assertFalse(retry.reply().text().isBlank());
+        } finally {
+            engine.close();
+        }
         weights.close();
     }
 }

@@ -38,6 +38,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.BooleanSupplier;
 
 /**
  * The framework-neutral provider runtime: one loaded model, the two-tier template stack (native
@@ -837,10 +838,10 @@ public final class ChatEngine implements AutoCloseable {
 
     /**
      * A finished generation in jinfer terms. {@link #cancelled} is derived: a cancelled pass has
-     * nothing to report, so its {@code reply} is null - there is no second boolean to disagree
-     * with. {@code stopped} means a stop sequence cut the content lane: the reply still carries the
-     * full text (with its verbatim token ids intact), and the caller truncates its own message with
-     * {@link TextStops#apply}.
+     * nothing to report, so its {@code reply} AND {@code result} are null - there is no second
+     * boolean to disagree with. {@code stopped} means a stop sequence cut the content lane: the
+     * reply still carries the full text (with its verbatim token ids intact), and the caller
+     * truncates its own message with {@link TextStops#apply}.
      */
     public record Completion(
             Message reply,
@@ -982,7 +983,8 @@ public final class ChatEngine implements AutoCloseable {
                         prepared.sampler(),
                         prepared.maxTokens(),
                         prepared.timeout(),
-                        listener);
+                        listener,
+                        out::cancelled);
         if (out.cancelled()) {
             // a cancelled pass ends silently: no reply, no completion callback upstream
             return new Completion(
@@ -1042,10 +1044,21 @@ public final class ChatEngine implements AutoCloseable {
             int maxTokens,
             Duration timeout,
             Generator.GenerationListener listener) {
+        return generate(prompt, sampler, maxTokens, timeout, listener, () -> false);
+    }
+
+    /** As the public form, with the sink's cancellation consulted between prefill chunks. */
+    Outcome generate(
+            List<Batch> prompt,
+            Sampler sampler,
+            int maxTokens,
+            Duration timeout,
+            Generator.GenerationListener listener,
+            BooleanSupplier cancelled) {
         lock.lock();
         try {
             checkOpen();
-            Outcome outcome = run(prompt, sampler, maxTokens, timeout, listener);
+            Outcome outcome = run(prompt, sampler, maxTokens, timeout, listener, cancelled);
             // sampled here, on the owning thread, while the lock still excludes other generations
             cacheSnapshot = cache.sample();
             return outcome;
@@ -1068,18 +1081,44 @@ public final class ChatEngine implements AutoCloseable {
             Sampler sampler,
             int maxTokens,
             Duration timeout,
-            Generator.GenerationListener listener) {
+            Generator.GenerationListener listener,
+            BooleanSupplier cancelled) {
         LanguageModel<?, ?, S> model = (LanguageModel<?, ?, S>) loaded.model();
         PromptCache<S> c = (PromptCache<S>) cache;
         // the facade validates the prompt (non-empty, fits the context) before any ingest
         long started = System.nanoTime();
+        long deadlineNanos = saturatingDeadline(started, timeout);
+        // the cooperative stop, consulted BETWEEN prefill chunks (never inside a forward):
+        // client cancellation, or the pass's wall-clock deadline covering prefill AND decode
+        BooleanSupplier interrupt =
+                () -> cancelled.getAsBoolean() || System.nanoTime() >= deadlineNanos;
         return c.serve(
                 prompt,
                 (state, serving) -> {
+                    if (!serving.prefillComplete()) {
+                        // interrupted prefill: nothing generates from a partially-served state
+                        if (cancelled.getAsBoolean()) {
+                            // the cancelled lane: no reply, no result, complete0 ends it silently
+                            return new Outcome(null, serving.restored(), serving.tier(), null);
+                        }
+                        return new Outcome(
+                                new Generator.GenerationResult(
+                                        new int[0],
+                                        OptionalInt.empty(),
+                                        Generator.FinishReason.TIMEOUT,
+                                        serving.promptTime(),
+                                        Duration.ZERO),
+                                serving.restored(),
+                                serving.tier(),
+                                null);
+                    }
                     Duration remaining = timeout;
                     if (!timeout.isZero()) {
                         remaining = timeout.minusNanos(System.nanoTime() - started);
                         if (remaining.isNegative() || remaining.isZero()) {
+                            // encodes "already expired": Constraints refuses a negative timeout
+                            // and ZERO means none - Generator's loop-top check ends the pass
+                            // before any token is sampled
                             remaining = Duration.ofNanos(1);
                         }
                     }
@@ -1147,7 +1186,15 @@ public final class ChatEngine implements AutoCloseable {
                                     serving.promptTime(),
                                     result.decodeTime());
                     return new Outcome(result, serving.restored(), serving.tier(), speculation);
-                });
+                },
+                interrupt);
+    }
+
+    /** The pass's wall-clock deadline in nanoTime terms; {@code Long.MAX_VALUE} when disabled. */
+    private static long saturatingDeadline(long startedNanos, Duration timeout) {
+        if (timeout.isZero()) return Long.MAX_VALUE;
+        long nanos = timeout.toNanos();
+        return nanos > Long.MAX_VALUE - startedNanos ? Long.MAX_VALUE : startedNanos + nanos;
     }
 
     // ---- cached prompts: define / freeze / save on the one PromptCache ----
