@@ -158,7 +158,17 @@
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
-        <artifactId>jota</artifactId>
+        <artifactId>jota-core</artifactId>
+        <version>${qxotic.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>jota-memory</artifactId>
+        <version>${qxotic.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>jota-tensor</artifactId>
         <version>${qxotic.version}</version>
       </dependency>
       <dependency>

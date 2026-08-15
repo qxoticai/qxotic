@@ -23,7 +23,7 @@
   <dependencies>
     <dependency>
       <groupId>com.qxotic</groupId>
-      <artifactId>jota</artifactId>
+      <artifactId>jota-tensor</artifactId>
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
