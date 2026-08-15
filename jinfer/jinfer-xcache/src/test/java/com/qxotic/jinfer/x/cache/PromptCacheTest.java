@@ -20,6 +20,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -50,8 +51,15 @@ public final class PromptCacheTest {
         /** Every token id the model actually ingested, in order. */
         final List<Integer> ingested = new ArrayList<>();
 
+        private final int batchCap;
+
         FakeState() {
+            this(512);
+        }
+
+        FakeState(int batchCap) {
             super(Arena.ofAuto());
+            this.batchCap = batchCap;
         }
 
         @Override
@@ -61,7 +69,7 @@ public final class PromptCacheTest {
 
         @Override
         public int batchCapacity() {
-            return 512;
+            return batchCap;
         }
 
         @Override
@@ -86,6 +94,9 @@ public final class PromptCacheTest {
     static class FakeModel implements LanguageModel<Config, Object, FakeState> {
         final StateCodec<FakeState> codec;
 
+        /** Test knob: the batch capacity of allocated states (chunk granularity of prefill). */
+        int stateBatch = 512;
+
         FakeModel(StateCodec<FakeState> codec) {
             this.codec = codec;
         }
@@ -107,7 +118,7 @@ public final class PromptCacheTest {
 
         @Override
         public FakeState newState(int ctx, int batch, Arena arena) {
-            return new FakeState();
+            return new FakeState(stateBatch);
         }
 
         @Override
@@ -766,6 +777,77 @@ public final class PromptCacheTest {
         assertThrows(IllegalStateException.class, cache::sample);
         assertThrows(IllegalStateException.class, () -> cache.define(prompt(1, 2)));
         assertThrows(IllegalStateException.class, cache::save);
+    }
+
+    // ---- cooperative prefill interrupt ------------------------------------------------------
+
+    @Test
+    void interruptedPrefillRunsThePassAndDiscardsTheSession() {
+        FakeModel model = fine();
+        model.stateBatch = 4; // a 12-token prompt ingests as 3 chunks
+        try (var cache = cache(model, 2, 1 << 20)) {
+            AtomicInteger calls = new AtomicInteger();
+            Object marker =
+                    cache.serve(
+                            turns(new int[] {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}),
+                            (state, serving) -> {
+                                assertFalse(serving.prefillComplete());
+                                assertEquals(4, state.position); // chunk 0 completed, 1 never ran
+                                assertEquals(PromptCache.Tier.FRESH, serving.tier());
+                                return "stopped";
+                            },
+                            () -> calls.incrementAndGet() > 1);
+            assertEquals("stopped", marker); // the pass ran and serve returned its result
+            // the partially-served SESSION was discarded, but chunk 0's committed block survives:
+            // the same prompt restores that prefix instead of prefilling from scratch
+            Served again =
+                    generate(cache, turns(new int[] {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}));
+            assertEquals(PromptCache.Tier.BLOCKS, again.tier());
+            assertEquals(4, again.restored());
+        }
+    }
+
+    @Test
+    void interruptBeforeTheFirstChunkIngestsNothing() {
+        FakeModel model = fine();
+        try (var cache = cache(model, 2, 1 << 20)) {
+            Object marker =
+                    cache.serve(
+                            turns(new int[] {1, 2, 3}),
+                            (state, serving) -> {
+                                assertFalse(serving.prefillComplete());
+                                assertEquals(0, state.position);
+                                assertEquals(0, serving.restored());
+                                assertTrue(serving.promptTime().toNanos() >= 0); // set even here
+                                return "stopped";
+                            },
+                            () -> true);
+            assertEquals("stopped", marker);
+            Served again = generate(cache, turns(new int[] {1, 2, 3}));
+            assertEquals(PromptCache.Tier.FRESH, again.tier()); // nothing committed or retained
+        }
+    }
+
+    @Test
+    void completedPrefillRetainsTheSession() {
+        FakeModel model = fine();
+        try (var cache = cache(model, 2, 1 << 20)) {
+            generate(cache, turns(new int[] {1, 2, 3}), 7);
+            AtomicInteger calls = new AtomicInteger();
+            // fires only far past completion: a consulted-but-unfired interrupt changes nothing
+            Served hit =
+                    cache.serve(
+                            turns(new int[] {1, 2, 3}, new int[] {7, 8}),
+                            (state, serving) -> {
+                                assertTrue(serving.prefillComplete());
+                                return new Served(serving.tier(), serving.restored());
+                            },
+                            () -> calls.incrementAndGet() > 100);
+            assertEquals(PromptCache.Tier.SESSION, hit.tier());
+            Served next =
+                    generate(cache, turns(new int[] {1, 2, 3}, new int[] {7, 8}, new int[] {9}));
+            assertEquals(PromptCache.Tier.SESSION, next.tier()); // the session survived
+        }
     }
 
     // ---- lifecycle --------------------------------------------------------------------------

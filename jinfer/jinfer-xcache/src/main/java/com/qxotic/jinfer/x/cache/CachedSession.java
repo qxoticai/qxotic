@@ -13,6 +13,7 @@ import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.function.BooleanSupplier;
 
 /**
  * The dual representation bound to a state: the exact ingested fingerprint stream (token ids)
@@ -198,12 +199,25 @@ public final class CachedSession<S extends RuntimeState> {
 
     /**
      * As {@link #ingest(List)} with the request's precomputed fingerprint stream, indexed by
-     * absolute stream position - so a serve that already ran {@link #fingerprints(List)} does not
-     * re-hash media rows (MBs per image). Either way the appended stream is byte-for-byte what
-     * {@code fingerprints} defines: the ONE fingerprint law.
+     * absolute stream position - so a serve that already ran {@code fingerprints} does not re-hash
+     * media rows (MBs per image). Either way the appended stream is byte-for-byte what {@code
+     * fingerprints} defines: the ONE fingerprint law.
      */
     void ingest(List<Batch> batches, long[] expected) {
+        ingest(batches, expected, () -> false);
+    }
+
+    /**
+     * As above, with a cooperative interrupt consulted BEFORE each chunk: when it first reports
+     * true, ingestion stops at the last completed chunk (a forward in flight always completes) and
+     * false is returned. The appended stream stays position-exact - interrupted chunks are simply
+     * absent, never half-recorded.
+     */
+    boolean ingest(List<Batch> batches, long[] expected, BooleanSupplier interrupt) {
         for (Batch b : Batch.prepare(batches, state.batchCapacity())) {
+            if (interrupt.getAsBoolean()) {
+                return false; // stop at the last completed chunk
+            }
             int off = len;
             long[] f = expected != null ? null : fingerprints(List.of(b));
             model.ingest(state, b);
@@ -211,6 +225,7 @@ public final class CachedSession<S extends RuntimeState> {
             for (int i = 0; i < n; i++) append(expected != null ? expected[off + i] : f[i]);
             commitSpan(off, len - off);
         }
+        return true;
     }
 
     /**
@@ -227,6 +242,11 @@ public final class CachedSession<S extends RuntimeState> {
 
     /** As {@link #ingestGroups(List)} with the precomputed fingerprint stream (see ingest). */
     void ingestGroups(List<List<Batch>> groups, long[] expected) {
+        ingestGroups(groups, expected, () -> false);
+    }
+
+    /** As above, stopping at the last completed chunk when the interrupt fires (see ingest). */
+    boolean ingestGroups(List<List<Batch>> groups, long[] expected, BooleanSupplier interrupt) {
         int restored = state.position();
         int pos = 0;
         for (List<Batch> group : groups) {
@@ -235,9 +255,13 @@ public final class CachedSession<S extends RuntimeState> {
                 pos = end;
                 continue;
             }
-            ingest(pos >= restored ? group : tail(group, restored - pos), expected);
+            if (!ingest(
+                    pos >= restored ? group : tail(group, restored - pos), expected, interrupt)) {
+                return false;
+            }
             pos = end;
         }
+        return true;
     }
 
     /**
