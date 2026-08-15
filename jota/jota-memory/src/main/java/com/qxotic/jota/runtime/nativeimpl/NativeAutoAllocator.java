@@ -45,4 +45,10 @@ final class NativeAutoAllocator
             throw new IllegalStateException("arena already closed");
         }
     }
+
+    /** Buffers come from {@code Arena.ofAuto()}: GC-managed, never invalidated by close(). */
+    @Override
+    public boolean isAlive() {
+        return true;
+    }
 }

@@ -14,6 +14,8 @@ class NativeUnsafeAllocatorArena implements ScopedMemoryAllocatorArena<MemorySeg
     private final Set<ScopedMemory<MemorySegment>> allocations =
             Collections.newSetFromMap(new ConcurrentHashMap<>());
 
+    private volatile boolean closed;
+
     private NativeUnsafeAllocatorArena() {}
 
     static ScopedMemoryAllocatorArena<MemorySegment> create() {
@@ -32,6 +34,9 @@ class NativeUnsafeAllocatorArena implements ScopedMemoryAllocatorArena<MemorySeg
 
     @Override
     public ScopedMemory<MemorySegment> allocateMemory(long byteSize, long byteAlignment) {
+        if (closed) {
+            throw new IllegalStateException("arena already closed");
+        }
         ScopedMemory<MemorySegment> scopedMemory =
                 NativeUnsafeAllocator.instance().allocateMemory(byteSize, byteAlignment);
         allocations.add(scopedMemory);
@@ -87,7 +92,14 @@ class NativeUnsafeAllocatorArena implements ScopedMemoryAllocatorArena<MemorySeg
 
     @Override
     public synchronized void close() {
+        closed = true;
         this.allocations.forEach(ScopedMemory::close);
         this.allocations.clear();
+    }
+
+    /** {@code close()} frees every tracked allocation: dead afterwards. */
+    @Override
+    public boolean isAlive() {
+        return !closed;
     }
 }
