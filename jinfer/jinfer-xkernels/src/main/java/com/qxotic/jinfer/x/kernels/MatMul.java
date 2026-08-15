@@ -172,12 +172,13 @@ public final class MatMul {
             }
         }
         if (dt.elementsPerBlock() > 1) {
+            Raw wv = Raw.of(w, dt, "w");
             // block-quantized weights: element offsets fold to block bytes (rows are k long and
             // k % epb == 0 for quant weights, so wOff/wStride are block-aligned)
             long epb = dt.elementsPerBlock();
             run(
-                    ws,
-                    wBase + wOff / epb * dt.byteSize(),
+                    wv.vseg(),
+                    wv.vbase() + wOff / epb * dt.byteSize(),
                     (long) wStride / epb * dt.byteSize(),
                     av,
                     aOff,
