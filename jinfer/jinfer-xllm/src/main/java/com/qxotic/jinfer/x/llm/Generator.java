@@ -43,7 +43,10 @@ public final class Generator {
      * bounded only by the state's remaining context, and 0 is meaningful (prefill without decode).
      * {@code timeout} is the wall-clock budget for the WHOLE pass - prompt ingestion AND decode (a
      * long prefill is exactly the cost a deadline exists to bound); {@link Duration#ZERO} for none.
-     * {@code stopTokens} is the family's terminator set, possibly empty.
+     * The deadline is cooperative: it is checked BETWEEN steps (a prefill chunk, a decode token), a
+     * step in flight always completes, and no new step starts past the deadline - so an expired
+     * pass emits nothing it has not already emitted, and no token is ever sampled after it. {@code
+     * stopTokens} is the family's terminator set, possibly empty.
      */
     public record Constraints(int maxTokens, Duration timeout, Set<Integer> stopTokens) {
 
@@ -123,7 +126,9 @@ public final class Generator {
      * continues from its position. The pass claims the state for its whole duration - a direct
      * {@code ingest} from another thread fails fast instead of silently interleaving two pipelines
      * into one KV. Different STATES of one model may decode concurrently; whether they run in
-     * parallel is the backend's business, not this loop's.
+     * parallel is the backend's business, not this loop's. A deadline that expires DURING prompt
+     * ingestion stops at the last completed chunk: the state then holds a partial prompt at its
+     * position, and continuing or resetting is the caller's decision.
      */
     public static <S extends RuntimeState> GenerationResult generate(
             LanguageModel<?, ?, S> model,
@@ -158,6 +163,9 @@ public final class Generator {
         base.enter(); // the single-pipeline claim, held across the whole pass
         try {
             for (Batch batch : Batch.prepare(prompt, state.batchCapacity())) {
+                if (System.nanoTime() >= deadlineNanos) {
+                    break; // no new chunk past the deadline; the decode loop ends the pass below
+                }
                 model.ingest(state, batch);
             }
             long prefillDoneNanos = System.nanoTime();
@@ -173,6 +181,12 @@ public final class Generator {
             // mid-generation is picked up by the next pass, which is soon enough.
             boolean traceTokens = new DecodeEvent().isEnabled();
             while (n < max) {
+                // the deadline gates WORK, not delivery: a token sampled in time is always
+                // emitted and ingested; no new sample starts past it
+                if (System.nanoTime() >= deadlineNanos) {
+                    finish = FinishReason.TIMEOUT;
+                    break;
+                }
                 DecodeEvent decode = traceTokens ? new DecodeEvent() : null;
                 if (decode != null) decode.begin();
                 try {
@@ -189,10 +203,6 @@ public final class Generator {
                     boolean keepGoing = listener.onToken(token);
                     if (stops.contains(token)) {
                         finish = FinishReason.STOP;
-                        break;
-                    }
-                    if (System.nanoTime() >= deadlineNanos) {
-                        finish = FinishReason.TIMEOUT;
                         break;
                     }
                     if (!keepGoing) {
