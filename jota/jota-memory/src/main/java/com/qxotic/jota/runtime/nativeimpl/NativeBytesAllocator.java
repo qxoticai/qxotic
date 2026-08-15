@@ -40,4 +40,10 @@ final class NativeBytesAllocator
     public void close() {
         // nop
     }
+
+    /** {@code close()} is a no-op and the buffers are GC-managed: always alive. */
+    @Override
+    public boolean isAlive() {
+        return true;
+    }
 }

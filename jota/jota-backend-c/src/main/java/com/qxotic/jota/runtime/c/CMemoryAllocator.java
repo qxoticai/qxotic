@@ -17,6 +17,7 @@ final class CMemoryAllocator implements MemoryAllocator<MemorySegment>, MemoryAr
 
     private final Device device;
     private final Set<CMemory> allocations = Collections.newSetFromMap(new ConcurrentHashMap<>());
+    private volatile boolean closed;
 
     CMemoryAllocator(Device device) {
         this.device = device;
@@ -34,6 +35,9 @@ final class CMemoryAllocator implements MemoryAllocator<MemorySegment>, MemoryAr
 
     @Override
     public Memory<MemorySegment> allocateMemory(long byteSize, long byteAlignment) {
+        if (closed) {
+            throw new IllegalStateException("arena already closed");
+        }
         if (byteSize < 0) {
             throw new IllegalArgumentException("invalid byteSize, must be >= 0");
         }
@@ -59,10 +63,17 @@ final class CMemoryAllocator implements MemoryAllocator<MemorySegment>, MemoryAr
 
     @Override
     public void close() {
+        closed = true;
         for (CMemory memory : allocations) {
             UNSAFE.freeMemory(memory.mallocAddress());
         }
         allocations.clear();
+    }
+
+    /** {@code close()} frees every allocation with {@code freeMemory}: dead afterwards. */
+    @Override
+    public boolean isAlive() {
+        return !closed;
     }
 
     private static boolean isPowerOf2(long value) {
