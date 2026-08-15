@@ -17,7 +17,8 @@ import java.util.List;
  * dimension. {@link #physicalShape(Shape)} divides the innermost dimension by {@link
  * #elementsPerBlock()} (exact division required); {@link #logicalShape(Shape)} multiplies it back.
  * For nested shapes the conversions scale the last dim in flatten order and preserve all other
- * structure.
+ * structure. Rank 0 is representable only for dense dtypes: a scalar has no innermost axis to tile,
+ * so the conversions throw {@link IllegalArgumentException} for block dtypes.
  *
  * <p><b>Blocks are atomic.</b> Every view's layout (shape + strides) is in physical units, so all
  * view algebra - reshape, slice, transpose, offset arithmetic - operates on whole blocks and never
@@ -149,7 +150,8 @@ public interface DataType {
      * BLOCKS, and blocking always tiles the innermost (last) storage axis, so the logical shape is
      * the physical shape with its last dimension (in flatten order) multiplied by {@code
      * elementsPerBlock()}. For every other type the physical shape IS the logical shape and this
-     * returns it unchanged.
+     * returns it unchanged (scalars included; a block-quantized scalar is not representable - rank
+     * 0 has no innermost axis to un-tile - and throws {@link IllegalArgumentException}).
      *
      * <p>This is a pure shape function over a shape in STORAGE axis order (blocked axis last): it
      * un-tiles the last dimension it is handed, so a permuted axis order must be transposed back
@@ -157,8 +159,16 @@ public interface DataType {
      */
     default Shape logicalShape(Shape physical) {
         long epb = elementsPerBlock();
-        if (epb == 1 || physical.isScalar()) {
-            return physical;
+        if (epb == 1) {
+            return physical; // dense: identity, scalars included
+        }
+        if (physical.isScalar()) {
+            throw new IllegalArgumentException(
+                    name()
+                            + ": a rank-0 shape has no innermost axis to un-tile - one block"
+                            + " holds "
+                            + epb
+                            + " elements, never 1");
         }
         long[] dims = physical.toArray(); // flatten order; the last entry is the blocked dim
         dims[dims.length - 1] = Math.multiplyExact(dims[dims.length - 1], epb);
@@ -168,13 +178,21 @@ public interface DataType {
     /**
      * The inverse of {@link #logicalShape(Shape)}: the storage shape for an element-dimensioned
      * shape, dividing the last dimension (in flatten order) by {@code elementsPerBlock()} - which
-     * must divide it exactly, a block is never split. Identity for non-block types; nested shapes
+     * must divide it exactly, a block is never split. Identity for non-block types (scalars
+     * included; a block-quantized scalar throws {@link IllegalArgumentException}); nested shapes
      * keep their structure.
      */
     default Shape physicalShape(Shape logical) {
         long epb = elementsPerBlock();
-        if (epb == 1 || logical.isScalar()) {
-            return logical;
+        if (epb == 1) {
+            return logical; // dense: identity, scalars included
+        }
+        if (logical.isScalar()) {
+            throw new IllegalArgumentException(
+                    name()
+                            + ": a rank-0 shape has no innermost axis to tile into "
+                            + epb
+                            + "-element blocks");
         }
         long[] dims = logical.toArray(); // flatten order; the last entry is the blocked dim
         long last = dims[dims.length - 1];
