@@ -116,13 +116,8 @@ public final class NemotronH
     void forward(State state, int[] tokens, int startPos, int rows) {
         Configuration c = configuration;
         Views.checkAlive(weights.tokenEmbedding, "tokenEmbedding");
-        for (int row = 0; row < rows; row++)
-            Convert.copyToF32(
-                    weights.tokenEmbedding,
-                    (long) tokens[row] * c.embeddingLength,
-                    state.residual,
-                    (long) row * c.embeddingLength,
-                    c.embeddingLength);
+        Convert.gatherToF32(
+                weights.tokenEmbedding, tokens, 0, rows, state.residual, 0, c.embeddingLength);
         for (int layer = 0; layer < c.numberOfLayers; layer++) {
             Norms.rmsnormRows(
                     state.normed,

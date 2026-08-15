@@ -220,4 +220,47 @@ class ConvertTest {
                 UnsupportedOperationException.class,
                 () -> Convert.copyToF32(f64View, 0, Oracles.f32View(dstRouted, n), 0, n));
     }
+
+    /**
+     * gatherToF32 == n per-row copyToF32 calls, bit-identical: the vectorized Q8_0 arm (B2I
+     * sign-extends, I2F is exact for a byte, one f32 multiply - no tier noise) and the per-row
+     * fallback on an FP32 table. Repeats and unordered rows included.
+     */
+    @Test
+    void gatherToF32Parity() {
+        int rows = 8, dim = 96; // 3 Q8_0 blocks per row
+        int[] tokens = {3, 0, 7, 7, 2, 5};
+        long n = (long) rows * dim, out = (long) tokens.length * dim;
+
+        MemorySegment q8 = Oracles.q8(arena, rows, dim, 7);
+        MemoryView<MemorySegment> q8Table = Oracles.q8View(q8, n);
+        MemorySegment expected = arena.allocate(4L * out, 64);
+        MemorySegment actual = arena.allocate(4L * out, 64);
+        for (int r = 0; r < tokens.length; r++) {
+            Convert.copyToF32(
+                    q8Table,
+                    (long) tokens[r] * dim,
+                    Oracles.f32View(expected, out),
+                    (long) r * dim,
+                    dim);
+        }
+        Convert.gatherToF32(
+                q8Table, tokens, 0, tokens.length, Oracles.f32View(actual, out), 0, dim);
+        for (long i = 0; i < out; i++) {
+            assertEquals(getF32(expected, i), getF32(actual, i), "gather Q8_0 at " + i);
+        }
+
+        MemorySegment f32 = Oracles.f32(arena, (int) n, 11);
+        MemoryView<MemorySegment> f32Table = Oracles.f32View(f32, n);
+        Convert.gatherToF32(
+                f32Table, tokens, 0, tokens.length, Oracles.f32View(actual, out), 0, dim);
+        for (int r = 0; r < tokens.length; r++) {
+            for (int i = 0; i < dim; i++) {
+                assertEquals(
+                        getF32(f32, (long) tokens[r] * dim + i),
+                        getF32(actual, (long) r * dim + i),
+                        "gather FP32 row " + r + " at " + i);
+            }
+        }
+    }
 }

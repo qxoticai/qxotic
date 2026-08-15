@@ -157,14 +157,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
         float embScale = config.embeddingScale, residScale = config.residualScale;
 
         Views.checkAlive(w.tokenEmbeddings(), "tokenEmbeddings"); // fail-fast on freed weights
-        for (int s = 0; s < seqLen; s++) {
-            Convert.copyToF32(
-                    w.tokenEmbeddings(),
-                    (long) tokens[s] * dim,
-                    state.residual,
-                    (long) s * dim,
-                    dim);
-        }
+        Convert.gatherToF32(w.tokenEmbeddings(), tokens, 0, seqLen, state.residual, 0, dim);
         if (embScale != 1.0f) {
             Ops.multiplyInPlace(state.residual, 0, Math.multiplyExact(seqLen, dim), embScale);
         }

@@ -150,13 +150,8 @@ public final class GptOss
     private void embed(State state, int[] tokens, int tokenOffset, int seqLen) {
         Views.checkAlive(weights.tokenEmbeddings, "tokenEmbeddings");
         int dim = configuration.embeddingLength;
-        for (int s = 0; s < seqLen; s++)
-            Convert.copyToF32(
-                    weights.tokenEmbeddings,
-                    (long) tokens[tokenOffset + s] * dim,
-                    state.residual,
-                    (long) s * dim,
-                    dim);
+        Convert.gatherToF32(
+                weights.tokenEmbeddings, tokens, tokenOffset, seqLen, state.residual, 0, dim);
     }
 
     private void layer(State state, int l, int startPos, int seqLen) {
