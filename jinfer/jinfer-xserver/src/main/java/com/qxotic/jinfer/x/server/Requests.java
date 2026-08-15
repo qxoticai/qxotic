@@ -84,8 +84,7 @@ final class Requests {
                 && map.get("name") instanceof String name
                 && map.get("function") == null) {
             request.put(
-                    "tool_choice",
-                    Map.of("type", "function", "function", Map.of("name", name)));
+                    "tool_choice", Map.of("type", "function", "function", Map.of("name", name)));
         }
     }
 
@@ -188,9 +187,12 @@ final class Requests {
             String callId = (String) map.get("call_id");
             messages.add(
                     Map.of(
-                            "role", "tool",
-                            "tool_call_id", callId,
-                            "content", responseToolOutput(map.get("output"))));
+                            "role",
+                            "tool",
+                            "tool_call_id",
+                            callId,
+                            "content",
+                            responseToolOutput(map.get("output"))));
             return;
         }
         String role = Values.stringValue(map.get("role"), "user");

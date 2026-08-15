@@ -245,21 +245,11 @@ final class OptionsTest {
         String model = model(dir).toString();
         assertThrows(
                 IllegalArgumentException.class,
-                () ->
-                        Options.parse(
-                                new String[] {
-                                    "-m", model, "--server", "--host", "0.0.0.0"
-                                }));
+                () -> Options.parse(new String[] {"-m", model, "--server", "--host", "0.0.0.0"}));
         Options secured =
                 Options.parse(
                         new String[] {
-                            "-m",
-                            model,
-                            "--server",
-                            "--host",
-                            "0.0.0.0",
-                            "--api-key",
-                            "secret"
+                            "-m", model, "--server", "--host", "0.0.0.0", "--api-key", "secret"
                         });
         assertEquals("secret", secured.apiKey());
     }

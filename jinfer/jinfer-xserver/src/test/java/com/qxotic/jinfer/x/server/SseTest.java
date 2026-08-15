@@ -33,12 +33,10 @@ class SseTest {
                 "text/event-stream; charset=utf-8",
                 exchange.getResponseHeaders().getFirst("Content-Type"));
         assertTrue(
-                body.contains(
-                        "event: first\ndata: {\"type\":\"first\",\"sequence_number\":0}"),
+                body.contains("event: first\ndata: {\"type\":\"first\",\"sequence_number\":0}"),
                 body);
         assertTrue(
-                body.contains(
-                        "event: second\ndata: {\"type\":\"second\",\"sequence_number\":1}"),
+                body.contains("event: second\ndata: {\"type\":\"second\",\"sequence_number\":1}"),
                 body);
         assertTrue(body.endsWith("data: [DONE]\n\n"), body);
     }
@@ -70,8 +68,7 @@ class SseTest {
     @Test
     void theReaperClosesAStalledWriter() throws Exception {
         BlockingOutput output = new BlockingOutput();
-        TestExchange exchange =
-                new TestExchange(new ByteArrayInputStream(new byte[0]), output);
+        TestExchange exchange = new TestExchange(new ByteArrayInputStream(new byte[0]), output);
         AtomicReference<Throwable> failure = new AtomicReference<>();
         Sse.startReaper();
 

@@ -49,8 +49,10 @@ final class Values {
     static long longValue(Object value, long defaultValue) {
         if (value == null) return defaultValue;
         if (value instanceof Number n) {
-            if (n instanceof Byte || n instanceof Short || n instanceof Integer || n instanceof Long)
-                return n.longValue();
+            if (n instanceof Byte
+                    || n instanceof Short
+                    || n instanceof Integer
+                    || n instanceof Long) return n.longValue();
             double wide = n.doubleValue();
             if (!Double.isFinite(wide)
                     || wide != Math.rint(wide)
@@ -69,8 +71,7 @@ final class Values {
                         "Invalid argument: '" + s + "' is not an integer");
             }
         }
-        throw new IllegalArgumentException(
-                "Invalid argument: '" + value + "' is not an integer");
+        throw new IllegalArgumentException("Invalid argument: '" + value + "' is not an integer");
     }
 
     /**
@@ -82,10 +83,8 @@ final class Values {
             StringBuilder sb = new StringBuilder();
             for (Object part : parts) {
                 if (part instanceof Map<?, ?> map
-                        && List.of("text", "input_text", "output_text")
-                                .contains(map.get("type"))) {
-                    Object text =
-                            map.get("text") != null ? map.get("text") : map.get("input_text");
+                        && List.of("text", "input_text", "output_text").contains(map.get("type"))) {
+                    Object text = map.get("text") != null ? map.get("text") : map.get("input_text");
                     if (text != null) sb.append(text);
                 }
             }
@@ -106,7 +105,6 @@ final class Values {
                 throw new IllegalArgumentException("Invalid argument: '" + s + "' is not a number");
             }
         }
-        throw new IllegalArgumentException(
-                "Invalid argument: '" + value + "' is not a number");
+        throw new IllegalArgumentException("Invalid argument: '" + value + "' is not a number");
     }
 }

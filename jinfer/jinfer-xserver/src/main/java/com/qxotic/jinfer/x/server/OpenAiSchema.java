@@ -172,8 +172,7 @@ final class OpenAiSchema {
      */
     static Map<String, Object> responseResponse(
             String id, String modelId, Reply result, List<Map<String, Object>> output) {
-        return responseResponse(
-                id, modelId, System.currentTimeMillis() / 1000, result, output);
+        return responseResponse(id, modelId, System.currentTimeMillis() / 1000, result, output);
     }
 
     static Map<String, Object> responseResponse(
@@ -216,9 +215,7 @@ final class OpenAiSchema {
                 "role",
                 "assistant",
                 "content",
-                "in_progress".equals(status)
-                        ? List.of()
-                        : List.of(outputText(text)));
+                "in_progress".equals(status) ? List.of() : List.of(outputText(text)));
     }
 
     static Map<String, Object> outputText(String text) {

@@ -59,8 +59,7 @@ final class ChatEngineModelTest {
             ChatEngine.Request request = request(List.of(Message.user("Name one color.")));
 
             // blocking: a fresh prompt computes every position
-            ChatEngine.Completion blocking =
-                    engine.complete(request, ChatEngine.ReplySink.NONE);
+            ChatEngine.Completion blocking = engine.complete(request, ChatEngine.ReplySink.NONE);
             assertFalse(blocking.cancelled());
             assertFalse(blocking.reply().text().isBlank());
             assertTrue(blocking.result().completionTokens() > 0);
@@ -97,8 +96,7 @@ final class ChatEngineModelTest {
                                     Message.user("Name one color."),
                                     Message.assistant(blocking.reply().text()),
                                     Message.user("And another?")));
-            ChatEngine.Completion second =
-                    engine.complete(followUp, ChatEngine.ReplySink.NONE);
+            ChatEngine.Completion second = engine.complete(followUp, ChatEngine.ReplySink.NONE);
             assertFalse(second.cancelled());
             assertTrue(
                     second.restoredTokens() > 0,
@@ -115,8 +113,7 @@ final class ChatEngineModelTest {
                             "");
             engine.definePrompt(prefix);
             ChatEngine.Completion fromBlocks =
-                    engine.complete(
-                            request(prefix.messages()), ChatEngine.ReplySink.NONE);
+                    engine.complete(request(prefix.messages()), ChatEngine.ReplySink.NONE);
             assertEquals(PromptCache.Tier.BLOCKS, fromBlocks.tier());
             assertTrue(fromBlocks.restoredTokens() > 0);
 
@@ -140,8 +137,7 @@ final class ChatEngineModelTest {
                 IllegalStateException.class,
                 () ->
                         engine.complete(
-                                request(List.of(Message.user("hi"))),
-                                ChatEngine.ReplySink.NONE));
+                                request(List.of(Message.user("hi"))), ChatEngine.ReplySink.NONE));
         weights.close();
     }
 }

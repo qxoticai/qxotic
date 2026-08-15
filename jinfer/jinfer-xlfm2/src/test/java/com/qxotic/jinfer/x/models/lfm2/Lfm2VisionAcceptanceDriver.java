@@ -365,8 +365,9 @@ final class Lfm2VisionAcceptanceDriver {
             double promptIngestMs = (completedAt - preparedAt) / 1_000_000.0 - decodeMs;
             String answer = completion.reply().text().replace('\n', ' ').strip();
             System.out.printf(
-                    "ACCEPTANCE\t%s\timage=%s\tpromptPositions=%d\tcompletionTokens=%d\tprepareMs=%.1f"
-                            + "\tpromptIngestMs=%.1f\tdecodeMs=%.1f\ttotalMs=%.1f\t%s%n",
+                    "ACCEPTANCE\t%s\timage=%s\tpromptPositions=%d\tcompletionTokens=%d"
+                            + "\tprepareMs=%.1f\tpromptIngestMs=%.1f\tdecodeMs=%.1f\ttotalMs=%.1f"
+                            + "\t%s%n",
                     name,
                     media(messages),
                     prepared.promptTokens(),

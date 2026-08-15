@@ -88,9 +88,7 @@ class WorkerTest {
                                                     }
                                                 }));
         assertTrue(running.await(5, TimeUnit.SECONDS));
-        Thread second =
-                Thread.ofPlatform()
-                        .start(() -> queued.set(worker.submitAndWait(() -> {})));
+        Thread second = Thread.ofPlatform().start(() -> queued.set(worker.submitAndWait(() -> {})));
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
         while (worker.queued() != 1 && System.nanoTime() < deadline) Thread.onSpinWait();
 

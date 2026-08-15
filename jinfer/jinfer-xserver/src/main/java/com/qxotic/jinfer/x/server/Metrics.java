@@ -63,9 +63,7 @@ final class Metrics {
         }
     }
 
-    /**
-     * Record one prompt-cache serve (worker thread); {@code restored} positions were reused.
-     */
+    /** Record one prompt-cache serve (worker thread); {@code restored} positions were reused. */
     synchronized void recordPromptCache(PromptCache.Tier tier, int restored) {
         switch (tier) {
             case SESSION -> {
@@ -99,31 +97,11 @@ final class Metrics {
                 "source",
                 "session",
                 sessionCacheRequests);
-        labeled(
-                sb,
-                "jinfer_prompt_cache_requests_total",
-                "source",
-                "block",
-                blockCacheRequests);
-        labeled(
-                sb,
-                "jinfer_prompt_cache_requests_total",
-                "source",
-                "fresh",
-                freshCacheRequests);
+        labeled(sb, "jinfer_prompt_cache_requests_total", "source", "block", blockCacheRequests);
+        labeled(sb, "jinfer_prompt_cache_requests_total", "source", "fresh", freshCacheRequests);
         type(sb, "jinfer_prompt_cache_tokens_total", "counter");
-        labeled(
-                sb,
-                "jinfer_prompt_cache_tokens_total",
-                "source",
-                "session",
-                sessionCachedTokens);
-        labeled(
-                sb,
-                "jinfer_prompt_cache_tokens_total",
-                "source",
-                "block",
-                blockCachedTokens);
+        labeled(sb, "jinfer_prompt_cache_tokens_total", "source", "session", sessionCachedTokens);
+        labeled(sb, "jinfer_prompt_cache_tokens_total", "source", "block", blockCachedTokens);
         metric(sb, "jinfer_prompt_cache_session_count", "gauge", cache.retainedSessions());
         metric(sb, "jinfer_prompt_cache_session_limit", "gauge", cache.retainedSessionLimit());
         metric(
@@ -135,12 +113,7 @@ final class Metrics {
         metric(sb, "jinfer_prompt_cache_memory_usage_bytes", "gauge", cache.bytes());
         metric(sb, "jinfer_prompt_cache_memory_limit_bytes", "gauge", cache.budgetBytes());
         type(sb, "jinfer_prompt_cache_block_lookups_total", "counter");
-        labeled(
-                sb,
-                "jinfer_prompt_cache_block_lookups_total",
-                "result",
-                "hit",
-                cache.blockHits());
+        labeled(sb, "jinfer_prompt_cache_block_lookups_total", "result", "hit", cache.blockHits());
         labeled(
                 sb,
                 "jinfer_prompt_cache_block_lookups_total",
@@ -160,11 +133,7 @@ final class Metrics {
                 "reason",
                 "discarded",
                 cache.blockDiscards());
-        metric(
-                sb,
-                "jinfer_prompt_cache_block_refusals_total",
-                "counter",
-                cache.blockRefusals());
+        metric(sb, "jinfer_prompt_cache_block_refusals_total", "counter", cache.blockRefusals());
         metric(sb, "jinfer_speculation_requests_total", "counter", speculationRequests);
         metric(sb, "jinfer_speculation_drafted_tokens_total", "counter", draftedTokens);
         metric(sb, "jinfer_speculation_accepted_tokens_total", "counter", acceptedTokens);
@@ -184,11 +153,7 @@ final class Metrics {
     }
 
     private static void labeled(
-            StringBuilder sb,
-            String name,
-            String label,
-            String labelValue,
-            Number value) {
+            StringBuilder sb, String name, String label, String labelValue, Number value) {
         sb.append(name)
                 .append('{')
                 .append(label)

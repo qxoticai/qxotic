@@ -13,8 +13,8 @@ import java.util.List;
 /**
  * The interactive {@code --chat} loop. ONE running conversation: each turn appends the user's
  * message, prepares, completes with the terminal sink, and appends the parsed reply - the engine's
- * own prompt cache carries the KV across turns (the retained session strictly extends), which is what
- * the old CLI hand-rolled with longest-common-prefix tracking and state rebuilds.
+ * own prompt cache carries the KV across turns (the retained session strictly extends), which is
+ * what the old CLI hand-rolled with longest-common-prefix tracking and state rebuilds.
  */
 final class Chat {
 

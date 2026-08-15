@@ -12,11 +12,7 @@ class RequestsTest {
     @Test
     void responsesInputPreservesMediaAndNormalizesTextParts() {
         Map<String, Object> image =
-                Map.of(
-                        "type",
-                        "input_image",
-                        "image_url",
-                        "data:image/png;base64,AA==");
+                Map.of("type", "input_image", "image_url", "data:image/png;base64,AA==");
         Map<String, Object> request =
                 Map.of(
                         "input",
@@ -93,25 +89,16 @@ class RequestsTest {
         Map<?, ?> tool = (Map<?, ?>) messages.get(1);
         assertEquals("call_42", call.get("id"));
         assertEquals("call_42", tool.get("tool_call_id"));
+        assertEquals(List.of(Map.of("type", "text", "text", "Sunny")), tool.get("content"));
         assertEquals(
-                List.of(Map.of("type", "text", "text", "Sunny")), tool.get("content"));
-        assertEquals(
-                Map.of(
-                        "type",
-                        "function",
-                        "function",
-                        Map.of("name", "weather")),
+                Map.of("type", "function", "function", Map.of("name", "weather")),
                 request.get("tool_choice"));
     }
 
     @Test
     void responsesJsonSchemaUsesTheSharedGrammarShape() {
         Map<String, Object> schema =
-                Map.of(
-                        "type",
-                        "object",
-                        "properties",
-                        Map.of("answer", Map.of("type", "string")));
+                Map.of("type", "object", "properties", Map.of("answer", Map.of("type", "string")));
         Map<String, Object> request =
                 new HashMap<>(
                         Map.of(

@@ -102,8 +102,7 @@ final class Validation {
                     List.of("auto", "none", "required").contains(s),
                     "tool_choice must be auto, none, required, or a function choice object");
             require(
-                    !"required".equals(s)
-                            || tools instanceof List<?> offered && !offered.isEmpty(),
+                    !"required".equals(s) || tools instanceof List<?> offered && !offered.isEmpty(),
                     "tool_choice required needs at least one tool");
         } else if (toolChoice instanceof Map<?, ?> map) {
             require(
@@ -124,8 +123,7 @@ final class Validation {
     static void validateChatOptions(Map<String, Object> request) {
         if (present(request, "modalities")) {
             require(
-                    Values.asArray(request.get("modalities"), "modalities")
-                            .equals(List.of("text")),
+                    Values.asArray(request.get("modalities"), "modalities").equals(List.of("text")),
                     "Only text output modality is supported");
         }
         require(!present(request, "audio"), "audio output is not supported");
@@ -229,8 +227,7 @@ final class Validation {
         if (present(request, "response_format")) {
             Values.asObject(request.get("response_format"), "response_format");
         }
-        boolean usesGrammar =
-                request.get("grammar") instanceof String source && !source.isBlank();
+        boolean usesGrammar = request.get("grammar") instanceof String source && !source.isBlank();
         if (request.get("response_format") instanceof Map<?, ?> format) {
             usesGrammar |=
                     "json_object".equals(format.get("type"))
@@ -294,8 +291,7 @@ final class Validation {
                 "logprobs is not supported");
         require(!present(request, "logit_bias"), "logit_bias is not supported");
         require(
-                !present(request, "frequency_penalty")
-                        && !present(request, "presence_penalty"),
+                !present(request, "frequency_penalty") && !present(request, "presence_penalty"),
                 "frequency_penalty and presence_penalty are not supported");
     }
 

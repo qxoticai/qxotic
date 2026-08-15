@@ -20,8 +20,8 @@ import com.qxotic.jinfer.x.chat.Channel;
 import com.qxotic.jinfer.x.chat.ChatTemplate;
 import com.qxotic.jinfer.x.chat.Content;
 import com.qxotic.jinfer.x.chat.Conversation;
-import com.qxotic.jinfer.x.chat.Message;
 import com.qxotic.jinfer.x.chat.MediaEncodingCache;
+import com.qxotic.jinfer.x.chat.Message;
 import com.qxotic.jinfer.x.chat.Role;
 import com.qxotic.jinfer.x.chat.Tool;
 import com.qxotic.jinfer.x.chat.UnsupportedConversation;
@@ -360,8 +360,7 @@ final class Lfm2ChatTemplateTest {
                     new Conversation(
                             List.of(
                                     new Message(
-                                            Role.USER,
-                                            List.of(new Content.Media(sentinel, key))))),
+                                            Role.USER, List.of(new Content.Media(sentinel, key))))),
                     256,
                     mediaCache,
                     batch -> {

@@ -44,8 +44,7 @@ class MetricsTest {
             String text =
                     metrics.exposition(
                             worker,
-                            new PromptCache.Sample(
-                                    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13));
+                            new PromptCache.Sample(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13));
             assertTrue(text.contains("jinfer_generations_completed_total 1"), text);
             assertTrue(text.contains("jinfer_generation_requests_invalid_total 1"), text);
             assertTrue(text.contains("jinfer_generation_requests_rejected_total 1"), text);
@@ -56,22 +55,18 @@ class MetricsTest {
             assertTrue(text.contains("jinfer_speculation_accepted_tokens_total 3"), text);
             assertTrue(text.contains("jinfer_speculation_forwards_total 2"), text);
             assertTrue(
-                    text.contains(
-                            "jinfer_prompt_cache_requests_total{source=\"session\"} 1"),
+                    text.contains("jinfer_prompt_cache_requests_total{source=\"session\"} 1"),
                     text);
-            assertTrue(
-                    text.contains("jinfer_prompt_cache_tokens_total{source=\"block\"} 3"), text);
+            assertTrue(text.contains("jinfer_prompt_cache_tokens_total{source=\"block\"} 3"), text);
             assertTrue(text.contains("jinfer_prompt_cache_session_count 1"), text);
             assertTrue(text.contains("jinfer_prompt_cache_session_limit 2"), text);
             assertTrue(text.contains("jinfer_prompt_cache_state_allocations_total 4"), text);
             assertTrue(text.contains("jinfer_prompt_cache_memory_usage_bytes 7"), text);
             assertTrue(
-                    text.contains(
-                            "jinfer_prompt_cache_block_lookups_total{result=\"hit\"} 9"),
+                    text.contains("jinfer_prompt_cache_block_lookups_total{result=\"hit\"} 9"),
                     text);
             assertTrue(
-                    text.contains(
-                            "jinfer_prompt_cache_block_lookups_total{result=\"miss\"} 10"),
+                    text.contains("jinfer_prompt_cache_block_lookups_total{result=\"miss\"} 10"),
                     text);
             assertTrue(
                     text.contains(
