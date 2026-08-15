@@ -19,7 +19,7 @@ HIP/ROCm backend for Jota on AMD GPUs.
 ```xml
 <dependency>
   <groupId>com.qxotic</groupId>
-  <artifactId>jota</artifactId>
+  <artifactId>jota-tensor</artifactId>
   <version>${qxotic.version}</version>
 </dependency>
 <dependency>

@@ -16,6 +16,8 @@
 
   <modules>
     <module>jota-core</module>
+    <module>jota-memory</module>
+    <module>jota-tensor</module>
     <module>jota-backend-panama</module>
     <module>jota-backend-c</module>
     <module>jota-graal</module>
