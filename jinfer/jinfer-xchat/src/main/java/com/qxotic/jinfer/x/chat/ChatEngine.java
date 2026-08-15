@@ -170,8 +170,9 @@ public final class ChatEngine implements AutoCloseable {
         PromptCache<?> built = null;
         try {
             // PromptCache.of reads the model's capabilities itself (codec-less = sessions-only,
-            // coarse = define-only writes); a zero budget is the block layer's off-switch, and an
-            // explicit catalog still mounts - the caller pointed at an artifact on purpose
+            // coarse = define-only writes); a zero budget is the block layer's off-switch. An
+            // explicit catalog against a codec-less model is REFUSED there - the caller pointed
+            // at an artifact nothing could ever be written to
             built = PromptCache.of(loaded.model(), loaded.seed(), cacheOptions);
             this.cache = built;
             // inside the try: a malformed chat template in the GGUF throws at compile, and an
@@ -235,12 +236,15 @@ public final class ChatEngine implements AutoCloseable {
         return modelName;
     }
 
-    /** Drafts per verify block for self-speculation, 0 = off; inert without a draft head. */
+    /**
+     * Drafts per verify block; 0 selects plain decoding. Embedded draft state may still be
+     * maintained so cached sessions remain valid if the depth changes later.
+     */
     public int speculationDepth() {
         return speculationDepth;
     }
 
-    /** Sets the self-speculation depth, 0..8 (0 disables); returns this engine. */
+    /** Sets the self-speculation depth, 0..8 (0 selects plain decoding); returns this engine. */
     public ChatEngine speculationDepth(int depth) {
         if (depth < 0 || depth > 8) {
             throw new IllegalArgumentException("speculation depth " + depth + " outside 0..8");
@@ -1055,8 +1059,8 @@ public final class ChatEngine implements AutoCloseable {
      * thing that matches (a live session it strictly extends, else the longest block prefix, else
      * fresh compute on a recycled state) and the pass only generates - each decode token joins the
      * cache step-time through the {@code onIngested} hook, so the reply stays per-position
-     * resumable and the retained stream stays in lockstep. Which layers exist (sessions-only, define-only
-     * coarse, full) was decided once, at construction, by what the model supports.
+     * resumable and the retained stream stays in lockstep. Which layers exist (sessions-only,
+     * define-only coarse, full) was decided once, at construction, by what the model supports.
      */
     @SuppressWarnings("unchecked")
     private <S extends RuntimeState> Outcome run(
