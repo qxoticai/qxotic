@@ -20,23 +20,31 @@ import com.qxotic.jinfer.x.kernels.Norms;
 import com.qxotic.jinfer.x.kernels.Ops;
 import com.qxotic.jinfer.x.kernels.RoPE;
 import com.qxotic.jinfer.x.kernels.Trace;
+import com.qxotic.jinfer.x.llm.Generator.Constraints;
+import com.qxotic.jinfer.x.llm.Generator.GenerationListener;
+import com.qxotic.jinfer.x.llm.Sampler;
+import com.qxotic.jinfer.x.llm.SpeculativeDecoding;
+import com.qxotic.jinfer.x.llm.SpeculativeDecoding.SpeculationAudit;
+import com.qxotic.jinfer.x.llm.SpeculativeDecoding.SpeculationResult;
 import com.qxotic.jota.DataType;
+import com.qxotic.jota.memory.MemoryAllocator;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.lang.ref.Reference;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 
 /** Text-only MemoryView port of the hybrid Qwen3.5 gated-delta/full-attention decoder. */
 public final class Qwen35
-        implements LanguageModel<Qwen35.Configuration, Qwen35.Weights, Qwen35.State> {
+        implements LanguageModel<Qwen35.Configuration, Qwen35.Weights, Qwen35.State>,
+                SpeculativeDecoding<Qwen35.State> {
     private final Configuration configuration;
     private final Tokenizer tokenizer;
     private final Weights weights;
@@ -73,8 +81,6 @@ public final class Qwen35
 
     @Override
     public void forward(State state, Batch batch) {
-        if (batch.outputs() != Batch.Outputs.LAST)
-            throw new UnsupportedOperationException("x Qwen3.5 supports LAST output only");
         int rows = batch.count();
         if (rows <= 0) throw new IllegalArgumentException("Qwen3.5 token batch must not be empty");
         if (rows > state.batchCapacity)
@@ -110,7 +116,7 @@ public final class Qwen35
                         return null;
                     });
         else forward(state, tokens, start, rows);
-        state.advance(rows, Batch.Outputs.LAST);
+        state.advance(rows, batch.outputs());
     }
 
     void forward(State state, int[] tokens, int startPos, int rows) {
@@ -125,30 +131,120 @@ public final class Qwen35
                     state.residual,
                     (long) row * c.embeddingLength,
                     c.embeddingLength);
-        for (int layer = 0; layer < c.numberOfLayers; layer++) {
+        for (int layer = 0; layer < c.numberOfLayers; layer++)
+            decoderBlock(state, layer, startPos, rows);
+        if (c.hasMtp()) {
             Norms.rmsnormRows(
-                    state.normed,
+                    state.targetHidden,
                     state.residual,
-                    weights.attnNorm[layer],
+                    weights.outputNorm,
                     rows,
                     c.embeddingLength,
                     c.rmsNormEps);
-            if (c.isFullAttention[layer]) attention(state, layer, startPos, rows);
-            else delta(state, layer, rows);
-            Ops.addInPlace(state.residual, 0, state.branch, 0, rows * c.embeddingLength);
-            Norms.rmsnormRows(
-                    state.normed,
-                    state.residual,
-                    weights.postAttentionNorm[layer],
-                    rows,
-                    c.embeddingLength,
-                    c.rmsNormEps);
-            if (c.isMoE()) moe(state, layer, rows);
-            else denseFfn(state, layer, rows);
-            Ops.addInPlace(state.residual, 0, state.branch, 0, rows * c.embeddingLength);
-            if (Trace.ENABLED)
-                Trace.sum("l_out-" + layer, state.residual, rows * c.embeddingLength);
+            synchronizeMtp(state, tokens, startPos, rows);
         }
+    }
+
+    private void decoderBlock(State state, int layer, int startPos, int rows) {
+        Configuration c = configuration;
+        Norms.rmsnormRows(
+                state.normed,
+                state.residual,
+                weights.attnNorm[layer],
+                rows,
+                c.embeddingLength,
+                c.rmsNormEps);
+        if (c.isFullAttention[layer]) attention(state, layer, startPos, rows);
+        else delta(state, layer, rows);
+        Ops.addInPlace(state.residual, 0, state.branch, 0, rows * c.embeddingLength);
+        Norms.rmsnormRows(
+                state.normed,
+                state.residual,
+                weights.postAttentionNorm[layer],
+                rows,
+                c.embeddingLength,
+                c.rmsNormEps);
+        if (c.isMoE()) moe(state, layer, rows);
+        else denseFfn(state, layer, rows);
+        Ops.addInPlace(state.residual, 0, state.branch, 0, rows * c.embeddingLength);
+        if (Trace.ENABLED) Trace.sum("l_out-" + layer, state.residual, rows * c.embeddingLength);
+    }
+
+    /** Keeps the embedded MTP block's KV prefix aligned with every committed target token. */
+    private void synchronizeMtp(State state, int[] tokens, int startPos, int rows) {
+        Configuration c = configuration;
+        NextNWeights nextn = weights.nextn;
+        int dim = c.embeddingLength;
+        for (int row = 0; row < rows; row++) {
+            long concat = (long) row * 2 * dim;
+            Convert.copyToF32(
+                    nextn.tokenEmbedding,
+                    (long) tokens[row] * dim,
+                    state.normed,
+                    (long) row * dim,
+                    dim);
+            Norms.rmsnorm(
+                    state.mtpConcat,
+                    concat,
+                    state.normed,
+                    (long) row * dim,
+                    nextn.embeddingNorm,
+                    dim,
+                    c.rmsNormEps);
+            MemoryView<MemorySegment> hidden = row == 0 ? state.pendingHidden : state.targetHidden;
+            long hiddenOffset = row == 0 ? 0 : (long) (row - 1) * dim;
+            Norms.rmsnorm(
+                    state.mtpConcat,
+                    concat + dim,
+                    hidden,
+                    hiddenOffset,
+                    nextn.hiddenNorm,
+                    dim,
+                    c.rmsNormEps);
+        }
+        Convert.copyF32(state.targetHidden, (long) (rows - 1) * dim, state.pendingHidden, 0, dim);
+        MatMul.gemm(
+                nextn.inputProjection,
+                state.mtpConcat,
+                2 * dim,
+                state.residual,
+                dim,
+                dim,
+                rows,
+                2 * dim);
+        decoderBlock(state, c.mtpLayer(), startPos, rows);
+    }
+
+    /** Fills {@code candidates[1..depth]} from the exact target seed in {@code candidates[0]}. */
+    void draft(State state, int depth, int[] candidates) {
+        Parallel.onDecodePool(
+                () -> {
+                    MemoryView<MemorySegment> hidden = state.pendingHidden;
+                    int token = candidates[0];
+                    int position = state.position();
+                    for (int i = 1; i <= depth; i++) {
+                        draftOne(state, token, hidden, position + i - 1);
+                        token = Ops.argmax(state.logits, 0, configuration.vocabularySize);
+                        candidates[i] = token;
+                        hidden = state.normed;
+                    }
+                    return null;
+                });
+    }
+
+    private void draftOne(State state, int token, MemoryView<MemorySegment> hidden, int position) {
+        Configuration c = configuration;
+        NextNWeights nextn = weights.nextn;
+        int dim = c.embeddingLength;
+        if (weights.rope != null)
+            RoPE.fill(state.ropeCos, state.ropeSin, position, 1, weights.ropeHalf, weights.rope);
+        Norms.rmsnorm(state.mtpConcat, dim, hidden, 0, nextn.hiddenNorm, dim, c.rmsNormEps);
+        Convert.copyToF32(nextn.tokenEmbedding, (long) token * dim, state.normed, 0, dim);
+        Norms.rmsnorm(state.mtpConcat, 0, state.normed, 0, nextn.embeddingNorm, dim, c.rmsNormEps);
+        MatMul.gemv(nextn.inputProjection, state.mtpConcat, state.residual, dim, 2 * dim);
+        decoderBlock(state, c.mtpLayer(), position, 1);
+        Norms.rmsnorm(state.normed, 0, state.residual, 0, nextn.outputNorm, dim, c.rmsNormEps);
+        MatMul.gemv(nextn.outputWeight, state.normed, state.logits, c.vocabularySize, dim);
     }
 
     private void attention(State s, int layer, int startPos, int rows) {
@@ -442,19 +538,25 @@ public final class Qwen35
 
     @Override
     public MemoryView<?> head(State state, int output) {
-        if (output != 0)
-            throw new UnsupportedOperationException("x Qwen3.5 retains only LAST output 0");
+        if (output < 0 || output >= state.outputCount)
+            throw new IllegalArgumentException(
+                    "output " + output + " outside [0," + state.outputCount + ")");
         int dim = configuration.embeddingLength;
+        int row = state.lastChunkLen - state.outputCount + output;
         return Parallel.onDecodePool(
                 () -> {
-                    Norms.rmsnorm(
-                            state.normed,
-                            0,
-                            state.residual,
-                            (long) (state.lastChunkLen - 1) * dim,
-                            weights.outputNorm,
-                            dim,
-                            configuration.rmsNormEps);
+                    if (configuration.hasMtp()) {
+                        Convert.copyF32(state.targetHidden, (long) row * dim, state.normed, 0, dim);
+                    } else {
+                        Norms.rmsnorm(
+                                state.normed,
+                                0,
+                                state.residual,
+                                (long) row * dim,
+                                weights.outputNorm,
+                                dim,
+                                configuration.rmsNormEps);
+                    }
                     MatMul.gemv(
                             weights.outputWeight,
                             state.normed,
@@ -465,9 +567,85 @@ public final class Qwen35
                 });
     }
 
+    void logitsAll(State state, MemoryView<MemorySegment> destination) {
+        int dim = configuration.embeddingLength;
+        int rows = state.outputCount;
+        int first = state.lastChunkLen - rows;
+        Parallel.onDecodePool(
+                () -> {
+                    if (configuration.hasMtp()) {
+                        Convert.copyF32(
+                                state.targetHidden,
+                                (long) first * dim,
+                                state.normed,
+                                0,
+                                rows * dim);
+                    } else {
+                        for (int row = 0; row < rows; row++)
+                            Norms.rmsnorm(
+                                    state.normed,
+                                    (long) row * dim,
+                                    state.residual,
+                                    (long) (first + row) * dim,
+                                    weights.outputNorm,
+                                    dim,
+                                    configuration.rmsNormEps);
+                    }
+                    MatMul.gemm(
+                            weights.outputWeight,
+                            state.normed,
+                            dim,
+                            destination,
+                            configuration.vocabularySize,
+                            configuration.vocabularySize,
+                            rows,
+                            dim);
+                    return null;
+                });
+        Reference.reachabilityFence(state);
+    }
+
+    @Override
+    public boolean speculationReady() {
+        return weights.nextn != null;
+    }
+
+    @Override
+    public SpeculationResult speculate(
+            State state,
+            Sampler sampler,
+            Constraints constraints,
+            int depth,
+            GenerationListener listener,
+            SpeculationAudit audit) {
+        int capacity = state.contextCapacity();
+        int budget =
+                constraints.maxTokens() == Constraints.UNLIMITED
+                        ? capacity - state.position()
+                        : Math.min(constraints.maxTokens(), capacity - state.position());
+        long timeoutNanos = constraints.timeout().isZero() ? 0 : constraints.timeout().toNanos();
+        state.enter();
+        try {
+            return Qwen35Speculative.generate(
+                    this,
+                    state,
+                    budget,
+                    timeoutNanos,
+                    constraints.stopTokens(),
+                    depth,
+                    sampler,
+                    listener,
+                    audit);
+        } finally {
+            state.exit();
+            Reference.reachabilityFence(this);
+        }
+    }
+
     public record Configuration(
             int embeddingLength,
             int numberOfLayers,
+            int nextnPredictLayers,
             int numberOfHeads,
             int numberOfKeyValueHeads,
             int headSize,
@@ -507,7 +685,28 @@ public final class Qwen35
         boolean isMoE() {
             return expertCount > 0;
         }
+
+        int storedLayers() {
+            return numberOfLayers + nextnPredictLayers;
+        }
+
+        boolean hasMtp() {
+            return nextnPredictLayers == 1;
+        }
+
+        int mtpLayer() {
+            if (!hasMtp()) throw new IllegalStateException("Qwen3.5 model has no MTP layer");
+            return numberOfLayers;
+        }
     }
+
+    public record NextNWeights(
+            MemoryView<MemorySegment> tokenEmbedding,
+            MemoryView<MemorySegment> embeddingNorm,
+            MemoryView<MemorySegment> hiddenNorm,
+            MemoryView<MemorySegment> inputProjection,
+            MemoryView<MemorySegment> outputNorm,
+            MemoryView<MemorySegment> outputWeight) {}
 
     public record Weights(
             MemoryView<MemorySegment> tokenEmbedding,
@@ -542,11 +741,13 @@ public final class Qwen35
             MemoryView<MemorySegment>[] moeSharedDown,
             MemoryView<MemorySegment>[] moeSharedInputGate,
             RoPE.Schedule rope,
-            int ropeHalf) {}
+            int ropeHalf,
+            NextNWeights nextn) {}
 
     public static final class State extends BaseState {
         final int contextCapacity, batchCapacity;
         final MemoryView<MemorySegment> residual, normed, branch, logits;
+        final MemoryView<MemorySegment> targetHidden, mtpConcat, pendingHidden;
         final MemoryView<MemorySegment> packedQ,
                 q,
                 k,
@@ -565,6 +766,11 @@ public final class Qwen35
         final int[] moeExpertCounts, moeRowTopE;
         final float[] moeRowTopP;
         final Moe.Routing moeRouting;
+        Qwen35Speculative.Scratch specScratch;
+
+        MemoryAllocator<MemorySegment> specArena() {
+            return memoryArena();
+        }
 
         @SuppressWarnings("unchecked")
         State(Configuration c, int contextCapacity, int batchCapacity, Arena arena) {
@@ -587,6 +793,9 @@ public final class Qwen35
             normed = Views.allocateF32(memoryArena(), b, dim);
             branch = Views.allocateF32(memoryArena(), b, dim);
             logits = Views.allocateF32(memoryArena(), c.vocabularySize);
+            targetHidden = c.hasMtp() ? Views.allocateF32(memoryArena(), b, dim) : null;
+            mtpConcat = c.hasMtp() ? Views.allocateF32(memoryArena(), b, 2L * dim) : null;
+            pendingHidden = c.hasMtp() ? Views.allocateF32(memoryArena(), dim) : null;
             packedQ = Views.allocateF32(memoryArena(), b, 2 * qd);
             q = Views.allocateF32(memoryArena(), b, qd);
             k = Views.allocateF32(memoryArena(), b, kvd);
@@ -615,11 +824,11 @@ public final class Qwen35
             ssmDelta = Views.allocateF32(memoryArena(), heads, hd);
             hidden = Views.allocateF32(memoryArena(), b, Math.max(1, maxHidden));
             hidden2 = Views.allocateF32(memoryArena(), b, Math.max(1, maxHidden));
-            keyCache = new MemoryView[c.numberOfLayers];
-            valueCache = new MemoryView[c.numberOfLayers];
-            convState = new MemoryView[c.numberOfLayers];
-            recurrentState = new MemoryView[c.numberOfLayers];
-            for (int l = 0; l < c.numberOfLayers; l++) {
+            keyCache = new MemoryView[c.storedLayers()];
+            valueCache = new MemoryView[c.storedLayers()];
+            convState = new MemoryView[c.storedLayers()];
+            recurrentState = new MemoryView[c.storedLayers()];
+            for (int l = 0; l < c.storedLayers(); l++) {
                 if (c.isFullAttention[l]) {
                     keyCache[l] = Views.allocateF16(memoryArena(), contextCapacity, kvd);
                     valueCache[l] = Views.allocateF16(memoryArena(), contextCapacity, kvd);
@@ -670,6 +879,8 @@ public final class Qwen35
             for (MemoryView<MemorySegment> state : recurrentState)
                 if (state != null)
                     Ops.fillInPlace(state, 0, Math.toIntExact(state.logicalSize()), 0f);
+            if (pendingHidden != null)
+                Ops.fillInPlace(pendingHidden, 0, Math.toIntExact(pendingHidden.logicalSize()), 0f);
         }
     }
 
@@ -693,7 +904,16 @@ public final class Qwen35
             tokenizer = GGUFTokenizerLoader.createBuilderWithBuiltins().build().fromGGUF(gguf);
         int context = gguf.getValue(int.class, arch + ".context_length");
         int dim = gguf.getValue(int.class, arch + ".embedding_length");
-        int layers = gguf.getValue(int.class, arch + ".block_count");
+        int storedLayers = gguf.getValue(int.class, arch + ".block_count");
+        int nextnLayers = gguf.getValueOrDefault(int.class, arch + ".nextn_predict_layers", 0);
+        if (nextnLayers < 0 || nextnLayers > 1)
+            throw new IllegalArgumentException(
+                    "unsupported "
+                            + arch
+                            + ".nextn_predict_layers="
+                            + nextnLayers
+                            + " (expected 0 or 1)");
+        int layers = storedLayers - nextnLayers;
         int heads = gguf.getValue(int.class, arch + ".attention.head_count");
         int kvHeads = gguf.getValue(int.class, arch + ".attention.head_count_kv");
         int headSize =
@@ -730,12 +950,14 @@ public final class Qwen35
                 || (expertCount > 0
                         && (expertUsed <= 0 || expertUsed > expertCount || expertFfn <= 0)))
             throw new IllegalArgumentException("inconsistent Qwen3.5 FFN dimensions");
-        boolean[] full = new boolean[layers];
+        boolean[] full = new boolean[storedLayers];
         for (int i = 0; i < layers; i++) full[i] = (i + 1) % interval == 0;
+        if (nextnLayers == 1) full[layers] = true;
         Configuration config =
                 new Configuration(
                         dim,
                         layers,
+                        nextnLayers,
                         heads,
                         kvHeads,
                         headSize,
@@ -761,77 +983,126 @@ public final class Qwen35
     }
 
     static Weights loadWeights(Map<String, MemoryView<MemorySegment>> tensors, Configuration c) {
-        int n = c.numberOfLayers;
+        if (!c.hasMtp() && tensors.keySet().stream().anyMatch(name -> name.contains(".nextn.")))
+            throw new IllegalArgumentException(
+                    "Qwen3.5 GGUF contains nextn tensors but declares nextn_predict_layers=0");
+        int n = c.storedLayers();
         MemoryView<MemorySegment> embedding = require(tensors, "token_embd.weight");
+        MemoryView<MemorySegment> outputNorm = requireF32(tensors, "output_norm.weight");
         MemoryView<MemorySegment> output =
                 tensors.containsKey("output.weight")
                         ? require(tensors, "output.weight")
                         : embedding;
         int ropeDim = Math.max(0, Math.min(c.ropeDimensionCount, c.headSize) & ~1);
+        NextNWeights nextn = null;
+        if (c.hasMtp()) {
+            String block = p(c.mtpLayer()) + "nextn.";
+            nextn =
+                    new NextNWeights(
+                            tensors.getOrDefault(block + "embed_tokens.weight", embedding),
+                            requireF32(tensors, block + "enorm.weight"),
+                            requireF32(tensors, block + "hnorm.weight"),
+                            require(tensors, block + "eh_proj.weight"),
+                            tensors.containsKey(block + "shared_head_norm.weight")
+                                    ? requireF32(tensors, block + "shared_head_norm.weight")
+                                    : outputNorm,
+                            tensors.getOrDefault(block + "shared_head_head.weight", output));
+        }
+        boolean moe = c.isMoE(), shared = moe && c.expertSharedFeedForwardLength > 0;
         return new Weights(
                 embedding,
-                requireF32(tensors, "output_norm.weight"),
+                outputNorm,
                 output,
                 array(n, i -> requireF32(tensors, p(i) + "attn_norm.weight")),
                 array(n, i -> requireF32(tensors, p(i) + "post_attention_norm.weight")),
-                array(n, i -> find(tensors, p(i) + "attn_q.weight")),
-                array(n, i -> find(tensors, p(i) + "attn_k.weight")),
-                array(n, i -> find(tensors, p(i) + "attn_v.weight")),
-                array(n, i -> find(tensors, p(i) + "attn_output.weight")),
-                array(n, i -> findF32(tensors, p(i) + "attn_q_norm.weight")),
-                array(n, i -> findF32(tensors, p(i) + "attn_k_norm.weight")),
-                array(n, i -> find(tensors, p(i) + "attn_qkv.weight")),
-                array(n, i -> find(tensors, p(i) + "attn_gate.weight")),
-                array(n, i -> find(tensors, p(i) + "ssm_alpha.weight")),
-                array(n, i -> find(tensors, p(i) + "ssm_beta.weight")),
-                array(n, i -> find(tensors, p(i) + "ssm_out.weight")),
-                array(n, i -> findF32(tensors, p(i) + "ssm_conv1d.weight")),
-                array(n, i -> findF32(tensors, p(i) + "ssm_a")),
-                array(n, i -> findF32(tensors, p(i) + "ssm_dt.bias")),
-                array(n, i -> findF32(tensors, p(i) + "ssm_norm.weight")),
-                array(n, i -> find(tensors, p(i) + "ffn_gate.weight")),
-                array(n, i -> find(tensors, p(i) + "ffn_up.weight")),
-                array(n, i -> find(tensors, p(i) + "ffn_down.weight")),
+                array(n, i -> requireIf(tensors, c.isFullAttention[i], p(i) + "attn_q.weight")),
+                array(n, i -> requireIf(tensors, c.isFullAttention[i], p(i) + "attn_k.weight")),
+                array(n, i -> requireIf(tensors, c.isFullAttention[i], p(i) + "attn_v.weight")),
+                array(
+                        n,
+                        i -> requireIf(tensors, c.isFullAttention[i], p(i) + "attn_output.weight")),
                 array(
                         n,
                         i ->
-                                first(
+                                requireF32If(
                                         tensors,
+                                        c.isFullAttention[i],
+                                        p(i) + "attn_q_norm.weight")),
+                array(
+                        n,
+                        i ->
+                                requireF32If(
+                                        tensors,
+                                        c.isFullAttention[i],
+                                        p(i) + "attn_k_norm.weight")),
+                array(n, i -> requireIf(tensors, !c.isFullAttention[i], p(i) + "attn_qkv.weight")),
+                array(n, i -> requireIf(tensors, !c.isFullAttention[i], p(i) + "attn_gate.weight")),
+                array(n, i -> requireIf(tensors, !c.isFullAttention[i], p(i) + "ssm_alpha.weight")),
+                array(n, i -> requireIf(tensors, !c.isFullAttention[i], p(i) + "ssm_beta.weight")),
+                array(n, i -> requireIf(tensors, !c.isFullAttention[i], p(i) + "ssm_out.weight")),
+                array(
+                        n,
+                        i ->
+                                requireF32If(
+                                        tensors,
+                                        !c.isFullAttention[i],
+                                        p(i) + "ssm_conv1d.weight")),
+                array(n, i -> requireF32If(tensors, !c.isFullAttention[i], p(i) + "ssm_a")),
+                array(n, i -> requireF32If(tensors, !c.isFullAttention[i], p(i) + "ssm_dt.bias")),
+                array(
+                        n,
+                        i ->
+                                requireF32If(
+                                        tensors, !c.isFullAttention[i], p(i) + "ssm_norm.weight")),
+                array(n, i -> requireIf(tensors, !moe, p(i) + "ffn_gate.weight")),
+                array(n, i -> requireIf(tensors, !moe, p(i) + "ffn_up.weight")),
+                array(n, i -> requireIf(tensors, !moe, p(i) + "ffn_down.weight")),
+                array(
+                        n,
+                        i ->
+                                requireFirstIf(
+                                        tensors,
+                                        moe,
                                         p(i) + "ffn_gate_inp.weight",
                                         p(i) + "ffn_router.weight")),
-                array(n, i -> find(tensors, p(i) + "ffn_gate_exps.weight")),
-                array(n, i -> find(tensors, p(i) + "ffn_up_exps.weight")),
-                array(n, i -> find(tensors, p(i) + "ffn_down_exps.weight")),
+                array(n, i -> requireIf(tensors, moe, p(i) + "ffn_gate_exps.weight")),
+                array(n, i -> requireIf(tensors, moe, p(i) + "ffn_up_exps.weight")),
+                array(n, i -> requireIf(tensors, moe, p(i) + "ffn_down_exps.weight")),
                 array(
                         n,
                         i ->
-                                first(
+                                requireFirstIf(
                                         tensors,
+                                        shared,
                                         p(i) + "ffn_gate_shexp.weight",
                                         p(i) + "ffn_shared_expert_gate.weight")),
                 array(
                         n,
                         i ->
-                                first(
+                                requireFirstIf(
                                         tensors,
+                                        shared,
                                         p(i) + "ffn_up_shexp.weight",
                                         p(i) + "ffn_shared_expert_up.weight")),
                 array(
                         n,
                         i ->
-                                first(
+                                requireFirstIf(
                                         tensors,
+                                        shared,
                                         p(i) + "ffn_down_shexp.weight",
                                         p(i) + "ffn_shared_expert_down.weight")),
                 array(
                         n,
                         i ->
-                                first(
+                                requireFirstIf(
                                         tensors,
+                                        shared,
                                         p(i) + "ffn_gate_inp_shexp.weight",
                                         p(i) + "ffn_shared_expert_gate_inp.weight")),
                 ropeDim == 0 ? null : RoPE.plain(ropeDim, c.ropeTheta),
-                ropeDim / 2);
+                ropeDim / 2,
+                nextn);
     }
 
     private interface ViewAt {
@@ -851,7 +1122,9 @@ public final class Qwen35
 
     private static MemoryView<MemorySegment> require(
             Map<String, MemoryView<MemorySegment>> tensors, String name) {
-        return Objects.requireNonNull(tensors.get(name), name);
+        MemoryView<MemorySegment> view = tensors.get(name);
+        if (view == null) throw new IllegalArgumentException("Qwen3.5 GGUF is missing " + name);
+        return view;
     }
 
     private static MemoryView<MemorySegment> requireF32(
@@ -861,20 +1134,24 @@ public final class Qwen35
         return view;
     }
 
-    private static MemoryView<MemorySegment> find(
-            Map<String, MemoryView<MemorySegment>> tensors, String name) {
-        return tensors.get(name);
+    private static MemoryView<MemorySegment> requireIf(
+            Map<String, MemoryView<MemorySegment>> tensors, boolean required, String name) {
+        return required ? require(tensors, name) : null;
     }
 
-    private static MemoryView<MemorySegment> findF32(
-            Map<String, MemoryView<MemorySegment>> tensors, String name) {
-        MemoryView<MemorySegment> view = tensors.get(name);
-        if (view != null) Views.requireDatatype(view, DataType.FP32, name);
+    private static MemoryView<MemorySegment> requireF32If(
+            Map<String, MemoryView<MemorySegment>> tensors, boolean required, String name) {
+        return required ? requireF32(tensors, name) : null;
+    }
+
+    private static MemoryView<MemorySegment> requireFirstIf(
+            Map<String, MemoryView<MemorySegment>> tensors,
+            boolean required,
+            String first,
+            String second) {
+        if (!required) return null;
+        MemoryView<MemorySegment> view = ModelLoader.firstPresent(tensors, first, second);
+        if (view == null) throw new IllegalArgumentException("Qwen3.5 GGUF is missing " + first);
         return view;
-    }
-
-    private static MemoryView<MemorySegment> first(
-            Map<String, MemoryView<MemorySegment>> tensors, String... names) {
-        return ModelLoader.firstPresent(tensors, names);
     }
 }

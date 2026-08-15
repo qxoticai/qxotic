@@ -62,6 +62,15 @@ class XQwen35Test {
                 for (int i = 0; i < first.length; i++)
                     max = Math.max(max, Math.abs(first[i] - reset[i]));
                 assertTrue(max < TOLERANCE, "reset prefill logits diverged: " + max);
+
+                xState.reset();
+                x.ingest(xState, Batch.score(prompt));
+                assertEquals(prompt.length, xState.outputCount(), "ALL retains every target row");
+                float[] scored = Views.toFloatArray(logits(x, xState), "logits");
+                max = 0f;
+                for (int i = 0; i < first.length; i++)
+                    max = Math.max(max, Math.abs(first[i] - scored[i]));
+                assertTrue(max < TOLERANCE, "ALL's last row diverged from LAST: " + max);
             }
         }
     }
