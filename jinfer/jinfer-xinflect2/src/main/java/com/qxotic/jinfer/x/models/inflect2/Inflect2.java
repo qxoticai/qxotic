@@ -30,11 +30,9 @@ import com.qxotic.jinfer.x.kernels.Norms;
 import com.qxotic.jinfer.x.kernels.Ops;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.memory.MemoryView;
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
-import java.nio.channels.Channels;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -208,24 +206,17 @@ public final class Inflect2 {
      * entry, where the header has been read to decide which port to call.
      */
     public static Inflect2 load(FileChannel channel, GGUF gguf, Arena arena) throws IOException {
-        return load(gguf, ModelLoader.loadTensors(channel, gguf, arena), arena);
+        return load(channel, gguf, 0, arena);
     }
 
     /**
-     * Load from a GGUF stored in a ZIP overlay appended to the running executable - the tensor data
-     * is mapped straight out of the executable into {@code arena}, with no temp file and no copy.
+     * As {@link #load(FileChannel, GGUF, Arena)}, with the GGUF beginning at {@code baseOffset} in
+     * {@code channel}. This supports models embedded in a larger file without coupling the model to
+     * any particular container format.
      */
-    public static Inflect2 loadSelfArchive(String entryName, Arena arena) throws IOException {
-        try (SelfArchive archive = SelfArchive.open()) {
-            SelfArchive.Entry entry = archive.entry(entryName);
-            // The header is small (< 64 KB even for Inflect2's 302 tensors).
-            byte[] header = archive.readAt(entry.offset(), Math.min(entry.size(), 1 << 16));
-            GGUF gguf = GGUF.read(Channels.newChannel(new ByteArrayInputStream(header)));
-            return load(
-                    gguf,
-                    ModelLoader.loadTensors(archive.channel(), gguf, entry.offset(), arena),
-                    arena);
-        }
+    public static Inflect2 load(FileChannel channel, GGUF gguf, long baseOffset, Arena arena)
+            throws IOException {
+        return load(gguf, ModelLoader.loadTensors(channel, gguf, baseOffset, arena), arena);
     }
 
     private static Inflect2 load(

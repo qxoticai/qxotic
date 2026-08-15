@@ -1,4 +1,4 @@
-package com.qxotic.jinfer.x.models.inflect2;
+package com.qxotic.jinfer.x.examples.inflect2;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
