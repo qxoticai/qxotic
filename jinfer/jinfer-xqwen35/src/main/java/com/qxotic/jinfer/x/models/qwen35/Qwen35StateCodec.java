@@ -11,9 +11,11 @@ import java.lang.foreign.MemorySegment;
  * plus the S matrices ({@code heads x headVDim x headVDim} F32) as the block RESIDUE - ~66MB total
  * residue at 35B-A3B dims (30 linear layers plus conv), so this model is {@link
  * #coarseCheckpoints()}: cached prompts commit as ONE block per prompt, one residue per prompt
- * rather than one per turn. MoE routing is per-token and carries no cross-token state; everything
- * else in the state is per-batch scratch - which is why {@code State.reset} zeroes exactly the
- * recurrent buffers (this residue) and the cursor, and nothing else.
+ * rather than one per turn. When present, the embedded MTP block contributes ordinary per-position
+ * K/V rows plus one normalized target-hidden row in the residue; no separate cache format or mode
+ * exists. MoE routing is per-token and carries no cross-token state; everything else is per-batch
+ * scratch - which is why {@code State.reset} zeroes exactly the recurrent buffers, the MTP carry,
+ * and the cursor.
  *
  * <p>Coarse consequences worth knowing: matching is ALL-OR-NOTHING - a request whose stream
  * diverges anywhere inside the defined span, or is shorter than it, restores nothing and
@@ -39,7 +41,7 @@ final class Qwen35StateCodec implements StateCodec<Qwen35.State> {
                 Math.multiplyExact(Math.max(config.ssmConvKernel() - 1, 0), config.convChannels());
         long rowBytes = 0;
         long linearLayers = 0;
-        for (int layer = 0; layer < config.numberOfLayers(); layer++) {
+        for (int layer = 0; layer < config.storedLayers(); layer++) {
             if (config.isFullAttention()[layer]) {
                 rowBytes =
                         Math.addExact(
@@ -50,9 +52,14 @@ final class Qwen35StateCodec implements StateCodec<Qwen35.State> {
         }
         bytesPerPosition = rowBytes;
         residueBytes =
-                Math.multiplyExact(
-                        linearLayers,
-                        Math.multiplyExact((long) recurrentFloats + convFloats, Float.BYTES));
+                Math.addExact(
+                        Math.multiplyExact(
+                                linearLayers,
+                                Math.multiplyExact(
+                                        (long) recurrentFloats + convFloats, Float.BYTES)),
+                        config.hasMtp()
+                                ? Math.multiplyExact((long) config.embeddingLength(), Float.BYTES)
+                                : 0);
     }
 
     @Override
@@ -81,7 +88,7 @@ final class Qwen35StateCodec implements StateCodec<Qwen35.State> {
         long offset = 0;
         long elements = Math.multiplyExact((long) (to - from), config.kvDim());
         long elementOffset = Math.multiplyExact((long) from, config.kvDim());
-        for (int layer = 0; layer < config.numberOfLayers(); layer++) {
+        for (int layer = 0; layer < config.storedLayers(); layer++) {
             if (!config.isFullAttention()[layer]) continue;
             offset +=
                     KvTransfer.transfer(
@@ -90,7 +97,7 @@ final class Qwen35StateCodec implements StateCodec<Qwen35.State> {
                     KvTransfer.transfer(
                             state.valueCache[layer], elementOffset, blob, offset, elements, save);
         }
-        for (int layer = 0; layer < config.numberOfLayers(); layer++) {
+        for (int layer = 0; layer < config.storedLayers(); layer++) {
             if (config.isFullAttention()[layer]) continue;
             offset +=
                     KvTransfer.transfer(
@@ -111,5 +118,14 @@ final class Qwen35StateCodec implements StateCodec<Qwen35.State> {
                             convFloats,
                             save);
         }
+        if (config.hasMtp())
+            KvTransfer.transfer(
+                    state.pendingHidden,
+                    DataType.FP32,
+                    0,
+                    blob,
+                    offset,
+                    config.embeddingLength(),
+                    save);
     }
 }

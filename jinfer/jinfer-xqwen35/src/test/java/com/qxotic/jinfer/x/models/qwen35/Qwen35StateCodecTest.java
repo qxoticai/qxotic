@@ -72,6 +72,35 @@ final class Qwen35StateCodecTest {
         }
     }
 
+    @Test
+    void includesTheMtpKvRowsAndPendingHidden() {
+        Qwen35.Configuration config = config(true);
+        Qwen35StateCodec codec = new Qwen35StateCodec(config);
+        assertEquals(112, codec.checkpointBytes(0), "recurrent residue plus pending hidden");
+        assertEquals(144, codec.checkpointBytes(2), "two full-attention layers");
+
+        try (Arena arena = Arena.ofConfined()) {
+            Qwen35.State state = new Qwen35.State(config, 8, 4, arena);
+            MemorySegment expected = patterned(arena, codec.checkpointBytes(2), 37);
+            codec.restoreCheckpoint(state, 0, 2, expected);
+            state.resumeAt(2);
+            MemorySegment actual = arena.allocate(codec.checkpointBytes(2), 64);
+            codec.saveCheckpoint(state, 0, 2, actual);
+            assertEquals(
+                    -1,
+                    expected.mismatch(actual),
+                    "target KV, MTP KV, recurrent state and MTP carry round-trip together");
+
+            state.reset();
+            MemorySegment reset = arena.allocate(codec.checkpointBytes(0), 64);
+            codec.saveCheckpoint(state, 0, 0, reset);
+            assertEquals(
+                    -1,
+                    MemorySegment.ofArray(new byte[112]).mismatch(reset),
+                    "reset clears recurrent state and the MTP carry");
+        }
+    }
+
     private static MemorySegment patterned(Arena arena, long bytes, int seed) {
         MemorySegment blob = arena.allocate(bytes, 64);
         for (long i = 0; i < bytes; i++) blob.set(ValueLayout.JAVA_BYTE, i, (byte) (seed + i));
@@ -79,9 +108,14 @@ final class Qwen35StateCodecTest {
     }
 
     private static Qwen35.Configuration config() {
+        return config(false);
+    }
+
+    private static Qwen35.Configuration config(boolean mtp) {
         return new Qwen35.Configuration(
                 4, // embeddingLength
                 2, // numberOfLayers
+                mtp ? 1 : 0, // nextnPredictLayers
                 2, // numberOfHeads
                 1, // numberOfKeyValueHeads
                 2, // headSize
@@ -91,7 +125,9 @@ final class Qwen35StateCodecTest {
                 10_000f, // ropeTheta
                 2, // ropeDimensionCount
                 8, // hiddenDim
-                new boolean[] {true, false}, // one full-attention layer, one GDN layer
+                mtp
+                        ? new boolean[] {true, false, true}
+                        : new boolean[] {true, false}, // appended MTP is full attention
                 4, // ssmInnerSize
                 1, // ssmGroupCount
                 2, // ssmTimeStepRank (heads)
