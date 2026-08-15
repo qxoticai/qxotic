@@ -19,7 +19,7 @@ Mojo backend for Jota on AMD GPUs (experimental, via HIP execution runtime).
 ```xml
 <dependency>
   <groupId>com.qxotic</groupId>
-  <artifactId>jota</artifactId>
+  <artifactId>jota-tensor</artifactId>
   <version>${qxotic.version}</version>
 </dependency>
 <dependency>

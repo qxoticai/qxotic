@@ -48,10 +48,29 @@ Jota supports custom kernels for these cases and provides decent performance for
 
 ## Usage
 
+Choose the smallest API you need:
+
+- `jota-core`: data types, devices, shapes, strides, and layouts
+- `jota-memory`: `Memory`, `MemoryView`, allocators, access, and transfers
+- `jota-tensor`: tensors, environments, runtimes, IR, and kernel compilation
+
+Each layer includes the preceding layers transitively. For example, applications using only the
+memory APIs need one dependency:
+
 ```xml
 <dependency>
     <groupId>com.qxotic</groupId>
-    <artifactId>jota-core</artifactId>
+    <artifactId>jota-memory</artifactId>
+    <version>0.1.0</version>
+</dependency>
+```
+
+Tensor applications use `jota-tensor` instead:
+
+```xml
+<dependency>
+    <groupId>com.qxotic</groupId>
+    <artifactId>jota-tensor</artifactId>
     <version>0.1.0</version>
 </dependency>
 ```

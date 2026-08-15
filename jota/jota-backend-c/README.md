@@ -18,7 +18,7 @@ C backend for Jota CPU execution.
 ```xml
 <dependency>
   <groupId>com.qxotic</groupId>
-  <artifactId>jota</artifactId>
+  <artifactId>jota-tensor</artifactId>
   <version>${qxotic.version}</version>
 </dependency>
 <dependency>

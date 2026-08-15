@@ -1,0 +1,1257 @@
+package com.qxotic.jota.tensor;
+
+import com.qxotic.jota.DataType;
+import com.qxotic.jota.Device;
+import com.qxotic.jota.Environment;
+import com.qxotic.jota.Layout;
+import com.qxotic.jota.Shape;
+import com.qxotic.jota.Stride;
+import com.qxotic.jota.memory.MemoryView;
+import com.qxotic.jota.random.RandomKey;
+
+/**
+ * Lazy tensor API.
+ *
+ * <p>Tensor operations build a graph and return new lazy tensors. Computation happens when {@link
+ * #materialize()} is called. Methods that expose reduction axes use the wrap-around naming
+ * convention: parameters named {@code _axis}/{@code _axes} are interpreted with wrap-around
+ * semantics (negative indices allowed).
+ */
+public interface Tensor {
+
+    DataType dataType();
+
+    Layout layout();
+
+    default Shape shape() {
+        return layout().shape();
+    }
+
+    default Stride stride() {
+        return layout().stride();
+    }
+
+    Device device();
+
+    default long size() {
+        return shape().size();
+    }
+
+    default boolean isScalar() {
+        return shape().isScalar();
+    }
+
+    MemoryView<?> materialize();
+
+    // region Instance Operations
+    // region Binary Operations
+
+    Tensor add(Tensor other);
+
+    Tensor add(int scalar);
+
+    Tensor add(long scalar);
+
+    Tensor add(float scalar);
+
+    Tensor add(double scalar);
+
+    Tensor subtract(Tensor other);
+
+    Tensor subtract(int scalar);
+
+    Tensor subtract(long scalar);
+
+    Tensor subtract(float scalar);
+
+    Tensor subtract(double scalar);
+
+    Tensor multiply(Tensor other);
+
+    Tensor multiply(int scalar);
+
+    Tensor multiply(long scalar);
+
+    Tensor multiply(float scalar);
+
+    Tensor multiply(double scalar);
+
+    Tensor divide(Tensor other);
+
+    Tensor divide(int scalar);
+
+    Tensor divide(long scalar);
+
+    Tensor divide(float scalar);
+
+    Tensor divide(double scalar);
+
+    Tensor min(Tensor other);
+
+    /**
+     * Reduces all axes with minimum.
+     *
+     * <p>This is lazy and only executes on {@link #materialize()}.
+     */
+    Tensor min();
+
+    /**
+     * Reduces selected axes with minimum.
+     *
+     * <p>Parameters {@code _axis}/{@code _axes} use wrap-around axis semantics.
+     */
+    Tensor min(int _axis, int... _axes);
+
+    /**
+     * Reduces selected axes with minimum.
+     *
+     * <p>Parameters {@code _axis}/{@code _axes} use wrap-around axis semantics.
+     */
+    Tensor min(boolean keepDims, int _axis, int... _axes);
+
+    Tensor max(Tensor other);
+
+    /**
+     * Reduces all axes with maximum.
+     *
+     * <p>This is lazy and only executes on {@link #materialize()}.
+     */
+    Tensor max();
+
+    /**
+     * Reduces selected axes with maximum.
+     *
+     * <p>Parameters {@code _axis}/{@code _axes} use wrap-around axis semantics.
+     */
+    Tensor max(int _axis, int... _axes);
+
+    /**
+     * Reduces selected axes with maximum.
+     *
+     * <p>Parameters {@code _axis}/{@code _axes} use wrap-around axis semantics.
+     */
+    Tensor max(boolean keepDims, int _axis, int... _axes);
+
+    // endregion Binary Operations
+    // region Reduction / Linear Algebra Operations
+
+    /** Returns the global argmax index over the flattened tensor as scalar I64. */
+    Tensor argmax();
+
+    /** Returns argmax indices along one axis as I64. */
+    Tensor argmax(int _axis);
+
+    /** Returns argmax indices along one axis as I64. */
+    Tensor argmax(int _axis, boolean keepDims);
+
+    /** Returns the global argmin index over the flattened tensor as scalar I64. */
+    Tensor argmin();
+
+    /** Returns argmin indices along one axis as I64. */
+    Tensor argmin(int _axis);
+
+    /** Returns argmin indices along one axis as I64. */
+    Tensor argmin(int _axis, boolean keepDims);
+
+    Tensor any();
+
+    Tensor all();
+
+    Tensor matmul(Tensor other);
+
+    Tensor batchedMatmul(Tensor other);
+
+    /**
+     * Dot product of two vectors with explicit accumulator type.
+     *
+     * <p>Strict semantics:
+     *
+     * <ul>
+     *   <li>Both operands must be rank-1 (vectors)
+     *   <li>Both vectors must have the same length and dtype
+     *   <li>Input dtype must be numeric non-BOOL
+     *   <li>Vectors must be non-empty
+     * </ul>
+     *
+     * <p>Execution semantics: both inputs are cast to {@code accumulatorType}, multiplication is
+     * performed in {@code accumulatorType}, and accumulation is also performed in {@code
+     * accumulatorType}. The result is a scalar tensor of {@code accumulatorType}.
+     *
+     * <p>Example:
+     *
+     * <pre>{@code
+     * Tensor a = Tensor.of(new int[] {50_000, 50_000});
+     * Tensor b = Tensor.of(new int[] {50_000, 50_000});
+     * Tensor out = a.dot(b, DataType.I64); // scalar I64, value 5_000_000_000
+     * }</pre>
+     */
+    Tensor dot(Tensor other, DataType accumulatorType);
+
+    /**
+     * Dot product of two vectors using the default accumulator policy.
+     *
+     * <p>Default overload is intentionally floating-point only. For integral inputs, use {@link
+     * #dot(Tensor, DataType)} to make the accumulator dtype explicit.
+     */
+    Tensor dot(Tensor other);
+
+    Tensor to(Device device);
+
+    Tensor contiguous();
+
+    // endregion Reduction / Linear Algebra Operations
+    // region Movement / Shape Operations
+
+    /**
+     * Returns a view of this tensor with a different shape.
+     *
+     * <p>This is a non-allocating reshape that returns a tensor sharing the same underlying memory.
+     * The new shape must be compatible with the current layout (total size must match and the
+     * layout must span a contiguous memory range).
+     *
+     * @param newShape the new shape for the view
+     * @return a tensor with the new shape sharing the same memory
+     * @throws IllegalArgumentException if a view cannot be created without copying
+     */
+    Tensor view(Shape newShape);
+
+    /**
+     * Convenience overload for {@link #view(Shape)} with optional {@code -1} inference.
+     *
+     * <p>Rules:
+     *
+     * <ul>
+     *   <li>At most one dimension may be {@code -1}
+     *   <li>All other dimensions must be {@code >= 0}
+     *   <li>The inferred size must divide total element count exactly
+     *   <li>{@code view()} (no dims) is allowed only for one-element tensors and produces scalar
+     *       shape {@code ()}
+     * </ul>
+     */
+    Tensor view(long... dims);
+
+    /**
+     * Inserts a size-1 axis at {@code axis_}.
+     *
+     * <p>{@code axis_} uses output-shape wrap-around semantics (post-op indexing): for rank {@code
+     * R}, valid values are in {@code [-(R+1), R]}.
+     */
+    Tensor unsqueeze(int axis_);
+
+    /**
+     * Removes a size-1 axis at {@code _axis}.
+     *
+     * <p>{@code _axis} uses input-shape wrap-around semantics. The selected axis/mode must have
+     * size {@code 1}.
+     */
+    Tensor squeeze(int _axis);
+
+    /**
+     * Removes all size-1 modes from the current (possibly nested) shape.
+     *
+     * <p>This is a view-only transform and preserves remaining nested structure.
+     */
+    Tensor squeezeAll();
+
+    Tensor broadcast(Shape targetShape);
+
+    Tensor expand(Shape targetShape);
+
+    Tensor transpose(int _axis0, int _axis1);
+
+    Tensor permute(int... permutationIndices);
+
+    Tensor slice(int _axis, long start, long end);
+
+    Tensor slice(int _axis, long start, long end, long indexStride);
+
+    /**
+     * Repeats this tensor along each axis.
+     *
+     * <p>Strict semantics: {@code repeats.length} must equal tensor rank and each repeat factor
+     * must be {@code >= 1}. This method does not prepend dimensions or flatten implicitly. For
+     * scalar tensors (rank 0), {@code repeat()} is the identity.
+     */
+    Tensor repeat(long... repeats);
+
+    /**
+     * Repeats each element along one axis.
+     *
+     * <p>For example, {@code [a,b,c].repeatInterleave(2, 0)} produces {@code [a,a,b,b,c,c]}.
+     */
+    Tensor repeatInterleave(long repeats, int _axis);
+
+    /**
+     * Returns a tensor with the specified shape.
+     *
+     * <p>This method tries to create a view first (non-allocating). If that's not possible because
+     * the layout has gaps or doesn't span a contiguous memory range, it allocates new memory and
+     * copies the data to create a contiguous tensor with the new shape.
+     *
+     * @param newShape the new shape (must have the same total number of elements)
+     * @return a tensor with the new shape (may or may not share memory with the original)
+     * @throws IllegalArgumentException if the total number of elements doesn't match
+     */
+    Tensor reshape(Shape newShape);
+
+    // endregion Movement / Shape Operations
+    // region Static Structural Operations
+
+    /**
+     * Concatenates tensors along an existing axis.
+     *
+     * <p>Strict semantics: all tensors must have the same dtype, device, rank, and equal sizes on
+     * non-concatenated axes. No implicit broadcasting or rank padding is performed.
+     */
+    static Tensor concat(int _axis, Tensor first, Tensor second, Tensor... rest) {
+        return TensorFactory.concat(_axis, first, second, rest);
+    }
+
+    /**
+     * Stacks tensors along a new axis.
+     *
+     * <p>Strict semantics: all tensors must have the same dtype, device and shape. No implicit
+     * broadcasting or rank padding is performed.
+     */
+    static Tensor stack(int _axis, Tensor first, Tensor second, Tensor... rest) {
+        return TensorFactory.stack(_axis, first, second, rest);
+    }
+
+    /**
+     * Splits a tensor into multiple views along one axis.
+     *
+     * <p>Strict semantics:
+     *
+     * <ul>
+     *   <li>Split axis must refer to a flat (non-nested) mode
+     *   <li>All explicit sizes must be {@code >= 1}
+     *   <li>At most one size may be {@code -1} and is inferred from remaining size
+     *   <li>Resolved sizes must sum exactly to axis size
+     * </ul>
+     */
+    static Tensor[] split(
+            int _axis, Tensor input, long firstSize, long secondSize, long... restSizes) {
+        return TensorFactory.split(_axis, input, firstSize, secondSize, restSizes);
+    }
+
+    // endregion Static Structural Operations
+    // region Bitwise / Logical / Comparison Operations
+
+    Tensor bitwiseNot();
+
+    Tensor bitwiseAnd(Tensor other);
+
+    Tensor bitwiseOr(Tensor other);
+
+    Tensor bitwiseXor(Tensor other);
+
+    Tensor leftShift(Tensor other);
+
+    Tensor rightShift(Tensor other);
+
+    Tensor rightShiftUnsigned(Tensor other);
+
+    Tensor logicalNot();
+
+    Tensor logicalAnd(Tensor other);
+
+    Tensor logicalOr(Tensor other);
+
+    Tensor logicalXor(Tensor other);
+
+    Tensor equal(Tensor other);
+
+    Tensor lessThan(Tensor other);
+
+    default Tensor notEqual(Tensor other) {
+        return equal(other).logicalNot();
+    }
+
+    default Tensor greaterThan(Tensor other) {
+        return other.lessThan(this);
+    }
+
+    default Tensor lessThanOrEqual(Tensor other) {
+        return other.lessThan(this).logicalNot();
+    }
+
+    default Tensor greaterThanOrEqual(Tensor other) {
+        return lessThan(other).logicalNot();
+    }
+
+    // endregion Bitwise / Logical / Comparison Operations
+    // region Selection / Reduction Operations
+
+    /**
+     * Elementwise conditional selection.
+     *
+     * <p>For each element, returns the corresponding value from {@code trueValue} when this tensor
+     * (the condition) is true, otherwise from {@code falseValue}. The condition must be BOOL.
+     *
+     * <p>This is lazy and only executes on {@link #materialize()}.
+     */
+    Tensor where(Tensor trueValue, Tensor falseValue);
+
+    /**
+     * Reduces all axes with sum.
+     *
+     * <p>This is lazy and only executes on {@link #materialize()}.
+     */
+    Tensor sum(DataType accumulatorType);
+
+    /**
+     * Reduces selected axes with sum.
+     *
+     * <p>Parameters {@code _axis}/{@code _axes} use wrap-around axis semantics.
+     */
+    Tensor sum(DataType accumulatorType, int _axis, int... _axes);
+
+    /**
+     * Reduces selected axes with sum.
+     *
+     * <p>Parameters {@code _axis}/{@code _axes} use wrap-around axis semantics.
+     */
+    Tensor sum(DataType accumulatorType, boolean keepDims, int _axis, int... _axes);
+
+    /**
+     * Reduces all axes with product.
+     *
+     * <p>This is lazy and only executes on {@link #materialize()}.
+     */
+    Tensor product(DataType accumulatorType);
+
+    /**
+     * Reduces selected axes with product.
+     *
+     * <p>Parameters {@code _axis}/{@code _axes} use wrap-around axis semantics.
+     */
+    Tensor product(DataType accumulatorType, int _axis, int... _axes);
+
+    /**
+     * Reduces selected axes with product.
+     *
+     * <p>Parameters {@code _axis}/{@code _axes} use wrap-around axis semantics.
+     */
+    Tensor product(DataType accumulatorType, boolean keepDims, int _axis, int... _axes);
+
+    /**
+     * Reduces all axes with arithmetic mean.
+     *
+     * <p>Requires floating-point input. This is lazy and only executes on {@link #materialize()}.
+     */
+    Tensor mean();
+
+    /**
+     * Reduces selected axes with arithmetic mean.
+     *
+     * <p>Requires floating-point input. Parameters {@code _axis}/{@code _axes} use wrap-around axis
+     * semantics.
+     */
+    Tensor mean(int _axis, int... _axes);
+
+    /**
+     * Reduces selected axes with arithmetic mean.
+     *
+     * <p>Requires floating-point input. Parameters {@code _axis}/{@code _axes} use wrap-around axis
+     * semantics.
+     */
+    Tensor mean(boolean keepDims, int _axis, int... _axes);
+
+    /**
+     * Gathers elements from this tensor along the specified axis according to the indices.
+     *
+     * <p>This is commonly used for embedding lookups where: - this: [vocabSize, hiddenSize]
+     * embedding table - indices: [batchSize, seqLen] token IDs - axis: 0 - returns: [batchSize,
+     * seqLen, hiddenSize] embeddings
+     *
+     * @param indices the indices tensor (must be integral type)
+     * @param _axis the axis along which to gather (wrap-around semantics)
+     * @return the gathered tensor
+     */
+    Tensor gather(Tensor indices, int _axis);
+
+    /**
+     * Convenience method for embedding lookup (gather along axis 0).
+     *
+     * <p>This is equivalent to {@code gather(indices, 0)}.
+     *
+     * @param indices the indices tensor
+     * @return the gathered embeddings
+     */
+    default Tensor embeddingLookup(Tensor indices) {
+        return gather(indices, 0);
+    }
+
+    // endregion Selection / Reduction Operations
+    // region Elementwise Unary Operations
+
+    Tensor cast(DataType targetType);
+
+    Tensor negate();
+
+    Tensor abs();
+
+    Tensor exp();
+
+    Tensor log();
+
+    Tensor sqrt();
+
+    /**
+     * Computes the reciprocal of the square root (1 / sqrt(x)).
+     *
+     * <p>This is a convenience method equivalent to {@code sqrt().reciprocal()}.
+     *
+     * @return a tensor with rsqrt values
+     * @throws IllegalArgumentException if the data type is not floating-point
+     */
+    default Tensor rsqrt() {
+        return sqrt().reciprocal();
+    }
+
+    default Tensor square() {
+        return multiply(this);
+    }
+
+    Tensor sin();
+
+    Tensor cos();
+
+    Tensor tanh();
+
+    /**
+     * Applies the Rectified Linear Unit (ReLU) activation function.
+     *
+     * <p>Returns max(0, x) elementwise.
+     *
+     * @return a tensor with ReLU values
+     */
+    default Tensor relu() {
+        return max(Tensor.full(0f, dataType(), shape()));
+    }
+
+    /**
+     * Computes the sigmoid function: 1 / (1 + exp(-x)).
+     *
+     * <p>This is equivalent to {@code negate().exp().add(1).reciprocal()}.
+     *
+     * @return a tensor with sigmoid values
+     */
+    default Tensor sigmoid() {
+        return negate().exp().add(Tensor.scalar(1, dataType())).reciprocal();
+    }
+
+    /**
+     * Computes the SiLU (Swish) activation: x * sigmoid(x).
+     *
+     * <p>This is equivalent to {@code multiply(sigmoid())}.
+     *
+     * @return a tensor with SiLU values
+     */
+    default Tensor silu() {
+        return multiply(sigmoid());
+    }
+
+    /**
+     * Computes the GELU (Gaussian Error Linear Unit) activation using the tanh approximation.
+     *
+     * <p>Formula: 0.5 * x * (1 + tanh(√(2/π) * (x + 0.044715 * x³)))
+     *
+     * <p>This is the approximation from the original GELU paper (Hendrycks &amp; Gimpel 2016).
+     *
+     * @return a tensor with GELU values
+     */
+    default Tensor gelu() {
+        DataType dt = dataType();
+        return square().multiply(this)
+                .multiply(Tensor.scalar(0.044715, dt))
+                .add(this)
+                .multiply(Tensor.scalar(0.7978845608, dt))
+                .tanh()
+                .add(Tensor.scalar(1, dt))
+                .multiply(this)
+                .multiply(Tensor.scalar(0.5, dt));
+    }
+
+    Tensor reciprocal();
+
+    /**
+     * Computes the reciprocal (1/x) with explicit target data type.
+     *
+     * <p>This is equivalent to {@code cast(dataType).reciprocal()}.
+     *
+     * @param dataType the target data type (must be floating-point)
+     * @return a tensor with reciprocal values in the specified data type
+     * @throws IllegalArgumentException if dataType is not floating-point
+     */
+    default Tensor reciprocal(DataType dataType) {
+        if (!dataType.isFloatingPoint()) {
+            throw new IllegalArgumentException(
+                    "reciprocal target type must be floating-point, got " + dataType);
+        }
+        return cast(dataType).reciprocal();
+    }
+
+    /**
+     * Clips (clamps) all elements to be within [min, max].
+     *
+     * <p>Returns min where input < min, max where input > max, and input otherwise.
+     *
+     * <p>Bounds are cast to the input tensor's data type (JAX/NumPy semantics). For example, {@code
+     * intTensor.clip(0.5, 2.5)} will truncate bounds to 0 and 2.
+     *
+     * @param min the lower bound (inclusive)
+     * @param max the upper bound (inclusive)
+     * @return a tensor with clipped values
+     */
+    default Tensor clip(Tensor min, Tensor max) {
+        return this.max(min).min(max);
+    }
+
+    /**
+     * Clips (clamps) all elements to be within [min, max].
+     *
+     * <p>Bounds are cast to the input tensor's data type (JAX/NumPy semantics). For example, {@code
+     * intTensor.clip(0.5, 2.5)} will truncate bounds to 0 and 2.
+     *
+     * @param min the lower bound scalar value (cast to input dtype)
+     * @param max the upper bound scalar value (cast to input dtype)
+     * @return a tensor with clipped values, same dtype as input
+     */
+    default Tensor clip(double min, double max) {
+        return clip(Tensor.scalar(min, dataType()), Tensor.scalar(max, dataType()));
+    }
+
+    /**
+     * Clips (clamps) all elements to be within [min, max].
+     *
+     * <p>Bounds are cast to the input tensor's data type. For integer tensors, this provides exact
+     * clipping without precision loss.
+     *
+     * @param min the lower bound scalar value (cast to input dtype)
+     * @param max the upper bound scalar value (cast to input dtype)
+     * @return a tensor with clipped values, same dtype as input
+     */
+    default Tensor clip(long min, long max) {
+        return clip(Tensor.scalar(min, dataType()), Tensor.scalar(max, dataType()));
+    }
+
+    // endregion Elementwise Unary Operations
+    // endregion Instance Operations
+
+    // region Static Creation Methods
+    // region Core Creation
+
+    static Tensor of(MemoryView<?> view) {
+        return TensorFactory.of(view);
+    }
+
+    // endregion Core Creation
+    // region Constant / Fill Creation
+
+    /**
+     * Creates a tensor filled with zeros.
+     *
+     * <p>Uses the default float type from {@link Environment#defaultFloat()}.
+     *
+     * @param shape the shape of the tensor
+     * @return a lazy tensor filled with zeros
+     */
+    static Tensor zeros(Shape shape) {
+        return TensorFactory.zeros(shape);
+    }
+
+    /**
+     * Creates a tensor filled with zeros with the specified data type.
+     *
+     * @param dtype the data type
+     * @param shape the shape of the tensor
+     * @return a lazy tensor filled with zeros
+     */
+    static Tensor zeros(DataType dtype, Shape shape) {
+        return TensorFactory.zeros(dtype, shape);
+    }
+
+    /**
+     * Creates a tensor filled with ones.
+     *
+     * <p>Uses the default float type from {@link Environment#defaultFloat()}.
+     *
+     * @param shape the shape of the tensor
+     * @return a lazy tensor filled with ones
+     */
+    static Tensor ones(Shape shape) {
+        return TensorFactory.ones(shape);
+    }
+
+    /**
+     * Creates a tensor filled with ones with the specified data type.
+     *
+     * @param dtype the data type
+     * @param shape the shape of the tensor
+     * @return a lazy tensor filled with ones
+     */
+    static Tensor ones(DataType dtype, Shape shape) {
+        return TensorFactory.ones(dtype, shape);
+    }
+
+    /**
+     * Creates a 1D range tensor [0, 1, 2, ..., n-1] with I64 dtype.
+     *
+     * @param n number of elements (non-negative)
+     * @return a lazy range tensor
+     */
+    static Tensor iota(long n) {
+        return TensorFactory.iota(n);
+    }
+
+    /**
+     * Creates a 1D range tensor [0, 1, 2, ..., n-1] and casts to the target type.
+     *
+     * @param n number of elements (non-negative)
+     * @param dataType target data type (integral or floating-point)
+     * @return a lazy range tensor cast to the target type
+     */
+    static Tensor iota(long n, DataType dataType) {
+        return TensorFactory.iota(n, dataType);
+    }
+
+    // endregion Constant / Fill Creation
+    // region Random Creation
+
+    /**
+     * Creates an opaque random key from a seed.
+     *
+     * <p>Recommended usage:
+     *
+     * <pre>{@code
+     * RandomKey key = Tensor.randomKey(1234L);
+     * Tensor x = Tensor.rand(key, Shape.of(2, 3), DataType.FP32);
+     * Tensor y = Tensor.randn(key.split(1L), Shape.of(2, 3), DataType.FP32);
+     * }</pre>
+     */
+    static RandomKey randomKey(long seed) {
+        return TensorFactory.randomKey(seed);
+    }
+
+    /**
+     * Creates a lazy tensor with uniform random values in [0, 1).
+     *
+     * <p>Deterministic output given the same key, counter, and length.
+     *
+     * @param randomKey the random key; determines the random stream (use {@code
+     *     Tensor.randomKey(seed)} or key split/fold)
+     * @param size number of elements
+     * @param dataType must be FP32 or FP64
+     * @return a lazy tensor with random values in [0, 1)
+     * @throws NullPointerException if randomKey or dataType is null
+     * @throws IllegalArgumentException if dataType is not FP32 or FP64
+     */
+    static Tensor rand(RandomKey randomKey, long size, DataType dataType) {
+        return TensorFactory.rand(randomKey, size, dataType);
+    }
+
+    /**
+     * Creates a lazy tensor with uniform random values in [0, 1).
+     *
+     * <p>Deterministic output given the same key, counter, and shape.
+     *
+     * @param randomKey the random key; determines the random stream (use {@code
+     *     Tensor.randomKey(seed)} or key split/fold)
+     * @param shape the tensor shape
+     * @param dataType must be FP32 or FP64
+     * @return a lazy tensor with random values in [0, 1)
+     * @throws NullPointerException if randomKey, shape, or dataType is null
+     * @throws IllegalArgumentException if dataType is not FP32 or FP64
+     */
+    static Tensor rand(RandomKey randomKey, Shape shape, DataType dataType) {
+        return TensorFactory.rand(randomKey, shape, dataType);
+    }
+
+    /**
+     * Creates a lazy tensor with standard normal (N(0, 1)) random values.
+     *
+     * <p>Deterministic output given the same key, counter, and length.
+     *
+     * @param randomKey the random key; determines the random stream (use {@code
+     *     Tensor.randomKey(seed)} or key split/fold)
+     * @param size number of elements
+     * @param dataType must be FP32 or FP64
+     * @return a lazy tensor with normal random values
+     * @throws NullPointerException if randomKey or dataType is null
+     * @throws IllegalArgumentException if dataType is not FP32 or FP64
+     */
+    static Tensor randn(RandomKey randomKey, long size, DataType dataType) {
+        return TensorFactory.randn(randomKey, size, dataType);
+    }
+
+    /**
+     * Creates a lazy tensor with standard normal (N(0, 1)) random values.
+     *
+     * <p>Deterministic output given the same key, counter, and shape.
+     *
+     * @param randomKey the random key; determines the random stream (use {@code
+     *     Tensor.randomKey(seed)} or key split/fold)
+     * @param shape the tensor shape
+     * @param dataType must be FP32 or FP64
+     * @return a lazy tensor with normal random values
+     * @throws NullPointerException if randomKey, shape, or dataType is null
+     * @throws IllegalArgumentException if dataType is not FP32 or FP64
+     */
+    static Tensor randn(RandomKey randomKey, Shape shape, DataType dataType) {
+        return TensorFactory.randn(randomKey, shape, dataType);
+    }
+
+    /**
+     * Creates a lazy tensor with uniform random integers in [startInclusive, endExclusive).
+     *
+     * <p>Deterministic output given the same key, counter, and length.
+     *
+     * @param randomKey the random key; determines the random stream (use {@code
+     *     Tensor.randomKey(seed)} or key split/fold)
+     * @param startInclusive the lower bound (inclusive)
+     * @param endExclusive the upper bound (exclusive)
+     * @param size number of elements
+     * @param dataType must be I8, I16, I32, or I64
+     * @return a lazy tensor with random integers
+     * @throws NullPointerException if randomKey or dataType is null
+     * @throws IllegalArgumentException if dataType is not an integer type, or if endExclusive <=
+     *     startInclusive, or if range doesn't fit in the target dtype
+     */
+    static Tensor randInt(
+            RandomKey randomKey,
+            long startInclusive,
+            long endExclusive,
+            long size,
+            DataType dataType) {
+        return TensorFactory.randInt(randomKey, startInclusive, endExclusive, size, dataType);
+    }
+
+    /**
+     * Creates a lazy tensor with uniform random integers in [startInclusive, endExclusive).
+     *
+     * <p>Deterministic output given the same key, counter, and shape.
+     *
+     * @param randomKey the random key; determines the random stream (use {@code
+     *     Tensor.randomKey(seed)} or key split/fold)
+     * @param startInclusive the lower bound (inclusive)
+     * @param endExclusive the upper bound (exclusive)
+     * @param shape the tensor shape
+     * @param dataType must be I8, I16, I32, or I64
+     * @return a lazy tensor with random integers
+     * @throws NullPointerException if randomKey, shape, or dataType is null
+     * @throws IllegalArgumentException if dataType is not an integer type, or if endExclusive <=
+     *     startInclusive, or if range doesn't fit in the target dtype
+     */
+    static Tensor randInt(
+            RandomKey randomKey,
+            long startInclusive,
+            long endExclusive,
+            Shape shape,
+            DataType dataType) {
+        return TensorFactory.randInt(randomKey, startInclusive, endExclusive, shape, dataType);
+    }
+
+    /**
+     * Creates a lazy tensor with uniform random values in [startInclusive, endExclusive).
+     *
+     * <p>Deterministic output given the same key, counter, and length.
+     *
+     * @param randomKey the random key; determines the random stream (use {@code
+     *     Tensor.randomKey(seed)} or key split/fold)
+     * @param size number of elements
+     * @param startInclusive the lower bound (inclusive)
+     * @param endExclusive the upper bound (exclusive); must be > startInclusive
+     * @param dataType must be FP32 or FP64
+     * @return a lazy tensor with random values
+     * @throws NullPointerException if randomKey or dataType is null
+     * @throws IllegalArgumentException if dataType is not FP32 or FP64, or if endExclusive <=
+     *     startInclusive, or if range is NaN or infinite
+     */
+    static Tensor uniform(
+            RandomKey randomKey,
+            long size,
+            double startInclusive,
+            double endExclusive,
+            DataType dataType) {
+        return TensorFactory.uniform(randomKey, size, startInclusive, endExclusive, dataType);
+    }
+
+    /**
+     * Creates a lazy tensor with uniform random values in [startInclusive, endExclusive).
+     *
+     * <p>Deterministic output given the same key, counter, and shape.
+     *
+     * @param randomKey the random key; determines the random stream (use {@code
+     *     Tensor.randomKey(seed)} or key split/fold)
+     * @param shape the tensor shape
+     * @param startInclusive the lower bound (inclusive)
+     * @param endExclusive the upper bound (exclusive); must be > startInclusive
+     * @param dataType must be FP32 or FP64
+     * @return a lazy tensor with random values
+     * @throws NullPointerException if randomKey, shape, or dataType is null
+     * @throws IllegalArgumentException if dataType is not FP32 or FP64, or if endExclusive <=
+     *     startInclusive, or if range is NaN or infinite
+     */
+    static Tensor uniform(
+            RandomKey randomKey,
+            Shape shape,
+            double startInclusive,
+            double endExclusive,
+            DataType dataType) {
+        return TensorFactory.uniform(randomKey, shape, startInclusive, endExclusive, dataType);
+    }
+
+    /**
+     * Creates a lazy tensor with normal (Gaussian) random values N(mean, std).
+     *
+     * <p>Deterministic output given the same key, counter, and length.
+     *
+     * @param randomKey the random key; determines the random stream (use {@code
+     *     Tensor.randomKey(seed)} or key split/fold)
+     * @param size number of elements
+     * @param mean the mean of the distribution
+     * @param std the standard deviation; must be > 0
+     * @param dataType must be FP32 or FP64
+     * @return a lazy tensor with normal random values
+     * @throws NullPointerException if randomKey or dataType is null
+     * @throws IllegalArgumentException if dataType is not FP32 or FP64, or if std <= 0, or if
+     *     parameters are NaN or infinite
+     */
+    static Tensor normal(
+            RandomKey randomKey, long size, double mean, double std, DataType dataType) {
+        return TensorFactory.normal(randomKey, size, mean, std, dataType);
+    }
+
+    /**
+     * Creates a lazy tensor with normal (Gaussian) random values N(mean, std).
+     *
+     * <p>Deterministic output given the same key, counter, and shape.
+     *
+     * @param randomKey the random key; determines the random stream (use {@code
+     *     Tensor.randomKey(seed)} or key split/fold)
+     * @param shape the tensor shape
+     * @param mean the mean of the distribution
+     * @param std the standard deviation; must be > 0
+     * @param dataType must be FP32 or FP64
+     * @return a lazy tensor with normal random values
+     * @throws NullPointerException if randomKey, shape, or dataType is null
+     * @throws IllegalArgumentException if dataType is not FP32 or FP64, or if std <= 0, or if
+     *     parameters are NaN or infinite
+     */
+    static Tensor normal(
+            RandomKey randomKey, Shape shape, double mean, double std, DataType dataType) {
+        return TensorFactory.normal(randomKey, shape, mean, std, dataType);
+    }
+
+    /**
+     * Creates a lazy tensor with uniform random integers in [startInclusive, endExclusive).
+     *
+     * <p>Deterministic output given the same key, counter, and length.
+     *
+     * @param randomKey the random key; determines the random stream (use {@code
+     *     Tensor.randomKey(seed)} or key split/fold)
+     * @param startInclusive the lower bound (inclusive)
+     * @param endExclusive the upper bound (exclusive)
+     * @param size number of elements
+     * @param dataType must be I8, I16, I32, or I64
+     * @return a lazy tensor with random integers
+     * @throws NullPointerException if randomKey or dataType is null
+     * @throws IllegalArgumentException if dataType is not an integer type, or if endExclusive <=
+     *     startInclusive, or if range doesn't fit in the target dtype, or if range overflows
+     */
+    static Tensor uniformInt(
+            RandomKey randomKey,
+            long startInclusive,
+            long endExclusive,
+            long size,
+            DataType dataType) {
+        return TensorFactory.uniformInt(randomKey, startInclusive, endExclusive, size, dataType);
+    }
+
+    /**
+     * Creates a lazy tensor with uniform random integers in [startInclusive, endExclusive).
+     *
+     * <p>Deterministic output given the same key, counter, and shape.
+     *
+     * @param randomKey the random key; determines the random stream (use {@code
+     *     Tensor.randomKey(seed)} or key split/fold)
+     * @param startInclusive the lower bound (inclusive)
+     * @param endExclusive the upper bound (exclusive)
+     * @param shape the tensor shape
+     * @param dataType must be I8, I16, I32, or I64
+     * @return a lazy tensor with random integers
+     * @throws NullPointerException if randomKey, shape, or dataType is null
+     * @throws IllegalArgumentException if dataType is not an integer type, or if endExclusive <=
+     *     startInclusive, or if range doesn't fit in the target dtype, or if range overflows
+     */
+    static Tensor uniformInt(
+            RandomKey randomKey,
+            long startInclusive,
+            long endExclusive,
+            Shape shape,
+            DataType dataType) {
+        return TensorFactory.uniformInt(randomKey, startInclusive, endExclusive, shape, dataType);
+    }
+
+    /**
+     * Creates a lazy tensor with normal random values N(mean, std), rounded to integers.
+     *
+     * <p>Values are rounded to nearest integer (ties away from zero) and clamped to the dtype
+     * range.
+     *
+     * <p>Deterministic output given the same key, counter, and length.
+     *
+     * @param randomKey the random key; determines the random stream (use {@code
+     *     Tensor.randomKey(seed)} or key split/fold)
+     * @param size number of elements
+     * @param mean the mean of the distribution
+     * @param std the standard deviation; must be > 0 and finite
+     * @param dataType must be I8, I16, I32, or I64
+     * @return a lazy tensor with random integers
+     * @throws NullPointerException if randomKey or dataType is null
+     * @throws IllegalArgumentException if dataType is not an integer type, or if std <= 0 or std is
+     *     infinite
+     */
+    static Tensor normalInt(
+            RandomKey randomKey, long size, double mean, double std, DataType dataType) {
+        return TensorFactory.normalInt(randomKey, size, mean, std, dataType);
+    }
+
+    /**
+     * Creates a lazy tensor with normal random values N(mean, std), rounded to integers.
+     *
+     * <p>Values are rounded to nearest integer (ties away from zero) and clamped to the dtype
+     * range.
+     *
+     * <p>Deterministic output given the same key, counter, and shape.
+     *
+     * @param randomKey the random key; determines the random stream (use {@code
+     *     Tensor.randomKey(seed)} or key split/fold)
+     * @param shape the tensor shape
+     * @param mean the mean of the distribution
+     * @param std the standard deviation; must be > 0 and finite
+     * @param dataType must be I8, I16, I32, or I64
+     * @return a lazy tensor with random integers
+     * @throws NullPointerException if randomKey, shape, or dataType is null
+     * @throws IllegalArgumentException if dataType is not an integer type, or if std <= 0 or std is
+     *     infinite
+     */
+    static Tensor normalInt(
+            RandomKey randomKey, Shape shape, double mean, double std, DataType dataType) {
+        return TensorFactory.normalInt(randomKey, shape, mean, std, dataType);
+    }
+
+    // endregion Random Creation
+    // region Fill / Scalar Creation
+
+    /**
+     * Creates a tensor filled with the specified float value.
+     *
+     * @param value the fill value
+     * @param shape the shape of the tensor
+     * @return a lazy tensor filled with the value (FP32)
+     */
+    static Tensor full(float value, Shape shape) {
+        return TensorFactory.full(value, shape);
+    }
+
+    /**
+     * Creates a tensor filled with the specified double value.
+     *
+     * @param value the fill value
+     * @param shape the shape of the tensor
+     * @return a lazy tensor filled with the value (FP64)
+     */
+    static Tensor full(double value, Shape shape) {
+        return TensorFactory.full(value, shape);
+    }
+
+    /**
+     * Creates a tensor filled with the specified long value.
+     *
+     * @param value the fill value
+     * @param shape the shape of the tensor
+     * @return a lazy tensor filled with the value (I64)
+     */
+    static Tensor full(long value, Shape shape) {
+        return TensorFactory.full(value, shape);
+    }
+
+    /**
+     * Creates a tensor filled with the specified int value.
+     *
+     * @param value the fill value
+     * @param shape the shape of the tensor
+     * @return a lazy tensor filled with the value (I32)
+     */
+    static Tensor full(int value, Shape shape) {
+        return TensorFactory.full(value, shape);
+    }
+
+    /**
+     * Creates a tensor filled with the specified value and data type.
+     *
+     * @param value the fill value
+     * @param dtype the data type
+     * @param shape the shape of the tensor
+     * @return a lazy tensor filled with the value
+     */
+    static Tensor full(Number value, DataType dtype, Shape shape) {
+        return TensorFactory.full(value, dtype, shape);
+    }
+
+    static Tensor scalar(int value) {
+        return TensorFactory.scalar(value);
+    }
+
+    static Tensor scalar(float value) {
+        return TensorFactory.scalar(value);
+    }
+
+    static Tensor scalar(double value) {
+        return TensorFactory.scalar(value);
+    }
+
+    static Tensor scalar(long value) {
+        return TensorFactory.scalar(value);
+    }
+
+    /**
+     * Creates a scalar tensor with the specified data type.
+     *
+     * <p>The primitive value is used as a carrier and cast to the target type.
+     *
+     * @param value the scalar value (used as carrier)
+     * @param dtype the target data type
+     * @return a scalar tensor with the specified type
+     */
+    static Tensor scalar(double value, DataType dtype) {
+        return TensorFactory.scalar(value, dtype);
+    }
+
+    /**
+     * Creates a scalar tensor with the specified data type.
+     *
+     * <p>The primitive value is used as a carrier and cast to the target type.
+     *
+     * @param value the scalar value (used as carrier)
+     * @param dtype the target data type
+     * @return a scalar tensor with the specified type
+     */
+    static Tensor scalar(long value, DataType dtype) {
+        return TensorFactory.scalar(value, dtype);
+    }
+
+    // endregion Fill / Scalar Creation
+    // region Lazy / Array-backed Creation
+
+    /**
+     * Creates a tensor from a float array.
+     *
+     * @param data the source array (copied, not referenced)
+     * @return a materialized tensor with shape [data.length] and FP32 dtype
+     */
+    static Tensor of(float[] data) {
+        return TensorFactory.of(data);
+    }
+
+    /**
+     * Creates a tensor from a float array with the specified shape.
+     *
+     * @param data the source array (copied, not referenced)
+     * @param shape the shape (must match array length)
+     * @return a materialized tensor with FP32 dtype
+     */
+    static Tensor of(float[] data, Shape shape) {
+        return TensorFactory.of(data, shape);
+    }
+
+    /**
+     * Creates a tensor from a double array.
+     *
+     * @param data the source array (copied, not referenced)
+     * @return a materialized tensor with shape [data.length] and FP64 dtype
+     */
+    static Tensor of(double[] data) {
+        return TensorFactory.of(data);
+    }
+
+    /**
+     * Creates a tensor from a double array with the specified shape.
+     *
+     * @param data the source array (copied, not referenced)
+     * @param shape the shape (must match array length)
+     * @return a materialized tensor with FP64 dtype
+     */
+    static Tensor of(double[] data, Shape shape) {
+        return TensorFactory.of(data, shape);
+    }
+
+    /**
+     * Creates a tensor from an int array.
+     *
+     * @param data the source array (copied, not referenced)
+     * @return a materialized tensor with shape [data.length] and I32 dtype
+     */
+    static Tensor of(int[] data) {
+        return TensorFactory.of(data);
+    }
+
+    /**
+     * Creates a tensor from an int array with the specified shape.
+     *
+     * @param data the source array (copied, not referenced)
+     * @param shape the shape (must match array length)
+     * @return a materialized tensor with I32 dtype
+     */
+    static Tensor of(int[] data, Shape shape) {
+        return TensorFactory.of(data, shape);
+    }
+
+    /**
+     * Creates a tensor from a long array.
+     *
+     * @param data the source array (copied, not referenced)
+     * @return a materialized tensor with shape [data.length] and I64 dtype
+     */
+    static Tensor of(long[] data) {
+        return TensorFactory.of(data);
+    }
+
+    /**
+     * Creates a tensor from a long array with the specified shape.
+     *
+     * @param data the source array (copied, not referenced)
+     * @param shape the shape (must match array length)
+     * @return a materialized tensor with I64 dtype
+     */
+    static Tensor of(long[] data, Shape shape) {
+        return TensorFactory.of(data, shape);
+    }
+
+    /**
+     * Creates a tensor from a boolean array.
+     *
+     * @param data the source array (copied, not referenced)
+     * @return a materialized tensor with shape [data.length] and BOOL dtype
+     */
+    static Tensor of(boolean[] data) {
+        return TensorFactory.of(data);
+    }
+
+    /**
+     * Creates a tensor from a boolean array with the specified shape.
+     *
+     * @param data the source array (copied, not referenced)
+     * @param shape the shape (must match array length)
+     * @return a materialized tensor with BOOL dtype
+     */
+    static Tensor of(boolean[] data, Shape shape) {
+        return TensorFactory.of(data, shape);
+    }
+
+    // endregion Lazy / Array-backed Creation
+    // endregion Static Creation Methods
+
+}

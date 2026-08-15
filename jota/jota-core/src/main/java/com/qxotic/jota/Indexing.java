@@ -1,7 +1,5 @@
 package com.qxotic.jota;
 
-import com.qxotic.jota.memory.MemoryView;
-
 public final class Indexing {
 
     private Indexing() {}
@@ -72,7 +70,7 @@ public final class Indexing {
         return offset;
     }
 
-    public static long coordToOffset(MemoryView<?> view, long... coord) {
+    public static long coordToOffset(View view, long... coord) {
         Stride stride = view.byteStride();
         int flatRank = stride.flatRank();
         if (coord.length != flatRank) {
@@ -127,7 +125,7 @@ public final class Indexing {
         return linearToOffset(layout.shape(), layout.stride(), dataType, linearIndex);
     }
 
-    public static long linearToOffset(MemoryView<?> view, long linearIndex) {
+    public static long linearToOffset(View view, long linearIndex) {
         long relativeOffset =
                 linearToOffset(view.shape(), view.stride(), view.dataType(), linearIndex);
         return view.byteOffset() + relativeOffset;

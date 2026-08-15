@@ -50,11 +50,11 @@
   <dependencies>
     <dependency>
       <groupId>com.qxotic</groupId>
-      <artifactId>jota</artifactId>
+      <artifactId>jota-tensor</artifactId>
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
-      <artifactId>jota</artifactId>
+      <artifactId>jota-tensor</artifactId>
       <version>${project.version}</version>
       <type>test-jar</type>
       <scope>test</scope>
@@ -113,7 +113,7 @@
             <jota.hip.mojo.backend>${jota.hip.mojo.backend}</jota.hip.mojo.backend>
           </systemPropertyVariables>
           <dependenciesToScan>
-            <dependency>com.qxotic:jota:test-jar:tests:${project.version}</dependency>
+            <dependency>com.qxotic:jota-tensor:test-jar:tests:${project.version}</dependency>
           </dependenciesToScan>
         </configuration>
       </plugin>

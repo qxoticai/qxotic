@@ -9,14 +9,14 @@
     <relativePath>../pom.xml</relativePath>
   </parent>
 
-  <artifactId>jota-graal</artifactId>
-  <name>Jota Graal Support</name>
-  <description>Core GraalVM Native Image support for Jota</description>
+  <artifactId>jota-memory</artifactId>
+  <name>Jota Memory</name>
+  <description>Memory, MemoryView, allocation, access, and transfer APIs</description>
 
   <dependencies>
     <dependency>
       <groupId>com.qxotic</groupId>
-      <artifactId>jota-tensor</artifactId>
+      <artifactId>jota-core</artifactId>
       <version>${project.version}</version>
     </dependency>
   </dependencies>

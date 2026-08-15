@@ -19,7 +19,7 @@ Metal backend for Jota on macOS.
 ```xml
 <dependency>
   <groupId>com.qxotic</groupId>
-  <artifactId>jota</artifactId>
+  <artifactId>jota-tensor</artifactId>
   <version>${qxotic.version}</version>
 </dependency>
 <dependency>

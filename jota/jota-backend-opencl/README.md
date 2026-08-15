@@ -19,7 +19,7 @@ OpenCL backend for Jota on OpenCL-capable GPUs/CPUs.
 ```xml
 <dependency>
   <groupId>com.qxotic</groupId>
-  <artifactId>jota</artifactId>
+  <artifactId>jota-tensor</artifactId>
   <version>${qxotic.version}</version>
 </dependency>
 <dependency>

@@ -4,10 +4,32 @@ import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.ValueLayout;
 import java.util.List;
 
+/**
+ * The element type of a tensor's storage: dense primitives (one addressable unit per logical
+ * element) and block-quantized formats (one addressable unit - a block of {@link #byteSize()} bytes
+ * - per {@link #elementsPerBlock()} consecutive logical elements; e.g. Q8_0 stores 32 logical
+ * elements in one 34-byte block).
+ *
+ * <p><b>Logical vs physical shapes.</b> A tensor's <i>logical</i> shape counts represented elements
+ * per axis; its <i>physical</i> (storage) shape counts addressable units per axis. The two differ
+ * only for block-quantized dtypes, and only on the INNERMOST storage axis - the single axis
+ * blocking tiles, matching GGUF/GGML, which interleave scales and mantissas along the contiguous
+ * dimension. {@link #physicalShape(Shape)} divides the innermost dimension by {@link
+ * #elementsPerBlock()} (exact division required); {@link #logicalShape(Shape)} multiplies it back.
+ * For nested shapes the conversions scale the last dim in flatten order and preserve all other
+ * structure.
+ *
+ * <p><b>Blocks are atomic.</b> Every view's layout (shape + strides) is in physical units, so all
+ * view algebra - reshape, slice, transpose, offset arithmetic - operates on whole blocks and never
+ * splits one: {@code byteOffset = Σ index × stride × byteSize()} holds uniformly for dense and
+ * block dtypes alike.
+ */
 public interface DataType {
-    long byteSize(); // block size in bytes
+    /** Bytes per addressable storage unit: one element for dense dtypes, one block for quants. */
+    long byteSize();
 
-    long elementsPerBlock(); // how many elements per block
+    /** Logical elements per storage unit: 1 for dense dtypes, the block width for quants. */
+    long elementsPerBlock();
 
     MemoryLayout layout();
 
@@ -18,10 +40,6 @@ public interface DataType {
     String name();
 
     List<String> aliases();
-
-    static DataType defaultFloat() {
-        return Environment.current().defaultFloat();
-    }
 
     DataType BOOL =
             new DataTypeImpl(
@@ -108,6 +126,11 @@ public interface DataType {
                 null);
     }
 
+    /**
+     * Bytes for {@code elementCount} addressable storage units - for block dtypes the "elements" of
+     * a physical shape ARE blocks (Q8_0: {@code byteSizeFor(2)} is 68 bytes holding 64 logical
+     * elements).
+     */
     default long byteSizeFor(long elementCount) {
         if (elementCount < 0) {
             throw new IllegalArgumentException("negative count");
@@ -115,54 +138,46 @@ public interface DataType {
         return Math.multiplyExact(byteSize(), elementCount);
     }
 
+    /** Bytes for a physical shape: {@link #byteSizeFor(long)} of its size. */
     default long byteSizeFor(Shape shape) {
         return byteSizeFor(shape.size());
     }
 
     /**
      * The element-dimensioned shape for a physical (storage) shape. Only block-quantized types
-     * ({@link #elementsPerBlock()} &gt; 1) distinguish the two: their {@code shape()} counts
-     * storage BLOCKS, and blocking always tiles the innermost (last) storage axis, so the logical
-     * shape is the physical shape with its last dimension multiplied by {@code elementsPerBlock()}.
-     * For every other type the physical shape IS the logical shape and this returns it unchanged.
+     * ({@link #elementsPerBlock()} &gt; 1) distinguish the two: their physical shape counts storage
+     * BLOCKS, and blocking always tiles the innermost (last) storage axis, so the logical shape is
+     * the physical shape with its last dimension (in flatten order) multiplied by {@code
+     * elementsPerBlock()}. For every other type the physical shape IS the logical shape and this
+     * returns it unchanged.
      *
-     * <p>Nested shapes are not supported for block types (flat shapes only); the conversion follows
-     * the storage axis order regardless of any permutation of the view.
+     * <p>This is a pure shape function over a shape in STORAGE axis order (blocked axis last): it
+     * un-tiles the last dimension it is handed, so a permuted axis order must be transposed back
+     * first. Nested shapes keep their structure - only the last dim is scaled.
      */
     default Shape logicalShape(Shape physical) {
         long epb = elementsPerBlock();
         if (epb == 1 || physical.isScalar()) {
             return physical;
         }
-        if (!physical.isFlat()) {
-            throw new UnsupportedOperationException(
-                    "block-quantized type " + name() + " with nested shape " + physical);
-        }
-        int rank = physical.flatRank();
-        long[] dims = new long[rank];
-        for (int i = 0; i < rank; i++) {
-            dims[i] = physical.flatAt(i);
-        }
-        dims[rank - 1] = Math.multiplyExact(dims[rank - 1], epb);
-        return Shape.flat(dims);
+        long[] dims = physical.toArray(); // flatten order; the last entry is the blocked dim
+        dims[dims.length - 1] = Math.multiplyExact(dims[dims.length - 1], epb);
+        return Shape.template(physical, dims); // same nesting, last dim scaled
     }
 
     /**
      * The inverse of {@link #logicalShape(Shape)}: the storage shape for an element-dimensioned
-     * shape, dividing the innermost dimension by {@code elementsPerBlock()} (which must divide it
-     * exactly). Identity for non-block types.
+     * shape, dividing the last dimension (in flatten order) by {@code elementsPerBlock()} - which
+     * must divide it exactly, a block is never split. Identity for non-block types; nested shapes
+     * keep their structure.
      */
     default Shape physicalShape(Shape logical) {
         long epb = elementsPerBlock();
         if (epb == 1 || logical.isScalar()) {
             return logical;
         }
-        if (!logical.isFlat()) {
-            throw new UnsupportedOperationException(
-                    "block-quantized type " + name() + " with nested shape " + logical);
-        }
-        int rank = logical.flatRank();
-        long last = logical.flatAt(rank - 1);
+        long[] dims = logical.toArray(); // flatten order; the last entry is the blocked dim
+        long last = dims[dims.length - 1];
         if (last % epb != 0) {
             throw new IllegalArgumentException(
                     "innermost dimension "
@@ -172,58 +187,12 @@ public interface DataType {
                             + " of "
                             + name());
         }
-        long[] dims = new long[rank];
-        for (int i = 0; i < rank; i++) {
-            dims[i] = logical.flatAt(i);
-        }
-        dims[rank - 1] = last / epb;
-        return Shape.flat(dims);
+        dims[dims.length - 1] = last / epb;
+        return Shape.template(logical, dims); // same nesting, last dim scaled
     }
 }
 
 final class DataTypeImpl implements DataType {
-
-    static DataType defaultFloatValue() {
-        return DefaultFloatHolder.VALUE;
-    }
-
-    private static final class DefaultFloatHolder {
-        private static final DataType VALUE = resolveDefaultFloat();
-
-        private static DataType resolveDefaultFloat() {
-            String name = System.getProperty("jota.defaultFloat");
-            if (name == null) {
-                return DataType.FP32;
-            }
-            DataType dataType = primitiveByName(name);
-            if (!dataType.isFloatingPoint()) {
-                throw new IllegalArgumentException("default float must be floating-point: " + name);
-            }
-            return dataType;
-        }
-
-        private DefaultFloatHolder() {}
-    }
-
-    private static DataType primitiveByName(String name) {
-        List<DataType> primitives =
-                List.of(
-                        DataType.BOOL,
-                        DataType.I8,
-                        DataType.I16,
-                        DataType.I32,
-                        DataType.I64,
-                        DataType.FP16,
-                        DataType.BF16,
-                        DataType.FP32,
-                        DataType.FP64);
-        for (DataType dt : primitives) {
-            if (dt.name().equals(name) || dt.aliases().contains(name)) {
-                return dt;
-            }
-        }
-        throw new IllegalArgumentException("unknown primitive data type: " + name);
-    }
 
     final String name;
     final long byteSize;
