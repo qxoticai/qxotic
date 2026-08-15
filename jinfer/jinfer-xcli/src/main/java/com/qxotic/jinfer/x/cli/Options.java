@@ -400,12 +400,10 @@ public record Options(
                         case "--api-key" -> apiKey = nextArg;
                         case "--cors-origin" -> allowedOrigins.add(nextArg);
                         case "--threads" -> serverThreads = parseInt(optionName, nextArg);
-                        case "--queue-capacity" ->
-                                queueCapacity = parseInt(optionName, nextArg);
+                        case "--queue-capacity" -> queueCapacity = parseInt(optionName, nextArg);
                         case "--max-body-mb" ->
                                 maxBodyBytes = (long) parseInt(optionName, nextArg) << 20;
-                        case "--write-timeout" ->
-                                writeTimeout = parseSeconds(optionName, nextArg);
+                        case "--write-timeout" -> writeTimeout = parseSeconds(optionName, nextArg);
                         case "--request-timeout" ->
                                 requestTimeout = parseSeconds(optionName, nextArg);
                         case "--seed", "-s" -> seed = parseLong(optionName, nextArg);
@@ -589,8 +587,10 @@ public record Options(
         out.println("  --server                      run an OpenAI-compatible HTTP server");
         out.println("  --host <host>                 bind host, default 127.0.0.1");
         out.println("  --port <int>                  bind port, default 17341");
-        out.println("  --api-key <token>             require a bearer token; mandatory off loopback");
-        out.println("  --cors-origin <origin>        allowed browser origin; repeatable, default *");
+        out.println(
+                "  --api-key <token>             require a bearer token; mandatory off loopback");
+        out.println(
+                "  --cors-origin <origin>        allowed browser origin; repeatable, default *");
         out.println("  --threads <int>               HTTP handler threads, default 16");
         out.println("  --queue-capacity <int>        waiting generations, default 4");
         out.println("  --max-body-mb <int>           request body limit, default 32");

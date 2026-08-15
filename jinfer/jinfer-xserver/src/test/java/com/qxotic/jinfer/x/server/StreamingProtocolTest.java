@@ -31,8 +31,7 @@ class StreamingProtocolTest {
         assertEquals(
                 7,
                 Values.intValue(
-                        Values.asObject(chunks.getLast().get("usage"), "usage")
-                                .get("total_tokens"),
+                        Values.asObject(chunks.getLast().get("usage"), "usage").get("total_tokens"),
                         -1));
     }
 

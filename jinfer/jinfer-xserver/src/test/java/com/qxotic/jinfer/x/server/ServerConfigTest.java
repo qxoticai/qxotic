@@ -53,8 +53,7 @@ class ServerConfigTest {
                                         .withGrammar(false)
                                         .withRequestTimeout(Duration.ofSeconds(2)))
                         .withAccess(
-                                new ServerConfig.Access(
-                                        "secret", Set.of("https://example.test")));
+                                new ServerConfig.Access("secret", Set.of("https://example.test")));
 
         assertEquals(3, config.limits().threads());
         assertEquals(1, config.limits().queueCapacity());

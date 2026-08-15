@@ -1,7 +1,7 @@
 package com.qxotic.jinfer.x.server;
 
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.charset.StandardCharsets;
@@ -18,9 +18,7 @@ class JsonCodecTest {
                 IllegalArgumentException.class,
                 () ->
                         JsonCodec.parse(
-                                new byte[] {
-                                    '{', '"', 'x', '"', ':', '"', (byte) 0xff, '"', '}'
-                                }));
+                                new byte[] {'{', '"', 'x', '"', ':', '"', (byte) 0xff, '"', '}'}));
         JsonCodec.parse("{}".getBytes(StandardCharsets.UTF_8));
     }
 

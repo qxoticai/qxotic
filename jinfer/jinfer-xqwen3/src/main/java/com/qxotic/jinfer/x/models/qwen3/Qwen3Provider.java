@@ -27,57 +27,60 @@ import java.util.Set;
  */
 public final class Qwen3Provider implements ModelProvider {
 
-  @Override
-  public boolean supports(String architecture) {
-    return "qwen3".equals(architecture);
-  }
+    @Override
+    public boolean supports(String architecture) {
+        return "qwen3".equals(architecture);
+    }
 
-  @Override
-  public Set<String> architectures() {
-    return Set.of("qwen3");
-  }
+    @Override
+    public Set<String> architectures() {
+        return Set.of("qwen3");
+    }
 
-  @Override
-  public LoadedModel<?> load(
-      FileChannel fileChannel,
-      GGUF gguf,
-      Arena arena,
-      Map<String, Path> companions,
-      Tokenizer tokenizer) {
-    throw new UnsupportedOperationException(
-        "'qwen3' is the Qwen3 RETRIEVAL family (Qwen3-Embedding, Qwen3-Reranker), not a"
-            + " generative model - load it with Models.loadEmbedder or"
-            + " Models.loadReranker");
-  }
+    @Override
+    public LoadedModel<?> load(
+            FileChannel fileChannel,
+            GGUF gguf,
+            Arena arena,
+            Map<String, Path> companions,
+            Tokenizer tokenizer) {
+        throw new UnsupportedOperationException(
+                "'qwen3' is the Qwen3 RETRIEVAL family (Qwen3-Embedding, Qwen3-Reranker), not a"
+                        + " generative model - load it with Models.loadEmbedder or"
+                        + " Models.loadReranker");
+    }
 
-  @Override
-  public LoadedEmbedder<?> loadEmbedder(FileChannel fileChannel, GGUF gguf, Path path, Arena arena)
-      throws IOException {
-    Qwen3 model = Qwen3.loadModel(fileChannel, gguf, arena);
-    // last-token pooling wants a trailing EOS on every sequence (the llama.cpp convention)
-    int eos =
-        SpecialTokens.find(model.tokenizer(), "<|endoftext|>")
-            .orElseThrow(() -> new IllegalStateException("qwen3 vocab has no <|endoftext|>"));
-    return new LoadedEmbedder<>(
-        model,
-        model.tokenizer(),
-        new int[0],
-        new int[] {eos},
-        model.config().embeddingLength(),
-        32, // model card: Matryoshka output supports every width from 32 to native
-        path.getFileName().toString(),
-        // the card's instructed-query framing, default retrieval task, verbatim
-        // (get_detailed_instruct: 'Instruct: {task}\nQuery:{query}' - no space after
-        // Query:); documents are embedded bare per the same card
-        "Instruct: Given a web search query, retrieve relevant passages that answer the"
-            + " query\nQuery:",
-        "");
-  }
+    @Override
+    public LoadedEmbedder<?> loadEmbedder(
+            FileChannel fileChannel, GGUF gguf, Path path, Arena arena) throws IOException {
+        Qwen3 model = Qwen3.loadModel(fileChannel, gguf, arena);
+        // last-token pooling wants a trailing EOS on every sequence (the llama.cpp convention)
+        int eos =
+                SpecialTokens.find(model.tokenizer(), "<|endoftext|>")
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "qwen3 vocab has no <|endoftext|>"));
+        return new LoadedEmbedder<>(
+                model,
+                model.tokenizer(),
+                new int[0],
+                new int[] {eos},
+                model.config().embeddingLength(),
+                32, // model card: Matryoshka output supports every width from 32 to native
+                path.getFileName().toString(),
+                // the card's instructed-query framing, default retrieval task, verbatim
+                // (get_detailed_instruct: 'Instruct: {task}\nQuery:{query}' - no space after
+                // Query:); documents are embedded bare per the same card
+                "Instruct: Given a web search query, retrieve relevant passages that answer the"
+                        + " query\nQuery:",
+                "");
+    }
 
-  @Override
-  public LoadedReranker<?> loadReranker(FileChannel fileChannel, GGUF gguf, Path path, Arena arena)
-      throws IOException {
-    Qwen3 model = Qwen3.loadModel(fileChannel, gguf, arena);
-    return new LoadedReranker<>(model, new Qwen3Reranker(model), path.getFileName().toString());
-  }
+    @Override
+    public LoadedReranker<?> loadReranker(
+            FileChannel fileChannel, GGUF gguf, Path path, Arena arena) throws IOException {
+        Qwen3 model = Qwen3.loadModel(fileChannel, gguf, arena);
+        return new LoadedReranker<>(model, new Qwen3Reranker(model), path.getFileName().toString());
+    }
 }

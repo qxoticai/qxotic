@@ -267,8 +267,7 @@ public final class Server {
         // no shutdown hook here: one per start() is a hook the embedder cannot unregister, and it
         // pins the engine for the life of the JVM. The CLI, which never closes the handle,
         // registers its own; every other caller closes the handle it was given.
-        long stopDelay =
-                Math.ceilDiv(config.limits().shutdownTimeout().toNanos(), 1_000_000_000L);
+        long stopDelay = Math.ceilDiv(config.limits().shutdownTimeout().toNanos(), 1_000_000_000L);
         return new Running(server, worker, (int) Math.min(Integer.MAX_VALUE, stopDelay));
     }
 
@@ -308,10 +307,7 @@ public final class Server {
                         byte[] raw = Http.readBody(exchange, config.limits().maxBodyBytes());
                         if (raw == null) return;
                         try {
-                            request =
-                                    Values.asObject(
-                                            JsonCodec.parse(raw),
-                                            "request");
+                            request = Values.asObject(JsonCodec.parse(raw), "request");
                         } catch (RuntimeException e) {
                             Http.sendError(exchange, 400, Http.errorMessage(e));
                             return;
@@ -367,9 +363,7 @@ public final class Server {
         }
         Map<String, Object> request;
         try {
-            request =
-                    Values.asObject(
-                            JsonCodec.parse(body), "request");
+            request = Values.asObject(JsonCodec.parse(body), "request");
             validator.accept(request);
         } catch (RuntimeException e) {
             metrics.record(Metrics.Outcome.INVALID_REQUEST);
@@ -505,11 +499,7 @@ public final class Server {
                         long created = System.currentTimeMillis() / 1000;
                         sse.emit(
                                 OpenAiSchema.chatCompletionChunk(
-                                        id,
-                                        modelId,
-                                        created,
-                                        Map.of("role", "assistant"),
-                                        null));
+                                        id, modelId, created, Map.of("role", "assistant"), null));
                         // A forced tool call streams no live channels (the turn is seeded
                         // straight into the tool-call block; the calls are parsed from the result
                         // and emitted once below); otherwise content and reasoning stream live.
@@ -625,8 +615,7 @@ public final class Server {
                                 result,
                                 OpenAiSchema.completionChunk(
                                         id, modelId, created, "", result.finishReason()),
-                                OpenAiSchema.completionChunk(
-                                        id, modelId, created, "", null));
+                                OpenAiSchema.completionChunk(id, modelId, created, "", null));
                     });
         }
     }
@@ -666,9 +655,7 @@ public final class Server {
                                         : deltaSink(
                                                 sse,
                                                 "response.output_text.delta",
-                                                t ->
-                                                        OpenAiSchema.responseTextDelta(
-                                                                itemId, t));
+                                                t -> OpenAiSchema.responseTextDelta(itemId, t));
                         Reply result =
                                 generation.chat(
                                         request,
@@ -680,8 +667,7 @@ public final class Server {
                                 if (!result.text().isEmpty()) {
                                     sse.emit(
                                             "response.output_text.delta",
-                                            OpenAiSchema.responseTextDelta(
-                                                    itemId, result.text()));
+                                            OpenAiSchema.responseTextDelta(itemId, result.text()));
                                 }
                             }
                             sse.emit(
@@ -715,8 +701,7 @@ public final class Server {
                                 OpenAiSchema.responseOutputItems(id, result);
                         for (int i = 0; i < items.size(); i++) {
                             if (!result.toolCalls().isEmpty()) {
-                                Map<String, Object> started =
-                                        new LinkedHashMap<>(items.get(i));
+                                Map<String, Object> started = new LinkedHashMap<>(items.get(i));
                                 started.put("status", "in_progress");
                                 started.put("arguments", "");
                                 sse.emit(

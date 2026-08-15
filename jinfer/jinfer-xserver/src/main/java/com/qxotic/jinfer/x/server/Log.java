@@ -16,4 +16,3 @@ final class Log {
 
     private Log() {}
 }
-

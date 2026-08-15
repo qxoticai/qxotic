@@ -152,21 +152,13 @@ class ValidationTest {
         Map<String, Object> required = new HashMap<>(user("hi"));
         required.put("tool_choice", "required");
         assertThrows(
-                IllegalArgumentException.class,
-                () -> Validation.validateChatRequest(required));
+                IllegalArgumentException.class, () -> Validation.validateChatRequest(required));
 
         Map<String, Object> named = new HashMap<>(user("hi"));
         named.put(
                 "tools",
-                List.of(
-                        Map.of(
-                                "type",
-                                "function",
-                                "function",
-                                Map.of("name", "weather"))));
-        named.put(
-                "tool_choice",
-                Map.of("type", "function", "function", Map.of("name", "missing")));
+                List.of(Map.of("type", "function", "function", Map.of("name", "weather"))));
+        named.put("tool_choice", Map.of("type", "function", "function", Map.of("name", "missing")));
         assertThrows(IllegalArgumentException.class, () -> Validation.validateChatRequest(named));
     }
 
@@ -208,9 +200,7 @@ class ValidationTest {
                                         "user",
                                         "content",
                                         List.of(Map.of("type", "input_file")))));
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> Validation.validateChatRequest(unknown));
+        assertThrows(IllegalArgumentException.class, () -> Validation.validateChatRequest(unknown));
     }
 
     @Test
@@ -232,10 +222,14 @@ class ValidationTest {
     void rejectsResponsesOptionsWhoseSemanticsAreNotImplemented() {
         Validation.validateResponseOptions(
                 Map.of(
-                        "background", false,
-                        "store", false,
-                        "truncation", "disabled",
-                        "include", List.of()));
+                        "background",
+                        false,
+                        "store",
+                        false,
+                        "truncation",
+                        "disabled",
+                        "include",
+                        List.of()));
 
         for (Map<String, Object> request :
                 List.<Map<String, Object>>of(

@@ -41,9 +41,7 @@ final class Generation {
         this.defaults =
                 config.defaults().sampling() != null
                         ? config.defaults().sampling()
-                        : engine.loaded()
-                                .samplingDefaults()
-                                .resolve(null, null, null, null, null);
+                        : engine.loaded().samplingDefaults().resolve(null, null, null, null, null);
     }
 
     PromptCache.Sample cacheSample() {
@@ -116,8 +114,7 @@ final class Generation {
 
         WireSink(Map<String, Object> request, Sinks sinks) {
             this.sinks = sinks;
-            inline =
-                    "none".equals(Values.stringValue(request.get("reasoning_format"), null));
+            inline = "none".equals(Values.stringValue(request.get("reasoning_format"), null));
         }
 
         @Override
@@ -200,7 +197,8 @@ final class Generation {
     private static void collectCalls(List<Content> content, List<Content.ToolCall> calls) {
         for (Content part : content) {
             if (part instanceof Content.ToolCall call) calls.add(call);
-            else if (part instanceof Content.Reasoning nested) collectCalls(nested.content(), calls);
+            else if (part instanceof Content.Reasoning nested)
+                collectCalls(nested.content(), calls);
         }
     }
 
@@ -220,8 +218,7 @@ final class Generation {
                                 Role.TOOL,
                                 List.of(
                                         new Content.ToolResult(
-                                                Values.stringValue(
-                                                        message.get("tool_call_id"), ""),
+                                                Values.stringValue(message.get("tool_call_id"), ""),
                                                 Values.messageContent(message.get("content"))))));
                 continue;
             }
@@ -318,7 +315,8 @@ final class Generation {
         try {
             return new Content.Media(ImageCodec.decode(bytes), digest(bytes));
         } catch (IOException failure) {
-            throw new IllegalArgumentException("image could not be decoded: " + failure.getMessage());
+            throw new IllegalArgumentException(
+                    "image could not be decoded: " + failure.getMessage());
         }
     }
 
@@ -333,7 +331,8 @@ final class Generation {
         try {
             return new Content.Media(AudioCodec.decode(bytes), digest(bytes));
         } catch (IOException failure) {
-            throw new IllegalArgumentException("audio could not be decoded: " + failure.getMessage());
+            throw new IllegalArgumentException(
+                    "audio could not be decoded: " + failure.getMessage());
         }
     }
 

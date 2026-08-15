@@ -28,8 +28,7 @@ import org.junit.jupiter.api.Test;
 @Tag("integration")
 class ServerIntegrationTest {
 
-    private static final String MODEL =
-            "hf.co/LiquidAI/LFM2.5-350M-GGUF/LFM2.5-350M-Q8_0.gguf";
+    private static final String MODEL = "hf.co/LiquidAI/LFM2.5-350M-GGUF/LFM2.5-350M-Q8_0.gguf";
 
     @Test
     void openAiTransportRunsAgainstARealMemoryViewModel() throws Exception {
@@ -39,10 +38,7 @@ class ServerIntegrationTest {
                                 path,
                                 Map.of(),
                                 PromptCache.Options.DEFAULTS.withContextCapacity(256));
-                Server.Running server =
-                        Server.start(
-                                engine,
-                                ServerConfig.local(0))) {
+                Server.Running server = Server.start(engine, ServerConfig.local(0))) {
             String base = "http://127.0.0.1:" + server.address().getPort();
             HttpClient client = HttpClient.newHttpClient();
 
@@ -57,14 +53,10 @@ class ServerIntegrationTest {
             assertFalse(props.contains("\"hot_sessions\":"), props);
             assertFalse(props.contains("\"hot_hits\":"), props);
             assertEquals(
-                    200,
-                    post(client, base + "/tokenize", "{\"content\":\"hello\"}")
-                            .statusCode());
+                    200, post(client, base + "/tokenize", "{\"content\":\"hello\"}").statusCode());
             assertEquals(400, post(client, base + "/tokenize", "{}").statusCode());
             assertEquals(
-                    400,
-                    post(client, base + "/detokenize", "{\"tokens\":[1.5]}")
-                            .statusCode());
+                    400, post(client, base + "/detokenize", "{\"tokens\":[1.5]}").statusCode());
 
             HttpResponse<String> completion =
                     post(
@@ -194,9 +186,7 @@ class ServerIntegrationTest {
         Path path = TestModels.require(MODEL);
         Path catalog = Files.createTempDirectory("xjinfer-server-cache").resolve("prompts.jkvf");
         PromptCache.Options options =
-                PromptCache.Options.DEFAULTS
-                        .withContextCapacity(256)
-                        .withCatalog(catalog, false);
+                PromptCache.Options.DEFAULTS.withContextCapacity(256).withCatalog(catalog, false);
         String body =
                 "{\"messages\":[{\"role\":\"user\",\"content\":"
                         + "\"The capital of France is Paris. Reply with one word.\"}],"
@@ -237,8 +227,7 @@ class ServerIntegrationTest {
                     post(
                                     HttpClient.newHttpClient(),
                                     base(busy) + "/v1/completions",
-                                    "{\"prompt\":\"Once\",\"max_tokens\":1,"
-                                            + "\"temperature\":0}")
+                                    "{\"prompt\":\"Once\",\"max_tokens\":1," + "\"temperature\":0}")
                             .statusCode());
             recording.stop();
             recording.dump(recordingFile);
