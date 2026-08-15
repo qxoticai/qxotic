@@ -47,7 +47,7 @@ class GeneratorTest {
     }
 
     /** A minimal model: prefill ingests the prompt, decode rows are scripted by the sampler. */
-    private static final class FakeModel implements LanguageModel<Config, Object, FakeModel.State> {
+    private static class FakeModel implements LanguageModel<Config, Object, FakeModel.State> {
 
         final List<int[]> ingested = new ArrayList<>();
 
@@ -92,8 +92,12 @@ class GeneratorTest {
             return new State(contextCapacity, batchCapacity, arena);
         }
 
+        /** Test hook: runs at the top of every forward call. */
+        void onForward() {}
+
         @Override
         public void forward(State state, Batch batch) {
+            onForward();
             if (batch.input() instanceof Batch.Input.Tokens t) ingested.add(t.ids());
             state.advance(batch.count(), batch.outputs());
         }
@@ -262,6 +266,79 @@ class GeneratorTest {
 
             assertEquals(Generator.FinishReason.TIMEOUT, result.finishReason());
             assertTrue(result.completionTokens() < 4); // the deadline cut the script short
+        }
+    }
+
+    @Test
+    void expiredDeadlineEmitsNoToken() {
+        FakeModel model = new FakeModel();
+        try (FakeModel.State state = model.newState(128, 8, Arena.ofAuto())) {
+            List<Integer> seen = new ArrayList<>(), committed = new ArrayList<>();
+            var result =
+                    Generator.generate(
+                            model,
+                            state,
+                            new int[] {1},
+                            scripted(10, 11, 12),
+                            constraints(16, Duration.ofNanos(1), Set.of()),
+                            recording(seen, committed));
+
+            assertEquals(Generator.FinishReason.TIMEOUT, result.finishReason());
+            assertArrayEquals(new int[0], result.tokens());
+            assertEquals(List.of(), seen); // no token is sampled past the deadline
+            assertEquals(List.of(), committed);
+        }
+    }
+
+    @Test
+    void deadlineBreaksBetweenPrefillChunks() {
+        FakeModel model =
+                new FakeModel() {
+                    @Override
+                    void onForward() {
+                        try {
+                            Thread.sleep(100); // one chunk outlasts the whole budget
+                        } catch (InterruptedException e) {
+                            throw new AssertionError(e);
+                        }
+                    }
+                };
+        try (FakeModel.State state = model.newState(128, 4, Arena.ofAuto())) {
+            List<Integer> seen = new ArrayList<>();
+            var result =
+                    Generator.generate(
+                            model,
+                            state,
+                            new int[32], // 8 chunks of 4
+                            scripted(10, 11, 12),
+                            constraints(16, Duration.ofMillis(50), Set.of()),
+                            recording(seen, new ArrayList<>()));
+
+            assertEquals(Generator.FinishReason.TIMEOUT, result.finishReason());
+            assertArrayEquals(new int[0], result.tokens());
+            assertEquals(List.of(), seen);
+            assertEquals(4, state.position()); // chunk 0 completed, chunk 1 never started
+        }
+    }
+
+    @Test
+    void generousDeadlineIsTransparent() {
+        FakeModel model = new FakeModel();
+        try (FakeModel.State state = model.newState(128, 8, Arena.ofAuto())) {
+            List<Integer> seen = new ArrayList<>(), committed = new ArrayList<>();
+            var result =
+                    Generator.generate(
+                            model,
+                            state,
+                            new int[] {1},
+                            scripted(10, 11, 12),
+                            constraints(3, Duration.ofHours(1), Set.of()),
+                            recording(seen, committed));
+
+            assertEquals(Generator.FinishReason.LENGTH, result.finishReason());
+            assertArrayEquals(new int[] {10, 11, 12}, result.tokens());
+            assertEquals(List.of(10, 11, 12), seen);
+            assertEquals(List.of(10, 11), committed); // the final token is not ingested
         }
     }
 }
