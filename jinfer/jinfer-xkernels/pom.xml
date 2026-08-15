@@ -54,6 +54,17 @@
       <artifactId>jinfer-testkit</artifactId>
       <scope>test</scope>
     </dependency>
+    <!-- the pure-java jam rungs, for MatMulJamParityTest's dedicated surefire execution -->
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jam-scalar</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jam-vector</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
@@ -61,17 +72,45 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
-        <configuration>
-          <!-- Differential oracles compare against the JAVA floor: exclude the JAM backends so
-               the old Dispatch routes gemm/gemv to the same dot-based code (jinfer-kernels pulls
-               them in transitively, and jam-native crashes the forked JVM intermittently).
-               JAM parity arrives with the JAM arm of x.MatMul. -->
-          <classpathDependencyExcludes>
-            <classpathDependencyExclude>com.qxotic:jam-native</classpathDependencyExclude>
-            <classpathDependencyExclude>com.qxotic:jam-vector</classpathDependencyExclude>
-            <classpathDependencyExclude>com.qxotic:jam-scalar</classpathDependencyExclude>
-          </classpathDependencyExcludes>
-        </configuration>
+        <executions>
+          <execution>
+            <id>default-test</id>
+            <goals>
+              <goal>test</goal>
+            </goals>
+            <configuration>
+              <!-- Differential oracles compare against the JAVA floor: exclude the JAM backends
+                   so the old Dispatch routes gemm/gemv to the same dot-based code (jinfer-kernels
+                   pulls them in transitively, and jam-native crashes the forked JVM
+                   intermittently). -->
+              <classpathDependencyExcludes>
+                <classpathDependencyExclude>com.qxotic:jam-native</classpathDependencyExclude>
+                <classpathDependencyExclude>com.qxotic:jam-vector</classpathDependencyExclude>
+                <classpathDependencyExclude>com.qxotic:jam-scalar</classpathDependencyExclude>
+              </classpathDependencyExcludes>
+              <excludes>
+                <exclude>**/MatMulJamParityTest.java</exclude>
+              </excludes>
+            </configuration>
+          </execution>
+          <execution>
+            <!-- jam-rung parity: MatMul.mm (jam-routed) vs MatMul.mmFloor (no jam) needs the
+                 pure-java backends on the classpath; jam-native stays excluded (flaky in the
+                 forked JVM). -->
+            <id>jam-parity</id>
+            <goals>
+              <goal>test</goal>
+            </goals>
+            <configuration>
+              <classpathDependencyExcludes>
+                <classpathDependencyExclude>com.qxotic:jam-native</classpathDependencyExclude>
+              </classpathDependencyExcludes>
+              <includes>
+                <include>**/MatMulJamParityTest.java</include>
+              </includes>
+            </configuration>
+          </execution>
+        </executions>
       </plugin>
     </plugins>
   </build>

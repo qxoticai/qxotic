@@ -179,6 +179,25 @@ public final class MatMul {
                 return;
             }
         }
+        mmFloor(w, wOff, wStride, av, aOff, aStride, cv, cOff, cStride, m, n, k, dt, inPlace);
+    }
+
+    /** The floor with the jam rungs removed - mm's tail, and the jam parity test's seam. */
+    static void mmFloor(
+            MemoryView<MemorySegment> w,
+            long wOff,
+            int wStride,
+            Raw av,
+            long aOff,
+            int aStride,
+            Raw cv,
+            long cOff,
+            int cStride,
+            int m,
+            int n,
+            int k,
+            DataType dt,
+            boolean inPlace) {
         if (dt.elementsPerBlock() > 1) {
             Raw wv = Raw.of(w, dt, "w");
             // block-quantized weights: element offsets fold to block bytes (rows are k long and
