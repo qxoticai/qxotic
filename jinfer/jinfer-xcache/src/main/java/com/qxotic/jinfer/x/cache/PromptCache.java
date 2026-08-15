@@ -15,6 +15,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.function.BooleanSupplier;
 
 /**
  * jinfer's KV cache - the one front door to every way caching happens. Two layers, one law:
@@ -267,6 +268,16 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
 
         /** Time spent selecting/restoring a state and ingesting the uncached prompt suffix. */
         Duration promptTime();
+
+        /**
+         * False when the pass's interrupt stopped prompt ingestion at the last completed chunk: the
+         * prompt is PARTIALLY served. The pass still runs - it produces its stopped outcome and
+         * must not generate from the state - and the session is discarded after the pass returns: a
+         * partially-served prompt never serves again. Committed blocks below the seam survive.
+         */
+        default boolean prefillComplete() {
+            return true;
+        }
     }
 
     /**
@@ -286,6 +297,17 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
      * reply commit throws, the session is discarded - a possibly-torn state must never serve again.
      */
     public <R> R serve(List<Batch> prompt, Pass<S, R> pass) {
+        return serve(prompt, pass, () -> false);
+    }
+
+    /**
+     * As {@link #serve(List, Pass)} with a cooperative interrupt consulted BETWEEN prefill chunks
+     * (never inside a forward - a chunk in flight always completes). When it first reports true,
+     * ingestion stops at the last completed chunk and the pass runs with {@link
+     * Serving#prefillComplete()} false; a completed prefill - including one fully restored from
+     * cache, where the supplier is never consulted - retains the session as usual.
+     */
+    public <R> R serve(List<Batch> prompt, Pass<S, R> pass, BooleanSupplier prefillInterrupt) {
         checkOpen();
         long promptStarted = System.nanoTime();
         long[] fingerprints = CachedSession.fingerprints(prompt);
@@ -311,26 +333,36 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
         Live serving = new Live(session, restored, tier);
         R result;
         try {
+            boolean complete = true;
             if (coarse && groups.size() > 1) {
                 // the snapshot must sit BEFORE the final batch - the generation prompt, by the
                 // chat-template convention that it is the prompt's last batch. The echoed next
                 // turn shares everything before that seam and nothing after it (the echo renders
                 // the reply's turn with history framing, the generation prompt with live framing:
                 // <think>\n vs the truncated pair), so a later snapshot can never match.
-                session.ingestGroups(groups.subList(0, groups.size() - 1), fingerprints);
-                session.snapshotTail(codec);
+                complete =
+                        session.ingestGroups(
+                                groups.subList(0, groups.size() - 1),
+                                fingerprints,
+                                prefillInterrupt);
+                if (complete) session.snapshotTail(codec); // never snapshot a partial prompt
             }
-            session.ingestGroups(groups, fingerprints);
+            if (complete) complete = session.ingestGroups(groups, fingerprints, prefillInterrupt);
             serving.promptTime = Duration.ofNanos(System.nanoTime() - promptStarted);
+            serving.prefillComplete = complete;
             result = pass.run(session.state(), serving);
-            serving.flushReply(); // one block, saved at the state's frontier
+            if (complete) serving.flushReply(); // one block, saved at the state's frontier
         } catch (RuntimeException | Error e) {
             closeSession(session); // torn: never serves again; its committed blocks survive
             throw e;
         } finally {
             serving.live = false;
         }
-        release(session);
+        if (serving.prefillComplete) {
+            release(session);
+        } else {
+            closeSession(session); // a partially-served prompt never serves again
+        }
         return result;
     }
 
@@ -342,6 +374,7 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
         private final List<Integer> reply = new ArrayList<>(); // buffered per-reply tail tokens
         private boolean live = true;
         private Duration promptTime;
+        private boolean prefillComplete = true;
 
         Live(CachedSession<S> session, int restored, Tier tier) {
             this.session = session;
@@ -401,6 +434,11 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
                 throw new IllegalStateException("prompt has not been served yet");
             }
             return promptTime;
+        }
+
+        @Override
+        public boolean prefillComplete() {
+            return prefillComplete;
         }
     }
 
