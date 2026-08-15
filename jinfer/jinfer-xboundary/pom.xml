@@ -22,7 +22,7 @@
   <dependencies>
     <dependency>
       <groupId>com.qxotic</groupId>
-      <artifactId>jota</artifactId>
+      <artifactId>jota-memory</artifactId>
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>

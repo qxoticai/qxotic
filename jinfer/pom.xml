@@ -261,7 +261,7 @@
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
-        <artifactId>jota</artifactId>
+        <artifactId>jota-memory</artifactId>
         <version>0.1.0</version>
       </dependency>
       <dependency>
