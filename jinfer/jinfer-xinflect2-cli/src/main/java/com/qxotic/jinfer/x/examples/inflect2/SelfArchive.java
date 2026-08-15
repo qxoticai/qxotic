@@ -11,7 +11,7 @@
 // the dependency here for one reason: ZipArchiveEntry.getDataOffset() gives the exact byte where an
 // entry's data begins, which the JDK's java.util.zip does not expose and which cannot be derived
 // without parsing the central directory by hand.
-package com.qxotic.jinfer.x.models.inflect2;
+package com.qxotic.jinfer.x.examples.inflect2;
 
 import java.io.EOFException;
 import java.io.IOException;
@@ -30,7 +30,7 @@ import java.util.Set;
 import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
 import org.apache.commons.compress.archivers.zip.ZipFile;
 
-public final class SelfArchive implements AutoCloseable {
+final class SelfArchive implements AutoCloseable {
 
     /** How many symlinks may be followed before assuming the archive is malformed. */
     private static final int MAX_SYMLINK_DEPTH = 8;
@@ -44,7 +44,7 @@ public final class SelfArchive implements AutoCloseable {
     }
 
     /** Open the running executable as an archive. */
-    public static SelfArchive open() throws IOException {
+    static SelfArchive open() throws IOException {
         Path self =
                 ProcessHandle.current()
                         .info()
@@ -66,15 +66,15 @@ public final class SelfArchive implements AutoCloseable {
     }
 
     /** The channel over the archive file, for mapping entry data in place. */
-    public FileChannel channel() {
+    FileChannel channel() {
         return channel;
     }
 
     /** One STORED entry: its name, the absolute offset of its data, and its length. */
-    public record Entry(String name, long offset, int size) {}
+    record Entry(String name, long offset, int size) {}
 
     /** Look up an entry by name, following Unix symlinks. */
-    public Entry entry(String name) throws IOException {
+    Entry entry(String name) throws IOException {
         return resolve(name, name, new HashSet<>());
     }
 
@@ -101,7 +101,7 @@ public final class SelfArchive implements AutoCloseable {
      * data; entries that are compressed, broken or dangling are left out - a listing should not
      * fail because one entry is unusable.
      */
-    public List<Entry> entries() {
+    List<Entry> entries() {
         List<Entry> usable = new ArrayList<>();
         for (Enumeration<ZipArchiveEntry> e = zip.getEntries(); e.hasMoreElements(); ) {
             String name = e.nextElement().getName();
@@ -116,7 +116,7 @@ public final class SelfArchive implements AutoCloseable {
     }
 
     /** Read exactly {@code count} bytes at {@code offset}. */
-    public byte[] readAt(long offset, int count) throws IOException {
+    byte[] readAt(long offset, int count) throws IOException {
         byte[] bytes = new byte[count];
         ByteBuffer buffer = ByteBuffer.wrap(bytes);
         long at = offset;

@@ -2,7 +2,7 @@
 //
 // Hand-written rather than javax.sound.sampled, which would pull the java.desktop module into a
 // native image for the sake of a 44-byte header.
-package com.qxotic.jinfer.x.models.inflect2;
+package com.qxotic.jinfer.x.examples.inflect2;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -12,14 +12,14 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
-public final class AudioIO {
+final class AudioIO {
     private AudioIO() {}
 
     private static final int HEADER_BYTES = 44;
     private static final short PCM_FORMAT = 1, MONO = 1, BITS_PER_SAMPLE = 16;
 
     /** Convert a float [-1,1] waveform to 16-bit signed little-endian samples. */
-    public static byte[] toS16LE(float[] waveform) {
+    static byte[] toS16LE(float[] waveform) {
         byte[] bytes = new byte[waveform.length * 2];
         for (int i = 0; i < waveform.length; i++) {
             int sample = Math.clamp((int) (waveform[i] * Short.MAX_VALUE), -32768, 32767);
@@ -30,7 +30,7 @@ public final class AudioIO {
     }
 
     /** Write a float [-1,1] mono waveform as a 16-bit PCM WAV file. */
-    public static void writeWav(float[] waveform, int sampleRate, Path path) throws IOException {
+    static void writeWav(float[] waveform, int sampleRate, Path path) throws IOException {
         int dataBytes = waveform.length * 2;
         int byteRate = sampleRate * MONO * BITS_PER_SAMPLE / 8;
         ByteBuffer header = ByteBuffer.allocate(HEADER_BYTES).order(ByteOrder.LITTLE_ENDIAN);

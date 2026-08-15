@@ -92,6 +92,16 @@ public final class InflectTTS
     }
 
     /**
+     * As {@link #load(FileChannel, GGUF, Path, Arena)}, with the GGUF beginning at {@code
+     * baseOffset} in {@code channel}. No adjacent lexicon is inferred because the GGUF has no
+     * standalone path; classpath lexicon and espeak fallback remain available.
+     */
+    public static InflectTTS load(FileChannel channel, GGUF gguf, long baseOffset, Arena arena)
+            throws IOException {
+        return wrap(Inflect2.load(channel, gguf, baseOffset, arena), null, null);
+    }
+
+    /**
      * As {@link #load(FileChannel, GGUF, Path, Arena)} with an explicit pronunciation lexicon,
      * which REPLACES the discovery ladder rather than joining it: naming a file and silently
      * falling back to another would be the same lie as ignoring it. Unreadable throws.
@@ -101,14 +111,6 @@ public final class InflectTTS
             throws IOException {
         if (lexicon == null) throw new IllegalArgumentException("null lexicon");
         return wrap(Inflect2.load(channel, gguf, arena), path, lexicon);
-    }
-
-    /**
-     * Load from a ZIP overlay appended to the running executable, e.g. {@code "default.gguf"}, with
-     * the weights mapped into {@code arena}.
-     */
-    public static InflectTTS loadSelfArchive(String entryName, Arena arena) throws IOException {
-        return wrap(Inflect2.loadSelfArchive(entryName, arena), null, null);
     }
 
     private static InflectTTS wrap(Inflect2 model, Path gguf, Path lexicon) throws IOException {

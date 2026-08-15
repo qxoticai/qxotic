@@ -32,6 +32,7 @@
     <module>jinfer-xnemotronh</module>
     <module>jinfer-xllama</module>
     <module>jinfer-xinflect2</module>
+    <module>jinfer-xinflect2-cli</module>
     <module>jinfer-xmodels-all</module>
     <module>jinfer-xchat</module>
     <module>jinfer-xserver</module>

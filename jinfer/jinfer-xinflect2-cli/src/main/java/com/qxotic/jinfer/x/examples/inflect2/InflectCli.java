@@ -2,16 +2,21 @@
 //
 //   inflect model.gguf --text "Hello world." --output hello.wav
 //   inflect --model z://default.gguf --play --speed 1.1
-package com.qxotic.jinfer.x.models.inflect2;
+package com.qxotic.jinfer.x.examples.inflect2;
 
+import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.x.boundary.Media;
 import com.qxotic.jinfer.x.boundary.SpeechOptions;
 import com.qxotic.jinfer.x.boundary.media.AudioCodec;
+import com.qxotic.jinfer.x.models.inflect2.Inflect2;
+import com.qxotic.jinfer.x.models.inflect2.InflectTTS;
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintStream;
 import java.lang.foreign.Arena;
+import java.nio.channels.Channels;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
@@ -61,12 +66,23 @@ public final class InflectCli {
     private static InflectTTS open(String model) throws IOException {
         // a CLI's weights live exactly as long as the process: the global arena owns them
         Arena weights = Arena.global();
-        if (model == null) return InflectTTS.loadSelfArchive(DEFAULT_ENTRY, weights);
+        if (model == null) return loadSelfArchive(DEFAULT_ENTRY, weights);
         if (model.startsWith(SELF_ARCHIVE))
-            return InflectTTS.loadSelfArchive(model.substring(SELF_ARCHIVE.length()), weights);
+            return loadSelfArchive(model.substring(SELF_ARCHIVE.length()), weights);
         Path path = Path.of(model);
         if (!Files.isReadable(path)) throw new IOException("cannot read model: " + path);
         return InflectTTS.load(path, weights);
+    }
+
+    /** Map a GGUF straight from a STORED entry in the running executable's ZIP overlay. */
+    private static InflectTTS loadSelfArchive(String name, Arena arena) throws IOException {
+        try (SelfArchive archive = SelfArchive.open()) {
+            SelfArchive.Entry entry = archive.entry(name);
+            // The header is small (< 64 KB even for Inflect2's 302 tensors).
+            byte[] header = archive.readAt(entry.offset(), Math.min(entry.size(), 1 << 16));
+            GGUF gguf = GGUF.read(Channels.newChannel(new ByteArrayInputStream(header)));
+            return InflectTTS.load(archive.channel(), gguf, entry.offset(), arena);
+        }
     }
 
     private static void write(InflectTTS tts, Inflect2.State state, Options options)
