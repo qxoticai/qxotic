@@ -7,8 +7,8 @@ import com.qxotic.jinfer.x.boundary.MultiModal;
 import com.qxotic.jinfer.x.chat.ChatTemplate;
 import com.qxotic.jinfer.x.chat.Content;
 import com.qxotic.jinfer.x.chat.Conversation;
-import com.qxotic.jinfer.x.chat.Message;
 import com.qxotic.jinfer.x.chat.MediaEncodingCache;
+import com.qxotic.jinfer.x.chat.Message;
 import com.qxotic.jinfer.x.chat.PromptWriter;
 import com.qxotic.jinfer.x.chat.ReplyLanguage;
 import com.qxotic.jinfer.x.chat.ReplyParser;
@@ -372,7 +372,10 @@ public final class Gemma4ChatTemplate implements ChatTemplate {
                     type.getSimpleName().toLowerCase() + " input is not supported by this model");
         out.cachedMedia(
                 contentKey,
-                encoded -> encoded.id(open).media(value, contentKey, embedder, bidirectional).id(close));
+                encoded ->
+                        encoded.id(open)
+                                .media(value, contentKey, embedder, bidirectional)
+                                .id(close));
     }
 
     /** Best-effort media positions via the modality's embedder plan (no encoding). */
