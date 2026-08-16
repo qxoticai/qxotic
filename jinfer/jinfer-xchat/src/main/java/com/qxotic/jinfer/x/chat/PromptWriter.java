@@ -4,6 +4,7 @@ import com.qxotic.jinfer.x.boundary.Batch;
 import com.qxotic.jinfer.x.boundary.Media;
 import com.qxotic.jinfer.x.boundary.MediaProjector;
 import com.qxotic.jinfer.x.llm.SpecialTokens;
+import com.qxotic.jinfer.x.telemetry.MediaProjectionEvent;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import java.util.Arrays;
@@ -128,25 +129,28 @@ public final class PromptWriter {
         return this;
     }
 
-    /** Emits one structural media item, replaying its projected batches when source-keyed. */
-    public PromptWriter cachedMedia(byte[] contentKey, Consumer<PromptWriter> projection) {
+    /**
+     * Emits one structural media item, replaying its projected batches when source-keyed.
+     *
+     * <p>On a miss (or without caching), {@code encode} runs synchronously with a fresh
+     * fragment-scoped writer which this method finishes. The callback must neither retain nor
+     * finish it. On a hit the recorded fragment is replayed and the callback is not invoked.
+     */
+    public void cachedMedia(
+            Media source, byte[] contentKey, Consumer<PromptWriter> encode) {
         checkOpen();
-        Objects.requireNonNull(projection, "projection");
-        if (contentKey == null || mediaCache == null) {
-            projection.accept(this);
-            return this;
-        }
+        Objects.requireNonNull(source, "source");
+        Objects.requireNonNull(encode, "encode");
         flushTokens();
+        if (mediaCache == null) {
+            projectMedia(source, encode, sink);
+            return;
+        }
         mediaCache.replayOrRecord(
                 contentKey,
                 batchCapacity,
-                recorded -> {
-                    PromptWriter media = new PromptWriter(tokenizer, batchCapacity, null, recorded);
-                    projection.accept(media);
-                    media.finish();
-                },
+                output -> projectMedia(source, encode, output),
                 sink);
-        return this;
     }
 
     /**
@@ -189,5 +193,21 @@ public final class PromptWriter {
 
     private void checkOpen() {
         if (finished) throw new IllegalStateException("prompt writer already finished");
+    }
+
+    private void projectMedia(
+            Media source, Consumer<PromptWriter> encode, Consumer<Batch> output) {
+        MediaProjectionEvent event = MediaProjectionEvent.started(source);
+        try {
+            PromptWriter fragment = new PromptWriter(tokenizer, batchCapacity, null, output);
+            encode.accept(fragment);
+            fragment.finish();
+        } catch (RuntimeException | Error failure) {
+            event.errorType = failure.getClass().getSimpleName();
+            throw failure;
+        } finally {
+            event.end();
+            event.commit();
+        }
     }
 }
