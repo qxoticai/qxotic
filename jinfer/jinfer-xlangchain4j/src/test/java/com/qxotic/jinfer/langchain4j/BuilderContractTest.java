@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.testkit.TestModels;
+import com.qxotic.jinfer.x.boundary.Arenas;
 import com.qxotic.jinfer.x.chat.LoadedModel;
 import com.qxotic.jinfer.x.chat.Models;
 import dev.langchain4j.exception.UnsupportedFeatureException;
@@ -136,7 +137,7 @@ final class BuilderContractTest {
         // exercises the close-on-failure guard around the constructor tail. The freeing itself
         // is only indirectly observable (LeakWatch reports a stranded engine at GC); what this
         // asserts is the documented failure plus the shared weights staying serviceable.
-        try (Arena weights = Arena.ofShared()) {
+        try (Arena weights = Arenas.newCrossThread()) {
             LoadedModel<?> loaded =
                     Models.load(
                             TestModels.require(
@@ -165,7 +166,7 @@ final class BuilderContractTest {
         // forked pipeline to the 4096 default with advice that could not be followed. Both
         // directions are pinned: a larger window is accepted, and the value demonstrably
         // reaches the state - a 64-token window refuses a prompt the default would take.
-        try (Arena weights = Arena.ofShared()) {
+        try (Arena weights = Arenas.newCrossThread()) {
             LoadedModel<?> loaded =
                     Models.load(
                             TestModels.require(
@@ -188,7 +189,7 @@ final class BuilderContractTest {
 
     @Test
     void companionsStillBelongToTheLoad() throws IOException {
-        try (Arena weights = Arena.ofShared()) {
+        try (Arena weights = Arenas.newCrossThread()) {
             LoadedModel<?> loaded =
                     Models.load(
                             TestModels.require(

@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.testkit.TestModels;
+import com.qxotic.jinfer.x.boundary.Arenas;
 import com.qxotic.jinfer.x.chat.Models;
 import dev.langchain4j.data.document.Document;
 import dev.langchain4j.data.embedding.Embedding;
@@ -405,7 +406,7 @@ class JinferEmbeddingModelIT {
 
     @Test
     void sharedWeightsForkIsAParallelPipeline() throws Exception {
-        try (Arena arena = Arena.ofShared()) {
+        try (Arena arena = Arenas.newCrossThread()) {
             var loaded =
                     Models.loadEmbedder(
                             TestModels.require(
@@ -464,7 +465,7 @@ class JinferEmbeddingModelIT {
     void useAfterTheOwnerFreesTheWeightsFailsFast() throws Exception {
         // the safety canary at the forward's entry turns what used to be a SIGSEGV into a
         // teaching ISE - for the SEQUENTIAL mistake; freeing DURING a request stays a data race
-        Arena arena = Arena.ofShared();
+        Arena arena = Arenas.newCrossThread();
         JinferEmbeddingModel borrowed;
         try {
             var loaded =

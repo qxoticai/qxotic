@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.testkit.TestModels;
+import com.qxotic.jinfer.x.PanamaMemoryArena;
+import com.qxotic.jinfer.x.boundary.Arenas;
 import com.qxotic.jinfer.x.chat.Models;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.data.segment.TextSegment;
@@ -46,7 +48,7 @@ class WeightsCanaryIT {
         for (String family : CHAT_FAMILIES) {
             var familyPath = TestModels.find(family);
             if (familyPath.isEmpty()) continue;
-            Arena arena = Arena.ofShared();
+            Arena arena = Arenas.newCrossThread();
             JinferChatModel borrowed;
             try {
                 var loaded = Models.load(familyPath.get(), arena);
@@ -80,7 +82,7 @@ class WeightsCanaryIT {
      */
     @Test
     void closedPipelineWithLiveWeightsFailsLoudly() throws Exception {
-        try (Arena arena = Arena.ofShared()) {
+        try (Arena arena = Arenas.newCrossThread()) {
             // chat: the engine's lifecycle gate
             String chatFixture = "hf.co/LiquidAI/LFM2.5-350M-GGUF/LFM2.5-350M-Q8_0.gguf";
             var chatPath = TestModels.find(chatFixture);
@@ -134,18 +136,18 @@ class WeightsCanaryIT {
     /**
      * The dilemma recurses at the CORE layer: {@code newState(ctx, batch, arena)} puts the state's
      * buffers in a CALLER-owned arena - closing it under a live state is the state-side twin of the
-     * weights mistake, and no adapter flag guards it. {@code BaseState.enter()} is the universal
-     * choke point (every forward claims the state first, every family), so the canary lives there
+     * weights mistake, and no adapter flag guards it. {@code RuntimeState.exclusively()} is the
+     * choke point (every forward enters the state first, every family), so the canary lives there
      * once: freed state arena, live weights, next pass must be a teaching ISE.
      */
     @Test
     void stateOverACallerArenaFailsFastWhenFreed() throws Exception {
         String fixture = "hf.co/Qwen/Qwen3-Embedding-0.6B-GGUF/Qwen3-Embedding-0.6B-Q8_0.gguf";
         var fixturePath = TestModels.require(fixture);
-        try (Arena weights = Arena.ofShared()) {
+        try (Arena weights = Arenas.newCrossThread()) {
             var loaded = com.qxotic.jinfer.x.chat.Models.loadEmbedder(fixturePath, weights);
-            Arena stateArena = Arena.ofShared();
-            var state = loaded.model().newState(512, 64, stateArena);
+            Arena stateArena = Arenas.newCrossThread();
+            var state = loaded.model().newState(512, 64, new PanamaMemoryArena(stateArena));
             stateArena.close(); // the caller frees the state's buffers under the state
             IllegalStateException e =
                     assertThrows(
@@ -164,7 +166,7 @@ class WeightsCanaryIT {
                         "hf.co/LiquidAI/LFM2.5-Embedding-350M-GGUF/LFM2.5-Embedding-350M-Q8_0.gguf")) {
             var familyPath = TestModels.find(family);
             if (familyPath.isEmpty()) continue;
-            Arena arena = Arena.ofShared();
+            Arena arena = Arenas.newCrossThread();
             JinferEmbeddingModel borrowed;
             try {
                 var loaded = com.qxotic.jinfer.x.chat.Models.loadEmbedder(familyPath.get(), arena);
@@ -196,7 +198,7 @@ class WeightsCanaryIT {
                         "hf.co/LiquidAI/LFM2.5-ColBERT-350M-GGUF/LFM2.5-ColBERT-350M-Q8_0.gguf")) {
             var familyPath = TestModels.find(family);
             if (familyPath.isEmpty()) continue;
-            Arena arena = Arena.ofShared();
+            Arena arena = Arenas.newCrossThread();
             JinferScoringModel borrowed;
             try {
                 var loaded = com.qxotic.jinfer.x.chat.Models.loadReranker(familyPath.get(), arena);

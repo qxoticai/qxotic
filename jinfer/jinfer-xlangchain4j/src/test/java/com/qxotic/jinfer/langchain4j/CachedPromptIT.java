@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.testkit.TestModels;
+import com.qxotic.jinfer.x.boundary.Arenas;
 import com.qxotic.jinfer.x.cache.PromptCache;
 import com.qxotic.jinfer.x.chat.Models;
 import dev.langchain4j.agent.tool.Tool;
@@ -184,7 +185,7 @@ class CachedPromptIT {
     void forkIsAParallelPipelineSharingTheWeights() throws Exception {
         // ONE load in the USER's arena; fork() mints a second pipeline for the price of a
         // context. The arena's block structure IS the ownership story: weights die at the brace.
-        try (Arena arena = Arena.ofShared()) {
+        try (Arena arena = Arenas.newCrossThread()) {
             var loaded = Models.load(TestModels.require(REF), arena);
             // contextLength is a load-time setting on the LoadedModel path - the builder
             // refuses it here by design; a generous budget keeps the echo assertion off luck
@@ -240,7 +241,7 @@ class CachedPromptIT {
     void useAfterTheOwnerFreesTheWeightsFailsFast() throws Exception {
         // the 350M keeps this cheap; the canary at the forward's entry turns what used to be a
         // SIGSEGV into a teaching ISE - for the SEQUENTIAL mistake only
-        Arena arena = Arena.ofShared();
+        Arena arena = Arenas.newCrossThread();
         JinferChatModel borrowed;
         try {
             var loaded =

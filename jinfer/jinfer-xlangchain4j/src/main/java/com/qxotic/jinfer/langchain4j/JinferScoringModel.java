@@ -1,7 +1,9 @@
 package com.qxotic.jinfer.langchain4j;
 
 import com.qxotic.jinfer.hub.ModelStore;
-import com.qxotic.jinfer.x.boundary.BaseState;
+import com.qxotic.jinfer.x.PanamaMemoryArena;
+import com.qxotic.jinfer.x.boundary.Arenas;
+import com.qxotic.jinfer.x.boundary.ContextState;
 import com.qxotic.jinfer.x.boundary.RuntimeState;
 import com.qxotic.jinfer.x.chat.LoadedReranker;
 import com.qxotic.jinfer.x.chat.Models;
@@ -35,17 +37,17 @@ public final class JinferScoringModel implements ScoringModel, AutoCloseable {
 
     private final LoadedReranker<?> loaded;
     private final RuntimeState state; // one reusable state; scoreAll resets it per call
+    private final Arena arena;
     private final ReentrantLock lock = new ReentrantLock(true); // single-stream, like ChatEngine
     private final String instruction;
     private final int contextLength; // the builder's raw knob, carried for fork()
     private final boolean ownsWeights; // false = the caller loaded the model and keeps the arena
 
     private JinferScoringModel(Builder b) {
-        // ONE arena adopted by the state: state.close() frees everything this instance allocated
-        // (idempotent, blocking, Cleaner-backstopped - all BaseState's laws, implemented once).
-        // Weights land in it only when THIS instance loads them; a caller-loaded model stays in
-        // the caller's arena, and this arena holds the state alone.
-        Arena arena = Arena.ofShared();
+        // ONE private arena. The state borrows it; close() closes the state first, then the arena.
+        // Weights land in it only when THIS instance loads them; caller-loaded weights stay in the
+        // caller's arena.
+        this.arena = Arenas.newCrossThread();
         try {
             this.ownsWeights = b.loaded == null;
             try {
@@ -63,7 +65,7 @@ public final class JinferScoringModel implements ScoringModel, AutoCloseable {
             this.instruction =
                     b.instruction == null ? loaded.reranker().defaultInstruction() : b.instruction;
         } catch (RuntimeException | Error e) {
-            arena.close(); // a leaked ofShared arena has no Cleaner: free before failing
+            Arenas.close(arena); // free before failing (best-effort: ofAuto self-manages)
             throw e;
         }
     }
@@ -86,15 +88,14 @@ public final class JinferScoringModel implements ScoringModel, AutoCloseable {
         return b.build();
     }
 
-    private static <S extends RuntimeState> S newState(
+    private static <S extends ContextState> S newState(
             LoadedReranker<S> l, int contextLength, Arena arena) {
         return l.model()
                 .newState(
                         Math.min(
                                 contextLength <= 0 ? Integer.MAX_VALUE : contextLength,
-                                l.model().config().contextLength()),
-                        arena,
-                        true);
+                                l.model().configuration().contextLength()),
+                        new PanamaMemoryArena(arena));
     }
 
     /**
@@ -106,7 +107,8 @@ public final class JinferScoringModel implements ScoringModel, AutoCloseable {
     public void close() {
         lock.lock();
         try {
-            ((BaseState) state).close();
+            state.close();
+            Arenas.close(arena);
         } finally {
             lock.unlock();
         }

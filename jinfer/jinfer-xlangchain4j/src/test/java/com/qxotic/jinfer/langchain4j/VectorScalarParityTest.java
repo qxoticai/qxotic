@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.testkit.TestModels;
 import com.qxotic.jinfer.x.Views;
-import com.qxotic.jinfer.x.boundary.BaseState;
+import com.qxotic.jinfer.x.boundary.Arenas;
 import com.qxotic.jinfer.x.boundary.Batch;
 import com.qxotic.jinfer.x.boundary.RuntimeState;
 import com.qxotic.jinfer.x.chat.LoadedModel;
@@ -83,14 +83,15 @@ final class VectorScalarParityTest {
 
     /** Forked entry point: greedy-decode {@link #STEPS} tokens and print them. */
     public static void main(String[] args) throws Exception {
-        try (Arena weights = Arena.ofShared()) {
+        try (Arena weights = Arenas.newCrossThread()) {
             System.out.println("WALK " + greedy(Models.load(Path.of(args[0]), weights)));
         }
     }
 
-    private static <S extends RuntimeState> String greedy(LoadedModel<S> loaded) {
+    private static <S extends com.qxotic.jinfer.x.boundary.ContextState> String greedy(
+            LoadedModel<S> loaded) {
         var model = loaded.model();
-        int vocab = model.config().vocabularySize();
+        int vocab = model.configuration().vocabularySize();
         S state = model.newState(512, 512);
         try {
             for (Batch b :
@@ -106,7 +107,7 @@ final class VectorScalarParityTest {
             }
             return walk.toString().trim();
         } finally {
-            ((BaseState) state).close();
+            ((RuntimeState) state).close();
         }
     }
 
