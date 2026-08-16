@@ -47,6 +47,11 @@
       <groupId>com.qxotic</groupId>
       <artifactId>toknroll-gguf</artifactId>
     </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-testkit</artifactId>
+      <scope>test</scope>
+    </dependency>
     <!-- differential gate: the old Llama/Granite ports (and their tree), test-scope ONLY -->
     <dependency>
       <groupId>com.qxotic</groupId>
