@@ -1,8 +1,10 @@
 package com.qxotic.jinfer.x.cache;
 
+import com.qxotic.jinfer.x.PanamaMemoryArena;
+import com.qxotic.jinfer.x.boundary.CheckpointCodec;
 import com.qxotic.jinfer.x.boundary.ContentKey;
-import com.qxotic.jinfer.x.boundary.RuntimeState;
-import com.qxotic.jinfer.x.boundary.StateCodec;
+import com.qxotic.jinfer.x.boundary.ContextState;
+import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import org.junit.jupiter.api.Test;
 
@@ -13,46 +15,25 @@ import org.junit.jupiter.api.Test;
  */
 public final class BlockTreeEvictionTest {
 
-    static final class FakeState implements RuntimeState {
-        int position;
+    static final class FakeState extends ContextState {
 
-        @Override
-        public int contextCapacity() {
-            return 1 << 20;
+        FakeState() {
+            super(1 << 20, 512, new PanamaMemoryArena(Arena.ofAuto()), false);
         }
 
         @Override
-        public int batchCapacity() {
-            return 512;
-        }
-
-        @Override
-        public int position() {
-            return position;
-        }
-
-        @Override
-        public int outputCount() {
-            return 1;
-        }
-
-        @Override
-        public void resumeAt(int p) {
-            position = p;
-        }
+        protected void clearHistory() {}
     }
 
-    static final class FakeCodec implements StateCodec<FakeState> {
+    static final class FakeCodec extends CheckpointCodec<FakeState> {
         @Override
-        public long checkpointBytes(int positions) {
+        protected long sizeOf(int positions) {
             return positions * 1024L + 4096; // rows + fixed residue
         }
 
         @Override
-        public void saveCheckpoint(FakeState s, int from, int to, MemorySegment dst) {}
-
-        @Override
-        public void restoreCheckpoint(FakeState s, int from, int to, MemorySegment src) {}
+        protected void transfer(
+                FakeState state, int from, int to, MemorySegment memory, boolean capture) {}
     }
 
     @Test
@@ -72,7 +53,7 @@ public final class BlockTreeEvictionTest {
             for (int i = 0; i < 64; i++) {
                 fp[i] = round * 1000L + i;
                 if (i < 8) fp[i] = i; // shared prefix across rounds (dedup)
-                s.position = i + 1;
+                s.resumeAt(i + 1);
                 tip = cache.commit(tip, fp, i, 1, s);
             }
             // resume against what survived (may be nothing - correctness never depends on it)

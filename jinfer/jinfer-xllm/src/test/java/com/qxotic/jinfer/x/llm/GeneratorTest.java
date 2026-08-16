@@ -5,12 +5,15 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.jinfer.x.boundary.BaseState;
+import com.qxotic.jinfer.x.PanamaMemoryArena;
 import com.qxotic.jinfer.x.boundary.Batch;
-import com.qxotic.jinfer.x.boundary.Config;
+import com.qxotic.jinfer.x.boundary.ContextConfiguration;
+import com.qxotic.jinfer.x.boundary.ContextState;
 import com.qxotic.jinfer.x.boundary.LanguageModel;
+import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
 import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -22,18 +25,10 @@ import org.junit.jupiter.api.Test;
 
 class GeneratorTest {
 
-    private static final Config CONFIG =
-            new Config() {
-                @Override
-                public int vocabularySize() {
-                    return 32_000;
-                }
+    private record Configuration(int vocabularySize, int contextLength)
+            implements ContextConfiguration {}
 
-                @Override
-                public int contextLength() {
-                    return 1 << 20;
-                }
-            };
+    private static final Configuration CONFIG = new Configuration(32_000, 1 << 20);
 
     /** A scripted sampler: yields queued token ids regardless of logits. */
     private static Sampler scripted(int... tokens) {
@@ -47,38 +42,26 @@ class GeneratorTest {
     }
 
     /** A minimal model: prefill ingests the prompt, decode rows are scripted by the sampler. */
-    private static class FakeModel implements LanguageModel<Config, Object, FakeModel.State> {
+    private static class FakeModel
+            implements LanguageModel<Configuration, Object, FakeModel.State> {
 
         final List<int[]> ingested = new ArrayList<>();
 
-        static final class State extends BaseState {
-            private final int contextCapacity;
-            private final int batchCapacity;
+        static final class State extends ContextState {
+            State(int contextCapacity, int batchCapacity, MemoryArena<MemorySegment> arena) {
+                super(contextCapacity, batchCapacity, arena, false);
+            }
 
-            State(int contextCapacity, int batchCapacity, Arena arena) {
-                super(arena);
-                this.contextCapacity = contextCapacity;
-                this.batchCapacity = batchCapacity;
+            void advance(Batch batch) {
+                advanceContext(batch.count(), batch.outputs());
             }
 
             @Override
-            public int contextCapacity() {
-                return contextCapacity;
-            }
-
-            @Override
-            public int batchCapacity() {
-                return batchCapacity;
-            }
-
-            @Override
-            public void reset() {
-                resumeAt(0);
-            }
+            protected void clearHistory() {}
         }
 
         @Override
-        public Config config() {
+        public Configuration configuration() {
             return CONFIG;
         }
 
@@ -88,23 +71,32 @@ class GeneratorTest {
         }
 
         @Override
-        public State newState(int contextCapacity, int batchCapacity, Arena arena) {
+        public State newState(
+                int contextCapacity, int batchCapacity, MemoryArena<MemorySegment> arena) {
             return new State(contextCapacity, batchCapacity, arena);
+        }
+
+        @Override
+        public State newState(int contextCapacity, int batchCapacity) {
+            return new State(contextCapacity, batchCapacity, new PanamaMemoryArena(Arena.ofAuto()));
         }
 
         /** Test hook: runs at the top of every forward call. */
         void onForward() {}
 
         @Override
-        public void forward(State state, Batch batch) {
-            onForward();
-            if (batch.input() instanceof Batch.Input.Tokens t) ingested.add(t.ids());
-            state.advance(batch.count(), batch.outputs());
+        public void ingest(State state, Batch batch) {
+            state.exclusively(
+                    () -> {
+                        onForward();
+                        if (batch.input() instanceof Batch.Input.Tokens t) ingested.add(t.ids());
+                        state.advance(batch);
+                    });
         }
 
         @Override
-        public MemoryView<?> head(State state, int output) {
-            return TestLogits.view(CONFIG.vocabularySize());
+        public MemoryView<?> logits(State state, int output) {
+            return state.exclusively(() -> TestLogits.view(CONFIG.vocabularySize()));
         }
     }
 
@@ -132,7 +124,8 @@ class GeneratorTest {
     @Test
     void generatesUntilAStopToken() {
         FakeModel model = new FakeModel();
-        try (FakeModel.State state = model.newState(128, 8, Arena.ofAuto())) {
+        try (FakeModel.State state =
+                model.newState(128, 8, new PanamaMemoryArena(Arena.ofAuto()))) {
             List<Integer> seen = new ArrayList<>(), committed = new ArrayList<>();
             var result =
                     Generator.generate(
@@ -156,7 +149,7 @@ class GeneratorTest {
     @Test
     void unlimitedBudgetEndsAtContextExhaustion() {
         FakeModel model = new FakeModel();
-        try (FakeModel.State state = model.newState(4, 8, Arena.ofAuto())) {
+        try (FakeModel.State state = model.newState(4, 8, new PanamaMemoryArena(Arena.ofAuto()))) {
             var result =
                     Generator.generate(
                             model,
@@ -175,7 +168,8 @@ class GeneratorTest {
     @Test
     void zeroBudgetIsPrefillOnly() {
         FakeModel model = new FakeModel();
-        try (FakeModel.State state = model.newState(128, 8, Arena.ofAuto())) {
+        try (FakeModel.State state =
+                model.newState(128, 8, new PanamaMemoryArena(Arena.ofAuto()))) {
             var result =
                     Generator.generate(
                             model,
@@ -194,7 +188,8 @@ class GeneratorTest {
     @Test
     void abortRecordsButDoesNotIngestTheAbortingToken() {
         FakeModel model = new FakeModel();
-        try (FakeModel.State state = model.newState(128, 8, Arena.ofAuto())) {
+        try (FakeModel.State state =
+                model.newState(128, 8, new PanamaMemoryArena(Arena.ofAuto()))) {
             List<Integer> committed = new ArrayList<>();
             var result =
                     Generator.generate(
@@ -227,7 +222,7 @@ class GeneratorTest {
     @Test
     void rejectsAnOutOfRangeSampleAndAnOversizedPrompt() {
         FakeModel model = new FakeModel();
-        try (FakeModel.State state = model.newState(4, 8, Arena.ofAuto())) {
+        try (FakeModel.State state = model.newState(4, 8, new PanamaMemoryArena(Arena.ofAuto()))) {
             assertThrows(
                     IllegalArgumentException.class,
                     () ->
@@ -254,7 +249,8 @@ class GeneratorTest {
     @Test
     void deadlinesEndThePassAsTimeoutNotLength() {
         FakeModel model = new FakeModel();
-        try (FakeModel.State state = model.newState(128, 8, Arena.ofAuto())) {
+        try (FakeModel.State state =
+                model.newState(128, 8, new PanamaMemoryArena(Arena.ofAuto()))) {
             var result =
                     Generator.generate(
                             model,
@@ -272,7 +268,8 @@ class GeneratorTest {
     @Test
     void expiredDeadlineEmitsNoToken() {
         FakeModel model = new FakeModel();
-        try (FakeModel.State state = model.newState(128, 8, Arena.ofAuto())) {
+        try (FakeModel.State state =
+                model.newState(128, 8, new PanamaMemoryArena(Arena.ofAuto()))) {
             List<Integer> seen = new ArrayList<>(), committed = new ArrayList<>();
             var result =
                     Generator.generate(
@@ -303,7 +300,8 @@ class GeneratorTest {
                         }
                     }
                 };
-        try (FakeModel.State state = model.newState(128, 4, Arena.ofAuto())) {
+        try (FakeModel.State state =
+                model.newState(128, 4, new PanamaMemoryArena(Arena.ofAuto()))) {
             List<Integer> seen = new ArrayList<>();
             var result =
                     Generator.generate(
@@ -324,7 +322,8 @@ class GeneratorTest {
     @Test
     void generousDeadlineIsTransparent() {
         FakeModel model = new FakeModel();
-        try (FakeModel.State state = model.newState(128, 8, Arena.ofAuto())) {
+        try (FakeModel.State state =
+                model.newState(128, 8, new PanamaMemoryArena(Arena.ofAuto()))) {
             List<Integer> seen = new ArrayList<>(), committed = new ArrayList<>();
             var result =
                     Generator.generate(

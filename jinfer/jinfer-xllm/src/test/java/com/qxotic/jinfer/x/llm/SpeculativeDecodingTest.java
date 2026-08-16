@@ -2,13 +2,24 @@ package com.qxotic.jinfer.x.llm;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import com.qxotic.jinfer.x.boundary.RuntimeState;
+import com.qxotic.jinfer.x.PanamaMemoryArena;
+import com.qxotic.jinfer.x.boundary.ContextState;
+import java.lang.foreign.Arena;
 import org.junit.jupiter.api.Test;
 
 /** The 1..8 depth contract lives at the interface's production door, not in port prose. */
 class SpeculativeDecodingTest {
 
-    private static final SpeculativeDecoding<RuntimeState> MUST_NOT_BE_ENTERED =
+    private static final class State extends ContextState {
+        State() {
+            super(8, 8, new PanamaMemoryArena(Arena.ofAuto()), false);
+        }
+
+        @Override
+        protected void clearHistory() {}
+    }
+
+    private static final SpeculativeDecoding<State> MUST_NOT_BE_ENTERED =
             new SpeculativeDecoding<>() {
                 @Override
                 public boolean speculationReady() {
@@ -17,7 +28,7 @@ class SpeculativeDecodingTest {
 
                 @Override
                 public SpeculationResult speculate(
-                        RuntimeState state,
+                        State state,
                         Sampler sampler,
                         Generator.Constraints constraints,
                         int depth,

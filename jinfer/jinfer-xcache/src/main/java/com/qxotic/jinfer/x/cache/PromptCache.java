@@ -1,11 +1,10 @@
 package com.qxotic.jinfer.x.cache;
 
-import com.qxotic.jinfer.x.boundary.BaseState;
 import com.qxotic.jinfer.x.boundary.Batch;
+import com.qxotic.jinfer.x.boundary.CheckpointCodec;
 import com.qxotic.jinfer.x.boundary.ContentKey;
+import com.qxotic.jinfer.x.boundary.ContextState;
 import com.qxotic.jinfer.x.boundary.LanguageModel;
-import com.qxotic.jinfer.x.boundary.RuntimeState;
-import com.qxotic.jinfer.x.boundary.StateCodec;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
@@ -35,87 +34,118 @@ import java.util.function.BooleanSupplier;
  * <p>THE LAW, stated once: a resume always stops one position short, so the final token re-ingests
  * and the logits are always fresh - and a cached answer is byte-identical to a cold one.
  *
- * <p>{@link #of} reads the model's capabilities itself: no {@link StateCodec} = sessions-only; a
- * coarse-residue codec = blocks written by {@link #define} alone (a served turn would cost a ~90MB
- * residue per block); otherwise the full picture. Callers make zero routing decisions.
+ * <p>{@link #of} reads the model's capabilities itself: no {@link CheckpointCodec} = sessions-only;
+ * fixed checkpoint overhead above the configured limit = blocks written by {@link #define} alone;
+ * otherwise the full picture.
  *
  * <p>Single-threaded by design: every method (including {@link #sample}) belongs to the one
  * generation thread, like the tree it fronts. The low-level layer ({@link CachedSession}, {@link
  * BlockTree}, {@link FrozenBlocks}) stays public for the testkit, benches and speculative decoding;
  * production callers should not need it.
  */
-public final class PromptCache<S extends RuntimeState> implements AutoCloseable {
+public final class PromptCache<S extends ContextState> implements AutoCloseable {
 
     private static final System.Logger LOG = System.getLogger("jinfer.cache");
 
-    /**
-     * @param retainedSessions live conversations retained; 0 closes the state after every request
-     * @param blockBudgetBytes RAM bound for the block layer; 0 = blocks disabled (sessions-only) -
-     *     an explicit {@code catalog} still mounts, read-only in spirit if the budget refuses
-     *     growth
-     * @param catalog the block layer's file, opened if present and CREATED OTHERWISE (so {@link
-     *     #save} is always an append - never a rewrite of a mounted mapping); null = RAM only
-     * @param readOnly the catalog is served, never written: {@link #save} is a no-op; missing or
-     *     incompatible artifacts fail the boot loudly
-     */
-    public record Options(
-            int retainedSessions,
-            int contextCapacity,
-            long blockBudgetBytes,
-            Path catalog,
-            boolean readOnly) {
+    /** Immutable cache configuration; start from {@link #DEFAULTS} and name every change. */
+    public static final class Options {
+
+        private static final long DEFAULT_MAX_CHECKPOINT_OVERHEAD = 1L << 20;
 
         /**
-         * What a caller with no opinion gets: 4 live conversations and a 2 GB block layer, RAM
-         * only. These were jinfer.sessions / jinfer.promptCacheMB / jinfer.promptCache, read inside
-         * ChatEngine - so an embedder could not set them and two engines in one process could not
-         * differ. Turning the block layer off is {@code withBlockBudget(0)}, which the boolean flag
-         * duplicated.
+         * What a caller with no opinion gets: 4 live conversations, a 2 GB RAM-only block layer and
+         * a 1 MiB incremental-checkpoint overhead limit. Turning the block layer off is {@code
+         * withBlockBudget(0)}.
          */
-        public static final Options DEFAULTS = new Options(4, 4096, 2048L << 20, null, false);
+        public static final Options DEFAULTS =
+                new Options(4, 4096, 2048L << 20, null, false, DEFAULT_MAX_CHECKPOINT_OVERHEAD);
+
+        private final int retainedSessions;
+        private final int contextCapacity;
+        private final long blockBudgetBytes;
+        private final Path catalog;
+        private final boolean readOnly;
+        private final long maxCheckpointOverheadBytes;
+
+        private Options(
+                int retainedSessions,
+                int contextCapacity,
+                long blockBudgetBytes,
+                Path catalog,
+                boolean readOnly,
+                long maxCheckpointOverheadBytes) {
+            if (retainedSessions < 0)
+                throw new IllegalArgumentException("retainedSessions " + retainedSessions);
+            if (contextCapacity < 0)
+                throw new IllegalArgumentException("contextCapacity " + contextCapacity);
+            if (blockBudgetBytes < 0)
+                throw new IllegalArgumentException("blockBudgetBytes " + blockBudgetBytes);
+            if (maxCheckpointOverheadBytes < 0)
+                throw new IllegalArgumentException(
+                        "maxCheckpointOverheadBytes " + maxCheckpointOverheadBytes);
+            this.retainedSessions = retainedSessions;
+            this.contextCapacity = contextCapacity;
+            this.blockBudgetBytes = blockBudgetBytes;
+            this.catalog = catalog;
+            this.readOnly = readOnly;
+            this.maxCheckpointOverheadBytes = maxCheckpointOverheadBytes;
+        }
 
         /** These options over {@code catalog}, read-only or accumulating. */
         public Options withCatalog(Path catalog, boolean readOnly) {
             return new Options(
-                    retainedSessions, contextCapacity, blockBudgetBytes, catalog, readOnly);
+                    retainedSessions,
+                    contextCapacity,
+                    blockBudgetBytes,
+                    catalog,
+                    readOnly,
+                    maxCheckpointOverheadBytes);
         }
 
         /** These options with a different block-layer budget; 0 disables the block layer. */
         public Options withBlockBudget(long blockBudgetBytes) {
             return new Options(
-                    retainedSessions, contextCapacity, blockBudgetBytes, catalog, readOnly);
+                    retainedSessions,
+                    contextCapacity,
+                    blockBudgetBytes,
+                    catalog,
+                    readOnly,
+                    maxCheckpointOverheadBytes);
         }
 
         /** These options with a different number of resident conversations. */
         public Options withRetainedSessions(int retainedSessions) {
             return new Options(
-                    retainedSessions, contextCapacity, blockBudgetBytes, catalog, readOnly);
+                    retainedSessions,
+                    contextCapacity,
+                    blockBudgetBytes,
+                    catalog,
+                    readOnly,
+                    maxCheckpointOverheadBytes);
         }
 
         /** These options with a different state size; refused above the model's contextLength. */
         public Options withContextCapacity(int contextCapacity) {
             return new Options(
-                    retainedSessions, contextCapacity, blockBudgetBytes, catalog, readOnly);
+                    retainedSessions,
+                    contextCapacity,
+                    blockBudgetBytes,
+                    catalog,
+                    readOnly,
+                    maxCheckpointOverheadBytes);
         }
 
-        // ranges, not taste: int widens silently into the long slot, so transposed
-        // (budget, retainedSessions) literals would compile and build a pathological cache
-        public Options {
-            if (retainedSessions < 0)
-                throw new IllegalArgumentException("retainedSessions " + retainedSessions);
-            // 0 is the documented sentinel "the model's maximum" - the engine resolves it after
-            // the model loads; PromptCache itself still requires a resolved positive capacity
-            if (contextCapacity < 0)
-                throw new IllegalArgumentException("contextCapacity " + contextCapacity);
-            if (blockBudgetBytes < 0)
-                throw new IllegalArgumentException("blockBudgetBytes " + blockBudgetBytes);
+        /** These options with a different fixed checkpoint-overhead limit. */
+        public Options withMaxCheckpointOverhead(long bytes) {
+            return new Options(
+                    retainedSessions, contextCapacity, blockBudgetBytes, catalog, readOnly, bytes);
         }
     }
 
     private final LanguageModel<?, ?, S> model;
     private final BlockTree<S> tree; // null = sessions-only (no codec, or blocks disabled)
-    private final StateCodec<S> codec; // null = no codec (sessions-only models)
-    private final boolean coarse; // blocks written by define() alone; serving restores read-only
+    private final CheckpointCodec<S> codec; // null = sessions-only models
+    private final boolean defineOnlyBlocks; // ordinary serving restores but does not grow the tree
     // The decode tail's granularity. Per-token singles keep EVERY reply position resumable, and
     // on a residue-free codec (dense rows, ring rows) they are free - a single stores just its
     // row, which any granularity stores anyway. A codec with a residue duplicates it into every
@@ -144,21 +174,22 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
 
     private PromptCache(
             LanguageModel<?, ?, S> model,
+            CheckpointCodec<S> codec,
             BlockTree<S> tree,
-            boolean coarse,
+            boolean defineOnlyBlocks,
             boolean tailPerToken,
             CacheStore store,
             Path writeBack,
             Options options) {
         this.model = model;
+        this.codec = codec;
         this.tree = tree;
-        this.codec = model.stateCodec().orElse(null);
-        this.coarse = coarse;
+        this.defineOnlyBlocks = defineOnlyBlocks;
         this.tailPerToken = tailPerToken;
         this.store = store;
         this.writeBack = writeBack;
-        this.retainedCapacity = options.retainedSessions();
-        this.contextCapacity = options.contextCapacity();
+        this.retainedCapacity = options.retainedSessions;
+        this.contextCapacity = options.contextCapacity;
     }
 
     /**
@@ -166,38 +197,47 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
      * model's cache identity (a sha256 {@link ContentKey}, produced model-load-side): block keys
      * and catalog files are rooted in it, so two models can never match each other's blocks.
      */
-    public static <S extends RuntimeState> PromptCache<S> of(
+    public static <S extends ContextState> PromptCache<S> of(
             LanguageModel<?, ?, S> model, ContentKey seed, Options o) {
         if (seed == null) throw new IllegalArgumentException("null seed");
-        StateCodec<S> codec = model.stateCodec().orElse(null);
-        if (codec == null && o.catalog() != null) {
+        int modelCapacity = model.configuration().contextLength();
+        int requestedCapacity = o.contextCapacity;
+        o =
+                o.withContextCapacity(
+                        requestedCapacity == 0
+                                ? modelCapacity
+                                : Math.min(requestedCapacity, modelCapacity));
+        CheckpointCodec<S> codec = model.checkpointCodec().orElse(null);
+        if (codec == null && o.catalog != null) {
             // never silently ignore a file the caller pointed at: without a codec nothing can
             // ever be written to it, so the configured cache would degrade into an unnoticed
             // cold start - the exact failure openCatalog refuses for a missing artifact
             throw new IllegalArgumentException(
                     "catalog "
-                            + o.catalog()
+                            + o.catalog
                             + " configured but "
                             + model.getClass().getSimpleName()
                             + " has no state codec - drop the catalog or load a model that can"
                             + " freeze state");
         }
-        boolean wantBlocks = codec != null && (o.blockBudgetBytes() > 0 || o.catalog() != null);
+        boolean wantBlocks = codec != null && (o.blockBudgetBytes > 0 || o.catalog != null);
         if (!wantBlocks) {
-            return new PromptCache<>(model, null, false, false, CacheStore.inMemory(), null, o);
+            return new PromptCache<>(
+                    model, codec, null, false, false, CacheStore.inMemory(), null, o);
         }
         CacheStore store = CacheStore.inMemory();
         try {
             FrozenBlocks base = openCatalog(seed, o);
-            BlockTree<S> tree = new BlockTree<>(codec, store, o.blockBudgetBytes(), seed, base);
-            Path writeBack = o.readOnly() ? null : o.catalog();
+            BlockTree<S> tree = new BlockTree<>(codec, store, o.blockBudgetBytes, seed, base);
+            Path writeBack = o.readOnly ? null : o.catalog;
+            long checkpointOverhead = codec.byteSize(0);
+            boolean defineOnlyBlocks = checkpointOverhead > o.maxCheckpointOverheadBytes;
             return new PromptCache<>(
                     model,
+                    codec,
                     tree,
-                    codec.coarseCheckpoints(),
-                    codec.checkpointBytes(0)
-                            == 0, // checkpointBytes(0) IS the endpoint snapshot: zero = singles
-                    // free
+                    defineOnlyBlocks,
+                    checkpointOverhead == 0,
                     store,
                     writeBack,
                     o);
@@ -215,18 +255,17 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
      * never degrade into an unnoticed cold start.
      */
     private static FrozenBlocks openCatalog(ContentKey seed, Options o) {
-        if (o.catalog() == null) return null;
+        if (o.catalog == null) return null;
         try {
-            if (!Files.exists(o.catalog())) {
-                if (o.readOnly()) {
-                    throw new IllegalArgumentException(
-                            "prompt cache does not exist: " + o.catalog());
+            if (!Files.exists(o.catalog)) {
+                if (o.readOnly) {
+                    throw new IllegalArgumentException("prompt cache does not exist: " + o.catalog);
                 }
-                FrozenBlocks.createEmpty(o.catalog(), seed);
+                FrozenBlocks.createEmpty(o.catalog, seed);
             }
-            return FrozenBlocks.open(o.catalog(), seed);
+            return FrozenBlocks.open(o.catalog, seed);
         } catch (IOException e) {
-            throw new UncheckedIOException("failed to open cache " + o.catalog(), e);
+            throw new UncheckedIOException("failed to open cache " + o.catalog, e);
         }
     }
 
@@ -284,7 +323,7 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
      * The generation body: receives the prepared state (prompt already ingested) and the pass
      * context. Runs on the cache's single thread.
      */
-    public interface Pass<S extends RuntimeState, R> {
+    public interface Pass<S extends ContextState, R> {
         R run(S state, Serving serving);
     }
 
@@ -321,7 +360,7 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
         // session match - but the session's TAIL SNAPSHOT (residue at the last prompt boundary) can
         // rewind the state to exactly where the echo diverges, and only the stripped reply +
         // new turn re-ingest. Fine codecs never need this: their block layer serves the echo.
-        if (sessionHit == null && coarse) sessionHit = snapshotAcquire(fingerprints);
+        if (sessionHit == null && defineOnlyBlocks) sessionHit = snapshotAcquire(fingerprints);
         if (sessionHit != null) sessionHits++;
         CachedSession<S> session = sessionHit != null ? sessionHit : attach(fingerprints);
         int restored = session.position();
@@ -334,7 +373,7 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
         R result;
         try {
             boolean complete = true;
-            if (coarse && groups.size() > 1) {
+            if (defineOnlyBlocks && groups.size() > 1) {
                 // the snapshot must sit BEFORE the final batch - the generation prompt, by the
                 // chat-template convention that it is the prompt's last batch. The echoed next
                 // turn shares everything before that seam and nothing after it (the echo renders
@@ -449,8 +488,8 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
         if (state == null) state = freshState();
         try {
             if (tree == null) return CachedSession.fresh(model, state);
-            // a coarse codec restores but never writes back: a residue per served block
-            return CachedSession.resume(model, tree, state, fingerprints, cap, !coarse);
+            // Large fixed overhead makes ordinary block writes wasteful; define() still writes.
+            return CachedSession.resume(model, tree, state, fingerprints, cap, !defineOnlyBlocks);
         } catch (RuntimeException | Error e) {
             closeState(state);
             throw e;
@@ -461,12 +500,11 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
      * Pins a prefix into the block layer: interior batches as turn blocks, the FINAL position as
      * its own single (so a later serve of exactly this prompt - capped one short by the law -
      * restores everything but that last token; a single-token or media-final batch commits whole
-     * instead, and cannot full-hit by construction); a coarse codec commits ONE prefix-only block
-     * over everything but the trailing batch - or, for a single-batch prompt, everything but the
-     * trailing position (a block containing the whole prompt could never match a one-short serve,
-     * yet would still pay the residue). Dedups against what is already cached. Throws when the
-     * budget refused it - a define exists only to cache, and returning quietly would let every
-     * later serve re-prefill with no diagnostic.
+     * instead, and cannot full-hit by construction); define-only mode commits one prefix block over
+     * everything but the trailing batch—or, for a single-batch prompt, everything but the trailing
+     * position. Dedups against what is already cached. Throws when the budget refused it—a define
+     * exists only to cache, and returning quietly would let every later serve re-prefill with no
+     * diagnostic.
      */
     public void define(List<Batch> prompt) {
         checkOpen();
@@ -477,11 +515,11 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
         // the same guard serve() applies, BEFORE any state is sized or block committed: an
         // over-long define would append junk blocks no serve could ever match
         checkFitsContext(total);
-        // a coarse define commits everything-but-the-last-batch as ONE chunk, so its state must
+        // Define-only mode commits everything-but-the-last-batch as one chunk, so its state must
         // hold the whole prompt per batch; fine codecs take the boundary's default batch width
         // (the old stateFor clamp's upper bound IS that default - identical chunking)
         S state =
-                coarse
+                defineOnlyBlocks
                         ? model.newState(contextCapacity, Math.max(total, 16))
                         : model.newState(contextCapacity);
         try {
@@ -505,7 +543,7 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
 
     private List<List<Batch>> defineGroups(List<Batch> prompt) {
         int n = prompt.size();
-        if (coarse) {
+        if (defineOnlyBlocks) {
             if (n > 1) return List.of(prompt.subList(0, n - 1));
             // a lone batch committed whole would be a block a one-short serve can never match:
             // one dead residue. Commit all but the trailing position instead (prefix-only);
@@ -635,7 +673,7 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
 
     /**
      * The retained session whose TAIL SNAPSHOT stream (the last prompt boundary) strictly prefixes
-     * the prompt, rewound to that boundary and removed from the pool - the coarse-codec echo path.
+     * the prompt, rewound to that boundary and removed from the pool—the define-only echo path.
      * Longest snapshot wins; null = no match.
      */
     private CachedSession<S> snapshotAcquire(long[] fingerprints) {
@@ -706,8 +744,8 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
         closeState(session.state());
     }
 
-    private static void closeState(RuntimeState state) {
-        if (state instanceof BaseState base) base.close();
+    private static void closeState(ContextState state) {
+        state.close();
     }
 
     private void checkOpen() {
@@ -729,7 +767,7 @@ public final class PromptCache<S extends RuntimeState> implements AutoCloseable 
     private BlockTree<S> requireTree() {
         if (tree == null) {
             throw new IllegalStateException(
-                    model.stateCodec().isPresent()
+                    codec != null
                             ? "block caching is disabled (block budget 0)"
                             : model.getClass().getSimpleName()
                                     + " does not support block caching (no state codec)");

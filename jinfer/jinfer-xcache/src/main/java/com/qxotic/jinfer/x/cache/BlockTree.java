@@ -1,8 +1,8 @@
 package com.qxotic.jinfer.x.cache;
 
+import com.qxotic.jinfer.x.boundary.CheckpointCodec;
 import com.qxotic.jinfer.x.boundary.ContentKey;
-import com.qxotic.jinfer.x.boundary.RuntimeState;
-import com.qxotic.jinfer.x.boundary.StateCodec;
+import com.qxotic.jinfer.x.boundary.ContextState;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -29,7 +29,7 @@ import java.util.Set;
  * cryptographic, is trusted as identity (matching recomputes the digest from the request's
  * fingerprints; no fingerprint storage, no collision handling: git/IPFS regime).
  *
- * <p>Every block is SELF-CONTAINED ({@link StateCodec}): restoring a matched chain in position
+ * <p>Every block is SELF-CONTAINED ({@link CheckpointCodec}): restoring a matched chain in position
  * order leaves the state live at the chain's end, so EVERY block boundary is a resume point —
  * blocks match completely or not at all, and the longest matching chain is the resume. The cache is
  * a pure optimization — every miss degrades to recompute, never to a wrong answer.
@@ -39,11 +39,12 @@ import java.util.Set;
  * the tip key, no re-walk — which is what makes single-token commits during decode natural. Large
  * blocks and single-token blocks are the same mechanism at different spans.
  *
- * <p>The model contributes only a {@link StateCodec}; storage only a {@link CacheStore}; identity
- * only a {@link ContentKey} seed. This class is pure policy: keys, the prefix tree, matching,
- * budget/LRU-leaf eviction. Single-threaded by design (the generation worker), like the store.
+ * <p>The model contributes only a {@link CheckpointCodec}; storage only a {@link CacheStore};
+ * identity only a {@link ContentKey} seed. This class is pure policy: keys, the prefix tree,
+ * matching, budget/LRU-leaf eviction. Single-threaded by design (the generation worker), like the
+ * store.
  */
-public final class BlockTree<S extends RuntimeState> {
+public final class BlockTree<S extends ContextState> {
 
     /** 256-bit chained content address. */
     public record BlockKey(long a, long b, long c, long d) {}
@@ -71,7 +72,7 @@ public final class BlockTree<S extends RuntimeState> {
         }
     }
 
-    private final StateCodec<S> codec;
+    private final CheckpointCodec<S> codec;
     private final CacheStore store;
     private final long budgetBytes;
     private final ContentKey modelSeed;
@@ -95,7 +96,7 @@ public final class BlockTree<S extends RuntimeState> {
      * {@code base} is a plain standalone cache.
      */
     public BlockTree(
-            StateCodec<S> codec,
+            CheckpointCodec<S> codec,
             CacheStore store,
             long budgetBytes,
             ContentKey modelSeed,
@@ -132,7 +133,7 @@ public final class BlockTree<S extends RuntimeState> {
      * deployment shape; the seed is produced model-load-side (xchat {@code Models.modelSeed}).
      */
     public BlockTree(
-            StateCodec<S> codec, CacheStore store, long budgetBytes, ContentKey modelSeed) {
+            CheckpointCodec<S> codec, CacheStore store, long budgetBytes, ContentKey modelSeed) {
         this.codec = codec;
         this.store = store;
         this.budgetBytes = budgetBytes;
@@ -184,7 +185,7 @@ public final class BlockTree<S extends RuntimeState> {
                     return resume(
                             fingerprints, len, state); // the tree changed: re-match from scratch
                 }
-                codec.restoreCheckpoint(state, b.from, b.to, b.mem);
+                codec.restore(state, b.from, b.to, b.mem);
             }
             chainScratch.clear();
             hits++;
@@ -218,13 +219,13 @@ public final class BlockTree<S extends RuntimeState> {
             return existing;
         }
         int to = tip.to + len;
-        long bytes = codec.checkpointBytes(len);
+        long bytes = codec.byteSize(len);
         if (!ensureBudget(bytes, tip)) { // budget refused: detach softly
             refusals++;
             return detached;
         }
         MemorySegment mem = store.allocate(bytes);
-        codec.saveCheckpoint(state, tip.to, to, mem);
+        codec.capture(state, tip.to, to, mem);
         Block block = new Block(key, tip, tip.to, to, mem);
         blocks.put(key, block);
         freshBlocks.add(block); // creation order is parents-first: a tip precedes its children

@@ -6,12 +6,14 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.jinfer.x.boundary.BaseState;
+import com.qxotic.jinfer.x.PanamaMemoryArena;
 import com.qxotic.jinfer.x.boundary.Batch;
-import com.qxotic.jinfer.x.boundary.Config;
+import com.qxotic.jinfer.x.boundary.CheckpointCodec;
 import com.qxotic.jinfer.x.boundary.ContentKey;
+import com.qxotic.jinfer.x.boundary.ContextConfiguration;
+import com.qxotic.jinfer.x.boundary.ContextState;
 import com.qxotic.jinfer.x.boundary.LanguageModel;
-import com.qxotic.jinfer.x.boundary.StateCodec;
+import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -47,7 +49,7 @@ public final class PromptCacheTest {
      */
     private static final int CTX = CONTEXT;
 
-    static final class FakeState extends BaseState {
+    static final class FakeState extends ContextState {
         /** Every token id the model actually ingested, in order. */
         final List<Integer> ingested = new ArrayList<>();
 
@@ -58,56 +60,39 @@ public final class PromptCacheTest {
         }
 
         FakeState(int batchCap) {
-            super(Arena.ofAuto());
+            super(CONTEXT, batchCap, new PanamaMemoryArena(Arena.ofAuto()), false);
             this.batchCap = batchCap;
         }
 
-        @Override
-        public int contextCapacity() {
-            return CONTEXT;
+        void advance(Batch batch) {
+            advanceContext(batch.count(), batch.outputs());
         }
 
         @Override
-        public int batchCapacity() {
-            return batchCap;
-        }
-
-        @Override
-        public void reset() {
-            resumeAt(0);
-        }
+        protected void clearHistory() {}
     }
 
-    static final Config CONFIG =
-            new Config() {
-                @Override
-                public int vocabularySize() {
-                    return 32;
-                }
+    record Configuration(int vocabularySize, int contextLength) implements ContextConfiguration {}
 
-                @Override
-                public int contextLength() {
-                    return CONTEXT;
-                }
-            };
+    static final Configuration CONFIG = new Configuration(32, CONTEXT);
 
-    static class FakeModel implements LanguageModel<Config, Object, FakeState> {
-        final StateCodec<FakeState> codec;
+    static class FakeModel implements LanguageModel<Configuration, Object, FakeState> {
+        final CheckpointCodec<FakeState> codec;
 
         /** Test knob: the batch capacity of allocated states (chunk granularity of prefill). */
         int stateBatch = 512;
 
-        FakeModel(StateCodec<FakeState> codec) {
+        FakeModel(CheckpointCodec<FakeState> codec) {
             this.codec = codec;
         }
 
         @Override
-        public Optional<StateCodec<FakeState>> stateCodec() {
+        public Optional<CheckpointCodec<FakeState>> checkpointCodec() {
             return Optional.ofNullable(codec);
         }
 
         @Override
-        public Config config() {
+        public Configuration configuration() {
             return CONFIG;
         }
 
@@ -117,77 +102,78 @@ public final class PromptCacheTest {
         }
 
         @Override
-        public FakeState newState(int ctx, int batch, Arena arena) {
+        public FakeState newState(int ctx, int batch, MemoryArena<MemorySegment> arena) {
             return new FakeState(stateBatch);
         }
 
         @Override
-        public void forward(FakeState s, Batch batch) {
-            if (batch.input() instanceof Batch.Input.Tokens t) {
-                for (int id : t.ids()) s.ingested.add(id);
-            }
-            s.position += batch.count();
+        public FakeState newState(int ctx, int batch) {
+            return new FakeState(stateBatch);
         }
 
         @Override
-        public MemoryView<?> head(FakeState s, int output) {
+        public void ingest(FakeState s, Batch batch) {
+            s.exclusively(
+                    () -> {
+                        if (batch.input() instanceof Batch.Input.Tokens t) {
+                            for (int id : t.ids()) s.ingested.add(id);
+                        }
+                        s.advance(batch);
+                    });
+        }
+
+        @Override
+        public MemoryView<?> logits(FakeState s, int output) {
             throw new UnsupportedOperationException("no logits in a cache test");
         }
     }
 
-    static class FakeCodec implements StateCodec<FakeState> {
-        final boolean coarse;
+    static class FakeCodec extends CheckpointCodec<FakeState> {
+        private final long overhead;
 
-        FakeCodec(boolean coarse) {
-            this.coarse = coarse;
+        FakeCodec(long overhead) {
+            this.overhead = overhead;
         }
 
         @Override
-        public boolean coarseCheckpoints() {
-            return coarse;
+        protected long sizeOf(int positions) {
+            return positions * 8L + overhead;
         }
 
         @Override
-        public long checkpointBytes(int positions) {
-            return positions * 8L;
-        }
-
-        @Override
-        public void saveCheckpoint(FakeState s, int from, int to, MemorySegment dst) {}
-
-        @Override
-        public void restoreCheckpoint(FakeState s, int from, int to, MemorySegment src) {}
+        protected void transfer(
+                FakeState state, int from, int to, MemorySegment memory, boolean capture) {}
     }
 
     static final ContentKey SEED = ContentKey.sha256(new byte[] {42});
 
     static FakeModel fine() {
-        return new FakeModel(new FakeCodec(false));
+        return new FakeModel(new FakeCodec(0));
     }
 
     /** A codec with a 100-byte residue trailer: the LFM2-class shape, scaled down. */
     static FakeModel residual() {
-        return new FakeModel(
-                new FakeCodec(false) {
-                    @Override
-                    public long checkpointBytes(int positions) {
-                        return positions * 8L + 100;
-                    }
-                });
+        return new FakeModel(new FakeCodec(100));
     }
 
-    static FakeModel coarse() {
-        return new FakeModel(new FakeCodec(true));
+    static PromptCache.Options options(int retained, long budget) {
+        return PromptCache.Options.DEFAULTS
+                .withRetainedSessions(retained)
+                .withContextCapacity(CTX)
+                .withBlockBudget(budget);
     }
 
     static PromptCache<FakeState> cache(FakeModel model, int retained, long budget) {
+        return PromptCache.of(model, SEED, options(retained, budget));
+    }
+
+    static PromptCache<FakeState> defineOnlyCache(int retained, long budget) {
         return PromptCache.of(
-                model, SEED, new PromptCache.Options(retained, CTX, budget, null, false));
+                residual(), SEED, options(retained, budget).withMaxCheckpointOverhead(0));
     }
 
     static PromptCache<FakeState> onCatalog(FakeModel model, Path catalog, boolean readOnly) {
-        return PromptCache.of(
-                model, SEED, new PromptCache.Options(0, CTX, 1 << 20, catalog, readOnly));
+        return PromptCache.of(model, SEED, options(0, 1 << 20).withCatalog(catalog, readOnly));
     }
 
     static List<Batch> prompt(int... ids) {
@@ -211,7 +197,7 @@ public final class PromptCacheTest {
                 prompt,
                 (state, serving) -> {
                     for (int token : reply) {
-                        state.position += 1; // model.ingest(step)
+                        state.resumeAt(state.position() + 1); // model.ingest(step)
                         serving.tail(token); // afterIngest
                     }
                     return new Served(serving.tier(), serving.restored());
@@ -279,7 +265,7 @@ public final class PromptCacheTest {
             assertEquals(0, s.retainedSessions());
             assertEquals(0, s.sessionHits());
             assertEquals(3, states.stream().distinct().count());
-            assertTrue(states.stream().allMatch(FakeState::isClosed));
+            assertTrue(states.stream().noneMatch(FakeState::isAlive));
         }
     }
 
@@ -358,18 +344,54 @@ public final class PromptCacheTest {
         }
     }
 
-    // ---- COARSE TAIL SNAPSHOT: the rewind that saves thinking models from full re-prefill ----
+    @Test
+    void checkpointOverheadLimitSelectsTheWriteStrategy() {
+        var options = options(0, 1 << 20);
+        try (var incremental =
+                PromptCache.of(residual(), SEED, options.withMaxCheckpointOverhead(100))) {
+            generate(incremental, prompt(1, 2, 3), 7);
+            assertEquals(2, incremental.sample().blocks(), "the limit is inclusive");
+        }
+        try (var defineOnly =
+                PromptCache.of(residual(), SEED, options.withMaxCheckpointOverhead(99))) {
+            generate(defineOnly, prompt(1, 2, 3), 7);
+            assertEquals(0, defineOnly.sample().blocks(), "ordinary serving is read-only");
+        }
+    }
+
+    @Test
+    void cacheResolvesContextCapacityAgainstTheModel() {
+        try (var maximum =
+                        PromptCache.of(
+                                fine(),
+                                SEED,
+                                PromptCache.Options.DEFAULTS
+                                        .withContextCapacity(0)
+                                        .withBlockBudget(0));
+                var clamped =
+                        PromptCache.of(
+                                fine(),
+                                SEED,
+                                PromptCache.Options.DEFAULTS
+                                        .withContextCapacity(CONTEXT + 1)
+                                        .withBlockBudget(0))) {
+            assertEquals(CONTEXT, maximum.contextCapacity());
+            assertEquals(CONTEXT, clamped.contextCapacity());
+        }
+    }
+
+    // ---- DEFINE-ONLY TAIL SNAPSHOT: saves thinking models from full re-prefill ---------------
 
     // the chat shape: the prompt's FINAL batch is the generation prompt (template convention);
     // 90 plays that role - the echoed next turn re-renders history differently past the seam
     private static final int GEN = 90;
 
     @Test
-    void aStrippedEchoRewindsToTheCoarseTailSnapshot() {
+    void aStrippedEchoRewindsToTheDefineOnlyTailSnapshot() {
         // the generated stream ends [.., GEN, 7, 8] (gen prompt + reply-with-thinking); the echo
         // renders the reply's turn as [9] - never a strict extension, so before the snapshot
-        // this was a full re-prefill on every coarse turn
-        try (var cache = cache(coarse(), 2, 1 << 20)) {
+        // this was a full re-prefill on every define-only turn
+        try (var cache = defineOnlyCache(2, 1 << 20)) {
             generate(cache, turns(new int[] {1, 2, 3}, new int[] {GEN}), 7, 8);
             Served turn2 = generate(cache, turns(new int[] {1, 2, 3, 9, 4}, new int[] {GEN}));
             assertEquals(PromptCache.Tier.SESSION, turn2.tier(), "snapshot rewind = hot tier");
@@ -379,7 +401,7 @@ public final class PromptCacheTest {
 
     @Test
     void theSnapshotAdvancesToEachNewPromptBoundary() {
-        try (var cache = cache(coarse(), 2, 1 << 20)) {
+        try (var cache = defineOnlyCache(2, 1 << 20)) {
             generate(cache, turns(new int[] {1, 2, 3}, new int[] {GEN}), 7, 8);
             generate(cache, turns(new int[] {1, 2, 3, 9, 4}, new int[] {GEN}), 8);
             // turn 3 echoes turn 2's stripped stream: rewinds to turn 2's seam (5), not 3
@@ -392,7 +414,7 @@ public final class PromptCacheTest {
     @Test
     void aForkBeforeTheSnapshotStillRePrefills() {
         // the snapshot is the TAIL rewind point only: recurrent state cannot rewind further
-        try (var cache = cache(coarse(), 2, 1 << 20)) {
+        try (var cache = defineOnlyCache(2, 1 << 20)) {
             generate(cache, turns(new int[] {1, 2, 3}, new int[] {GEN}), 7, 8);
             Served fork = generate(cache, turns(new int[] {1, 99, 3}, new int[] {GEN}));
             assertEquals(PromptCache.Tier.FRESH, fork.tier());
@@ -405,13 +427,13 @@ public final class PromptCacheTest {
         try (var cache = cache(fine(), 2, 1 << 20)) {
             generate(cache, turns(new int[] {1, 2, 3}, new int[] {GEN}), 7);
             assertEquals(
-                    0, cache.sample().sessionSnapshotBytes(), "snapshots are the coarse-codec fix");
+                    0, cache.sample().sessionSnapshotBytes(), "incremental mode needs no snapshot");
         }
-        try (var cache = cache(coarse(), 2, 1 << 20)) {
+        try (var cache = defineOnlyCache(2, 1 << 20)) {
             generate(cache, turns(new int[] {1, 2, 3}, new int[] {GEN}), 7);
             assertTrue(
                     cache.sample().sessionSnapshotBytes() > 0,
-                    "a served coarse turn holds a snapshot");
+                    "a served define-only turn holds a snapshot");
         }
     }
 
@@ -462,7 +484,7 @@ public final class PromptCacheTest {
             cache.serve(
                     turns(new int[] {1, 2, 3}),
                     (state, serving) -> {
-                        state.position += 2; // decode tokens never reported through tail()
+                        state.resumeAt(state.position() + 2); // tokens not reported through tail
                         return null;
                     });
             assertEquals(
@@ -502,7 +524,7 @@ public final class PromptCacheTest {
                                         acquired[0] = state;
                                         throw new IllegalStateException("boom");
                                     }));
-            assertTrue(acquired[0].isClosed());
+            assertFalse(acquired[0].isAlive());
             assertEquals(0, cache.sample().retainedSessions());
         }
     }
@@ -511,7 +533,7 @@ public final class PromptCacheTest {
 
     @Test
     void coarseServingRestoresDefinedPrefixesAndCommitsNothing() {
-        try (var cache = cache(coarse(), 0, 1 << 20)) {
+        try (var cache = defineOnlyCache(0, 1 << 20)) {
             cache.define(turns(new int[] {1, 2, 3, 4}, new int[] {5})); // one block: [1,2,3,4]
             assertTrue(cache.treeStats().startsWith("blocks=1 "), cache.treeStats());
 
@@ -525,10 +547,10 @@ public final class PromptCacheTest {
     }
 
     @Test
-    void aSingleBatchCoarseDefineStillServesOneShort() {
+    void aSingleBatchDefineOnlyPromptStillServesOneShort() {
         // one token batch. Committed whole it would be a dead block (a one-short serve can never
         // match it); define must commit the prefix-only block
-        try (var cache = cache(coarse(), 0, 1 << 20)) {
+        try (var cache = defineOnlyCache(0, 1 << 20)) {
             cache.define(prompt(1, 2, 3, 4, 5));
             assertTrue(cache.treeStats().startsWith("blocks=1 "), cache.treeStats());
             Served hit = generate(cache, prompt(1, 2, 3, 4, 5), 7);
@@ -613,11 +635,7 @@ public final class PromptCacheTest {
         Path missing = Path.of("/nonexistent/jinfer/catalog.jkvf");
         assertThrows(
                 IllegalArgumentException.class,
-                () ->
-                        PromptCache.of(
-                                model,
-                                SEED,
-                                new PromptCache.Options(1, CTX, 1 << 20, missing, true)));
+                () -> PromptCache.of(model, SEED, options(1, 1 << 20).withCatalog(missing, true)));
         assertFalse(Files.exists(missing));
     }
 
@@ -651,8 +669,7 @@ public final class PromptCacheTest {
             writer.save();
         }
         long size = Files.size(catalog);
-        try (var frozen =
-                PromptCache.of(model, SEED, new PromptCache.Options(0, CTX, 0, catalog, false))) {
+        try (var frozen = PromptCache.of(model, SEED, options(0, 0).withCatalog(catalog, false))) {
             Served hit = generate(frozen, turns(new int[] {1, 2, 3, 4}, new int[] {9}), 7);
             assertEquals(PromptCache.Tier.BLOCKS, hit.tier(), "the mount serves");
             assertTrue(frozen.sample().blockRefusals() > 0, "growth is refused, and counted");
@@ -664,9 +681,9 @@ public final class PromptCacheTest {
 
     @Test
     void coarseRestoreEndingInsideABatchSlicesTheTail() {
-        // the defined coarse block ends mid-batch of the request: the read-only session must
+        // the defined block ends mid-batch of the request: the read-only session must
         // slice the group head it restored and ingest only the tail - still committing nothing
-        try (var cache = cache(coarse(), 0, 1 << 20)) {
+        try (var cache = defineOnlyCache(0, 1 << 20)) {
             cache.define(turns(new int[] {1, 2, 3, 4}, new int[] {5})); // one block: [1,2,3,4]
             Served hit = generate(cache, prompt(1, 2, 3, 4, 9), 7); // ONE batch, seam at 4
             assertEquals(PromptCache.Tier.BLOCKS, hit.tier());
@@ -717,21 +734,18 @@ public final class PromptCacheTest {
 
     @Test
     void optionsRejectNonsenseInsteadOfBuildingAPathologicalCache() {
-        // int widens silently into the long slot: a transposed (budget, hot) pair must not
-        // become a million-session retained layer with a 4-byte budget
         assertThrows(
                 IllegalArgumentException.class,
-                () -> new PromptCache.Options(-1, CTX, 1, null, false));
+                () -> PromptCache.Options.DEFAULTS.withRetainedSessions(-1));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> new PromptCache.Options(1, CTX, -1, null, false));
+                () -> PromptCache.Options.DEFAULTS.withBlockBudget(-1));
         assertThrows(
                 IllegalArgumentException.class,
-                () ->
-                        PromptCache.of(
-                                new FakeModel(null),
-                                null,
-                                new PromptCache.Options(0, CTX, 0, null, false)));
+                () -> PromptCache.Options.DEFAULTS.withMaxCheckpointOverhead(-1));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PromptCache.of(new FakeModel(null), null, options(0, 0)));
     }
 
     @Test
@@ -744,8 +758,7 @@ public final class PromptCacheTest {
                         PromptCache.of(
                                 new FakeModel(null),
                                 SEED,
-                                new PromptCache.Options(
-                                        0, CTX, 0, Path.of("never-created.jcache"), false)));
+                                options(0, 0).withCatalog(Path.of("never-created.jcache"), false)));
     }
 
     @Test
@@ -792,7 +805,7 @@ public final class PromptCacheTest {
                             turns(new int[] {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}),
                             (state, serving) -> {
                                 assertFalse(serving.prefillComplete());
-                                assertEquals(4, state.position); // chunk 0 completed, 1 never ran
+                                assertEquals(4, state.position()); // chunk 0 completed, 1 never ran
                                 assertEquals(PromptCache.Tier.FRESH, serving.tier());
                                 return "stopped";
                             },
@@ -816,7 +829,7 @@ public final class PromptCacheTest {
                             turns(new int[] {1, 2, 3}),
                             (state, serving) -> {
                                 assertFalse(serving.prefillComplete());
-                                assertEquals(0, state.position);
+                                assertEquals(0, state.position());
                                 assertEquals(0, serving.restored());
                                 assertTrue(serving.promptTime().toNanos() >= 0); // set even here
                                 return "stopped";
@@ -858,12 +871,12 @@ public final class PromptCacheTest {
         var warm = cache(model, 1, 1 << 20);
         FakeState pooled = warm.serve(turns(new int[] {1, 2}), (state, serving) -> state);
         warm.close();
-        assertTrue(pooled.isClosed(), "close frees the pooled state deterministically");
+        assertFalse(pooled.isAlive(), "close frees the pooled state deterministically");
 
         var stateless = cache(model, 0, 0);
         FakeState state = stateless.serve(turns(new int[] {1, 2}), (s, serving) -> s);
-        assertTrue(state.isClosed(), "zero closes the state as soon as the request completes");
+        assertFalse(state.isAlive(), "zero closes the state as soon as the request completes");
         stateless.close();
-        assertTrue(state.isClosed(), "cache close stays idempotent");
+        assertFalse(state.isAlive(), "cache close stays idempotent");
     }
 }

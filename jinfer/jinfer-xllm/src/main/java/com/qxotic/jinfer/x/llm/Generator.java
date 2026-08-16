@@ -1,9 +1,8 @@
 package com.qxotic.jinfer.x.llm;
 
-import com.qxotic.jinfer.x.boundary.BaseState;
 import com.qxotic.jinfer.x.boundary.Batch;
+import com.qxotic.jinfer.x.boundary.ContextState;
 import com.qxotic.jinfer.x.boundary.LanguageModel;
-import com.qxotic.jinfer.x.boundary.RuntimeState;
 import com.qxotic.jinfer.x.telemetry.DecodeEvent;
 import java.lang.ref.Reference;
 import java.time.Duration;
@@ -104,10 +103,10 @@ public final class Generator {
     }
 
     /**
-     * As {@link #generate(LanguageModel, RuntimeState, List, Sampler, Constraints,
+     * As {@link #generate(LanguageModel, ContextState, List, Sampler, Constraints,
      * GenerationListener)} for a plain token prompt.
      */
-    public static <S extends RuntimeState> GenerationResult generate(
+    public static <S extends ContextState> GenerationResult generate(
             LanguageModel<?, ?, S> model,
             S state,
             int[] promptTokens,
@@ -123,14 +122,29 @@ public final class Generator {
      * One generation pass: ingest {@code prompt} at the state's cursor, then sample-decode-ingest
      * until a stop token, the listener's abort, the deadline, or the budget (clamped to the state's
      * remaining context). A fresh state generates from the prompt; a resumed state (empty prompt)
-     * continues from its position. The pass claims the state for its whole duration - a direct
+     * continues from its position. The pass holds the state for its whole duration - a direct
      * {@code ingest} from another thread fails fast instead of silently interleaving two pipelines
      * into one KV. Different STATES of one model may decode concurrently; whether they run in
      * parallel is the backend's business, not this loop's. A deadline that expires DURING prompt
      * ingestion stops at the last completed chunk: the state then holds a partial prompt at its
      * position, and continuing or resetting is the caller's decision.
      */
-    public static <S extends RuntimeState> GenerationResult generate(
+    public static <S extends ContextState> GenerationResult generate(
+            LanguageModel<?, ?, S> model,
+            S state,
+            List<Batch> prompt,
+            Sampler sampler,
+            Constraints constraints,
+            GenerationListener listener) {
+        try {
+            return state.exclusively(
+                    () -> generate0(model, state, prompt, sampler, constraints, listener));
+        } finally {
+            Reference.reachabilityFence(model);
+        }
+    }
+
+    private static <S extends ContextState> GenerationResult generate0(
             LanguageModel<?, ?, S> model,
             S state,
             List<Batch> prompt,
@@ -159,91 +173,80 @@ public final class Generator {
                         ? Long.MAX_VALUE
                         : saturatingDeadline(startNanos, constraints.timeout().toNanos());
 
-        BaseState base = (BaseState) state;
-        base.enter(); // the single-pipeline claim, held across the whole pass
-        try {
-            for (Batch batch : Batch.prepare(prompt, state.batchCapacity())) {
-                if (System.nanoTime() >= deadlineNanos) {
-                    break; // no new chunk past the deadline; the decode loop ends the pass below
-                }
-                model.ingest(state, batch);
+        for (Batch batch : Batch.prepare(prompt, state.batchCapacity())) {
+            if (System.nanoTime() >= deadlineNanos) {
+                break; // no new chunk past the deadline; the decode loop ends the pass below
             }
-            long prefillDoneNanos = System.nanoTime();
+            model.ingest(state, batch);
+        }
+        long prefillDoneNanos = System.nanoTime();
 
-            int vocab = model.config().vocabularySize();
-            Set<Integer> stops = constraints.stopTokens();
-            int[] generated = new int[max];
-            int n = 0;
-            FinishReason finish =
-                    FinishReason.LENGTH; // budget/context, or maxTokens=0 prefill-only
-            // resolved ONCE, not per token: allocating a per-token event only to find it disabled
-            // would let telemetry perturb the thing it measures. A recording started
-            // mid-generation is picked up by the next pass, which is soon enough.
-            boolean traceTokens = new DecodeEvent().isEnabled();
-            while (n < max) {
-                // the deadline gates WORK, not delivery: a token sampled in time is always
-                // emitted and ingested; no new sample starts past it
-                if (System.nanoTime() >= deadlineNanos) {
-                    finish = FinishReason.TIMEOUT;
+        int vocab = model.configuration().vocabularySize();
+        Set<Integer> stops = constraints.stopTokens();
+        int[] generated = new int[max];
+        int n = 0;
+        FinishReason finish = FinishReason.LENGTH; // budget/context, or maxTokens=0 prefill-only
+        // resolved ONCE, not per token: allocating a per-token event only to find it disabled
+        // would let telemetry perturb the thing it measures. A recording started
+        // mid-generation is picked up by the next pass, which is soon enough.
+        boolean traceTokens = new DecodeEvent().isEnabled();
+        while (n < max) {
+            // the deadline gates WORK, not delivery: a token sampled in time is always
+            // emitted and ingested; no new sample starts past it
+            if (System.nanoTime() >= deadlineNanos) {
+                finish = FinishReason.TIMEOUT;
+                break;
+            }
+            DecodeEvent decode = traceTokens ? new DecodeEvent() : null;
+            if (decode != null) decode.begin();
+            try {
+                int token = sampler.sampleToken(model.logits(state));
+                if (token < 0 || token >= vocab) {
+                    throw new IllegalArgumentException(
+                            "sampler returned token id "
+                                    + token
+                                    + " out of range [0, "
+                                    + vocab
+                                    + ")");
+                }
+                generated[n++] = token;
+                boolean keepGoing = listener.onToken(token);
+                if (stops.contains(token)) {
+                    finish = FinishReason.STOP;
                     break;
                 }
-                DecodeEvent decode = traceTokens ? new DecodeEvent() : null;
-                if (decode != null) decode.begin();
-                try {
-                    int token = sampler.sampleToken(model.logits(state));
-                    if (token < 0 || token >= vocab) {
-                        throw new IllegalArgumentException(
-                                "sampler returned token id "
-                                        + token
-                                        + " out of range [0, "
-                                        + vocab
-                                        + ")");
-                    }
-                    generated[n++] = token;
-                    boolean keepGoing = listener.onToken(token);
-                    if (stops.contains(token)) {
-                        finish = FinishReason.STOP;
-                        break;
-                    }
-                    if (!keepGoing) {
-                        finish = FinishReason.ABORT;
-                        break;
-                    }
-                    if (n >= max || state.position() >= capacity) {
-                        break; // LENGTH, and the final token is not ingested
-                    }
-                    model.ingest(state, Batch.step(token));
-                    listener.onIngested(token);
-                } finally {
-                    if (decode != null) {
-                        decode.end();
-                        decode.commit();
-                    }
+                if (!keepGoing) {
+                    finish = FinishReason.ABORT;
+                    break;
+                }
+                if (n >= max || state.position() >= capacity) {
+                    break; // LENGTH, and the final token is not ingested
+                }
+                model.ingest(state, Batch.step(token));
+                listener.onIngested(token);
+            } finally {
+                if (decode != null) {
+                    decode.end();
+                    decode.commit();
                 }
             }
-            long endNanos = System.nanoTime();
+        }
+        long endNanos = System.nanoTime();
 
-            if (finish == FinishReason.STOP) {
-                return new GenerationResult(
-                        Arrays.copyOf(generated, n - 1),
-                        OptionalInt.of(generated[n - 1]),
-                        finish,
-                        Duration.ofNanos(prefillDoneNanos - startNanos),
-                        Duration.ofNanos(endNanos - prefillDoneNanos));
-            }
+        if (finish == FinishReason.STOP) {
             return new GenerationResult(
-                    Arrays.copyOf(generated, n),
-                    OptionalInt.empty(),
+                    Arrays.copyOf(generated, n - 1),
+                    OptionalInt.of(generated[n - 1]),
                     finish,
                     Duration.ofNanos(prefillDoneNanos - startNanos),
                     Duration.ofNanos(endNanos - prefillDoneNanos));
-        } finally {
-            base.exit();
-            // weights live in an arena kernels read via raw addresses, which the GC cannot see:
-            // pin the model across the pass so a dropped caller reference can never unmap under
-            // a running kernel
-            Reference.reachabilityFence(model);
         }
+        return new GenerationResult(
+                Arrays.copyOf(generated, n),
+                OptionalInt.empty(),
+                finish,
+                Duration.ofNanos(prefillDoneNanos - startNanos),
+                Duration.ofNanos(endNanos - prefillDoneNanos));
     }
 
     private static long saturatingDeadline(long nowNanos, long timeoutNanos) {

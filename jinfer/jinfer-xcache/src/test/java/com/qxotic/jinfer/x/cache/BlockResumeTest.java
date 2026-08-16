@@ -3,9 +3,11 @@ package com.qxotic.jinfer.x.cache;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.x.PanamaMemoryArena;
+import com.qxotic.jinfer.x.boundary.CheckpointCodec;
 import com.qxotic.jinfer.x.boundary.ContentKey;
-import com.qxotic.jinfer.x.boundary.RuntimeState;
-import com.qxotic.jinfer.x.boundary.StateCodec;
+import com.qxotic.jinfer.x.boundary.ContextState;
+import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import org.junit.jupiter.api.Test;
@@ -19,10 +21,13 @@ import org.junit.jupiter.api.Test;
 public final class BlockResumeTest {
 
     /** Rows are a visible array; the residue is a value that only exists "at" a position. */
-    static final class FakeState implements RuntimeState {
-        int position;
+    static final class FakeState extends ContextState {
         final long[] rows = new long[1 << 10];
         long residue; // simulated recurrent state: must equal residueAt(position) when live
+
+        FakeState() {
+            super(1 << 10, 512, new PanamaMemoryArena(Arena.ofAuto()), false);
+        }
 
         static long rowAt(int p) {
             return 0xC0FFEE_0000L + p;
@@ -33,56 +38,38 @@ public final class BlockResumeTest {
         }
 
         void ingestTo(int to) { // simulate ingestion: rows appear, residue mutates in place
-            for (int p = position; p < to; p++) rows[p] = rowAt(p);
-            position = to;
+            for (int p = position(); p < to; p++) rows[p] = rowAt(p);
+            resumeAt(to);
             residue = residueAt(to);
         }
 
         @Override
-        public int contextCapacity() {
-            return rows.length;
-        }
-
-        @Override
-        public int batchCapacity() {
-            return 512;
-        }
-
-        @Override
-        public int position() {
-            return position;
-        }
-
-        @Override
-        public int outputCount() {
-            return 1;
-        }
-
-        @Override
-        public void resumeAt(int p) {
-            position = p;
-        }
+        protected void clearHistory() {}
     }
 
-    static final class FakeCodec implements StateCodec<FakeState> {
+    static final class FakeCodec extends CheckpointCodec<FakeState> {
         @Override
-        public long checkpointBytes(int positions) {
+        protected long sizeOf(int positions) {
             return positions * 8L + 8; // rows + residue trailer
         }
 
         @Override
-        public void saveCheckpoint(FakeState s, int from, int to, MemorySegment dst) {
-            assertEquals(to, s.position, "save is only valid at state.position() == to");
-            for (int p = from; p < to; p++)
-                dst.setAtIndex(ValueLayout.JAVA_LONG, p - from, s.rows[p]);
-            dst.set(ValueLayout.JAVA_LONG, (long) (to - from) * 8, s.residue);
-        }
-
-        @Override
-        public void restoreCheckpoint(FakeState s, int from, int to, MemorySegment src) {
-            for (int p = from; p < to; p++)
-                s.rows[p] = src.getAtIndex(ValueLayout.JAVA_LONG, p - from);
-            s.residue = src.get(ValueLayout.JAVA_LONG, (long) (to - from) * 8);
+        protected void transfer(
+                FakeState state, int from, int to, MemorySegment memory, boolean capture) {
+            for (int position = from; position < to; position++) {
+                long index = position - from;
+                if (capture) {
+                    memory.setAtIndex(ValueLayout.JAVA_LONG, index, state.rows[position]);
+                } else {
+                    state.rows[position] = memory.getAtIndex(ValueLayout.JAVA_LONG, index);
+                }
+            }
+            long residueOffset = (long) (to - from) * Long.BYTES;
+            if (capture) {
+                memory.set(ValueLayout.JAVA_LONG, residueOffset, state.residue);
+            } else {
+                state.residue = memory.get(ValueLayout.JAVA_LONG, residueOffset);
+            }
         }
     }
 
@@ -112,7 +99,7 @@ public final class BlockResumeTest {
         for (int b : bounds) {
             FakeState r = new FakeState();
             cache.resume(fp, b, r);
-            assertEquals(b, r.position, "resume lands exactly on boundary " + b);
+            assertEquals(b, r.position(), "resume lands exactly on boundary " + b);
             for (int p = 0; p < b; p++) assertEquals(FakeState.rowAt(p), r.rows[p], "row " + p);
             assertEquals(FakeState.residueAt(b), r.residue, "residue as of " + b);
         }
@@ -122,7 +109,7 @@ public final class BlockResumeTest {
         diverged[13] ^= 0x5DEECE66DL; // inside block [10,17)
         FakeState d = new FakeState();
         cache.resume(diverged, diverged.length, d);
-        assertEquals(10, d.position, "mid-block divergence resumes at the previous boundary");
+        assertEquals(10, d.position(), "mid-block divergence resumes at the previous boundary");
         assertEquals(FakeState.residueAt(10), d.residue, "residue of the landing boundary");
 
         // first-block divergence: cold start
@@ -130,7 +117,7 @@ public final class BlockResumeTest {
         cold[0] ^= 1;
         FakeState c = new FakeState();
         cache.resume(cold, cold.length, c);
-        assertEquals(0, c.position, "divergence in the first block is a cold start");
+        assertEquals(0, c.position(), "divergence in the first block is a cold start");
 
         assertTrue(cache.stats().contains("blocks=3"), cache.stats());
     }

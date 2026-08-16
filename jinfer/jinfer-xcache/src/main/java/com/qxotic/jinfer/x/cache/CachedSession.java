@@ -2,9 +2,9 @@ package com.qxotic.jinfer.x.cache;
 
 import com.qxotic.jinfer.x.boundary.Arenas;
 import com.qxotic.jinfer.x.boundary.Batch;
-import com.qxotic.jinfer.x.boundary.Model;
-import com.qxotic.jinfer.x.boundary.RuntimeState;
-import com.qxotic.jinfer.x.boundary.StateCodec;
+import com.qxotic.jinfer.x.boundary.CheckpointCodec;
+import com.qxotic.jinfer.x.boundary.ContextModel;
+import com.qxotic.jinfer.x.boundary.ContextState;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.toknroll.IntSequence;
 import java.lang.foreign.Arena;
@@ -20,10 +20,10 @@ import java.util.function.BooleanSupplier;
  * alongside the KV. In its full mode a cache commit lands at every ingestion boundary, keeping the
  * committed chain contiguous - the cache's WRITE HANDLE. Two reduced modes exist for the facade:
  * SESSIONS-ONLY (no tree: the stream still tracks every position, nothing commits or restores) and
- * READ-ONLY (coarse serving: restores, never writes). It is otherwise the write handle - it holds
- * the tip of the committed chain and extends it by exactly each ingested span. Ingestion chunks at
- * the state's batch capacity; each chunk is one block (large blocks), each decode {@link #step} is
- * one block (single-token blocks).
+ * READ-ONLY (define-only serving: restores, never writes). It is otherwise the write handle - it
+ * holds the tip of the committed chain and extends it by exactly each ingested span. Ingestion
+ * chunks at the state's batch capacity; each chunk is one block (large blocks), each decode {@link
+ * #step} is one block (single-token blocks).
  *
  * <p>Attach with {@link #resume}: restores the longest cached prefix of {@code expected} into the
  * fresh state; the caller re-ingests everything past {@link #position()}.
@@ -42,16 +42,16 @@ import java.util.function.BooleanSupplier;
  * caller ingests the tail) - {@code maxPositions} (pass {@code total - 1}) leaves the final block
  * re-ingested so the state holds fresh logits at its frontier.
  */
-public final class CachedSession<S extends RuntimeState> {
+public final class CachedSession<S extends ContextState> {
 
-    private final Model<?, ?, S> model;
+    private final ContextModel<?, ?, S> model;
     private final S state;
     private final BlockTree<S> cache; // null: SESSIONS-ONLY (stream tracked, nothing committed)
-    private final boolean commits; // false: read-only serving (coarse codecs restore, never write)
+    private final boolean commits; // false: define-only mode restores but never writes
     private BlockTree<S>.Block tip;
     private long[] fp;
     private int len;
-    // TAIL SNAPSHOT (coarse codecs): the recurrent residue captured at the last prompt boundary.
+    // TAIL SNAPSHOT (define-only mode): recurrent state at the last prompt boundary.
     // The attention rows [0, snapshotLen) stay valid in the state itself (linear append-only KV;
     // decode only appends), so rewinding needs ONLY the residue restored and the position moved -
     // which un-does the reply's recurrent influence and lets a thinking-stripped echo (never a
@@ -62,7 +62,7 @@ public final class CachedSession<S extends RuntimeState> {
     private int snapshotLen = -1;
 
     private CachedSession(
-            Model<?, ?, S> model,
+            ContextModel<?, ?, S> model,
             S state,
             BlockTree<S> cache,
             boolean commits,
@@ -90,7 +90,7 @@ public final class CachedSession<S extends RuntimeState> {
      * A session over NO tree: the fingerprint stream still tracks every ingested position (session
      * matching needs it), but nothing is committed and nothing can be restored.
      */
-    static <S extends RuntimeState> CachedSession<S> fresh(Model<?, ?, S> model, S state) {
+    static <S extends ContextState> CachedSession<S> fresh(ContextModel<?, ?, S> model, S state) {
         // a non-zero position would seed a stream of zero fingerprints for content the state
         // actually holds - a false prefix match away from serving wrong bytes. Refuse.
         if (state.position() != 0) {
@@ -101,8 +101,8 @@ public final class CachedSession<S extends RuntimeState> {
     }
 
     /** A fresh session on a fresh state for a brand-new conversation (nothing to resume). */
-    public static <S extends RuntimeState> CachedSession<S> start(
-            Model<?, ?, S> model, BlockTree<S> cache, S state) {
+    public static <S extends ContextState> CachedSession<S> start(
+            ContextModel<?, ?, S> model, BlockTree<S> cache, S state) {
         return resume(model, cache, state, new long[0], 0, true);
     }
 
@@ -111,19 +111,19 @@ public final class CachedSession<S extends RuntimeState> {
      * encoded batches themselves are the key; their content addressing (token ids as themselves,
      * media rows by content digest) is this package's internal law.
      */
-    public static <S extends RuntimeState> CachedSession<S> resume(
-            Model<?, ?, S> model, BlockTree<S> cache, S state, List<Batch> prompt) {
+    public static <S extends ContextState> CachedSession<S> resume(
+            ContextModel<?, ?, S> model, BlockTree<S> cache, S state, List<Batch> prompt) {
         long[] fp = fingerprints(prompt);
         return resume(model, cache, state, fp, fp.length, true);
     }
 
     /**
-     * As {@link #resume(Model, BlockTree, RuntimeState, List)} but restoring at most {@code
+     * As {@link #resume(ContextModel, BlockTree, ContextState, List)} but restoring at most {@code
      * maxPositions} - e.g. the prompt length minus its final block, so a whole-prompt hit still
      * re-ingests that block and holds fresh logits at the frontier.
      */
-    public static <S extends RuntimeState> CachedSession<S> resume(
-            Model<?, ?, S> model,
+    public static <S extends ContextState> CachedSession<S> resume(
+            ContextModel<?, ?, S> model,
             BlockTree<S> cache,
             S state,
             List<Batch> prompt,
@@ -134,11 +134,11 @@ public final class CachedSession<S extends RuntimeState> {
     /**
      * The one attach point: resumes the longest cached prefix of {@code expected[0..maxPositions)}
      * into the fresh state. {@code commits=false} is READ-ONLY serving - the longest cached prefix
-     * restores, and no ingestion ever writes back (the coarse-codec mode: a residue per served
+     * restores, and no ingestion ever writes back (define-only mode: fixed overhead per served
      * block would grow the store by ~MBs per request).
      */
-    static <S extends RuntimeState> CachedSession<S> resume(
-            Model<?, ?, S> model,
+    static <S extends ContextState> CachedSession<S> resume(
+            ContextModel<?, ?, S> model,
             BlockTree<S> cache,
             S state,
             long[] expected,
@@ -425,19 +425,19 @@ public final class CachedSession<S extends RuntimeState> {
         fp[len++] = fingerprint;
     }
 
-    // ---- tail snapshot (coarse codecs; see the field comment) --------------------------------
+    // ---- tail snapshot (define-only mode; see the field comment) -----------------------------
 
     /**
      * Captures the residue at the CURRENT frontier - call at the prompt boundary, before decode.
      * Replaces any previous snapshot (one per session: the tail is the only sound rewind point; see
      * {@code save}'s contract - the residue only exists at the position the state is at).
      */
-    void snapshotTail(StateCodec<S> codec) {
+    void snapshotTail(CheckpointCodec<S> codec) {
         dropSnapshot();
-        long bytes = codec.checkpointBytes(0); // an empty span = the endpoint snapshot alone
+        long bytes = codec.byteSize(0); // an empty span = the endpoint snapshot alone
         Arena arena = Arenas.newCrossThread();
         MemorySegment blob = arena.allocate(Math.max(bytes, 1), 8);
-        codec.saveCheckpoint(state, state.position(), state.position(), blob);
+        codec.capture(state, state.position(), state.position(), blob);
         this.snapshotArena = arena;
         this.snapshot = blob;
         this.snapshotLen = state.position();
@@ -463,21 +463,15 @@ public final class CachedSession<S extends RuntimeState> {
      * truncated to the boundary (the reply's fingerprints drop with its recurrent influence). Rows
      * past the boundary become dead; the caller re-ingests the request's tail over them.
      */
-    void rewindToSnapshot(StateCodec<S> codec) {
-        codec.restoreCheckpoint(state, snapshotLen, snapshotLen, snapshot);
+    void rewindToSnapshot(CheckpointCodec<S> codec) {
+        codec.restore(state, snapshotLen, snapshotLen, snapshot);
         state.resumeAt(snapshotLen);
         len = snapshotLen;
     }
 
     /** Frees the snapshot blob; idempotent. Every path that ends the session must call this. */
     void dropSnapshot() {
-        if (snapshotArena != null) {
-            try {
-                snapshotArena.close();
-            } catch (UnsupportedOperationException ignored) {
-                // automatic arena (native image): freed by GC; the reference drops below
-            }
-        }
+        if (snapshotArena != null) Arenas.close(snapshotArena);
         snapshotArena = null;
         snapshot = null;
         snapshotLen = -1;

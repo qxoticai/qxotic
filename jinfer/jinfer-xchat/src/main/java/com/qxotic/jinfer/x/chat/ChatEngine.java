@@ -4,9 +4,9 @@ import com.qxotic.jinfer.x.PanamaMemoryArena;
 import com.qxotic.jinfer.x.Views;
 import com.qxotic.jinfer.x.boundary.Arenas;
 import com.qxotic.jinfer.x.boundary.Batch;
+import com.qxotic.jinfer.x.boundary.ContextState;
 import com.qxotic.jinfer.x.boundary.LanguageModel;
 import com.qxotic.jinfer.x.boundary.LeakWatch;
-import com.qxotic.jinfer.x.boundary.RuntimeState;
 import com.qxotic.jinfer.x.cache.PromptCache;
 import com.qxotic.jinfer.x.llm.Generator;
 import com.qxotic.jinfer.x.llm.Sampler;
@@ -162,16 +162,11 @@ public final class ChatEngine implements AutoCloseable {
         this.loaded = owned.loaded();
         this.modelName = modelName;
         if (cacheOptions == null) throw new IllegalArgumentException("null cache options");
-        // contextCapacity 0 = "the model's maximum", resolvable only now that the model is
-        // loaded; explicit values clamp to it (a state larger than the model serves is waste)
-        int max = loaded.model().config().contextLength();
-        int capacity = cacheOptions.contextCapacity();
-        cacheOptions =
-                cacheOptions.withContextCapacity(capacity == 0 ? max : Math.min(capacity, max));
         PromptCache<?> built = null;
         try {
-            // PromptCache.of reads the model's capabilities itself (codec-less = sessions-only,
-            // coarse = define-only writes); a zero budget is the block layer's off-switch. An
+            // PromptCache.of reads the model's capabilities itself (codec-less = sessions-only;
+            // excessive checkpoint overhead = define-only writes); a zero budget is the block
+            // layer's off-switch. An
             // explicit catalog against a codec-less model is REFUSED there - the caller pointed
             // at an artifact nothing could ever be written to
             built = PromptCache.of(loaded.model(), loaded.seed(), cacheOptions);
@@ -203,12 +198,7 @@ public final class ChatEngine implements AutoCloseable {
 
     /** Frees the weights arena iff this engine allocated it. */
     private void freeOwnedWeights() {
-        if (weights == null) return; // the caller's arena, and the caller's to close
-        try {
-            weights.close();
-        } catch (UnsupportedOperationException ignored) {
-            // a non-closeable arena manages itself; nothing to free eagerly
-        }
+        if (weights != null) Arenas.close(weights);
     }
 
     /** Telemetry's vocabulary for the cache's own sample - mapped here, at the only seam. */
@@ -439,7 +429,7 @@ public final class ChatEngine implements AutoCloseable {
         if (promptTokens == null || promptTokens.length == 0) {
             throw new IllegalArgumentException("a raw prompt needs at least one token");
         }
-        Sampler sampler = sampling.sampler(loaded.model().config().vocabularySize());
+        Sampler sampler = sampling.sampler(loaded.model().configuration().vocabularySize());
         if (contentGbnf != null) {
             ReplyLanguage.Walk walk =
                     ReplyLanguage.Selection.of(
@@ -488,12 +478,7 @@ public final class ChatEngine implements AutoCloseable {
 
         @Override
         public void close() {
-            if (memory == null || !memory.scope().isAlive()) return;
-            try {
-                memory.close();
-            } catch (UnsupportedOperationException ignored) {
-                // Native-image may provide an ofAuto arena; GC owns that fallback.
-            }
+            if (memory != null) Arenas.close(memory);
         }
     }
 
@@ -512,18 +497,17 @@ public final class ChatEngine implements AutoCloseable {
      * </ul>
      */
     public Prepared prepare(Request request) {
-        lock.lock();
+        // deliberately LOCK-FREE: encoding touches only per-call state (the request's arena, a
+        // fresh parser, the synchronized media cache, the stateless vision projector) - a media
+        // encode must never head-of-line block generations. A close() mid-prepare fails loudly
+        // at generate()'s checkOpen.
+        checkOpen();
+        Arena memory = Arenas.newCrossThread();
         try {
-            checkOpen();
-            Arena memory = Arenas.newCrossThread();
-            try {
-                return prepare(request, memory);
-            } catch (RuntimeException | Error failure) {
-                closeArena(memory);
-                throw failure;
-            }
-        } finally {
-            lock.unlock();
+            return prepare(request, memory);
+        } catch (RuntimeException | Error failure) {
+            Arenas.close(memory);
+            throw failure;
         }
     }
 
@@ -592,14 +576,6 @@ public final class ChatEngine implements AutoCloseable {
                 memory);
     }
 
-    private static void closeArena(Arena arena) {
-        try {
-            arena.close();
-        } catch (UnsupportedOperationException ignored) {
-            // Native-image ofAuto fallback.
-        }
-    }
-
     /**
      * The id to EMIT when a decode must be ended from outside (a grammar's dead end, a forced
      * call's terminator): the stop set's FIRST element - the model's own end-of-turn, an order the
@@ -621,7 +597,7 @@ public final class ChatEngine implements AutoCloseable {
             int maxTokens,
             Integer reasoningOverride,
             IntSequence replyPrefix) {
-        Sampler sampler = sampling.sampler(loaded.model().config().vocabularySize());
+        Sampler sampler = sampling.sampler(loaded.model().configuration().vocabularySize());
         if (!think) {
             return Thinking.banMarkers(sampler, loaded.tokenizer());
         }
@@ -682,8 +658,8 @@ public final class ChatEngine implements AutoCloseable {
 
     /**
      * The sink-side copy the media contract demands: embedder chunks are borrowed views of the
-     * per-encode scratch arena, dead the moment {@code Embedder#embed} returns, while prompt
-     * batches are ingested after {@code ChatTemplate#encode} returns. Non-media batches pass
+     * per-encode scratch arena, dead the moment {@code MediaProjector#project} returns, while
+     * prompt batches are ingested after {@code ChatTemplate#encode} returns. Non-media batches pass
      * through.
      */
     private static Batch own(Batch batch, PanamaMemoryArena arena) {
@@ -1073,10 +1049,10 @@ public final class ChatEngine implements AutoCloseable {
      * fresh compute on a recycled state) and the pass only generates - each decode token joins the
      * cache step-time through the {@code onIngested} hook, so the reply stays per-position
      * resumable and the retained stream stays in lockstep. Which layers exist (sessions-only,
-     * define-only coarse, full) was decided once, at construction, by what the model supports.
+     * define-only, full) was decided once, at construction, from the model and cache options.
      */
     @SuppressWarnings("unchecked")
-    private <S extends RuntimeState> Outcome run(
+    private <S extends ContextState> Outcome run(
             List<Batch> prompt,
             Sampler sampler,
             int maxTokens,
@@ -1231,9 +1207,9 @@ public final class ChatEngine implements AutoCloseable {
 
     /**
      * Defines (prefills) a cached prompt: dedups against the tree, commits one block per encoded
-     * batch (turn boundaries) - or ONE block for the whole prompt when the model's codec has a
-     * coarse residue ({@code StateCodec#coarseCheckpoints}) - then discards the working state: the
-     * blocks hold the KV.
+     * batch (turn boundaries), or one block for the reusable prefix when its fixed checkpoint
+     * overhead exceeds the configured limit, then discards the working state: the blocks hold the
+     * KV.
      */
     public void definePrompt(Conversation prefix) {
         Arena memory = Arenas.newCrossThread();
@@ -1244,7 +1220,7 @@ public final class ChatEngine implements AutoCloseable {
             cacheSnapshot = cache.sample(); // a define changes blocks/bytes like a pass does
         } finally {
             lock.unlock();
-            closeArena(memory);
+            Arenas.close(memory);
         }
     }
 

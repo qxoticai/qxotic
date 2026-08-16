@@ -69,7 +69,7 @@ public final class FrozenBlocksTest {
         for (long[] prompt : new long[][] {a, b}) {
             BlockResumeTest.FakeState r = new BlockResumeTest.FakeState();
             live.resume(prompt, 16, r);
-            assertEquals(16, r.position, "frozen prompt resumes fully");
+            assertEquals(16, r.position(), "frozen prompt resumes fully");
             for (int p = 0; p < 16; p++)
                 assertEquals(BlockResumeTest.FakeState.rowAt(p), r.rows[p], "row " + p);
             assertEquals(BlockResumeTest.FakeState.residueAt(16), r.residue);
@@ -79,7 +79,7 @@ public final class FrozenBlocksTest {
         for (int round = 0; round < 6; round++) {
             BlockResumeTest.FakeState s = new BlockResumeTest.FakeState();
             BlockTree<BlockResumeTest.FakeState>.Block tip = live.resume(a, 16, s);
-            assertEquals(16, s.position, "frozen prefix hit on round " + round);
+            assertEquals(16, s.position(), "frozen prefix hit on round " + round);
             s.ingestTo(30);
             long[] grown = Arrays.copyOf(a, 30);
             for (int i = 16; i < 30; i++) grown[i] = 5000 + round * 100 + i; // diverging tails
@@ -88,7 +88,7 @@ public final class FrozenBlocksTest {
         // budget only fits ~2 grown tails: earlier tails were evicted - but never frozen blocks
         BlockResumeTest.FakeState check = new BlockResumeTest.FakeState();
         live.resume(b, 16, check);
-        assertEquals(16, check.position, "frozen blocks survive eviction pressure");
+        assertEquals(16, check.position(), "frozen blocks survive eviction pressure");
 
         // corruption: flip one KV byte in the artifact - the CRC gate turns it into a MISS,
         // never a wrong restore (open a separate copy so the mmap above stays pristine)
@@ -107,7 +107,7 @@ public final class FrozenBlocksTest {
                         FrozenBlocks.open(corrupt, seed));
         BlockResumeTest.FakeState cr = new BlockResumeTest.FakeState();
         corrupted.resume(a, 16, cr);
-        assertEquals(0, cr.position, "corrupted frozen block degrades to a miss, never restores");
+        assertEquals(0, cr.position(), "corrupted frozen block degrades to a miss, never restores");
 
         // commit dedup against a frozen block: re-ingesting prompt A stores nothing new
         String before = live.stats().replaceAll(" hits=.*", "");
@@ -140,7 +140,7 @@ public final class FrozenBlocksTest {
         first.commit(tip, a, 0, 12, s);
         first.appendTo(file);
         long size1 = Files.size(file);
-        byte[] blobA = new byte[(int) codec.checkpointBytes(12)];
+        byte[] blobA = new byte[(int) codec.byteSize(12)];
         try (var ch = FileChannel.open(file)) {
             ch.read(ByteBuffer.wrap(blobA), FrozenBlocks.HEADER_BYTES);
         }
@@ -153,7 +153,7 @@ public final class FrozenBlocksTest {
                         codec, CacheStore.inMemory(), 1 << 20, seed, FrozenBlocks.open(file, seed));
         BlockResumeTest.FakeState g = new BlockResumeTest.FakeState();
         BlockTree<BlockResumeTest.FakeState>.Block gt = grow.resume(b, 20, g);
-        assertEquals(12, g.position, "append pass reuses the frozen prefix");
+        assertEquals(12, g.position(), "append pass reuses the frozen prefix");
         g.ingestTo(20);
         grow.commit(gt, b, 12, 8, g);
         grow.appendTo(file);
@@ -180,7 +180,7 @@ public final class FrozenBlocksTest {
                     new BlockTree<>(codec, CacheStore.inMemory(), 0, seed, reopened);
             BlockResumeTest.FakeState r = new BlockResumeTest.FakeState();
             serve.resume(prompt, prompt.length, r);
-            assertEquals(prompt.length, r.position, "chain of " + prompt.length + " serves");
+            assertEquals(prompt.length, r.position(), "chain of " + prompt.length + " serves");
             for (int px = 0; px < prompt.length; px++)
                 assertEquals(BlockResumeTest.FakeState.rowAt(px), r.rows[px]);
         }
@@ -194,7 +194,7 @@ public final class FrozenBlocksTest {
                         codec, CacheStore.inMemory(), 1 << 20, seed, FrozenBlocks.open(file, seed));
         BlockResumeTest.FakeState t = new BlockResumeTest.FakeState();
         BlockTree<BlockResumeTest.FakeState>.Block tt = third.resume(c, 15, t);
-        assertEquals(12, t.position, "third boot reuses the shared prefix");
+        assertEquals(12, t.position(), "third boot reuses the shared prefix");
         t.ingestTo(15);
         third.commit(tt, c, 12, 3, t);
         third.appendTo(file);
@@ -239,7 +239,7 @@ public final class FrozenBlocksTest {
             // restore the PRE-append header (count=1, indexOffset as after the first appendTo)
             ByteBuffer flip = ByteBuffer.allocate(12).order(ByteOrder.LITTLE_ENDIAN);
             long firstIndexOffset =
-                    FrozenBlocks.align(FrozenBlocks.HEADER_BYTES + codec.checkpointBytes(12));
+                    FrozenBlocks.align(FrozenBlocks.HEADER_BYTES + codec.byteSize(12));
             flip.putInt(1).putLong(firstIndexOffset).flip();
             ch.write(flip, FrozenBlocks.COUNT_OFFSET);
         }
@@ -249,6 +249,6 @@ public final class FrozenBlocksTest {
                 new BlockTree<>(codec, CacheStore.inMemory(), 0, seed, recovered);
         BlockResumeTest.FakeState r = new BlockResumeTest.FakeState();
         serve.resume(a, 12, r);
-        assertEquals(12, r.position, "torn append: old prompt still serves");
+        assertEquals(12, r.position(), "torn append: old prompt still serves");
     }
 }

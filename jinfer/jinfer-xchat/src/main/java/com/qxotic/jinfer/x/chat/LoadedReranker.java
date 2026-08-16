@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.x.chat;
 
-import com.qxotic.jinfer.x.boundary.Model;
+import com.qxotic.jinfer.x.boundary.ContextModel;
+import com.qxotic.jinfer.x.boundary.ContextState;
 import com.qxotic.jinfer.x.boundary.Reranker;
 import com.qxotic.jinfer.x.boundary.RuntimeState;
 import com.qxotic.jinfer.x.telemetry.InferenceEvent;
@@ -12,8 +13,8 @@ import java.util.function.DoubleConsumer;
  * LoadedEmbedder}, carrying exactly what a provider integration needs: the backbone and the
  * family's {@link Reranker} recipe (its judge frame and verdict read).
  */
-public record LoadedReranker<S extends RuntimeState>(
-        Model<?, ?, S> model, Reranker<S> reranker, String name) {
+public record LoadedReranker<S extends ContextState>(
+        ContextModel<?, ?, S> model, Reranker<S> reranker, String name) {
 
     public LoadedReranker {
         if (model == null) throw new IllegalArgumentException("null model");

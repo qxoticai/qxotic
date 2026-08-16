@@ -24,14 +24,6 @@ public final class CacheStore implements AutoCloseable {
 
     private static final Cleaner CLEANER = Cleaner.create();
 
-    private static void closeArena(Arena arena) {
-        try {
-            arena.close();
-        } catch (UnsupportedOperationException ignored) {
-            // an automatic arena (native image) frees at GC; accounting already dropped it
-        }
-    }
-
     private final IdentityHashMap<MemorySegment, Arena> blobs = new IdentityHashMap<>();
     private final Cleaner.Cleanable backstop = CLEANER.register(this, sweepOf(blobs));
     private final Runnable leakWatch = LeakWatch.arm(this, "in-memory CacheStore");
@@ -48,7 +40,7 @@ public final class CacheStore implements AutoCloseable {
     private static Runnable sweepOf(IdentityHashMap<MemorySegment, Arena> blobs) {
         return () -> {
             synchronized (blobs) {
-                blobs.values().forEach(CacheStore::closeArena);
+                blobs.values().forEach(Arenas::close);
                 blobs.clear();
             }
         };
@@ -64,7 +56,7 @@ public final class CacheStore implements AutoCloseable {
         try {
             blob = arena.allocate(bytes, 64);
         } catch (RuntimeException | Error e) {
-            closeArena(arena); // blobs are GB-scale: a failed allocation must not leak
+            Arenas.close(arena); // blobs are GB-scale: a failed allocation must not leak
             throw e;
         }
         synchronized (blobs) {
@@ -82,7 +74,7 @@ public final class CacheStore implements AutoCloseable {
             if (arena != null) used -= blob.byteSize();
         }
         if (arena == null) throw new IllegalArgumentException("blob not allocated by this store");
-        closeArena(arena);
+        Arenas.close(arena);
     }
 
     /** Total live bytes (for budget enforcement). May be read from handler threads. */

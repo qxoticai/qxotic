@@ -22,10 +22,10 @@ public final class CachedSessionPartialGroupTest {
 
     @Test
     void aMidGroupResumeIngestsOnlyTheUnrestoredTail() {
-        FakeModel model = new FakeModel(new FakeCodec(false));
+        FakeModel model = new FakeModel(new FakeCodec(0));
         BlockTree<FakeState> cache =
                 new BlockTree<>(
-                        new FakeCodec(false),
+                        new FakeCodec(0),
                         CacheStore.inMemory(),
                         1 << 20,
                         ContentKey.sha256(new byte[] {1}));
