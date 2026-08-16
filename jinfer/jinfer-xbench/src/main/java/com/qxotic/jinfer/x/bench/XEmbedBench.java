@@ -152,7 +152,7 @@ public final class XEmbedBench {
 
     /**
      * One impl = load + state + one packed embed pass. The seam is stateful like XJinferBench's:
-     * both sides drive their CLAIMING public {@code embed} (the old interface default, the x
+     * both sides drive their exclusive public {@code embed} (the old interface default, the x
      * bidirectional override), which resets/reuses the state per call.
      */
     abstract static class BenchModel {
@@ -207,7 +207,7 @@ public final class XEmbedBench {
 
         @Override
         int vocab() {
-            return model.config().vocabularySize();
+            return model.configuration().vocabularySize();
         }
 
         @Override
@@ -218,7 +218,7 @@ public final class XEmbedBench {
         @Override
         int embed(int[] ids, int[] seqLen) {
             int[] got = {0};
-            model.embed(
+            model.embedAll(
                     s,
                     new com.qxotic.jinfer.x.boundary.Batch.Input.Sequences(
                             new com.qxotic.jinfer.x.boundary.Batch.Input.Tokens(ids), seqLen),
@@ -275,7 +275,7 @@ public final class XEmbedBench {
 
         @Override
         int vocab() {
-            return model.config().vocabularySize();
+            return model.configuration().vocabularySize();
         }
 
         @Override
@@ -286,7 +286,7 @@ public final class XEmbedBench {
         @Override
         int embed(int[] ids, int[] seqLen) {
             int[] got = {0};
-            model.embed(
+            model.embedAll(
                     s,
                     new com.qxotic.jinfer.x.boundary.Batch.Input.Sequences(
                             new com.qxotic.jinfer.x.boundary.Batch.Input.Tokens(ids), seqLen),
