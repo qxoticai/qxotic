@@ -4,7 +4,6 @@ import com.qxotic.jinfer.hub.ModelStore;
 import com.qxotic.jinfer.x.PanamaMemoryArena;
 import com.qxotic.jinfer.x.boundary.Arenas;
 import com.qxotic.jinfer.x.boundary.ContextState;
-import com.qxotic.jinfer.x.boundary.RuntimeState;
 import com.qxotic.jinfer.x.chat.LoadedEmbedder;
 import com.qxotic.jinfer.x.chat.Models;
 import dev.langchain4j.data.embedding.Embedding;
@@ -46,7 +45,7 @@ import java.util.concurrent.locks.ReentrantLock;
 public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable {
 
     private final LoadedEmbedder<?> loaded;
-    private final RuntimeState state; // one reusable state; embed() resets it per group
+    private final ContextState state; // one reusable state; embed() resets it per group
     private final Arena arena;
     private final int contextLength;
     private final boolean ownsWeights; // false = the caller loaded the model and keeps the arena
@@ -121,8 +120,8 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
     /**
      * Token counting over THIS model's tokenizer: exact on text - for sizing splitter chunks
      * against {@code contextLength}. The embedder adds its framing tokens per embedded segment
-     * (sequencePrefix + sequenceSuffix: one trailing EOS on Qwen3, one leading BOS on
-     * LFM2.5-Embedding) on top of the text count.
+     * (prefixTokens + suffixTokens: one trailing EOS on Qwen3, one leading BOS on LFM2.5-Embedding)
+     * on top of the text count.
      */
     public TokenCountEstimator tokenCountEstimator() {
         // no media plan, no sampler: the estimator refuses media messages before any decode
@@ -174,7 +173,8 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
 
     @Override
     public EmbeddingResponse doEmbed(EmbeddingRequest request) {
-        int outputDimension = loaded.resolveDimension(request.dimensions());
+        int outputDimension =
+                request.dimensions() == null ? loaded.dimension() : request.dimensions();
         String prefix =
                 switch (request.inputType()) {
                     case QUERY -> loaded.queryPrefix();
@@ -201,9 +201,9 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
             total =
                     loaded.embedAll(
                             state,
-                            contextLength,
                             texts,
-                            v -> out.add(Embedding.from(loaded.copyEmbedding(v, outputDimension))));
+                            outputDimension,
+                            vector -> out.add(Embedding.from(vector)));
         } finally {
             lock.unlock();
         }

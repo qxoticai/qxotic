@@ -208,7 +208,7 @@ class JinferEmbeddingModelIT {
     }
 
     @Test
-    void fixedWidthModelRejectsDimensionsOption() {
+    void fixedWidthModelAcceptsOnlyItsNativeDimension() {
         try (JinferEmbeddingModel fixed =
                 JinferEmbeddingModel.builder()
                         .modelPath(
@@ -219,6 +219,16 @@ class JinferEmbeddingModelIT {
             assertEquals(
                     1024,
                     fixed.call(new EmbeddingRequest(List.of("native"), null))
+                            .getResults()
+                            .get(0)
+                            .getOutput()
+                            .length);
+            assertEquals(
+                    1024,
+                    fixed.call(
+                                    new EmbeddingRequest(
+                                            List.of("explicit native"),
+                                            EmbeddingOptions.builder().dimensions(1024).build()))
                             .getResults()
                             .get(0)
                             .getOutput()

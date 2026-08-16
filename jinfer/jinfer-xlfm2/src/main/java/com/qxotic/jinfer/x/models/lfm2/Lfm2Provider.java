@@ -7,6 +7,7 @@ import com.qxotic.jinfer.x.chat.LoadedReranker;
 import com.qxotic.jinfer.x.chat.ModelProvider;
 import com.qxotic.jinfer.x.chat.Models;
 import com.qxotic.jinfer.x.llm.SpecialTokens;
+import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import java.io.IOException;
 import java.lang.foreign.Arena;
@@ -88,8 +89,8 @@ public final class Lfm2Provider implements ModelProvider {
         return new LoadedEmbedder<Lfm2.State>(
                 model,
                 model.tokenizer(),
-                new int[] {bos},
-                new int[0],
+                IntSequence.of(bos),
+                IntSequence.empty(),
                 model.configuration().embeddingLength(),
                 model.configuration().embeddingLength(), // fixed 1024-dim vector; no MRL claim
                 path.getFileName().toString(),

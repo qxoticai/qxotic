@@ -4,7 +4,6 @@ import com.qxotic.jinfer.hub.ModelStore;
 import com.qxotic.jinfer.x.PanamaMemoryArena;
 import com.qxotic.jinfer.x.boundary.Arenas;
 import com.qxotic.jinfer.x.boundary.ContextState;
-import com.qxotic.jinfer.x.boundary.RuntimeState;
 import com.qxotic.jinfer.x.chat.LoadedEmbedder;
 import com.qxotic.jinfer.x.chat.Models;
 import io.micrometer.observation.ObservationRegistry;
@@ -52,7 +51,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
 
     private final LoadedEmbedder<?> loaded;
     final String modelName;
-    private final RuntimeState state; // one reusable state; embed() resets it per group
+    private final ContextState state; // one reusable state; embed() resets it per group
     private final Arena arena;
     private final int contextLength;
     private final boolean ownsWeights; // false = the caller loaded the model and keeps the arena
@@ -227,8 +226,8 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
                             + modelName
                             + "' (one loaded GGUF per instance)");
         }
-        int outputDimension =
-                loaded.resolveDimension(options == null ? null : options.getDimensions());
+        Integer requestedDimension = options == null ? null : options.getDimensions();
+        int outputDimension = requestedDimension == null ? loaded.dimension() : requestedDimension;
         List<String> inputs = request.getInstructions();
         List<Embedding> out = new ArrayList<>(inputs.size());
         int total;
@@ -237,13 +236,9 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
             total =
                     loaded.embedAll(
                             state,
-                            contextLength,
                             inputs,
-                            v ->
-                                    out.add(
-                                            new Embedding(
-                                                    loaded.copyEmbedding(v, outputDimension),
-                                                    out.size())));
+                            outputDimension,
+                            vector -> out.add(new Embedding(vector, out.size())));
         } finally {
             lock.unlock();
         }

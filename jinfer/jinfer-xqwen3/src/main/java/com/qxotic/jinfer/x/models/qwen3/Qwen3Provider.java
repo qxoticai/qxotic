@@ -6,6 +6,7 @@ import com.qxotic.jinfer.x.chat.LoadedModel;
 import com.qxotic.jinfer.x.chat.LoadedReranker;
 import com.qxotic.jinfer.x.chat.ModelProvider;
 import com.qxotic.jinfer.x.llm.SpecialTokens;
+import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import java.io.IOException;
 import java.lang.foreign.Arena;
@@ -64,8 +65,8 @@ public final class Qwen3Provider implements ModelProvider {
         return new LoadedEmbedder<>(
                 model,
                 model.tokenizer(),
-                new int[0],
-                new int[] {eos},
+                IntSequence.empty(),
+                IntSequence.of(eos),
                 model.configuration().embeddingLength(),
                 32, // model card: Matryoshka output supports every width from 32 to native
                 path.getFileName().toString(),
