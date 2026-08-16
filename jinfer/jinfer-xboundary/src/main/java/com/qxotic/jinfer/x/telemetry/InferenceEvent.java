@@ -31,10 +31,11 @@ import jdk.jfr.Timespan;
  *   <tr><td>{@code duration}</td><td>derives {@code gen_ai.client.operation.duration}</td></tr>
  * </table>
  *
- * <p>{@code prefillTime}/{@code decodeTime} are jinfer's own: OpenTelemetry's time-to-first-token
- * and time-per-output-token are DERIVED from them, and the split says more than either. Zero is a
- * true measurement everywhere - an embedding runs no decode loop, so its {@code decodeTime} is
- * genuinely zero rather than "not applicable".
+ * <p>{@code prefillTime}/{@code decodeTime} are jinfer's own. Time per output token can be derived
+ * from {@code decodeTime}; time to first token cannot, because it also includes cache restore,
+ * prefill and first-token sampling, so chat records it explicitly. Zero is a true measurement
+ * everywhere - an embedding runs no decode loop, so its {@code decodeTime} is genuinely zero
+ * rather than "not applicable".
  *
  * <p>{@code gen_ai.provider.name} and {@code gen_ai.response.model} are deliberately absent: in
  * process they are constants, so an exporter adds them for free and every event would pay bytes to
@@ -127,6 +128,11 @@ public final class InferenceEvent extends Event {
     @Label("Decode Time")
     @Timespan(Timespan.NANOSECONDS)
     public long decodeTime;
+
+    /** From entering chat completion to the first sampled model token; zero when none was sampled. */
+    @Label("Time to First Token")
+    @Timespan(Timespan.NANOSECONDS)
+    public long timeToFirstToken;
 
     @Label("Finish Reason")
     public String finishReason;

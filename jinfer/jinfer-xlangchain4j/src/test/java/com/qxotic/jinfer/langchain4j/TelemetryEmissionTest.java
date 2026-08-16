@@ -57,6 +57,10 @@ class TelemetryEmissionTest {
         assertTrue(event.getInt("outputTokens") <= 16, "maxTokens must bound the report");
         assertTrue(event.getLong("prefillTime") > 0, "prefill was measured");
         assertTrue(event.getLong("decodeTime") > 0, "decode was measured");
+        assertTrue(event.getLong("timeToFirstToken") > 0, "TTFT was measured");
+        assertTrue(
+                event.getLong("timeToFirstToken") <= event.getDuration().toNanos(),
+                "TTFT ends inside the call");
         assertTrue(
                 event.getDuration().toNanos()
                         >= event.getLong("prefillTime") + event.getLong("decodeTime"),

@@ -22,7 +22,10 @@ import com.qxotic.toknroll.Vocabulary;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.reflect.Proxy;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -30,6 +33,9 @@ import java.util.OptionalInt;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import jdk.jfr.Recording;
+import jdk.jfr.consumer.RecordedEvent;
+import jdk.jfr.consumer.RecordingFile;
 import org.junit.jupiter.api.Test;
 
 final class ChatEngineTimeoutTest {
@@ -69,6 +75,76 @@ final class ChatEngineTimeoutTest {
             assertEquals(0, model.speculations.get(), "speculative decoding must not start");
             assertEquals(0, sampled.get(), "plain decoding must not start");
             assertNull(outcome.result(), "cancellation has no generation result");
+        }
+    }
+
+    @Test
+    void ttftIsRecordedAtTheFirstPlainAndSpeculativeToken() throws Exception {
+        ProbeModel model = new ProbeModel(() -> {});
+        Path recordingPath = Files.createTempFile("jinfer-ttft", ".jfr");
+        try (ChatEngine engine = engine(model); Recording recording = new Recording()) {
+            recording.enable("jinfer.Inference");
+            recording.start();
+
+            engine.speculationDepth(0);
+            completeOneToken(engine, ignored -> {
+                sleep(Duration.ofMillis(2));
+                return 1;
+            });
+            engine.speculationDepth(4);
+            completeOneToken(engine, ignored -> 1);
+
+            recording.stop();
+            recording.dump(recordingPath);
+        }
+
+        List<RecordedEvent> events = events(recordingPath, "jinfer.Inference");
+        assertEquals(2, events.size());
+        for (RecordedEvent event : events) {
+            assertTrue(event.getLong("timeToFirstToken") > 0);
+            assertTrue(event.getLong("timeToFirstToken") <= event.getDuration().toNanos());
+        }
+        assertEquals(1, model.speculations.get(), "the second pass must exercise MTP");
+    }
+
+    @Test
+    void ttftIsZeroWhenNoTokenIsSampled() throws Exception {
+        ProbeModel model = new ProbeModel(() -> {});
+        Path recordingPath = Files.createTempFile("jinfer-no-ttft", ".jfr");
+        try (ChatEngine engine = engine(model); Recording recording = new Recording()) {
+            engine.speculationDepth(0);
+            recording.enable("jinfer.Inference");
+            recording.start();
+            try (ChatEngine.Prepared prepared =
+                    ChatEngine.Prepared.raw(
+                            new int[] {1, 2, 3}, ignored -> 1, 0, Duration.ZERO, List.of())) {
+                engine.complete(prepared, ChatEngine.ReplySink.NONE);
+            }
+            recording.stop();
+            recording.dump(recordingPath);
+        }
+
+        RecordedEvent event = events(recordingPath, "jinfer.Inference").getFirst();
+        assertEquals(0, event.getLong("timeToFirstToken"));
+        assertEquals(0, event.getInt("outputTokens"));
+    }
+
+    private static void completeOneToken(ChatEngine engine, Sampler sampler) {
+        try (ChatEngine.Prepared prepared =
+                ChatEngine.Prepared.raw(
+                        new int[] {1, 2, 3}, sampler, 1, Duration.ZERO, List.of())) {
+            engine.complete(prepared, ChatEngine.ReplySink.NONE);
+        }
+    }
+
+    private static List<RecordedEvent> events(Path recording, String name) throws Exception {
+        try (RecordingFile file = new RecordingFile(recording)) {
+            List<RecordedEvent> found = new ArrayList<>();
+            while (file.hasMoreEvents()) {
+                RecordedEvent event = file.readEvent();
+                if (event.getEventType().getName().equals(name)) found.add(event);
+            }
+            return found;
         }
     }
 
@@ -131,6 +207,7 @@ final class ChatEngineTimeoutTest {
                         new Class<?>[] {Tokenizer.class},
                         (proxy, method, args) -> {
                             if (method.getName().equals("vocabulary")) return vocabulary;
+                            if (method.getName().equals("decodeBytes")) return new byte[] {'x'};
                             throw new UnsupportedOperationException(method.getName());
                         });
     }
@@ -217,8 +294,10 @@ final class ChatEngineTimeoutTest {
                 Generator.GenerationListener listener,
                 SpeculationAudit audit) {
             speculations.incrementAndGet();
+            sleep(Duration.ofMillis(2));
+            listener.onToken(1);
             return new SpeculationResult(
-                    IntSequence.empty(),
+                    IntSequence.of(1),
                     IntSequence.empty(),
                     OptionalInt.empty(),
                     Generator.FinishReason.LENGTH,
