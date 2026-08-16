@@ -408,4 +408,60 @@ class StrideMethodsTest {
                 },
                 "Single-element nested brackets in sequence should be rejected");
     }
+
+    @Test
+    void testScaleFlatStride() {
+        Stride stride = Stride.flat(12, 4, 1).scale(3);
+
+        assertArrayEquals(new long[] {36, 12, 3}, stride.toArray());
+        assertTrue(stride.isFlat());
+    }
+
+    @Test
+    void testScalePreservesNesting() {
+        // (12, (4, 1))
+        Stride stride = Stride.of(12, Stride.of(4L, 1L)).scale(2);
+
+        assertEquals(2, stride.rank());
+        assertEquals(3, stride.flatRank());
+        assertFalse(stride.isFlat());
+        assertArrayEquals(new long[] {24, 8, 2}, stride.toArray());
+        assertArrayEquals(new long[] {8, 2}, stride.modeAt(1).toArray());
+    }
+
+    @Test
+    void testScaleByOneIsIdentity() {
+        Stride stride = Stride.flat(12, 4, 1).scale(1);
+
+        assertArrayEquals(new long[] {12, 4, 1}, stride.toArray());
+    }
+
+    @Test
+    void testScaleByZeroYieldsAllZeros() {
+        Stride stride = Stride.flat(12, 4, 1).scale(0);
+
+        assertArrayEquals(new long[] {0, 0, 0}, stride.toArray());
+        assertTrue(stride.isAllZeros());
+    }
+
+    @Test
+    void testScaleZerosStaysZeros() {
+        Stride stride = Stride.zeros(3).scale(7);
+
+        assertArrayEquals(new long[] {0, 0, 0}, stride.toArray());
+        assertTrue(stride.isAllZeros());
+    }
+
+    @Test
+    void testIsAllZeros() {
+        assertTrue(Stride.zeros(3).isAllZeros());
+        assertTrue(Stride.flat(0, 0).isAllZeros());
+        assertTrue(Stride.zeros(Stride.of(1, Stride.of(2L, 3L))).isAllZeros());
+        // Scalar stride has no elements, so it is vacuously all zeros
+        assertTrue(Stride.scalar().isAllZeros());
+
+        assertFalse(Stride.flat(1, 0).isAllZeros());
+        assertFalse(Stride.flat(0, 0, 2).isAllZeros());
+        assertFalse(Stride.rowMajor(Shape.flat(2, 3)).isAllZeros());
+    }
 }

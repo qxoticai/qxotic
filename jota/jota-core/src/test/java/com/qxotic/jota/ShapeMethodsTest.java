@@ -206,4 +206,55 @@ class ShapeMethodsTest {
         Shape nested = Shape.of(2, Shape.of(3L, 4L));
         assertEquals("(2, (3, 4))", nested.toString());
     }
+
+    @Test
+    void testFlattenModesFlatShape() {
+        Shape shape = Shape.flat(2, 3, 4);
+        Shape flattened = shape.flattenModes();
+
+        assertTrue(flattened.isFlat());
+        assertArrayEquals(new long[] {2, 3, 4}, flattened.toArray());
+    }
+
+    @Test
+    void testFlattenModesNestedShape() {
+        // (2, (3, 4), 5) collapses each top-level mode to its total size
+        Shape shape = Shape.of(2, Shape.of(3L, 4L), 5);
+        Shape flattened = shape.flattenModes();
+
+        assertTrue(flattened.isFlat());
+        assertEquals(3, flattened.rank());
+        assertArrayEquals(new long[] {2, 12, 5}, flattened.toArray());
+    }
+
+    @Test
+    void testFlattenModesDeeplyNestedShape() {
+        // (2, (3, (4, 5))) collapses the nested mode to 3 * 4 * 5
+        Shape shape = Shape.of(2, Shape.of(3, Shape.of(4L, 5L)));
+        Shape flattened = shape.flattenModes();
+
+        assertTrue(flattened.isFlat());
+        assertEquals(2, flattened.rank());
+        assertArrayEquals(new long[] {2, 60}, flattened.toArray());
+    }
+
+    @Test
+    void testFlattenModesScalar() {
+        Shape flattened = Shape.scalar().flattenModes();
+
+        assertTrue(flattened.isScalar());
+        assertEquals(1, flattened.size());
+    }
+
+    @Test
+    void testHasOneElement() {
+        assertTrue(Shape.scalar().hasOneElement());
+        assertTrue(Shape.flat(1).hasOneElement());
+        assertTrue(Shape.flat(1, 1, 1).hasOneElement());
+        assertTrue(Shape.of(1, Shape.of(1L, 1L)).hasOneElement());
+
+        assertFalse(Shape.flat(2).hasOneElement());
+        assertFalse(Shape.flat(2, 3).hasOneElement());
+        assertFalse(Shape.flat(0).hasOneElement());
+    }
 }
