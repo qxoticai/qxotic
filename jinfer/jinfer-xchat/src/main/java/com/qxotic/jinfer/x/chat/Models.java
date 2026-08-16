@@ -148,12 +148,42 @@ public final class Models {
      * metadata) through the same architecture dispatch as {@link #load}.
      */
     public static LoadedEmbedder<?> loadEmbedder(Path path, Arena arena) throws IOException {
-        return open(path, (fc, gguf) -> provider(gguf).loadEmbedder(fc, gguf, path, arena));
+        return loadEmbedder(path, arena, null);
+    }
+
+    /**
+     * As {@link #loadEmbedder(Path, Arena)} with a caller-supplied tokenizer. Null means the GGUF's
+     * own; a supplied tokenizer must keep its token-id space.
+     */
+    public static LoadedEmbedder<?> loadEmbedder(Path path, Arena arena, Tokenizer tokenizer)
+            throws IOException {
+        return open(
+                path,
+                (fc, gguf) -> {
+                    ModelProvider provider = provider(gguf);
+                    if (tokenizer != null) requireSameIdSpace(gguf, tokenizer);
+                    return provider.loadEmbedder(fc, gguf, path, arena, tokenizer);
+                });
     }
 
     /** Loads a RERANKER - the backbone plus the family's scoring recipe. */
     public static LoadedReranker<?> loadReranker(Path path, Arena arena) throws IOException {
-        return open(path, (fc, gguf) -> provider(gguf).loadReranker(fc, gguf, path, arena));
+        return loadReranker(path, arena, null);
+    }
+
+    /**
+     * As {@link #loadReranker(Path, Arena)} with a caller-supplied tokenizer. Null means the GGUF's
+     * own; a supplied tokenizer must keep its token-id space.
+     */
+    public static LoadedReranker<?> loadReranker(Path path, Arena arena, Tokenizer tokenizer)
+            throws IOException {
+        return open(
+                path,
+                (fc, gguf) -> {
+                    ModelProvider provider = provider(gguf);
+                    if (tokenizer != null) requireSameIdSpace(gguf, tokenizer);
+                    return provider.loadReranker(fc, gguf, path, arena, tokenizer);
+                });
     }
 
     /** Loads a SPEECH model at the port's own defaults. */

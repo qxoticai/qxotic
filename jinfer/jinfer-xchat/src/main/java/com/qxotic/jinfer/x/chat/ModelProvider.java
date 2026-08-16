@@ -89,10 +89,12 @@ public interface ModelProvider {
     /**
      * Loads an EMBEDDING model from an already-parsed GGUF ({@link Models#loadEmbedder}); {@code
      * path} names the loaded file, which is the identity its telemetry reports. Ports whose
-     * architectures are generative-only keep this default.
+     * architectures are generative-only keep this default. {@code tokenizer} is the validated
+     * caller override, or null for the GGUF's own.
      */
     default LoadedEmbedder<?> loadEmbedder(
-            FileChannel fileChannel, GGUF gguf, Path path, Arena arena) throws IOException {
+            FileChannel fileChannel, GGUF gguf, Path path, Arena arena, Tokenizer tokenizer)
+            throws IOException {
         throw new UnsupportedOperationException(
                 "'"
                         + gguf.getString("general.architecture")
@@ -102,10 +104,12 @@ public interface ModelProvider {
     /**
      * Loads a RERANKER from an already-parsed GGUF ({@link Models#loadReranker}): the backbone plus
      * this family's {@link com.qxotic.jinfer.x.boundary.Reranker} recipe. Ports with no reranker in
-     * the family keep this default.
+     * the family keep this default. {@code tokenizer} is the validated caller override, or null for
+     * the GGUF's own.
      */
     default LoadedReranker<?> loadReranker(
-            FileChannel fileChannel, GGUF gguf, Path path, Arena arena) throws IOException {
+            FileChannel fileChannel, GGUF gguf, Path path, Arena arena, Tokenizer tokenizer)
+            throws IOException {
         throw new UnsupportedOperationException(
                 "'" + gguf.getString("general.architecture") + "' is not a reranker architecture");
     }

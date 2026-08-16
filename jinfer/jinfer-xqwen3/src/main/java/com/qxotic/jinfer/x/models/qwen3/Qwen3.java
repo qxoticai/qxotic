@@ -715,8 +715,14 @@ public final class Qwen3
 
     public static Qwen3 loadModel(FileChannel fileChannel, GGUF gguf, Arena arena)
             throws IOException {
-        Tokenizer tokenizer =
-                GGUFTokenizerLoader.createBuilderWithBuiltins().build().fromGGUF(gguf);
+        return loadModel(fileChannel, gguf, arena, null);
+    }
+
+    public static Qwen3 loadModel(
+            FileChannel fileChannel, GGUF gguf, Arena arena, Tokenizer tokenizer)
+            throws IOException {
+        if (tokenizer == null)
+            tokenizer = GGUFTokenizerLoader.createBuilderWithBuiltins().build().fromGGUF(gguf);
         Configuration config = loadConfiguration(gguf, tokenizer);
         Map<String, MemoryView<MemorySegment>> tensors =
                 ModelLoader.loadTensors(fileChannel, gguf, arena);
