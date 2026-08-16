@@ -20,7 +20,8 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  *     model-seed-checked
  * @param retainedSessions live conversation states kept resident and reused append-only when a
  *     request's conversation strictly extends one; default 1, zero retains no completed state
- * @param contextLength state window (default 4096); {@code <= 0} opts into the model's maximum
+ * @param contextLength upper bound on the conversation context (default 4096); {@code 0} uses the
+ *     model's declared context length; negative values are rejected
  * @param temperature sampling temperature; null uses the model recommendation
  * @param topP nucleus sampling mass; null uses the model recommendation
  * @param maxTokens maximum completion tokens; null lets the context bound the reply

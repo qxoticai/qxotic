@@ -37,6 +37,19 @@ class JinferChatAutoConfigurationTest {
     }
 
     @Test
+    void negativeContextLengthFailsBeforeModelResolution() {
+        runner.withPropertyValues(
+                        "spring.ai.jinfer.chat.model=/missing.gguf",
+                        "spring.ai.jinfer.chat.context-length=-1")
+                .run(
+                        context -> {
+                            assertThat(context).hasFailed();
+                            assertThat(context.getStartupFailure())
+                                    .hasStackTraceContaining("contextLength must be >= 0");
+                        });
+    }
+
+    @Test
     void propertiesBind() {
         // binding only: the model bean needs a real GGUF, so this runs without the auto-config
         new ApplicationContextRunner()

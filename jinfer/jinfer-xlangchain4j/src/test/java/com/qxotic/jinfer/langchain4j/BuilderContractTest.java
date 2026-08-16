@@ -35,6 +35,21 @@ final class BuilderContractTest {
     }
 
     @Test
+    void contextLengthHasOneSentinelAtEveryBuilder() {
+        JinferChatModel.builder().contextLength(0);
+        JinferEmbeddingModel.builder().contextLength(0);
+        JinferScoringModel.builder().contextLength(0);
+        assertThrows(
+                IllegalArgumentException.class, () -> JinferChatModel.builder().contextLength(-1));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> JinferEmbeddingModel.builder().contextLength(-1));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> JinferScoringModel.builder().contextLength(-1));
+    }
+
+    @Test
     void unsupportedDefaultsRejectBeforeTheWeightsEverMap() {
         // core merges defaults UNDER each request, so a request can add what defaults lack but
         // can never unset an unsupported knob - build-fatal, and checked before the load. The

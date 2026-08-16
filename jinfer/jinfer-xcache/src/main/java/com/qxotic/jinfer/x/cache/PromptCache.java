@@ -77,7 +77,9 @@ public final class PromptCache<S extends ContextState> implements AutoCloseable 
             if (retainedSessions < 0)
                 throw new IllegalArgumentException("retainedSessions " + retainedSessions);
             if (contextCapacity < 0)
-                throw new IllegalArgumentException("contextCapacity " + contextCapacity);
+                throw new IllegalArgumentException(
+                        "contextCapacity must be >= 0 (0 uses the model context length): "
+                                + contextCapacity);
             if (blockBudgetBytes < 0)
                 throw new IllegalArgumentException("blockBudgetBytes " + blockBudgetBytes);
             if (maxCheckpointOverheadBytes < 0)
@@ -124,7 +126,13 @@ public final class PromptCache<S extends ContextState> implements AutoCloseable 
                     maxCheckpointOverheadBytes);
         }
 
-        /** These options with a different state size; refused above the model's contextLength. */
+        /**
+         * Returns these options with a different context-capacity upper bound. {@code 0} uses the
+         * model's declared context length; otherwise the effective capacity is the smaller of this
+         * value and that length.
+         *
+         * @throws IllegalArgumentException if {@code contextCapacity < 0}
+         */
         public Options withContextCapacity(int contextCapacity) {
             return new Options(
                     retainedSessions,

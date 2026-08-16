@@ -9,8 +9,8 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  *
  * @param model the reranker GGUF (e.g. Qwen3-Reranker or LFM2.5-ColBERT) as a local path, hub ref
  *     or URL; configuring it is what activates the post-processor
- * @param contextLength bounds query+document length (default 2048); {@code <= 0} = the model's own
- *     maximum
+ * @param contextLength upper bound on the encoded query-and-document context (default 2048); {@code
+ *     0} uses the model's declared context length; negative values are rejected
  * @param instruction the task instruction in the judge frame; empty = the model card's own wording
  * @param topK keep only the best {@code topK} documents; 0 (default) keeps all of them
  * @param minScore drop documents scoring below this; 0 (default) keeps all. Qwen3-Reranker scores

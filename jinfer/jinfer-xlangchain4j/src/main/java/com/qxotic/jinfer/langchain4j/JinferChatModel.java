@@ -95,7 +95,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             Path promptCache, int retainedSessions, int contextLength) {
         var defaults = PromptCache.Options.DEFAULTS;
         return defaults.withRetainedSessions(retainedSessions)
-                .withContextCapacity(Math.max(0, contextLength)) // 0 = model max, engine-resolved
+                .withContextCapacity(contextLength)
                 .withCatalog(promptCache, true);
     }
 
@@ -108,7 +108,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             List<Tool> stated = statedTools(b.defaultParameters);
             rejectUnsupported(b.defaultParameters, stated != null && !stated.isEmpty());
         }
-        this.cacheOptions =
+        PromptCache.Options requestedCacheOptions =
                 cacheOptions(
                         b.promptCache,
                         b.retainedSessions,
@@ -116,13 +116,14 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         this.ownsWeights = b.loaded == null;
         this.engine =
                 b.loaded == null
-                        ? new ChatEngine(b.modelPath, b.companionPaths, cacheOptions)
+                        ? new ChatEngine(b.modelPath, b.companionPaths, requestedCacheOptions)
                         : new ChatEngine(
                                 b.loaded,
                                 b.modelName == null
                                         ? b.loaded.model().getClass().getSimpleName()
                                         : b.modelName,
-                                cacheOptions);
+                                requestedCacheOptions);
+        this.cacheOptions = requestedCacheOptions.withContextCapacity(engine.contextCapacity());
         // the engine above is live (weights mapped) - anything that throws from here on must
         // free it, or a failed build() leaks a GB-scale ofShared arena with no backstop
         try {
@@ -634,10 +635,17 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         }
 
         /**
-         * State window (default 4096 - bounded on purpose: a full-context state can be GB-scale
-         * KV). {@code <= 0} opts into the model's maximum, explicitly; larger values clamp to it.
+         * Upper bound on the context available to each conversation, in tokens. The default is
+         * 4096, deliberately bounded because a full-context state can consume substantial memory.
+         * {@code 0} uses the model's declared context length; otherwise the effective capacity is
+         * the smaller of this value and that length.
+         *
+         * @throws IllegalArgumentException if {@code contextLength < 0}
          */
         public Builder contextLength(int contextLength) {
+            if (contextLength < 0)
+                throw new IllegalArgumentException(
+                        "contextLength must be >= 0 (0 uses the model maximum): " + contextLength);
             this.contextLength = contextLength;
             return this;
         }

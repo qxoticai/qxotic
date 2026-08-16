@@ -25,8 +25,8 @@ import java.util.TreeSet;
  * same flags, so a new flag and its help line are added in the same file or noticed missing.
  *
  * @param maxOutputTokens tokens GENERATED per turn, -1 = as many as the context allows
- * @param contextCapacity the size of a session's state, and the ceiling on every one-shot. Refused
- *     above the model's own context length
+ * @param contextCapacity the size of a session's state, and the ceiling on every one-shot; {@code
+ *     0} uses the model's declared context length; positive values above it are refused
  */
 public record Options(
         Path modelPath,
@@ -83,7 +83,10 @@ public record Options(
         require(
                 minp == null || (0 <= minp && minp <= 1),
                 "Invalid argument: --min-p must be within [0, 1]");
-        require(contextCapacity >= 1, "Invalid argument: --context-capacity must be at least 1");
+        require(
+                contextCapacity >= 0,
+                "Invalid argument: --context-capacity must be non-negative"
+                        + " (0 uses the model maximum)");
         require(0 <= port && port <= 65535, "Invalid argument: --port must be within [0, 65535]");
         require(
                 maxOutputTokens >= -1,
@@ -615,8 +618,8 @@ public record Options(
                 "  --seed, -s <long>             pins the sampling seed; default: a fresh random"
                         + " seed per request");
         out.println(
-                "  --context-capacity, -c <int>  how much the model can remember, in tokens;"
-                        + " default "
+                "  --context-capacity, -c <int>  allocated context positions; 0 uses the model"
+                        + " maximum; default "
                         + DEFAULT_CONTEXT_CAPACITY
                         + ", refused above the model's own context length");
         out.println(

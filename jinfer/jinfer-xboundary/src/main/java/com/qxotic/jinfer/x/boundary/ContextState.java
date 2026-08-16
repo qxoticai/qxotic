@@ -57,6 +57,7 @@ public abstract class ContextState extends RuntimeState {
         return memoryArena;
     }
 
+    /** Positive number of context positions allocated for this state. */
     public final int contextCapacity() {
         return contextCapacity;
     }

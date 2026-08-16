@@ -139,6 +139,28 @@ final class OptionsTest {
         assertEquals(512, options.contextCapacity(), "--flag=value works like --flag value");
     }
 
+    @Test
+    void zeroContextCapacitySelectsTheModelMaximum(@TempDir Path dir) throws IOException {
+        String m = model(dir).toString();
+        Options options =
+                Options.parse(new String[] {"-m", m, "-p", "hi", "--context-capacity", "0"});
+        assertEquals(0, options.contextCapacity());
+    }
+
+    @Test
+    void negativeContextCapacityIsRejectedByName(@TempDir Path dir) throws IOException {
+        String m = model(dir).toString();
+        IllegalArgumentException failure =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                Options.parse(
+                                        new String[] {
+                                            "-m", m, "-p", "hi", "--context-capacity", "-1"
+                                        }));
+        assertTrue(failure.getMessage().contains("--context-capacity"), failure.getMessage());
+    }
+
     /**
      * A bad number names its flag; 'For input string: \"x\"' named neither flag nor expectation.
      */

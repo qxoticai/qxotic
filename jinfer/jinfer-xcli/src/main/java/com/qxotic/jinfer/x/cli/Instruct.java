@@ -30,7 +30,7 @@ final class Instruct {
                             List.of())) {
                 completion = engine.complete(prepared, turn);
             }
-            turn.finish(completion, options.contextCapacity());
+            turn.finish(completion, engine.contextCapacity());
             return;
         }
 
@@ -69,6 +69,6 @@ final class Instruct {
             turn = Turn.start(engine.loaded().tokenizer(), prepared, options);
             completion = engine.complete(prepared, turn);
         }
-        turn.finish(completion, options.contextCapacity());
+        turn.finish(completion, engine.contextCapacity());
     }
 }

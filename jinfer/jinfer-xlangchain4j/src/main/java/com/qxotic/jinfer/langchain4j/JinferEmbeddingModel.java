@@ -47,7 +47,6 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
     private final LoadedEmbedder<?> loaded;
     private final ContextState state; // one reusable state; embed() resets it per group
     private final Arena arena;
-    private final int contextLength;
     private final boolean ownsWeights; // false = the caller loaded the model and keeps the arena
     private final ReentrantLock lock = new ReentrantLock(true); // single-stream, like ChatEngine
     private static final org.slf4j.Logger LOG =
@@ -67,13 +66,12 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
             } catch (IOException e) {
                 throw new UncheckedIOException("failed to load " + b.modelPath, e);
             }
-            // the builder's knob IS the state size: it used to reach the loader, and
-            // loading is no longer sized by context. Unset (<= 0) means the model's own.
-            this.contextLength =
-                    Math.min(
-                            b.contextLength <= 0 ? Integer.MAX_VALUE : b.contextLength,
-                            loaded.model().configuration().contextLength());
-            this.state = newState(loaded, contextLength, arena);
+            int modelContextLength = loaded.model().configuration().contextLength();
+            int contextCapacity =
+                    b.contextLength == 0
+                            ? modelContextLength
+                            : Math.min(b.contextLength, modelContextLength);
+            this.state = newState(loaded, contextCapacity, arena);
             this.listeners = b.listeners == null ? List.of() : List.copyOf(b.listeners);
         } catch (RuntimeException | Error e) {
             Arenas.close(arena); // free before failing (best-effort: ofAuto self-manages)
@@ -98,7 +96,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
                             + " Load once into YOUR arena instead: Models.loadEmbedder(path,"
                             + " arena), build with model(loaded), then fork freely");
         }
-        return builder().model(loaded).contextLength(contextLength).build();
+        return builder().model(loaded).contextLength(state.contextCapacity()).build();
     }
 
     /**
@@ -277,12 +275,18 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
         }
 
         /**
-         * The packing window and per-segment ceiling (default 2048 - bounded on purpose, like every
-         * builder; chat's default is 4096): larger packs more segments per forward pass and admits
-         * longer segments, at the cost of a bigger resident KV state. {@code <= 0} opts into the
-         * model's maximum, explicitly.
+         * Upper bound on the packing window and on each embedded sequence, in tokens. The default
+         * is 2048. A larger value admits longer sequences and can pack more sequences into one
+         * forward pass, at the cost of a larger resident state. {@code 0} uses the model's declared
+         * context length; otherwise the effective capacity is the smaller of this value and that
+         * length.
+         *
+         * @throws IllegalArgumentException if {@code contextLength < 0}
          */
         public Builder contextLength(int contextLength) {
+            if (contextLength < 0)
+                throw new IllegalArgumentException(
+                        "contextLength must be >= 0 (0 uses the model maximum): " + contextLength);
             this.contextLength = contextLength;
             return this;
         }

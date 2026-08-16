@@ -374,10 +374,27 @@ public final class PromptCacheTest {
                                 SEED,
                                 PromptCache.Options.DEFAULTS
                                         .withContextCapacity(CONTEXT + 1)
+                                        .withBlockBudget(0));
+                var bounded =
+                        PromptCache.of(
+                                fine(),
+                                SEED,
+                                PromptCache.Options.DEFAULTS
+                                        .withContextCapacity(CONTEXT - 1)
                                         .withBlockBudget(0))) {
             assertEquals(CONTEXT, maximum.contextCapacity());
             assertEquals(CONTEXT, clamped.contextCapacity());
+            assertEquals(CONTEXT - 1, bounded.contextCapacity());
         }
+    }
+
+    @Test
+    void cacheRejectsNegativeContextCapacity() {
+        IllegalArgumentException failure =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> PromptCache.Options.DEFAULTS.withContextCapacity(-1));
+        assertTrue(failure.getMessage().contains("contextCapacity"), failure.getMessage());
     }
 
     // ---- DEFINE-ONLY TAIL SNAPSHOT: saves thinking models from full re-prefill ---------------
