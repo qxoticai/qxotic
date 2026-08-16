@@ -470,7 +470,7 @@ public record Options(
             for (String value : companionRefs.values()) {
                 if (!"auto".equals(value)) wanted.add(value);
             }
-            List<Path> resolved = ModelStore.resolveAll(wanted);
+            List<Path> resolved = ModelStore.standard().resolveAll(wanted);
             int at = 0;
             modelPath = modelRef == null ? null : resolved.get(at++);
             tokenizerPath = tokenizerRef == null ? null : resolved.get(at++);

@@ -768,7 +768,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             List<String> wanted = new ArrayList<>();
             if (source instanceof String ref) wanted.add(ref);
             wanted.addAll(companions.values());
-            List<Path> resolved = ModelStore.resolveAll(wanted);
+            List<Path> resolved = ModelStore.standard().resolveAll(wanted);
             int at = 0;
             modelPath = source instanceof Path path ? path : resolved.get(at++);
             var resolvedCompanions = new LinkedHashMap<String, Path>();

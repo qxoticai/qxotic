@@ -200,7 +200,7 @@ public final class JinferScoringModel implements ScoringModel, AutoCloseable {
             modelPath = null;
             loaded = null;
             switch (source) {
-                case String ref -> modelPath = ModelStore.resolve(ref);
+                case String ref -> modelPath = ModelStore.standard().resolve(ref);
                 case Path path -> modelPath = path;
                 case LoadedReranker<?> l -> loaded = l;
                 case null, default ->

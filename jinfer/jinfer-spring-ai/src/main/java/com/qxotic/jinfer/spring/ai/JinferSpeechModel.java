@@ -275,7 +275,7 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
             model = null;
             modelPath = null;
             switch (source) {
-                case String ref -> modelPath = ModelStore.resolve(ref);
+                case String ref -> modelPath = ModelStore.standard().resolve(ref);
                 case Path path -> modelPath = path;
                 case SpeechSynthesisModel<?, ?, ?> m -> model = m;
                 case null, default ->

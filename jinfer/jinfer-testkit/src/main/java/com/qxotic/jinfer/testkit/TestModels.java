@@ -33,7 +33,7 @@ public final class TestModels {
 
     /** The cached path for {@code ref}, or the test aborts - with the fix in the message. */
     public static Path require(String ref) {
-        return require(ref, ModelStore::find, System::getProperty);
+        return require(ref, ModelStore.standard()::find, System::getProperty);
     }
 
     static Path require(
@@ -57,7 +57,7 @@ public final class TestModels {
     }
 
     private static Optional<Path> resolve(String ref) {
-        return resolve(ref, ModelStore::find, System::getProperty);
+        return resolve(ref, ModelStore.standard()::find, System::getProperty);
     }
 
     // Package-private seam for TestModelsTest: the store and the property source are injected so

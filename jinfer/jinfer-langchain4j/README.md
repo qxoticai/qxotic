@@ -326,7 +326,7 @@ For real parallelism, load the weights once into YOUR arena and fork - every bui
 
 ```java
 try (Arena arena = Arena.ofShared()) {
-    var loaded = Models.load(ModelStore.resolve("hf.co/...:Q4_K_M"), arena);
+    var loaded = Models.load(ModelStore.standard().resolve("hf.co/...:Q4_K_M"), arena);
     var a = JinferChatModel.builder().model(loaded).contextLength(8192).build();
     var b = a.fork();               // second pipeline, same weights, a context's price
     // ... concurrent chat on a and b ...

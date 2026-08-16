@@ -152,10 +152,10 @@ public class Main {
         }
         try {
             if (force) {
-                refs.forEach(ModelStore::evict);
+                refs.forEach(ModelStore.standard()::evict);
             }
             // several refs download concurrently; paths print in argument order, so it pipes
-            ModelStore.resolveAll(refs).forEach(System.out::println);
+            ModelStore.standard().resolveAll(refs).forEach(System.out::println);
         } catch (RuntimeException e) {
             System.err.println("ERROR " + Options.rootMessage(e));
             System.exit(1);
@@ -167,9 +167,9 @@ public class Main {
      * {@code --model} or {@code --with}, which is the point: the cache path IS the ref.
      */
     private static void list() {
-        List<ModelStore.Cached> models = ModelStore.cached();
+        List<ModelStore.Cached> models = ModelStore.standard().cached();
         if (models.isEmpty()) {
-            System.out.println("no models cached in " + ModelStore.root());
+            System.out.println("no models cached in " + ModelStore.standard().root());
             return;
         }
         int width = models.stream().mapToInt(m -> m.ref().length()).max().orElse(0);
