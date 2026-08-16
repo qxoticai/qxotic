@@ -5,15 +5,17 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.testkit.TestModels;
-import com.qxotic.jinfer.x.boundary.Config;
+import com.qxotic.jinfer.x.boundary.Arenas;
 import com.qxotic.jinfer.x.boundary.Media;
-import com.qxotic.jinfer.x.boundary.SpeechModel;
+import com.qxotic.jinfer.x.boundary.RuntimeState;
 import com.qxotic.jinfer.x.boundary.SpeechOptions;
-import com.qxotic.jinfer.x.boundary.SpeechState;
+import com.qxotic.jinfer.x.boundary.SpeechSynthesisModel;
 import com.qxotic.jinfer.x.chat.Models;
+import com.qxotic.jota.memory.MemoryArena;
 import dev.langchain4j.exception.UnsupportedFeatureException;
 import dev.langchain4j.model.audio.TextToSpeechRequest;
 import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -35,7 +37,7 @@ final class JinferSpeechModelTest {
                         IllegalArgumentException.class, () -> JinferSpeechModel.builder().build());
         assertEquals(
                 "a model is required: model(\"hf.co/owner/repo:Q4_K_M\"), modelPath(...) or"
-                        + " model(SpeechModel)",
+                        + " model(SpeechSynthesisModel)",
                 e.getMessage());
     }
 
@@ -133,7 +135,7 @@ final class JinferSpeechModelTest {
 
     @Test
     void aCallersArenaOutlivesTheAdapter() throws Exception {
-        try (Arena weights = Arena.ofShared()) {
+        try (Arena weights = Arenas.newCrossThread()) {
             JinferSpeechModel.builder()
                     .model(
                             Models.loadSpeech(
@@ -178,7 +180,7 @@ final class JinferSpeechModelTest {
     }
 
     /** Blocks inside speak until released, so close() has something in flight to wait for. */
-    private static final class SlowModel implements SpeechModel<Config, Void, ToyState> {
+    private static final class SlowModel implements SpeechSynthesisModel<Void, Void, ToyState> {
 
         private final CountDownLatch entered;
         private final CountDownLatch release;
@@ -190,8 +192,8 @@ final class JinferSpeechModelTest {
         }
 
         @Override
-        public Config config() {
-            throw new UnsupportedOperationException();
+        public Void configuration() {
+            return null;
         }
 
         @Override
@@ -200,8 +202,13 @@ final class JinferSpeechModelTest {
         }
 
         @Override
-        public ToyState newState(Arena arena, boolean adopt) {
+        public ToyState newState() {
             return state = new ToyState();
+        }
+
+        @Override
+        public ToyState newState(MemoryArena<MemorySegment> arena) {
+            return newState();
         }
 
         @Override
@@ -226,7 +233,7 @@ final class JinferSpeechModelTest {
                         .model(
                                 new ToyModel() {
                                     @Override
-                                    public ToyState newState(Arena arena, boolean adopt) {
+                                    public ToyState newState() {
                                         throw new IllegalStateException("no scratch");
                                     }
                                 })
@@ -285,7 +292,7 @@ final class JinferSpeechModelTest {
     }
 
     /** Emits one fixed clip per call and remembers the state it handed out. */
-    private static class ToyModel implements SpeechModel<Config, Void, ToyState> {
+    private static class ToyModel implements SpeechSynthesisModel<Void, Void, ToyState> {
 
         static final int SAMPLES = 8;
 
@@ -294,8 +301,8 @@ final class JinferSpeechModelTest {
         final List<ToyState> all = Collections.synchronizedList(new ArrayList<>());
 
         @Override
-        public Config config() {
-            throw new UnsupportedOperationException();
+        public Void configuration() {
+            return null;
         }
 
         @Override
@@ -304,11 +311,16 @@ final class JinferSpeechModelTest {
         }
 
         @Override
-        public ToyState newState(Arena arena, boolean adopt) {
+        public ToyState newState() {
             minted.incrementAndGet();
             ToyState s = new ToyState();
             all.add(s);
             return state = s;
+        }
+
+        @Override
+        public ToyState newState(MemoryArena<MemorySegment> arena) {
+            return newState();
         }
 
         @Override
@@ -318,11 +330,11 @@ final class JinferSpeechModelTest {
         }
     }
 
-    private static final class ToyState implements SpeechState {
+    private static final class ToyState extends RuntimeState {
         boolean closed;
 
         @Override
-        public void close() {
+        protected void releaseResources() {
             closed = true;
         }
     }

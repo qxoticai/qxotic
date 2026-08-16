@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.testkit.TestModels;
 import com.qxotic.jinfer.x.boundary.Media;
-import com.qxotic.jinfer.x.boundary.MultiModal;
+import com.qxotic.jinfer.x.boundary.Multimodal;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.AudioContent;
 import dev.langchain4j.data.message.TextContent;
@@ -59,8 +59,8 @@ class Gemma4MediaIT extends AbstractMediaIT {
                         .maxOutputTokens(512)
                         .build()) {
             Assumptions.assumeTrue(
-                    engineModel(audioModel) instanceof MultiModal mm
-                            && mm.modalities().contains(Media.Audio.class),
+                    engineModel(audioModel) instanceof Multimodal mm
+                            && mm.projector(Media.Audio.class).isPresent(),
                     "mmproj carries no audio adapter");
             byte[] wav = toneWav(440, 1.0, 16000);
             ChatResponse r =
@@ -149,7 +149,7 @@ class Gemma4MediaIT extends AbstractMediaIT {
     }
 
     private static Object engineModel(JinferChatModel m) {
-        // the loaded LanguageModel implements MultiModal for gemma4
+        // the loaded LanguageModel implements Multimodal for gemma4
         return m.engine.loaded().model();
     }
 }

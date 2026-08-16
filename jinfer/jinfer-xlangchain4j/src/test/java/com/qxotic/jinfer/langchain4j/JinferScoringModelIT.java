@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.testkit.TestModels;
+import com.qxotic.jinfer.x.boundary.Arenas;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.output.Response;
 import java.util.List;
@@ -54,7 +55,7 @@ class JinferScoringModelIT {
 
     @Test
     void sharedWeightsForkScoresTheSameRanking() throws Exception {
-        try (java.lang.foreign.Arena arena = java.lang.foreign.Arena.ofShared()) {
+        try (java.lang.foreign.Arena arena = Arenas.newCrossThread()) {
             var loaded =
                     com.qxotic.jinfer.x.chat.Models.loadReranker(TestModels.require(REF), arena);
             JinferScoringModel a =

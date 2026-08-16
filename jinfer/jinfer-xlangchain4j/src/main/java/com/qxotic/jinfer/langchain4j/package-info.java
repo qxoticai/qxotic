@@ -16,7 +16,7 @@
  * model(loaded)} seam and every model a {@code fork()}:
  *
  * <pre>{@code
- * try (Arena arena = Arena.ofShared()) {
+ * try (Arena arena = Arenas.newCrossThread()) {
  *     var loaded = Models.loadEmbedder(ModelStore.resolve("hf.co/...:Q8_0"), arena);
  *     var a = JinferEmbeddingModel.builder().model(loaded).build();
  *     var b = a.fork();               // second pipeline, same weights, a context's price

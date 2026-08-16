@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.testkit.TestModels;
+import com.qxotic.jinfer.x.boundary.Arenas;
 import com.qxotic.jinfer.x.cache.PromptCache;
 import com.qxotic.jinfer.x.chat.ChatEngine;
 import com.qxotic.jinfer.x.chat.LoadedModel;
@@ -36,7 +37,7 @@ final class ChatEngineWeightsOwnershipTest {
 
     @Test
     void anEngineGivenAModelDoesNotFreeTheCallersWeights() throws IOException {
-        try (Arena weights = Arena.ofShared()) {
+        try (Arena weights = Arenas.newCrossThread()) {
             LoadedModel<?> loaded = Models.load(model(), weights);
             ChatEngine engine = new ChatEngine(loaded, "borrowed", SESSIONS_ONLY);
 
@@ -47,7 +48,7 @@ final class ChatEngineWeightsOwnershipTest {
                     weights.scope().isAlive(),
                     "close() freed an arena the engine did not allocate");
             // and the weights are still readable, not merely 'alive'
-            assertTrue(loaded.model().config().vocabularySize() > 0);
+            assertTrue(loaded.model().configuration().vocabularySize() > 0);
         }
     }
 
@@ -62,7 +63,7 @@ final class ChatEngineWeightsOwnershipTest {
 
     @Test
     void closeIsIdempotentOnABorrowedEngineToo() throws IOException {
-        try (Arena weights = Arena.ofShared()) {
+        try (Arena weights = Arenas.newCrossThread()) {
             ChatEngine engine =
                     new ChatEngine(Models.load(model(), weights), "borrowed", SESSIONS_ONLY);
             engine.close();
@@ -76,7 +77,7 @@ final class ChatEngineWeightsOwnershipTest {
         // the law the code cannot enforce, pinned as documentation: closing YOUR arena while the
         // engine still lives is on you. This only asserts the ordering the contract prescribes -
         // engine first, then the arena - leaves nothing alive.
-        Arena weights = Arena.ofShared();
+        Arena weights = Arenas.newCrossThread();
         ChatEngine engine =
                 new ChatEngine(Models.load(model(), weights), "borrowed", SESSIONS_ONLY);
         engine.close();
