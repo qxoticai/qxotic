@@ -1084,29 +1084,19 @@ public final class ChatEngine implements AutoCloseable {
                 (state, serving) -> {
                     if (!serving.prefillComplete()) {
                         // interrupted prefill: nothing generates from a partially-served state
-                        if (cancelled.getAsBoolean()) {
-                            // the cancelled lane: no reply, no result, complete0 ends it silently
-                            return new Outcome(null, serving.restored(), serving.tier(), null);
-                        }
-                        return new Outcome(
-                                new Generator.GenerationResult(
-                                        new int[0],
-                                        OptionalInt.empty(),
-                                        Generator.FinishReason.TIMEOUT,
-                                        serving.promptTime(),
-                                        Duration.ZERO),
-                                serving.restored(),
-                                serving.tier(),
-                                null);
+                        return cancelled.getAsBoolean()
+                                ? cancelledOutcome(serving)
+                                : timeoutOutcome(serving);
                     }
+                    // A fully restored prompt never consulted the prefill interrupt, and
+                    // cancellation may arrive while the final chunk is in flight.
+                    if (cancelled.getAsBoolean()) return cancelledOutcome(serving);
+
                     Duration remaining = timeout;
                     if (!timeout.isZero()) {
                         remaining = timeout.minusNanos(System.nanoTime() - started);
                         if (remaining.isNegative() || remaining.isZero()) {
-                            // encodes "already expired": Constraints refuses a negative timeout
-                            // and ZERO means none - Generator's loop-top check ends the pass
-                            // before any token is sampled
-                            remaining = Duration.ofNanos(1);
+                            return timeoutOutcome(serving);
                         }
                     }
                     Generator.Constraints constraints =
@@ -1175,6 +1165,25 @@ public final class ChatEngine implements AutoCloseable {
                     return new Outcome(result, serving.restored(), serving.tier(), speculation);
                 },
                 interrupt);
+    }
+
+    /** Cancellation is silent: no reply and no generation result. */
+    private static Outcome cancelledOutcome(PromptCache.Serving serving) {
+        return new Outcome(null, serving.restored(), serving.tier(), null);
+    }
+
+    /** A whole-pass deadline exhausted by prefill never enters either decoder. */
+    private static Outcome timeoutOutcome(PromptCache.Serving serving) {
+        return new Outcome(
+                new Generator.GenerationResult(
+                        new int[0],
+                        OptionalInt.empty(),
+                        Generator.FinishReason.TIMEOUT,
+                        serving.promptTime(),
+                        Duration.ZERO),
+                serving.restored(),
+                serving.tier(),
+                null);
     }
 
     /** The pass's wall-clock deadline in nanoTime terms; {@code Long.MAX_VALUE} when disabled. */
