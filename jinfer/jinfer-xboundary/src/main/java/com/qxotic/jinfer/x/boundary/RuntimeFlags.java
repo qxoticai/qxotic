@@ -1,6 +1,6 @@
 package com.qxotic.jinfer.x.boundary;
 
-/** The boundary cone's slice of jinfer's runtime flags (ported from jinfer-core RuntimeFlags). */
+/** Runtime defaults owned by the model boundary. */
 final class RuntimeFlags {
 
     /** Default scratch width for {@code newState}: prefill batches up to this many tokens. */

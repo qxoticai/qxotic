@@ -12,8 +12,7 @@
   <packaging>jar</packaging>
 
   <name>jinfer-xcore</name>
-  <description>MemoryView-based substrate (FloatTensor migration; see qxotic/.opencode/plans/memoryview-migration.md).
-    Memory plumbing over com.qxotic.jota.memory.MemoryView&lt;MemorySegment&gt;: views, segment access,
+  <description>Memory plumbing over com.qxotic.jota.memory.MemoryView&lt;MemorySegment&gt;: views, segment access,
     dtype conversion, the Panama arena adapter, and the decode execution pool. The compute kernels
     live in jinfer-xkernels.</description>
 

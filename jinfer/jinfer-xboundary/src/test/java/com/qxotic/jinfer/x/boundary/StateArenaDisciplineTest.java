@@ -14,8 +14,8 @@ import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
 /**
- * The invariant that makes borrow-vs-adopt mean anything: <b>a State allocates only from the arena
- * it was given</b> ({@code memoryArena()}). Ownership is decided by the {@code newState} flavor and
+ * The invariant that makes ownership mean anything: <b>a State allocates only from the arena it was
+ * given</b> ({@code memoryArena()}). Ownership is decided by the {@code newState} flavor and
  * implemented once in the boundary, so a family cannot get the FREEING wrong - but a family that
  * quietly allocated a buffer from an arena of its own would leave memory alive after {@code
  * close()}, and no ownership rule would catch it. That is not hypothetical: {@code

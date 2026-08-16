@@ -1,7 +1,7 @@
 package com.qxotic.jinfer.x.boundary;
 
 /**
- * How an utterance is spoken, as opposed to {@link Config}, which is what the model IS.
+ * How an utterance is spoken, as opposed to model configuration, which describes what the model is.
  *
  * <p>Deliberately NARROW: exactly what a framework request object can express, so an integration
  * passes it through without knowing which port is underneath. Everything else a speech model takes

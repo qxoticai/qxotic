@@ -10,9 +10,14 @@ import java.util.Objects;
 /**
  * One forward call's worth of work: what to feed ({@link Input}) and which final hidden states to
  * retain ({@link Outputs}). Position-agnostic: a batch is always ingested at the state's cursor
- * ({@link RuntimeState#position()}), which then advances by {@link #count()}.
+ * ({@link ContextState#position()}), which then advances by {@link #count()}.
  */
 public record Batch(Input input, Outputs outputs) {
+
+    public Batch {
+        Objects.requireNonNull(input, "input");
+        Objects.requireNonNull(outputs, "outputs");
+    }
 
     /**
      * Which rows' final hidden state to retain for projection. LAST = generation; ALL = scoring.
@@ -24,7 +29,11 @@ public record Batch(Input input, Outputs outputs) {
 
     /** Token ids, encoder-projected rows, or packed ragged multi-sequence text. */
     public sealed interface Input {
-        record Tokens(int[] ids) implements Input {}
+        record Tokens(int[] ids) implements Input {
+            public Tokens {
+                Objects.requireNonNull(ids, "ids");
+            }
+        }
 
         /**
          * Dense FP32 {@code [count, modelDim]} encoder output. A bidirectional block is one atomic
@@ -69,7 +78,12 @@ public record Batch(Input input, Outputs outputs) {
          * stream (not just this chunk). Each token attends only within its own sequence, causally,
          * positions restart at 0 per sequence. Used for batched embedding (no padding).
          */
-        record Sequences(Tokens tokens, int[] seqLen) implements Input {}
+        record Sequences(Tokens tokens, int[] seqLen) implements Input {
+            public Sequences {
+                Objects.requireNonNull(tokens, "tokens");
+                Objects.requireNonNull(seqLen, "seqLen");
+            }
+        }
     }
 
     /** Prefill a prompt span, projecting only the last row (the next-token distribution). */

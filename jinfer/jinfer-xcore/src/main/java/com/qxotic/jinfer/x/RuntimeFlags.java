@@ -4,9 +4,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
- * The kernel cone's slice of jinfer's runtime flags (ported from jinfer-core {@code RuntimeFlags}):
- * only what the decode work-runners read. The rest (prompt lengths, cache, batch defaults) lands
- * with the boundary cone that owns it.
+ * Runtime flags read by the decode work-runners. Prompt, cache and batch defaults live with their
+ * owning modules.
  */
 public final class RuntimeFlags {
 
