@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.langchain4j;
 
 import com.qxotic.format.json.Json;
+import com.qxotic.jinfer.x.boundary.ContentKey;
 import com.qxotic.jinfer.x.boundary.Media;
 import com.qxotic.jinfer.x.boundary.media.AudioCodec;
 import com.qxotic.jinfer.x.boundary.media.ImageCodec;
@@ -46,6 +47,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -93,11 +95,11 @@ final class Mappings {
                 case TextContent t -> parts.add(new Content.Text(t.text(), null));
                 case ImageContent i -> {
                     byte[] src = bytes(i.image().base64Data(), i.image().url());
-                    parts.add(blob("image", sha256(src), () -> ImageCodec.decode(src)));
+                    parts.add(blob("image", ContentKey.sha256(src), () -> ImageCodec.decode(src)));
                 }
                 case AudioContent a -> {
                     byte[] src = bytes(a.audio().base64Data(), a.audio().url());
-                    parts.add(blob("audio", sha256(src), () -> AudioCodec.decode(src)));
+                    parts.add(blob("audio", ContentKey.sha256(src), () -> AudioCodec.decode(src)));
                 }
                 case VideoContent v -> {
                     // no base64 door here, unlike image/audio: the frame sampler reads a FILE
@@ -123,7 +125,7 @@ final class Mappings {
         Media decode() throws IOException;
     }
 
-    private static Content.Media blob(String kind, byte[] contentKey, MediaDecode decode) {
+    private static Content.Media blob(String kind, ContentKey contentKey, MediaDecode decode) {
         try {
             return new Content.Media(decode.decode(), contentKey);
         } catch (IOException e) {
@@ -132,27 +134,14 @@ final class Mappings {
     }
 
     /**
-     * The SOURCE digest that keys media caching deterministically (encoder rows drift an ulp while
-     * the JIT warms; the original bytes never do) - same law as the server wire. Video frames
-     * derive per-frame keys from this digest in the template.
-     */
-    private static byte[] sha256(byte[] source) {
-        try {
-            return MessageDigest.getInstance("SHA-256").digest(source);
-        } catch (NoSuchAlgorithmException e) {
-            throw new AssertionError(e);
-        }
-    }
-
-    /**
      * Streaming digest of a local file - videos should not be pulled onto the heap to be hashed.
      */
-    private static byte[] sha256(Path file) {
+    private static ContentKey sha256(Path file) {
         try (var in = Files.newInputStream(file)) {
             var md = MessageDigest.getInstance("SHA-256");
             byte[] buf = new byte[1 << 16];
             for (int n; (n = in.read(buf)) > 0; ) md.update(buf, 0, n);
-            return md.digest();
+            return new ContentKey("sha256:" + HexFormat.of().formatHex(md.digest()));
         } catch (IOException e) {
             throw new UncheckedIOException("failed to read " + file, e);
         } catch (NoSuchAlgorithmException e) {

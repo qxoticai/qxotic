@@ -2,12 +2,12 @@ package com.qxotic.jinfer.x.chat;
 
 import com.qxotic.jinfer.x.Views;
 import com.qxotic.jinfer.x.boundary.Batch;
+import com.qxotic.jinfer.x.boundary.ContentKey;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;
-import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -19,7 +19,7 @@ public final class MediaEncodingCache {
     static final long DEFAULT_BUDGET_BYTES =
             Math.multiplyExact(Math.max(0, Long.getLong("jinfer.mediaCacheMB", 192L)), 1L << 20);
 
-    private record Key(String content, int batchCapacity) {}
+    private record Key(ContentKey content, int batchCapacity) {}
 
     private sealed interface CachedBatch {
         Batch replay();
@@ -43,7 +43,7 @@ public final class MediaEncodingCache {
                 int count,
                 int dimension,
                 boolean bidirectional,
-                byte[] contentKey,
+                ContentKey contentKey,
                 Batch.Outputs outputs)
                 implements CachedBatch {
             @Override
@@ -89,7 +89,7 @@ public final class MediaEncodingCache {
     // content serialize (same-content misses dedupe into one projection, which is the point).
     // Upgrade to a per-key in-flight future if multimodal concurrency ever shows in a profile.
     synchronized void replayOrRecord(
-            byte[] contentKey,
+            ContentKey contentKey,
             int batchCapacity,
             Consumer<Consumer<Batch>> projection,
             Consumer<Batch> sink) {
@@ -97,7 +97,7 @@ public final class MediaEncodingCache {
             projection.accept(sink);
             return;
         }
-        Key key = key(contentKey, batchCapacity);
+        Key key = new Key(contentKey, batchCapacity);
         List<CachedBatch> hit = entries.get(key);
         if (hit != null) {
             hits++;
@@ -165,9 +165,5 @@ public final class MediaEncodingCache {
         long total = 0;
         for (CachedBatch batch : batches) total = Math.addExact(total, batch.bytes());
         return total;
-    }
-
-    private static Key key(byte[] contentKey, int batchCapacity) {
-        return new Key(HexFormat.of().formatHex(contentKey), batchCapacity);
     }
 }

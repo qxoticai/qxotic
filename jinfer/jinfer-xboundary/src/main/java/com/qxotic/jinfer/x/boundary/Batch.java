@@ -41,7 +41,8 @@ public record Batch(Input input, Outputs outputs) {
          * source content and preprocessing options instead. The rows and their backing memory are
          * borrowed and must remain alive and unchanged through ingestion.
          */
-        record Embeddings(MemoryView<?> rows, int count, boolean bidirectional, byte[] contentKey)
+        record Embeddings(
+                MemoryView<?> rows, int count, boolean bidirectional, ContentKey contentKey)
                 implements Input {
             public Embeddings {
                 Objects.requireNonNull(rows, "rows");
@@ -55,20 +56,10 @@ public record Batch(Input input, Outputs outputs) {
                             "embedding count " + count + " does not match shape " + rows.shape());
                 if (!rows.isRowMajorContiguous())
                     throw new IllegalArgumentException("embedding rows must be dense row-major");
-                if (contentKey != null) {
-                    if (contentKey.length == 0)
-                        throw new IllegalArgumentException("contentKey must not be empty");
-                    contentKey = contentKey.clone();
-                }
             }
 
             public Embeddings(MemoryView<?> rows, int count, boolean bidirectional) {
                 this(rows, count, bidirectional, null);
-            }
-
-            @Override
-            public byte[] contentKey() {
-                return contentKey == null ? null : contentKey.clone();
             }
         }
 
@@ -113,7 +104,7 @@ public record Batch(Input input, Outputs outputs) {
 
     /** As {@link #embeddings(MemoryView, int, boolean)} with a source-content cache key. */
     public static Batch embeddings(
-            MemoryView<?> rows, int count, boolean bidirectional, byte[] contentKey) {
+            MemoryView<?> rows, int count, boolean bidirectional, ContentKey contentKey) {
         return new Batch(
                 new Input.Embeddings(rows, count, bidirectional, contentKey), Outputs.LAST);
     }

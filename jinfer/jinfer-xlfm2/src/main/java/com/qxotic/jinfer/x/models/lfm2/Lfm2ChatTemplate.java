@@ -4,6 +4,7 @@ import static com.qxotic.jinfer.x.chat.ReplyLanguage.mark;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.x.boundary.Batch;
+import com.qxotic.jinfer.x.boundary.ContentKey;
 import com.qxotic.jinfer.x.boundary.Media;
 import com.qxotic.jinfer.x.chat.ChatTemplate;
 import com.qxotic.jinfer.x.chat.Content;
@@ -197,7 +198,7 @@ public final class Lfm2ChatTemplate implements ChatTemplate {
     private void writeMedia(PromptWriter out, Content.Media content, int batchCapacity) {
         if (!(content.value() instanceof Media.Image image) || vision == null)
             throw new IllegalStateException("unsupported media after validation");
-        byte[] contentKey = content.contentKey();
+        ContentKey contentKey = content.contentKey();
         out.cachedMedia(
                 image,
                 contentKey,

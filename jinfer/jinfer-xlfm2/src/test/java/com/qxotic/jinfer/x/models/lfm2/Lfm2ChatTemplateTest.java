@@ -15,6 +15,7 @@ import com.qxotic.jinfer.testkit.TestModels;
 import com.qxotic.jinfer.x.PanamaMemoryArena;
 import com.qxotic.jinfer.x.Views;
 import com.qxotic.jinfer.x.boundary.Batch;
+import com.qxotic.jinfer.x.boundary.ContentKey;
 import com.qxotic.jinfer.x.boundary.Media;
 import com.qxotic.jinfer.x.chat.Channel;
 import com.qxotic.jinfer.x.chat.ChatTemplate;
@@ -298,7 +299,7 @@ final class Lfm2ChatTemplateTest {
             current = GGUFTokenizerLoader.createBuilderWithBuiltins().build().fromGGUF(gguf);
         }
 
-        byte[] key = {1, 2, 3};
+        ContentKey key = new ContentKey("image:test");
         Media.Image image = new Media.Image(new float[2000 * 1000 * 3], 1000, 2000, 3);
         try (Arena arena = Arena.ofShared()) {
             Lfm2Vision vision = tinyVision(new PanamaMemoryArena(arena));
@@ -323,7 +324,7 @@ final class Lfm2ChatTemplateTest {
                                     tokens.addAll(IntSequence.of(value.ids()));
                             case Batch.Input.Embeddings value -> {
                                 assertTrue(value.bidirectional());
-                                assertArrayEquals(key, value.contentKey());
+                                assertEquals(key, value.contentKey());
                                 embeddingRows.add(value.count());
                             }
                             default -> throw new AssertionError("unexpected batch input");

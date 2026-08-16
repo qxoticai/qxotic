@@ -2,6 +2,7 @@ package com.qxotic.jinfer.x.bench;
 
 import com.qxotic.jinfer.x.Views;
 import com.qxotic.jinfer.x.boundary.Batch;
+import com.qxotic.jinfer.x.boundary.ContentKey;
 import com.qxotic.jinfer.x.boundary.ContextState;
 import com.qxotic.jinfer.x.boundary.Multimodal;
 import com.qxotic.jinfer.x.boundary.media.ImageCodec;
@@ -18,8 +19,6 @@ import java.io.PrintStream;
 import java.lang.foreign.Arena;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -433,7 +432,7 @@ public final class XJinferBench {
                     && mm.projector(com.qxotic.jinfer.x.boundary.Media.Image.class).isPresent()) {
                 byte[] bytes = Files.readAllBytes(mediaPath);
                 var image = ImageCodec.decode(bytes);
-                var request = mediaRequest(image, sha256(bytes), gen);
+                var request = mediaRequest(image, ContentKey.sha256(bytes), gen);
                 long coldMedia = promptNanos(engine, request);
                 long warmMedia = promptNanos(engine, request);
                 media = String.format("%.1f / %.1f", coldMedia / 1e6, warmMedia / 1e6);
@@ -473,7 +472,7 @@ public final class XJinferBench {
     }
 
     private static ChatEngine.Request mediaRequest(
-            com.qxotic.jinfer.x.boundary.Media.Image image, byte[] contentKey, int gen) {
+            com.qxotic.jinfer.x.boundary.Media.Image image, ContentKey contentKey, int gen) {
         return new ChatEngine.Request(
                 List.of(
                         new Message(
@@ -500,14 +499,6 @@ public final class XJinferBench {
                     .result()
                     .promptTime()
                     .toNanos();
-        }
-    }
-
-    private static byte[] sha256(byte[] source) {
-        try {
-            return MessageDigest.getInstance("SHA-256").digest(source);
-        } catch (NoSuchAlgorithmException e) {
-            throw new AssertionError(e);
         }
     }
 

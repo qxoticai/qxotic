@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.x.server;
 
+import com.qxotic.jinfer.x.boundary.ContentKey;
 import com.qxotic.jinfer.x.boundary.Media;
 import com.qxotic.jinfer.x.boundary.media.AudioCodec;
 import com.qxotic.jinfer.x.boundary.media.ImageCodec;
@@ -20,8 +21,6 @@ import com.qxotic.toknroll.IntSequence;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
@@ -318,7 +317,7 @@ final class Generation {
         Object image = part.get("image_url") != null ? part.get("image_url") : part.get("image");
         byte[] bytes = dataUri(url(image), "image_url");
         try {
-            return new Content.Media(ImageCodec.decode(bytes), digest(bytes));
+            return new Content.Media(ImageCodec.decode(bytes), ContentKey.sha256(bytes));
         } catch (IOException failure) {
             throw new IllegalArgumentException(
                     "image could not be decoded: " + failure.getMessage());
@@ -334,7 +333,7 @@ final class Generation {
             throw new IllegalArgumentException("input_audio data is not valid base64");
         }
         try {
-            return new Content.Media(AudioCodec.decode(bytes), digest(bytes));
+            return new Content.Media(AudioCodec.decode(bytes), ContentKey.sha256(bytes));
         } catch (IOException failure) {
             throw new IllegalArgumentException(
                     "audio could not be decoded: " + failure.getMessage());
@@ -348,7 +347,7 @@ final class Generation {
             temporary = Files.createTempFile("jinfer-video", ".bin");
             Files.write(temporary, bytes);
             Media.Video video = VideoSampler.UNIFORM.sample(temporary);
-            return new Content.Media(video, digest(bytes));
+            return new Content.Media(video, ContentKey.sha256(bytes));
         } catch (IOException failure) {
             throw new IllegalArgumentException(
                     "video could not be decoded: " + failure.getMessage());
@@ -383,14 +382,6 @@ final class Generation {
             return Base64.getDecoder().decode(value.substring(comma + 1));
         } catch (IllegalArgumentException failure) {
             throw new IllegalArgumentException(field + " base64 payload is malformed");
-        }
-    }
-
-    private static byte[] digest(byte[] value) {
-        try {
-            return MessageDigest.getInstance("SHA-256").digest(value);
-        } catch (NoSuchAlgorithmException impossible) {
-            throw new AssertionError(impossible);
         }
     }
 

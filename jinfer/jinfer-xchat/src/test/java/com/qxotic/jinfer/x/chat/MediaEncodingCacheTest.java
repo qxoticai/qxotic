@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import com.qxotic.jinfer.x.PanamaMemoryArena;
 import com.qxotic.jinfer.x.Views;
 import com.qxotic.jinfer.x.boundary.Batch;
+import com.qxotic.jinfer.x.boundary.ContentKey;
 import com.qxotic.jinfer.x.boundary.Media;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
@@ -19,14 +20,15 @@ final class MediaEncodingCacheTest {
 
     @Test
     void repeatedImageAndVideoProjectOnlyOnce() {
-        assertProjectedOnce(new Media.Image(new float[] {0, 0, 0}, 1, 1, 3), new byte[] {1});
+        assertProjectedOnce(
+                new Media.Image(new float[] {0, 0, 0}, 1, 1, 3), new ContentKey("image"));
         Media.Image frame = new Media.Image(new float[] {0, 0, 0}, 1, 1, 3);
         assertProjectedOnce(
                 new Media.Video(List.of(new Media.Video.Frame(frame, Duration.ZERO))),
-                new byte[] {2});
+                new ContentKey("video"));
     }
 
-    private static void assertProjectedOnce(Media source, byte[] key) {
+    private static void assertProjectedOnce(Media source, ContentKey key) {
         MediaEncodingCache cache = new MediaEncodingCache();
         AtomicInteger projections = new AtomicInteger();
         List<List<Float>> outputs = new ArrayList<>();
@@ -78,7 +80,7 @@ final class MediaEncodingCacheTest {
 
         for (int pass = 0; pass < 2; pass++) {
             cache.replayOrRecord(
-                    new byte[] {1},
+                    new ContentKey("oversized"),
                     8,
                     sink -> {
                         projections.incrementAndGet();
@@ -102,12 +104,12 @@ final class MediaEncodingCacheTest {
         // two 8-byte entries, an 8-byte budget: the second insert must evict the first
         MediaEncodingCache cache = new MediaEncodingCache(8);
         cache.replayOrRecord(
-                new byte[] {1},
+                new ContentKey("one"),
                 8,
                 sink -> sink.accept(Batch.prefill(new int[] {1, 2})),
                 batch -> {});
         cache.replayOrRecord(
-                new byte[] {2},
+                new ContentKey("two"),
                 8,
                 sink -> sink.accept(Batch.prefill(new int[] {3, 4})),
                 batch -> {});
@@ -120,7 +122,7 @@ final class MediaEncodingCacheTest {
         // and the survivor is the NEWER entry: key 1 misses again, key 2 hits
         AtomicInteger projections = new AtomicInteger();
         cache.replayOrRecord(
-                new byte[] {1},
+                new ContentKey("one"),
                 8,
                 sink -> {
                     projections.incrementAndGet();

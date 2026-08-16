@@ -10,6 +10,7 @@ import com.qxotic.jinfer.testkit.TestModels;
 import com.qxotic.jinfer.x.PanamaMemoryArena;
 import com.qxotic.jinfer.x.Views;
 import com.qxotic.jinfer.x.boundary.Batch;
+import com.qxotic.jinfer.x.boundary.ContentKey;
 import com.qxotic.jinfer.x.boundary.Media;
 import com.qxotic.jinfer.x.boundary.MediaProjector;
 import com.qxotic.jinfer.x.boundary.Multimodal;
@@ -73,8 +74,8 @@ final class Gemma4ChatTemplateTest {
     @Test
     void imageAndAudioStayStructuralAndOrdered() throws Exception {
         Tokenizer tokenizer = tokenizer();
-        byte[] imageKey = {1, 2};
-        byte[] audioKey = {3, 4};
+        ContentKey imageKey = new ContentKey("image:test");
+        ContentKey audioKey = new ContentKey("audio:test");
         Media.Image image = new Media.Image(new float[] {0, 0, 0}, 1, 1, 3);
         Media.Audio audio = new Media.Audio(new float[] {0}, 16_000, 1);
         Message message =
@@ -102,8 +103,8 @@ final class Gemma4ChatTemplateTest {
             assertEquals(2, embeddings.size());
             assertTrue(embeddings.get(0).bidirectional());
             assertFalse(embeddings.get(1).bidirectional());
-            assertArrayEquals(imageKey, embeddings.get(0).contentKey());
-            assertArrayEquals(audioKey, embeddings.get(1).contentKey());
+            assertEquals(imageKey, embeddings.get(0).contentKey());
+            assertEquals(audioKey, embeddings.get(1).contentKey());
             assertArrayEquals(expectedMediaTokens(tokenizer), tokenIds(batches));
         }
     }
@@ -111,7 +112,7 @@ final class Gemma4ChatTemplateTest {
     @Test
     void repeatedImageReplaysProjectedRows() throws Exception {
         Tokenizer tokenizer = tokenizer();
-        byte[] key = {9, 8, 7};
+        ContentKey key = new ContentKey("image:test");
         Message message =
                 new Message(
                         Role.USER,
