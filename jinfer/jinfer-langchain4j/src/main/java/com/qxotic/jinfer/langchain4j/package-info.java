@@ -17,7 +17,7 @@
  *
  * <pre>{@code
  * try (Arena arena = Arenas.newCrossThread()) {
- *     var loaded = Models.loadEmbedder(ModelStore.resolve("hf.co/...:Q8_0"), arena);
+ *     var loaded = Models.loadEmbedder(ModelStore.standard().resolve("hf.co/...:Q8_0"), arena);
  *     var a = JinferEmbeddingModel.builder().model(loaded).build();
  *     var b = a.fork();               // second pipeline, same weights, a context's price
  *     // ... parallel ingestion on a and b ...
