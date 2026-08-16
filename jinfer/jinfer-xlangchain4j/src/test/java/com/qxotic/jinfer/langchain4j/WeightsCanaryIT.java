@@ -152,7 +152,7 @@ class WeightsCanaryIT {
             IllegalStateException e =
                     assertThrows(
                             IllegalStateException.class,
-                            () -> loaded.embedAll(state, 512, List.of("hi"), v -> {}));
+                            () -> loaded.embedAll(state, List.of("hi"), ignored -> {}));
             assertTrue(e.getMessage().contains("freed"), e.getMessage());
         }
     }
