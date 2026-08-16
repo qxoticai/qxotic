@@ -3,7 +3,7 @@
 //COMPILE_OPTIONS --enable-preview --release 25
 //RUNTIME_OPTIONS --enable-preview --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED -Xmx24g
 //REPOS mavenLocal,central
-//DEPS com.qxotic:jinfer-gemma4:0.1.0
+//DEPS com.qxotic:jinfer-xlangchain4j:0.1.0
 
 // Gemma 4 video understanding (equivalent of the docs' "Describe this video."):
 //   https://ai.google.dev/gemma/docs/capabilities/vision/video
@@ -22,18 +22,13 @@
 // Tune sampling with -Djinfer.video.frames (default 16 here; frames are spread uniformly across
 // the WHOLE duration, each stamped with its true timestamp).
 
-import com.qxotic.jinfer.Batch;
-import com.qxotic.jinfer.Media;
-import com.qxotic.jinfer.chat.Message;
-import com.qxotic.jinfer.chat.TurnTemplate;
-import com.qxotic.jinfer.media.VideoCodec;
-import com.qxotic.jinfer.models.gemma4.Gemma4;
+import com.qxotic.jinfer.langchain4j.JinferChatModel;
+import com.qxotic.jinfer.x.boundary.media.VideoCodec;
+import dev.langchain4j.data.message.TextContent;
+import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.data.message.VideoContent;
 
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Set;
-import java.lang.foreign.Arena;
 
 public class GemmaVideo {
 
@@ -51,35 +46,19 @@ public class GemmaVideo {
 
         int numFrames = Integer.getInteger("jinfer.video.frames", 16);
 
-        // 1. Sample the video -> Media.Video (timestamped frames). ffmpeg does the demux/decode.
-        Media.Video vid = VideoCodec.ffmpeg().uniform(video, numFrames);
-        Media.Image first = vid.frames().getFirst().image();
-        System.err.printf("sampled %d frames uniformly (%dx%d)%n",
-                vid.frames().size(), first.width(), first.height());
-
-        Gemma4 model = Gemma4.loadModel(textGguf, mmproj, Arena.ofAuto());   // frame tokens need headroom
-        TurnTemplate template = model.turnTemplate().orElseThrow();
-        Set<Integer> stops = model.stopTokens();
-
-        // 2. One user turn carrying the prompt + the whole Media.Video. encodeTurn expands it into
-        //    timestamped frame image-blocks and runs each frame through the vision encoder.
-        List<Batch> batches = new ArrayList<>(template.conversationStart());
-        batches.addAll(template.encodeTurn(Message.user(prompt, vid)));
-        batches.addAll(template.generationPrompt(false));
-
-        Gemma4.State state = model.newState(8192, 512);
-        int pos = 0;
-        for (Batch b : Batch.prepare(batches, 512)) { model.ingest(state, b); pos += b.count(); }
-        System.err.printf("prompt: %d positions%n", pos);
-
-        System.out.println("\n=== Gemma 4 describes the video ===");
-        int tok = model.logits(state).argmax();
-        for (int n = 0; n < 400 && !stops.contains(tok); n++) {
-            System.out.print(model.tokenizer().decode(new int[] {tok}));
-            System.out.flush();
-            model.ingest(state, Batch.step(tok));
-            tok = model.logits(state).argmax();
+        try (var model = JinferChatModel.builder()
+                .modelPath(textGguf)
+                .companion("media", mmproj)
+                .videoSampler(path -> VideoCodec.ffmpeg().uniform(path, numFrames))
+                .contextLength(8192)
+                .maxOutputTokens(400)
+                .thinking(false)
+                .build()) {
+            var message = UserMessage.from(
+                    TextContent.from(prompt), VideoContent.from(video.toUri()));
+            System.err.printf("sampling %d frames uniformly from %s%n", numFrames, video);
+            System.out.println("\n=== Gemma 4 describes the video ===");
+            System.out.println(model.chat(message).aiMessage().text());
         }
-        System.out.println();
     }
 }

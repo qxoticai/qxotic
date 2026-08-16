@@ -3,7 +3,7 @@
 //COMPILE_OPTIONS --enable-preview --release 25
 //RUNTIME_OPTIONS --enable-preview --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED -Xmx24g
 //REPOS mavenLocal,central
-//DEPS com.qxotic:jinfer-gemma4:0.1.0
+//DEPS com.qxotic:jinfer-xlangchain4j:0.1.0
 
 // Gemma 4 with MULTIPLE images in one prompt (per the docs: several image blocks per turn).
 // Each image becomes its own <|image>...<image|> soft-token span; the model reasons across all of them.
@@ -15,20 +15,15 @@
 //         ~/models/unsloth/gemma-4-12b-it-GGUF/mmproj-F32.gguf
 //   Defaults to E2B if no model paths are given.
 
-import com.qxotic.jinfer.Batch;
-import com.qxotic.jinfer.Media;
-import com.qxotic.jinfer.chat.Message;
-import com.qxotic.jinfer.chat.Part;
-import com.qxotic.jinfer.chat.Role;
-import com.qxotic.jinfer.chat.TurnTemplate;
-import com.qxotic.jinfer.media.ImageCodec;
-import com.qxotic.jinfer.models.gemma4.Gemma4;
+import com.qxotic.jinfer.langchain4j.JinferChatModel;
+import dev.langchain4j.data.message.Content;
+import dev.langchain4j.data.message.ImageContent;
+import dev.langchain4j.data.message.TextContent;
+import dev.langchain4j.data.message.UserMessage;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
-import java.lang.foreign.Arena;
 
 public class GemmaVisionMulti {
 
@@ -51,37 +46,25 @@ public class GemmaVisionMulti {
             end -= 2;
         }
 
-        Gemma4 model = Gemma4.loadModel(textGguf, mmproj, Arena.ofAuto());   // more context: many image tokens
-        TurnTemplate template = model.turnTemplate().orElseThrow();
-        Set<Integer> stops = model.stopTokens();
-
         // Build one user turn whose content interleaves the prompt text with N image parts.
-        // Message content is an ordered List<Part>: Text then a Blob per image.
-        List<Part> content = new ArrayList<>();
-        content.add(new Part.Text(prompt + "\n"));
+        List<Content> content = new ArrayList<>();
+        content.add(TextContent.from(prompt + "\n"));
         for (int i = 1; i < end; i++) {
-            Media.Image img = ImageCodec.load(Path.of(args[i]));
-            content.add(new Part.Text("Image " + i + ":\n"));
-            content.add(new Part.Blob(img));
-            System.err.printf("loaded image %d: %s (%dx%d)%n", i, args[i], img.width(), img.height());
+            Path image = Path.of(args[i]);
+            content.add(TextContent.from("Image " + i + ":\n"));
+            content.add(ImageContent.from(image.toUri()));
+            System.err.printf("loaded image %d: %s%n", i, image);
         }
-        Message turn = new Message(Role.USER, content);
 
-        List<Batch> batches = new ArrayList<>(template.conversationStart());
-        batches.addAll(template.encodeTurn(turn));           // encodes every image inline, in order
-        batches.addAll(template.generationPrompt(false));
-
-        Gemma4.State state = model.newState(8192, 512);
-        for (Batch b : Batch.prepare(batches, 512)) model.ingest(state, b);
-
-        System.out.println("\n=== Gemma 4 says ===");
-        int tok = model.logits(state).argmax();
-        for (int n = 0; n < 400 && !stops.contains(tok); n++) {
-            System.out.print(model.tokenizer().decode(new int[] {tok}));
-            System.out.flush();
-            model.ingest(state, Batch.step(tok));
-            tok = model.logits(state).argmax();
+        try (var model = JinferChatModel.builder()
+                .modelPath(textGguf)
+                .companion("media", mmproj)
+                .contextLength(8192)
+                .maxOutputTokens(400)
+                .thinking(false)
+                .build()) {
+            System.out.println("\n=== Gemma 4 says ===");
+            System.out.println(model.chat(UserMessage.from(content)).aiMessage().text());
         }
-        System.out.println();
     }
 }
