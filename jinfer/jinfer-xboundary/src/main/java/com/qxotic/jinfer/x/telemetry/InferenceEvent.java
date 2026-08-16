@@ -34,8 +34,8 @@ import jdk.jfr.Timespan;
  * <p>{@code prefillTime}/{@code decodeTime} are jinfer's own. Time per output token can be derived
  * from {@code decodeTime}; time to first token cannot, because it also includes cache restore,
  * prefill and first-token sampling, so chat records it explicitly. Zero is a true measurement
- * everywhere - an embedding runs no decode loop, so its {@code decodeTime} is genuinely zero
- * rather than "not applicable".
+ * everywhere - an embedding runs no decode loop, so its {@code decodeTime} is genuinely zero rather
+ * than "not applicable".
  *
  * <p>{@code gen_ai.provider.name} and {@code gen_ai.response.model} are deliberately absent: in
  * process they are constants, so an exporter adds them for free and every event would pay bytes to
@@ -129,7 +129,9 @@ public final class InferenceEvent extends Event {
     @Timespan(Timespan.NANOSECONDS)
     public long decodeTime;
 
-    /** From entering chat completion to the first sampled model token; zero when none was sampled. */
+    /**
+     * From entering chat completion to the first sampled model token; zero when none was sampled.
+     */
     @Label("Time to First Token")
     @Timespan(Timespan.NANOSECONDS)
     public long timeToFirstToken;

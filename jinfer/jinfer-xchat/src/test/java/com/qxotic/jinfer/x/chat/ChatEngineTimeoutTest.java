@@ -82,15 +82,18 @@ final class ChatEngineTimeoutTest {
     void ttftIsRecordedAtTheFirstPlainAndSpeculativeToken() throws Exception {
         ProbeModel model = new ProbeModel(() -> {});
         Path recordingPath = Files.createTempFile("jinfer-ttft", ".jfr");
-        try (ChatEngine engine = engine(model); Recording recording = new Recording()) {
+        try (ChatEngine engine = engine(model);
+                Recording recording = new Recording()) {
             recording.enable("jinfer.Inference");
             recording.start();
 
             engine.speculationDepth(0);
-            completeOneToken(engine, ignored -> {
-                sleep(Duration.ofMillis(2));
-                return 1;
-            });
+            completeOneToken(
+                    engine,
+                    ignored -> {
+                        sleep(Duration.ofMillis(2));
+                        return 1;
+                    });
             engine.speculationDepth(4);
             completeOneToken(engine, ignored -> 1);
 
@@ -111,7 +114,8 @@ final class ChatEngineTimeoutTest {
     void ttftIsZeroWhenNoTokenIsSampled() throws Exception {
         ProbeModel model = new ProbeModel(() -> {});
         Path recordingPath = Files.createTempFile("jinfer-no-ttft", ".jfr");
-        try (ChatEngine engine = engine(model); Recording recording = new Recording()) {
+        try (ChatEngine engine = engine(model);
+                Recording recording = new Recording()) {
             engine.speculationDepth(0);
             recording.enable("jinfer.Inference");
             recording.start();
