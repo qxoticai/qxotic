@@ -8,9 +8,8 @@ import java.lang.foreign.MemorySegment;
 import java.util.function.IntUnaryOperator;
 
 /**
- * Rotary position embeddings over views — ported byte-for-byte from jinfer-core {@code RoPE}.
- * Schedules are tensor-free and move unchanged; {@code fill}/{@code apply*} take dense FP32 views
- * (checked at entry).
+ * Rotary position embeddings over views. Schedules are memory-free; {@code fill}/{@code apply*}
+ * take dense FP32 views checked at entry.
  *
  * <pre>
  *                      schedule                          rotation

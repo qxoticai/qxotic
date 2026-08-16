@@ -16,7 +16,6 @@
   <description>Java LLM inference engine (multi-module)</description>
 
   <modules>
-    <module>jinfer-core</module>
     <module>jinfer-testkit</module>
     <module>jinfer-xcore</module>
     <module>jinfer-xkernels</module>
@@ -38,33 +37,14 @@
     <module>jinfer-xserver</module>
     <module>jinfer-xcli</module>
     <module>jinfer-xbench</module>
-    <module>jinfer-llm</module>
-    <module>jinfer-chat</module>
     <module>jinfer-hub</module>
     <module>jinfer-jinja</module>
-    <module>jinfer-kernels</module>
-    <module>jinfer-gemma4</module>
-    <module>jinfer-llama</module>
-    <module>jinfer-qwen35</module>
-    <module>jinfer-qwen3</module>
-    <module>jinfer-gptoss</module>
-    <module>jinfer-nemotronh</module>
-    <module>jinfer-lfm2</module>
-    <module>jinfer-server</module>
-    <module>jinfer-cli</module>
-    <module>jinfer-models-all</module>
-    <module>jinfer-langchain4j</module>
     <module>jinfer-xlangchain4j</module>
     <module>jinfer-xspring-ai</module>
     <module>jinfer-xspring-ai-autoconfigure</module>
     <module>jinfer-xspring-ai-spring-boot-starter</module>
-    <module>jinfer-spring-ai</module>
-    <module>jinfer-spring-ai-autoconfigure</module>
-    <module>jinfer-spring-ai-spring-boot-starter</module>
     <module>jinfer-example-judge-advisor</module>
     <module>jinfer-example-local-rag</module>
-    <module>jinfer-inflect2</module>
-    <module>jinfer-bench</module>
   </modules>
 
   <properties>
@@ -76,8 +56,8 @@
     <!-- Per-executable knobs for the shared shade + native-image config below. A module that ships a
          binary overrides jinfer.image.name/mainClass (and addModules, when it needs more than the
          Vector API); everything else inherits the defaults. -->
-    <jinfer.image.name>jinfer</jinfer.image.name>
-    <jinfer.image.mainClass>com.qxotic.jinfer.Main</jinfer.image.mainClass>
+    <jinfer.image.name>xjinfer</jinfer.image.name>
+    <jinfer.image.mainClass>com.qxotic.jinfer.x.cli.Main</jinfer.image.mainClass>
     <jinfer.image.addModules>jdk.incubator.vector</jinfer.image.addModules>
 
     <!-- native builder opt-in: wide 512-bit register tiles (needs a 32-ZMM Graal, GR-13757) -->
@@ -110,7 +90,7 @@
     <surefire.excludedGroups>integration,bench,driver</surefire.excludedGroups>
     <jinfer.preload />
 
-    <!-- the Spring AI backend modules (jinfer-spring-ai*) -->
+    <!-- the Spring AI backend modules -->
     <spring-ai.version>2.0.0</spring-ai.version>
     <spring-boot.version>4.1.0</spring-boot.version>
     <!-- observation test assertions; matches spring-ai-model's micrometer-observation -->
@@ -123,11 +103,6 @@
 
   <dependencyManagement>
     <dependencies>
-      <dependency>
-        <groupId>com.qxotic</groupId>
-        <artifactId>jinfer-core</artifactId>
-        <version>${project.version}</version>
-      </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-xcore</artifactId>
@@ -220,16 +195,6 @@
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
-        <artifactId>jinfer-llm</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>com.qxotic</groupId>
-        <artifactId>jinfer-chat</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>com.qxotic</groupId>
         <artifactId>jinfer-hub</artifactId>
         <version>${project.version}</version>
       </dependency>
@@ -240,25 +205,8 @@
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
-        <artifactId>jinfer-server</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>com.qxotic</groupId>
         <artifactId>jinfer-jinja</artifactId>
         <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>com.qxotic</groupId>
-        <artifactId>jinfer-kernels</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <!-- the testkit (ModelFixture & co.) shared by the backend modules' tests -->
-      <dependency>
-        <groupId>com.qxotic</groupId>
-        <artifactId>jinfer-kernels</artifactId>
-        <version>${project.version}</version>
-        <type>test-jar</type>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
@@ -267,70 +215,9 @@
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
-        <artifactId>jinfer-gemma4</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>com.qxotic</groupId>
-        <artifactId>jinfer-llama</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>com.qxotic</groupId>
-        <artifactId>jinfer-qwen35</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>com.qxotic</groupId>
-        <artifactId>jinfer-qwen3</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>com.qxotic</groupId>
-        <artifactId>jinfer-gptoss</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>com.qxotic</groupId>
-        <artifactId>jinfer-nemotronh</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>com.qxotic</groupId>
-        <artifactId>jinfer-lfm2</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>com.qxotic</groupId>
-        <artifactId>jinfer-models-all</artifactId>
-        <version>${project.version}</version>
-        <type>pom</type>
-      </dependency>
-      <dependency>
-        <groupId>com.qxotic</groupId>
         <artifactId>jinfer-xmodels-all</artifactId>
         <version>${project.version}</version>
         <type>pom</type>
-      </dependency>
-      <dependency>
-        <groupId>com.qxotic</groupId>
-        <artifactId>jinfer-inflect2</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>com.qxotic</groupId>
-        <artifactId>jinfer-spring-ai</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>com.qxotic</groupId>
-        <artifactId>jinfer-spring-ai-autoconfigure</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>com.qxotic</groupId>
-        <artifactId>jinfer-spring-ai-spring-boot-starter</artifactId>
-        <version>${project.version}</version>
       </dependency>
       <!-- enforcer pin for the Spring AI modules: jsonschema-generator pulls jackson-core
            3.0.3, spring-ai-model wants 3.1.4 (inert for every other module) -->
@@ -390,9 +277,8 @@
           <artifactId>maven-surefire-plugin</artifactId>
           <configuration>
             <!-- Every src/test class is JUnit; discovery scans all classes (non-@Test helpers are
-                 ignored). Unit tests + weights-free oracles run in every build (oracles skip via
-                 assumptions when their GGUF is absent); integration/bench/driver tags are opt-in -
-                 see surefire.excludedGroups above. -->
+                 ignored). Integration/bench/driver tags are opt-in; see surefire.excludedGroups
+                 above. -->
             <argLine>--add-modules jdk.incubator.vector,jdk.httpserver --enable-preview --enable-native-access=ALL-UNNAMED</argLine>
             <excludedGroups>${surefire.excludedGroups}</excludedGroups>
             <includes>
@@ -401,8 +287,7 @@
           </configuration>
         </plugin>
 
-        <!-- Shared by jinfer-cli and jinfer-bench: an executable fat jar, and (under -Pnative) the
-             native image built from it. Both differ only in the jinfer.image.* properties. -->
+        <!-- Shared executable fat-jar and native-image configuration. -->
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-shade-plugin</artifactId>
@@ -420,7 +305,7 @@
                     <mainClass>${jinfer.image.mainClass}</mainClass>
                     <manifestEntries>
                       <!-- jinfer maps weights with MemorySegment::reinterpret. Declaring it here
-                           means `java -jar jinfer.jar` is quiet: without it the JVM prints four
+                           means `java -jar xjinfer.jar` is quiet: without it the JVM prints four
                            restricted-method warnings that only the native-access flag silences,
                            and a user reading them cannot tell them from a real problem. -->
                       <Enable-Native-Access>ALL-UNNAMED</Enable-Native-Access>
@@ -483,7 +368,7 @@
                    live in the image heap (the daemon thread does not survive the build); LeakWatch
                    additionally because -Djinfer.leakDetection is a RUN-time flag that build-time
                    initialization would freeze to the builder's value. -->
-              <buildArg>--initialize-at-run-time=com.qxotic.jinfer.RuntimeFlags,com.qxotic.jinfer.Parallel,com.qxotic.jinfer.MatMul,com.qxotic.jinfer.Dispatch,com.qxotic.jinfer.JamMatMul,com.qxotic.jinfer.LeakWatch,com.qxotic.jinfer.LeakWatch$Holder,com.qxotic.jinfer.BaseState,com.qxotic.jinfer.cache.CacheStore,com.qxotic.jinfer.x.boundary.RuntimeFlags,com.qxotic.jinfer.x.boundary.LeakWatch,com.qxotic.jinfer.x.boundary.LeakWatch$Holder,com.qxotic.jinfer.x.boundary.ContextState,com.qxotic.jinfer.x.cache.CacheStore,com.qxotic.jinfer.x.kernels.MatMul,com.qxotic.jinfer.x.RuntimeFlags,com.qxotic.jinfer.x.Parallel,com.qxotic.jinfer.models.gemma4.VisionPreprocess,com.qxotic.jinfer.hub.Fetch,com.qxotic.jinfer.hub.Proxies,com.qxotic.jam.NativeJAM,com.qxotic.jam.NativeLoader</buildArg>
+              <buildArg>--initialize-at-run-time=com.qxotic.jinfer.x.boundary.RuntimeFlags,com.qxotic.jinfer.x.boundary.LeakWatch,com.qxotic.jinfer.x.boundary.LeakWatch$Holder,com.qxotic.jinfer.x.boundary.ContextState,com.qxotic.jinfer.x.cache.CacheStore,com.qxotic.jinfer.x.kernels.MatMul,com.qxotic.jinfer.x.RuntimeFlags,com.qxotic.jinfer.x.Parallel,com.qxotic.jinfer.x.models.gemma4.VisionPreprocess,com.qxotic.jinfer.hub.Fetch,com.qxotic.jinfer.hub.Proxies,com.qxotic.jam.NativeJAM,com.qxotic.jam.NativeLoader</buildArg>
               <!-- hub.Fetch/Proxies: an HttpClient cannot live in the image heap, and both read
                    JINFER_DOWNLOAD_THREADS and the proxy variables into statics - build-time init
                    would freeze the BUILD machine's environment into the binary. -->

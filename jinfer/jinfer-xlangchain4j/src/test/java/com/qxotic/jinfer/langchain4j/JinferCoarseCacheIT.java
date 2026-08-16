@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Tag;
 /**
  * {@link AbstractCoarseCacheIT} on Nemotron-H (Mamba2 hybrid: ~90MB SSM residue per block at 30B
  * dims). Model-gated (30B - slow to load). Run: {@code mvn test -Dsurefire.excludedGroups=
- * -Dgroups=integration -pl jinfer-langchain4j}
+ * -Dgroups=integration -pl jinfer-xlangchain4j}
  */
 @Tag("integration")
 class JinferCoarseCacheIT extends AbstractCoarseCacheIT {

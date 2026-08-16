@@ -12,11 +12,9 @@ import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.VectorSpecies;
 
 /**
- * Activation kernels over views — ported byte-for-byte from jinfer-core {@code Activations}: scalar
- * element-wise forms plus the fused whole-span ops. Span ops take dense FP32 views (checked at
- * entry); the old non-F32 scalar fallbacks are gone by contract. Scalar tails use the same {@code
- * tanhApprox} twin as the vector lanes, so a span applies one monotonic function across the
- * body/tail boundary.
+ * Scalar activation functions and fused whole-span operations over dense FP32 views. Scalar tails
+ * use the same {@code tanhApprox} twin as vector lanes, so a span applies one monotonic function
+ * across the body/tail boundary.
  */
 public final class Activations {
     private Activations() {}

@@ -28,17 +28,14 @@ import jdk.incubator.vector.ShortVector;
 import jdk.incubator.vector.VectorOperators;
 
 /**
- * Static, dtype-switched matmul over views — the migration of jinfer-core's {@code MatMul} trio
- * ({@code Dispatch} routing + {@code ScalarMatMul} floor) with the virtual {@code
- * FloatTensor.dot/gemm} seam replaced by per-dtype static arms whose dispatch is hoisted out of the
- * row loop.
+ * Static, dtype-switched matmul over views. Per-dtype dispatch is hoisted out of the row loop.
  *
  * <p>Contract: activations {@code a} and result {@code c} are dense FP32; weights {@code w} are
  * dense, dtype dispatched ({@code FP32}, {@code FP16}, {@code BF16} element-strided; every jota
  * block dtype — {@code Q8_0}, {@code MXFP4}, {@code Q4_0}, {@code Q4_1}, {@code Q5_1}, {@code
  * Q4_K}, {@code Q5_K}, {@code Q6_K}, {@code NVFP4}, {@code Q1_0}, {@code TQ1_0}, {@code TQ2_0} —
- * via block geometry). Offsets/strides are in ELEMENTS (weights: quant elements, block-aligned)
- * exactly as the old {@code MatMul.mm}.
+ * via block geometry). Offsets/strides are in ELEMENTS (weights: quant elements, block-aligned) and
+ * must be block-aligned.
  *
  * <p>Computes {@code C = W · Aᵀ}: for output row {@code s} and weight row {@code row}, {@code
  * C[s*cStride + cOff + row] = dot(W[row], A[s])}.

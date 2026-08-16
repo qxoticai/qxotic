@@ -1,7 +1,6 @@
 // Shared GGUF loading plumbing: parse metadata, memory-map tensors, and expose them as
 // MemoryView<MemorySegment> weights (one jota Memory over the READ_ONLY mmap, one view per
-// tensor). Ported from jinfer-kernels ModelLoader: FloatTensor.create + flat shapes become
-// typed views carrying real Shapes; unsupported dtypes fail at LOAD time, not inside a kernel.
+// tensor). Views carry real Shapes; unsupported dtypes fail at LOAD time, not inside a kernel.
 package com.qxotic.jinfer.x.kernels;
 
 import com.qxotic.format.gguf.GGUF;

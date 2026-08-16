@@ -1,5 +1,5 @@
-// Shared Mixture-of-Experts dispatch, ported from jinfer-kernels Moe: tensor params become
-// FP32-checked views; the gather is a raw row copy and the scatter-add x.Ops.saxpyInPlace.
+// Shared Mixture-of-Experts dispatch over FP32-checked views. Gather is a raw row copy and
+// scatter-add uses x.Ops.saxpyInPlace.
 // The router/gating (softmax/sigmoid, top-k, normalization) is a model's identity and stays
 // per-architecture; this owns only the architecture-independent plumbing: the CSR grouping of
 // tokens by routed expert, the gather, and the prob-weighted scatter-add. The per-expert FFN math

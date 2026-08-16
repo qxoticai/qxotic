@@ -24,10 +24,9 @@ import jdk.incubator.vector.VectorOperators;
 import jdk.incubator.vector.VectorSpecies;
 
 /**
- * Online-softmax accumulate and normalize over a head vector, plus the per-thread tile scratch —
- * ported byte-for-byte from jinfer-core {@code FlashAttention}. Tensor parameters become views:
- * Q/output are FP32-checked {@link Raw}s, K/V sources are {@link Src} (F32 or F16, the old {@code
- * instanceof F16FloatTensor} switch). Anything else falls back to scalar, as before.
+ * Online-softmax accumulation and normalization over a head vector, plus per-thread tile scratch.
+ * Q/output are FP32-checked {@link Raw}s; K/V sources are F32 or F16 {@link Src}s. Anything else
+ * falls back to scalar.
  */
 public final class FlashAttention {
 

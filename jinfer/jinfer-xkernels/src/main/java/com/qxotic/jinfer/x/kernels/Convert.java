@@ -25,11 +25,8 @@ import jdk.incubator.vector.ShortVector;
 import jdk.incubator.vector.VectorOperators;
 
 /**
- * Cross-dtype span converters over views, ported byte-for-byte from the jinfer-core tensor methods
- * they replace ({@code F16FloatTensor.f16ToF32Vector}/{@code copyRow}, the {@code copyTo}
- * per-element convert path, {@code Q8_0FloatTensor.getFloat}/{@code copyRow}). Faithful first:
- * F32→F16 stays scalar (the old path was a per-element {@code floatToFloat16}), Q8_0 dequant keeps
- * the one-scale-read-per-block structure of the old {@code copyRow}.
+ * Cross-dtype span converters over views. F32→F16 stays scalar; Q8_0 dequantization reads its scale
+ * once per block.
  */
 public final class Convert {
 
