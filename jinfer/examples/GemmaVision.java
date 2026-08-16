@@ -5,7 +5,7 @@
 // jinfer is a local (unpublished) build - install it to your ~/.m2 once, then jbang resolves it:
 //     cd jinfer && ./mvnw -q -DskipTests install
 //REPOS mavenLocal,central
-//DEPS com.qxotic:jinfer-gemma4:0.1.0
+//DEPS com.qxotic:jinfer-xlangchain4j:0.1.0
 
 // Gemma 4 vision (image -> text) through jinfer's multimodal chat API.
 // Same code runs on every Gemma 4 size - only the GGUF + mmproj paths change:
@@ -25,18 +25,12 @@
 // No native jam lib needed - it falls back to the Java Vector backend automatically (pass
 // -Djam.native.library.path=/path/to/libjam.so for full speed).
 
-import com.qxotic.jinfer.Batch;
-import com.qxotic.jinfer.Media;
-import com.qxotic.jinfer.chat.Message;
-import com.qxotic.jinfer.chat.TurnTemplate;
-import com.qxotic.jinfer.media.ImageCodec;
-import com.qxotic.jinfer.models.gemma4.Gemma4;
+import com.qxotic.jinfer.langchain4j.JinferChatModel;
+import dev.langchain4j.data.message.ImageContent;
+import dev.langchain4j.data.message.TextContent;
+import dev.langchain4j.data.message.UserMessage;
 
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Set;
-import java.lang.foreign.Arena;
 
 public class GemmaVision {
 
@@ -52,33 +46,18 @@ public class GemmaVision {
         Path textGguf = Path.of(args.length > 2 ? args[2] : MODELS + "gemma-4-E2B-it-Q8_0.gguf");
         Path mmproj   = Path.of(args.length > 3 ? args[3] : MODELS + "gemma-4-E2B-it-GGUF/mmproj-F32.gguf");
 
-        // 1. Load the text model WITH its vision projector. This is the whole multimodal setup.
-        Gemma4 model = Gemma4.loadModel(textGguf, mmproj, Arena.ofAuto());
-        TurnTemplate template = model.turnTemplate().orElseThrow();
-        Set<Integer> stops = model.stopTokens();
-
-        // 2. Decode the image to jinfer's universal RGB Media.Image (any format via ffmpeg/ImageIO).
-        Media.Image img = ImageCodec.load(image);
-        System.err.printf("image %dx%d, model %s%n", img.width(), img.height(), textGguf.getFileName());
-
-        // 3. Build the prompt: one user turn carrying text + the image. encodeTurn runs the vision
-        //    encoder and emits the image's soft-token embeddings inline - nothing else to wire.
-        List<Batch> batches = new ArrayList<>(template.conversationStart());
-        batches.addAll(template.encodeTurn(Message.user(prompt, img)));
-        batches.addAll(template.generationPrompt(false));   // false = answer directly (no <think>)
-
-        // 4. Ingest (prompt + image embeddings) and greedy-decode the reply.
-        Gemma4.State state = model.newState(4096, 512);
-        for (Batch b : Batch.prepare(batches, 512)) model.ingest(state, b);
-
-        System.out.println("\n=== Gemma 4 says ===");
-        int tok = model.logits(state).argmax();
-        for (int n = 0; n < 300 && !stops.contains(tok); n++) {
-            System.out.print(model.tokenizer().decode(new int[] {tok}));
-            System.out.flush();
-            model.ingest(state, Batch.step(tok));
-            tok = model.logits(state).argmax();
+        try (var model = JinferChatModel.builder()
+                .modelPath(textGguf)
+                .companion("media", mmproj)
+                .contextLength(4096)
+                .maxOutputTokens(300)
+                .thinking(false)
+                .build()) {
+            var message = UserMessage.from(
+                    TextContent.from(prompt), ImageContent.from(image.toUri()));
+            System.err.printf("image %s, model %s%n", image.getFileName(), textGguf.getFileName());
+            System.out.println("\n=== Gemma 4 says ===");
+            System.out.println(model.chat(message).aiMessage().text());
         }
-        System.out.println();
     }
 }

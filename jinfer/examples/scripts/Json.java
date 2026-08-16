@@ -3,7 +3,7 @@
 //COMPILE_OPTIONS --enable-preview --release 25
 //RUNTIME_OPTIONS --enable-preview --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED
 //REPOS mavenLocal,central
-//DEPS com.qxotic:jinfer-langchain4j:0.1.0
+//DEPS com.qxotic:jinfer-xlangchain4j:0.1.0
 //SOURCES Models.java
 
 // Structured output that CANNOT be malformed: a GBNF grammar constrains SAMPLING, so the model is

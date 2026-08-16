@@ -3,7 +3,8 @@
 //COMPILE_OPTIONS --enable-preview --release 25
 //RUNTIME_OPTIONS --enable-preview --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED -Xmx16g
 //REPOS mavenLocal,central
-//DEPS com.qxotic:jinfer-gemma4:0.1.0
+//DEPS com.qxotic:jinfer-xlangchain4j:0.1.0
+//DEPS com.qxotic:json:0.1.0
 //SOURCES Models.java
 
 // Object detection with boxes DRAWN, not printed. Gemma 4 returns normalized 0-1024 coordinates as
@@ -20,19 +21,16 @@
 // labelled both right and put the llama's box inside the mug). 12B places both correctly from the
 // same prompt and the same code. Pass a smaller GGUF explicitly if you want to see it fail:
 //     jbang Detect.java photo.jpg "a llama" ~/models/.../gemma-4-E2B-it-Q8_0.gguf ~/models/.../mmproj-F32.gguf
-import com.qxotic.jinfer.Batch;
-import com.qxotic.jinfer.Media;
-import com.qxotic.jinfer.chat.JsonCodec;
-import com.qxotic.jinfer.chat.Message;
-import com.qxotic.jinfer.media.ImageCodec;
-import com.qxotic.jinfer.models.gemma4.Gemma4;
+import com.qxotic.format.json.Json;
+import com.qxotic.jinfer.langchain4j.JinferChatModel;
+import dev.langchain4j.data.message.ImageContent;
+import dev.langchain4j.data.message.TextContent;
+import dev.langchain4j.data.message.UserMessage;
 
 import javax.imageio.ImageIO;
 import java.awt.*;
 import java.awt.image.BufferedImage;
-import java.lang.foreign.Arena;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -45,30 +43,22 @@ public class Detect {
         Path gguf   = Models.gemmaDetect(args, 2);
         Path mmproj = Models.gemmaDetectMmproj(args, 3);
 
-        var model = Gemma4.loadModel(gguf, mmproj, Arena.ofAuto());
-        var template = model.turnTemplate().orElseThrow();
-        Media.Image img = ImageCodec.load(image);
-
         String prompt = "Detect " + what + ". Output ONLY a JSON array, each element "
                 + "{\"label\": string, \"box_2d\": [ymin, xmin, ymax, xmax]} with coordinates "
                 + "normalized to 0-1024.";
 
-        List<Batch> batches = new ArrayList<>(template.conversationStart());
-        batches.addAll(template.encodeTurn(Message.user(prompt, img)));
-        batches.addAll(template.generationPrompt(false));
-
-        var state = model.newState(4096, 512);
-        for (Batch b : Batch.prepare(batches, 512)) model.ingest(state, b);
-
-        var stops = model.stopTokens();
-        var ids = new ArrayList<Integer>();
-        int tok = model.logits(state).argmax();
-        for (int n = 0; n < 512 && !stops.contains(tok); n++) {
-            ids.add(tok);
-            model.ingest(state, Batch.step(tok));
-            tok = model.logits(state).argmax();
+        String reply;
+        try (var model = JinferChatModel.builder()
+                .modelPath(gguf)
+                .companion("media", mmproj)
+                .contextLength(4096)
+                .maxOutputTokens(512)
+                .thinking(false)
+                .build()) {
+            var message = UserMessage.from(
+                    TextContent.from(prompt), ImageContent.from(image.toUri()));
+            reply = model.chat(message).aiMessage().text();
         }
-        String reply = model.tokenizer().decode(ids.stream().mapToInt(Integer::intValue).toArray());
         System.out.println(reply);
         draw(image, reply, Path.of("detected.png"));
     }
@@ -88,7 +78,7 @@ public class Detect {
         int from = json.indexOf('['), to = json.lastIndexOf(']');
         if (from < 0 || to < from) throw new IllegalStateException("no JSON array in reply:\n" + json);
         int found = 0;
-        for (Object element : (List<?>) JsonCodec.parse(json.substring(from, to + 1))) {
+        for (Object element : Json.parseList(json.substring(from, to + 1))) {
             if (!(element instanceof Map<?, ?> object)) continue;
             if (!(object.get("box_2d") instanceof List<?> box) || box.size() != 4) continue;
             String name = object.get("label") instanceof String s ? s : "?";

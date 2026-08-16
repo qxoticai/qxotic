@@ -5,7 +5,7 @@ Runnable equivalents of every snippet on
 `transformers`. One-time setup publishes jinfer to your local Maven repo so jbang can resolve it:
 
 ```bash
-cd .. && ./mvnw -q -DskipTests install     # installs com.qxotic:jinfer-gemma4 to ~/.m2
+cd .. && ./mvnw -q -DskipTests install     # installs com.qxotic:jinfer-xlangchain4j to ~/.m2
 ```
 
 Pass `-Djam.native.library.path=/path/to/libjam.so` for native-speed matmul (otherwise the Java
