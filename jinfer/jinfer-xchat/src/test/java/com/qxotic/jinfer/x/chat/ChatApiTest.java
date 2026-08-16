@@ -10,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.qxotic.jinfer.x.PanamaMemoryArena;
 import com.qxotic.jinfer.x.Views;
 import com.qxotic.jinfer.x.boundary.Batch;
+import com.qxotic.jinfer.x.boundary.ContentKey;
 import com.qxotic.jinfer.x.boundary.Media;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.StandardTokenType;
@@ -61,7 +62,7 @@ final class ChatApiTest {
     @Test
     void mediaRowsAreStreamedWithTheirKey() {
         List<Batch> batches = new ArrayList<>();
-        byte[] key = {1, 2, 3};
+        ContentKey key = new ContentKey("media:test");
         Media.Image image = new Media.Image(new float[] {0, 0, 0}, 1, 1, 3);
         try (Arena arena = Arena.ofConfined()) {
             PromptWriter writer = new PromptWriter(TOKENIZER, 2, batches::add);
@@ -78,14 +79,14 @@ final class ChatApiTest {
         assertEquals(3, batches.size());
         Batch.Input.Embeddings media =
                 assertInstanceOf(Batch.Input.Embeddings.class, batches.get(1).input());
-        assertArrayEquals(key, media.contentKey());
+        assertEquals(key, media.contentKey());
         assertTrue(media.bidirectional());
     }
 
     @Test
     void cachedMediaUsesOneFragmentPathAndTracesOnlyActualProjection() throws Exception {
         Media.Image image = image(2, 3, 3);
-        byte[] key = {1, 2, 3};
+        ContentKey key = new ContentKey("media:test");
         MediaEncodingCache cache = new MediaEncodingCache(1024);
         AtomicInteger projections = new AtomicInteger();
         Path recordingPath = Files.createTempFile("jinfer-media-cache", ".jfr");

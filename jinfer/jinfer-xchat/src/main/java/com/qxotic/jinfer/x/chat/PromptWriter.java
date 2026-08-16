@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.x.chat;
 
 import com.qxotic.jinfer.x.boundary.Batch;
+import com.qxotic.jinfer.x.boundary.ContentKey;
 import com.qxotic.jinfer.x.boundary.Media;
 import com.qxotic.jinfer.x.boundary.MediaProjector;
 import com.qxotic.jinfer.x.llm.SpecialTokens;
@@ -108,7 +109,7 @@ public final class PromptWriter {
      * {@link MediaProjector#project}), so a sink that defers ingestion must copy.
      */
     public <M extends Media> PromptWriter media(
-            M source, byte[] contentKey, MediaProjector<M> projector, boolean bidirectional) {
+            M source, ContentKey contentKey, MediaProjector<M> projector, boolean bidirectional) {
         checkOpen();
         Objects.requireNonNull(source, "source");
         Objects.requireNonNull(projector, "projector");
@@ -136,7 +137,7 @@ public final class PromptWriter {
      * fragment-scoped writer which this method finishes. The callback must neither retain nor
      * finish it. On a hit the recorded fragment is replayed and the callback is not invoked.
      */
-    public void cachedMedia(Media source, byte[] contentKey, Consumer<PromptWriter> encode) {
+    public void cachedMedia(Media source, ContentKey contentKey, Consumer<PromptWriter> encode) {
         checkOpen();
         Objects.requireNonNull(source, "source");
         Objects.requireNonNull(encode, "encode");

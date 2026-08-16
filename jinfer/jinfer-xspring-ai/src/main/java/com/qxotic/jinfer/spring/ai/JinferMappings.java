@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.spring.ai;
 
 import com.qxotic.format.json.Json;
+import com.qxotic.jinfer.x.boundary.ContentKey;
 import com.qxotic.jinfer.x.boundary.Media;
 import com.qxotic.jinfer.x.boundary.media.AudioCodec;
 import com.qxotic.jinfer.x.boundary.media.ImageCodec;
@@ -18,6 +19,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -78,11 +80,11 @@ final class JinferMappings {
             switch (kind) {
                 case "image" -> {
                     byte[] src = bytes(media);
-                    parts.add(blob(kind, sha256(src), () -> ImageCodec.decode(src)));
+                    parts.add(blob(kind, ContentKey.sha256(src), () -> ImageCodec.decode(src)));
                 }
                 case "audio" -> {
                     byte[] src = bytes(media);
-                    parts.add(blob(kind, sha256(src), () -> AudioCodec.decode(src)));
+                    parts.add(blob(kind, ContentKey.sha256(src), () -> AudioCodec.decode(src)));
                 }
                 case "video" -> {
                     Path src = localPath(media);
@@ -100,7 +102,7 @@ final class JinferMappings {
         Media decode() throws IOException;
     }
 
-    private static Content.Media blob(String kind, byte[] contentKey, MediaDecode decode) {
+    private static Content.Media blob(String kind, ContentKey contentKey, MediaDecode decode) {
         try {
             return new Content.Media(decode.decode(), contentKey);
         } catch (IOException e) {
@@ -109,27 +111,14 @@ final class JinferMappings {
     }
 
     /**
-     * The SOURCE digest that keys media caching deterministically (encoder rows drift an ulp while
-     * the JIT warms; the original bytes never do) - same law as the server wire. Video frames
-     * derive per-frame keys from this digest in the template.
-     */
-    private static byte[] sha256(byte[] source) {
-        try {
-            return MessageDigest.getInstance("SHA-256").digest(source);
-        } catch (NoSuchAlgorithmException e) {
-            throw new AssertionError(e);
-        }
-    }
-
-    /**
      * Streaming digest of a local file - videos should not be pulled onto the heap to be hashed.
      */
-    private static byte[] sha256(Path file) {
+    private static ContentKey sha256(Path file) {
         try (var in = Files.newInputStream(file)) {
             var md = MessageDigest.getInstance("SHA-256");
             byte[] buf = new byte[1 << 16];
             for (int n; (n = in.read(buf)) > 0; ) md.update(buf, 0, n);
-            return md.digest();
+            return new ContentKey("sha256:" + HexFormat.of().formatHex(md.digest()));
         } catch (IOException e) {
             throw new UncheckedIOException("failed to read " + file, e);
         } catch (NoSuchAlgorithmException e) {

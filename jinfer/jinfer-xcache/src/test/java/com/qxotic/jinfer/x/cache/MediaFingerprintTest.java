@@ -6,10 +6,10 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import com.qxotic.jinfer.x.PanamaMemoryArena;
 import com.qxotic.jinfer.x.Views;
 import com.qxotic.jinfer.x.boundary.Batch;
+import com.qxotic.jinfer.x.boundary.ContentKey;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
-import java.security.MessageDigest;
 import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -22,7 +22,7 @@ import org.junit.jupiter.api.Test;
  */
 final class MediaFingerprintTest {
 
-    private static Batch embeddings(Arena arena, byte[] key, float seed) {
+    private static Batch embeddings(Arena arena, ContentKey key, float seed) {
         MemoryView<MemorySegment> rows = Views.allocateF32(new PanamaMemoryArena(arena), 2, 4);
         float[] values = new float[8];
         for (int i = 0; i < values.length; i++) values[i] = seed + i;
@@ -31,15 +31,15 @@ final class MediaFingerprintTest {
     }
 
     @Test
-    void contentKeyedBatchesFingerprintByTheKeyNotTheRows() throws Exception {
-        byte[] key = MessageDigest.getInstance("SHA-256").digest(new byte[] {1, 2, 3});
+    void contentKeyedBatchesFingerprintByTheKeyNotTheRows() {
+        ContentKey key = new ContentKey("media:one");
         try (Arena arena = Arena.ofConfined()) {
             long[] a = CachedSession.fingerprints(List.of(embeddings(arena, key, 0.5f)));
             long[] b = CachedSession.fingerprints(List.of(embeddings(arena, key, 99.5f)));
             assertArrayEquals(
                     a, b, "same source key must fingerprint identically across row drift");
 
-            byte[] other = MessageDigest.getInstance("SHA-256").digest(new byte[] {9});
+            ContentKey other = new ContentKey("media:other");
             long[] c = CachedSession.fingerprints(List.of(embeddings(arena, other, 0.5f)));
             assertFalse(Arrays.equals(a, c), "a different source must fingerprint differently");
         }

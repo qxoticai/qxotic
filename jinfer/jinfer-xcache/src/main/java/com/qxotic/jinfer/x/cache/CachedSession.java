@@ -1,5 +1,7 @@
 package com.qxotic.jinfer.x.cache;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import com.qxotic.jinfer.x.boundary.Arenas;
 import com.qxotic.jinfer.x.boundary.Batch;
 import com.qxotic.jinfer.x.boundary.CheckpointCodec;
@@ -29,13 +31,11 @@ import java.util.function.BooleanSupplier;
  * fresh state; the caller re-ingests everything past {@link #position()}.
  *
  * <p>Media just works: an {@link Batch.Input.Embeddings} batch contributes per-position
- * fingerprints derived from a SHA-256 of its raw row bits, spread across positions ({@code digest[i
- * & 3] + GOLDEN * i}) so the full 256-bit content identity enters the chained block key — same
- * media, same encoder, same fingerprints; different media diverge at the block. {@link
- * Batch#prepare} keeps each embeddings batch isolated, so a bidirectional image block (one
- * attention group) commits as exactly one cache block. Note the fingerprints hash the ENCODED rows:
- * re-fingerprinting an echoed conversation needs either the retained stream ({@link
- * #fingerprints(List)}, the dual view) or a re-encode — servers keep the stream.
+ * fingerprints derived from its stable content key, or from a SHA-256 of its raw row bits when no
+ * key is supplied. The digest is spread across positions ({@code digest[i & 3] + GOLDEN * i}) so
+ * the full 256-bit identity enters the chained block key. {@link Batch#prepare} keeps each
+ * embeddings batch isolated, so a bidirectional image block (one attention group) commits as
+ * exactly one cache block.
  *
  * <p>{@code start} opens a brand-new conversation (ingest incrementally); {@code resume(model,
  * cache, state, prompt)} serves a prompt against the cache (longest cached prefix restored, the
@@ -172,12 +172,14 @@ public final class CachedSession<S extends ContextState> {
                     for (int id : t.ids()) fp[at++] = id;
                 }
                 case Batch.Input.Embeddings e -> {
-                    // SOURCE digest when the batch carries one (deterministic across a process's
-                    // whole life); the encoded-rows hash otherwise (exact but JIT-warmup drift
-                    // makes early passes differ - see Batch.embeddings' contentKey doc)
-                    byte[] key = e.contentKey(); // the accessor clones: read once
+                    // Stable source identity when supplied; encoded rows otherwise (exact, but
+                    // early JIT passes can drift - see Batch.embeddings' contentKey doc).
+                    var key = e.contentKey();
                     long[] digest =
-                            key != null && key.length == 32 ? Sha256.longs(key) : rowsDigest(e);
+                            key == null
+                                    ? rowsDigest(e)
+                                    : Sha256.longs(
+                                            Sha256.sha256().digest(key.value().getBytes(UTF_8)));
                     for (int i = 0; i < e.count(); i++) fp[at++] = digest[i & 3] + GOLDEN * i;
                 }
                 default ->

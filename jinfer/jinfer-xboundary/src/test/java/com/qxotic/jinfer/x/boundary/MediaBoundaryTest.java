@@ -1,6 +1,5 @@
 package com.qxotic.jinfer.x.boundary;
 
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -64,14 +63,13 @@ class MediaBoundaryTest {
     }
 
     @Test
-    void validatesDenseFp32EmbeddingRowsAndProtectsContentKey() {
+    void validatesDenseFp32EmbeddingRowsAndKeepsContentKey() {
         try (Arena arena = Arena.ofConfined()) {
             MemoryView<?> rows =
                     Views.allocateF32(new PanamaMemoryArena(arena), 12).view(Shape.flat(3, 4));
-            byte[] key = {1, 2, 3};
+            ContentKey key = new ContentKey("media:test");
             Batch.Input.Embeddings embeddings = new Batch.Input.Embeddings(rows, 3, true, key);
-            key[0] = 9;
-            assertArrayEquals(new byte[] {1, 2, 3}, embeddings.contentKey());
+            assertEquals(key, embeddings.contentKey());
 
             assertThrows(
                     IllegalArgumentException.class,

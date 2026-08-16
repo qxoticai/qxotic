@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.x.models.gemma4;
 
 import com.qxotic.jinfer.x.boundary.Batch;
+import com.qxotic.jinfer.x.boundary.ContentKey;
 import com.qxotic.jinfer.x.boundary.Media;
 import com.qxotic.jinfer.x.boundary.MediaProjector;
 import com.qxotic.jinfer.x.boundary.Multimodal;
@@ -361,7 +362,7 @@ public final class Gemma4ChatTemplate implements ChatTemplate {
     private <M extends Media> void writeMedia(
             PromptWriter out,
             M value,
-            byte[] contentKey,
+            ContentKey contentKey,
             Class<M> type,
             int open,
             int close,
