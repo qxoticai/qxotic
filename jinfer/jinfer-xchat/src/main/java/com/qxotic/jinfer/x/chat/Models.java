@@ -410,7 +410,7 @@ public final class Models {
      * A supplied tokenizer must cover the GGUF's exact token-id space: token ids index the
      * embedding table and the stop-token ids.
      */
-    private static void requireSameIdSpace(GGUF gguf, Tokenizer tokenizer) {
+    static void requireSameIdSpace(GGUF gguf, Tokenizer tokenizer) {
         if (!gguf.containsKey("tokenizer.ggml.tokens")) {
             return; // no vocabulary in the header: nothing checkable
         }

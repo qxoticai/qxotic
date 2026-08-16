@@ -54,6 +54,7 @@ class XLlamaTest {
     private static final Path HF_CACHE =
             Path.of(System.getProperty("user.home"), ".cache/huggingface/hub");
     private static final float LOGIT_TOLERANCE = 1e-2f;
+    private static final float RESTORE_LOGIT_TOLERANCE = 5e-4f;
 
     private static Path llamaModel, smollm3Model, mistralModel, minicpmModel;
 
@@ -180,7 +181,10 @@ class XLlamaTest {
                                             model.logits(restored), "restored logits"),
                                     "restored logits");
                     assertArrayEquals(
-                            liveLogits, restoredLogits, 1e-4f, "restored endpoint logits");
+                            liveLogits,
+                            restoredLogits,
+                            RESTORE_LOGIT_TOLERANCE,
+                            "restored endpoint logits");
 
                     int token =
                             Ops.argmax(

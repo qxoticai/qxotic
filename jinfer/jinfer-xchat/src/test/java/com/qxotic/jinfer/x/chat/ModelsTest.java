@@ -1,21 +1,27 @@
 package com.qxotic.jinfer.x.chat;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertIterableEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.format.gguf.Builder;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.x.boundary.ContentKey;
 import com.qxotic.jinfer.x.boundary.LanguageModel;
 import com.qxotic.toknroll.Tokenizer;
+import com.qxotic.toknroll.Vocabulary;
 import java.lang.foreign.Arena;
 import java.lang.reflect.Proxy;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -124,7 +130,37 @@ class ModelsTest {
         assertTrue(first.value().startsWith("sha256:"));
     }
 
+    @Test
+    void loadedModelKeepsStopTokenOrderAndOwnership() {
+        Set<Integer> source = new LinkedHashSet<>(List.of(5, 2, 9));
+        LoadedModel<?> loaded = loadedModel(ContentKey.sha256(new byte[] {0}), source);
+
+        source.add(4);
+        assertIterableEquals(List.of(5, 2, 9), loaded.stopTokens());
+        assertThrows(UnsupportedOperationException.class, () -> loaded.stopTokens().add(4));
+    }
+
+    @Test
+    void tokenizerOverrideMustKeepTheModelsIdSpace() {
+        GGUF gguf =
+                Builder.newBuilder()
+                        .putArrayOfString("tokenizer.ggml.tokens", new String[] {"a", "b"})
+                        .build();
+
+        assertDoesNotThrow(() -> Models.requireSameIdSpace(gguf, tokenizer(2)));
+        IllegalArgumentException failure =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> Models.requireSameIdSpace(gguf, tokenizer(1)));
+        assertTrue(failure.getMessage().contains("1 tokens"), failure.getMessage());
+        assertTrue(failure.getMessage().contains("2"), failure.getMessage());
+    }
+
     private static LoadedModel<?> loadedModel(ContentKey seed) {
+        return loadedModel(seed, Set.of());
+    }
+
+    private static LoadedModel<?> loadedModel(ContentKey seed, Set<Integer> stopTokens) {
         LanguageModel<?, ?, ?> model =
                 (LanguageModel<?, ?, ?>)
                         Proxy.newProxyInstance(
@@ -133,21 +169,33 @@ class ModelsTest {
                                 (proxy, method, args) -> {
                                     throw new UnsupportedOperationException();
                                 });
-        Tokenizer tokenizer =
-                (Tokenizer)
-                        Proxy.newProxyInstance(
-                                ModelsTest.class.getClassLoader(),
-                                new Class<?>[] {Tokenizer.class},
-                                (proxy, method, args) -> {
-                                    throw new UnsupportedOperationException();
-                                });
         return new LoadedModel<>(
                 model,
-                tokenizer,
+                tokenizer(0),
                 "",
-                Set.of(),
+                stopTokens,
                 seed,
                 Optional.empty(),
                 LoadedModel.SamplingDefaults.NONE);
+    }
+
+    private static Tokenizer tokenizer(int vocabularySize) {
+        Vocabulary vocabulary =
+                (Vocabulary)
+                        Proxy.newProxyInstance(
+                                ModelsTest.class.getClassLoader(),
+                                new Class<?>[] {Vocabulary.class},
+                                (proxy, method, args) -> {
+                                    if (method.getName().equals("size")) return vocabularySize;
+                                    throw new UnsupportedOperationException();
+                                });
+        return (Tokenizer)
+                Proxy.newProxyInstance(
+                        ModelsTest.class.getClassLoader(),
+                        new Class<?>[] {Tokenizer.class},
+                        (proxy, method, args) -> {
+                            if (method.getName().equals("vocabulary")) return vocabulary;
+                            throw new UnsupportedOperationException();
+                        });
     }
 }

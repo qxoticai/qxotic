@@ -24,8 +24,8 @@ public interface EmbeddingModel<C extends ContextConfiguration, W, S extends Con
      * <p>{@code outputIndex} is relative to the retained outputs and must be in {@code [0,
      * state.outputCount())}.
      *
-     * @implSpec Implementations must validate, project and invoke {@code consumer} synchronously
-     *     on the calling thread while holding {@link RuntimeState#exclusively(Runnable) exclusive
+     * @implSpec Implementations must validate, project and invoke {@code consumer} synchronously on
+     *     the calling thread while holding {@link RuntimeState#exclusively(Runnable) exclusive
      *     access}. The consumer's return ends the projected view's validity. Access must be
      *     released if projection or the consumer fails, and the model must remain strongly
      *     reachable until the call completes, normally through {@link

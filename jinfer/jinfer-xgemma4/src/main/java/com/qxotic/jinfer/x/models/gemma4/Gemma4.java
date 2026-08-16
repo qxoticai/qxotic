@@ -981,24 +981,9 @@ public final class Gemma4
         Objects.requireNonNull(arena, "arena");
         try (FileChannel channel = FileChannel.open(mmprojPath, StandardOpenOption.READ)) {
             GGUF gguf = ModelLoader.readGguf(channel, mmprojPath.toString());
+            validateMediaPairing(mmprojPath, gguf, configuration.embeddingLength);
             String visionType = gguf.getStringOrDefault("clip.vision.projector_type", "");
             String audioType = gguf.getStringOrDefault("clip.audio.projector_type", "");
-            if (visionType.isEmpty() && audioType.isEmpty())
-                throw new IllegalArgumentException(
-                        "'" + mmprojPath.getFileName() + "' carries no media projector");
-            int visionDim = gguf.getValueOrDefault(int.class, "clip.vision.projection_dim", 0);
-            int audioDim = gguf.getValueOrDefault(int.class, "clip.audio.projection_dim", 0);
-            if ((visionDim != 0 && visionDim != configuration.embeddingLength)
-                    || (audioDim != 0 && audioDim != configuration.embeddingLength))
-                throw new IllegalArgumentException(
-                        "'"
-                                + mmprojPath.getFileName()
-                                + "' projector dimensions [vision="
-                                + visionDim
-                                + ", audio="
-                                + audioDim
-                                + "] do not match model width "
-                                + configuration.embeddingLength);
             Map<String, MemoryView<MemorySegment>> tensors =
                     ModelLoader.loadTensors(channel, gguf, arena);
             MediaProjector<Media.Image> visionEncoder =
@@ -1030,6 +1015,29 @@ public final class Gemma4
                     };
             return new Gemma4(configuration, tokenizer, weights, visionEncoder, audioEncoder);
         }
+    }
+
+    /** Header-only pairing check: fail before mapping a sidecar's tensors. */
+    static void validateMediaPairing(Path path, GGUF gguf, int modelWidth) {
+        String visionType = gguf.getStringOrDefault("clip.vision.projector_type", "");
+        String audioType = gguf.getStringOrDefault("clip.audio.projector_type", "");
+        if (visionType.isEmpty() && audioType.isEmpty())
+            throw new IllegalArgumentException(
+                    "'" + path.getFileName() + "' carries no media projector");
+        int visionDim = gguf.getValueOrDefault(int.class, "clip.vision.projection_dim", 0);
+        int audioDim = gguf.getValueOrDefault(int.class, "clip.audio.projection_dim", 0);
+        if ((visionDim != 0 && visionDim != modelWidth)
+                || (audioDim != 0 && audioDim != modelWidth))
+            throw new IllegalArgumentException(
+                    "'"
+                            + path.getFileName()
+                            + "' projector dimensions [vision="
+                            + visionDim
+                            + ", audio="
+                            + audioDim
+                            + "] do not match model width "
+                            + modelWidth
+                            + "; use the projector for the same Gemma 4 size");
     }
 
     public static Gemma4 loadModel(FileChannel channel, GGUF gguf, Arena arena) throws IOException {
