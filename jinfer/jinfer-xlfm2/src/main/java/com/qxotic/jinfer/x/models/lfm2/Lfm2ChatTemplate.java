@@ -199,6 +199,7 @@ public final class Lfm2ChatTemplate implements ChatTemplate {
             throw new IllegalStateException("unsupported media after validation");
         byte[] contentKey = content.contentKey();
         out.cachedMedia(
+                image,
                 contentKey,
                 encoded -> {
                     Lfm2VisionPreprocess.Plan plan = vision.plan(image);

@@ -3,6 +3,7 @@ package com.qxotic.jinfer.x.chat;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -18,12 +19,19 @@ import com.qxotic.toknroll.Vocabulary;
 import java.lang.foreign.Arena;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.IntStream;
+import jdk.jfr.Recording;
+import jdk.jfr.consumer.RecordedEvent;
+import jdk.jfr.consumer.RecordingFile;
 import org.junit.jupiter.api.Test;
 
 final class ChatApiTest {
@@ -72,6 +80,147 @@ final class ChatApiTest {
                 assertInstanceOf(Batch.Input.Embeddings.class, batches.get(1).input());
         assertArrayEquals(key, media.contentKey());
         assertTrue(media.bidirectional());
+    }
+
+    @Test
+    void cachedMediaUsesOneFragmentPathAndTracesOnlyActualProjection() throws Exception {
+        Media.Image image = image(2, 3, 3);
+        byte[] key = {1, 2, 3};
+        MediaEncodingCache cache = new MediaEncodingCache(1024);
+        AtomicInteger projections = new AtomicInteger();
+        Path recordingPath = Files.createTempFile("jinfer-media-cache", ".jfr");
+
+        try (Recording recording = new Recording()) {
+            recording.enable("jinfer.MediaProjection");
+            recording.start();
+            for (int pass = 0; pass < 2; pass++) {
+                List<Batch> batches = new ArrayList<>();
+                PromptWriter outer = new PromptWriter(TOKENIZER, 32, cache, batches::add);
+                outer.text("before");
+                outer.cachedMedia(
+                        image,
+                        key,
+                        fragment -> {
+                            assertNotSame(outer, fragment);
+                            projections.incrementAndGet();
+                            sleep(Duration.ofMillis(2));
+                            fragment.id(ByteTokenizer.X);
+                        });
+                outer.text("after").finish();
+                assertArrayEquals(
+                        TOKENIZER.ids("before", ByteTokenizer.X, "after"),
+                        Batch.tokenIds(batches));
+            }
+            recording.stop();
+            recording.dump(recordingPath);
+        }
+
+        assertEquals(1, projections.get(), "a cache hit must not invoke the projector");
+        assertEquals(1, cache.sample().misses());
+        assertEquals(1, cache.sample().hits());
+        RecordedEvent event = event(recordingPath, "jinfer.MediaProjection", 0);
+        assertEquals("image", event.getString("modality"));
+        assertEquals(3, event.getInt("sourceWidth"));
+        assertEquals(2, event.getInt("sourceHeight"));
+        assertEquals(3, event.getInt("sourceChannels"));
+        assertEquals("", event.getString("errorType"));
+        assertTrue(event.getDuration().toNanos() > 0);
+        assertEquals(1, events(recordingPath, "jinfer.MediaProjection").size());
+    }
+
+    @Test
+    void uncachedMediaStillUsesAFreshAutoFinishedFragment() {
+        List<Batch> batches = new ArrayList<>();
+        PromptWriter outer = new PromptWriter(TOKENIZER, 32, batches::add);
+
+        outer.cachedMedia(
+                image(1, 1, 3),
+                null,
+                fragment -> {
+                    assertNotSame(outer, fragment);
+                    fragment.id(ByteTokenizer.X);
+                });
+        outer.finish();
+
+        assertArrayEquals(new int[] {ByteTokenizer.X}, Batch.tokenIds(batches));
+    }
+
+    @Test
+    void mediaProjectionReportsAudioAndSampledVideoSizes() throws Exception {
+        Media.Audio audio = new Media.Audio(new float[160_000], 16_000, 1);
+        Media.Image frame = image(2, 3, 3);
+        Media.Video video =
+                new Media.Video(
+                        IntStream.range(0, 10)
+                                .mapToObj(
+                                        i ->
+                                                new Media.Video.Frame(
+                                                        frame, Duration.ofSeconds(i)))
+                                .toList());
+        Media.Video mixed =
+                new Media.Video(
+                        List.of(
+                                new Media.Video.Frame(frame, Duration.ZERO),
+                                new Media.Video.Frame(
+                                        image(1, 1, 3), Duration.ofSeconds(1))));
+        Path recordingPath = Files.createTempFile("jinfer-media-sizes", ".jfr");
+
+        try (Recording recording = new Recording()) {
+            recording.enable("jinfer.MediaProjection");
+            recording.start();
+            projectEmpty(audio);
+            projectEmpty(video);
+            projectEmpty(mixed);
+            recording.stop();
+            recording.dump(recordingPath);
+        }
+
+        RecordedEvent audioEvent = event(recordingPath, "jinfer.MediaProjection", 0);
+        assertEquals("audio", audioEvent.getString("modality"));
+        assertEquals(1, audioEvent.getInt("sourceChannels"));
+        assertEquals(16_000, audioEvent.getInt("sourceSampleRate"));
+        assertEquals(Duration.ofSeconds(10).toNanos(), audioEvent.getLong("sourceDuration"));
+
+        RecordedEvent videoEvent = event(recordingPath, "jinfer.MediaProjection", 1);
+        assertEquals("video", videoEvent.getString("modality"));
+        assertEquals(10, videoEvent.getInt("sampledFrames"));
+        assertEquals(3, videoEvent.getInt("sourceWidth"));
+        assertEquals(2, videoEvent.getInt("sourceHeight"));
+        assertEquals(3, videoEvent.getInt("sourceChannels"));
+
+        RecordedEvent mixedEvent = event(recordingPath, "jinfer.MediaProjection", 2);
+        assertEquals(2, mixedEvent.getInt("sampledFrames"));
+        assertEquals(0, mixedEvent.getInt("sourceWidth"));
+        assertEquals(0, mixedEvent.getInt("sourceHeight"));
+        assertEquals(0, mixedEvent.getInt("sourceChannels"));
+    }
+
+    @Test
+    void mediaProjectionRecordsFailureWithoutChangingIt() throws Exception {
+        Path recordingPath = Files.createTempFile("jinfer-media-failure", ".jfr");
+        IllegalStateException failure = new IllegalStateException("projector failed");
+
+        try (Recording recording = new Recording()) {
+            recording.enable("jinfer.MediaProjection");
+            recording.start();
+            PromptWriter writer = new PromptWriter(TOKENIZER, 32, ignored -> {});
+            IllegalStateException thrown =
+                    assertThrows(
+                            IllegalStateException.class,
+                            () ->
+                                    writer.cachedMedia(
+                                            image(1, 1, 3),
+                                            null,
+                                            ignored -> {
+                                                throw failure;
+                                            }));
+            assertEquals(failure, thrown);
+            recording.stop();
+            recording.dump(recordingPath);
+        }
+
+        RecordedEvent event = event(recordingPath, "jinfer.MediaProjection", 0);
+        assertEquals("IllegalStateException", event.getString("errorType"));
     }
 
     @Test
@@ -126,6 +275,40 @@ final class ChatApiTest {
         assertThrows(IllegalStateException.class, () -> parser.seed(IntSequence.empty()));
         parser.finish();
         assertThrows(IllegalStateException.class, () -> parser.feed(ByteTokenizer.THINK_CLOSE));
+    }
+
+    private static Media.Image image(int height, int width, int channels) {
+        return new Media.Image(new float[height * width * channels], height, width, channels);
+    }
+
+    private static void projectEmpty(Media source) {
+        PromptWriter writer = new PromptWriter(TOKENIZER, 32, ignored -> {});
+        writer.cachedMedia(source, null, ignored -> {});
+        writer.finish();
+    }
+
+    private static RecordedEvent event(Path recording, String name, int index) throws Exception {
+        return events(recording, name).get(index);
+    }
+
+    private static List<RecordedEvent> events(Path recording, String name) throws Exception {
+        try (RecordingFile file = new RecordingFile(recording)) {
+            List<RecordedEvent> found = new ArrayList<>();
+            while (file.hasMoreEvents()) {
+                RecordedEvent event = file.readEvent();
+                if (event.getEventType().getName().equals(name)) found.add(event);
+            }
+            return found;
+        }
+    }
+
+    private static void sleep(Duration duration) {
+        try {
+            Thread.sleep(duration);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError(interrupted);
+        }
     }
 
     private static final class ByteTokenizer implements Tokenizer {

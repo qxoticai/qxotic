@@ -371,6 +371,7 @@ public final class Gemma4ChatTemplate implements ChatTemplate {
             throw new UnsupportedConversation(
                     type.getSimpleName().toLowerCase() + " input is not supported by this model");
         out.cachedMedia(
+                value,
                 contentKey,
                 encoded ->
                         encoded.id(open)
