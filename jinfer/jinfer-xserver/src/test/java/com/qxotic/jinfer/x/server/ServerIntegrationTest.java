@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import jdk.jfr.Recording;
+import jdk.jfr.consumer.RecordedEvent;
 import jdk.jfr.consumer.RecordingFile;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -243,15 +244,17 @@ class ServerIntegrationTest {
                             get(base(idle) + "/metrics").body(),
                             "jinfer_generations_completed_total"));
         }
-        int events = 0;
+        List<RecordedEvent> events = new ArrayList<>();
         try (RecordingFile recording = new RecordingFile(recordingFile)) {
             while (recording.hasMoreEvents()) {
-                if (recording.readEvent().getEventType().getName().equals("jinfer.Inference")) {
-                    events++;
-                }
+                RecordedEvent event = recording.readEvent();
+                if (event.getEventType().getName().equals("jinfer.Inference")) events.add(event);
             }
         }
-        assertEquals(1, events);
+        assertEquals(1, events.size());
+        RecordedEvent event = events.getFirst();
+        assertTrue(event.getLong("timeToFirstToken") > 0);
+        assertTrue(event.getLong("timeToFirstToken") <= event.getDuration().toNanos());
     }
 
     @Test

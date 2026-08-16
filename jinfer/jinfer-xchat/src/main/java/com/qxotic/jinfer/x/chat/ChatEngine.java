@@ -861,8 +861,9 @@ public final class ChatEngine implements AutoCloseable {
     public Completion complete(Prepared prepared, ReplySink out) {
         InferenceEvent event =
                 InferenceEvent.started(modelName, InferenceEvent.CHAT, InferenceEvent.TEXT);
+        long startedNanos = System.nanoTime();
         try {
-            Completion completion = complete0(prepared, out);
+            Completion completion = complete0(prepared, out, event, startedNanos);
             record(event, prepared, completion);
             return completion;
         } catch (RuntimeException | Error failure) {
@@ -910,7 +911,8 @@ public final class ChatEngine implements AutoCloseable {
         return total;
     }
 
-    private Completion complete0(Prepared prepared, ReplySink out) {
+    private Completion complete0(
+            Prepared prepared, ReplySink out, InferenceEvent event, long startedNanos) {
         ReplyParser parser = prepared.encoded().parser();
         // the raw lane: no parser, decoded text only (pre-encoded completions)
         PendingUtf8 pending = parser == null ? new PendingUtf8() : null;
@@ -929,8 +931,14 @@ public final class ChatEngine implements AutoCloseable {
                         });
         Generator.GenerationListener listener =
                 new Generator.GenerationListener() {
+                    private boolean first = true;
+
                     @Override
                     public boolean onToken(int token) {
+                        if (first) {
+                            first = false;
+                            event.timeToFirstToken = System.nanoTime() - startedNanos;
+                        }
                         if (out.cancelled()) return false;
                         if (parser == null) {
                             if (loaded.stopTokens().contains(token)) return true;
