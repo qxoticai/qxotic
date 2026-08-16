@@ -24,10 +24,14 @@ public class Json {
             ws   ::= " "*
             """;
 
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) {
         var text = args.length > 0 ? args[0]
                 : "Ada Lovelace, born 1815 in London, wrote the first algorithm.";
-        try (var model = JinferChatModel.builder().modelPath(Models.chat(args, 1)).build()) {
+        try (var model = JinferChatModel.builder()
+                .model(Models.chat(args, 1))
+                .maxOutputTokens(96)
+                .thinking(false)
+                .build()) {
             var request = ChatRequest.builder()
                     .messages(UserMessage.from("Extract the person as JSON:\n" + text))
                     .parameters(JinferChatRequestParameters.builder().grammar(GRAMMAR).build())

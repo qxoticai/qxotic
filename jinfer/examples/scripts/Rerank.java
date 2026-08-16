@@ -11,7 +11,9 @@
 //   jbang Rerank.java "what causes coffee bitterness?"
 import com.qxotic.jinfer.langchain4j.JinferScoringModel;
 import dev.langchain4j.data.segment.TextSegment;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 
 public class Rerank {
 
@@ -23,7 +25,7 @@ public class Rerank {
 
     public static void main(String[] args) {
         var query = args.length > 0 ? args[0] : "what causes coffee bitterness?";
-        try (var scorer = JinferScoringModel.builder().modelPath(Models.rerank(args, 1)).build()) {
+        try (var scorer = JinferScoringModel.builder().model(Models.rerank(args, 1)).build()) {
             var scores = scorer.scoreAll(DOCS.stream().map(TextSegment::from).toList(), query).content();
 
             record Hit(double score, String text) {}

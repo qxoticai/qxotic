@@ -9,20 +9,37 @@
 // Streaming chat, in-process. No server, no Python, no JNI glue.
 //   jbang Chat.java "Explain HTTP/3 in two sentences."
 import com.qxotic.jinfer.langchain4j.JinferChatModel;
-import dev.langchain4j.model.chat.response.*;
-import java.util.concurrent.CountDownLatch;
+import dev.langchain4j.model.chat.response.ChatResponse;
+import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
+import java.util.concurrent.CompletableFuture;
 
 public class Chat {
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) {
         var prompt = args.length > 0 ? args[0] : "Explain HTTP/3 in two sentences.";
-        try (var model = JinferChatModel.builder().modelPath(Models.chat(args, 1)).build()) {
-            var done = new CountDownLatch(1);
-            model.streaming().chat(prompt, new StreamingChatResponseHandler() {
-                public void onPartialResponse(String token) { System.out.print(token); System.out.flush(); }
-                public void onCompleteResponse(ChatResponse r) { System.out.println(); done.countDown(); }
-                public void onError(Throwable t) { t.printStackTrace(); done.countDown(); }
-            });
-            done.await();
+        try (var model = JinferChatModel.builder().model(Models.chat(args, 1)).build()) {
+            var done = new CompletableFuture<Void>();
+            model.streaming()
+                    .chat(
+                            prompt,
+                            new StreamingChatResponseHandler() {
+                                @Override
+                                public void onPartialResponse(String text) {
+                                    System.out.print(text);
+                                    System.out.flush();
+                                }
+
+                                @Override
+                                public void onCompleteResponse(ChatResponse response) {
+                                    System.out.println();
+                                    done.complete(null);
+                                }
+
+                                @Override
+                                public void onError(Throwable error) {
+                                    done.completeExceptionally(error);
+                                }
+                            });
+            done.join();
         }
     }
 }

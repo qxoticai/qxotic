@@ -11,7 +11,9 @@
 import com.qxotic.jinfer.langchain4j.JinferEmbeddingModel;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.store.embedding.CosineSimilarity;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 
 public class Search {
 
@@ -24,9 +26,9 @@ public class Search {
 
     public static void main(String[] args) {
         var query = args.length > 0 ? args[0] : "how do I make coffee?";
-        try (var embed = JinferEmbeddingModel.builder().modelPath(Models.embed(args, 1)).build()) {
-            var docs = embed.embedAll(DOCS.stream().map(TextSegment::from).toList()).content();
-            var q = embed.embed(query).content();
+        try (var embedder = JinferEmbeddingModel.builder().model(Models.embed(args, 1)).build()) {
+            var docs = embedder.embedAll(DOCS.stream().map(TextSegment::from).toList()).content();
+            var q = embedder.embed(query).content();
 
             record Hit(double score, String text) {}
             var hits = new ArrayList<Hit>();
@@ -38,5 +40,4 @@ public class Search {
             hits.forEach(h -> System.out.printf("  %.3f  %s%n", h.score(), h.text()));
         }
     }
-
 }

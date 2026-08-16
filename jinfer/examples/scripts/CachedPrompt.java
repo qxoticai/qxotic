@@ -6,18 +6,13 @@
 //DEPS com.qxotic:jinfer-xlangchain4j:0.1.0
 //SOURCES Models.java
 
-// A long system prompt is prefilled ONCE and its KV restored per request, instead of being
-// re-ingested every time. Output is byte-identical either way - this is a cost optimisation, not a
-// behaviour change.
-//
-// Both passes run warm and answer the same questions; the only difference is whether the shared
-// prefix is sent with each request or restored from the block tree.
+// A long system prompt is prefilled once and its KV restored per request. Each response reports
+// the restored token count, so the saving is visible without a misleading wall-clock benchmark.
 //   jbang CachedPrompt.java
 import com.qxotic.jinfer.langchain4j.JinferChatModel;
-import dev.langchain4j.data.message.ChatMessage;
+import com.qxotic.jinfer.langchain4j.JinferTokenUsage;
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
-import java.util.ArrayList;
 import java.util.List;
 
 public class CachedPrompt {
@@ -29,33 +24,22 @@ public class CachedPrompt {
     static final List<String> QUESTIONS =
             List.of("Do you sell decaf?", "What is a flat white?", "Is arabica bitter?");
 
-    public static void main(String[] args) throws Exception {
-        try (var base = JinferChatModel.builder().modelPath(Models.chat(args, 0)).build()) {
+    public static void main(String[] args) {
+        try (var base = JinferChatModel.builder()
+                .model(Models.chat(args, 0))
+                .maxOutputTokens(48)
+                .build()) {
             var cached = base.withCachedPrompt(List.of(SystemMessage.from(SYSTEM)), List.of());
-
-            for (int i = 0; i < 2; i++) { plain(base); cached.chat(QUESTIONS.get(0)); } // JIT warmup
-
-            var answers = new ArrayList<String>();
-            long uncached = time(() -> plain(base));
-            long withCache = time(() -> QUESTIONS.forEach(q -> answers.add(cached.chat(q))));
-
-            System.out.println("answer (identical either way): " + answers.get(0));
-            System.out.printf("%n%d questions over a %d-char system prompt:%n", QUESTIONS.size(), SYSTEM.length());
-            System.out.printf("  prefix sent every time : %5d ms%n", uncached);
-            System.out.printf("  prefix restored (cached): %5d ms   -> %.1fx%n",
-                    withCache, uncached / (double) Math.max(withCache, 1));
+            for (String question : QUESTIONS) {
+                var response = cached.chat(UserMessage.from(question));
+                var usage = (JinferTokenUsage) response.tokenUsage();
+                System.out.printf(
+                        "%s%n  %s%n  restored %,d of %,d prompt tokens%n%n",
+                        question,
+                        response.aiMessage().text(),
+                        usage.cachedInputTokens(),
+                        usage.inputTokenCount());
+            }
         }
-    }
-
-    /** The prefix travels with every request - what you do without caching. */
-    private static void plain(JinferChatModel model) {
-        for (String q : QUESTIONS)
-            model.chat(List.<ChatMessage>of(SystemMessage.from(SYSTEM), UserMessage.from(q)));
-    }
-
-    private static long time(Runnable r) {
-        long t0 = System.nanoTime();
-        r.run();
-        return (System.nanoTime() - t0) / 1_000_000;
     }
 }

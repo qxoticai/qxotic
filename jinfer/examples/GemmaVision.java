@@ -3,12 +3,13 @@
 //COMPILE_OPTIONS --enable-preview --release 25
 //RUNTIME_OPTIONS --enable-preview --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED -Xmx24g
 // jinfer is a local (unpublished) build - install it to your ~/.m2 once, then jbang resolves it:
-//     cd jinfer && ./mvnw -q -DskipTests install
+//     cd jinfer && mvn -q -DskipTests install
 //REPOS mavenLocal,central
 //DEPS com.qxotic:jinfer-xlangchain4j:0.1.0
+//SOURCES scripts/Models.java
 
 // Gemma 4 vision (image -> text) through jinfer's multimodal chat API.
-// Same code runs on every Gemma 4 size - only the GGUF + mmproj paths change:
+// Same code runs on every Gemma 4 size - only the model + mmproj references change:
 //
 //   E2B:  jbang GemmaVision.java cat.jpg "What is in this image?"
 //   E4B:  jbang GemmaVision.java cat.jpg "Describe it" \
@@ -34,28 +35,26 @@ import java.nio.file.Path;
 
 public class GemmaVision {
 
-    static final String MODELS = System.getenv().getOrDefault("JINFER_MODELS_UNSLOTH", System.getProperty("user.home") + "/models/unsloth/");
-
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) {
         if (args.length < 2) {
-            System.err.println("usage: GemmaVision <image> <prompt> [textGguf] [mmprojGguf]");
+            System.err.println("usage: GemmaVision <image> <prompt> [model] [mmproj]");
             System.exit(2);
         }
-        Path image  = Path.of(args[0]);
+        Path image = Path.of(args[0]);
         String prompt = args[1];
-        Path textGguf = Path.of(args.length > 2 ? args[2] : MODELS + "gemma-4-E2B-it-Q8_0.gguf");
-        Path mmproj   = Path.of(args.length > 3 ? args[3] : MODELS + "gemma-4-E2B-it-GGUF/mmproj-F32.gguf");
+        String modelRef = Models.gemma(args, 2);
+        String mediaRef = Models.gemmaMmproj(args, 3);
 
         try (var model = JinferChatModel.builder()
-                .modelPath(textGguf)
-                .companion("media", mmproj)
+                .model(modelRef)
+                .companion("media", mediaRef)
                 .contextLength(4096)
                 .maxOutputTokens(300)
                 .thinking(false)
                 .build()) {
             var message = UserMessage.from(
                     TextContent.from(prompt), ImageContent.from(image.toUri()));
-            System.err.printf("image %s, model %s%n", image.getFileName(), textGguf.getFileName());
+            System.err.printf("image: %s%nmodel: %s%n", image, modelRef);
             System.out.println("\n=== Gemma 4 says ===");
             System.out.println(model.chat(message).aiMessage().text());
         }

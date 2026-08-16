@@ -4,16 +4,18 @@
 //RUNTIME_OPTIONS --enable-preview --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED -Xmx24g
 //REPOS mavenLocal,central
 //DEPS com.qxotic:jinfer-xlangchain4j:0.1.0
+//SOURCES scripts/Models.java
 
 // Gemma 4 with MULTIPLE images in one prompt (per the docs: several image blocks per turn).
 // Each image becomes its own <|image>...<image|> soft-token span; the model reasons across all of them.
 //
-//   Install once:  cd jinfer && ./mvnw -q -DskipTests install
+//   Install once:  cd jinfer && mvn -q -DskipTests install
 //   Run (12B is worth it for cross-image reasoning):
 //     jbang GemmaVisionMulti.java "Which image has more animals, and by how many?" a.jpg b.jpg \
+//         -- \
 //         ~/models/unsloth/gemma-4-12b-it-GGUF/gemma-4-12b-it-Q8_0.gguf \
 //         ~/models/unsloth/gemma-4-12b-it-GGUF/mmproj-F32.gguf
-//   Defaults to E2B if no model paths are given.
+//   Defaults to E2B if no model references are given.
 
 import com.qxotic.jinfer.langchain4j.JinferChatModel;
 import dev.langchain4j.data.message.Content;
@@ -27,24 +29,18 @@ import java.util.List;
 
 public class GemmaVisionMulti {
 
-    static final String MODELS = System.getenv().getOrDefault("JINFER_MODELS_UNSLOTH", System.getProperty("user.home") + "/models/unsloth/");
-
-    public static void main(String[] args) throws Exception {
-        if (args.length < 3) {
-            System.err.println("usage: GemmaVisionMulti <prompt> <image1> <image2> [image3 ...] [textGguf mmprojGguf]");
+    public static void main(String[] args) {
+        int separator = List.of(args).indexOf("--");
+        if (args.length < 3 || (separator >= 0 && (separator < 3 || args.length != separator + 3))) {
+            System.err.println(
+                    "usage: GemmaVisionMulti <prompt> <image1> <image2> [image3 ...] [-- <model> <mmproj>]");
             System.exit(2);
         }
         String prompt = args[0];
 
-        // Trailing two args are the model paths if they end in .gguf; everything between is images.
-        int end = args.length;
-        Path textGguf = Path.of(MODELS + "gemma-4-E2B-it-Q8_0.gguf");
-        Path mmproj   = Path.of(MODELS + "gemma-4-E2B-it-GGUF/mmproj-F32.gguf");
-        if (end >= 3 && args[end - 1].endsWith(".gguf") && args[end - 2].endsWith(".gguf")) {
-            textGguf = Path.of(args[end - 2]);
-            mmproj   = Path.of(args[end - 1]);
-            end -= 2;
-        }
+        int end = separator < 0 ? args.length : separator;
+        String modelRef = separator < 0 ? Models.gemma(args, end) : args[separator + 1];
+        String mediaRef = separator < 0 ? Models.gemmaMmproj(args, end) : args[separator + 2];
 
         // Build one user turn whose content interleaves the prompt text with N image parts.
         List<Content> content = new ArrayList<>();
@@ -57,8 +53,8 @@ public class GemmaVisionMulti {
         }
 
         try (var model = JinferChatModel.builder()
-                .modelPath(textGguf)
-                .companion("media", mmproj)
+                .model(modelRef)
+                .companion("media", mediaRef)
                 .contextLength(8192)
                 .maxOutputTokens(400)
                 .thinking(false)
