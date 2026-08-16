@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/xsd/maven-4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
   <parent>
@@ -12,10 +12,10 @@
   <packaging>jar</packaging>
 
   <name>jinfer-xbench</name>
-  <description>A/B bench for the MemoryView ports: JinferBench's harness verbatim, driving both old
-    and x LFM2/Gemma 4 implementations behind one --impl flag, so old vs x pp/tg is measured by one
-    timing loop in one JVM. A consumer of both trees, not an x-module: the "x never deps on old"
-    rule does not apply here - comparing them is the whole point.</description>
+  <description>Benchmark harness for the x tree: llama-bench-parity pp/tg through the generic model
+    loader (any architecture on the classpath), plus engine-level capability metrics - TTFT,
+    prompt-cache hit latency, MTP acceptance, projected-media cold/warm, state allocation, peak
+    RSS.</description>
 
   <properties>
     <maven.deploy.skip>true</maven.deploy.skip>
@@ -32,8 +32,25 @@
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-xboundary</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-xcache</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-xllm</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-xchat</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
       <artifactId>jinfer-xkernels</artifactId>
     </dependency>
+    <!-- the ports, ServiceLoader-discovered by Models.load at runtime -->
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-xlfm2</artifactId>
@@ -46,21 +63,7 @@
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-xgemma4</artifactId>
     </dependency>
-    <!-- the old tree, benchmarked against the x port -->
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-lfm2</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-qwen3</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-gemma4</artifactId>
-    </dependency>
-    <!-- the native JAM backend BOTH trees route prefill gemm to (ServiceLoader-discovered);
-         the whole point of the A/B -->
+    <!-- the native JAM backend prefill gemm routes to (ServiceLoader-discovered) -->
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jam-native</artifactId>

@@ -1,22 +1,36 @@
 package com.qxotic.jinfer.x.bench;
 
 import com.qxotic.jinfer.x.Views;
+import com.qxotic.jinfer.x.boundary.Batch;
+import com.qxotic.jinfer.x.boundary.ContextState;
+import com.qxotic.jinfer.x.boundary.Multimodal;
+import com.qxotic.jinfer.x.boundary.media.ImageCodec;
+import com.qxotic.jinfer.x.cache.PromptCache;
+import com.qxotic.jinfer.x.chat.ChatEngine;
+import com.qxotic.jinfer.x.chat.Content;
+import com.qxotic.jinfer.x.chat.LoadedModel;
+import com.qxotic.jinfer.x.chat.Message;
+import com.qxotic.jinfer.x.chat.Models;
+import com.qxotic.jinfer.x.chat.Role;
+import com.qxotic.jinfer.x.llm.Sampler;
+import com.qxotic.jinfer.x.llm.Sampling;
 import java.io.PrintStream;
 import java.lang.foreign.Arena;
-import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ForkJoinPool;
 
 /**
- * A/B twin of {@code com.qxotic.jinfer.bench.JinferBench}: a llama-bench-parity harness (this
- * repo's {@code tools/llama-bench/llama-bench.cpp}) driving both LFM2 and Gemma 4 implementations
- * behind {@code --impl old,x} so old vs x is one timing loop in one JVM. The llama-bench approach,
- * point by point:
+ * A llama-bench-parity harness for the x tree, driving every port through the generic loader
+ * ({@link Models#load} - any architecture on the classpath runs, no per-model code). The
+ * llama-bench approach ({@code tools/llama-bench/llama-bench.cpp}), point by point:
  *
  * <ul>
  *   <li>pp512 / tg128 are SEPARATE tests, each with its own context sized exactly to the work
@@ -44,29 +58,44 @@ import java.util.concurrent.ForkJoinPool;
  * throughput settles within 3% over a window of 3, min {@code -w}, max 30) instead of llama-bench's
  * single warmup run - native code needs one pass, the JIT needs several; {@code --no-warmup} skips
  * it. Tokens are synthetic in-range ids, not real BOS/rand. Threadpool priority/polling ({@code
- * poll=50}) has no Java analog. Loading is direct ({@code loadModel}) on both sides and never
- * timed.
+ * poll=50}) has no Java analog. Loading is direct ({@code Models.load}) and never timed.
  *
- * <pre>jinfer-xbench -m model.gguf [--impl old,x] [-p 512] [-n 128] [-r 5] [-w 2] [--ctx N]</pre>
+ * <p>Beyond the parity tests, each model also gets a CAPABILITIES pass through {@link ChatEngine}
+ * (the layer where the machinery lives): time to first token, prompt-cache hit latency, MTP draft
+ * acceptance and net decode speedup (skipped when the model carries no draft head), and - with
+ * {@code --media <file>} and a vision port - projected-media cold versus warm latency. State
+ * allocation time and peak RSS (VmHWM) are reported per model.
+ *
+ * <pre>jinfer-xbench -m model.gguf [-m ...] [-p 512] [-n 128] [-r 5] [-w 2] [--ctx N]
+ *                  [--media image.png]</pre>
  */
 public final class XJinferBench {
 
     /**
      * Compute-graph width for prefill chunks - llama-bench's {@code -ub 512}. Pinned here rather
      * than inherited from {@code RuntimeFlags.BATCH_CAPACITY} so an ambient {@code
-     * -Djinfer.batchCapacity} cannot silently change what both sides measure.
+     * -Djinfer.batchCapacity} cannot silently change what is measured.
      */
     private static final int UBATCH = 512;
 
     public static void main(String[] args) throws Exception {
         List<String> models = new ArrayList<>();
-        List<String> impls = new ArrayList<>();
+        Map<String, Path> companions = new java.util.LinkedHashMap<>();
         int p = 512, n = 128, reps = 5, warmup = 2, ctx = 0, threads = 0;
         boolean noWarmup = false;
+        Path media = null;
         for (int i = 0; i < args.length; i++) {
             switch (args[i]) {
                 case "-m", "--model" -> models.add(args[++i]);
-                case "--impl" -> impls.addAll(List.of(args[++i].split(",")));
+                case "--with" -> {
+                    // xcli's convention: --with media=<mmproj.gguf> attaches a companion
+                    String[] kv = args[++i].split("=", 2);
+                    if (kv.length != 2) {
+                        System.err.println("--with expects capability=path, got: " + args[i]);
+                        System.exit(2);
+                    }
+                    companions.put(kv[0], Path.of(kv[1]));
+                }
                 case "-p", "--n-prompt" -> p = Integer.parseInt(args[++i]);
                 case "-n", "--n-gen" -> n = Integer.parseInt(args[++i]);
                 case "-r", "--repetitions" -> reps = Integer.parseInt(args[++i]);
@@ -74,6 +103,7 @@ public final class XJinferBench {
                 case "--no-warmup" -> noWarmup = true;
                 case "--ctx" -> ctx = Integer.parseInt(args[++i]);
                 case "-t", "--threads" -> threads = Integer.parseInt(args[++i]);
+                case "--media" -> media = Path.of(args[++i]);
                 case "-h", "--help" -> {
                     usage(System.out);
                     return;
@@ -89,17 +119,16 @@ public final class XJinferBench {
             usage(System.err);
             System.exit(2);
         }
-        if (impls.isEmpty()) impls = List.of("old", "x");
 
-        // THREAD PARITY, verbatim from JinferBench (both trees read the same
-        // jinfer.decodeThreads property and pin the same common pool).
         if (threads <= 0) threads = physicalCores();
         System.setProperty("jinfer.decodeThreads", Integer.toString(threads));
         System.setProperty(
                 "java.util.concurrent.ForkJoinPool.common.parallelism",
                 Integer.toString(Math.max(1, threads - 1))); // +1 for the submitting thread
         int prefillThreads = ForkJoinPool.commonPool().getParallelism() + 1;
-        int decodeThreads = com.qxotic.jinfer.RuntimeFlags.DECODE_THREADS;
+        // the x tree's OWN constant - the property is shared with legacy today, but this report
+        // must not depend on that coincidence
+        int decodeThreads = com.qxotic.jinfer.x.RuntimeFlags.DECODE_THREADS;
         System.err.printf(
                 "threads: prefill=%d decode=%d (requested %d)%n",
                 prefillThreads, decodeThreads, threads);
@@ -120,259 +149,96 @@ public final class XJinferBench {
         }
 
         List<Row> rows = new ArrayList<>();
+        List<CapRow> caps = new ArrayList<>();
         for (String path : models) {
-            for (String implName : impls) {
-                System.err.printf("loading %s impl=%s ...%n", path, implName);
-                BenchModel impl = load(Path.of(path), implName);
-                String name = name(path) + " [" + implName + "]";
-                // llama-bench: pp and tg are separate tests on separate contexts sized to the
-                // work (n_ctx = n_prompt resp. n_gen; --ctx overrides both).
-                if (p > 0)
-                    rows.add(
-                            measure(
-                                    impl,
-                                    name,
-                                    prefillThreads,
-                                    "pp" + p,
-                                    p,
-                                    true,
-                                    ctx != 0 ? ctx : p,
-                                    warmup,
-                                    reps,
-                                    noWarmup));
-                if (n > 0)
-                    rows.add(
-                            measure(
-                                    impl,
-                                    name,
-                                    decodeThreads,
-                                    "tg" + n,
-                                    n,
-                                    false,
-                                    ctx != 0 ? ctx : n,
-                                    warmup,
-                                    reps,
-                                    noWarmup));
-            }
+            System.err.printf("loading %s ...%n", path);
+            BenchModel<?> bench = BenchModel.open(Path.of(path), companions);
+            String name = name(path);
+            // llama-bench: pp and tg are separate tests on separate contexts sized to the work
+            // (n_ctx = n_prompt resp. n_gen; --ctx overrides both).
+            if (p > 0)
+                rows.add(
+                        measure(
+                                bench,
+                                name,
+                                prefillThreads,
+                                "pp" + p,
+                                p,
+                                true,
+                                ctx != 0 ? ctx : p,
+                                warmup,
+                                reps,
+                                noWarmup));
+            if (n > 0)
+                rows.add(
+                        measure(
+                                bench,
+                                name,
+                                decodeThreads,
+                                "tg" + n,
+                                n,
+                                false,
+                                ctx != 0 ? ctx : n,
+                                warmup,
+                                reps,
+                                noWarmup));
+            caps.add(capabilities(bench, name, p > 0 ? p : 512, Math.max(n, 16), media));
         }
         printTable(rows);
+        printCaps(caps);
     }
 
     /**
-     * One impl = load + the operations {@code runOnce} times, each a transliteration of what
-     * llama-bench's {@code test_prompt}/{@code test_gen} do on the llama.cpp context. One state per
-     * test, {@link #reset()} per pass - llama-bench's per-rep {@code llama_memory_clear}.
+     * The one model wrapper: whatever {@link Models#load} resolves, driven at the raw boundary
+     * (state/batch/logits) for the llama-bench-parity tests and through {@link ChatEngine} for the
+     * capability metrics. States are owned-arena, GC/Cleaner-freed - allocation never enters a
+     * timed region.
      */
-    private abstract static class BenchModel {
-        abstract int vocab();
+    private static final class BenchModel<S extends ContextState> {
+        final LoadedModel<S> loaded;
+        private S state;
 
-        abstract void newState(int ctx);
+        private BenchModel(LoadedModel<S> loaded) {
+            this.loaded = loaded;
+        }
+
+        @SuppressWarnings("unchecked")
+        static BenchModel<?> open(Path path, Map<String, Path> companions)
+                throws java.io.IOException {
+            return new BenchModel<>(
+                    (LoadedModel<ContextState>) Models.load(path, Arena.ofAuto(), companions));
+        }
+
+        int vocab() {
+            return loaded.model().configuration().vocabularySize();
+        }
+
+        /** Times the allocation; the caller reports it. */
+        long newState(int ctx) {
+            long t0 = System.nanoTime();
+            state = loaded.model().newState(ctx, UBATCH);
+            return System.nanoTime() - t0;
+        }
 
         /** llama_memory_clear: KV/conv state back to empty, same buffers. */
-        abstract void reset();
-
-        abstract void ingestPrefill(int[] prompt);
-
-        abstract void ingestStep(int tok);
-
-        abstract float logits0();
-    }
-
-    /** Old tree: exactly llama-bench's calls transliterated to a directly-loaded old Lfm2. */
-    private static final class OldBenchModel extends BenchModel {
-        private final com.qxotic.jinfer.models.lfm2.Lfm2 model;
-        private com.qxotic.jinfer.models.lfm2.Lfm2.State s;
-
-        OldBenchModel(Path path) throws Exception {
-            this.model = com.qxotic.jinfer.models.lfm2.Lfm2.loadModel(path, Arena.ofAuto());
-        }
-
-        @Override
-        int vocab() {
-            return model.config().vocabularySize();
-        }
-
-        @Override
-        void newState(int ctx) {
-            s = model.newState(ctx, UBATCH); // owned arena, GC/Cleaner-freed
-        }
-
-        @Override
         void reset() {
-            s.reset();
+            state.reset();
         }
 
-        @Override
         void ingestPrefill(int[] prompt) {
-            List<com.qxotic.jinfer.Batch> chunks =
-                    com.qxotic.jinfer.Batch.prepare(
-                            List.of(com.qxotic.jinfer.Batch.prefill(prompt)), s.batchCapacity());
-            for (com.qxotic.jinfer.Batch b : chunks) model.ingest(s, b);
-        }
-
-        @Override
-        void ingestStep(int tok) {
-            model.ingest(s, com.qxotic.jinfer.Batch.step(tok));
-        }
-
-        @Override
-        float logits0() {
-            return model.logits(s).getFloat(0);
-        }
-    }
-
-    /** X tree: the same calls transliterated to the x seam (manual chunking, safe entry points). */
-    private static final class XBenchModel extends BenchModel {
-        private final com.qxotic.jinfer.x.models.lfm2.Lfm2 model;
-        private com.qxotic.jinfer.x.models.lfm2.Lfm2.State s;
-
-        XBenchModel(Path path) throws Exception {
-            this.model = com.qxotic.jinfer.x.models.lfm2.Lfm2.loadModel(path, Arena.ofAuto());
-        }
-
-        @Override
-        int vocab() {
-            return model.configuration().vocabularySize();
-        }
-
-        @Override
-        void newState(int ctx) {
-            s = model.newState(ctx, UBATCH); // owned arena, GC/Cleaner-freed
-        }
-
-        @Override
-        void reset() {
-            s.reset();
-        }
-
-        @Override
-        void ingestPrefill(int[] prompt) {
-            for (com.qxotic.jinfer.x.boundary.Batch b :
-                    com.qxotic.jinfer.x.boundary.Batch.prepare(
-                            List.of(com.qxotic.jinfer.x.boundary.Batch.prefill(prompt)),
-                            s.batchCapacity())) {
-                model.ingest(s, b);
+            for (Batch b : Batch.prepare(List.of(Batch.prefill(prompt)), state.batchCapacity())) {
+                loaded.model().ingest(state, b);
             }
         }
 
-        @Override
         void ingestStep(int tok) {
-            model.ingest(s, com.qxotic.jinfer.x.boundary.Batch.step(tok));
+            loaded.model().ingest(state, Batch.step(tok));
         }
 
-        @Override
         float logits0() {
             return Views.getFloat(
-                    Views.castToSegmentBacked(model.logits(s), "logits"), 0, "logits");
+                    Views.castToSegmentBacked(loaded.model().logits(state), "logits"), 0, "logits");
         }
-    }
-
-    private static final class OldGemma4BenchModel extends BenchModel {
-        private final com.qxotic.jinfer.models.gemma4.Gemma4 model;
-        private com.qxotic.jinfer.models.gemma4.Gemma4.State s;
-
-        OldGemma4BenchModel(Path path) throws Exception {
-            this.model = com.qxotic.jinfer.models.gemma4.Gemma4.loadModel(path, Arena.ofAuto());
-        }
-
-        @Override
-        int vocab() {
-            return model.config().vocabularySize();
-        }
-
-        @Override
-        void newState(int ctx) {
-            s = model.newState(ctx, UBATCH);
-        }
-
-        @Override
-        void reset() {
-            s.reset();
-        }
-
-        @Override
-        void ingestPrefill(int[] prompt) {
-            for (com.qxotic.jinfer.Batch b :
-                    com.qxotic.jinfer.Batch.prepare(
-                            List.of(com.qxotic.jinfer.Batch.prefill(prompt)), s.batchCapacity())) {
-                model.ingest(s, b);
-            }
-        }
-
-        @Override
-        void ingestStep(int tok) {
-            model.ingest(s, com.qxotic.jinfer.Batch.step(tok));
-        }
-
-        @Override
-        float logits0() {
-            return model.logits(s).getFloat(0);
-        }
-    }
-
-    private static final class XGemma4BenchModel extends BenchModel {
-        private final com.qxotic.jinfer.x.models.gemma4.Gemma4 model;
-        private com.qxotic.jinfer.x.models.gemma4.Gemma4.State s;
-
-        XGemma4BenchModel(Path path) throws Exception {
-            this.model = com.qxotic.jinfer.x.models.gemma4.Gemma4.loadModel(path, Arena.ofAuto());
-        }
-
-        @Override
-        int vocab() {
-            return model.configuration().vocabularySize();
-        }
-
-        @Override
-        void newState(int ctx) {
-            s = model.newState(ctx, UBATCH);
-        }
-
-        @Override
-        void reset() {
-            s.reset();
-        }
-
-        @Override
-        void ingestPrefill(int[] prompt) {
-            for (com.qxotic.jinfer.x.boundary.Batch b :
-                    com.qxotic.jinfer.x.boundary.Batch.prepare(
-                            List.of(com.qxotic.jinfer.x.boundary.Batch.prefill(prompt)),
-                            s.batchCapacity())) {
-                model.ingest(s, b);
-            }
-        }
-
-        @Override
-        void ingestStep(int tok) {
-            model.ingest(s, com.qxotic.jinfer.x.boundary.Batch.step(tok));
-        }
-
-        @Override
-        float logits0() {
-            return Views.getFloat(
-                    Views.castToSegmentBacked(model.logits(s), "logits"), 0, "logits");
-        }
-    }
-
-    private static BenchModel load(Path path, String impl) throws Exception {
-        String architecture;
-        try (FileChannel channel = FileChannel.open(path, StandardOpenOption.READ)) {
-            architecture =
-                    com.qxotic.jinfer.x.kernels.ModelLoader.readGguf(channel, path.toString())
-                            .getString("general.architecture");
-        }
-        return switch (architecture + ":" + impl) {
-            case "lfm2:old", "lfm2moe:old" -> new OldBenchModel(path);
-            case "lfm2:x", "lfm2moe:x" -> new XBenchModel(path);
-            case "gemma4:old" -> new OldGemma4BenchModel(path);
-            case "gemma4:x" -> new XGemma4BenchModel(path);
-            default -> {
-                System.err.println("unsupported architecture/impl: " + architecture + ":" + impl);
-                System.exit(2);
-                throw new AssertionError();
-            }
-        };
     }
 
     /**
@@ -402,7 +268,7 @@ public final class XJinferBench {
      * reset()} - llama-bench's per-rep {@code llama_memory_clear}.
      */
     private static Row measure(
-            BenchModel model,
+            BenchModel<?> model,
             String name,
             int threads,
             String test,
@@ -455,7 +321,7 @@ public final class XJinferBench {
      * projection llama_decode computes for the last token of a batch / each step.
      */
     private static double runOnce(
-            BenchModel model, int[] prompt, int count, boolean prefill, int vocab) {
+            BenchModel<?> model, int[] prompt, int count, boolean prefill, int vocab) {
         model.reset(); // llama_memory_clear, outside the timed region
         if (prefill) {
             long t0 = System.nanoTime();
@@ -483,14 +349,180 @@ public final class XJinferBench {
         return (previous * 1103515245 + 12345 & 0x7fffffff) % vocab;
     }
 
-    /**
-     * Synthetic in-range token ids — throughput is content-independent, and tokenizer() isn't on
-     * the interface.
-     */
+    /** Synthetic in-range token ids - throughput is content-independent. */
     private static int[] fillerTokens(int vocab, int count) {
         int[] ids = new int[count];
         for (int i = 0; i < count; i++) ids[i] = (i * 17 + 1) % vocab;
         return ids;
+    }
+
+    // ---- capabilities: the engine-level metrics (cache, MTP, media live in ChatEngine) ----
+
+    private record CapRow(
+            String model,
+            String stateAllocMs,
+            String ttftMs,
+            String cacheHit,
+            String mtp,
+            String media,
+            String peakRssMb) {}
+
+    private static final Sampling GREEDY = new Sampling(0f, 1f, 0, 0f, null);
+
+    private static CapRow capabilities(
+            BenchModel<?> bench, String name, int promptLen, int gen, Path mediaPath)
+            throws Exception {
+        // state allocation, timed once on a capabilities-sized state (JIT-warm by now)
+        long allocNanos = bench.newState(promptLen + gen + 16);
+        String allocMs = String.format("%.1f", allocNanos / 1e6);
+
+        String ttft = "n/a", cache = "n/a", mtp = "no draft head", media = "n/a";
+        // two engines over ONE loaded model: the cached one and its no-cache control (cache-hit
+        // latency only means something against a full re-prefill of the same follow-up)
+        PromptCache.Options noCache =
+                PromptCache.Options.DEFAULTS.withRetainedSessions(0).withBlockBudget(0);
+        try (ChatEngine engine = new ChatEngine(bench.loaded, name, PromptCache.Options.DEFAULTS);
+                ChatEngine control = new ChatEngine(bench.loaded, name, noCache)) {
+            Sampler greedy = GREEDY.sampler(bench.vocab());
+            int[] prompt = fillerTokens(bench.vocab(), promptLen);
+
+            // TTFT: a cold request's promptTime is prefill + first-token projection
+            ChatEngine.Completion cold = complete(engine, prompt, greedy, gen);
+            ttft = String.format("%.1f", cold.result().promptTime().toNanos() / 1e6);
+
+            // cache hit: TURN 2 - the cache's session law is "the prompt strictly extends a
+            // retained stream", so the workload is prompt + reply + a small delta, never a
+            // repeated identical prompt (a single-batch prompt cannot full-hit by construction:
+            // resume stops one position short, the last token always recomputes)
+            int[] followUp = followUp(prompt, cold.result().tokens(), bench.vocab());
+            ChatEngine.Completion hit = complete(engine, followUp, greedy, gen);
+            if (hit.restoredTokens() > 0) {
+                ChatEngine.Completion full = complete(control, followUp, greedy, gen);
+                double hitMs = hit.result().promptTime().toNanos() / 1e6;
+                double fullMs = full.result().promptTime().toNanos() / 1e6;
+                cache =
+                        String.format(
+                                "%.1f vs %.1f (%.1fx, %d restored)",
+                                hitMs, fullMs, fullMs / hitMs, hit.restoredTokens());
+            }
+
+            // MTP: decode with and without the draft head; acceptance from the pass itself
+            if (engine.speculationReady()) {
+                engine.speculationDepth(0);
+                ChatEngine.Completion plain = complete(engine, prompt, greedy, gen);
+                engine.speculationDepth(4);
+                ChatEngine.Completion drafted = complete(engine, prompt, greedy, gen);
+                double plainTps = decodeTps(plain);
+                double mtpTps = decodeTps(drafted);
+                mtp =
+                        drafted.speculated()
+                                .map(
+                                        s ->
+                                                String.format(
+                                                        "%.0f%% accepted, %.2fx",
+                                                        100.0
+                                                                * s.accepted()
+                                                                / Math.max(1, s.drafted()),
+                                                        mtpTps / plainTps))
+                                .orElse("n/a");
+            }
+
+            // projected media, cold (encoder projection) vs warm (media-cache replay)
+            if (mediaPath != null
+                    && bench.loaded.model() instanceof Multimodal mm
+                    && mm.projector(com.qxotic.jinfer.x.boundary.Media.Image.class).isPresent()) {
+                byte[] bytes = Files.readAllBytes(mediaPath);
+                var image = ImageCodec.decode(bytes);
+                var request = mediaRequest(image, sha256(bytes), gen);
+                long coldMedia = promptNanos(engine, request);
+                long warmMedia = promptNanos(engine, request);
+                media = String.format("%.1f / %.1f", coldMedia / 1e6, warmMedia / 1e6);
+            }
+        }
+        long peak = peakRssBytes();
+        return new CapRow(
+                name,
+                allocMs,
+                ttft,
+                cache,
+                mtp,
+                media,
+                peak < 0 ? "n/a" : Long.toString(peak >> 20));
+    }
+
+    private static ChatEngine.Completion complete(
+            ChatEngine engine, int[] prompt, Sampler sampler, int gen) {
+        try (ChatEngine.Prepared prepared =
+                ChatEngine.Prepared.raw(prompt, sampler, gen, Duration.ZERO, List.of())) {
+            return engine.complete(prepared, ChatEngine.ReplySink.NONE);
+        }
+    }
+
+    /** Turn-2 prompt: the original prompt, the model's own reply, then a short new delta. */
+    private static int[] followUp(int[] prompt, int[] reply, int vocab) {
+        int[] out = Arrays.copyOf(prompt, prompt.length + reply.length + 8);
+        System.arraycopy(reply, 0, out, prompt.length, reply.length);
+        for (int i = prompt.length + reply.length; i < out.length; i++) {
+            out[i] = (i * 29 + 7) % vocab;
+        }
+        return out;
+    }
+
+    private static double decodeTps(ChatEngine.Completion c) {
+        return c.result().completionTokens() / (c.result().decodeTime().toNanos() / 1e9);
+    }
+
+    private static ChatEngine.Request mediaRequest(
+            com.qxotic.jinfer.x.boundary.Media.Image image, byte[] contentKey, int gen) {
+        return new ChatEngine.Request(
+                List.of(
+                        new Message(
+                                Role.USER,
+                                List.of(
+                                        new Content.Media(image, contentKey),
+                                        new Content.Text("Describe this image.", null)))),
+                List.of(),
+                false,
+                gen,
+                null,
+                Duration.ZERO,
+                GREEDY,
+                null,
+                null,
+                List.of(),
+                Map.of());
+    }
+
+    /** The request's prompt phase through the engine, in nanos (media projection lives there). */
+    private static long promptNanos(ChatEngine engine, ChatEngine.Request request) {
+        try (ChatEngine.Prepared prepared = engine.prepare(request)) {
+            return engine.complete(prepared, ChatEngine.ReplySink.NONE)
+                    .result()
+                    .promptTime()
+                    .toNanos();
+        }
+    }
+
+    private static byte[] sha256(byte[] source) {
+        try {
+            return MessageDigest.getInstance("SHA-256").digest(source);
+        } catch (NoSuchAlgorithmException e) {
+            throw new AssertionError(e);
+        }
+    }
+
+    /** Peak resident set (Linux VmHWM); -1 where /proc does not exist. */
+    private static long peakRssBytes() {
+        try {
+            for (String line : Files.readAllLines(Path.of("/proc/self/status"))) {
+                if (line.startsWith("VmHWM:")) {
+                    return Long.parseLong(line.substring(6).replace("kB", "").trim()) << 10;
+                }
+            }
+        } catch (Exception unreadable) {
+            // not Linux, or /proc restricted - reported as n/a
+        }
+        return -1;
     }
 
     private record Row(String model, int threads, String test, double mean, double stddev) {}
@@ -508,6 +540,38 @@ public final class XJinferBench {
                     r.threads,
                     r.test,
                     String.format("%.2f ± %.2f", r.mean, r.stddev));
+    }
+
+    private static void printCaps(List<CapRow> rows) {
+        String[] headers = {
+            "model", "state ms", "ttft ms", "cache hit ms", "mtp", "media cold/warm ms", "peak MB"
+        };
+        int[] w = new int[headers.length];
+        for (int i = 0; i < w.length; i++) w[i] = headers[i].length();
+        for (CapRow r : rows) {
+            String[] cells = {
+                r.model, r.stateAllocMs, r.ttftMs, r.cacheHit, r.mtp, r.media, r.peakRssMb
+            };
+            for (int i = 0; i < w.length; i++) w[i] = Math.max(w[i], cells[i].length());
+        }
+        StringBuilder fmt = new StringBuilder();
+        for (int width : w) fmt.append("| %-").append(width).append("s ");
+        fmt.append("|%n");
+        System.out.println();
+        System.out.printf(fmt.toString(), (Object[]) headers);
+        String[] rule = new String[w.length];
+        for (int i = 0; i < w.length; i++) rule[i] = "-".repeat(w[i]);
+        System.out.printf(fmt.toString(), (Object[]) rule);
+        for (CapRow r : rows)
+            System.out.printf(
+                    fmt.toString(),
+                    r.model,
+                    r.stateAllocMs,
+                    r.ttftMs,
+                    r.cacheHit,
+                    r.mtp,
+                    r.media,
+                    r.peakRssMb);
     }
 
     private static double mean(double[] a) {
@@ -529,11 +593,11 @@ public final class XJinferBench {
     private static void usage(PrintStream out) {
         out.println(
                 """
-                jinfer-xbench — llama-bench-parity harness A/B-ing old vs x ports
+                jinfer-xbench - llama-bench-parity harness for the x tree (generic loader)
 
                 usage: jinfer-xbench -m <model.gguf> [-m ...] [options]
-                  -m, --model <path>      LFM2 or Gemma 4 model to benchmark (repeatable)
-                      --impl <old,x>      which tree(s) to run (default old,x)
+                  -m, --model <path>      model to benchmark (repeatable; any architecture the
+                                          x tree loads)
                   -p, --n-prompt <N>      prefill tokens (default 512; 0 to skip pp)
                   -n, --n-gen <N>         decode tokens  (default 128; 0 to skip tg)
                   -r, --repetitions <N>   timed reps     (default 5)
@@ -541,7 +605,10 @@ public final class XJinferBench {
                       --no-warmup         skip warmup runs before benchmarking
                   -t, --threads <N>       pp and tg threads (default physical cores)
                       --ctx <N>           override context size for both tests
-                                          (default per test, as llama-bench: p for pp, n for tg)\
+                                          (default per test, as llama-bench: p for pp, n for tg)
+                      --media <path>      also benchmark projected-media cold vs warm latency
+                                          (needs a vision projector: --with media=<mmproj.gguf>)
+                      --with <cap=path>   attach a companion file (repeatable; xcli's convention)\
                 """);
     }
 }

@@ -31,9 +31,9 @@ import org.junit.jupiter.api.Test;
  * the same dot-based Java floor: the JAM backends are surefire-excluded). Two legs:
  * LFM2.5-2.6B-Q8_0 (fully dense) and LFM2.5-8B-A1B-Q8_0 (lfm2moe: 32 experts top-4, sigmoid gating
  * - the ONLY gate the x MoE path has). Floor-only on purpose: discrete top-k routing amplifies
- * backend-mix noise into argmax flips even when both trees are individually correct, so jam-on MoE
- * divergence is NOT a correctness signal (see XParityRun's javadoc). Skipped per leg when the
- * checkpoint is not cached.
+ * backend-mix noise into argmax flips even when both trees are individually correct - the
+ * divergence is symmetric (old-jam vs old-floor disagrees exactly as x-jam vs x-floor), so jam-on
+ * MoE divergence is NOT a correctness signal. Skipped per leg when the checkpoint is not cached.
  */
 class XLfm2Test {
 
