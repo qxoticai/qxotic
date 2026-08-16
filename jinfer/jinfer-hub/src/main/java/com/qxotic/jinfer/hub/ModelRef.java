@@ -35,8 +35,8 @@ import java.util.stream.Collectors;
  * else parse identically. What jinfer is willing to LOAD is a separate question, answered once in
  * {@link ModelStore}.
  */
-record ModelRef(
-        Host host, String owner, String repo, String revision, String location, String quant) {
+public record ModelRef(
+        String host, String owner, String repo, String revision, String path, String quant) {
 
     /**
      * A host jinfer can talk to as a repository. Both serve a repository the same way - {@code
@@ -112,10 +112,10 @@ record ModelRef(
      * The host {@code name} spells, or null. Each row declares its own spellings, so adding a host
      * is one enum constant; a leading {@code www.} is stripped by rule rather than enumerated,
      * covering every host's browser spelling at once. (The listing parser lives in {@code
-     * ModelStore}, where an exhaustive switch makes a row without one a compile error - this class
-     * stays pure grammar.)
+     * RepositorySource}, where an exhaustive switch makes a row without one a compile error - this
+     * class stays pure grammar.)
      */
-    private static Host host(String name) {
+    private static Host lookup(String name) {
         String canonical = name.toLowerCase(Locale.ROOT);
         if (canonical.startsWith("www.")) {
             canonical = canonical.substring("www.".length());
@@ -130,7 +130,7 @@ record ModelRef(
 
     /** Whether this is a host a ref may name - the first segment of every repository ref. */
     static boolean isKnownHost(String name) {
-        return host(name) != null;
+        return lookup(name) != null;
     }
 
     /** The canonical host names, for a message that has to list what jinfer knows. */
@@ -155,7 +155,8 @@ record ModelRef(
     /** The Hub view segments that carry a revision, so a pasted URL from any tab works. */
     private static final List<String> VIEWS = List.of("blob", "resolve", "tree", "raw");
 
-    ModelRef {
+    public ModelRef {
+        component(host, "host");
         component(owner, "owner");
         component(repo, "repository");
         if (revision != null) {
@@ -164,7 +165,7 @@ record ModelRef(
         if (quant != null) {
             component(quant, "quant");
         }
-        for (String segment : segments(location)) {
+        for (String segment : segments(path)) {
             component(segment, "path segment");
         }
     }
@@ -182,15 +183,15 @@ record ModelRef(
         }
         String rest = withoutScheme(candidate.strip());
         int slash = rest.indexOf('/');
-        return slash > 0 && host(rest.substring(0, slash)) != null;
+        return slash > 0 && lookup(rest.substring(0, slash)) != null;
     }
 
     /** Parses a ref, per the grammar in the class note. */
-    static ModelRef parse(String ref) {
+    public static ModelRef parse(String ref) {
         require(ref != null && !ref.isBlank(), "empty model ref");
         String rest = withoutScheme(stripQuery(ref.strip()));
         int slash = rest.indexOf('/');
-        Host host = slash > 0 ? host(rest.substring(0, slash)) : null;
+        Host host = slash > 0 ? lookup(rest.substring(0, slash)) : null;
         require(host != null, shape(ref));
         rest = rest.substring(slash + 1);
         while (rest.endsWith("/")) {
@@ -225,7 +226,7 @@ record ModelRef(
             }
             path = parts.subList(2, parts.size());
         }
-        return new ModelRef(host, owner, repo, revision, String.join("/", path), quant);
+        return new ModelRef(host.name, owner, repo, revision, String.join("/", path), quant);
     }
 
     private static String withoutScheme(String ref) {
@@ -285,9 +286,16 @@ record ModelRef(
                 what + " must be a single path component, not '" + value + "'");
     }
 
+    /** This ref's host as a protocol row, or null when the host names nothing jinfer ships. */
+    Host hostKind() {
+        return lookup(host);
+    }
+
     /** The revision this ref means, explicit or the host's own. */
     String revisionOrDefault() {
-        return revision == null ? host.defaultRevision : revision;
+        Host kind = hostKind();
+        require(kind != null, "unknown host: " + host);
+        return revision == null ? kind.defaultRevision : revision;
     }
 
     /** The quant this ref means. Null {@link #quant} also permits the single-file fallback. */
@@ -296,7 +304,7 @@ record ModelRef(
     }
 
     /** {@code owner/repo} - what an error should say when the file is not the point. */
-    String repoId() {
+    public String repoId() {
         return owner + "/" + repo;
     }
 
@@ -311,7 +319,9 @@ record ModelRef(
 
     /** The repository's web page, for a message that has to send someone to accept a licence. */
     String repoUrl() {
-        return host.base() + host.prefix + "/" + repoId();
+        Host kind = hostKind();
+        require(kind != null, "unknown host: " + host);
+        return kind.base() + kind.prefix + "/" + repoId();
     }
 
     /** The download URL of {@code file}, repository-relative (a 302 to a signed CDN URL). */
@@ -319,19 +329,19 @@ record ModelRef(
         return repoUrl() + "/resolve/" + revisionOrDefault() + "/" + file;
     }
 
-    /** {@code location} joined onto {@code file}, the repository-relative path of a listed file. */
-    String inLocation(String file) {
-        return location.isEmpty() ? file : location + "/" + file;
+    /** {@code path} joined onto {@code file}, the repository-relative path of a listed file. */
+    String inPath(String file) {
+        return path.isEmpty() ? file : path + "/" + file;
     }
 
     @Override
     public String toString() {
-        StringBuilder ref = new StringBuilder(host.name).append('/').append(repoId());
+        StringBuilder ref = new StringBuilder(host).append('/').append(repoId());
         if (revision != null) {
             ref.append('@').append(revision);
         }
-        if (!location.isEmpty()) {
-            ref.append('/').append(location);
+        if (!path.isEmpty()) {
+            ref.append('/').append(path);
         }
         if (quant != null) {
             ref.append(':').append(quant);

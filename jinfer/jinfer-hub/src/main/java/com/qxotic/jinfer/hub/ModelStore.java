@@ -1,20 +1,19 @@
 package com.qxotic.jinfer.hub;
 
-import com.qxotic.format.json.Json;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.lang.System.Logger.Level;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
@@ -30,27 +29,35 @@ import java.util.regex.Pattern;
  * injective and reversible, so a path tells you where it came from and a ref tells you where it
  * will land. It is also exactly the tree {@code scripts/download-models.sh} populates and the test
  * {@code ModelFixture} reads, so a checkout that has downloaded its fixtures is already a warm
- * cache. Flat and obvious on purpose: {@code ls} and {@code rm -rf} are the management commands,
- * which is why this module ships no {@code list} or {@code rm}.
+ * cache. Flat and obvious on purpose: {@code ls} and {@code rm -rf} are the management commands.
  *
- * <p>ONE exception, for sharing: with the DEFAULT root, an {@code hf.co} download is written into
- * the HuggingFace hub cache in its own layout ({@code models--owner--repo/blobs/<sha256>} plus a
- * {@code snapshots/<commit>} symlink), so the bytes are immediately visible to llama.cpp, {@code hf
- * download} and everything else that reads that layout - and theirs to us, which the read side
- * already did. An EXPLICIT root ({@code JINFER_MODELS} / {@code -Djinfer.models}) opts out: it says
- * "my cache lives here, all of it", and it is also the documented escape hatch for a full disk, so
- * nothing may leak elsewhere. ModelScope and plain URLs always use the flat layout - there is no
- * shared convention to join.
+ * <p>A store is an INSTANCE: {@link #standard()} for the ambient root ({@code -Djinfer.models} &gt;
+ * {@code $JINFER_MODELS} &gt; the platform's cache directory) with the two shipped sources, {@link
+ * #of} to build your own - a scratch root for a test, or a store with NO sources, which is the
+ * offline story made explicit: cache hits resolve, misses fail without touching the network. {@code
+ * standard()} builds fresh on every call, so a test that sets {@code jinfer.models} sees it.
  *
- * <p>Root: {@code -Djinfer.models} &gt; {@code $JINFER_MODELS} &gt; the platform's cache directory
- * ({@code $XDG_CACHE_HOME} or {@code ~/.cache} on Linux, {@code ~/Library/Caches} on macOS, {@code
- * %LOCALAPPDATA%} on Windows) plus {@code jinfer}. Platform-native rather than {@code ~/.cache}
- * everywhere, because a cache in the wrong place is one the operating system will not clean up and
- * the user will not find.
+ * <p>SOURCES are tried in the order they were given; the first that serves the ref wins. A source
+ * that fails (network down, repository answered "no") is not silently skipped: the fallback is
+ * logged at WARNING and the success of a non-primary source at INFO. Only a miss everywhere is an
+ * error, and it names every source that was tried and why it failed.
+ *
+ * <p>ONE exception to the flat layout, for sharing: with the DEFAULT root (by value - {@code
+ * of(standard().root())} keeps it), an {@code hf.co} download is written into the HuggingFace hub
+ * cache in its own layout, so the bytes are immediately visible to llama.cpp, {@code hf download}
+ * and everything else that reads that layout - and theirs to us, which the read side always does.
+ * An EXPLICIT root opts out: it says "my cache lives here, all of it", and it is also the
+ * documented escape hatch for a full disk, so nothing may leak elsewhere. ModelScope and plain URLs
+ * always use the flat layout - there is no shared convention to join.
  *
  * <p>Format policy lives HERE, not in the grammar. {@link ModelRef} parses any repository path;
  * this class knows that jinfer loads GGUF, and refuses a repository that ships none BEFORE any
  * bytes move rather than after a caller waits for twenty gigabytes.
+ *
+ * <p>READ-ONLY is a supported deployment: point {@code root} at a mounted, pre-populated cache.
+ * {@link #find}, {@link #cached} and cache hits through {@link #resolve} all work; a miss fails
+ * with "cache root is not writable"; {@link #evict} reports the filesystem's refusal. Sources are
+ * read-only too - no source ever writes into the store beyond the one path it was handed.
  *
  * <p>Nothing in the inference engine calls this. Resolution happens in a CLI, before {@code
  * Models.load}, so a Java caller that passes a path gets exactly that path and no library load ever
@@ -58,24 +65,48 @@ import java.util.regex.Pattern;
  */
 public final class ModelStore {
 
-    private ModelStore() {}
+    private static final System.Logger LOG = System.getLogger(ModelStore.class.getName());
+
+    private final Path root;
+    private final boolean hubShare;
+    private final List<ModelSource> sources;
+
+    private ModelStore(Path root, boolean hubShare, List<ModelSource> sources) {
+        this.root = root;
+        this.hubShare = hubShare;
+        this.sources = sources;
+    }
 
     /**
-     * A file as the repository lists it. {@code path} is REPOSITORY-RELATIVE, so it carries any
-     * subfolder; {@code sha256} is null when the host does not publish one.
+     * The ambient store: the root from {@code -Djinfer.models} / {@code $JINFER_MODELS} / the
+     * platform cache directory, with HuggingFace and ModelScope as sources. Built FRESH on every
+     * call - the ambient lookups (property, env) happen now, so a test that sets {@code
+     * jinfer.models} gets a store that honors it.
      */
-    record RepoFile(String path, long size, String sha256) {} // package-visible for the IT
+    public static ModelStore standard() {
+        return of(ambientRoot(), new HuggingFaceSource(), new ModelScopeSource());
+    }
 
-    /** A listing entry that is a directory: enough to tell a folder from a file. */
-    private record RepoDir(String path) {}
-
-    private static final Pattern SPLIT_PART =
-            Pattern.compile(".*-\\d{5}-of-\\d{5}\\.gguf$", Pattern.CASE_INSENSITIVE);
-
-    // ---- the cache root ----
+    /**
+     * A store over {@code root} fed by {@code sources}, in the order given. No sources means a
+     * store that can only serve what the root already holds - the offline deployment, without a
+     * flag. The hub-cache write-through applies when {@code root} IS the platform default by value,
+     * wherever the caller got it.
+     */
+    public static ModelStore of(Path root, ModelSource... sources) {
+        Objects.requireNonNull(root, "root");
+        Path normalized = root.toAbsolutePath().normalize();
+        boolean hubShare =
+                normalized.equals(platformCache().resolve("jinfer").toAbsolutePath().normalize());
+        return new ModelStore(normalized, hubShare, List.of(sources));
+    }
 
     /** Where downloads land, and the first place a ref is looked for. */
-    public static Path root() {
+    public Path root() {
+        return root;
+    }
+
+    static Path ambientRoot() {
         String property = System.getProperty("jinfer.models");
         if (property != null && !property.isBlank()) {
             return Path.of(property);
@@ -85,17 +116,6 @@ public final class ModelStore {
             return Path.of(env);
         }
         return platformCache().resolve("jinfer");
-    }
-
-    /**
-     * Whether {@code hf.co} downloads go into the shared HuggingFace hub cache. True only for the
-     * DEFAULT root: a caller who pointed the cache somewhere (a bigger disk, a test's temp
-     * directory) gets everything there and nothing anywhere else.
-     */
-    private static boolean sharedHubWrites() {
-        String property = System.getProperty("jinfer.models");
-        String env = System.getenv("JINFER_MODELS");
-        return (property == null || property.isBlank()) && (env == null || env.isBlank());
     }
 
     private static Path platformCache() {
@@ -154,11 +174,11 @@ public final class ModelStore {
      * A local path or a remote ref, told apart by ONE visible rule: a ref names its host,
      * everything else is a file on this machine. Nothing is inferred from the shape of the string
      * or from what happens to exist on disk, so the same argument means the same thing on every
-     * machine.
+     * machine. This is the only door that touches the network.
      */
-    public static Path resolve(String pathOrRef) {
+    public Path resolve(String pathOrRef) {
         if (ModelRef.isRef(pathOrRef)) {
-            return resolve(ModelRef.parse(pathOrRef)); // a repository we know how to talk to
+            return resolveRef(ModelRef.parse(pathOrRef)); // a repository a source may talk to
         }
         if (ModelRef.hostOfUrl(pathOrRef) != null) {
             return url(pathOrRef); // any other URL: bytes, and nothing else
@@ -178,9 +198,9 @@ public final class ModelStore {
      */
     // ponytail: no dedup, no aggregate progress bar (concurrent downloads print named lines, see
     // Fetch.Progress), no shared disk-space budget. Add each when someone actually hits it.
-    public static List<Path> resolveAll(List<String> pathOrRefs) {
+    public List<Path> resolveAll(List<String> pathOrRefs) {
         if (pathOrRefs.size() <= 1 || Fetch.oneAtATime()) {
-            return pathOrRefs.stream().map(ModelStore::resolve).toList();
+            return pathOrRefs.stream().map(this::resolve).toList();
         }
         // ponytail: at most 4 files in flight (x up to 8 chunk connections each, see
         // JINFER_DOWNLOAD_THREADS). A fixed constant, not a knob - add the env var when a real
@@ -220,7 +240,7 @@ public final class ModelStore {
      * used VERBATIM for the request - a query may be a signature - while the cache path is derived
      * from the path portion alone.
      */
-    private static Path url(String url) {
+    private Path url(String url) {
         URI uri;
         try {
             uri = URI.create(url);
@@ -237,7 +257,7 @@ public final class ModelStore {
                 !path.isEmpty() && !path.endsWith("/") && !nameOf(path).isEmpty(),
                 "the URL must end in the file name, so the cache has something to call it: " + url);
 
-        Path dest = root().resolve(uri.getHost());
+        Path dest = root.resolve(uri.getHost());
         for (String segment : path.split("/")) {
             if (!segment.isEmpty()) {
                 require(
@@ -252,8 +272,9 @@ public final class ModelStore {
         Map<String, String> headers = Map.of("User-Agent", "jinfer-hub");
         long size = Fetch.sizeOf(url, headers);
         requireOnlineFor(url, dest);
+        requireWritable(dest);
         requireDiskSpace(dest, Fetch.remainingBytes(dest, size));
-        tagCacheDirectory(root());
+        tagCacheDirectory(root);
         Fetch.announce(
                 "download "
                         + uri.getHost()
@@ -277,7 +298,7 @@ public final class ModelStore {
      * refused: they carry no checksum, so finding one in the cache would vouch for bytes nothing
      * verified.
      */
-    public static Optional<Path> find(String pathOrRef) {
+    public Optional<Path> find(String pathOrRef) {
         if (ModelRef.isRef(pathOrRef)) {
             try {
                 return Optional.ofNullable(cachedFile(ModelRef.parse(pathOrRef)));
@@ -315,17 +336,16 @@ public final class ModelStore {
      * well have been jinfer itself. Only {@code .gguf} files: that cache also holds every tokenizer
      * and config the Python stack ever fetched, none of which is a {@code --model}.
      */
-    public static List<Cached> cached() {
+    public List<Cached> cached() {
         List<Cached> all = new ArrayList<>(ownCached());
-        all.addAll(huggingFaceCached(huggingFaceCache()));
+        all.addAll(Hub.cached(Hub.cache()));
         return all.stream().distinct().sorted(Comparator.comparing(Cached::ref)).toList();
     }
 
     /** One cache entry: the ref (or path) to ask for it again, and its size on disk. */
     public record Cached(String ref, long sizeBytes) {}
 
-    private static List<Cached> ownCached() {
-        Path root = root();
+    private List<Cached> ownCached() {
         if (!Files.isDirectory(root)) {
             return List.of();
         }
@@ -340,79 +360,12 @@ public final class ModelStore {
         }
     }
 
-    /** GGUFs in the hub cache's CURRENT snapshots, as refs. Package-visible for its test. */
-    static List<Cached> huggingFaceCached(Path hubCache) {
-        if (!Files.isDirectory(hubCache)) {
-            return List.of();
-        }
-        List<Cached> refs = new ArrayList<>();
-        try (var repos = Files.list(hubCache)) {
-            for (Path repo : repos.filter(Files::isDirectory).toList()) {
-                String folder = repo.getFileName().toString();
-                int cut = folder.indexOf("--", "models--".length());
-                if (!folder.startsWith("models--") || cut < 0) {
-                    continue;
-                }
-                String repoId =
-                        folder.substring("models--".length(), cut)
-                                + "/"
-                                + folder.substring(cut + 2);
-                String commit = currentCommit(repo);
-                Path snapshot = commit == null ? null : repo.resolve("snapshots").resolve(commit);
-                if (snapshot == null || !Files.isDirectory(snapshot)) {
-                    continue;
-                }
-                try (var walk = Files.walk(snapshot)) {
-                    for (Path file :
-                            walk.filter(Files::isRegularFile) // a broken symlink cannot resolve
-                                    .filter(p -> isGguf(p.getFileName().toString()))
-                                    .sorted()
-                                    .toList()) {
-                        StringBuilder ref = new StringBuilder("hf.co/").append(repoId);
-                        for (Path segment : snapshot.relativize(file)) {
-                            ref.append('/').append(segment);
-                        }
-                        refs.add(new Cached(ref.toString(), sizeOf(file)));
-                    }
-                }
-            }
-        } catch (IOException e) {
-            throw new UncheckedIOException(
-                    "could not read the HuggingFace hub cache at " + hubCache + ": " + e, e);
-        }
-        return refs;
-    }
-
-    private static long sizeOf(Path file) {
+    static long sizeOf(Path file) {
         try {
             return Files.size(file);
         } catch (IOException unreadable) {
             return 0; // a size the filesystem will not state is not worth failing a listing over
         }
-    }
-
-    /** The commit a repo's {@code refs/} names right now: {@code main} first, any branch else. */
-    private static String currentCommit(Path repo) throws IOException {
-        Path refs = repo.resolve("refs");
-        if (!Files.isDirectory(refs)) {
-            return null;
-        }
-        String fallback = null;
-        try (var entries = Files.list(refs)) {
-            for (Path entry : entries.filter(Files::isRegularFile).sorted().toList()) {
-                String commit = Files.readString(entry, StandardCharsets.UTF_8).strip();
-                if (!isCommit(commit)) {
-                    continue;
-                }
-                if (entry.getFileName().toString().equals("main")) {
-                    return commit;
-                }
-                if (fallback == null) {
-                    fallback = commit;
-                }
-            }
-        }
-        return fallback;
     }
 
     /** A ref when the first segment is a host we know, else the absolute path. Never a guess. */
@@ -446,7 +399,7 @@ public final class ModelStore {
      * the same name needs one way to say "fetch it again". A ref pinned to a commit never needs
      * this, because a commit is immutable.
      */
-    public static boolean evict(String pathOrRef) {
+    public boolean evict(String pathOrRef) {
         if (!ModelRef.isRef(pathOrRef)) {
             return false; // a file you passed by path is yours; this cache never deletes it
         }
@@ -456,62 +409,21 @@ public final class ModelStore {
             if (cached == null) {
                 return false;
             }
-            if (cached.toAbsolutePath().startsWith(root().toAbsolutePath())) {
+            if (cached.toAbsolutePath().startsWith(root)) {
                 return Files.deleteIfExists(cached); // our flat cache: the file is the entry
             }
             // the shared hub cache: jinfer writes there too now, so it may also remove there -
             // but only THIS entry, and its blob only once nothing else in the repo links it.
             // Everything beyond that belongs to other snapshots and other tools.
-            Path hub = huggingFaceCache().toAbsolutePath().normalize();
-            if (ref.host() == ModelRef.Host.HF
+            Path hub = Hub.cache().toAbsolutePath().normalize();
+            if (ref.host().equals(ModelRef.Host.HF.name)
                     && cached.toAbsolutePath().normalize().startsWith(hub)) {
-                return evictHub(cached);
+                return Hub.evict(cached);
             }
             return false;
         } catch (IOException e) {
             throw new UncheckedIOException("could not evict " + ref + ": " + e, e);
         }
-    }
-
-    /**
-     * Removes one snapshot entry from the hub cache, and its blob when this was the last snapshot
-     * linking it - the same care llama.cpp takes, because a blob may serve many snapshots.
-     * Package-visible for its test.
-     */
-    static boolean evictHub(Path cached) throws IOException {
-        Path blob =
-                Files.isSymbolicLink(cached)
-                        ? cached.getParent()
-                                .resolve(Files.readSymbolicLink(cached))
-                                .toAbsolutePath()
-                                .normalize()
-                        : null;
-        boolean removed = Files.deleteIfExists(cached);
-        if (removed && blob != null && Files.isRegularFile(blob) && !referenced(blob)) {
-            Files.deleteIfExists(blob);
-        }
-        return removed;
-    }
-
-    /** Whether any snapshot entry in the blob's repository still links {@code blob}. */
-    private static boolean referenced(Path blob) throws IOException {
-        Path snapshots = blob.getParent().getParent().resolve("snapshots");
-        if (!Files.isDirectory(snapshots)) {
-            return false;
-        }
-        try (var walk = Files.walk(snapshots)) {
-            for (Path entry : walk.toList()) {
-                if (Files.isSymbolicLink(entry)
-                        && entry.getParent()
-                                .resolve(Files.readSymbolicLink(entry))
-                                .toAbsolutePath()
-                                .normalize()
-                                .equals(blob)) {
-                    return true;
-                }
-            }
-        }
-        return false;
     }
 
     /**
@@ -556,47 +468,126 @@ public final class ModelStore {
 
     // ---- resolution ----
 
-    /** The cached file for {@code ref}, downloading it when absent. */
-    static Path resolve(ModelRef ref) {
+    /** The cached file for {@code ref}, fetching it from the first source that can. */
+    private Path resolveRef(ModelRef ref) {
         try {
             Path cached = cachedFile(ref);
             if (cached != null) {
                 return cached;
             }
-            // before the LISTING, not just the download: offline means no request at all
-            requireOnline(ref, folderDir(ref));
-            return fetch(ref, select(ref));
         } catch (IOException e) {
             // the cause carries the only actionable part (refused proxy, DNS, TLS, timeout)
             throw new UncheckedIOException("could not resolve " + ref + ": " + e, e);
         }
+        // before the LISTING, not just the download: offline means no request at all
+        requireOnline(ref, folderDir(ref));
+        List<ModelSource> serving = sources.stream().filter(s -> s.supports(ref)).toList();
+        if (serving.isEmpty()) {
+            throw new UncheckedIOException(
+                    new IOException(
+                            ref
+                                    + " is not cached, and no source in this store serves "
+                                    + ref.host()
+                                    + (sources.isEmpty()
+                                            ? " (this store was built with no sources -"
+                                                    + " ModelStore.of(root) is the offline store)"
+                                            : "")));
+        }
+        List<String> failures = new ArrayList<>();
+        for (ModelSource source : serving) {
+            try {
+                Path path = fetchPipeline(ref, source);
+                if (source != serving.get(0)) {
+                    LOG.log(Level.INFO, "{0} resolved by {1}", ref, source);
+                }
+                return path;
+            } catch (IllegalArgumentException e) {
+                if (!(e.getCause() instanceof Fetch.HttpStatusException)) {
+                    throw e; // the REF is at fault: selection, grammar, format policy
+                }
+                failures.add(source + ": " + e.getMessage());
+                LOG.log(Level.WARNING, "{0} could not serve {1}: {2}", source, ref, e.getMessage());
+            } catch (IOException e) {
+                failures.add(source + ": " + e.getMessage());
+                LOG.log(Level.WARNING, "{0} could not serve {1}: {2}", source, ref, e.getMessage());
+            }
+        }
+        throw new UncheckedIOException(
+                "could not resolve " + ref + ": " + String.join("; ", failures),
+                new IOException("all sources failed"));
+    }
+
+    private Path fetchPipeline(ModelRef ref, ModelSource source) throws IOException {
+        RemoteFile file = select(ref, source);
+        if (SPLIT_PART.matcher(file.path()).matches()) {
+            throw new UnsupportedOperationException(
+                    nameOf(file.path())
+                            + " is one part of a split GGUF, which jinfer cannot load. Merge the"
+                            + " parts first with llama.cpp's llama-gguf-split --merge, or pick a"
+                            + " quant that fits in one file.");
+        }
+        if (hubShare && ref.host().equals(ModelRef.Host.HF.name) && Hub.isSha256(file.sha256())) {
+            String commit = Hub.commit(ref);
+            if (commit != null) {
+                return Hub.fetchInto(ref, file, commit, Hub.cache());
+            }
+            // no commit means no snapshot directory to link under; the flat layout still works
+        }
+        Path dest = pathOf(ref, file.path());
+        requireWritable(dest);
+        requireDiskSpace(dest, Fetch.remainingBytes(dest, file.sizeBytes()));
+        tagCacheDirectory(root);
+        Fetch.announce("download " + ref.host() + "/" + ref.repoId() + "/" + file.path());
+        source.fetch(ref, file, dest);
+        return dest;
     }
 
     /**
-     * The one file {@code ref} selects, from the repository listing.
+     * A store rooted on a read-only mount still serves every cache hit; a MISS is where the write
+     * would happen, and that is refused by name rather than as the staging error the source would
+     * surface.
+     */
+    private void requireWritable(Path dest) {
+        Path dir = dest.getParent();
+        while (dir != null && !Files.exists(dir)) {
+            dir = dir.getParent();
+        }
+        if (dir == null || !Files.isWritable(dir)) {
+            throw new UncheckedIOException(new IOException("cache root is not writable: " + root));
+        }
+    }
+
+    /**
+     * The one file {@code ref} selects, from the source's listing.
      *
      * <p>The listing - never a file extension - decides whether the ref's path names a file or a
      * folder, which is what keeps the grammar free of formats: {@code .safetensors} and a folder
-     * called {@code Qwen2.5} both work without a special case.
+     * called {@code Qwen2.5} both work without a special case. The parent is listed first; if the
+     * path's last segment is not a FILE there, the path is treated as a folder and listed - a
+     * failure or an empty answer means the path names nothing, and the parent's contents make the
+     * menu.
      */
-    static RepoFile select(ModelRef ref) throws IOException {
-        String folder = ref.location();
-        if (!folder.isEmpty()) {
-            String parent = parentOf(folder);
-            String last = nameOf(folder);
-            List<RepoFile> files = listFiles(ref, parent);
-            for (RepoFile file : files) {
+    RemoteFile select(ModelRef ref, ModelSource source) throws IOException {
+        String location = ref.path();
+        if (!location.isEmpty()) {
+            String parent = parentOf(location);
+            String last = nameOf(location);
+            List<RemoteFile> siblings = source.list(ref, parent);
+            for (RemoteFile file : siblings) {
                 if (nameOf(file.path()).equals(last)) {
                     require(
                             ref.quant() == null,
-                            ref.location()
+                            location
                                     + " already names a file, so ':"
                                     + ref.quant()
                                     + "' has nothing to choose - drop one of them");
                     return file;
                 }
             }
-            if (!hasDirectory(ref, parent, last)) {
+            List<RemoteFile> inside;
+            try {
+                inside = source.list(ref, location);
+            } catch (IOException | IllegalArgumentException notAFolder) {
                 throw new IllegalArgumentException(
                         "no '"
                                 + last
@@ -604,18 +595,29 @@ public final class ModelStore {
                                 + ref.repoId()
                                 + (parent.isEmpty() ? "" : "/" + parent)
                                 + ". Contains: "
-                                + names(files));
+                                + names(siblings));
             }
+            if (inside.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "no '"
+                                + last
+                                + "' in "
+                                + ref.repoId()
+                                + (parent.isEmpty() ? "" : "/" + parent)
+                                + ". Contains: "
+                                + names(siblings));
+            }
+            return byQuant(ref, location, inside);
         }
-        return byQuant(ref, folder);
+        return byQuant(ref, "", source.list(ref, ""));
     }
 
     /**
      * The single file matching this ref's quant inside {@code folder}, or a message saying why not.
      */
-    private static RepoFile byQuant(ModelRef ref, String folder) throws IOException {
-        List<RepoFile> files = listFiles(ref, folder);
-        List<RepoFile> models = files.stream().filter(f -> isModelGguf(nameOf(f.path()))).toList();
+    private RemoteFile byQuant(ModelRef ref, String folder, List<RemoteFile> files) {
+        List<RemoteFile> models =
+                files.stream().filter(f -> isModelGguf(nameOf(f.path()))).toList();
         if (models.isEmpty()) {
             throw noGguf(ref, folder, files);
         }
@@ -624,7 +626,7 @@ public final class ModelStore {
         if (models.size() == 1 && ref.quant() == null) {
             return models.get(0);
         }
-        List<RepoFile> matches =
+        List<RemoteFile> matches =
                 models.stream()
                         .filter(f -> matchesQuant(nameOf(f.path()), ref.quantOrDefault()))
                         .toList();
@@ -658,7 +660,7 @@ public final class ModelStore {
      * them.
      */
     private static IllegalArgumentException noGguf(
-            ModelRef ref, String folder, List<RepoFile> files) {
+            ModelRef ref, String folder, List<RemoteFile> files) {
         boolean safetensors =
                 files.stream()
                         .anyMatch(
@@ -680,17 +682,20 @@ public final class ModelStore {
 
     // ---- the cache ----
 
+    private static final Pattern SPLIT_PART =
+            Pattern.compile(".*-\\d{5}-of-\\d{5}\\.gguf$", Pattern.CASE_INSENSITIVE);
+
     /**
      * Where a repository-relative file lives (or would live) in the cache: subfolders preserved, a
      * NAMED revision folded into the repository directory. Every segment is validated because the
      * listing that produced it is remote input.
      */
-    static Path pathOf(ModelRef ref, String repoRelative) {
+    Path pathOf(ModelRef ref, String repoRelative) {
         return under(repoDir(ref), repoRelative);
     }
 
     /** {@code repoRelative} resolved beneath {@code base}, every segment checked for escape. */
-    private static Path under(Path base, String repoRelative) {
+    static Path under(Path base, String repoRelative) {
         Path at = base;
         for (String segment : repoRelative.split("/")) {
             if (segment.isEmpty()) {
@@ -707,8 +712,8 @@ public final class ModelStore {
         return at;
     }
 
-    private static Path repoDir(ModelRef ref) {
-        return root().resolve(ref.host().name).resolve(ref.owner()).resolve(ref.cacheRepo());
+    private Path repoDir(ModelRef ref) {
+        return root.resolve(ref.host()).resolve(ref.owner()).resolve(ref.cacheRepo());
     }
 
     /**
@@ -718,62 +723,23 @@ public final class ModelStore {
      * <p>Looks in jinfer's own cache first, then in the HuggingFace hub cache, so a file fetched by
      * {@code hf download}, {@code llama-server -hf} or anything else that writes that layout is
      * found rather than downloaded again - and with the default root, jinfer's own downloads land
-     * there too ({@link #fetchIntoHub}).
+     * there too ({@link Hub#fetchInto}).
      */
-    private static Path cachedFile(ModelRef ref) throws IOException {
+    private Path cachedFile(ModelRef ref) throws IOException {
         Path own = cachedIn(ref, folderDir(ref));
         if (own != null) {
             return own;
         }
-        Path shared = huggingFaceSnapshot(ref);
+        Path shared = Hub.snapshot(ref);
         return shared == null ? null : cachedIn(ref, shared);
-    }
-
-    /**
-     * The snapshot directory this ref names in the HuggingFace hub cache, or null. Honors the same
-     * variables every HF client reads, and resolves a branch through {@code refs/} exactly as they
-     * do - a ref pinned to a commit needs no indirection at all.
-     */
-    private static Path huggingFaceSnapshot(ModelRef ref) throws IOException {
-        return huggingFaceSnapshot(ref, huggingFaceCache());
-    }
-
-    /** Package-visible for its test: the env lookup is the only part a test cannot drive. */
-    static Path huggingFaceSnapshot(ModelRef ref, Path hubCache) throws IOException {
-        if (ref.host() != ModelRef.Host.HF) {
-            return null; // ModelScope's own cache is a different layout; not ours to read
-        }
-        Path repo = hubCache.resolve("models--" + ref.owner() + "--" + ref.repo()).normalize();
-        String revision = ref.revisionOrDefault();
-        Path branch = repo.resolve("refs").resolve(revision);
-        if (Files.isRegularFile(branch)) {
-            revision = Files.readString(branch, StandardCharsets.UTF_8).strip();
-        }
-        Path snapshot = repo.resolve("snapshots").resolve(revision);
-        Path located = snapshot.resolve(ref.location());
-        if (Files.isRegularFile(located)) return located.getParent();
-        return Files.isDirectory(located) ? located : null;
-    }
-
-    private static Path huggingFaceCache() {
-        for (String[] var : new String[][] {{"HF_HUB_CACHE", ""}, {"HF_HOME", "hub"}}) {
-            String value = System.getenv(var[0]);
-            if (value != null && !value.isBlank()) {
-                return var[1].isEmpty() ? Path.of(value) : Path.of(value, var[1]);
-            }
-        }
-        String xdg = System.getenv("XDG_CACHE_HOME");
-        return xdg != null && !xdg.isBlank()
-                ? Path.of(xdg, "huggingface", "hub")
-                : Path.of(System.getProperty("user.home"), ".cache", "huggingface", "hub");
     }
 
     private static Path cachedIn(ModelRef ref, Path dir) throws IOException {
         if (dir == null || !Files.isDirectory(dir)) {
             return null;
         }
-        if (!ref.location().isEmpty()) {
-            Path named = dir.resolve(nameOf(ref.location()));
+        if (!ref.path().isEmpty()) {
+            Path named = dir.resolve(nameOf(ref.path()));
             if (Files.isRegularFile(named)) {
                 return named; // the ref named a file outright
             }
@@ -797,149 +763,6 @@ public final class ModelStore {
                             .toList();
             return matches.size() == 1 ? matches.get(0) : null; // ambiguity goes to the listing
         }
-    }
-
-    private static Path fetch(ModelRef ref, RepoFile file) throws IOException {
-        if (SPLIT_PART.matcher(file.path()).matches()) {
-            throw new UnsupportedOperationException(
-                    nameOf(file.path())
-                            + " is one part of a split GGUF, which jinfer cannot load. Merge the"
-                            + " parts first with llama.cpp's llama-gguf-split --merge, or pick a"
-                            + " quant that fits in one file.");
-        }
-        if (ref.host() == ModelRef.Host.HF && isSha256(file.sha256()) && sharedHubWrites()) {
-            String commit = hubCommit(ref);
-            if (commit != null) {
-                return fetchIntoHub(ref, file, commit, huggingFaceCache());
-            }
-            // no commit means no snapshot directory to link under; the flat layout still works
-        }
-        Path dest = pathOf(ref, file.path());
-        requireDiskSpace(dest, Fetch.remainingBytes(dest, file.size()));
-        tagCacheDirectory(root());
-        Fetch.announce("download " + ref.host().name + "/" + ref.repoId() + "/" + file.path());
-        Fetch.download(
-                ref.fileUrl(file.path()), dest, file.size(), file.sha256(), headers(ref.host()));
-        return dest;
-    }
-
-    // ---- the shared HuggingFace hub cache, as a write target ----
-
-    /**
-     * The commit this ref's revision names, or null when it cannot be learned - and null only
-     * DOWNGRADES the download to the flat layout, never fails it. The hub layout keys snapshots by
-     * commit, so joining it starts here; a ref already pinned to a commit needs no request.
-     */
-    static String hubCommit(ModelRef ref) {
-        String revision = ref.revisionOrDefault();
-        if (isCommit(revision)) {
-            return revision;
-        }
-        try {
-            Map<String, Object> body =
-                    Json.parseMap(
-                            get(ref, ref.host().base() + "/api/models/" + ref.repoId() + "/refs"));
-            for (String kind : new String[] {"branches", "tags"}) {
-                for (Object entry : Json.queryList(body, kind).orElse(List.of())) {
-                    if (entry instanceof Map<?, ?> map
-                            && revision.equals(map.get("name"))
-                            && map.get("targetCommit") instanceof String commit
-                            && isCommit(commit)) {
-                        return commit;
-                    }
-                }
-            }
-            return null;
-        } catch (IOException unreachable) {
-            return null;
-        }
-    }
-
-    /**
-     * Downloads {@code file} into the HuggingFace hub cache the way every HF client lays it out:
-     * bytes in {@code blobs/<sha256>} - the same sha256 the download already verifies - and a
-     * relative symlink from {@code snapshots/<commit>/<path>}, so llama.cpp and {@code hf download}
-     * see the file as their own. Concurrent writers need no lock here: blobs are content-addressed,
-     * so two tools racing on one file write identical bytes, each behind its own temp-and-rename.
-     */
-    static Path fetchIntoHub(ModelRef ref, RepoFile file, String commit, Path hubCache)
-            throws IOException {
-        Path repo = hubCache.resolve("models--" + ref.owner() + "--" + ref.repo());
-        Path blob = repo.resolve("blobs").resolve(file.sha256());
-        Path dest = under(repo.resolve("snapshots").resolve(commit), file.path());
-        if (!Files.isRegularFile(blob)) {
-            requireDiskSpace(blob, Fetch.remainingBytes(blob, file.size()));
-            Fetch.announce("download " + ref.host().name + "/" + ref.repoId() + "/" + file.path());
-            // download at the COMMIT, not the branch: the listing that chose this file and the
-            // fetch must not straddle a push
-            String url = ref.repoUrl() + "/resolve/" + commit + "/" + file.path();
-            Fetch.download(
-                    url,
-                    blob,
-                    nameOf(file.path()),
-                    file.size(),
-                    file.sha256(),
-                    headers(ref.host()));
-        }
-        if (!isCommit(ref.revisionOrDefault())) {
-            writeRef(repo.resolve("refs").resolve(ref.revisionOrDefault()), commit);
-        }
-        return link(blob, dest);
-    }
-
-    /**
-     * Publishes {@code blob} at {@code dest} as a relative symlink, the hub cache's own idiom. On a
-     * filesystem that refuses symlinks (Windows without developer mode) the blob MOVES to {@code
-     * dest} instead - dedup is lost, correctness is not, and that is the same degraded mode
-     * llama.cpp and huggingface_hub fall back to.
-     */
-    static Path link(Path blob, Path dest) throws IOException {
-        if (Files.isSymbolicLink(dest) || Files.exists(dest)) {
-            return dest; // the blob it points at was just ensured
-        }
-        Files.createDirectories(dest.getParent());
-        try {
-            Path target = dest.getParent().toAbsolutePath().relativize(blob.toAbsolutePath());
-            Files.createSymbolicLink(dest, target);
-        } catch (IOException | UnsupportedOperationException noSymlinks) {
-            Files.move(blob, dest);
-        }
-        return dest;
-    }
-
-    /**
-     * Writes a {@code refs/<branch>} file the way the hub does: content is the commit, atomically.
-     */
-    private static void writeRef(Path refFile, String commit) throws IOException {
-        Files.createDirectories(refFile.getParent());
-        Path tmp = refFile.resolveSibling(refFile.getFileName() + ".tmp");
-        Files.writeString(tmp, commit, StandardCharsets.UTF_8);
-        Files.move(
-                tmp, refFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-    }
-
-    /** A git commit hash, fit to be a snapshot directory name. */
-    private static boolean isCommit(String value) {
-        return isHex(value, 40);
-    }
-
-    /** A sha256, fit to be a blob file name. The oid arrives from a remote listing: validated. */
-    private static boolean isSha256(String value) {
-        return isHex(value, 64);
-    }
-
-    private static boolean isHex(String value, int length) {
-        if (value == null || value.length() != length) {
-            return false;
-        }
-        for (int i = 0; i < value.length(); i++) {
-            char c = value.charAt(i);
-            boolean hex = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
-            if (!hex) {
-                return false;
-            }
-        }
-        return true;
     }
 
     private static void requireOnline(ModelRef ref, Path dest) {
@@ -988,206 +811,14 @@ public final class ModelStore {
         }
     }
 
-    // ---- repository listings ----
-
-    /** The folder a ref searches: its location, unless the location named a file. */
-    private static String folderOf(ModelRef ref) throws IOException {
-        String location = ref.location();
-        if (location.isEmpty()) {
-            return "";
-        }
-        String parent = parentOf(location);
-        String last = nameOf(location);
-        for (RepoFile file : listFiles(ref, parent)) {
-            if (nameOf(file.path()).equals(last)) {
-                return parent; // the location is a file: its folder is the parent
-            }
-        }
-        return location;
-    }
-
-    /** The same question, answered from the cache's own shape (no network). */
-    private static Path folderDir(ModelRef ref) {
-        String location = ref.location();
+    /** The folder a ref would search on disk: its path, unless the path named a file. */
+    private Path folderDir(ModelRef ref) {
+        String location = ref.path();
         if (location.isEmpty()) {
             return repoDir(ref);
         }
         Path named = pathOf(ref, location);
         return Files.isRegularFile(named) ? named.getParent() : named;
-    }
-
-    private static boolean hasDirectory(ModelRef ref, String parent, String name)
-            throws IOException {
-        return listDirs(ref, parent).stream().anyMatch(d -> nameOf(d.path()).equals(name));
-    }
-
-    private static List<RepoFile> listFiles(ModelRef ref, String path) throws IOException {
-        return listing(ref, path).files();
-    }
-
-    private static List<RepoDir> listDirs(ModelRef ref, String path) throws IOException {
-        return listing(ref, path).dirs();
-    }
-
-    private record Listing(List<RepoFile> files, List<RepoDir> dirs) {}
-
-    /** One listing of {@code path} within the repository, at the ref's revision. */
-    private static Listing listing(ModelRef ref, String path) throws IOException {
-        return switch (ref.host()) {
-            case HF -> listHuggingFace(ref, path);
-            case MODELSCOPE -> listModelScope(ref, path);
-        };
-    }
-
-    /**
-     * {@code /api/models/owner/repo/tree/<rev>/<path>}: a JSON array, sha256 under {@code lfs.oid}.
-     */
-    private static Listing listHuggingFace(ModelRef ref, String path) throws IOException {
-        String url =
-                ref.host().base()
-                        + "/api/models/"
-                        + ref.repoId()
-                        + "/tree/"
-                        + ref.revisionOrDefault()
-                        + (path.isEmpty() ? "" : "/" + path);
-        List<RepoFile> files = new ArrayList<>();
-        List<RepoDir> dirs = new ArrayList<>();
-        for (Object entry : Json.parseList(get(ref, url))) {
-            if (!(entry instanceof Map<?, ?> map)) {
-                continue;
-            }
-            if ("directory".equals(map.get("type"))) {
-                dirs.add(new RepoDir(str(map.get("path"))));
-                continue;
-            }
-            if (!"file".equals(map.get("type"))) {
-                continue;
-            }
-            // a plain file's "oid" is a git blob sha1, not content: only LFS entries carry a
-            // sha256, and every GGUF worth downloading is one
-            String sha256 =
-                    map.get("lfs") instanceof Map<?, ?> lfs && lfs.get("oid") instanceof String oid
-                            ? oid
-                            : null;
-            files.add(new RepoFile(str(map.get("path")), num(map.get("size")), sha256));
-        }
-        return new Listing(files, dirs);
-    }
-
-    /** {@code /api/v1/models/owner/repo/repo/files}: {@code Data.Files}, sha256 on every entry. */
-    private static Listing listModelScope(ModelRef ref, String path) throws IOException {
-        String url =
-                ref.host().base()
-                        + "/api/v1/models/"
-                        + ref.repoId()
-                        + "/repo/files?Revision="
-                        + ref.revisionOrDefault()
-                        + "&Root="
-                        + path;
-        Map<String, Object> body = Json.parseMap(get(ref, url));
-        List<Object> entries =
-                Json.queryList(body, "Data", "Files")
-                        .orElseThrow(
-                                () ->
-                                        new IOException(
-                                                "unexpected listing for "
-                                                        + ref.repoId()
-                                                        + " from "
-                                                        + url
-                                                        + " - API changed?"));
-        List<RepoFile> files = new ArrayList<>();
-        List<RepoDir> dirs = new ArrayList<>();
-        for (Object entry : entries) {
-            if (!(entry instanceof Map<?, ?> map)) {
-                continue;
-            }
-            if ("tree".equals(map.get("Type"))) {
-                dirs.add(new RepoDir(str(map.get("Path"))));
-            } else if ("blob".equals(map.get("Type"))) {
-                files.add(
-                        new RepoFile(
-                                str(map.get("Path")),
-                                num(map.get("Size")),
-                                map.get("Sha256") instanceof String s && !s.isBlank() ? s : null));
-            }
-        }
-        return new Listing(files, dirs);
-    }
-
-    /**
-     * A listing GET, translating the failures a user can actually fix: a gated repository, and one
-     * that is not there.
-     */
-    private static String get(ModelRef ref, String url) throws IOException {
-        try {
-            return Fetch.getString(url, headers(ref.host()));
-        } catch (Fetch.HttpStatusException e) {
-            if (e.status == 401 || e.status == 403) {
-                throw new IllegalArgumentException(
-                        ref.repoId()
-                                + " is gated or private. Accept its licence at "
-                                + ref.repoUrl()
-                                + " then set "
-                                + ref.host().tokenEnv
-                                + (ref.host() == ModelRef.Host.HF
-                                        ? " (or log in once with: hf auth login)"
-                                        : ""),
-                        e);
-            }
-            if (e.status == 404) {
-                throw new IllegalArgumentException(
-                        "no repository "
-                                + ref.repoId()
-                                + " at revision "
-                                + ref.revisionOrDefault()
-                                + " on "
-                                + ref.host().name
-                                + " ("
-                                + ref.repoUrl()
-                                + ")",
-                        e);
-            }
-            throw e;
-        }
-    }
-
-    /**
-     * Credentials for {@code host}: its token variable, and for HuggingFace the token {@code hf
-     * auth login} leaves behind - someone who has logged in once should not have to export
-     * anything.
-     */
-    private static Map<String, String> headers(ModelRef.Host host) {
-        Map<String, String> headers = new LinkedHashMap<>();
-        headers.put("User-Agent", "jinfer-hub");
-        String token = System.getenv(host.tokenEnv);
-        if ((token == null || token.isBlank()) && host == ModelRef.Host.HF) {
-            token = huggingFaceTokenFile();
-        }
-        if (token != null && !token.isBlank()) {
-            headers.put("Authorization", "Bearer " + token.strip());
-        }
-        return headers;
-    }
-
-    /** {@code $HF_TOKEN_PATH} &gt; {@code $HF_HOME/token} &gt; the default, as every HF client. */
-    private static String huggingFaceTokenFile() {
-        String explicit = System.getenv("HF_TOKEN_PATH");
-        String home = System.getenv("HF_HOME");
-        Path token;
-        if (explicit != null && !explicit.isBlank()) {
-            token = Path.of(explicit);
-        } else if (home != null && !home.isBlank()) {
-            token = Path.of(home, "token");
-        } else {
-            token = Path.of(System.getProperty("user.home"), ".cache", "huggingface", "token");
-        }
-        try {
-            return Files.isRegularFile(token)
-                    ? Files.readString(token, StandardCharsets.UTF_8)
-                    : null;
-        } catch (IOException e) {
-            return null; // an unreadable token file is not a reason to fail a public download
-        }
     }
 
     // ---- matching ----
@@ -1201,7 +832,7 @@ public final class ModelStore {
      */
     private static final List<String> COMPANIONS = List.of("mmproj", "mtp");
 
-    private static boolean isGguf(String fileName) {
+    static boolean isGguf(String fileName) {
         return fileName.toLowerCase(Locale.ROOT).endsWith(".gguf");
     }
 
@@ -1242,7 +873,7 @@ public final class ModelStore {
 
     // ---- small helpers ----
 
-    private static String nameOf(String path) {
+    static String nameOf(String path) {
         int slash = path.lastIndexOf('/');
         return slash < 0 ? path : path.substring(slash + 1);
     }
@@ -1257,39 +888,31 @@ public final class ModelStore {
      * list dumped into a sentence. Ambiguity is always resolved by NAMING one, never by guessing,
      * so the message's job is to make naming a copy and a paste.
      */
-    private static String menu(ModelRef ref, List<RepoFile> matches) {
-        List<RepoFile> sorted =
+    private static String menu(ModelRef ref, List<RemoteFile> matches) {
+        List<RemoteFile> sorted =
                 matches.stream()
                         .sorted(
-                                Comparator.comparingLong(RepoFile::size)
-                                        .thenComparing(RepoFile::path))
+                                Comparator.comparingLong(RemoteFile::sizeBytes)
+                                        .thenComparing(RemoteFile::path))
                         .toList();
         int width = sorted.stream().mapToInt(f -> f.path().length()).max().orElse(0);
         StringBuilder out = new StringBuilder();
-        for (RepoFile f : sorted) {
+        for (RemoteFile f : sorted) {
             out.append("\n  ")
-                    .append(ref.host().name)
+                    .append(ref.host())
                     .append('/')
                     .append(ref.repoId())
                     .append('/')
                     .append(f.path())
                     .append(" ".repeat(width - f.path().length()))
                     .append("   ")
-                    .append(Fetch.size(f.size()));
+                    .append(Fetch.size(f.sizeBytes()));
         }
         return out.toString();
     }
 
-    private static List<String> names(List<RepoFile> files) {
+    private static List<String> names(List<RemoteFile> files) {
         return files.stream().map(f -> nameOf(f.path())).sorted().toList();
-    }
-
-    private static String str(Object value) {
-        return value instanceof String s ? s : "";
-    }
-
-    private static long num(Object value) {
-        return value instanceof Number n ? n.longValue() : -1;
     }
 
     private static void require(boolean condition, String message) {

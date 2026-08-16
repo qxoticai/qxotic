@@ -38,7 +38,7 @@ class ModelStoreFindTest {
     @Test
     void aQuantRefFindsTheMatchingFile() throws IOException {
         Path file = plant("stories15M_MOE-Q8_0.gguf");
-        assertEquals(Optional.of(file), ModelStore.find(REF));
+        assertEquals(Optional.of(file), ModelStore.standard().find(REF));
     }
 
     @Test
@@ -46,33 +46,35 @@ class ModelStoreFindTest {
         Path file = plant("mmproj-F32.gguf");
         assertEquals(
                 Optional.of(file),
-                ModelStore.find("hf.co/ggml-org/stories15M_MOE/mmproj-F32.gguf"));
+                ModelStore.standard().find("hf.co/ggml-org/stories15M_MOE/mmproj-F32.gguf"));
     }
 
     @Test
     void aMissIsEmptyWithoutAnyListing() {
         System.setProperty("jinfer.models", root.toString());
-        assertEquals(Optional.empty(), ModelStore.find(REF));
+        assertEquals(Optional.empty(), ModelStore.standard().find(REF));
     }
 
     @Test
     void aDifferentQuantIsAMiss() throws IOException {
         plant("stories15M_MOE-F16.gguf");
-        assertEquals(Optional.empty(), ModelStore.find(REF));
+        assertEquals(Optional.empty(), ModelStore.standard().find(REF));
     }
 
     @Test
     void anAmbiguousCacheIsAMissRatherThanAGuess() throws IOException {
         plant("stories15M_MOE-a-Q8_0.gguf");
         plant("stories15M_MOE-b-Q8_0.gguf");
-        assertEquals(Optional.empty(), ModelStore.find(REF));
+        assertEquals(Optional.empty(), ModelStore.standard().find(REF));
     }
 
     @Test
     void aLocalPathPassesThrough() throws IOException {
         Path local = Files.writeString(root.resolve("local-model.gguf"), "not really a model");
-        assertEquals(Optional.of(local), ModelStore.find(local.toString()));
-        assertEquals(Optional.empty(), ModelStore.find(root.resolve("absent.gguf").toString()));
+        assertEquals(Optional.of(local), ModelStore.standard().find(local.toString()));
+        assertEquals(
+                Optional.empty(),
+                ModelStore.standard().find(root.resolve("absent.gguf").toString()));
     }
 
     @Test
@@ -80,7 +82,7 @@ class ModelStoreFindTest {
         var failure =
                 assertThrows(
                         IllegalArgumentException.class,
-                        () -> ModelStore.find("https://example.org/models/x.gguf"));
+                        () -> ModelStore.standard().find("https://example.org/models/x.gguf"));
         assertTrue(failure.getMessage().contains("checksum"), failure.getMessage());
     }
 }
