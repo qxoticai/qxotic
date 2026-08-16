@@ -67,10 +67,22 @@ public record LoadedModel<S extends ContextState>(
             return new SamplingDefaults(
                     floatValue(gguf, "general.sampling.temp"),
                     floatValue(gguf, "general.sampling.top_p"),
-                    gguf.containsKey("general.sampling.top_k")
-                            ? gguf.getValue(Integer.class, "general.sampling.top_k")
-                            : null,
+                    topKValue(gguf),
                     floatValue(gguf, "general.sampling.min_p"));
+        }
+
+        /**
+         * Reads {@code general.sampling.top_k} following llama.cpp's convention: a non-positive
+         * value is an explicit "top-k disabled" statement (normalized to {@code 0}, which {@link
+         * com.qxotic.jinfer.x.llm.Sampling} accepts and the sampler treats as pass-through), not an
+         * absent opinion. Only a missing key yields {@code null}, letting the layering fall through
+         * to the port's recommendation or the engine baseline.
+         */
+        private static Integer topKValue(com.qxotic.format.gguf.GGUF gguf) {
+            if (!gguf.containsKey("general.sampling.top_k")) {
+                return null;
+            }
+            return Math.max(0, gguf.getValue(Integer.class, "general.sampling.top_k"));
         }
 
         private static Float floatValue(com.qxotic.format.gguf.GGUF gguf, String key) {
