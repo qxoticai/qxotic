@@ -291,4 +291,76 @@ class LayoutMethodsTest {
         assertEquals(2, layout.stride().rank());
         assertEquals(3, layout.stride().flatRank());
     }
+
+    @Test
+    void testNestedLikeShape() {
+        // Shape structure wins; stride values are spread over the shape's nesting
+        Shape shape = Shape.of(2, Shape.of(3L, 4L));
+        Layout layout = Layout.nestedLikeShape(shape, Stride.flat(12, 4, 1));
+
+        assertEquals(shape, layout.shape());
+        assertEquals(2, layout.stride().rank());
+        assertEquals(3, layout.stride().flatRank());
+        assertArrayEquals(new long[] {12, 4, 1}, layout.stride().toArray());
+        assertArrayEquals(new long[] {4, 1}, layout.stride().modeAt(1).toArray());
+    }
+
+    @Test
+    void testNestedLikeShapeFlatShape() {
+        Layout layout = Layout.nestedLikeShape(Shape.flat(2, 3), Stride.flat(3, 1));
+
+        assertTrue(layout.shape().isFlat());
+        assertTrue(layout.stride().isFlat());
+        assertArrayEquals(new long[] {3, 1}, layout.stride().toArray());
+    }
+
+    @Test
+    void testNestedLikeShapeScalar() {
+        Layout layout = Layout.nestedLikeShape(Shape.scalar(), Stride.scalar());
+
+        assertTrue(layout.shape().isScalar());
+        assertEquals(1, layout.cosize());
+    }
+
+    @Test
+    void testNestedLikeShapeRejectsFlatRankMismatch() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> Layout.nestedLikeShape(Shape.flat(2, 3), Stride.flat(1, 2, 3)));
+    }
+
+    @Test
+    void testNestedLikeStride() {
+        // Stride structure wins; shape values are spread over the stride's nesting
+        Stride stride = Stride.of(12, Stride.of(4L, 1L));
+        Layout layout = Layout.nestedLikeStride(stride, Shape.flat(2, 3, 4));
+
+        assertEquals(stride, layout.stride());
+        assertEquals(2, layout.shape().rank());
+        assertEquals(3, layout.shape().flatRank());
+        assertArrayEquals(new long[] {2, 3, 4}, layout.shape().toArray());
+        assertArrayEquals(new long[] {3, 4}, layout.shape().modeAt(1).toArray());
+    }
+
+    @Test
+    void testNestedLikeStrideRejectsFlatRankMismatch() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> Layout.nestedLikeStride(Stride.flat(1, 2, 3), Shape.flat(2, 3)));
+    }
+
+    @Test
+    void testNestedLikeRoundTrip() {
+        // Restructuring a flat layout through both directions recovers the nested layout
+        Shape nested = Shape.of(2, Shape.of(3L, 4L));
+        Stride nestedStride = Stride.rowMajor(nested);
+        Layout layout = Layout.nestedLikeShape(nested, Stride.flat(12, 4, 1));
+
+        assertEquals(nested, layout.shape());
+        assertEquals(nestedStride, layout.stride());
+
+        Layout roundTripped = Layout.nestedLikeStride(layout.stride(), Shape.flat(2, 3, 4));
+        assertEquals(layout.shape(), roundTripped.shape());
+        assertEquals(layout.stride(), roundTripped.stride());
+    }
 }
