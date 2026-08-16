@@ -185,7 +185,7 @@ public record Options(
      * that stand on their own.
      */
     public void requireFitsModel(LoadedModel<?> model) {
-        int trained = model.model().config().contextLength();
+        int trained = model.model().configuration().contextLength();
         require(
                 contextCapacity <= trained,
                 "Invalid argument: --context-capacity %d exceeds what %s was trained for (%d)",
@@ -206,13 +206,13 @@ public record Options(
      * Rejects a bad COMMAND LINE. The message is printed next to the usage block and the process
      * exits 1, which is why it names flags.
      */
-    public static void require(boolean condition, String messageFormat, Object... args) {
+    static void require(boolean condition, String messageFormat, Object... args) {
         if (!condition) {
             throw new IllegalArgumentException(messageFormat.formatted(args));
         }
     }
 
-    public static boolean parseBooleanOption(String optionName, String value) {
+    static boolean parseBooleanOption(String optionName, String value) {
         return switch (value.toLowerCase(Locale.ROOT)) {
             case "true", "on" -> true;
             case "false", "off" -> false;
@@ -265,7 +265,7 @@ public record Options(
         return Duration.ofSeconds(seconds);
     }
 
-    public static boolean supportsAnsiColors(String colorMode) {
+    static boolean supportsAnsiColors(String colorMode) {
         return switch (colorMode) {
             case "on" -> true;
             case "off" -> false;
@@ -638,8 +638,8 @@ public record Options(
                 "  --raw-prompt                  bypass chat template and tokenize --prompt"
                         + " directly");
         out.println(
-                "  --cache <file>                persistent prompt cache (instruct) - serves"
-                        + " matching prefixes, appends new prompts");
+                "  --cache <file>                persistent prompt cache (instruct/server) -"
+                        + " serves matching prefixes, appends new prompts");
         out.println(
                 "  --cache-ro <file>             like --cache but read-only - serves matching"
                         + " prefixes, never writes");

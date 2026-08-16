@@ -5,7 +5,7 @@
 //
 // Supports GGUF models and multiple tensor formats
 // Matrix-vector kernels use Java's Vector API
-// CLI modes: --chat and --instruct (the OpenAI server lands with jinfer-xserver)
+// CLI modes: --chat, --instruct and --server
 //
 // Build/run: `mvn package` then `java -jar target/xjinfer.jar --help`.
 package com.qxotic.jinfer.x.cli;
@@ -22,7 +22,6 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.NoSuchFileException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -40,21 +39,25 @@ public class Main {
         forceUtf8Console();
         oneLineLogs();
         if (args.length > 0 && !args[0].startsWith("-")) {
-            if (args[0].equals("list")) {
-                Options.require(args.length == 1, "list takes no arguments");
-                list();
-                return;
+            switch (args[0]) {
+                case "list" -> {
+                    Options.require(args.length == 1, "list takes no arguments");
+                    list();
+                    return;
+                }
+                case "pull" -> {
+                    pull(Arrays.copyOfRange(args, 1, args.length));
+                    return;
+                }
+                default -> {
+                    System.err.println(
+                            "ERROR unknown command: " + args[0] + " (commands: pull, list)");
+                    System.err.println();
+                    Options.printUsage(System.err);
+                    System.exit(2);
+                    return;
+                }
             }
-            if (!args[0].equals("pull")) {
-                System.err.println(
-                        "ERROR unknown command: " + args[0] + " (the only one is: pull)");
-                System.err.println();
-                Options.printUsage(System.err);
-                System.exit(2);
-                return;
-            }
-            pull(Arrays.copyOfRange(args, 1, args.length));
-            return;
         }
         Options options;
         try {
@@ -87,7 +90,7 @@ public class Main {
                 | IllegalStateException
                 | UnsupportedOperationException
                 | UncheckedIOException
-                | NoSuchFileException e) {
+                | IOException e) {
             // load errors carry their remedy in the message (wrong mmproj, unknown architecture,
             // split GGUF, bad pre-tokenizer flag, ...) - print it, don't bury it in a stack
             // trace; anything else is a bug and still traces

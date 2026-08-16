@@ -5,6 +5,7 @@ import com.qxotic.jinfer.x.chat.Channel;
 import com.qxotic.jinfer.x.chat.ChatEngine;
 import com.qxotic.jinfer.x.llm.Generator;
 import com.qxotic.jinfer.x.llm.SpecialTokens;
+import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import java.io.PrintStream;
 import java.util.HexFormat;
@@ -149,9 +150,13 @@ final class Turn implements ChatEngine.ReplySink {
 
     /** Every token of this delta is special - a control fragment the raw lane must not display. */
     private boolean isControl(ChatEngine.Delta delta) {
-        boolean[] allSpecial = {true};
-        delta.tokens().forEachInt(t -> allSpecial[0] &= SpecialTokens.isSpecial(tokenizer, t));
-        return allSpecial[0];
+        IntSequence tokens = delta.tokens();
+        for (int i = 0; i < tokens.length(); i++) {
+            if (!SpecialTokens.isSpecial(tokenizer, tokens.intAt(i))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private PrintStream thoughtOut() {

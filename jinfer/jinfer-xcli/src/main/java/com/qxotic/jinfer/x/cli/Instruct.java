@@ -23,7 +23,8 @@ final class Instruct {
             try (ChatEngine.Prepared prepared =
                     ChatEngine.Prepared.raw(
                             tokens,
-                            sampling.sampler(engine.loaded().model().config().vocabularySize()),
+                            sampling.sampler(
+                                    engine.loaded().model().configuration().vocabularySize()),
                             options.maxOutputTokens(),
                             Duration.ZERO,
                             List.of())) {
