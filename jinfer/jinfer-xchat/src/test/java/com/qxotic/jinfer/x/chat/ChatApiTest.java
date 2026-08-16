@@ -108,8 +108,7 @@ final class ChatApiTest {
                         });
                 outer.text("after").finish();
                 assertArrayEquals(
-                        TOKENIZER.ids("before", ByteTokenizer.X, "after"),
-                        Batch.tokenIds(batches));
+                        TOKENIZER.ids("before", ByteTokenizer.X, "after"), Batch.tokenIds(batches));
             }
             recording.stop();
             recording.dump(recordingPath);
@@ -152,17 +151,13 @@ final class ChatApiTest {
         Media.Video video =
                 new Media.Video(
                         IntStream.range(0, 10)
-                                .mapToObj(
-                                        i ->
-                                                new Media.Video.Frame(
-                                                        frame, Duration.ofSeconds(i)))
+                                .mapToObj(i -> new Media.Video.Frame(frame, Duration.ofSeconds(i)))
                                 .toList());
         Media.Video mixed =
                 new Media.Video(
                         List.of(
                                 new Media.Video.Frame(frame, Duration.ZERO),
-                                new Media.Video.Frame(
-                                        image(1, 1, 3), Duration.ofSeconds(1))));
+                                new Media.Video.Frame(image(1, 1, 3), Duration.ofSeconds(1))));
         Path recordingPath = Files.createTempFile("jinfer-media-sizes", ".jfr");
 
         try (Recording recording = new Recording()) {

@@ -44,7 +44,8 @@ public final class MediaProjectionEvent extends Event {
                                             image ->
                                                     image.width() == first.width()
                                                             && image.height() == first.height()
-                                                            && image.channels() == first.channels());
+                                                            && image.channels()
+                                                                    == first.channels());
                     if (uniform) event.imageShape(first);
                 }
             }

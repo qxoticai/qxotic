@@ -136,8 +136,7 @@ public final class PromptWriter {
      * fragment-scoped writer which this method finishes. The callback must neither retain nor
      * finish it. On a hit the recorded fragment is replayed and the callback is not invoked.
      */
-    public void cachedMedia(
-            Media source, byte[] contentKey, Consumer<PromptWriter> encode) {
+    public void cachedMedia(Media source, byte[] contentKey, Consumer<PromptWriter> encode) {
         checkOpen();
         Objects.requireNonNull(source, "source");
         Objects.requireNonNull(encode, "encode");
@@ -147,10 +146,7 @@ public final class PromptWriter {
             return;
         }
         mediaCache.replayOrRecord(
-                contentKey,
-                batchCapacity,
-                output -> projectMedia(source, encode, output),
-                sink);
+                contentKey, batchCapacity, output -> projectMedia(source, encode, output), sink);
     }
 
     /**
@@ -195,8 +191,7 @@ public final class PromptWriter {
         if (finished) throw new IllegalStateException("prompt writer already finished");
     }
 
-    private void projectMedia(
-            Media source, Consumer<PromptWriter> encode, Consumer<Batch> output) {
+    private void projectMedia(Media source, Consumer<PromptWriter> encode, Consumer<Batch> output) {
         MediaProjectionEvent event = MediaProjectionEvent.started(source);
         try {
             PromptWriter fragment = new PromptWriter(tokenizer, batchCapacity, null, output);
