@@ -17,7 +17,7 @@ final class Serve {
                 "model       %s  (%s, ctx %d of %d)%n",
                 options.modelPath().getFileName(),
                 model.model().getClass().getSimpleName(),
-                options.contextCapacity(),
+                engine.contextCapacity(),
                 model.model().configuration().contextLength());
         System.out.printf(
                 "speculation %s (depth %d)%n",

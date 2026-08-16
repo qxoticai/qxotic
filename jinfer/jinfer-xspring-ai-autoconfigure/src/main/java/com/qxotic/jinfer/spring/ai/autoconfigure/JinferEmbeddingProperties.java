@@ -9,9 +9,10 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  *
  * @param model the embedding GGUF (e.g. a Qwen3-Embedding model) as a local path, hub ref or URL;
  *     required. A remote ref resolves at context startup
- * @param contextLength the packing window and per-segment ceiling (default 2048): larger packs more
- *     segments per forward pass and admits longer segments, at the cost of a bigger resident KV
- *     state; {@code <= 0} = the model's own maximum
+ * @param contextLength upper bound on the packing window and each embedded sequence (default 2048):
+ *     larger packs more sequences per forward pass and admits longer sequences, at the cost of a
+ *     bigger resident state; {@code 0} uses the model's declared context length; negative values
+ *     are rejected
  */
 @ConfigurationProperties("spring.ai.jinfer.embedding")
 public record JinferEmbeddingProperties(String model, @DefaultValue("2048") int contextLength) {}

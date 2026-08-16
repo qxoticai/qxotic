@@ -48,7 +48,7 @@ public final class JinferDocumentPostProcessor implements DocumentPostProcessor,
     private final String instruction;
     private final int topK;
     private final double minScore;
-    private final int contextLength; // the builder's raw knob, carried for fork()
+    private final int contextCapacity;
     private final boolean ownsWeights; // false = the caller loaded the model and keeps the arena
 
     private JinferDocumentPostProcessor(Builder b) {
@@ -63,8 +63,12 @@ public final class JinferDocumentPostProcessor implements DocumentPostProcessor,
             } catch (IOException e) {
                 throw new UncheckedIOException("failed to load " + b.modelPath, e);
             }
-            this.contextLength = b.contextLength;
-            this.state = newState(loaded, b.contextLength, arena);
+            int modelContextLength = loaded.model().configuration().contextLength();
+            this.contextCapacity =
+                    b.contextLength == 0
+                            ? modelContextLength
+                            : Math.min(b.contextLength, modelContextLength);
+            this.state = newState(loaded, contextCapacity, arena);
             // the card's own wording is only knowable once the port is loaded
             if (b.instruction != null && !loaded.reranker().hasInstructionSlot())
                 throw new IllegalArgumentException(
@@ -94,19 +98,18 @@ public final class JinferDocumentPostProcessor implements DocumentPostProcessor,
                             + " arena), build with model(loaded), then fork freely");
         }
         Builder b =
-                builder().model(loaded).contextLength(contextLength).topK(topK).minScore(minScore);
+                builder()
+                        .model(loaded)
+                        .contextLength(contextCapacity)
+                        .topK(topK)
+                        .minScore(minScore);
         if (loaded.reranker().hasInstructionSlot()) b.instruction(instruction);
         return b.build();
     }
 
     private static <S extends ContextState> S newState(
-            LoadedReranker<S> l, int contextLength, Arena arena) {
-        return l.model()
-                .newState(
-                        Math.min(
-                                contextLength <= 0 ? Integer.MAX_VALUE : contextLength,
-                                l.model().configuration().contextLength()),
-                        new PanamaMemoryArena(arena));
+            LoadedReranker<S> l, int contextCapacity, Arena arena) {
+        return l.model().newState(contextCapacity, new PanamaMemoryArena(arena));
     }
 
     /**
@@ -207,11 +210,16 @@ public final class JinferDocumentPostProcessor implements DocumentPostProcessor,
         }
 
         /**
-         * The judging window (default 2048 - bounded on purpose: a full-context state can be
-         * GB-scale KV; the chat builders default to 4096). Bounds query+document length; {@code <=
-         * 0} opts into the model's maximum, explicitly.
+         * Upper bound on the encoded query-and-document context, in tokens. The default is 2048.
+         * {@code 0} uses the model's declared context length; otherwise the effective capacity is
+         * the smaller of this value and that length.
+         *
+         * @throws IllegalArgumentException if {@code contextLength < 0}
          */
         public Builder contextLength(int contextLength) {
+            if (contextLength < 0)
+                throw new IllegalArgumentException(
+                        "contextLength must be >= 0 (0 uses the model maximum): " + contextLength);
             this.contextLength = contextLength;
             return this;
         }

@@ -40,7 +40,7 @@ final class Chat {
                 if ("/context".equals(userText)) {
                     System.out.printf(
                             "context: capacity %d tokens, %s%n",
-                            options.contextCapacity(), engine.sessionStats());
+                            engine.contextCapacity(), engine.sessionStats());
                     continue;
                 }
                 history.add(Message.user(userText));
@@ -51,7 +51,7 @@ final class Chat {
                     turn = Turn.start(engine.loaded().tokenizer(), prepared, options);
                     completion = engine.complete(prepared, turn);
                 }
-                turn.finish(completion, options.contextCapacity());
+                turn.finish(completion, engine.contextCapacity());
                 if (completion.reply() != null) {
                     // the parser's structured message (verbatim ids): the codec's verbatim splice
                     // keeps generated turns inside the cache's common prefix

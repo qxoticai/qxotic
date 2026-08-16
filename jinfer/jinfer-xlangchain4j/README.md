@@ -228,7 +228,7 @@ Usage reports exact token counts.
 ```java
 EmbeddingModel embeddings = JinferEmbeddingModel.builder()
         .model("hf.co/Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0")
-        .contextLength(2048)          // packing window; <= 0 = the model's maximum
+        .contextLength(2048)          // packing upper bound; 0 = the model's maximum
         .build();
 ```
 
