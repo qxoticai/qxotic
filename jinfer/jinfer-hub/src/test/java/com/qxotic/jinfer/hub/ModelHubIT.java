@@ -66,13 +66,13 @@ class ModelHubIT {
     void huggingFaceSequentialDownloadThenCacheHit(@TempDir Path root) throws Exception {
         assumeReachable("huggingface.co");
         useCache(root);
-        Path file = ModelStore.resolve(REPO + ":Q8_0");
+        Path file = ModelStore.standard().resolve(REPO + ":Q8_0");
         assertEquals(root.resolve("hf.co/ggml-org/stories15M_MOE/stories15M_MOE-Q8_0.gguf"), file);
         assertEquals(39390272L, Files.size(file));
         String hash = sha256(file);
 
         // second resolve must be served from disk, and must be the same bytes
-        Path again = ModelStore.resolve(REPO + ":Q8_0");
+        Path again = ModelStore.standard().resolve(REPO + ":Q8_0");
         assertEquals(file, again);
         assertEquals(hash, sha256(again));
 
@@ -88,7 +88,9 @@ class ModelHubIT {
     void huggingFaceParallelChunkedDownload(@TempDir Path root) throws Exception {
         assumeReachable("huggingface.co");
         useCache(root);
-        Path file = ModelStore.resolve(REPO + ":F16"); // 73 MB: three chunks, fetched concurrently
+        Path file =
+                ModelStore.standard()
+                        .resolve(REPO + ":F16"); // 73 MB: three chunks, fetched concurrently
         assertEquals(73466432L, Files.size(file));
         assertTrue(
                 Files.notExists(file.resolveSibling(file.getFileName() + ".map")),
@@ -107,10 +109,15 @@ class ModelHubIT {
         assumeReachable("huggingface.co");
         useCache(root);
         ModelRef ref = ModelRef.parse(REPO + ":Q8_0");
-        String commit = ModelStore.hubCommit(ref);
+        String commit = Hub.commit(ref);
         Assertions.assertNotNull(commit, "main resolves to a commit");
 
-        Path file = ModelStore.fetchIntoHub(ref, ModelStore.select(ref), commit, hub);
+        Path file =
+                Hub.fetchInto(
+                        ref,
+                        ModelStore.standard().select(ref, new HuggingFaceSource()),
+                        commit,
+                        hub);
         assertTrue(file.startsWith(hub));
         assertEquals(39390272L, Files.size(file));
         assertTrue(Files.isSymbolicLink(file), "a snapshot entry is a link into blobs/");
@@ -123,9 +130,9 @@ class ModelHubIT {
                         .strip());
 
         // the read side sees what the write side did: resolve() from here is a cache hit
-        assertEquals(file.getParent(), ModelStore.huggingFaceSnapshot(ref, hub));
+        assertEquals(file.getParent(), Hub.snapshot(ref, hub));
         assertTrue(
-                ModelStore.huggingFaceCached(hub).stream()
+                Hub.cached(hub).stream()
                         .anyMatch(
                                 m ->
                                         m.ref()
@@ -138,8 +145,8 @@ class ModelHubIT {
     void modelScopeServesTheSameBytes(@TempDir Path root) throws Exception {
         assumeReachable("modelscope.cn");
         useCache(root);
-        Path fromHf = ModelStore.resolve(REPO + ":Q8_0");
-        Path fromMs = ModelStore.resolve(MS_REPO + ":Q8_0");
+        Path fromHf = ModelStore.standard().resolve(REPO + ":Q8_0");
+        Path fromMs = ModelStore.standard().resolve(MS_REPO + ":Q8_0");
         assertEquals(root.resolve("modelscope.cn/ggml-org/stories15M_MOE"), fromMs.getParent());
         assertEquals(sha256(fromHf), sha256(fromMs));
     }
@@ -152,7 +159,7 @@ class ModelHubIT {
         Files.createDirectories(dir);
         Path part = dir.resolve("stories15M_MOE-Q8_0.gguf.part");
         // half a file from a previous run, with the real leading bytes
-        Path whole = ModelStore.resolve(REPO + ":Q8_0");
+        Path whole = ModelStore.standard().resolve(REPO + ":Q8_0");
         byte[] prefix = new byte[1 << 20];
         try (var in = Files.newInputStream(whole)) {
             in.readNBytes(prefix, 0, prefix.length);
@@ -161,7 +168,7 @@ class ModelHubIT {
         Files.delete(whole);
         Files.write(part, prefix);
 
-        Path resumed = ModelStore.resolve(REPO + ":Q8_0");
+        Path resumed = ModelStore.standard().resolve(REPO + ":Q8_0");
         assertEquals(expected, sha256(resumed));
     }
 
@@ -169,7 +176,7 @@ class ModelHubIT {
     void aParallelResumeRefetchesOnlyTheMissingChunks(@TempDir Path root) throws Exception {
         assumeReachable("huggingface.co");
         useCache(root);
-        Path whole = ModelStore.resolve(REPO + ":F16"); // 73 MB = three 32 MB chunks
+        Path whole = ModelStore.standard().resolve(REPO + ":F16"); // 73 MB = three 32 MB chunks
         String expected = sha256(whole);
         long size = Files.size(whole);
         byte[] firstChunk = new byte[32 << 20];
@@ -188,7 +195,7 @@ class ModelHubIT {
         Files.write(part.resolveSibling(part.getFileName() + ".map"), new byte[] {1, 0, 0});
         assertEquals(size - (32L << 20), Fetch.remainingBytes(whole, size), "two chunks to go");
 
-        Path resumed = ModelStore.resolve(REPO + ":F16");
+        Path resumed = ModelStore.standard().resolve(REPO + ":F16");
         assertEquals(expected, sha256(resumed), "a resumed file is byte-identical");
     }
 
@@ -198,7 +205,8 @@ class ModelHubIT {
         useCache(root);
         var failure =
                 assertThrows(
-                        IllegalArgumentException.class, () -> ModelStore.resolve(REPO + ":Q4_K_M"));
+                        IllegalArgumentException.class,
+                        () -> ModelStore.standard().resolve(REPO + ":Q4_K_M"));
         assertTrue(failure.getMessage().contains("stories15M_MOE-Q8_0.gguf"), failure.getMessage());
     }
 
@@ -209,7 +217,9 @@ class ModelHubIT {
         var failure =
                 assertThrows(
                         IllegalArgumentException.class,
-                        () -> ModelStore.resolve("hf.co/ggml-org/there-is-no-such-repo-here"));
+                        () ->
+                                ModelStore.standard()
+                                        .resolve("hf.co/ggml-org/there-is-no-such-repo-here"));
         assertTrue(failure.getMessage().contains("huggingface.co"), failure.getMessage());
     }
 
@@ -220,7 +230,8 @@ class ModelHubIT {
         try {
             var failure =
                     assertThrows(
-                            IllegalStateException.class, () -> ModelStore.resolve(REPO + ":Q8_0"));
+                            IllegalStateException.class,
+                            () -> ModelStore.standard().resolve(REPO + ":Q8_0"));
             assertTrue(failure.getMessage().contains("JINFER_OFFLINE"), failure.getMessage());
         } finally {
             System.clearProperty("jinfer.offline");
@@ -230,6 +241,6 @@ class ModelHubIT {
     @Test
     void anExistingPathIsNeverTreatedAsARef(@TempDir Path dir) throws IOException {
         Path local = Files.writeString(dir.resolve("local-model.gguf"), "not really a model");
-        assertEquals(local, ModelStore.resolve(local.toString()));
+        assertEquals(local, ModelStore.standard().resolve(local.toString()));
     }
 }

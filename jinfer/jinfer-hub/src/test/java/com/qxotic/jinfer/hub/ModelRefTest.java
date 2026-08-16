@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.jinfer.hub.ModelRef.Host;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.channels.FileChannel;
@@ -25,10 +24,10 @@ class ModelRefTest {
     @Test
     void aBareRepositoryTakesEveryDefault() {
         ModelRef ref = ModelRef.parse("hf.co/unsloth/gemma-4-E2B-it-GGUF");
-        assertEquals(Host.HF, ref.host());
+        assertEquals("hf.co", ref.host());
         assertEquals("unsloth", ref.owner());
         assertEquals("gemma-4-E2B-it-GGUF", ref.repo());
-        assertEquals("", ref.location());
+        assertEquals("", ref.path());
         assertNull(ref.quant(), "an unwritten quant stays null: it is what permits the fallback");
         assertEquals("Q4_K_M", ref.quantOrDefault());
         assertEquals("main", ref.revisionOrDefault());
@@ -42,15 +41,15 @@ class ModelRefTest {
     @Test
     void thePathIsTheLocation() {
         ModelRef file = ModelRef.parse("hf.co/unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf");
-        assertEquals("mmproj-F32.gguf", file.location());
+        assertEquals("mmproj-F32.gguf", file.path());
         assertNull(file.quant());
 
         ModelRef folder = ModelRef.parse("hf.co/ggml-org/models/bert-bge-small:F16");
-        assertEquals("bert-bge-small", folder.location());
+        assertEquals("bert-bge-small", folder.path());
         assertEquals("F16", folder.quant());
 
         ModelRef deep = ModelRef.parse("hf.co/ggml-org/models/bert-bge-small/ggml-model-f16.gguf");
-        assertEquals("bert-bge-small/ggml-model-f16.gguf", deep.location());
+        assertEquals("bert-bge-small/ggml-model-f16.gguf", deep.path());
     }
 
     @Test
@@ -58,7 +57,7 @@ class ModelRefTest {
         ModelRef ref = ModelRef.parse("hf.co/ggml-org/models@a1b2c3d/bert-bge-small:F16");
         assertEquals("models", ref.repo());
         assertEquals("a1b2c3d", ref.revision());
-        assertEquals("bert-bge-small", ref.location());
+        assertEquals("bert-bge-small", ref.path());
         assertEquals("F16", ref.quant());
         assertEquals("models@a1b2c3d", ref.cacheRepo(), "a NAMED revision joins the cache path");
     }
@@ -93,18 +92,18 @@ class ModelRefTest {
                 ModelRef.parse(
                         "https://hf.co/ggml-org/models/blob/main/bert-bge-small/ggml-model-f16.gguf");
         assertEquals("main", blob.revision());
-        assertEquals("bert-bge-small/ggml-model-f16.gguf", blob.location());
+        assertEquals("bert-bge-small/ggml-model-f16.gguf", blob.path());
 
         ModelRef download =
                 ModelRef.parse(
                         "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/"
                                 + "mmproj-F32.gguf?download=true");
         assertEquals("main", download.revision());
-        assertEquals("mmproj-F32.gguf", download.location());
+        assertEquals("mmproj-F32.gguf", download.path());
 
         ModelRef tree = ModelRef.parse("https://hf.co/ggml-org/models/tree/main/bert-bge-small");
         assertEquals("main", tree.revision());
-        assertEquals("bert-bge-small", tree.location());
+        assertEquals("bert-bge-small", tree.path());
     }
 
     // ---- remote versus local ----
@@ -141,7 +140,7 @@ class ModelRefTest {
         var failure =
                 assertThrows(
                         IllegalArgumentException.class,
-                        () -> ModelStore.resolve("unsloth/gemma-4-E2B-it-GGUF"));
+                        () -> ModelStore.standard().resolve("unsloth/gemma-4-E2B-it-GGUF"));
         assertTrue(failure.getMessage().contains("hf.co/"), failure.getMessage());
     }
 
@@ -177,7 +176,7 @@ class ModelRefTest {
         // a listing is remote input: a hostile repository must not choose where bytes land
         assertThrows(
                 IllegalArgumentException.class,
-                () -> ModelStore.pathOf(ref, "../../../etc/x.gguf"));
+                () -> ModelStore.standard().pathOf(ref, "../../../etc/x.gguf"));
     }
 
     @Test
@@ -186,7 +185,8 @@ class ModelRefTest {
         // out of resolve: an unparseable path is simply not a file.
         var failure =
                 assertThrows(
-                        IllegalArgumentException.class, () -> ModelStore.resolve("us\0er/repo"));
+                        IllegalArgumentException.class,
+                        () -> ModelStore.standard().resolve("us\0er/repo"));
         assertTrue(failure.getMessage().contains("no such model file"), failure.getMessage());
     }
 
@@ -197,19 +197,22 @@ class ModelRefTest {
         System.setProperty("jinfer.models", root.toString());
         assertEquals(
                 root.resolve("hf.co/unsloth/gemma-4-E2B-it-GGUF/gemma-4-E2B-it-Q8_0.gguf"),
-                ModelStore.pathOf(
-                        ModelRef.parse("hf.co/unsloth/gemma-4-E2B-it-GGUF:Q8_0"),
-                        "gemma-4-E2B-it-Q8_0.gguf"));
+                ModelStore.standard()
+                        .pathOf(
+                                ModelRef.parse("hf.co/unsloth/gemma-4-E2B-it-GGUF:Q8_0"),
+                                "gemma-4-E2B-it-Q8_0.gguf"));
         // subfolders survive, so two files of one name in different folders cannot collide
         assertEquals(
                 root.resolve("hf.co/ggml-org/models/bert-bge-small/ggml-model-f16.gguf"),
-                ModelStore.pathOf(
-                        ModelRef.parse("hf.co/ggml-org/models"),
-                        "bert-bge-small/ggml-model-f16.gguf"));
+                ModelStore.standard()
+                        .pathOf(
+                                ModelRef.parse("hf.co/ggml-org/models"),
+                                "bert-bge-small/ggml-model-f16.gguf"));
         // a named revision folds into the repository directory
         assertEquals(
                 root.resolve("hf.co/ggml-org/models@a1b2c3d/x.gguf"),
-                ModelStore.pathOf(ModelRef.parse("hf.co/ggml-org/models@a1b2c3d"), "x.gguf"));
+                ModelStore.standard()
+                        .pathOf(ModelRef.parse("hf.co/ggml-org/models@a1b2c3d"), "x.gguf"));
     }
 
     @Test
@@ -240,26 +243,23 @@ class ModelRefTest {
 
         assertEquals(
                 repo.resolve("snapshots/abc123def"),
-                ModelStore.huggingFaceSnapshot(
-                        ModelRef.parse("hf.co/ggml-org/stories15M_MOE:Q8_0"), hub),
+                Hub.snapshot(ModelRef.parse("hf.co/ggml-org/stories15M_MOE:Q8_0"), hub),
                 "a branch resolves through refs/ to its commit");
         assertEquals(
                 repo.resolve("snapshots/abc123def"),
-                ModelStore.huggingFaceSnapshot(
-                        ModelRef.parse("hf.co/ggml-org/stories15M_MOE@abc123def"), hub),
+                Hub.snapshot(ModelRef.parse("hf.co/ggml-org/stories15M_MOE@abc123def"), hub),
                 "a pinned commit needs no indirection");
         assertEquals(
                 repo.resolve("snapshots/abc123def"),
-                ModelStore.huggingFaceSnapshot(
+                Hub.snapshot(
                         ModelRef.parse("hf.co/ggml-org/stories15M_MOE/stories15M_MOE-Q8_0.gguf"),
                         hub),
                 "an explicit file resolves to the directory cachedIn searches");
         assertNull(
-                ModelStore.huggingFaceSnapshot(ModelRef.parse("hf.co/who/else"), hub),
+                Hub.snapshot(ModelRef.parse("hf.co/who/else"), hub),
                 "a repository that is not there is not a hit");
         assertNull(
-                ModelStore.huggingFaceSnapshot(
-                        ModelRef.parse("modelscope.cn/ggml-org/stories15M_MOE"), hub),
+                Hub.snapshot(ModelRef.parse("modelscope.cn/ggml-org/stories15M_MOE"), hub),
                 "ModelScope keeps its own layout; not ours to read");
     }
 
@@ -270,13 +270,13 @@ class ModelRefTest {
         Files.writeString(blob, "weights");
         Path dest = repo.resolve("snapshots").resolve("c".repeat(40)).resolve("x.gguf");
 
-        assertEquals(dest, ModelStore.link(blob, dest));
+        assertEquals(dest, Hub.link(blob, dest));
         assertTrue(Files.isSymbolicLink(dest));
         assertFalse(
                 Files.readSymbolicLink(dest).isAbsolute(),
                 "relative, so the cache can move as a whole");
         assertEquals("weights", Files.readString(dest));
-        assertEquals(dest, ModelStore.link(blob, dest), "publishing twice is a no-op");
+        assertEquals(dest, Hub.link(blob, dest), "publishing twice is a no-op");
     }
 
     @Test
@@ -301,7 +301,7 @@ class ModelRefTest {
                 List.of(
                         "hf.co/ggml-org/stories15M_MOE/model-Q8_0.gguf",
                         "hf.co/ggml-org/stories15M_MOE/sub/mmproj-f16.gguf"),
-                ModelStore.huggingFaceCached(hub).stream().map(ModelStore.Cached::ref).toList());
+                Hub.cached(hub).stream().map(ModelStore.Cached::ref).toList());
     }
 
     @Test
@@ -311,12 +311,12 @@ class ModelRefTest {
         Files.writeString(blob, "weights");
         Path first = repo.resolve("snapshots").resolve("c".repeat(40)).resolve("x.gguf");
         Path second = repo.resolve("snapshots").resolve("d".repeat(40)).resolve("x.gguf");
-        ModelStore.link(blob, first);
-        ModelStore.link(blob, second);
+        Hub.link(blob, first);
+        Hub.link(blob, second);
 
-        assertTrue(ModelStore.evictHub(first));
+        assertTrue(Hub.evict(first));
         assertTrue(Files.exists(blob), "another snapshot still links these bytes");
-        assertTrue(ModelStore.evictHub(second));
+        assertTrue(Hub.evict(second));
         assertFalse(Files.exists(blob), "the last link took the blob with it");
     }
 
@@ -328,7 +328,9 @@ class ModelRefTest {
             var offline =
                     assertThrows(
                             IllegalStateException.class,
-                            () -> ModelStore.resolve("https://example.org/models/x.gguf"));
+                            () ->
+                                    ModelStore.standard()
+                                            .resolve("https://example.org/models/x.gguf"));
             assertTrue(
                     offline.getMessage()
                             .contains(root.resolve("example.org/models/x.gguf").toString()),
@@ -344,7 +346,8 @@ class ModelRefTest {
                 new String[] {
                     "https://example.org/models/", "https://example.org", "ftp://example.org/x.gguf"
                 }) {
-            assertThrows(IllegalArgumentException.class, () -> ModelStore.resolve(bad), bad);
+            assertThrows(
+                    IllegalArgumentException.class, () -> ModelStore.standard().resolve(bad), bad);
         }
     }
 
