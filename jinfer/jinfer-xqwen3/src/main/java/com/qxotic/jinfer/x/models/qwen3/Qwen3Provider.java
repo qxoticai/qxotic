@@ -53,8 +53,9 @@ public final class Qwen3Provider implements ModelProvider {
 
     @Override
     public LoadedEmbedder<?> loadEmbedder(
-            FileChannel fileChannel, GGUF gguf, Path path, Arena arena) throws IOException {
-        Qwen3 model = Qwen3.loadModel(fileChannel, gguf, arena);
+            FileChannel fileChannel, GGUF gguf, Path path, Arena arena, Tokenizer tokenizer)
+            throws IOException {
+        Qwen3 model = Qwen3.loadModel(fileChannel, gguf, arena, tokenizer);
         // last-token pooling wants a trailing EOS on every sequence (the llama.cpp convention)
         int eos =
                 SpecialTokens.find(model.tokenizer(), "<|endoftext|>")
@@ -80,8 +81,9 @@ public final class Qwen3Provider implements ModelProvider {
 
     @Override
     public LoadedReranker<?> loadReranker(
-            FileChannel fileChannel, GGUF gguf, Path path, Arena arena) throws IOException {
-        Qwen3 model = Qwen3.loadModel(fileChannel, gguf, arena);
+            FileChannel fileChannel, GGUF gguf, Path path, Arena arena, Tokenizer tokenizer)
+            throws IOException {
+        Qwen3 model = Qwen3.loadModel(fileChannel, gguf, arena, tokenizer);
         return new LoadedReranker<>(model, new Qwen3Reranker(model), path.getFileName().toString());
     }
 }

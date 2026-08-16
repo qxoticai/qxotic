@@ -1,12 +1,14 @@
 package com.qxotic.jinfer.x.models.lfm2;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.testkit.TestModels;
 import com.qxotic.jinfer.x.boundary.Reranker;
+import com.qxotic.jinfer.x.chat.Models;
 import com.qxotic.jinfer.x.kernels.ModelLoader;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
@@ -45,26 +47,27 @@ class XLfm2ColbertTest {
 
     @Test
     void matchesLlamaCppMaxSimScores() throws Exception {
-        try (FileChannel channel = FileChannel.open(model())) {
+        Path path = model();
+        Tokenizer tokenizer;
+        try (FileChannel channel = FileChannel.open(path)) {
             GGUF gguf = ModelLoader.readGguf(channel, "lfm2.5-colbert");
-            Tokenizer tokenizer =
-                    GGUFTokenizerLoader.createBuilderWithBuiltins().build().fromGGUF(gguf);
-            var xm = Lfm2.loadModel(channel, gguf, Arena.ofAuto(), tokenizer);
-            Reranker<Lfm2.State> reranker = Lfm2Colbert.fromGguf(xm, gguf);
-            try (var state = xm.newState(2048, 512)) {
-                List<Double> scores = new ArrayList<>();
-                reranker.scoreAll(state, "", QUERY, DOCUMENTS, scores::add);
-                assertEquals(DOCUMENTS.size(), scores.size());
-                for (int i = 0; i < GOLDEN_SCORES.length; i++) {
-                    assertEquals(
-                            GOLDEN_SCORES[i],
-                            scores.get(i),
-                            0.05, // quant kernel-order noise; measured deltas are <= 0.03
-                            "document " + i + " drifted from llama.cpp");
-                }
-                // the point of a reranker: the on-topic document wins
-                assertTrue(scores.get(2) > scores.get(1) && scores.get(1) > scores.get(0));
+            tokenizer = GGUFTokenizerLoader.createBuilderWithBuiltins().build().fromGGUF(gguf);
+        }
+        var loaded = Models.loadReranker(path, Arena.ofAuto(), tokenizer);
+        assertSame(tokenizer, ((Lfm2) loaded.model()).tokenizer());
+        try (var state = loaded.model().newState(2048, 512)) {
+            List<Double> scores = new ArrayList<>();
+            loaded.scoreAll(state, "", QUERY, DOCUMENTS, scores::add);
+            assertEquals(DOCUMENTS.size(), scores.size());
+            for (int i = 0; i < GOLDEN_SCORES.length; i++) {
+                assertEquals(
+                        GOLDEN_SCORES[i],
+                        scores.get(i),
+                        0.05, // quant kernel-order noise; measured deltas are <= 0.03
+                        "document " + i + " drifted from llama.cpp");
             }
+            // the point of a reranker: the on-topic document wins
+            assertTrue(scores.get(2) > scores.get(1) && scores.get(1) > scores.get(0));
         }
     }
 

@@ -76,8 +76,9 @@ public final class Lfm2Provider implements ModelProvider {
      */
     @Override
     public LoadedEmbedder<?> loadEmbedder(
-            FileChannel fileChannel, GGUF gguf, Path path, Arena arena) throws IOException {
-        Lfm2 model = Lfm2.loadModel(fileChannel, gguf, arena, null);
+            FileChannel fileChannel, GGUF gguf, Path path, Arena arena, Tokenizer tokenizer)
+            throws IOException {
+        Lfm2 model = Lfm2.loadModel(fileChannel, gguf, arena, tokenizer);
         if (!model.configuration().isEmbedder())
             throw new IllegalArgumentException(
                     path.getFileName()
@@ -106,8 +107,9 @@ public final class Lfm2Provider implements ModelProvider {
      */
     @Override
     public LoadedReranker<?> loadReranker(
-            FileChannel fileChannel, GGUF gguf, Path path, Arena arena) throws IOException {
-        Lfm2 model = Lfm2.loadModel(fileChannel, gguf, arena, null);
+            FileChannel fileChannel, GGUF gguf, Path path, Arena arena, Tokenizer tokenizer)
+            throws IOException {
+        Lfm2 model = Lfm2.loadModel(fileChannel, gguf, arena, tokenizer);
         if (!model.configuration().isColbert() || model.weights().dense2() == null)
             throw new IllegalArgumentException(
                     path.getFileName()

@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.x.models.lfm2;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -8,6 +9,7 @@ import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.testkit.TestModels;
 import com.qxotic.jinfer.x.Views;
 import com.qxotic.jinfer.x.boundary.Batch;
+import com.qxotic.jinfer.x.chat.Models;
 import com.qxotic.jinfer.x.kernels.ModelLoader;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
@@ -48,8 +50,10 @@ final class XLfm2EmbeddingTest {
             GGUF gguf = ModelLoader.readGguf(channel, "lfm2.5-embedding");
             tokenizer = GGUFTokenizerLoader.createBuilderWithBuiltins().build().fromGGUF(gguf);
             bos = gguf.getValue(int.class, "tokenizer.ggml.bos_token_id");
-            model = Lfm2.loadModel(channel, gguf, Arena.ofAuto(), tokenizer);
         }
+        var loaded = Models.loadEmbedder(path, Arena.ofAuto(), tokenizer);
+        assertSame(tokenizer, loaded.tokenizer());
+        model = (Lfm2) loaded.model();
     }
 
     @Test
