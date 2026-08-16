@@ -5,7 +5,7 @@
 // jinfer is a local (unpublished) build - install it to your ~/.m2 once, then jbang resolves it:
 //     cd jinfer && mvn -q -DskipTests install
 //REPOS mavenLocal,central
-//DEPS com.qxotic:jinfer-xlangchain4j:0.1.0
+//DEPS com.qxotic:jinfer-langchain4j:0.1.0
 //SOURCES scripts/Models.java
 
 // Gemma 4 vision (image -> text) through jinfer's multimodal chat API.

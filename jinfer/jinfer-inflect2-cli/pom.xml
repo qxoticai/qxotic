@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.qxotic</groupId>
+    <artifactId>jinfer-parent</artifactId>
+    <version>0.1.0</version>
+  </parent>
+
+  <artifactId>jinfer-inflect2-cli</artifactId>
+  <packaging>jar</packaging>
+
+  <name>jinfer-inflect2-cli</name>
+  <description>Example command line and native executable for jinfer-inflect2.</description>
+
+  <properties>
+    <jinfer.image.name>inflect</jinfer.image.name>
+    <jinfer.image.mainClass>com.qxotic.jinfer.examples.inflect2.InflectCli</jinfer.image.mainClass>
+    <maven.deploy.skip>true</maven.deploy.skip>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-inflect2</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-boundary</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>gguf</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.commons</groupId>
+      <artifactId>commons-compress</artifactId>
+      <version>1.28.0</version>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <finalName>${jinfer.image.name}</finalName>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-shade-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+
+  <profiles>
+    <profile>
+      <id>native</id>
+      <properties>
+        <!-- Where the model fixtures live, same resolution as the testkit's TestModels:
+             -Djinfer.models, else the models directory beside the checkout. -->
+        <jinfer.models>${maven.multiModuleProjectDirectory}/../../models</jinfer.models>
+        <jinfer.lexicon.dir>${jinfer.models}/hf.co/remixerdec/Inflect-Nano-v2-GGUF</jinfer.lexicon.dir>
+      </properties>
+      <build>
+        <plugins>
+          <!-- The lexicon is downloaded test data, not source. A single-file executable has no
+               model directory beside it, so include it when present and otherwise use espeak. -->
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-resources-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>embed-lexicon</id>
+                <goals>
+                  <goal>copy-resources</goal>
+                </goals>
+                <phase>process-classes</phase>
+                <configuration>
+                  <outputDirectory>${project.build.outputDirectory}</outputDirectory>
+                  <resources>
+                    <resource>
+                      <directory>${jinfer.lexicon.dir}</directory>
+                      <includes>
+                        <include>lexicon.bin</include>
+                      </includes>
+                    </resource>
+                  </resources>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.graalvm.buildtools</groupId>
+            <artifactId>native-maven-plugin</artifactId>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+</project>

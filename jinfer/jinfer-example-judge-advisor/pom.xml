@@ -43,7 +43,7 @@
   <dependencies>
     <dependency>
       <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-xspring-ai-spring-boot-starter</artifactId>
+      <artifactId>jinfer-spring-ai-spring-boot-starter</artifactId>
       <version>${project.version}</version>
     </dependency>
     <dependency>

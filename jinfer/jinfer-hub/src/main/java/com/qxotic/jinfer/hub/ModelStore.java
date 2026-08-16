@@ -1196,7 +1196,7 @@ public final class ModelStore {
      * Filename prefixes that mark a file as a COMPANION of a model rather than a model: a media
      * projector, a draft head. This is a naming convention of GGUF repositories - the same kind of
      * knowledge as a quant name - and it exists so that a quant search cannot answer with a
-     * projector, which is a real collision in repositories shipping both {@code x-f16.gguf} and
+     * projector, which is a real collision in repositories shipping both {@code model-f16.gguf} and
      * {@code mmproj-model-f16.gguf}.
      */
     private static final List<String> COMPANIONS = List.of("mmproj", "mtp");

@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.qxotic</groupId>
+    <artifactId>jinfer-parent</artifactId>
+    <version>0.1.0</version>
+  </parent>
+
+  <artifactId>jinfer-kernels</artifactId>
+  <packaging>jar</packaging>
+
+  <name>jinfer-kernels</name>
+  <description>Compute kernels over com.qxotic.jota.memory.MemoryView&lt;MemorySegment&gt; (matmul, norms, rope,
+    convolutions, flash attention, activations, MoE) plus GGUF loading and FP16 KvTransfer. Model
+    implementation modules (jinfer-lfm2, ...) depend on this module for the kernels.</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jota-memory</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>gguf</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jam-core</artifactId>
+      <!-- API + ServiceLoader discovery only; the backends (jam-native/jam-vector) arrive from
+           the CONSUMER's classpath. Absent -> MatMul runs the Java floor, bit-identical. -->
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>graalvm-annotations</artifactId>
+      <!-- @AlwaysInline: compile-only, not bundled; GraalVM supplies it at native-image build -->
+      <scope>provided</scope>
+    </dependency>
+    <!-- test-only: checkpoint acquisition by ref (lookup only, never a download) -->
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-testkit</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <!-- the pure-java jam rungs, for MatMulJamParityTest's dedicated surefire execution -->
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jam-scalar</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jam-vector</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>default-test</id>
+            <goals>
+              <goal>test</goal>
+            </goals>
+            <configuration>
+              <!-- Keep ordinary kernel contracts on the Java floor; the dedicated execution below
+                   exercises the pure-Java JAM routes. -->
+              <classpathDependencyExcludes>
+                <classpathDependencyExclude>com.qxotic:jam-native</classpathDependencyExclude>
+                <classpathDependencyExclude>com.qxotic:jam-vector</classpathDependencyExclude>
+                <classpathDependencyExclude>com.qxotic:jam-scalar</classpathDependencyExclude>
+              </classpathDependencyExcludes>
+              <excludes>
+                <exclude>**/MatMulJamParityTest.java</exclude>
+              </excludes>
+            </configuration>
+          </execution>
+          <execution>
+            <!-- jam-rung parity: MatMul.mm (jam-routed) vs MatMul.mmFloor (no jam) needs the
+                 pure-java backends on the classpath; jam-native stays excluded (flaky in the
+                 forked JVM). -->
+            <id>jam-parity</id>
+            <goals>
+              <goal>test</goal>
+            </goals>
+            <configuration>
+              <classpathDependencyExcludes>
+                <classpathDependencyExclude>com.qxotic:jam-native</classpathDependencyExclude>
+              </classpathDependencyExcludes>
+              <includes>
+                <include>**/MatMulJamParityTest.java</include>
+              </includes>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>
