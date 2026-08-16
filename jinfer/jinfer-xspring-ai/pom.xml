@@ -17,8 +17,7 @@
        media, embeddings, reranking, speech. Runtime needs jinfer's JVM flags: enable-preview,
        jdk.incubator.vector, enable-native-access.
 
-       Twin of jinfer-spring-ai (same package, same class names): classpath-exclusive, swap by
-       dependency. Named jinfer-xspring-ai, NOT spring-ai-jinfer: the spring-ai- prefix belongs to
+       Named jinfer-xspring-ai, NOT spring-ai-jinfer: the spring-ai- prefix belongs to
        modules released by that project, and wearing it under com.qxotic would read on Maven
        Central as an official integration. Same convention as jinfer-xlangchain4j. -->
   <name>jinfer-xspring-ai</name>

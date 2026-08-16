@@ -1,73 +1,84 @@
 # jinfer architecture
 
-One page: the module graph, the chat-to-tokens flow, and the prompt-cache design.
+One implementation stack built on `MemoryView`: model boundaries, kernels, chat orchestration and
+the prompt cache.
 
 ## Modules
 
-```
-jinfer-core     types + seams: Batch, FloatTensor, Model/LanguageModel/RuntimeState,
-                GgufTokenizer, chat/ (layout), cache/ (prompt caching), media/ (codecs)
-jinfer-jinja    Jinja template engine (CompiledTemplate) - used by the server fallback
-                and as the OFFLINE oracle for hand-written templates; never on the hot path
-jinfer-kernels  ModelLoader, FlashAttention, GEMM dispatch (JAM native / Vector API);
-                test-jar ships the shared testkit (Harness + scenario batteries)
-jinfer-<model>  one module per curated model (lfm2, gemma4, llama, gptoss, qwen35, ...):
-                the arch port + its TurnTemplate + its StateCodec. Retrieval families are
-                ports too: jinfer-qwen3 is arch "qwen3" (Qwen3-Embedding pooling +
-                Qwen3-Reranker judging), no chat template, loaded via Models.loadEmbedder
-                / loadReranker
-jinfer-hub      model refs, the cache, and downloads (build()-time only: the CLI and the provider integrations' builders resolve; nothing on an inference path ever does)
-jinfer-server   the OpenAI-compatible HTTP server as a library: hand it a LoadedModel and a
-                ServerConfig. No model ports, no downloader, no printing, no ambient configuration
-jinfer-cli      the deliverable: the `jinfer` jar and native binary. The chat loop, the argv
-                parser, the shade and native-image configuration, and the only module that
-                depends on everything - which is what keeps the others from having to
+```text
+jinfer-xcore       native-memory adapters, parallel execution and shared view utilities
+jinfer-xkernels    GGUF loading and CPU kernels over MemoryView
+jinfer-xboundary   model/configuration/weights/state contracts, media and telemetry
+jinfer-xcache      retained sessions and content-addressed checkpoint storage
+jinfer-xllm        sampling, grammar constraints, generation and speculative decoding
+jinfer-xchat       model loading, templates, conversations, tools and ChatEngine
+jinfer-x<model>    one ServiceLoader provider per supported GGUF architecture
+jinfer-xserver     OpenAI-compatible HTTP/SSE server
+jinfer-xcli        chat, completion, pull and server executable
+jinfer-xbench      generic language-model and embedding benchmarks
+
+jinfer-hub         model references, local cache and downloads
+jinfer-jinja       whole-template fallback renderer
+jinfer-testkit     shared model-fixture discovery for tests
 ```
 
-Dependencies flow strictly downward (core &larr; jinja &larr; kernels &larr; models &larr; server &larr; cli);
-no cycles. Nothing depends on jinfer-cli; that is what makes it free to amalgamate.
+`jinfer-xmodels-all` is the convenience aggregate. Footprint-sensitive applications can depend on
+only the architecture modules they need; `Models.load` discovers the available providers and gives
+an actionable error when a matching provider is absent.
 
-## Chat flow: conversation to tokens to KV
+Dependencies point toward the small substrate: xcore and xboundary at the bottom, then kernels,
+cache and xllm, then xchat, model providers, integrations and executables. The CLI is a leaf.
 
+## Model boundary
+
+```text
+Model<C, W, S extends RuntimeState>
+├── ContextModel             incremental bounded ingestion
+│   ├── LanguageModel        logits projection
+│   ├── EmbeddingModel       pooled embedding projection
+│   └── RerankingModel       relevance projection
+└── SpeechSynthesisModel     text-to-audio generation
 ```
-Message(role, [Text|Blob(Media)])                    high-level, portable
-  -> TurnTemplate.encodeTurn / generationPrompt      per-turn, deterministic, turn-stable
-  -> List<Batch>  (Tokens | Embeddings)              text plain-encoded, media via MultiModal
-  -> Batch.prepare(batches, batchCapacity)           merge/split, bidirectional blocks whole
-  -> model.ingest(state, batch)                      KV grows at state.position()
+
+Configuration and weights are immutable. Runtime state owns mutable inference memory and admits one
+serial operation at a time. A caller-supplied arena remains caller-owned; a state-created arena is
+released with the state. Returned `MemoryView`s are borrowed unless an API explicitly returns a
+copy, and callback APIs delimit borrowed-view validity.
+
+## Chat flow
+
+```text
+Conversation(role, Content...)
+  -> ChatTemplate.encode(..., Consumer<Batch>)
+  -> PromptWriter streams token or projected-media batches
+  -> PromptCache serves the longest compatible prefix
+  -> ContextModel.ingest(state, batch)
+  -> LanguageModel.logits(state)
+  -> Generator samples and streams reply tokens
+  -> ReplyParser produces the assistant message and tool calls
 ```
 
-Templates are hand-written per model (curated set) and validated **token-exact** against the
-GGUF's own `tokenizer.chat_template` by the oracle tests. Two tokenization domains: scaffolding
-is trusted special ids; conversation text is plain-encoded and can never mint control tokens.
-Models without a hand-written template fall back to the server's Jinja render path.
+Native templates emit trusted control tokens directly while user text is always plain-tokenized.
+Media projectors stream borrowed embedding rows; `MediaEncodingCache` can replay a previous
+projection by `ContentKey`. Models without a native codec use the hardened Jinja whole-render
+fallback.
 
-## Prompt cache: policy over two seams
+## Prompt cache
 
-The model provides a `StateCodec` (resume-state for a position span &harr; opaque bytes: per-position
-K/V rows for attention layers; fixed-size checkpoints for short-conv, SSM, or sliding-window
-layers - restored at true ring slots since RoPE is position-baked). Storage provides a
-`CacheStore`. `PromptCache` owns the rest:
+`PromptCache` is the production entry point over three mechanisms:
 
-- **Chained crypto keys**: block key = SHA-256(parent key, span fingerprints); fingerprints are
-  token ids (media: content hash). The chain names the whole prefix - trusted as identity.
-- **Per-model seed**: the chain ROOT is seeded with the GGUF's identity
-  (`PromptCache.modelSeed`: length + head/tail SHA-256), so caches are per-model by construction
-  and a wrong cache file fails with a descriptive error, never a wrong restore.
-- **Complete blocks only**: checkpoints exist only at boundaries, so a block matches whole or
-  not at all. Prefill chunks are large blocks; each decode step is a single-token block
-  (`CachedSession` commits at every ingestion boundary via the O(span) `Cursor`).
-- **Pure optimization**: any miss, eviction, or verification failure degrades to recompute.
+- retained sessions keep a bounded number of live, appendable conversation states;
+- block storage checkpoints complete prompt batches under a byte budget;
+- one optional JKVF catalog supplies persistent read-only prefixes and can receive exported ones.
 
-Serving artifacts: `FrozenBlocks` files (JKVF: any number of prompts as one content-addressed
-block tree, shared prefixes stored once; `freeze()`/`open()`/`createEmpty()`, lazily mapped,
-appendable under a file lock - the accumulating `--cache` catalog and the prompt-compiler path).
-Measured on CPU: resume is near-constant in history length (~20-50 ms) vs linear prefill -
-84-404x on multi-thousand-token histories.
+Block identities chain model identity with token IDs or media content keys, so incompatible models
+and prompts cannot match. A restore stops one position short and re-ingests the last position to
+produce fresh logits. Misses, eviction or unavailable checkpoints always degrade to recomputation;
+caching changes cost, never inference semantics.
 
 ## Testing
 
-Main-method harnesses per model, parameterized by the shared testkit: oracle battery
-(token-exact vs the Jinja render, injection-inert), cache battery (byte-identical restored
-state - the sound gate; reply equality strict for deterministic decodes, informational for MoE
-whose threaded reductions are not byte-deterministic), sealed/frozen batteries, benchmarks.
+Fast unit contracts cover state lifecycle, cache laws, kernels, templates, grammar, media and
+server protocols. Fixture-gated integration tests exercise real GGUF models, framework TCKs,
+checkpoint restore, tools, structured output, vision, speech, embeddings, reranking and MTP.
+Oracle coupling to the removed tensor implementation is deliberately absent.

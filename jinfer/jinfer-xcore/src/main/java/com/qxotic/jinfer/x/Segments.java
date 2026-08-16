@@ -10,11 +10,11 @@ import jdk.incubator.vector.VectorSpecies;
 import sun.misc.Unsafe;
 
 /**
- * The raw-memory substrate every xcore kernel body assumes, ported byte-for-byte from {@code
- * FloatTensor}'s statics (jinfer-core). Kernels validate dtype/contiguity at entry (see {@link
- * Views}), extract {@code (segment, byteOffset)} once, then run on these accessors.
+ * The raw-memory substrate every xcore kernel body assumes. Kernels validate dtype/contiguity at
+ * entry (see {@link Views}), extract {@code (segment, byteOffset)} once, then run on these
+ * accessors.
  *
- * <p>Two deliberate mechanisms, unchanged from the old world:
+ * <p>Two deliberate mechanisms:
  *
  * <ul>
  *   <li>{@link #GLOBAL_SEGMENT}: all-of-memory segment so per-access bounds/liveness checks fold

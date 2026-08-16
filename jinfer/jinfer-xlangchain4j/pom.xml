@@ -16,10 +16,10 @@
        fallback for unported models. Blocking + streaming, tools, reasoning lane. Runtime needs
        jinfer's JVM flags: enable-preview, jdk.incubator.vector, enable-native-access.
 
-       Named jinfer-langchain4j, NOT langchain4j-jinfer: the langchain4j- prefix belongs to modules
+       Named jinfer-xlangchain4j, NOT langchain4j-jinfer: the langchain4j- prefix belongs to modules
        released by that project (dev.langchain4j / dev.langchain4j.community), and wearing it under
        com.qxotic would read on Maven Central as an official integration. It flips only if this is
-       ever upstreamed. Same convention as jinfer-spring-ai. -->
+       ever upstreamed. Same convention as jinfer-xspring-ai. -->
   <name>jinfer-xlangchain4j</name>
   <properties>
     <langchain4j.version>1.18.0</langchain4j.version>

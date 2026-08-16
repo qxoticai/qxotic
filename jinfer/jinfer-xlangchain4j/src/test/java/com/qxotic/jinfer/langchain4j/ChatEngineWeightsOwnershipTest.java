@@ -21,8 +21,8 @@ import org.junit.jupiter.api.Test;
  * whoever loaded them and may hold more than this engine.
  *
  * <p>Fixture-gated: this needs real weights in a real arena, since the whole point is observing
- * whether that arena is still alive afterwards. It lives here rather than in jinfer-chat because
- * the ports depend on jinfer-chat, so that module has no architecture-dispatch provider to load
+ * whether that arena is still alive afterwards. It lives here rather than in jinfer-xchat because
+ * the ports depend on jinfer-xchat, so that module has no architecture-dispatch provider to load
  * with.
  */
 final class ChatEngineWeightsOwnershipTest {

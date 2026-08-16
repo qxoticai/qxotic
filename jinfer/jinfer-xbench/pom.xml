@@ -15,7 +15,7 @@
   <description>Benchmark harness for the x tree: llama-bench-parity pp/tg through the generic model
     loader (any architecture on the classpath), plus engine-level capability metrics - TTFT,
     prompt-cache hit latency, MTP acceptance, projected-media cold/warm, state allocation, peak
-    RSS.</description>
+    RSS, convolution tuning and decode-pool dispatch cost.</description>
 
   <properties>
     <maven.deploy.skip>true</maven.deploy.skip>

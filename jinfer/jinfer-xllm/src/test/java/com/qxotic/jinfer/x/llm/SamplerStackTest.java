@@ -14,9 +14,8 @@ import org.junit.jupiter.api.Test;
 
 /**
  * The sampler stack's semantics: each filter's cut, llama.cpp's chain order, composition,
- * determinism, and that sampling only ever draws from the filtered population. The SIMD/scalar
- * agreement of the underlying tensor primitives is pinned separately in jinfer-core's
- * SamplingPrimitivesTest.
+ * determinism, and that sampling only ever draws from the filtered population. SIMD/scalar kernel
+ * agreement is pinned separately in {@code jinfer-xkernels}.
  */
 class SamplerStackTest {
 

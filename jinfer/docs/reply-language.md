@@ -312,7 +312,7 @@ Writing all nine families changed the interfaces; this is why the exercise prece
 
 External contracts (`ReplyParser`, `ChatEngine.prepare`, provider APIs) hold throughout; families migrate one at a time.
 
-1. **Bricks**: a token-identity element in the `Grammar` engine (feasibility verified against its internals: new `T_TOKEN` slot kind plus a programmatic compile entry, roughly sixty lines, the GBNF parser, stack machinery and mask cache unchanged) and the region-tagged walk layered above it in jinfer-chat.
+1. **Bricks**: a token-identity element in the `Grammar` engine (feasibility verified against its internals: new `T_TOKEN` slot kind plus a programmatic compile entry, roughly sixty lines, the GBNF parser, stack machinery and mask cache unchanged) and the region-tagged walk layered above it in `jinfer-xchat`.
 2. **gpt-oss first**: full language, `ReplyParser` implemented by the walk, Laws 1-3 plus transcript replay as the gate.
    The REQUIRED release defect dies here as a corollary.
 3. **SmolLM3 and Granite next** (shared JSON envelope), then LFM2, Mistral, Qwen3.5, NemotronH, MiniCPM5, Gemma4 (hardest: compact syntax with quote Marks).

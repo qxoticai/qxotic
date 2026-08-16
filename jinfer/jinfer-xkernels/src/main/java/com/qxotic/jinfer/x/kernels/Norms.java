@@ -13,10 +13,8 @@ import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.VectorOperators;
 
 /**
- * Normalization kernels over views — ported byte-for-byte from jinfer-core {@code Norms}. All
- * operands are dense FP32 (checked at entry via {@link Raw#f32}); the old non-F32 scalar fallbacks
- * are gone by contract, the {@code USE_VECTOR_API=false} scalar path remains (now raw FP32 reads,
- * same math).
+ * Normalization kernels over views. All operands are dense FP32 (checked at entry via {@link
+ * Raw#f32}); {@code USE_VECTOR_API=false} selects the scalar path with the same math.
  */
 public final class Norms {
     private Norms() {}

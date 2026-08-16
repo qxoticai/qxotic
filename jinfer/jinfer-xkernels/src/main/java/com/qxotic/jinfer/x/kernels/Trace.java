@@ -8,8 +8,7 @@ import java.lang.foreign.MemorySegment;
 /**
  * Per-layer residual-checkpoint tracing for the model ports, enabled with {@code -Djinfer.trace}.
  * Zero cost in production: {@link #sum} returns immediately when disabled, and callers guard the
- * expensive argument construction on {@link #ENABLED}. Ported from jinfer-kernels {@code Trace}
- * with the FloatTensor reads replaced by FP32-checked raw reads.
+ * expensive argument construction on {@link #ENABLED}. Reads are FP32-checked.
  */
 public final class Trace {
     private Trace() {}

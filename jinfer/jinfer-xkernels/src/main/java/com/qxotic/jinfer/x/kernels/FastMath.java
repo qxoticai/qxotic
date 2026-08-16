@@ -6,9 +6,8 @@ package com.qxotic.jinfer.x.kernels;
  * built on it. {@code Math.exp} costs ~9ns per call in a native image (no vector math stubs, no
  * SVML); the fused vector form of this polynomial runs at ~0.19ns per element.
  *
- * <p>Ported byte-for-byte from jinfer-core {@code FastMath}. The segment-coupled fused vector forms
- * ({@code sigmoidMulInPlace}, {@code tanhInPlace}, {@code expSumInPlace}) are deferred until a
- * ported consumer needs them — their accuracy gates live with the consumers.
+ * <p>Segment-coupled fused vector forms are added only when a consumer needs them; their accuracy
+ * gates live with the consumers.
  *
  * <p>These are APPROXIMATIONS with enforced contracts: every consumer domain carries an exhaustive
  * or dense-sweep accuracy gate ({@code ExpAccuracyTest}: exp within 3 ulp of {@code (float)
