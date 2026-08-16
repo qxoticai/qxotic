@@ -221,7 +221,7 @@ public final class XJinferBench {
         }
     }
 
-    /** X tree: the same calls transliterated to the x seam (manual chunking, per-call claim). */
+    /** X tree: the same calls transliterated to the x seam (manual chunking, safe entry points). */
     private static final class XBenchModel extends BenchModel {
         private final com.qxotic.jinfer.x.models.lfm2.Lfm2 model;
         private com.qxotic.jinfer.x.models.lfm2.Lfm2.State s;
@@ -232,7 +232,7 @@ public final class XJinferBench {
 
         @Override
         int vocab() {
-            return model.config().vocabularySize();
+            return model.configuration().vocabularySize();
         }
 
         @Override
@@ -320,7 +320,7 @@ public final class XJinferBench {
 
         @Override
         int vocab() {
-            return model.config().vocabularySize();
+            return model.configuration().vocabularySize();
         }
 
         @Override

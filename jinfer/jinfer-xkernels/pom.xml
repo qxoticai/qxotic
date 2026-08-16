@@ -12,8 +12,7 @@
   <packaging>jar</packaging>
 
   <name>jinfer-xkernels</name>
-  <description>MemoryView-based kernel cone (FloatTensor migration; see qxotic/.opencode/plans/memoryview-migration.md).
-    The compute kernels over com.qxotic.jota.memory.MemoryView&lt;MemorySegment&gt; (matmul, norms, rope,
+  <description>Compute kernels over com.qxotic.jota.memory.MemoryView&lt;MemorySegment&gt; (matmul, norms, rope,
     convolutions, flash attention, activations, MoE) plus GGUF loading and FP16 KvTransfer. Model
     implementation modules (jinfer-xlfm2, ...) depend on this module for the kernels.</description>
 
