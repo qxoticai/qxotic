@@ -1,6 +1,6 @@
 package com.qxotic.jinfer.example.judgeadvisor;
 
-import com.qxotic.jinfer.chat.JsonCodec;
+import com.qxotic.format.json.Json;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -99,8 +99,7 @@ public final class GrammarPinnedEvaluationAdvisor implements CallAdvisor {
                     1, "judge verdict truncated at the token budget", "Be more concise.");
         }
         String text = judgeResponse.getResult().getOutput().getText();
-        @SuppressWarnings("unchecked")
-        Map<String, Object> json = (Map<String, Object>) JsonCodec.parse(text);
+        Map<String, Object> json = Json.parseMap(text);
         return new Verdict(
                 ((Number) json.get("rating")).intValue(),
                 (String) json.get("evaluation"),

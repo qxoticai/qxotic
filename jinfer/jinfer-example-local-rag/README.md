@@ -33,4 +33,4 @@ mvn spring-boot:run
 ## Tests
 
 `mvn test -Dsurefire.excludedGroups= -Dgroups=integration` - `LocalRagIT` asserts the answers
-are grounded in the corpus facts (model-gated, uses the repo's `ModelFixture` paths).
+are grounded in the corpus facts (model-gated through the repo's `TestModels` cache lookup).

@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.qxotic.jinfer.spring.ai.JinferChatModel;
 import com.qxotic.jinfer.spring.ai.autoconfigure.JinferChatAutoConfiguration;
-import com.qxotic.jinfer.testkit.ModelFixture;
+import com.qxotic.jinfer.testkit.TestModels;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -27,7 +27,7 @@ class JudgeAdvisorKimiIT {
     void remoteGeniusLocalJudge() {
         String apiKey = System.getenv("KIMI_API_KEY");
         Assumptions.assumeTrue(apiKey != null && !apiKey.isBlank(), "KIMI_API_KEY not set");
-        var judgeModel = ModelFixture.LFM25_8B_Q8.require();
+        var judgeModel = TestModels.require("hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF:Q8_0");
         new ApplicationContextRunner()
                 .withConfiguration(
                         AutoConfigurations.of(
