@@ -1,8 +1,8 @@
 package com.qxotic.jinfer.x.chat;
 
 import com.qxotic.jinfer.x.boundary.ContentKey;
+import com.qxotic.jinfer.x.boundary.ContextState;
 import com.qxotic.jinfer.x.boundary.LanguageModel;
-import com.qxotic.jinfer.x.boundary.RuntimeState;
 import com.qxotic.jinfer.x.llm.Sampling;
 import com.qxotic.toknroll.Tokenizer;
 import java.util.Collections;
@@ -19,7 +19,7 @@ import java.util.Set;
  * <p>Lifetime: no {@code close()} - the arena given to {@code Models.load} owns the weights, and
  * who provided it owns its lifetime.
  */
-public record LoadedModel<S extends RuntimeState>(
+public record LoadedModel<S extends ContextState>(
         LanguageModel<?, ?, S> model,
         Tokenizer tokenizer,
         String chatTemplateSource,

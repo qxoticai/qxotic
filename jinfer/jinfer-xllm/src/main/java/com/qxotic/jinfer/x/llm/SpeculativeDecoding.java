@@ -1,6 +1,6 @@
 package com.qxotic.jinfer.x.llm;
 
-import com.qxotic.jinfer.x.boundary.RuntimeState;
+import com.qxotic.jinfer.x.boundary.ContextState;
 import com.qxotic.jinfer.x.llm.Generator.Constraints;
 import com.qxotic.jinfer.x.llm.Generator.FinishReason;
 import com.qxotic.jinfer.x.llm.Generator.GenerationListener;
@@ -21,7 +21,7 @@ import java.util.OptionalInt;
  *
  * @param <S> the implementing model's state type
  */
-public interface SpeculativeDecoding<S extends RuntimeState> {
+public interface SpeculativeDecoding<S extends ContextState> {
 
     /** Whether this model has usable draft weights, so {@link #speculate} may be called. */
     boolean speculationReady();

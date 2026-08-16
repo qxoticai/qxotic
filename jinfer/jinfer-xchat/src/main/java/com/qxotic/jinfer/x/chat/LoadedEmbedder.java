@@ -2,6 +2,7 @@ package com.qxotic.jinfer.x.chat;
 
 import com.qxotic.jinfer.x.Views;
 import com.qxotic.jinfer.x.boundary.Batch;
+import com.qxotic.jinfer.x.boundary.ContextState;
 import com.qxotic.jinfer.x.boundary.EmbeddingModel;
 import com.qxotic.jinfer.x.boundary.RuntimeState;
 import com.qxotic.jinfer.x.telemetry.InferenceEvent;
@@ -23,7 +24,7 @@ import java.util.function.Consumer;
  * are trained WITH these prefixes - LFM2.5's {@code "query: "}/{@code "document: "} pair, Qwen3's
  * instructed query - and embedding bare text instead silently degrades retrieval quality.
  */
-public record LoadedEmbedder<S extends RuntimeState>(
+public record LoadedEmbedder<S extends ContextState>(
         EmbeddingModel<?, ?, S> model,
         Tokenizer tokenizer,
         int[] sequencePrefix,
@@ -219,7 +220,7 @@ public record LoadedEmbedder<S extends RuntimeState>(
                 at += seqs[i].length;
                 len[i - start] = seqs[i].length;
             }
-            model.embed(s, new Batch.Input.Sequences(new Batch.Input.Tokens(ids), len), sink);
+            model.embedAll(s, new Batch.Input.Sequences(new Batch.Input.Tokens(ids), len), sink);
             start = end;
         }
         return total;

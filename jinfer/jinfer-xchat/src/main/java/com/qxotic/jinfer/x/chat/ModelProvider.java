@@ -118,7 +118,7 @@ public interface ModelProvider {
      * container does not carry - a phoneme port looks for its pronunciation lexicon beside the
      * model before falling back.
      */
-    default com.qxotic.jinfer.x.boundary.SpeechModel<?, ?, ?> loadSpeech(
+    default com.qxotic.jinfer.x.boundary.SpeechSynthesisModel<?, ?, ?> loadSpeech(
             FileChannel fileChannel, GGUF gguf, Path path, Arena arena) throws IOException {
         throw new UnsupportedOperationException(
                 "'" + gguf.getString("general.architecture") + "' is not a speech architecture");
@@ -133,7 +133,7 @@ public interface ModelProvider {
      * no change: an empty map is the plain load, and a non-empty one is a caller asking for
      * something this architecture does not have.
      */
-    default com.qxotic.jinfer.x.boundary.SpeechModel<?, ?, ?> loadSpeech(
+    default com.qxotic.jinfer.x.boundary.SpeechSynthesisModel<?, ?, ?> loadSpeech(
             FileChannel fileChannel,
             GGUF gguf,
             Path path,

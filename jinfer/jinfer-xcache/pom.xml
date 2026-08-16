@@ -12,11 +12,10 @@
   <packaging>jar</packaging>
 
   <name>jinfer-xcache</name>
-  <description>The x prompt cache (FloatTensor migration): the model-agnostic KV cache over the
-    xboundary seam - hot sessions, content-keyed blocks with a RAM budget, and the JKVF catalog
-    artifact that survives restarts. Models contribute only a StateCodec (xboundary); seeds are
-    ContentKeys. Ported from jinfer-core/cache with the seed type unified on ContentKey and the
-    modelSeed hashing law left to xchat Models.</description>
+  <description>The model-agnostic x prompt cache over the
+    xboundary seam - retained sessions, content-keyed blocks with a RAM budget, and the JKVF catalog
+    artifact that survives restarts. Models contribute only a CheckpointCodec; seeds are
+    ContentKeys.</description>
 
   <dependencies>
     <dependency>

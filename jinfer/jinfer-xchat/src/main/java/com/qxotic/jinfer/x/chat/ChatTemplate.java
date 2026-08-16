@@ -17,9 +17,9 @@ public interface ChatTemplate {
     /**
      * Streams the complete prompt synchronously. Media chunks are borrowed: neither their liveness
      * nor their contents is guaranteed beyond the sink call ({@link
-     * com.qxotic.jinfer.x.boundary.Embedder#embed}), so a sink that ingests after {@code encode}
-     * returns must copy them during the call. The returned parser is already seeded with the
-     * prompt-owned reply prefix.
+     * com.qxotic.jinfer.x.boundary.MediaProjector#project}), so a sink that ingests after {@code
+     * encode} returns must copy them during the call. The returned parser is already seeded with
+     * the prompt-owned reply prefix.
      */
     ReplyState encode(Conversation conversation, int batchCapacity, Consumer<Batch> sink);
 
@@ -59,7 +59,7 @@ public interface ChatTemplate {
     /**
      * Best-effort context-position count for one media item - the preprocessing plan's number
      * (image tier, audio frames), never an encoder run. Templates without media keep the default
-     * throw; see {@code Embedder#positions}.
+     * throw; see {@code MediaProjector#positions}.
      */
     default int mediaPositions(Media media) {
         throw new UnsupportedOperationException("this model does not plan media positions");

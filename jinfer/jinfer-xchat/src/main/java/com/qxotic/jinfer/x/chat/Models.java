@@ -3,8 +3,9 @@ package com.qxotic.jinfer.x.chat;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.format.gguf.GGUFFormatException;
 import com.qxotic.jinfer.x.boundary.ContentKey;
-import com.qxotic.jinfer.x.boundary.MultiModal;
-import com.qxotic.jinfer.x.boundary.RuntimeState;
+import com.qxotic.jinfer.x.boundary.ContextState;
+import com.qxotic.jinfer.x.boundary.Media;
+import com.qxotic.jinfer.x.boundary.Multimodal;
 import com.qxotic.jinfer.x.boundary.media.ImageCodec;
 import com.qxotic.toknroll.Tokenizer;
 import java.io.BufferedInputStream;
@@ -156,7 +157,7 @@ public final class Models {
     }
 
     /** Loads a SPEECH model at the port's own defaults. */
-    public static com.qxotic.jinfer.x.boundary.SpeechModel<?, ?, ?> loadSpeech(
+    public static com.qxotic.jinfer.x.boundary.SpeechSynthesisModel<?, ?, ?> loadSpeech(
             Path path, Arena arena) throws IOException {
         return loadSpeech(path, arena, Map.of());
     }
@@ -167,7 +168,7 @@ public final class Models {
      * external tool) remains the DEFAULT; naming one here overrides that ladder rather than
      * extending it.
      */
-    public static com.qxotic.jinfer.x.boundary.SpeechModel<?, ?, ?> loadSpeech(
+    public static com.qxotic.jinfer.x.boundary.SpeechSynthesisModel<?, ?, ?> loadSpeech(
             Path path, Arena arena, Map<String, Path> companions) throws IOException {
         Map<String, Path> attached = Map.copyOf(companions);
         return open(
@@ -399,7 +400,7 @@ public final class Models {
      * Attaches the effective sampling recommendations: the GGUF's {@code general.sampling.*} where
      * present, falling back to the port's model-author recommendation, if it declared one.
      */
-    private static <S extends RuntimeState> LoadedModel<S> sampled(
+    private static <S extends ContextState> LoadedModel<S> sampled(
             LoadedModel<S> loaded, GGUF gguf) {
         return new LoadedModel<>(
                 loaded.model(),
@@ -419,7 +420,7 @@ public final class Models {
      * projector producing different rows for the same image must never be served blocks cached
      * under the old one.
      */
-    static <S extends RuntimeState> LoadedModel<S> companionSeeded(
+    static <S extends ContextState> LoadedModel<S> companionSeeded(
             LoadedModel<S> loaded, Map<String, Path> companions) {
         if (companions.isEmpty()) {
             return loaded;
@@ -432,8 +433,17 @@ public final class Models {
             sha.update(modelSeed(companion.getValue()).value().getBytes(StandardCharsets.UTF_8));
         }
         sha.update(ImageCodec.decoder().name().getBytes(StandardCharsets.UTF_8));
-        if (loaded.model() instanceof MultiModal mm) {
-            sha.update(mm.encodePlanId().getBytes(StandardCharsets.UTF_8));
+        if (loaded.model() instanceof Multimodal mm) {
+            mm.projector(Media.Image.class)
+                    .ifPresent(
+                            projector ->
+                                    sha.update(
+                                            projector.planId().getBytes(StandardCharsets.UTF_8)));
+            mm.projector(Media.Audio.class)
+                    .ifPresent(
+                            projector ->
+                                    sha.update(
+                                            projector.planId().getBytes(StandardCharsets.UTF_8)));
         }
         return new LoadedModel<>(
                 loaded.model(),

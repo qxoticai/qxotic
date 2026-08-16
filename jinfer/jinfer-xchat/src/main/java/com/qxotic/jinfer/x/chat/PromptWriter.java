@@ -1,8 +1,8 @@
 package com.qxotic.jinfer.x.chat;
 
 import com.qxotic.jinfer.x.boundary.Batch;
-import com.qxotic.jinfer.x.boundary.Embedder;
 import com.qxotic.jinfer.x.boundary.Media;
+import com.qxotic.jinfer.x.boundary.MediaProjector;
 import com.qxotic.jinfer.x.llm.SpecialTokens;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
@@ -104,22 +104,22 @@ public final class PromptWriter {
     /**
      * Encodes media and forwards each borrowed embedding chunk synchronously. The chunk is valid
      * only inside the sink call - neither its liveness nor its contents survive the callback (see
-     * {@link Embedder#embed}), so a sink that defers ingestion must copy.
+     * {@link MediaProjector#project}), so a sink that defers ingestion must copy.
      */
     public <M extends Media> PromptWriter media(
-            M source, byte[] contentKey, Embedder<M> embedder, boolean bidirectional) {
+            M source, byte[] contentKey, MediaProjector<M> projector, boolean bidirectional) {
         checkOpen();
         Objects.requireNonNull(source, "source");
-        Objects.requireNonNull(embedder, "embedder");
+        Objects.requireNonNull(projector, "projector");
         flushTokens();
-        embedder.embed(
+        projector.project(
                 source,
                 batchCapacity,
                 rows -> {
                     int count = Math.toIntExact(rows.shape().flatAt(0));
                     if (count > batchCapacity)
                         throw new IllegalArgumentException(
-                                "embedder returned "
+                                "projector returned "
                                         + count
                                         + " rows for maxChunkSize "
                                         + batchCapacity);
