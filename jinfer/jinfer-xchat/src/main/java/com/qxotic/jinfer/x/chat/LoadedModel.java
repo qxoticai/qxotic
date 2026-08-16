@@ -42,6 +42,25 @@ public record LoadedModel<S extends ContextState>(
     }
 
     /**
+     * Returns the same loaded model with a caller-supplied Jinja chat template.
+     *
+     * <p>This is the narrow escape hatch for a GGUF whose embedded template is missing or wrong.
+     * The native template is deliberately dropped: a model-family codec was written for the
+     * original wire format and must not frame a replacement one. Rendering therefore falls back to
+     * {@code source}; replies use the generic parser.
+     *
+     * <p>The cache identity is unchanged. Cache entries also fingerprint the rendered token ids, so
+     * a changed template naturally misses old prefixes without invalidating compatible ones.
+     */
+    public LoadedModel<S> withChatTemplateSource(String source) {
+        if (source == null || source.isBlank()) {
+            throw new IllegalArgumentException("blank chat template source");
+        }
+        return new LoadedModel<>(
+                model, tokenizer, source, stopTokens, seed, Optional.empty(), samplingDefaults);
+    }
+
+    /**
      * The container's recommended sampling parameters, layered:
      *
      * <ol>
