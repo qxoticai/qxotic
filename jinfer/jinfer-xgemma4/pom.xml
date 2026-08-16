@@ -47,11 +47,6 @@
       <groupId>com.qxotic</groupId>
       <artifactId>toknroll-gguf</artifactId>
     </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-gemma4</artifactId>
-      <scope>test</scope>
-    </dependency>
     <!-- test-only: checkpoint acquisition by ref (lookup only, never a download) -->
     <dependency>
       <groupId>com.qxotic</groupId>
@@ -60,19 +55,4 @@
     </dependency>
   </dependencies>
 
-  <build>
-    <plugins>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-surefire-plugin</artifactId>
-        <configuration>
-          <classpathDependencyExcludes>
-            <classpathDependencyExclude>com.qxotic:jam-native</classpathDependencyExclude>
-            <classpathDependencyExclude>com.qxotic:jam-vector</classpathDependencyExclude>
-            <classpathDependencyExclude>com.qxotic:jam-scalar</classpathDependencyExclude>
-          </classpathDependencyExcludes>
-        </configuration>
-      </plugin>
-    </plugins>
-  </build>
 </project>

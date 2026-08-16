@@ -53,24 +53,6 @@
       <groupId>com.qxotic</groupId>
       <artifactId>toknroll-gguf</artifactId>
     </dependency>
-    <!-- differential gate: the old Qwen3 port (and its tree), test-scope ONLY -->
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-qwen3</artifactId>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-llm</artifactId>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <!-- the shipped scorer (Models.loadReranker -> Qwen3Provider -> old Qwen3Reranker): the
-           score leg's oracle, and its Models dispatch needs the ServiceLoader wiring -->
-      <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-chat</artifactId>
-      <scope>test</scope>
-    </dependency>
     <!-- test-only: checkpoint acquisition by ref (lookup only, never a download) -->
     <dependency>
       <groupId>com.qxotic</groupId>
@@ -79,22 +61,4 @@
     </dependency>
   </dependencies>
 
-  <build>
-    <plugins>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-surefire-plugin</artifactId>
-        <configuration>
-          <!-- Differential oracles compare against the JAVA floor: exclude the JAM backends so
-               the old Dispatch routes gemm/gemv to the same dot-based code. JAM parity arrives
-               with the JAM arm of x.MatMul. -->
-          <classpathDependencyExcludes>
-            <classpathDependencyExclude>com.qxotic:jam-native</classpathDependencyExclude>
-            <classpathDependencyExclude>com.qxotic:jam-vector</classpathDependencyExclude>
-            <classpathDependencyExclude>com.qxotic:jam-scalar</classpathDependencyExclude>
-          </classpathDependencyExcludes>
-        </configuration>
-      </plugin>
-    </plugins>
-  </build>
 </project>

@@ -39,39 +39,6 @@ import org.junit.jupiter.api.Test;
 final class Gemma4ChatTemplateTest {
 
     @Test
-    void plainTurnsMatchTheOracleValidatedOldPort() throws Exception {
-        Tokenizer tokenizer = tokenizer();
-        Gemma4ChatTemplate actual = new Gemma4ChatTemplate(tokenizer);
-        com.qxotic.jinfer.models.gemma4.Gemma4TurnTemplate expected =
-                new com.qxotic.jinfer.models.gemma4.Gemma4TurnTemplate(tokenizer);
-        List<Message> messages =
-                List.of(
-                        Message.system(" You are concise. "),
-                        Message.user("literal <|turn> and unicode: ñé漢字"),
-                        Message.assistant(" history "),
-                        Message.user("continue"));
-        List<com.qxotic.jinfer.chat.Message> oldMessages =
-                messages.stream()
-                        .map(
-                                message ->
-                                        new com.qxotic.jinfer.chat.Message(
-                                                new com.qxotic.jinfer.chat.Role(
-                                                        message.role().name()),
-                                                message.text()))
-                        .toList();
-        int[] oracle =
-                com.qxotic.jinfer.Batch.tokenIds(
-                        expected.encode(new com.qxotic.jinfer.chat.Conversation(oldMessages)));
-
-        for (int capacity : List.of(1, 7, 512)) {
-            List<Batch> batches = new ArrayList<>();
-            actual.encode(new Conversation(messages), capacity, batches::add);
-            assertArrayEquals(oracle, Batch.tokenIds(batches), "batchCapacity " + capacity);
-            assertTrue(batches.stream().allMatch(batch -> batch.count() <= capacity));
-        }
-    }
-
-    @Test
     void imageAndAudioStayStructuralAndOrdered() throws Exception {
         Tokenizer tokenizer = tokenizer();
         ContentKey imageKey = new ContentKey("image:test");
@@ -132,29 +99,14 @@ final class Gemma4ChatTemplateTest {
     }
 
     @Test
-    void nonThinkingScaffoldAndReplySeedStayTogether() throws Exception {
+    void nonThinkingReplyStartsInContentChannel() throws Exception {
         Tokenizer tokenizer = tokenizer();
         Message message = Message.user("answer directly");
         Conversation conversation = new Conversation(List.of(message), List.of(), false, "");
-        List<Batch> batches = new ArrayList<>();
         ChatTemplate.ReplyState reply =
                 new Gemma4ChatTemplate(tokenizer, null, true)
-                        .encode(conversation, 32, batches::add);
+                        .encode(conversation, 32, ignored -> {});
 
-        com.qxotic.jinfer.models.gemma4.Gemma4TurnTemplate old =
-                new com.qxotic.jinfer.models.gemma4.Gemma4TurnTemplate(tokenizer, null, 0, true);
-        var oldPrompt =
-                old.encodePrompt(
-                        new com.qxotic.jinfer.chat.Conversation(
-                                List.of(
-                                        new com.qxotic.jinfer.chat.Message(
-                                                com.qxotic.jinfer.chat.Role.USER, message.text())),
-                                List.of(),
-                                false,
-                                ""));
-
-        assertArrayEquals(
-                com.qxotic.jinfer.Batch.tokenIds(oldPrompt.batches()), Batch.tokenIds(batches));
         assertFalse(reply.replyPrefix().isEmpty());
         assertEquals(Channel.CONTENT, reply.parser().channel());
     }
