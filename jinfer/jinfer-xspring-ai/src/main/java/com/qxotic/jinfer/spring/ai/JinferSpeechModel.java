@@ -4,10 +4,11 @@
 package com.qxotic.jinfer.spring.ai;
 
 import com.qxotic.jinfer.hub.ModelStore;
+import com.qxotic.jinfer.x.boundary.Arenas;
 import com.qxotic.jinfer.x.boundary.Media;
-import com.qxotic.jinfer.x.boundary.SpeechModel;
+import com.qxotic.jinfer.x.boundary.RuntimeState;
 import com.qxotic.jinfer.x.boundary.SpeechOptions;
-import com.qxotic.jinfer.x.boundary.SpeechState;
+import com.qxotic.jinfer.x.boundary.SpeechSynthesisModel;
 import com.qxotic.jinfer.x.boundary.media.AudioCodec;
 import com.qxotic.jinfer.x.chat.Models;
 import java.io.IOException;
@@ -43,7 +44,7 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
     /** OpenAI's TTS limit, so a caller porting from it meets the same boundary here. */
     private static final int DEFAULT_MAX_INPUT_CHARS = 4096;
 
-    private final SpeechModel<?, ?, SpeechState> model;
+    private final SpeechSynthesisModel<?, ?, RuntimeState> model;
     private final Arena owned; // null unless this instance loaded the weights
     // Requests take the READ lock and run in PARALLEL - a state is per-call, so there is nothing
     // to serialize. close() takes the WRITE lock, which is what makes it wait for every in-flight
@@ -59,10 +60,10 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
         this.maxInputChars = b.maxInputChars;
         // an arena this instance creates is this instance's to free on EVERY path out of here,
         // including a state allocation that fails after the weights are already mapped
-        Arena created = b.model == null ? Arena.ofShared() : null;
+        Arena created = b.model == null ? Arenas.newCrossThread() : null;
         try {
             this.model =
-                    (SpeechModel<?, ?, SpeechState>)
+                    (SpeechSynthesisModel<?, ?, RuntimeState>)
                             (b.model != null ? b.model : Models.loadSpeech(b.modelPath, created));
         } catch (IOException e) {
             closeQuietly(created); // a leaked ofShared arena has no backstop: free before failing
@@ -75,7 +76,7 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
     }
 
     private static void closeQuietly(Arena arena) {
-        if (arena != null) arena.close();
+        if (arena != null) Arenas.close(arena);
     }
 
     @Override
@@ -88,7 +89,7 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
             // ONE STATE PER CALL - a jinfer speech state cannot be shared, so this does not share
             // one. Measured at +3.5% against reusing a state, which is what a thread-safe bean is
             // worth.
-            try (SpeechState state = model.newState()) {
+            try (RuntimeState state = model.newState()) {
                 Media.Audio audio = model.speak(state, text, options);
                 return new TextToSpeechResponse(List.of(new Speech(AudioCodec.wav(audio))));
             }
@@ -116,7 +117,7 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
                             lifecycle.readLock().lock();
                             try {
                                 checkOpen();
-                                try (SpeechState state = model.newState()) {
+                                try (RuntimeState state = model.newState()) {
                                     model.speak(
                                             state,
                                             text,
@@ -219,8 +220,8 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
 
     public static final class Builder {
 
-        private Object source; // Path | ref/URL String | SpeechModel: the last setter wins
-        private SpeechModel<?, ?, ?> model; // derived from source at build()
+        private Object source; // Path | ref/URL String | SpeechSynthesisModel: last setter wins
+        private SpeechSynthesisModel<?, ?, ?> model; // derived from source at build()
         private Path modelPath; // derived from source at build()
         private Double speed;
         private int maxInputChars = DEFAULT_MAX_INPUT_CHARS;
@@ -230,7 +231,7 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
          * ({@code InflectTTS.load(gguf, weights).variation(0.5)}). Its weights arena stays yours.
          * Mutually exclusive with {@link #modelPath}.
          */
-        public Builder model(SpeechModel<?, ?, ?> model) {
+        public Builder model(SpeechSynthesisModel<?, ?, ?> model) {
             this.source = model;
             return this;
         }
@@ -276,11 +277,11 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
             switch (source) {
                 case String ref -> modelPath = ModelStore.resolve(ref);
                 case Path path -> modelPath = path;
-                case SpeechModel<?, ?, ?> m -> model = m;
+                case SpeechSynthesisModel<?, ?, ?> m -> model = m;
                 case null, default ->
                         throw new IllegalArgumentException(
                                 "a model is required: model(\"hf.co/owner/repo:Q4_K_M\"),"
-                                        + " modelPath(...) or model(SpeechModel)");
+                                        + " modelPath(...) or model(SpeechSynthesisModel)");
             }
             return new JinferSpeechModel(this);
         }
