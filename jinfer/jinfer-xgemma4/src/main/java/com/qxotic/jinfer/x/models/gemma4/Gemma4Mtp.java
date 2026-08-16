@@ -167,7 +167,7 @@ public final class Gemma4Mtp {
                 layers,
                 gguf.getValue(int.class, p + "feed_forward_length"),
                 gguf.getValue(int.class, p + "attention.head_count"),
-                gguf.getValue(int.class, p + "attention.head_count_kv"),
+                headCountKv(gguf, p + "attention.head_count_kv", layers),
                 headFull,
                 headSWA,
                 gguf.getValue(int.class, p + "attention.sliding_window"),
@@ -176,6 +176,28 @@ public final class Gemma4Mtp {
                 gguf.getValueOrDefault(float.class, p + "rope.freq_base_swa", 10000f),
                 isSWA,
                 backboneVocab);
+    }
+
+    /**
+     * The KV-head count is descriptive only (drafts project Q and share the backbone's KV), and
+     * sidecars disagree on its shape: E2B stores a scalar {@code 1}, the 26B stores per-layer
+     * {@code [8, 8, 8, 2]}. Read either; a per-layer array is validated against the layer count and
+     * summarized by its first entry.
+     */
+    private static int headCountKv(GGUF gguf, String key, int layers) {
+        Object value = gguf.getValue(Object.class, key);
+        if (value instanceof int[] perLayer) {
+            if (perLayer.length != layers) {
+                throw new IllegalArgumentException(
+                        key
+                                + ": per-layer array of "
+                                + perLayer.length
+                                + " does not match block_count "
+                                + layers);
+            }
+            return perLayer[0];
+        }
+        return (Integer) value;
     }
 
     private static Weights loadWeights(Map<String, MemoryView<MemorySegment>> t, Configuration c) {
