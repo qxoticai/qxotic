@@ -1,16 +1,17 @@
 package com.qxotic.jinfer.x.models.gemma4;
 
 import com.qxotic.format.gguf.GGUF;
-import com.qxotic.jinfer.x.PanamaMemoryArena;
 import com.qxotic.jinfer.x.Parallel;
 import com.qxotic.jinfer.x.Views;
-import com.qxotic.jinfer.x.boundary.Embedder;
+import com.qxotic.jinfer.x.boundary.Arenas;
 import com.qxotic.jinfer.x.boundary.Media;
+import com.qxotic.jinfer.x.boundary.MediaProjector;
 import com.qxotic.jinfer.x.kernels.MatMul;
 import com.qxotic.jinfer.x.kernels.ModelLoader;
 import com.qxotic.jinfer.x.kernels.Norms;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Shape;
+import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import java.io.IOException;
 import java.lang.foreign.Arena;
@@ -23,7 +24,7 @@ import java.util.Objects;
 import java.util.function.Consumer;
 
 /** Gemma 4 raw-waveform audio projector ({@code projector_type=gemma4ua}). */
-public final class Gemma4Audio implements Embedder<Media.Audio> {
+public final class Gemma4Audio implements MediaProjector<Media.Audio> {
     private final int modelDim, frameSize;
     private final float eps;
     private final MemoryView<MemorySegment> inputProjection;
@@ -60,12 +61,13 @@ public final class Gemma4Audio implements Embedder<Media.Audio> {
         return Math.max(1, Math.toIntExact(((long) samples + frameSize - 1) / frameSize));
     }
 
-    String planId() {
+    @Override
+    public String planId() {
         return "gemma4ua frame=" + frameSize;
     }
 
     @Override
-    public void embed(Media.Audio audio, int maxChunkSize, Consumer<MemoryView<?>> sink) {
+    public void project(Media.Audio audio, int maxChunkSize, Consumer<MemoryView<?>> sink) {
         Objects.requireNonNull(audio, "audio");
         Objects.requireNonNull(sink, "sink");
         if (maxChunkSize <= 0) throw new IllegalArgumentException("maxChunkSize must be positive");
@@ -74,8 +76,8 @@ public final class Gemma4Audio implements Embedder<Media.Audio> {
         int rows = Math.max(1, Math.toIntExact(((long) pcm.length + frameSize - 1) / frameSize));
         for (int firstRow = 0; firstRow < rows; ) {
             int chunkRows = Math.min(maxChunkSize, rows - firstRow);
-            try (Arena arena = Arena.ofShared()) {
-                PanamaMemoryArena scratch = new PanamaMemoryArena(arena);
+            MemoryArena<MemorySegment> scratch = Arenas.newCrossThreadMemoryArena();
+            try {
                 MemoryView<MemorySegment> frames = Views.allocateF32(scratch, chunkRows, frameSize);
                 int rowBase = firstRow;
                 Parallel.forRows(
@@ -111,6 +113,8 @@ public final class Gemma4Audio implements Embedder<Media.Audio> {
                         chunkRows,
                         frameSize);
                 sink.accept(projected);
+            } finally {
+                Arenas.close(scratch);
             }
             firstRow += chunkRows;
         }

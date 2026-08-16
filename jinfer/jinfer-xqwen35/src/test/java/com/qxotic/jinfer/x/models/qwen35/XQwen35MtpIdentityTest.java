@@ -34,7 +34,7 @@ final class XQwen35MtpIdentityTest {
         Path path = TestModels.require(ref);
         Qwen35 model = Qwen35.loadModel(path, Arena.ofAuto());
         assertTrue(model.speculationReady(), "embedded MTP detected");
-        assertEquals(moe, model.config().isMoE(), "architecture kind");
+        assertEquals(moe, model.configuration().isMoE(), "architecture kind");
 
         int[] prompt = model.tokenizer().encodeToArray("Count upward: 1, 2, 3,");
         int context = prompt.length + 32;

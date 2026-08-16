@@ -1,5 +1,4 @@
-// Qwen3 against the MemoryView boundary: a port of jinfer-qwen3's Qwen3 (cycle 2 of the
-// FloatTensor migration, after xlfm2 proved the substrate). A standard decoder-only Llama-family
+// Qwen3 against the MemoryView boundary. A standard decoder-only Llama-family
 // transformer: RMSNorm + grouped-query attention with per-head q/k RMS-norm (QK-norm), NeoX
 // (split-half) rotary, SwiGLU FFN. No conv, no MoE, no gated attention, no embedding norm. Ties
 // the LM head to the embedding table when output.weight is absent; embedding checkpoints pool
@@ -18,12 +17,13 @@ package com.qxotic.jinfer.x.models.qwen3;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.x.Parallel;
 import com.qxotic.jinfer.x.Views;
-import com.qxotic.jinfer.x.boundary.BaseState;
+import com.qxotic.jinfer.x.boundary.Arenas;
 import com.qxotic.jinfer.x.boundary.Batch;
-import com.qxotic.jinfer.x.boundary.Config;
+import com.qxotic.jinfer.x.boundary.CheckpointCodec;
+import com.qxotic.jinfer.x.boundary.ContextConfiguration;
+import com.qxotic.jinfer.x.boundary.ContextState;
 import com.qxotic.jinfer.x.boundary.EmbeddingModel;
 import com.qxotic.jinfer.x.boundary.LanguageModel;
-import com.qxotic.jinfer.x.boundary.StateCodec;
 import com.qxotic.jinfer.x.kernels.Activations;
 import com.qxotic.jinfer.x.kernels.Convert;
 import com.qxotic.jinfer.x.kernels.FlashAttention;
@@ -34,6 +34,7 @@ import com.qxotic.jinfer.x.kernels.Ops;
 import com.qxotic.jinfer.x.kernels.RoPE;
 import com.qxotic.jinfer.x.kernels.Trace;
 import com.qxotic.jota.DataType;
+import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
@@ -47,6 +48,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Consumer;
 
 public final class Qwen3
         implements LanguageModel<Qwen3.Configuration, Qwen3.Weights, Qwen3.State>,
@@ -63,7 +65,7 @@ public final class Qwen3
     }
 
     @Override
-    public Configuration config() {
+    public Configuration configuration() {
         return configuration;
     }
 
@@ -77,30 +79,48 @@ public final class Qwen3
     }
 
     @Override
-    public Optional<StateCodec<State>> stateCodec() {
-        return Optional.of(new Qwen3StateCodec(configuration));
+    public Optional<CheckpointCodec<State>> checkpointCodec() {
+        return Optional.of(new Qwen3CheckpointCodec(configuration));
     }
 
     @Override
-    public State newState(int contextCapacity, int batchCapacity, Arena arena) {
-        return new State(configuration, contextCapacity, batchCapacity, arena);
+    public State newState(
+            int contextCapacity, int batchCapacity, MemoryArena<MemorySegment> arena) {
+        return new State(configuration, contextCapacity, batchCapacity, arena, false);
     }
 
     @Override
-    public void forward(State s, Batch batch) {
+    public State newState(int contextCapacity, int batchCapacity) {
+        MemoryArena<MemorySegment> arena = Arenas.newCrossThreadMemoryArena();
+        try {
+            return new State(configuration, contextCapacity, batchCapacity, arena, true);
+        } catch (RuntimeException | Error failure) {
+            Arenas.close(arena);
+            throw failure;
+        }
+    }
+
+    @Override
+    public void ingest(State s, Batch batch) {
+        s.exclusively(() -> forward(s, batch));
+        Reference.reachabilityFence(this);
+    }
+
+    private void forward(State s, Batch batch) {
         int n = batch.count();
-        if (n > s.batchCapacity)
+        if (n <= 0) throw new IllegalArgumentException("batch must not be empty");
+        if (n > s.batchCapacity())
             throw new IllegalArgumentException(
-                    "batch " + n + " exceeds batchCapacity " + s.batchCapacity);
+                    "batch " + n + " exceeds batchCapacity " + s.batchCapacity());
         int from = s.position();
-        if (from + n > s.contextCapacity) {
+        if (from + n > s.contextCapacity()) {
             throw new IllegalArgumentException(
                     "ingest of "
                             + n
                             + " at position "
                             + from
                             + " exceeds contextCapacity "
-                            + s.contextCapacity);
+                            + s.contextCapacity());
         }
         int[] ids;
         int nPieces;
@@ -131,7 +151,7 @@ public final class Qwen3
                         return null;
                     });
         else forward(s, ids, from, n, nPieces);
-        s.advance(n, batch.outputs());
+        s.advance(batch);
     }
 
     /**
@@ -164,7 +184,7 @@ public final class Qwen3
     }
 
     /** Causal chunk forward over rows {@code [startPos, startPos+seqLen)} of the stream. */
-    void forward(State state, int[] tokens, int startPos, int seqLen, int nPieces) {
+    private void forward(State state, int[] tokens, int startPos, int seqLen, int nPieces) {
         // ONCE for the batch: an angle never depends on the layer. Not a range: each sequence
         // restarts at position 0, so the tables are filled from per-row positions
         RoPE.fill(
@@ -435,9 +455,16 @@ public final class Qwen3
     // --- heads ---
 
     @Override
-    public MemoryView<?> head(State s, int output) {
+    public MemoryView<?> logits(State s, int output) {
+        MemoryView<?> result = s.exclusively(() -> projectLogits(s, output));
+        Reference.reachabilityFence(this);
+        return result;
+    }
+
+    private MemoryView<?> projectLogits(State s, int output) {
+        requireOutput(s, output);
         int dim = configuration.embeddingLength;
-        int row = s.lastChunkLen - s.outputCount + output;
+        int row = s.lastBatchSize() - s.outputCount() + output;
         return Parallel.onDecodePool(
                 () -> {
                     Norms.rmsnorm(
@@ -459,25 +486,23 @@ public final class Qwen3
      * (Qwen3 small variants tie the LM head; reranker GGUFs carry no separate output.weight). A
      * reranker reads its two verdict tokens with two of these - two dot products, where a
      * generative head would project the whole vocabulary (~155 MB streamed at Q8) to reach them.
-     * Claims the state and fences the model, like every other public entry point that runs kernels;
+     * Holds the state and fences the model, like every other public entry point that runs kernels;
      * {@link #targetedHead} is the unfenced seam.
      */
     public float logit(State s, int token) {
-        s.enter();
-        float out;
-        try {
-            out = targetedHead(s, token);
-        } finally {
-            s.exit();
-        }
+        float out = s.exclusively(() -> targetedHead(s, token));
         Reference.reachabilityFence(this);
         return out;
     }
 
     private float targetedHead(State s, int token) {
+        if (token < 0 || token >= configuration.vocabularySize())
+            throw new IllegalArgumentException(
+                    "token " + token + " outside [0," + configuration.vocabularySize() + ")");
+        if (s.outputCount() == 0) throw new IllegalStateException("state has no retained output");
         int dim = configuration.embeddingLength;
         // the last retained row IS the last row of the chunk just ingested
-        int row = s.lastChunkLen - 1;
+        int row = s.lastBatchSize() - 1;
         Norms.rmsnorm(
                 s.normed,
                 0,
@@ -501,14 +526,23 @@ public final class Qwen3
     }
 
     /**
-     * The sentence embedding: final-norm the retained row, L2-normalize (pooling_type=LAST: the row
-     * {@code index} addresses is the sequence's last - the boundary's embed0 sinks it as each
-     * sequence completes). The returned view is a REUSED per-state buffer.
+     * The sentence embedding: final-norm the retained row, then L2-normalize. LAST pooling means
+     * {@code outputIndex} addresses the sequence's final row.
      */
     @Override
-    public MemoryView<?> pool(State s, int index) {
+    public void projectEmbedding(State s, int outputIndex, Consumer<MemoryView<?>> consumer) {
+        Objects.requireNonNull(consumer, "consumer");
+        try {
+            s.exclusively(() -> consumer.accept(projectEmbedding0(s, outputIndex)));
+        } finally {
+            Reference.reachabilityFence(this);
+        }
+    }
+
+    private MemoryView<?> projectEmbedding0(State s, int outputIndex) {
+        requireOutput(s, outputIndex);
         int dim = configuration.embeddingLength;
-        int row = s.lastChunkLen - s.outputCount + index;
+        int row = s.lastBatchSize() - s.outputCount() + outputIndex;
         MemoryView<MemorySegment> out = s.pooled;
         Norms.rmsnorm(
                 out,
@@ -522,6 +556,12 @@ public final class Qwen3
         float inv = ss > 0 ? (float) (1.0 / Math.sqrt(ss)) : 0f;
         Ops.mapInPlace(out, 0, dim, v -> v * inv);
         return out;
+    }
+
+    private static void requireOutput(State state, int output) {
+        if (output < 0 || output >= state.outputCount())
+            throw new IllegalArgumentException(
+                    "output " + output + " outside [0," + state.outputCount() + ")");
     }
 
     // === Configuration ===
@@ -541,12 +581,11 @@ public final class Qwen3
             int queryDim,
             int kvDim,
             int kvMul)
-            implements Config {}
+            implements ContextConfiguration {}
 
     // === State ===
 
-    public static final class State extends BaseState {
-        final int contextCapacity, batchCapacity;
+    public static final class State extends ContextState {
 
         /** The residual stream every block adds back into. */
         final MemoryView<MemorySegment> residual;
@@ -587,8 +626,13 @@ public final class Qwen3
         // (row0, len, kvStart, prior): ONE allocation each, refilled per forward (pieces <= rows)
         final int[] posOf, pieceRow0, pieceLen, pieceKv, piecePrior;
 
-        State(Configuration config, int contextCapacity, int batchCapacity, Arena arena) {
-            super(arena);
+        State(
+                Configuration config,
+                int contextCapacity,
+                int batchCapacity,
+                MemoryArena<MemorySegment> arena,
+                boolean ownsArena) {
+            super(contextCapacity, batchCapacity, arena, ownsArena);
             if (contextCapacity > config.contextLength()) {
                 throw new IllegalArgumentException(
                         "contextCapacity "
@@ -596,9 +640,7 @@ public final class Qwen3
                                 + " exceeds model contextLength "
                                 + config.contextLength());
             }
-            this.contextCapacity = contextCapacity;
-            int c = Math.max(1, batchCapacity);
-            this.batchCapacity = c;
+            int c = batchCapacity;
             int dim = config.embeddingLength;
             this.residual = Views.allocateF32(memoryArena(), c * dim);
             this.normed = Views.allocateF32(memoryArena(), c * dim);
@@ -629,24 +671,16 @@ public final class Qwen3
             this.piecePrior = new int[c];
         }
 
-        @Override
-        public int contextCapacity() {
-            return contextCapacity;
-        }
-
-        @Override
-        public int batchCapacity() {
-            return batchCapacity;
-        }
-
         /**
          * Recycles this allocation for a fresh sequence: cursor to 0. Pure attention carries
          * nothing but KV across positions, and stale rows beyond the cursor are attention-masked
          * (then overwritten) - a cursor move suffices, nothing to zero.
          */
         @Override
-        public void reset() {
-            resumeAt(0);
+        protected void clearHistory() {}
+
+        private void advance(Batch batch) {
+            advanceContext(batch.count(), batch.outputs());
         }
     }
 

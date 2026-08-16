@@ -1,7 +1,7 @@
 package com.qxotic.jinfer.x.models.inflect2;
 
 import com.qxotic.format.gguf.GGUF;
-import com.qxotic.jinfer.x.boundary.SpeechModel;
+import com.qxotic.jinfer.x.boundary.SpeechSynthesisModel;
 import com.qxotic.jinfer.x.chat.LoadedModel;
 import com.qxotic.jinfer.x.chat.ModelProvider;
 import com.qxotic.toknroll.Tokenizer;
@@ -52,13 +52,13 @@ public final class Inflect2Provider implements ModelProvider {
     }
 
     @Override
-    public SpeechModel<?, ?, ?> loadSpeech(
+    public SpeechSynthesisModel<?, ?, ?> loadSpeech(
             FileChannel fileChannel, GGUF gguf, Path path, Arena arena) throws IOException {
         return InflectTTS.load(fileChannel, gguf, path, arena);
     }
 
     @Override
-    public SpeechModel<?, ?, ?> loadSpeech(
+    public SpeechSynthesisModel<?, ?, ?> loadSpeech(
             FileChannel fileChannel,
             GGUF gguf,
             Path path,

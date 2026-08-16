@@ -11,13 +11,15 @@ package com.qxotic.jinfer.x.models.inflect2;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.x.boundary.Media;
-import com.qxotic.jinfer.x.boundary.SpeechModel;
 import com.qxotic.jinfer.x.boundary.SpeechOptions;
+import com.qxotic.jinfer.x.boundary.SpeechSynthesisModel;
 import com.qxotic.jinfer.x.models.inflect2.frontend.Phonemizer;
 import com.qxotic.jinfer.x.models.inflect2.frontend.TextNormalizer;
+import com.qxotic.jota.memory.MemoryArena;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -27,7 +29,7 @@ import java.util.Map;
 import java.util.function.Predicate;
 
 public final class InflectTTS
-        implements SpeechModel<Inflect2.Configuration, Inflect2.Weights, Inflect2.State> {
+        implements SpeechSynthesisModel<Inflect2.Configuration, Inflect2.Weights, Inflect2.State> {
 
     /** Longest chunk handed to the model; longer sentences are split at a comma, then a space. */
     private static final int CHUNK_LIMIT = 280;
@@ -177,15 +179,15 @@ public final class InflectTTS
         return new InflectTTS(model, phonemizer, Map.copyOf(overrides), variation, seed);
     }
 
-    // ── SpeechModel ───────────────────────────────────────────────────────
+    // ── SpeechSynthesisModel ──────────────────────────────────────────────
 
     public Inflect2 model() {
         return model;
     }
 
     @Override
-    public Inflect2.Configuration config() {
-        return model.config();
+    public Inflect2.Configuration configuration() {
+        return model.configuration();
     }
 
     @Override
@@ -194,11 +196,16 @@ public final class InflectTTS
     }
 
     @Override
-    public Inflect2.State newState(Arena arena, boolean adopt) {
-        return model.newState(arena, adopt);
+    public Inflect2.State newState() {
+        return model.newState();
     }
 
-    /** ponytail: kept as a one-liner over config().sampleRate(), used four times in the CLI. */
+    @Override
+    public Inflect2.State newState(MemoryArena<MemorySegment> arena) {
+        return model.newState(arena);
+    }
+
+    /** Ponytail: kept as a one-liner over configuration, used four times in the CLI. */
     public int sampleRate() {
         return model.sampleRate();
     }
@@ -208,21 +215,22 @@ public final class InflectTTS
             Inflect2.State state, String text, SpeechOptions options, Predicate<Media.Audio> sink) {
         double speed = speed(options);
         List<String> chunks = split(text);
-        // Claim the state for the WHOLE utterance, not per chunk: a close arriving between chunks
+        // Hold the state for the WHOLE utterance, not per chunk: a close arriving between chunks
         // would otherwise free the arena mid-utterance. Reentrant, so the per-chunk synthesize
         // nests inside this one.
-        state.enter();
-        try {
-            for (int i = 0; i < chunks.size(); i++) {
-                if (i > 0 && !sink.test(silence(pauseSamples(chunks.get(i - 1))))) return;
-                float[] chunk = synthesizeChunk(state, chunks.get(i), speed, seed + i);
-                if (!sink.test(new Media.Audio(chunk, sampleRate(), 1))) return;
-            }
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        } finally {
-            state.exit();
-        }
+        state.exclusively(
+                () -> {
+                    try {
+                        for (int i = 0; i < chunks.size(); i++) {
+                            if (i > 0 && !sink.test(silence(pauseSamples(chunks.get(i - 1)))))
+                                return;
+                            float[] chunk = synthesizeChunk(state, chunks.get(i), speed, seed + i);
+                            if (!sink.test(new Media.Audio(chunk, sampleRate(), 1))) return;
+                        }
+                    } catch (IOException e) {
+                        throw new UncheckedIOException(e);
+                    }
+                });
     }
 
     /** The caller's rate, bounded. A speed outside the range is refused, never clamped. */

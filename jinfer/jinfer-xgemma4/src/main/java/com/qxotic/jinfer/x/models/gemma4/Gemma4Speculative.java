@@ -42,7 +42,7 @@ public final class Gemma4Speculative {
     /**
      * Pre-allocated per-STATE speculation scratch, from the state's own arena: freed exactly when
      * the state closes, never "when GC notices" - a few MB of native memory must not depend on heap
-     * pressure. One state runs one generation at a time (the claim serializes), so reuse is
+     * pressure. One state runs one generation at a time (exclusive access serializes), so reuse is
      * race-free; RESET is implicit, because every buffer is written before it is read each
      * iteration (the warm-up draft re-seeds the decoder, logitsAll rewrites the verify rows).
      */
@@ -57,9 +57,10 @@ public final class Gemma4Speculative {
             var arena = s.specArena();
             this.decoder = model.mtpDecoder(arena);
             this.vlogits =
-                    Views.allocateF32(arena, (long) (depth + 1) * model.config().vocabularySize());
-            this.row = Views.allocateF32(arena, model.config().vocabularySize());
-            this.h = Views.allocateF32(arena, model.config().embeddingLength());
+                    Views.allocateF32(
+                            arena, (long) (depth + 1) * model.configuration().vocabularySize());
+            this.row = Views.allocateF32(arena, model.configuration().vocabularySize());
+            this.h = Views.allocateF32(arena, model.configuration().embeddingLength());
             this.depth = depth;
         }
     }
@@ -77,7 +78,7 @@ public final class Gemma4Speculative {
         if (depth < 1 || depth > 8) {
             throw new IllegalArgumentException("speculation depth " + depth + " outside 1..8");
         }
-        int vocab = model.config().vocabularySize();
+        int vocab = model.configuration().vocabularySize();
         if (!model.speculationReady())
             throw new IllegalStateException(
                     "MTP sidecar not loaded - use loadWithMtp(gguf, mtpSidecar, arena)");
@@ -132,14 +133,14 @@ public final class Gemma4Speculative {
         IntSequence.Builder emitted = IntSequence.newBuilder();
         IntSequence.Builder committed = IntSequence.newBuilder();
         int drafted = 0, acceptedTotal = 0, forwards = 0;
-        int dim = model.config().embeddingLength();
+        int dim = model.configuration().embeddingLength();
         Gemma4MtpDecoder decoder = scratch.decoder;
         MemoryView<MemorySegment> vlogits = scratch.vlogits;
         MemoryView<MemorySegment> row = scratch.row;
         MemoryView<MemorySegment> h = scratch.h;
 
         // seed from the last ingested row: its token, its hidden, and the exact next token
-        int lastRow = s.lastChunkLen - 1;
+        int lastRow = s.lastBatchSize() - 1;
         int tLast = s.lastTokens[lastRow];
         Convert.copyF32(s.residual, (long) lastRow * dim, h, 0, dim);
         MemoryView<?> promptLogits = model.logits(s, s.outputCount() - 1);

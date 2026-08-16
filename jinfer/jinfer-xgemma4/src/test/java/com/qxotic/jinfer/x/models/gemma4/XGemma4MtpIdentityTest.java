@@ -150,7 +150,7 @@ class XGemma4MtpIdentityTest {
         {
             BlockTree<Gemma4.State> cache =
                     new BlockTree<>(
-                            m.stateCodec().orElseThrow(),
+                            m.checkpointCodec().orElseThrow(),
                             CacheStore.inMemory(),
                             1L << 30,
                             ContentKey.sha256(model.toString().getBytes(StandardCharsets.UTF_8)));
@@ -185,7 +185,7 @@ class XGemma4MtpIdentityTest {
     }
 
     static int argmaxLastRow(Gemma4 m, Gemma4.State s) {
-        int vocab = m.config().vocabularySize();
+        int vocab = m.configuration().vocabularySize();
         return Ops.argmax(Views.castToSegmentBacked(m.logits(s), "logits"), 0, vocab);
     }
 

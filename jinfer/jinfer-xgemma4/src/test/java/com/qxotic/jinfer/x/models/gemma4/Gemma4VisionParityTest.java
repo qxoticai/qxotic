@@ -7,8 +7,8 @@ import com.qxotic.jinfer.FloatTensor;
 import com.qxotic.jinfer.testkit.TestModels;
 import com.qxotic.jinfer.x.PanamaMemoryArena;
 import com.qxotic.jinfer.x.Views;
-import com.qxotic.jinfer.x.boundary.Embedder;
 import com.qxotic.jinfer.x.boundary.Media;
+import com.qxotic.jinfer.x.boundary.MediaProjector;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -34,7 +34,7 @@ class Gemma4VisionParityTest {
         try (Arena oldArena = Arena.ofShared();
                 Arena xArena = Arena.ofShared()) {
             FloatTensor expected;
-            Embedder<Media.Image> actualProjector;
+            MediaProjector<Media.Image> actualProjector;
             if (type.equals("gemma4v")) {
                 expected =
                         com.qxotic.jinfer.models.gemma4.Gemma4Vision.loadModel(path, oldArena)
@@ -49,7 +49,7 @@ class Gemma4VisionParityTest {
             }
 
             int rows = actualProjector.positions(xImage);
-            actualProjector.embed(
+            actualProjector.project(
                     xImage,
                     rows,
                     actual -> assertClose(expected, Views.castToSegmentBacked(actual, "rows")));
@@ -71,7 +71,7 @@ class Gemma4VisionParityTest {
                             .attachMediaEncoders(mmproj, oldArena);
             var x = Gemma4.loadModel(text, mmproj, xArena);
             int[] prefix = x.tokenizer().encodeToArray("Look:");
-            int rows = x.embedder(Media.Image.class).orElseThrow().positions(xImage);
+            int rows = x.projector(Media.Image.class).orElseThrow().positions(xImage);
             assertTrue(rows > 1, "test image must exercise bidirectional attention");
             int capacity = prefix.length + rows + 2;
             try (var oldState = old.newState(capacity, rows);
@@ -95,7 +95,9 @@ class Gemma4VisionParityTest {
                                 });
                 MemoryView<MemorySegment> projected =
                         Views.allocateF32(
-                                new PanamaMemoryArena(xArena), rows, x.config().embeddingLength());
+                                new PanamaMemoryArena(xArena),
+                                rows,
+                                x.configuration().embeddingLength());
                 Views.copyFromArray(
                         projected, 0, exactRows[0], 0, exactRows[0].length, "projected rows");
                 x.ingest(

@@ -51,7 +51,7 @@ class Gemma4ConformerTest {
             List<float[]> output = new ArrayList<>();
             List<MemoryView<?>> borrowed = new ArrayList<>();
 
-            conformer.embed(
+            conformer.project(
                     audio,
                     1,
                     chunk -> {

@@ -46,7 +46,7 @@ public final class Lfm2Provider implements ModelProvider {
         Path media = companions.get("media");
         if (media != null) model = model.withMedia(media, arena);
         // a retrieval checkpoint "loads" as a chat model and then generates noise - refuse by name
-        if (!model.config().causalAttention()) {
+        if (!model.configuration().causalAttention()) {
             throw new IllegalArgumentException(
                     "this LFM2 checkpoint is a RETRIEVAL model (non-causal attention), not a"
                             + " generative one - it belongs to an embedder/reranker load path,"
@@ -77,7 +77,7 @@ public final class Lfm2Provider implements ModelProvider {
     public LoadedEmbedder<?> loadEmbedder(
             FileChannel fileChannel, GGUF gguf, Path path, Arena arena) throws IOException {
         Lfm2 model = Lfm2.loadModel(fileChannel, gguf, arena, null);
-        if (!model.config().isEmbedder())
+        if (!model.configuration().isEmbedder())
             throw new IllegalArgumentException(
                     path.getFileName()
                             + " is a generative LFM2 checkpoint, not an embedder (embedders"
@@ -90,8 +90,8 @@ public final class Lfm2Provider implements ModelProvider {
                 model.tokenizer(),
                 new int[] {bos},
                 new int[0],
-                model.config().embeddingLength(),
-                model.config().embeddingLength(), // fixed 1024-dim vector; no MRL claim
+                model.configuration().embeddingLength(),
+                model.configuration().embeddingLength(), // fixed 1024-dim vector; no MRL claim
                 path.getFileName().toString(),
                 // the card's retrieval framing: LFM2.5-Embedding is trained on this exact pair
                 "query: ",
@@ -107,7 +107,7 @@ public final class Lfm2Provider implements ModelProvider {
     public LoadedReranker<?> loadReranker(
             FileChannel fileChannel, GGUF gguf, Path path, Arena arena) throws IOException {
         Lfm2 model = Lfm2.loadModel(fileChannel, gguf, arena, null);
-        if (!model.config().isColbert() || model.weights().dense2() == null)
+        if (!model.configuration().isColbert() || model.weights().dense2() == null)
             throw new IllegalArgumentException(
                     path.getFileName()
                             + " is not the family's reranker - LFM2 reranking is"

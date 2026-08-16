@@ -28,7 +28,7 @@ class Gemma4AudioParityTest {
                             .encode(new com.qxotic.jinfer.Media.Audio(pcm, 16_000, 1));
             Gemma4Audio actual = Gemma4Audio.loadModel(path, xArena);
             int[] offset = {0};
-            actual.embed(
+            actual.project(
                     new Media.Audio(pcm, 16_000, 1),
                     3,
                     rows -> {
@@ -65,7 +65,7 @@ class Gemma4AudioParityTest {
                             .attachMediaEncoders(mmproj, oldArena);
             var x = Gemma4.loadModel(text, mmproj, xArena);
             int[] prefix = x.tokenizer().encodeToArray("Listen:");
-            int rows = x.embedder(Media.Audio.class).orElseThrow().positions(xAudio);
+            int rows = x.projector(Media.Audio.class).orElseThrow().positions(xAudio);
             int context = prefix.length + rows + 2;
             try (var oldState = old.newState(context, rows);
                     var xState = x.newState(context, 4)) {
@@ -81,7 +81,7 @@ class Gemma4AudioParityTest {
                                             oldState,
                                             com.qxotic.jinfer.Batch.embeddings(
                                                     projected, rows, false));
-                                    int dim = x.config().embeddingLength();
+                                    int dim = x.configuration().embeddingLength();
                                     for (int first = 0; first < rows; first += 4) {
                                         int count = Math.min(4, rows - first);
                                         MemoryView<MemorySegment> chunk =

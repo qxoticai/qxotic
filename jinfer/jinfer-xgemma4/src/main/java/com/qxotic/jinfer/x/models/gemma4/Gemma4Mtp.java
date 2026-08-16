@@ -38,7 +38,7 @@ import java.util.Map;
 public final class Gemma4Mtp {
 
     /** Draft-transformer geometry, read from the {@code gemma4-assistant.*} sidecar metadata. */
-    public record Config(
+    public record Configuration(
             int embeddingLength, // draft dim (256)
             int backboneDim, // embedding_length_out (1536) - the backbone hidden the draft consumes
             int numberOfLayers, // 4
@@ -113,16 +113,16 @@ public final class Gemma4Mtp {
         }
     }
 
-    private final Config config;
+    private final Configuration configuration;
     private final Weights weights;
 
-    private Gemma4Mtp(Config config, Weights weights) {
-        this.config = config;
+    private Gemma4Mtp(Configuration configuration, Weights weights) {
+        this.configuration = configuration;
         this.weights = weights;
     }
 
-    public Config config() {
-        return config;
+    public Configuration configuration() {
+        return configuration;
     }
 
     public Weights weights() {
@@ -142,15 +142,15 @@ public final class Gemma4Mtp {
                 throw new IllegalArgumentException(
                         "not a gemma4-assistant MTP sidecar: arch=" + arch);
             }
-            Config config = readConfig(gguf, backboneVocab);
+            Configuration configuration = readConfiguration(gguf, backboneVocab);
             Map<String, MemoryView<MemorySegment>> tensors =
                     ModelLoader.loadTensors(fc, gguf, arena);
-            Weights weights = loadWeights(tensors, config);
-            return new Gemma4Mtp(config, weights);
+            Weights weights = loadWeights(tensors, configuration);
+            return new Gemma4Mtp(configuration, weights);
         }
     }
 
-    private static Config readConfig(GGUF gguf, int backboneVocab) {
+    private static Configuration readConfiguration(GGUF gguf, int backboneVocab) {
         String p = "gemma4-assistant.";
         int layers = gguf.getValue(int.class, p + "block_count");
         int headFull = gguf.getValue(int.class, p + "attention.key_length");
@@ -161,7 +161,7 @@ public final class Gemma4Mtp {
         // head=key_length).
         boolean[] isSWA = new boolean[layers];
         for (int i = 0; i < layers; i++) isSWA[i] = i < layers - 1;
-        return new Config(
+        return new Configuration(
                 gguf.getValue(int.class, p + "embedding_length"),
                 gguf.getValue(int.class, p + "embedding_length_out"),
                 layers,
@@ -178,7 +178,7 @@ public final class Gemma4Mtp {
                 backboneVocab);
     }
 
-    private static Weights loadWeights(Map<String, MemoryView<MemorySegment>> t, Config c) {
+    private static Weights loadWeights(Map<String, MemoryView<MemorySegment>> t, Configuration c) {
         int n = c.numberOfLayers();
         int dim = c.embeddingLength();
 

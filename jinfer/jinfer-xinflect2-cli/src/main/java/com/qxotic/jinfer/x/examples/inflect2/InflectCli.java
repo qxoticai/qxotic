@@ -199,7 +199,7 @@ public final class InflectCli {
             if (model == null) return;
         }
         var inflect = open(model).model();
-        var config = inflect.config();
+        var config = inflect.configuration();
         System.out.printf(
                 "symbols=%d inter=%d hidden=%d filter=%d heads=%d layers=%d sampleRate=%d"
                         + " decoderWidth=%d%n",

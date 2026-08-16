@@ -3,11 +3,12 @@ package com.qxotic.jinfer.x.models.qwen35;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.x.Parallel;
 import com.qxotic.jinfer.x.Views;
-import com.qxotic.jinfer.x.boundary.BaseState;
+import com.qxotic.jinfer.x.boundary.Arenas;
 import com.qxotic.jinfer.x.boundary.Batch;
-import com.qxotic.jinfer.x.boundary.Config;
+import com.qxotic.jinfer.x.boundary.CheckpointCodec;
+import com.qxotic.jinfer.x.boundary.ContextConfiguration;
+import com.qxotic.jinfer.x.boundary.ContextState;
 import com.qxotic.jinfer.x.boundary.LanguageModel;
-import com.qxotic.jinfer.x.boundary.StateCodec;
 import com.qxotic.jinfer.x.kernels.Activations;
 import com.qxotic.jinfer.x.kernels.Convert;
 import com.qxotic.jinfer.x.kernels.Convolutions;
@@ -28,6 +29,7 @@ import com.qxotic.jinfer.x.llm.SpeculativeDecoding.SpeculationAudit;
 import com.qxotic.jinfer.x.llm.SpeculativeDecoding.SpeculationResult;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.memory.MemoryAllocator;
+import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
@@ -56,7 +58,7 @@ public final class Qwen35
     }
 
     @Override
-    public Configuration config() {
+    public Configuration configuration() {
         return configuration;
     }
 
@@ -70,31 +72,48 @@ public final class Qwen35
     }
 
     @Override
-    public Optional<StateCodec<State>> stateCodec() {
-        return Optional.of(new Qwen35StateCodec(configuration));
+    public Optional<CheckpointCodec<State>> checkpointCodec() {
+        return Optional.of(new Qwen35CheckpointCodec(configuration));
     }
 
     @Override
-    public State newState(int contextCapacity, int batchCapacity, Arena arena) {
-        return new State(configuration, contextCapacity, batchCapacity, arena);
+    public State newState(
+            int contextCapacity, int batchCapacity, MemoryArena<MemorySegment> arena) {
+        return new State(configuration, contextCapacity, batchCapacity, arena, false);
     }
 
     @Override
-    public void forward(State state, Batch batch) {
+    public State newState(int contextCapacity, int batchCapacity) {
+        MemoryArena<MemorySegment> arena = Arenas.newCrossThreadMemoryArena();
+        try {
+            return new State(configuration, contextCapacity, batchCapacity, arena, true);
+        } catch (RuntimeException | Error failure) {
+            Arenas.close(arena);
+            throw failure;
+        }
+    }
+
+    @Override
+    public void ingest(State state, Batch batch) {
+        state.exclusively(() -> forward(state, batch));
+        Reference.reachabilityFence(this);
+    }
+
+    private void forward(State state, Batch batch) {
         int rows = batch.count();
         if (rows <= 0) throw new IllegalArgumentException("Qwen3.5 token batch must not be empty");
-        if (rows > state.batchCapacity)
+        if (rows > state.batchCapacity())
             throw new IllegalArgumentException(
-                    "batch " + rows + " exceeds batchCapacity " + state.batchCapacity);
+                    "batch " + rows + " exceeds batchCapacity " + state.batchCapacity());
         int start = state.position();
-        if (start + rows > state.contextCapacity)
+        if (start + rows > state.contextCapacity())
             throw new IllegalArgumentException(
                     "ingest of "
                             + rows
                             + " at position "
                             + start
                             + " exceeds contextCapacity "
-                            + state.contextCapacity);
+                            + state.contextCapacity());
         int[] tokens =
                 switch (batch.input()) {
                     case Batch.Input.Tokens t -> t.ids();
@@ -116,10 +135,10 @@ public final class Qwen35
                         return null;
                     });
         else forward(state, tokens, start, rows);
-        state.advance(rows, batch.outputs());
+        state.advance(batch);
     }
 
-    void forward(State state, int[] tokens, int startPos, int rows) {
+    private void forward(State state, int[] tokens, int startPos, int rows) {
         Configuration c = configuration;
         if (weights.rope != null)
             RoPE.fill(state.ropeCos, state.ropeSin, startPos, rows, weights.ropeHalf, weights.rope);
@@ -532,12 +551,16 @@ public final class Qwen35
     }
 
     @Override
-    public MemoryView<?> head(State state, int output) {
-        if (output < 0 || output >= state.outputCount)
+    public MemoryView<?> logits(State state, int output) {
+        return state.exclusively(() -> projectLogits(state, output));
+    }
+
+    private MemoryView<?> projectLogits(State state, int output) {
+        if (output < 0 || output >= state.outputCount())
             throw new IllegalArgumentException(
-                    "output " + output + " outside [0," + state.outputCount + ")");
+                    "output " + output + " outside [0," + state.outputCount() + ")");
         int dim = configuration.embeddingLength;
-        int row = state.lastChunkLen - state.outputCount + output;
+        int row = state.lastBatchSize() - state.outputCount() + output;
         return Parallel.onDecodePool(
                 () -> {
                     if (configuration.hasMtp()) {
@@ -564,8 +587,8 @@ public final class Qwen35
 
     void logitsAll(State state, MemoryView<MemorySegment> destination) {
         int dim = configuration.embeddingLength;
-        int rows = state.outputCount;
-        int first = state.lastChunkLen - rows;
+        int rows = state.outputCount();
+        int first = state.lastBatchSize() - rows;
         Parallel.onDecodePool(
                 () -> {
                     if (configuration.hasMtp()) {
@@ -619,22 +642,18 @@ public final class Qwen35
                         ? capacity - state.position()
                         : Math.min(constraints.maxTokens(), capacity - state.position());
         long timeoutNanos = constraints.timeout().isZero() ? 0 : constraints.timeout().toNanos();
-        state.enter();
-        try {
-            return Qwen35Speculative.generate(
-                    this,
-                    state,
-                    budget,
-                    timeoutNanos,
-                    constraints.stopTokens(),
-                    depth,
-                    sampler,
-                    listener,
-                    audit);
-        } finally {
-            state.exit();
-            Reference.reachabilityFence(this);
-        }
+        return state.exclusively(
+                () ->
+                        Qwen35Speculative.generate(
+                                this,
+                                state,
+                                budget,
+                                timeoutNanos,
+                                constraints.stopTokens(),
+                                depth,
+                                sampler,
+                                listener,
+                                audit));
     }
 
     public record Configuration(
@@ -660,7 +679,7 @@ public final class Qwen35
             int expertUsedCount,
             int expertFeedForwardLength,
             int expertSharedFeedForwardLength)
-            implements Config {
+            implements ContextConfiguration {
         int queryDim() {
             return numberOfHeads * headSize;
         }
@@ -739,8 +758,7 @@ public final class Qwen35
             int ropeHalf,
             NextNWeights nextn) {}
 
-    public static final class State extends BaseState {
-        final int contextCapacity, batchCapacity;
+    public static final class State extends ContextState {
         final MemoryView<MemorySegment> residual, normed, branch, logits;
         final MemoryView<MemorySegment> targetHidden, mtpConcat, pendingHidden;
         final MemoryView<MemorySegment> packedQ,
@@ -768,8 +786,13 @@ public final class Qwen35
         }
 
         @SuppressWarnings("unchecked")
-        State(Configuration c, int contextCapacity, int batchCapacity, Arena arena) {
-            super(arena);
+        State(
+                Configuration c,
+                int contextCapacity,
+                int batchCapacity,
+                MemoryArena<MemorySegment> arena,
+                boolean ownsArena) {
+            super(contextCapacity, batchCapacity, arena, ownsArena);
             if (contextCapacity <= 0 || contextCapacity > c.contextLength)
                 throw new IllegalArgumentException(
                         "contextCapacity "
@@ -779,8 +802,6 @@ public final class Qwen35
                                 + "]");
             if (batchCapacity <= 0)
                 throw new IllegalArgumentException("batchCapacity " + batchCapacity);
-            this.contextCapacity = contextCapacity;
-            this.batchCapacity = batchCapacity;
             int b = batchCapacity, dim = c.embeddingLength, qd = c.queryDim(), kvd = c.kvDim();
             int hd = c.headVDim(), heads = c.ssmTimeStepRank, channels = c.convChannels();
             int maxHidden = Math.max(c.hiddenDim, c.expertFeedForwardLength);
@@ -855,19 +876,12 @@ public final class Qwen35
             }
         }
 
-        @Override
-        public int contextCapacity() {
-            return contextCapacity;
+        private void advance(Batch batch) {
+            advanceContext(batch.count(), batch.outputs());
         }
 
         @Override
-        public int batchCapacity() {
-            return batchCapacity;
-        }
-
-        @Override
-        public void reset() {
-            resumeAt(0);
+        protected void clearHistory() {
             for (MemoryView<MemorySegment> state : convState)
                 if (state != null)
                     Ops.fillInPlace(state, 0, Math.toIntExact(state.logicalSize()), 0f);

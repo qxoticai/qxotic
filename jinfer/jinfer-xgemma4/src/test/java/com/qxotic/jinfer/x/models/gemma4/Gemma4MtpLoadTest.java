@@ -25,7 +25,7 @@ class Gemma4MtpLoadTest {
 
         // backbone vocab = 262144 (Gemma 4 E2B); the tied draft head must match it.
         Gemma4Mtp mtp = Gemma4Mtp.loadSidecar(sidecar, 262144, Arena.ofAuto());
-        Gemma4Mtp.Config c = mtp.config();
+        Gemma4Mtp.Configuration c = mtp.configuration();
 
         assertEquals(256, c.embeddingLength(), "draft dim");
         assertEquals(1536, c.backboneDim(), "backbone hidden dim");

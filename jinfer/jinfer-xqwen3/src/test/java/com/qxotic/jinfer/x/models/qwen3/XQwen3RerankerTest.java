@@ -60,7 +60,7 @@ class XQwen3RerankerTest {
         // the ':' of "<Document>:") and the candidate carries the leading space, so the split is a
         // prefix cut, not a re-tokenization - the two halves concatenate to the joint encoding
         assertArrayEquals(
-                HEAD, ids(reranker.head(reranker.defaultInstruction(), QUERY)), "judge frame");
+                HEAD, ids(reranker.prefix(reranker.defaultInstruction(), QUERY)), "judge frame");
         assertArrayEquals(DOCUMENT_IDS, ids(reranker.document(DOCUMENT)), "document framing");
     }
 

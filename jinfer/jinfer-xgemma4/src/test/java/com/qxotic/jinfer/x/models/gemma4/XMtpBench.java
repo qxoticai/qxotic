@@ -51,7 +51,7 @@ class XMtpBench {
         Tokenizer tk = m.tokenizer();
         int bos = SpecialTokens.find(tk, "<bos>").orElse(2);
         Set<Integer> stops = XGemma4MtpIdentityTest.stopTokens(tk);
-        int vocab = m.config().vocabularySize();
+        int vocab = m.configuration().vocabularySize();
 
         Case[] cases = {
             new Case(

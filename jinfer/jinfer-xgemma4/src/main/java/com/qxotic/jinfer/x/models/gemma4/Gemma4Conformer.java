@@ -4,8 +4,9 @@ import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.x.PanamaMemoryArena;
 import com.qxotic.jinfer.x.Parallel;
 import com.qxotic.jinfer.x.Views;
-import com.qxotic.jinfer.x.boundary.Embedder;
+import com.qxotic.jinfer.x.boundary.Arenas;
 import com.qxotic.jinfer.x.boundary.Media;
+import com.qxotic.jinfer.x.boundary.MediaProjector;
 import com.qxotic.jinfer.x.kernels.Activations;
 import com.qxotic.jinfer.x.kernels.Convert;
 import com.qxotic.jinfer.x.kernels.Convolutions;
@@ -15,6 +16,7 @@ import com.qxotic.jinfer.x.kernels.ModelLoader;
 import com.qxotic.jinfer.x.kernels.Norms;
 import com.qxotic.jinfer.x.kernels.Ops;
 import com.qxotic.jota.Shape;
+import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import java.io.IOException;
 import java.lang.foreign.Arena;
@@ -28,7 +30,7 @@ import java.util.Objects;
 import java.util.function.Consumer;
 
 /** Gemma 4 Conformer audio tower ({@code projector_type=gemma4a}). */
-public final class Gemma4Conformer implements Embedder<Media.Audio> {
+public final class Gemma4Conformer implements MediaProjector<Media.Audio> {
     static final int CHUNK = 12;
     static final int PAST = 12;
     static final int CONTEXT = CHUNK + PAST;
@@ -120,7 +122,8 @@ public final class Gemma4Conformer implements Embedder<Media.Audio> {
         return Math.max(1, total);
     }
 
-    String planId() {
+    @Override
+    public String planId() {
         return "gemma4a mel=" + nMel + " dim=" + dim + " blocks=" + blocks.length;
     }
 
@@ -130,24 +133,27 @@ public final class Gemma4Conformer implements Embedder<Media.Audio> {
     }
 
     @Override
-    public void embed(Media.Audio audio, int maxChunkSize, Consumer<MemoryView<?>> sink) {
+    public void project(Media.Audio audio, int maxChunkSize, Consumer<MemoryView<?>> sink) {
         Objects.requireNonNull(audio, "audio");
         Objects.requireNonNull(sink, "sink");
         if (maxChunkSize <= 0) throw new IllegalArgumentException("maxChunkSize must be positive");
         List<AudioPreprocess.MelChunk> mels = preprocess.logMel(audio);
         if (mels.isEmpty()) mels = List.of(new AudioPreprocess.MelChunk(new float[0], 0));
         for (AudioPreprocess.MelChunk mel : mels) {
-            try (Arena arena = Arena.ofShared()) {
-                MemoryView<MemorySegment> rows = forward(mel, new PanamaMemoryArena(arena));
+            MemoryArena<MemorySegment> scratch = Arenas.newCrossThreadMemoryArena();
+            try {
+                MemoryView<MemorySegment> rows = forward(mel, scratch);
                 int count = Math.toIntExact(rows.shape().flatAt(0));
                 for (int first = 0; first < count; first += maxChunkSize)
                     sink.accept(rows.slice(0, first, Math.min(count, first + maxChunkSize)));
+            } finally {
+                Arenas.close(scratch);
             }
         }
     }
 
     private MemoryView<MemorySegment> forward(
-            AudioPreprocess.MelChunk mel, PanamaMemoryArena scratch) {
+            AudioPreprocess.MelChunk mel, MemoryArena<MemorySegment> scratch) {
         int frames = mel.frames();
         int time2 = (frames - 1) / 2 + 1;
         int rows = tokensForFrames(frames);
@@ -215,7 +221,7 @@ public final class Gemma4Conformer implements Embedder<Media.Audio> {
             MemoryView<MemorySegment> output,
             MemoryView<MemorySegment> clamp) {
         static Scratch allocate(
-                PanamaMemoryArena arena, int rows, int dim, int ffDim, int outputDim) {
+                MemoryArena<MemorySegment> arena, int rows, int dim, int ffDim, int outputDim) {
             int max = Math.max(Math.max(dim * 2, ffDim), outputDim);
             return new Scratch(
                     Views.allocateF32(arena, rows, dim),

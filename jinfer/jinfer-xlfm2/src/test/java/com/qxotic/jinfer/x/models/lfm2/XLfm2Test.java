@@ -10,7 +10,7 @@ import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.jinfer.testkit.TestModels;
 import com.qxotic.jinfer.x.Views;
 import com.qxotic.jinfer.x.boundary.Batch;
-import com.qxotic.jinfer.x.boundary.StateCodec;
+import com.qxotic.jinfer.x.boundary.CheckpointCodec;
 import com.qxotic.jinfer.x.kernels.ModelLoader;
 import com.qxotic.jinfer.x.kernels.Ops;
 import com.qxotic.jota.memory.MemoryView;
@@ -89,15 +89,15 @@ class XLfm2Test {
             int[] xIds;
             float[] xFirst, xLast;
             var xm = Lfm2.loadModel(channel, gguf, Arena.ofAuto(), tokenizer);
-            var xc = xm.config();
+            var xc = xm.configuration();
             int context = Math.min(xc.contextLength(), ids.length + N_TOKENS + 16);
             try (var xs = xm.newState(context, Math.max(16, ids.length));
                     var restored = xm.newState(context, Math.max(16, ids.length));
                     Arena cache = Arena.ofConfined()) {
-                StateCodec<Lfm2.State> codec = xm.stateCodec().orElseThrow();
+                CheckpointCodec<Lfm2.State> codec = xm.checkpointCodec().orElseThrow();
                 xm.ingest(xs, Batch.prefill(ids));
-                MemorySegment prefix = cache.allocate(codec.checkpointBytes(ids.length), 64);
-                codec.saveCheckpoint(xs, 0, ids.length, prefix);
+                MemorySegment prefix = cache.allocate(codec.byteSize(ids.length), 64);
+                codec.capture(xs, 0, ids.length, prefix);
                 xIds = new int[N_TOKENS];
                 MemoryView<MemorySegment> logits =
                         Views.castToSegmentBacked(xm.logits(xs), "logits");
@@ -112,10 +112,10 @@ class XLfm2Test {
                 xLast = snapshotX(logits, vocab);
 
                 MemorySegment suffix =
-                        cache.allocate(codec.checkpointBytes(xs.position() - ids.length), 64);
-                codec.saveCheckpoint(xs, ids.length, xs.position(), suffix);
-                codec.restoreCheckpoint(restored, 0, ids.length, prefix);
-                codec.restoreCheckpoint(restored, ids.length, xs.position(), suffix);
+                        cache.allocate(codec.byteSize(xs.position() - ids.length), 64);
+                codec.capture(xs, ids.length, xs.position(), suffix);
+                codec.restore(restored, 0, ids.length, prefix);
+                codec.restore(restored, ids.length, xs.position(), suffix);
                 restored.resumeAt(xs.position());
                 xm.ingest(xs, Batch.step(tok));
                 xm.ingest(restored, Batch.step(tok));
@@ -142,7 +142,7 @@ class XLfm2Test {
                 assertThrows(
                         UnsupportedOperationException.class,
                         () ->
-                                xm.embed(
+                                xm.embedAll(
                                         xs,
                                         (Batch.Input.Sequences)
                                                 Batch.pack(new int[][] {ids}).input(),

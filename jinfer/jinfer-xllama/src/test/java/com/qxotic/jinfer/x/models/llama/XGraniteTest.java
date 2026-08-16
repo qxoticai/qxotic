@@ -131,7 +131,7 @@ class XGraniteTest {
             int[] xIds;
             float[] xFirst, xLast;
             var xm = Granite.loadModel(channel, gguf, Arena.ofAuto(), tokenizer);
-            var xc = xm.config();
+            var xc = xm.configuration();
             try (var xs =
                     xm.newState(Math.min(xc.contextLength(), ids.length + nTokens + 16), bc)) {
                 for (Batch chunk : Batch.prepare(List.of(Batch.prefill(ids)), bc)) {

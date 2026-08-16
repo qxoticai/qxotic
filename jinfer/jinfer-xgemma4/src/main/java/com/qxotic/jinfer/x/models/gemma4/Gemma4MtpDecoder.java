@@ -33,7 +33,7 @@ import java.lang.foreign.MemorySegment;
  */
 public final class Gemma4MtpDecoder {
 
-    private final Gemma4Mtp.Config cfg;
+    private final Gemma4Mtp.Configuration cfg;
     private final Gemma4Mtp.Weights w;
     private final Gemma4 backbone;
     private final int backboneOwnKv;
@@ -52,10 +52,10 @@ public final class Gemma4MtpDecoder {
     public Gemma4MtpDecoder(
             Gemma4Mtp mtp, Gemma4 backbone, MemoryAllocator<MemorySegment> allocator) {
         this.decodeScratch = new FlashAttention.DecodeScratch(allocator);
-        this.cfg = mtp.config();
+        this.cfg = mtp.configuration();
         this.w = mtp.weights();
         this.backbone = backbone;
-        this.backboneOwnKv = backbone.config().ownKvLayers();
+        this.backboneOwnKv = backbone.configuration().ownKvLayers();
 
         this.ropeSWA = RoPE.plain(cfg.headSizeSWA(), cfg.ropeThetaSWA());
         this.ropeFull =
@@ -125,10 +125,11 @@ public final class Gemma4MtpDecoder {
             }
 
             int kvSrc = swa ? backboneOwnKv - 2 : backboneOwnKv - 1;
-            int bkvDim = backbone.config().kvDim(kvSrc);
+            int bkvDim = backbone.configuration().kvDim(kvSrc);
             int kvMul =
-                    cfg.numberOfHeads() / backbone.config().numberOfKeyValueHeadsPerLayer()[kvSrc];
-            int window = backbone.config().slidingWindow();
+                    cfg.numberOfHeads()
+                            / backbone.configuration().numberOfKeyValueHeadsPerLayer()[kvSrc];
+            int window = backbone.configuration().slidingWindow();
             int attStart = swa ? Math.max(0, position - window + 1) : 0;
             // the draft has no own KV: null batch buffers -> attend only the backbone cache
             // [attStart, position]

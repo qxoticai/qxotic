@@ -78,9 +78,10 @@ final class Qwen35MtpLoadTest {
     void realEmbeddedMtpModelLoads() throws Exception {
         Path path = TestModels.require(MODEL_REF);
         Qwen35 model = Qwen35.loadModel(path, Arena.ofAuto());
-        assertEquals(1, model.config().nextnPredictLayers());
-        assertEquals(model.config().numberOfLayers() + 1, model.config().storedLayers());
-        assertTrue(model.config().isFullAttention()[model.config().mtpLayer()]);
+        assertEquals(1, model.configuration().nextnPredictLayers());
+        assertEquals(
+                model.configuration().numberOfLayers() + 1, model.configuration().storedLayers());
+        assertTrue(model.configuration().isFullAttention()[model.configuration().mtpLayer()]);
         assertTrue(model.speculationReady());
     }
 

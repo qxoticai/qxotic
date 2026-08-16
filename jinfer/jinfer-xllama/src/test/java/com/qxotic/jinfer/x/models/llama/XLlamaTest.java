@@ -133,7 +133,7 @@ class XLlamaTest {
             int lastToken = ids[ids.length - 1];
 
             Llama model = Llama.loadModel(channel, gguf, Arena.ofAuto(), tokenizer);
-            var codec = new LlamaStateCodec(model.config());
+            var codec = new LlamaCheckpointCodec(model.configuration());
             int capacity = ids.length + 2;
 
             List<int[]> spans = new ArrayList<>();
@@ -146,14 +146,14 @@ class XLlamaTest {
                 for (Batch chunk : Batch.prepare(List.of(Batch.prefill(prefix)), 8)) {
                     model.ingest(live, chunk);
                     int to = live.position();
-                    MemorySegment block = arena.allocate(codec.checkpointBytes(to - from), 64);
-                    codec.saveCheckpoint(live, from, to, block);
+                    MemorySegment block = arena.allocate(codec.byteSize(to - from), 64);
+                    codec.capture(live, from, to, block);
                     spans.add(new int[] {from, to});
                     blocks.add(block);
                     from = to;
                 }
-                wholeSpan = arena.allocate(codec.checkpointBytes(prefix.length), 64);
-                codec.saveCheckpoint(live, 0, prefix.length, wholeSpan);
+                wholeSpan = arena.allocate(codec.byteSize(prefix.length), 64);
+                codec.capture(live, 0, prefix.length, wholeSpan);
 
                 model.ingest(live, Batch.step(lastToken));
                 liveLogits =
@@ -163,14 +163,12 @@ class XLlamaTest {
 
                 try (var restored = model.newState(capacity, 8)) {
                     for (int i = 0; i < spans.size(); i++) {
-                        codec.restoreCheckpoint(
-                                restored, spans.get(i)[0], spans.get(i)[1], blocks.get(i));
+                        codec.restore(restored, spans.get(i)[0], spans.get(i)[1], blocks.get(i));
                     }
                     restored.resumeAt(prefix.length);
 
-                    MemorySegment resaved =
-                            arena.allocate(codec.checkpointBytes(prefix.length), 64);
-                    codec.saveCheckpoint(restored, 0, prefix.length, resaved);
+                    MemorySegment resaved = arena.allocate(codec.byteSize(prefix.length), 64);
+                    codec.capture(restored, 0, prefix.length, resaved);
                     assertEquals(-1, wholeSpan.mismatch(resaved), "re-saved history bytes");
 
                     model.ingest(restored, Batch.step(lastToken));
@@ -188,7 +186,7 @@ class XLlamaTest {
                             Ops.argmax(
                                     Views.castToSegmentBacked(model.logits(live), "live logits"),
                                     0,
-                                    model.config().vocabularySize());
+                                    model.configuration().vocabularySize());
                     model.ingest(live, Batch.step(token));
                     model.ingest(restored, Batch.step(token));
                     int liveToken =
@@ -196,13 +194,13 @@ class XLlamaTest {
                                     Views.castToSegmentBacked(
                                             model.logits(live), "live continuation"),
                                     0,
-                                    model.config().vocabularySize());
+                                    model.configuration().vocabularySize());
                     int restoredToken =
                             Ops.argmax(
                                     Views.castToSegmentBacked(
                                             model.logits(restored), "restored continuation"),
                                     0,
-                                    model.config().vocabularySize());
+                                    model.configuration().vocabularySize());
                     assertEquals(liveToken, restoredToken, "continued greedy token");
                 }
             }
@@ -270,7 +268,7 @@ class XLlamaTest {
             int[] xIds;
             float[] xFirst, xLast;
             var xm = Llama.loadModel(channel, gguf, Arena.ofAuto(), tokenizer);
-            var xc = xm.config();
+            var xc = xm.configuration();
             try (var xs =
                     xm.newState(Math.min(xc.contextLength(), ids.length + nTokens + 16), bc)) {
                 for (Batch chunk : Batch.prepare(List.of(Batch.prefill(ids)), bc)) {

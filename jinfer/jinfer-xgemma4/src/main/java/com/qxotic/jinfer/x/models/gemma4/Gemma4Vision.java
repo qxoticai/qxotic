@@ -1,11 +1,11 @@
 package com.qxotic.jinfer.x.models.gemma4;
 
 import com.qxotic.format.gguf.GGUF;
-import com.qxotic.jinfer.x.PanamaMemoryArena;
 import com.qxotic.jinfer.x.Parallel;
 import com.qxotic.jinfer.x.Views;
-import com.qxotic.jinfer.x.boundary.Embedder;
+import com.qxotic.jinfer.x.boundary.Arenas;
 import com.qxotic.jinfer.x.boundary.Media;
+import com.qxotic.jinfer.x.boundary.MediaProjector;
 import com.qxotic.jinfer.x.kernels.Activations;
 import com.qxotic.jinfer.x.kernels.Convert;
 import com.qxotic.jinfer.x.kernels.FlashAttention;
@@ -15,6 +15,7 @@ import com.qxotic.jinfer.x.kernels.Norms;
 import com.qxotic.jinfer.x.kernels.Ops;
 import com.qxotic.jinfer.x.kernels.RoPE;
 import com.qxotic.jota.Shape;
+import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import java.io.IOException;
 import java.lang.foreign.Arena;
@@ -27,7 +28,7 @@ import java.util.Objects;
 import java.util.function.Consumer;
 
 /** Gemma 4 SigLIP-style vision tower ({@code projector_type=gemma4v}). */
-public final class Gemma4Vision implements Embedder<Media.Image> {
+public final class Gemma4Vision implements MediaProjector<Media.Image> {
     private static final float ROPE_THETA = 100f;
 
     private final int imageSize,
@@ -123,7 +124,8 @@ public final class Gemma4Vision implements Embedder<Media.Image> {
         return Math.multiplyExact(Math.max(1, patchesX / merge), Math.max(1, patchesY / merge));
     }
 
-    String planId() {
+    @Override
+    public String planId() {
         return "gemma4v patch="
                 + patchSize
                 + " merge="
@@ -135,7 +137,7 @@ public final class Gemma4Vision implements Embedder<Media.Image> {
     }
 
     @Override
-    public void embed(Media.Image image, int maxChunkSize, Consumer<MemoryView<?>> sink) {
+    public void project(Media.Image image, int maxChunkSize, Consumer<MemoryView<?>> sink) {
         Objects.requireNonNull(image, "image");
         Objects.requireNonNull(sink, "sink");
         if (maxChunkSize <= 0) throw new IllegalArgumentException("maxChunkSize must be positive");
@@ -148,13 +150,16 @@ public final class Gemma4Vision implements Embedder<Media.Image> {
                             + rows
                             + " projected rows, exceeding maxChunkSize "
                             + maxChunkSize);
-        try (Arena arena = Arena.ofShared()) {
-            sink.accept(encode(image, new PanamaMemoryArena(arena), size));
+        MemoryArena<MemorySegment> scratch = Arenas.newCrossThreadMemoryArena();
+        try {
+            sink.accept(encode(image, scratch, size));
+        } finally {
+            Arenas.close(scratch);
         }
     }
 
     private MemoryView<MemorySegment> encode(
-            Media.Image image, PanamaMemoryArena scratch, int[] size) {
+            Media.Image image, MemoryArena<MemorySegment> scratch, int[] size) {
         int patchesX = size[0] / patchSize, patchesY = size[1] / patchSize;
         if (patchesX > positionSize || patchesY > positionSize)
             throw new IllegalArgumentException(
@@ -286,7 +291,7 @@ public final class Gemma4Vision implements Embedder<Media.Image> {
             MemoryView<MemorySegment> current,
             int patchesX,
             int patchesY,
-            PanamaMemoryArena scratch,
+            MemoryArena<MemorySegment> scratch,
             MemoryView<MemorySegment> clampScratch) {
         int outputX = Math.max(1, patchesX / merge), outputY = Math.max(1, patchesY / merge);
         int rows = Math.multiplyExact(outputX, outputY);

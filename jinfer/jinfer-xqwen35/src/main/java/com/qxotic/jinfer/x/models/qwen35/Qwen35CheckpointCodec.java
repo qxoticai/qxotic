@@ -1,6 +1,6 @@
 package com.qxotic.jinfer.x.models.qwen35;
 
-import com.qxotic.jinfer.x.boundary.StateCodec;
+import com.qxotic.jinfer.x.boundary.CheckpointCodec;
 import com.qxotic.jinfer.x.kernels.KvTransfer;
 import com.qxotic.jota.DataType;
 import java.lang.foreign.MemorySegment;
@@ -8,22 +8,13 @@ import java.lang.foreign.MemorySegment;
 /**
  * Qwen3.5 resume-state codec: the full-attention layers store per-position K/V rows (full context,
  * linear position indexing - no ring); the gated-delta-net layers contribute their conv history
- * plus the S matrices ({@code heads x headVDim x headVDim} F32) as the block RESIDUE - ~66MB total
- * residue at 35B-A3B dims (30 linear layers plus conv), so this model is {@link
- * #coarseCheckpoints()}: cached prompts commit as ONE block per prompt, one residue per prompt
- * rather than one per turn. When present, the embedded MTP block contributes ordinary per-position
- * K/V rows plus one normalized target-hidden row in the residue; no separate cache format or mode
- * exists. MoE routing is per-token and carries no cross-token state; everything else is per-batch
- * scratch - which is why {@code State.reset} zeroes exactly the recurrent buffers, the MTP carry,
- * and the cursor.
- *
- * <p>Coarse consequences worth knowing: matching is ALL-OR-NOTHING - a request whose stream
- * diverges anywhere inside the defined span, or is shorter than it, restores nothing and
- * re-prefills silently; only the misses counter tells. The defined block is always PREFIX-ONLY
- * (define drops the trailing batch, or the trailing position of a single-batch prompt), so a
- * one-short serve can match it.
+ * plus the S matrices ({@code heads x headVDim x headVDim} F32) as ~66MB of fixed checkpoint
+ * overhead at 35B-A3B dims (30 linear layers plus conv). When present, the embedded MTP block
+ * contributes ordinary per-position K/V rows plus one normalized target-hidden row to that fixed
+ * state; no separate cache format or mode exists. MoE routing is per-token and carries no
+ * cross-token state; everything else is per-batch scratch.
  */
-final class Qwen35StateCodec implements StateCodec<Qwen35.State> {
+final class Qwen35CheckpointCodec extends CheckpointCodec<Qwen35.State> {
 
     private final Qwen35.Configuration config;
     private final int recurrentFloats; // heads * headVDim * headVDim per linear layer
@@ -31,7 +22,7 @@ final class Qwen35StateCodec implements StateCodec<Qwen35.State> {
     private final long bytesPerPosition;
     private final long residueBytes;
 
-    Qwen35StateCodec(Qwen35.Configuration config) {
+    Qwen35CheckpointCodec(Qwen35.Configuration config) {
         this.config = config;
         recurrentFloats =
                 Math.multiplyExact(
@@ -63,28 +54,13 @@ final class Qwen35StateCodec implements StateCodec<Qwen35.State> {
     }
 
     @Override
-    public long checkpointBytes(int positions) {
-        if (positions < 0) throw new IllegalArgumentException("positions " + positions);
+    protected long sizeOf(int positions) {
         return Math.addExact(Math.multiplyExact((long) positions, bytesPerPosition), residueBytes);
     }
 
     @Override
-    public boolean coarseCheckpoints() {
-        return true;
-    }
-
-    @Override
-    public void saveCheckpoint(Qwen35.State state, int from, int to, MemorySegment destination) {
-        transfer(state, from, to, destination, true);
-    }
-
-    @Override
-    public void restoreCheckpoint(Qwen35.State state, int from, int to, MemorySegment source) {
-        transfer(state, from, to, source, false);
-    }
-
-    private void transfer(Qwen35.State state, int from, int to, MemorySegment blob, boolean save) {
-        StateCodec.requireCheckpoint(this, state, from, to, blob, save);
+    protected void transfer(
+            Qwen35.State state, int from, int to, MemorySegment blob, boolean capture) {
         long offset = 0;
         long elements = Math.multiplyExact((long) (to - from), config.kvDim());
         long elementOffset = Math.multiplyExact((long) from, config.kvDim());
@@ -92,10 +68,15 @@ final class Qwen35StateCodec implements StateCodec<Qwen35.State> {
             if (!config.isFullAttention()[layer]) continue;
             offset +=
                     KvTransfer.transfer(
-                            state.keyCache[layer], elementOffset, blob, offset, elements, save);
+                            state.keyCache[layer], elementOffset, blob, offset, elements, capture);
             offset +=
                     KvTransfer.transfer(
-                            state.valueCache[layer], elementOffset, blob, offset, elements, save);
+                            state.valueCache[layer],
+                            elementOffset,
+                            blob,
+                            offset,
+                            elements,
+                            capture);
         }
         for (int layer = 0; layer < config.storedLayers(); layer++) {
             if (config.isFullAttention()[layer]) continue;
@@ -107,7 +88,7 @@ final class Qwen35StateCodec implements StateCodec<Qwen35.State> {
                             blob,
                             offset,
                             recurrentFloats,
-                            save);
+                            capture);
             offset +=
                     KvTransfer.transfer(
                             state.convState[layer],
@@ -116,7 +97,7 @@ final class Qwen35StateCodec implements StateCodec<Qwen35.State> {
                             blob,
                             offset,
                             convFloats,
-                            save);
+                            capture);
         }
         if (config.hasMtp())
             KvTransfer.transfer(
@@ -126,6 +107,6 @@ final class Qwen35StateCodec implements StateCodec<Qwen35.State> {
                     blob,
                     offset,
                     config.embeddingLength(),
-                    save);
+                    capture);
     }
 }

@@ -46,7 +46,7 @@ class XQwen35Test {
                 float[] first = Views.toFloatArray(xLogits, "logits");
                 for (int step = 0; step < 4; step++) {
                     int oldToken = oldLogits.argmax();
-                    int xToken = Ops.argmax(xLogits, 0, x.config().vocabularySize());
+                    int xToken = Ops.argmax(xLogits, 0, x.configuration().vocabularySize());
                     assertEquals(oldToken, xToken, "greedy token at step " + step);
                     old.ingest(oldState, com.qxotic.jinfer.Batch.step(oldToken));
                     x.ingest(xState, Batch.step(xToken));

@@ -23,16 +23,16 @@ final class Qwen35Speculative {
 
     static final class Scratch {
         final MemoryView<MemorySegment> verificationLogits;
-        final Qwen35StateCodec codec;
+        final Qwen35CheckpointCodec codec;
         final MemorySegment checkpoint;
         final int depth;
 
         Scratch(Qwen35 model, Qwen35.State state, int depth) {
             var arena = state.specArena();
-            int vocab = model.config().vocabularySize();
+            int vocab = model.configuration().vocabularySize();
             verificationLogits = Views.allocateF32(arena, (long) (depth + 1) * vocab);
-            codec = new Qwen35StateCodec(model.config());
-            checkpoint = arena.allocateMemory(codec.checkpointBytes(0), 64).base();
+            codec = new Qwen35CheckpointCodec(model.configuration());
+            checkpoint = arena.allocateMemory(codec.byteSize(0), 64).base();
             this.depth = depth;
         }
     }
@@ -97,8 +97,8 @@ final class Qwen35Speculative {
                 timeoutNanos > 0 && timeoutNanos <= Long.MAX_VALUE - started
                         ? started + timeoutNanos
                         : Long.MAX_VALUE;
-        int vocab = model.config().vocabularySize();
-        Qwen35StateCodec codec = scratch.codec;
+        int vocab = model.configuration().vocabularySize();
+        Qwen35CheckpointCodec codec = scratch.codec;
         IntSequence.Builder emitted = IntSequence.newBuilder();
         IntSequence.Builder committed = IntSequence.newBuilder();
         int drafted = 0, acceptedTotal = 0, forwards = 0;
@@ -137,7 +137,7 @@ final class Qwen35Speculative {
                                     maxTokens - emitted.size() - 1));
             int[] candidates = blocks[drafts];
             int base = state.position();
-            if (drafts > 0) codec.saveCheckpoint(state, base, base, scratch.checkpoint);
+            if (drafts > 0) codec.capture(state, base, base, scratch.checkpoint);
 
             candidates[0] = next;
             if (drafts > 0) model.draft(state, drafts, candidates);
@@ -172,7 +172,7 @@ final class Qwen35Speculative {
             int keep = stop >= 0 ? stop + 1 : accepted + 1;
 
             if (keep < drafts + 1) {
-                codec.restoreCheckpoint(state, base, base, scratch.checkpoint);
+                codec.restore(state, base, base, scratch.checkpoint);
                 state.resumeAt(base);
                 int[] prefix = prefixes[keep];
                 System.arraycopy(candidates, 0, prefix, 0, keep);

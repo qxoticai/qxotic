@@ -47,7 +47,7 @@ class XNemotronHTest {
                 float[] first = Views.toFloatArray(xLogits, "logits");
                 for (int step = 0; step < 2; step++) {
                     int oldToken = oldLogits.argmax(),
-                            xToken = Ops.argmax(xLogits, 0, x.config().vocabularySize());
+                            xToken = Ops.argmax(xLogits, 0, x.configuration().vocabularySize());
                     assertEquals(oldToken, xToken, "greedy token at step " + step);
                     old.ingest(oldState, com.qxotic.jinfer.Batch.step(oldToken));
                     x.ingest(xState, Batch.step(xToken));

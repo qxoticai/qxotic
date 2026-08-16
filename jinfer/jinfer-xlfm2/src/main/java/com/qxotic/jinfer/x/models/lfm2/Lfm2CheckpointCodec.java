@@ -1,19 +1,19 @@
 package com.qxotic.jinfer.x.models.lfm2;
 
-import com.qxotic.jinfer.x.boundary.StateCodec;
+import com.qxotic.jinfer.x.boundary.CheckpointCodec;
 import com.qxotic.jinfer.x.kernels.KvTransfer;
 import com.qxotic.jota.DataType;
 import java.lang.foreign.MemorySegment;
 
 /** LFM2 attention history plus the short-convolution state at each block endpoint. */
-final class Lfm2StateCodec implements StateCodec<Lfm2.State> {
+final class Lfm2CheckpointCodec extends CheckpointCodec<Lfm2.State> {
 
     private final Lfm2.Configuration config;
     private final int convElements;
     private final long bytesPerPosition;
     private final long residueBytes;
 
-    Lfm2StateCodec(Lfm2.Configuration config) {
+    Lfm2CheckpointCodec(Lfm2.Configuration config) {
         this.config = config;
         convElements =
                 Math.multiplyExact(
@@ -37,23 +37,13 @@ final class Lfm2StateCodec implements StateCodec<Lfm2.State> {
     }
 
     @Override
-    public long checkpointBytes(int positions) {
-        if (positions < 0) throw new IllegalArgumentException("positions " + positions);
+    protected long sizeOf(int positions) {
         return Math.addExact(Math.multiplyExact((long) positions, bytesPerPosition), residueBytes);
     }
 
     @Override
-    public void saveCheckpoint(Lfm2.State state, int from, int to, MemorySegment destination) {
-        transfer(state, from, to, destination, true);
-    }
-
-    @Override
-    public void restoreCheckpoint(Lfm2.State state, int from, int to, MemorySegment source) {
-        transfer(state, from, to, source, false);
-    }
-
-    private void transfer(Lfm2.State state, int from, int to, MemorySegment blob, boolean save) {
-        StateCodec.requireCheckpoint(this, state, from, to, blob, save);
+    protected void transfer(
+            Lfm2.State state, int from, int to, MemorySegment blob, boolean capture) {
 
         long offset = 0;
         int positions = to - from;
@@ -64,10 +54,15 @@ final class Lfm2StateCodec implements StateCodec<Lfm2.State> {
             long elementOffset = Math.multiplyExact((long) from, kvDim);
             offset +=
                     KvTransfer.transfer(
-                            state.keyCache[layer], elementOffset, blob, offset, elements, save);
+                            state.keyCache[layer], elementOffset, blob, offset, elements, capture);
             offset +=
                     KvTransfer.transfer(
-                            state.valueCache[layer], elementOffset, blob, offset, elements, save);
+                            state.valueCache[layer],
+                            elementOffset,
+                            blob,
+                            offset,
+                            elements,
+                            capture);
         }
         for (int layer = 0; layer < config.numberOfLayers(); layer++) {
             if (!config.isRecurrentLayer(layer)) continue;
@@ -79,7 +74,7 @@ final class Lfm2StateCodec implements StateCodec<Lfm2.State> {
                             blob,
                             offset,
                             convElements,
-                            save);
+                            capture);
         }
     }
 }

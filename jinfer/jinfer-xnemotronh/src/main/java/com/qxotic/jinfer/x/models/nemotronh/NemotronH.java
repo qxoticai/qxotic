@@ -3,11 +3,12 @@ package com.qxotic.jinfer.x.models.nemotronh;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.x.Parallel;
 import com.qxotic.jinfer.x.Views;
-import com.qxotic.jinfer.x.boundary.BaseState;
+import com.qxotic.jinfer.x.boundary.Arenas;
 import com.qxotic.jinfer.x.boundary.Batch;
-import com.qxotic.jinfer.x.boundary.Config;
+import com.qxotic.jinfer.x.boundary.CheckpointCodec;
+import com.qxotic.jinfer.x.boundary.ContextConfiguration;
+import com.qxotic.jinfer.x.boundary.ContextState;
 import com.qxotic.jinfer.x.boundary.LanguageModel;
-import com.qxotic.jinfer.x.boundary.StateCodec;
 import com.qxotic.jinfer.x.kernels.Activations;
 import com.qxotic.jinfer.x.kernels.Convert;
 import com.qxotic.jinfer.x.kernels.Convolutions;
@@ -20,12 +21,14 @@ import com.qxotic.jinfer.x.kernels.Norms;
 import com.qxotic.jinfer.x.kernels.Ops;
 import com.qxotic.jinfer.x.kernels.Trace;
 import com.qxotic.jota.DataType;
+import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.lang.ref.Reference;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -48,7 +51,7 @@ public final class NemotronH
     }
 
     @Override
-    public Configuration config() {
+    public Configuration configuration() {
         return configuration;
     }
 
@@ -62,32 +65,49 @@ public final class NemotronH
     }
 
     @Override
-    public Optional<StateCodec<State>> stateCodec() {
-        return Optional.of(new NemotronHStateCodec(configuration));
+    public Optional<CheckpointCodec<State>> checkpointCodec() {
+        return Optional.of(new NemotronHCheckpointCodec(configuration));
     }
 
     @Override
-    public State newState(int contextCapacity, int batchCapacity, Arena arena) {
-        return new State(configuration, contextCapacity, batchCapacity, arena);
+    public State newState(
+            int contextCapacity, int batchCapacity, MemoryArena<MemorySegment> arena) {
+        return new State(configuration, contextCapacity, batchCapacity, arena, false);
     }
 
     @Override
-    public void forward(State state, Batch batch) {
+    public State newState(int contextCapacity, int batchCapacity) {
+        MemoryArena<MemorySegment> arena = Arenas.newCrossThreadMemoryArena();
+        try {
+            return new State(configuration, contextCapacity, batchCapacity, arena, true);
+        } catch (RuntimeException | Error failure) {
+            Arenas.close(arena);
+            throw failure;
+        }
+    }
+
+    @Override
+    public void ingest(State state, Batch batch) {
+        state.exclusively(() -> forward(state, batch));
+        Reference.reachabilityFence(this);
+    }
+
+    private void forward(State state, Batch batch) {
         int rows = batch.count();
         if (rows <= 0)
             throw new IllegalArgumentException("Nemotron-H token batch must not be empty");
-        if (rows > state.batchCapacity)
+        if (rows > state.batchCapacity())
             throw new IllegalArgumentException(
-                    "batch " + rows + " exceeds batchCapacity " + state.batchCapacity);
+                    "batch " + rows + " exceeds batchCapacity " + state.batchCapacity());
         int start = state.position();
-        if (start + rows > state.contextCapacity)
+        if (start + rows > state.contextCapacity())
             throw new IllegalArgumentException(
                     "ingest of "
                             + rows
                             + " at position "
                             + start
                             + " exceeds contextCapacity "
-                            + state.contextCapacity);
+                            + state.contextCapacity());
         int[] tokens =
                 switch (batch.input()) {
                     case Batch.Input.Tokens t -> t.ids();
@@ -110,10 +130,10 @@ public final class NemotronH
                         return null;
                     });
         else forward(state, tokens, start, rows);
-        state.advance(rows, batch.outputs());
+        state.advance(batch);
     }
 
-    void forward(State state, int[] tokens, int startPos, int rows) {
+    private void forward(State state, int[] tokens, int startPos, int rows) {
         Configuration c = configuration;
         Views.checkAlive(weights.tokenEmbedding, "tokenEmbedding");
         Convert.gatherToF32(
@@ -325,11 +345,17 @@ public final class NemotronH
     }
 
     @Override
-    public MemoryView<?> head(State state, int output) {
-        if (output < 0 || output >= state.outputCount)
+    public MemoryView<?> logits(State state, int output) {
+        MemoryView<?> result = state.exclusively(() -> projectLogits(state, output));
+        Reference.reachabilityFence(this);
+        return result;
+    }
+
+    private MemoryView<?> projectLogits(State state, int output) {
+        if (output < 0 || output >= state.outputCount())
             throw new IllegalArgumentException("output " + output + " outside retained outputs");
         Configuration c = configuration;
-        int row = state.lastChunkLen - state.outputCount + output;
+        int row = state.lastBatchSize() - state.outputCount() + output;
         return Parallel.onDecodePool(
                 () -> {
                     Norms.rmsnorm(
@@ -377,7 +403,7 @@ public final class NemotronH
             int expertSharedFeedForwardLength,
             boolean expertWeightsNorm,
             float expertWeightsScale)
-            implements Config {
+            implements ContextConfiguration {
         int queryDim() {
             return numberOfHeads * headSize;
         }
@@ -428,8 +454,7 @@ public final class NemotronH
             SsmWeights[] ssm,
             MoeWeights[] moe) {}
 
-    public static final class State extends BaseState {
-        final int contextCapacity, batchCapacity;
+    public static final class State extends ContextState {
         final MemoryView<MemorySegment> residual, normed, branch, logits;
         final MemoryView<MemorySegment> q, k, v, attentionOut;
         final MemoryView<MemorySegment> ssmProjection, ssmZ, ssmXbc, ssmDt, ssmConvOut;
@@ -443,8 +468,13 @@ public final class NemotronH
         final Moe.Routing moeRouting;
 
         @SuppressWarnings("unchecked")
-        State(Configuration c, int contextCapacity, int batchCapacity, Arena arena) {
-            super(arena);
+        State(
+                Configuration c,
+                int contextCapacity,
+                int batchCapacity,
+                MemoryArena<MemorySegment> arena,
+                boolean ownsArena) {
+            super(contextCapacity, batchCapacity, arena, ownsArena);
             if (contextCapacity <= 0 || contextCapacity > c.contextLength)
                 throw new IllegalArgumentException(
                         "contextCapacity "
@@ -454,8 +484,6 @@ public final class NemotronH
                                 + "]");
             if (batchCapacity <= 0)
                 throw new IllegalArgumentException("batchCapacity " + batchCapacity);
-            this.contextCapacity = contextCapacity;
-            this.batchCapacity = batchCapacity;
             int b = batchCapacity, dim = c.embeddingLength, qd = c.queryDim(), kvd = c.kvDim();
             int inner = c.ssmInnerSize, channels = c.ssmConvChannels();
             residual = Views.allocateF32(memoryArena(), b, dim);
@@ -510,24 +538,17 @@ public final class NemotronH
         }
 
         @Override
-        public int contextCapacity() {
-            return contextCapacity;
-        }
-
-        @Override
-        public int batchCapacity() {
-            return batchCapacity;
-        }
-
-        @Override
-        public void reset() {
-            resumeAt(0);
+        protected void clearHistory() {
             for (MemoryView<MemorySegment> state : convState)
                 if (state != null)
                     Ops.fillInPlace(state, 0, Math.toIntExact(state.logicalSize()), 0f);
             for (MemoryView<MemorySegment> state : recurrentState)
                 if (state != null)
                     Ops.fillInPlace(state, 0, Math.toIntExact(state.logicalSize()), 0f);
+        }
+
+        private void advance(Batch batch) {
+            advanceContext(batch.count(), batch.outputs());
         }
     }
 
