@@ -8,6 +8,7 @@ import com.qxotic.jinfer.x.cache.PromptCache;
 import com.qxotic.jinfer.x.chat.Channel;
 import com.qxotic.jinfer.x.chat.ChatEngine;
 import com.qxotic.jinfer.x.chat.Content;
+import com.qxotic.jinfer.x.chat.MediaEncodingCache;
 import com.qxotic.jinfer.x.chat.Message;
 import com.qxotic.jinfer.x.chat.Role;
 import com.qxotic.jinfer.x.chat.TextStops;
@@ -46,6 +47,10 @@ final class Generation {
 
     PromptCache.Sample cacheSample() {
         return engine.cacheSample();
+    }
+
+    MediaEncodingCache.Sample mediaCacheSample() {
+        return engine.mediaCacheSample();
     }
 
     boolean blockCaching() {

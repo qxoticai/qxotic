@@ -133,6 +133,19 @@ public final class Server {
         return props;
     }
 
+    /** The projected-media cache's health for {@code /props} - same counters /metrics exports. */
+    private Map<String, Object> mediaCacheProps() {
+        var sample = generation.mediaCacheSample();
+        Map<String, Object> props = new LinkedHashMap<>();
+        props.put("entries", sample.entries());
+        props.put("bytes", sample.bytes());
+        props.put("budget_bytes", sample.budgetBytes());
+        props.put("hits", sample.hits());
+        props.put("misses", sample.misses());
+        props.put("refusals", sample.refusals());
+        return props;
+    }
+
     private Running serve(ChatEngine engine, ServerConfig config) throws IOException {
         LoadedModel<?> model = engine.loaded();
         Sampling sampling = generation.defaults();
@@ -204,7 +217,8 @@ public final class Server {
                                                 "top_p", trim(sampling.topP()),
                                                 "top_k", sampling.topK(),
                                                 "min_p", trim(sampling.minP())),
-                                "prompt_cache", promptCacheProps()));
+                                "prompt_cache", promptCacheProps(),
+                                "media_cache", mediaCacheProps()));
         Function<Map<String, Object>, Object> tokenize =
                 request -> {
                     // present-but-empty is a legitimate question (the answer is []); ABSENT is a
@@ -815,7 +829,8 @@ public final class Server {
                 exchange,
                 200,
                 Metrics.CONTENT_TYPE,
-                metrics.exposition(worker, generation.cacheSample()));
+                metrics.exposition(
+                        worker, generation.cacheSample(), generation.mediaCacheSample()));
     }
 
     private static void setTimingHeader(HttpExchange exchange, Reply result) {

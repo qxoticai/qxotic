@@ -62,5 +62,75 @@ final class MediaEncodingCacheTest {
 
         assertEquals(1, projections.get(), source.getClass().getSimpleName());
         assertEquals(outputs.get(0), outputs.get(1));
+        MediaEncodingCache.Sample sample = cache.sample();
+        assertEquals(1, sample.entries());
+        assertEquals(1, sample.misses());
+        assertEquals(1, sample.hits());
+        assertEquals(0, sample.refusals());
+    }
+
+    @Test
+    void oversizedEntriesAreServedButNotRetained() {
+        // the bound is HARD: one int[] {7, 8} is 8 bytes, the budget holds only 4
+        MediaEncodingCache cache = new MediaEncodingCache(4);
+        AtomicInteger projections = new AtomicInteger();
+        List<int[]> served = new ArrayList<>();
+
+        for (int pass = 0; pass < 2; pass++) {
+            cache.replayOrRecord(
+                    new byte[] {1},
+                    8,
+                    sink -> {
+                        projections.incrementAndGet();
+                        sink.accept(Batch.prefill(new int[] {7, 8}));
+                    },
+                    batch -> served.add(((Batch.Input.Tokens) batch.input()).ids()));
+        }
+
+        assertEquals(2, projections.get(), "an oversized entry re-projects on every use");
+        assertEquals(2, served.size(), "oversized or not, the caller is always served");
+        MediaEncodingCache.Sample sample = cache.sample();
+        assertEquals(0, sample.entries());
+        assertEquals(0, sample.bytes());
+        assertEquals(2, sample.misses());
+        assertEquals(0, sample.hits());
+        assertEquals(2, sample.refusals());
+    }
+
+    @Test
+    void theBudgetEvictsEldestWithoutException() {
+        // two 8-byte entries, an 8-byte budget: the second insert must evict the first
+        MediaEncodingCache cache = new MediaEncodingCache(8);
+        cache.replayOrRecord(
+                new byte[] {1},
+                8,
+                sink -> sink.accept(Batch.prefill(new int[] {1, 2})),
+                batch -> {});
+        cache.replayOrRecord(
+                new byte[] {2},
+                8,
+                sink -> sink.accept(Batch.prefill(new int[] {3, 4})),
+                batch -> {});
+
+        MediaEncodingCache.Sample sample = cache.sample();
+        assertEquals(1, sample.entries());
+        assertEquals(8, sample.bytes());
+        assertEquals(8, sample.budgetBytes());
+
+        // and the survivor is the NEWER entry: key 1 misses again, key 2 hits
+        AtomicInteger projections = new AtomicInteger();
+        cache.replayOrRecord(
+                new byte[] {1},
+                8,
+                sink -> {
+                    projections.incrementAndGet();
+                    sink.accept(Batch.prefill(new int[] {1, 2}));
+                },
+                batch -> {});
+        assertEquals(1, projections.get(), "the eldest was evicted");
+        MediaEncodingCache.Sample after = cache.sample();
+        assertEquals(0, after.refusals(), "both entries fit the budget; eviction is not refusal");
+        assertEquals(1, after.entries());
+        assertEquals(8, after.bytes());
     }
 }

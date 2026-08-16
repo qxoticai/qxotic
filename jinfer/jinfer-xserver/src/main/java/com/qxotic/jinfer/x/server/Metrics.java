@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.x.server;
 
 import com.qxotic.jinfer.x.cache.PromptCache;
+import com.qxotic.jinfer.x.chat.MediaEncodingCache;
 
 /**
  * One server's observability: generation/token counters and the Prometheus text exposition
@@ -79,7 +80,8 @@ final class Metrics {
     }
 
     /** Prometheus exposition: generation outcomes, token totals, queue + worker gauges. */
-    synchronized String exposition(Worker worker, PromptCache.Sample cache) {
+    synchronized String exposition(
+            Worker worker, PromptCache.Sample cache, MediaEncodingCache.Sample mediaCache) {
         StringBuilder sb = new StringBuilder();
         metric(sb, "jinfer_uptime_seconds", "gauge", (System.nanoTime() - startNanos) / 1e9);
         metric(sb, "jinfer_generations_completed_total", "counter", completedGenerations);
@@ -134,6 +136,13 @@ final class Metrics {
                 "discarded",
                 cache.blockDiscards());
         metric(sb, "jinfer_prompt_cache_block_refusals_total", "counter", cache.blockRefusals());
+        metric(sb, "jinfer_media_cache_entry_count", "gauge", mediaCache.entries());
+        metric(sb, "jinfer_media_cache_memory_usage_bytes", "gauge", mediaCache.bytes());
+        metric(sb, "jinfer_media_cache_memory_limit_bytes", "gauge", mediaCache.budgetBytes());
+        type(sb, "jinfer_media_cache_lookups_total", "counter");
+        labeled(sb, "jinfer_media_cache_lookups_total", "result", "hit", mediaCache.hits());
+        labeled(sb, "jinfer_media_cache_lookups_total", "result", "miss", mediaCache.misses());
+        metric(sb, "jinfer_media_cache_refusals_total", "counter", mediaCache.refusals());
         metric(sb, "jinfer_speculation_requests_total", "counter", speculationRequests);
         metric(sb, "jinfer_speculation_drafted_tokens_total", "counter", draftedTokens);
         metric(sb, "jinfer_speculation_accepted_tokens_total", "counter", acceptedTokens);
