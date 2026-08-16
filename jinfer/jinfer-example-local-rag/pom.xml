@@ -40,7 +40,8 @@
   <dependencies>
     <dependency>
       <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-spring-ai-spring-boot-starter</artifactId>
+      <artifactId>jinfer-xspring-ai-spring-boot-starter</artifactId>
+      <version>${project.version}</version>
     </dependency>
     <dependency>
       <groupId>org.springframework.ai</groupId>
@@ -53,8 +54,7 @@
     <!-- shared model fixtures (paths relative to the checkout; scripts/download-models.sh) -->
     <dependency>
       <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-kernels</artifactId>
-      <type>test-jar</type>
+      <artifactId>jinfer-testkit</artifactId>
       <scope>test</scope>
     </dependency>
   </dependencies>

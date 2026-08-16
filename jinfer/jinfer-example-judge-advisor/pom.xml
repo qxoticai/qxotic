@@ -43,7 +43,12 @@
   <dependencies>
     <dependency>
       <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-spring-ai-spring-boot-starter</artifactId>
+      <artifactId>jinfer-xspring-ai-spring-boot-starter</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>json</artifactId>
     </dependency>
     <!-- the remote generator: Kimi's OpenAI-compatible endpoint -->
     <dependency>
@@ -58,8 +63,7 @@
     <!-- shared model fixtures (paths relative to the checkout; scripts/download-models.sh) -->
     <dependency>
       <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-kernels</artifactId>
-      <type>test-jar</type>
+      <artifactId>jinfer-testkit</artifactId>
       <scope>test</scope>
     </dependency>
   </dependencies>
