@@ -4,13 +4,13 @@ Single-file demos of what jinfer does that other local engines mostly don't. Eve
 runnable as-is and does its work **in-process** — no server, no Python, no JNI glue.
 
 ```bash
-cd ../.. && ./mvnw -q -DskipTests install    # publish jinfer to ~/.m2 once
-export JINFER_MODELS=/path/to/models         # default: ~/models
+cd ../.. && mvn -q -DskipTests install    # publish jinfer to ~/.m2 once
 jbang Chat.java "Explain HTTP/3 in two sentences."
 ```
 
-Each script takes the model path as a trailing argument if you'd rather be explicit than set
-`JINFER_MODELS`. Model layout matches `scripts/download-models.sh` (`{source}/{user}/{repo}/{file}`).
+The defaults are complete Hugging Face references, resolved through jinfer's model store. Pass a
+local path, URL or another hub reference as the trailing model argument to override one. Downloaded
+models are kept in jinfer's local model cache.
 
 | script | shows | model |
 |---|---|---|
@@ -19,7 +19,7 @@ Each script takes the model path as a trailing argument if you'd rather be expli
 | `Speak.java` | text to speech from a 4 MB model | Inflect-Nano-v2 |
 | `Search.java` | semantic search, no vector database | Qwen3-Embedding-0.6B |
 | `Rerank.java` | cross-encoder reranking, the second stage of RAG | Qwen3-Reranker-0.6B |
-| `CachedPrompt.java` | prompt caching, with a measured speedup | Llama-3.2-1B |
+| `CachedPrompt.java` | prompt caching, with restored-token accounting | Llama-3.2-1B |
 | `Detect.java` | object detection with the boxes **drawn** on the image | Gemma 4 12B + mmproj |
 
 ## Vision
@@ -58,11 +58,11 @@ pipelines use both.
 
 ## Notes
 
-`Models.java` is a shared path helper, not a demo — it is pulled in via `//SOURCES`.
+`Models.java` only holds the shared default model references — it is pulled in via `//SOURCES`.
 
-`CachedPrompt.java` warms the JIT before timing and compares like with like (same questions, same
-warm JVM, only the prefix handling differs). Caching never changes the answer; byte-identity with an
-uncached run is a project law, so the numbers are purely about cost.
+`CachedPrompt.java` reports restored prompt tokens from the response itself. It intentionally avoids
+a tiny wall-clock benchmark, where model loading, JIT warmup and the ordinary block cache obscure
+the feature being demonstrated.
 
 Native matmul is used automatically when `libjam` is on the path; otherwise the Java Vector backend
 runs and everything still works, slower.

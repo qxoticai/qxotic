@@ -19,7 +19,7 @@
 // USE A BIG MODEL FOR THIS ONE. Describing an image and LOCALIZING in it are very different asks:
 // E2B labels correctly and places badly (asked for the llama and the mug in a test photo, it
 // labelled both right and put the llama's box inside the mug). 12B places both correctly from the
-// same prompt and the same code. Pass a smaller GGUF explicitly if you want to see it fail:
+// same prompt and the same code. Pass a smaller model explicitly if you want to see it fail:
 //     jbang Detect.java photo.jpg "a llama" ~/models/.../gemma-4-E2B-it-Q8_0.gguf ~/models/.../mmproj-F32.gguf
 import com.qxotic.format.json.Json;
 import com.qxotic.jinfer.langchain4j.JinferChatModel;
@@ -28,20 +28,28 @@ import dev.langchain4j.data.message.TextContent;
 import dev.langchain4j.data.message.UserMessage;
 
 import javax.imageio.ImageIO;
-import java.awt.*;
+import java.awt.BasicStroke;
+import java.awt.Color;
+import java.awt.Font;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
 public class Detect {
 
-    public static void main(String[] args) throws Exception {
-        if (args.length < 1) { System.err.println("usage: Detect <image> [labels] [gguf] [mmproj]"); System.exit(2); }
-        Path image  = Path.of(args[0]);
+    public static void main(String[] args) throws IOException {
+        if (args.length < 1) {
+            System.err.println("usage: Detect <image> [labels] [model] [mmproj]");
+            System.exit(2);
+        }
+        Path image = Path.of(args[0]);
         String what = args.length > 1 ? args[1] : "every prominent object";
-        Path gguf   = Models.gemmaDetect(args, 2);
-        Path mmproj = Models.gemmaDetectMmproj(args, 3);
+        String modelRef = Models.gemmaDetect(args, 2);
+        String mediaRef = Models.gemmaDetectMmproj(args, 3);
 
         String prompt = "Detect " + what + ". Output ONLY a JSON array, each element "
                 + "{\"label\": string, \"box_2d\": [ymin, xmin, ymax, xmax]} with coordinates "
@@ -49,8 +57,8 @@ public class Detect {
 
         String reply;
         try (var model = JinferChatModel.builder()
-                .modelPath(gguf)
-                .companion("media", mmproj)
+                .model(modelRef)
+                .companion("media", mediaRef)
                 .contextLength(4096)
                 .maxOutputTokens(512)
                 .thinking(false)
@@ -64,37 +72,55 @@ public class Detect {
     }
 
     /** Rescale Gemma's 0-1024 boxes onto the real pixels and stroke them with their labels. */
-    private static void draw(Path source, String json, Path out) throws Exception {
+    private static void draw(Path source, String json, Path out) throws IOException {
+        // Models may wrap the array in prose or a ```json fence. Parse the outermost array; object
+        // field order is deliberately ignored because the model varies it.
+        int from = json.indexOf('[');
+        int to = json.lastIndexOf(']');
+        if (from < 0 || to < from) throw new IllegalStateException("no JSON array in reply:\n" + json);
+        List<?> detections = Json.parseList(json.substring(from, to + 1));
+
         BufferedImage canvas = ImageIO.read(source.toFile());
-        Graphics2D g = canvas.createGraphics();
-        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        g.setStroke(new BasicStroke(Math.max(2f, canvas.getWidth() / 400f)));
-        g.setFont(g.getFont().deriveFont(Font.BOLD, Math.max(14f, canvas.getWidth() / 45f)));
+        if (canvas == null) throw new IOException("unsupported image: " + source);
 
         Color[] palette = {Color.RED, Color.CYAN, Color.YELLOW, Color.GREEN, Color.MAGENTA, Color.ORANGE};
-        // A real parser, so field order does not matter - the model emits box_2d before label as
-        // often as after. Models like to wrap the array in prose or a ```json fence; take the
-        // outermost [ ... ] and let the parser do the rest.
-        int from = json.indexOf('['), to = json.lastIndexOf(']');
-        if (from < 0 || to < from) throw new IllegalStateException("no JSON array in reply:\n" + json);
         int found = 0;
-        for (Object element : Json.parseList(json.substring(from, to + 1))) {
-            if (!(element instanceof Map<?, ?> object)) continue;
-            if (!(object.get("box_2d") instanceof List<?> box) || box.size() != 4) continue;
-            String name = object.get("label") instanceof String s ? s : "?";
-            int ymin = scale(box.get(0), canvas.getHeight()), xmin = scale(box.get(1), canvas.getWidth());
-            int ymax = scale(box.get(2), canvas.getHeight()), xmax = scale(box.get(3), canvas.getWidth());
-            g.setColor(palette[found++ % palette.length]);
-            g.drawRect(xmin, ymin, xmax - xmin, ymax - ymin);
-            g.drawString(name, xmin + 4, Math.max(ymin + g.getFont().getSize(), 16));
+        Graphics2D g = canvas.createGraphics();
+        try {
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g.setStroke(new BasicStroke(Math.max(2f, canvas.getWidth() / 400f)));
+            g.setFont(g.getFont().deriveFont(Font.BOLD, Math.max(14f, canvas.getWidth() / 45f)));
+
+            for (Object element : detections) {
+                if (!(element instanceof Map<?, ?> object)) continue;
+                if (!(object.get("box_2d") instanceof List<?> box) || box.size() != 4) continue;
+                if (!(box.get(0) instanceof Number y0)
+                        || !(box.get(1) instanceof Number x0)
+                        || !(box.get(2) instanceof Number y1)
+                        || !(box.get(3) instanceof Number x1)) continue;
+
+                int py0 = scale(y0, canvas.getHeight());
+                int px0 = scale(x0, canvas.getWidth());
+                int py1 = scale(y1, canvas.getHeight());
+                int px1 = scale(x1, canvas.getWidth());
+                int top = Math.min(py0, py1);
+                int left = Math.min(px0, px1);
+                int bottom = Math.max(py0, py1);
+                int right = Math.max(px0, px1);
+                String name = object.get("label") instanceof String s ? s : "?";
+                g.setColor(palette[found++ % palette.length]);
+                g.drawRect(left, top, right - left, bottom - top);
+                g.drawString(name, left + 4, Math.max(top + g.getFont().getSize(), 16));
+            }
+        } finally {
+            g.dispose();
         }
-        g.dispose();
         ImageIO.write(canvas, "png", out.toFile());
         System.out.printf("%n%d box(es) drawn on %dx%d -> %s%n",
                 found, canvas.getWidth(), canvas.getHeight(), out.toAbsolutePath());
     }
 
-    private static int scale(Object normalized, int pixels) {
-        return Math.round(((Number) normalized).floatValue() / 1024f * pixels);
+    private static int scale(Number normalized, int pixels) {
+        return Math.clamp(Math.round(normalized.floatValue() / 1024f * pixels), 0, pixels);
     }
 }

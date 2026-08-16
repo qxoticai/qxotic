@@ -5,8 +5,11 @@ Runnable equivalents of every snippet on
 `transformers`. One-time setup publishes jinfer to your local Maven repo so jbang can resolve it:
 
 ```bash
-cd .. && ./mvnw -q -DskipTests install     # installs com.qxotic:jinfer-xlangchain4j to ~/.m2
+cd .. && mvn -q -DskipTests install     # installs com.qxotic:jinfer-xlangchain4j to ~/.m2
 ```
+
+The examples default to Hugging Face model references, which jinfer downloads and caches. A local
+GGUF path, URL or another hub reference can be supplied in the same argument position.
 
 Pass `-Djam.native.library.path=/path/to/libjam.so` for native-speed matmul (otherwise the Java
 Vector backend is used automatically).
@@ -22,7 +25,8 @@ Vector backend is used automatically).
 1, 3 and 4 are the same script — Gemma's vision is prompt-driven, so describe / OCR / detect differ
 only by the prompt (detection returns normalized 0-1024 box coordinates as JSON).
 
-Model sizes (any Gemma 4 works — only the paths change; E-variants share the E2B projector):
+Model sizes (any Gemma 4 works — only the model references change; E-variants share the E2B
+projector):
 
 ```bash
 # E2B (default, fastest)   E4B                                  12B (sharpest)
