@@ -19,8 +19,6 @@ import com.qxotic.jinfer.x.llm.Sampling;
 import com.qxotic.jinfer.x.llm.SpecialTokens;
 import com.qxotic.toknroll.IntSequence;
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
@@ -341,23 +339,17 @@ final class Generation {
     }
 
     private Content.Media video(Map<String, Object> part) {
-        byte[] bytes = dataUri(url(part.get("video_url")), "video_url");
-        Path temporary = null;
+        MediaSpill.Spilled spilled = null;
         try {
-            temporary = Files.createTempFile("jinfer-video", ".bin");
-            Files.write(temporary, bytes);
-            Media.Video video = VideoSampler.UNIFORM.sample(temporary);
-            return new Content.Media(video, ContentKey.sha256(bytes));
+            spilled = MediaSpill.base64Video(url(part.get("video_url")), "video_url");
+            Media.Video video = VideoSampler.UNIFORM.sample(spilled.file());
+            return new Content.Media(video, spilled.key());
         } catch (IOException failure) {
             throw new IllegalArgumentException(
                     "video could not be decoded: " + failure.getMessage());
         } finally {
-            if (temporary != null) {
-                try {
-                    Files.deleteIfExists(temporary);
-                } catch (IOException ignored) {
-                    temporary.toFile().deleteOnExit();
-                }
+            if (spilled != null) {
+                MediaSpill.deleteQuietly(spilled.file());
             }
         }
     }
