@@ -138,17 +138,18 @@ public final class BlockTree<S extends ContextState> {
         this.store = store;
         this.budgetBytes = budgetBytes;
         this.modelSeed = modelSeed;
-        BlockKey root = ROOT;
-        byte[] seedBytes = modelSeed.digestBytes();
-        if (seedBytes.length > 0) {
-            sha.reset();
-            sha.update(seedBytes);
-            long[] d = Sha256.digestLongs(sha);
-            root = new BlockKey(d[0], d[1], d[2], d[3]);
-        }
+        BlockKey root = chainRoot(modelSeed);
         this.sentinel = new Block(root, null, 0, 0, null);
         this.detached = new Block(root, null, 0, 0, null);
         this.detached.live = false;
+    }
+
+    /** The key-chain root one model seed implies - the graft anchor frozen blocks hang from. */
+    static BlockKey chainRoot(ContentKey modelSeed) {
+        byte[] seedBytes = modelSeed.digestBytes();
+        if (seedBytes.length == 0) return ROOT;
+        long[] d = Sha256.longs(Sha256.sha256().digest(seedBytes));
+        return new BlockKey(d[0], d[1], d[2], d[3]);
     }
 
     /**

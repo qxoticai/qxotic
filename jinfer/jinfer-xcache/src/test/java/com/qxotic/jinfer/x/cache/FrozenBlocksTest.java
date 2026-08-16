@@ -14,6 +14,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
+import java.util.Random;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -250,5 +251,120 @@ public final class FrozenBlocksTest {
         BlockResumeTest.FakeState r = new BlockResumeTest.FakeState();
         serve.resume(a, 12, r);
         assertEquals(12, r.position(), "torn append: old prompt still serves");
+    }
+
+    @Test
+    void corruptArtifactsFailWithOneStableError() throws Exception {
+        ContentKey seed = ContentKey.sha256(new byte[] {42});
+        Path file = artifactWithTwoBlocks(seed);
+        byte[] pristine = Files.readAllBytes(file);
+        int index = (int) indexOffset(pristine);
+
+        // header: negative count, absurd count (index past EOF), index offset out of range
+        assertCorrupt(mutateInt(pristine, FrozenBlocks.COUNT_OFFSET, -1), seed);
+        assertCorrupt(mutateInt(pristine, FrozenBlocks.COUNT_OFFSET, 1 << 20), seed);
+        assertCorrupt(mutateLong(pristine, FrozenBlocks.COUNT_OFFSET + 4, -1), seed);
+        assertCorrupt(mutateLong(pristine, FrozenBlocks.COUNT_OFFSET + 4, 8), seed);
+        assertCorrupt(
+                mutateLong(pristine, FrozenBlocks.COUNT_OFFSET + 4, pristine.length + 64), seed);
+
+        // entry 0: inverted span, negative from
+        assertCorrupt(mutateInt(pristine, index + 64, -4), seed); // from
+        assertCorrupt(mutateInt(pristine, index + 68, -1), seed); // to < from
+        // entry 0: blob below the KV region, negative length, length past the index
+        assertCorrupt(mutateLong(pristine, index + 72, 0), seed);
+        assertCorrupt(mutateLong(pristine, index + 80, -8), seed);
+        assertCorrupt(
+                mutateLong(pristine, index + 80, index - FrozenBlocks.HEADER_BYTES + 1), seed);
+        // entry 0: wrong parent (the seed-derived root zeroed out)
+        byte[] wrongRoot = pristine.clone();
+        for (int i = 32; i < 64; i++) wrongRoot[index + i] = 0;
+        assertCorrupt(wrongRoot, seed);
+        // entry 1 before its parent: swap the two 96-byte records (parents-first violated)
+        byte[] swapped = pristine.clone();
+        for (int i = 0; i < FrozenBlocks.INDEX_ENTRY_BYTES; i++) {
+            byte t = swapped[index + i];
+            swapped[index + i] = swapped[index + FrozenBlocks.INDEX_ENTRY_BYTES + i];
+            swapped[index + FrozenBlocks.INDEX_ENTRY_BYTES + i] = t;
+        }
+        assertCorrupt(swapped, seed);
+        // duplicate key: entry 1's key overwritten with entry 0's
+        byte[] dup = pristine.clone();
+        System.arraycopy(pristine, index, dup, index + 96, 32);
+        assertCorrupt(dup, seed);
+    }
+
+    @Test
+    void fuzzedArtifactsOpenOrFailStablyNeverIncidentally() throws Exception {
+        ContentKey seed = ContentKey.sha256(new byte[] {42});
+        byte[] pristine = Files.readAllBytes(artifactWithTwoBlocks(seed));
+        Random random = new Random(20260816L);
+        for (int trial = 0; trial < 500; trial++) {
+            byte[] mutated = pristine.clone();
+            for (int f = 0, flips = 1 + random.nextInt(3); f < flips; f++) {
+                mutated[random.nextInt(mutated.length)] ^= (byte) (1 << random.nextInt(8));
+            }
+            Path tmp = Files.createTempFile("frozen-fuzz", ".jkv");
+            tmp.toFile().deleteOnExit();
+            Files.write(tmp, mutated);
+            try {
+                // may still open: KV-byte and structure-preserving flips stay servable
+                // (blob CRCs are verified lazily at restore, by design)
+                FrozenBlocks.open(tmp, seed);
+            } catch (IllegalStateException stable) {
+                // the one error a corrupt artifact fails with
+            } catch (RuntimeException incidental) {
+                throw new AssertionError(
+                        "trial " + trial + " failed incidentally, not stably", incidental);
+            }
+        }
+    }
+
+    /** A valid two-block artifact: a 12-position block with a 3-position child. */
+    private static Path artifactWithTwoBlocks(ContentKey seed) throws IOException {
+        BlockResumeTest.FakeCodec codec = new BlockResumeTest.FakeCodec();
+        BlockTree<BlockResumeTest.FakeState> build =
+                new BlockTree<>(codec, CacheStore.inMemory(), 1 << 20, seed);
+        long[] a = fp(15, 100);
+        BlockResumeTest.FakeState s = new BlockResumeTest.FakeState();
+        BlockTree<BlockResumeTest.FakeState>.Block tip = build.resume(new long[0], 0, s);
+        s.ingestTo(12);
+        tip = build.commit(tip, a, 0, 12, s);
+        s.ingestTo(15);
+        build.commit(tip, a, 12, 3, s);
+        Path file = Files.createTempFile("frozen-corrupt", ".jkv");
+        file.toFile().deleteOnExit();
+        build.freeze(file);
+        return file;
+    }
+
+    private static long indexOffset(byte[] artifact) {
+        return ByteBuffer.wrap(artifact)
+                .order(ByteOrder.LITTLE_ENDIAN)
+                .getLong(FrozenBlocks.COUNT_OFFSET + 4);
+    }
+
+    /** The artifact with one little-endian int overwritten, in a fresh temp file. */
+    private static byte[] mutateInt(byte[] pristine, long at, int value) {
+        byte[] mutated = pristine.clone();
+        ByteBuffer.wrap(mutated).order(ByteOrder.LITTLE_ENDIAN).putInt((int) at, value);
+        return mutated;
+    }
+
+    private static byte[] mutateLong(byte[] pristine, long at, long value) {
+        byte[] mutated = pristine.clone();
+        ByteBuffer.wrap(mutated).order(ByteOrder.LITTLE_ENDIAN).putLong((int) at, value);
+        return mutated;
+    }
+
+    private static void assertCorrupt(byte[] mutated, ContentKey seed) throws IOException {
+        Path tmp = Files.createTempFile("frozen-mutated", ".jkv");
+        tmp.toFile().deleteOnExit();
+        Files.write(tmp, mutated);
+        IllegalStateException e =
+                assertThrows(IllegalStateException.class, () -> FrozenBlocks.open(tmp, seed));
+        assertTrue(
+                e.getMessage().contains("not a valid frozen prompt cache"),
+                "the stable corrupt-artifact error, got: " + e.getMessage());
     }
 }

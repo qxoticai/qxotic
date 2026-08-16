@@ -12,8 +12,10 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Set;
 import java.util.zip.CRC32C;
 
 /**
@@ -27,9 +29,10 @@ import java.util.zip.CRC32C;
  *
  * <p>Layout (little-endian): {@code JKVF, formatVersion, modelSeed[32], blockCount, indexOffset |
  * KV blobs (64-aligned) | index: per block {key[4], parentKey[4], from, to, byteOffset, byteLen}}
- * in BFS order (parents precede children, so the tree grafts in one pass). The model seed also
- * covers the codec's blob layout: a layout change ships as a format bump, so a stale file fails
- * with a clear error instead of restoring garbage.
+ * in BFS order (parents precede children, so the tree grafts in one pass - {@link #open} enforces
+ * the ordering, so a corrupt index fails at parse, not at graft). The model seed also covers the
+ * codec's blob layout: a layout change ships as a format bump, so a stale file fails with a clear
+ * error instead of restoring garbage.
  *
  * <p>The cross-process lifecycle, end to end: compile once ({@link PromptCache#define} + {@link
  * PromptCache#export}, or any {@code freeze}), {@code open(path, modelSeed)} at serve start - the
@@ -148,10 +151,24 @@ public final class FrozenBlocks {
         }
         int count = h.getInt();
         long indexOffset = h.getLong();
+        long size = map.byteSize();
+        // one compact validation pass: every header/index value is ranged BEFORE it is used, so a
+        // corrupt artifact fails here with one stable error, never an incidental slice/allocation
+        // exception from inside the JDK. Blob CRCs stay lazy (verified once at first restore).
+        if (count < 0) throw corrupt(file, "negative block count " + count);
+        if (indexOffset < HEADER_BYTES || indexOffset > size) {
+            throw corrupt(
+                    file, "index offset " + indexOffset + " outside a " + size + "-byte file");
+        }
+        if ((long) count * INDEX_ENTRY_BYTES > size - indexOffset) {
+            throw corrupt(file, "index of " + count + " blocks runs past the end of the file");
+        }
         ByteBuffer idx =
                 map.asSlice(indexOffset, (long) count * INDEX_ENTRY_BYTES)
                         .asByteBuffer()
                         .order(ByteOrder.LITTLE_ENDIAN);
+        BlockTree.BlockKey root = BlockTree.chainRoot(modelSeed);
+        Set<BlockTree.BlockKey> seen = new HashSet<>();
         List<Entry> entries = new ArrayList<>(count);
         for (int i = 0; i < count; i++) {
             BlockTree.BlockKey key = getKey(idx);
@@ -160,9 +177,29 @@ public final class FrozenBlocks {
             long offset = idx.getLong(), len = idx.getLong();
             int crc = idx.getInt();
             idx.getInt(); // pad
+            if (from < 0 || to < from) {
+                throw corrupt(file, "block " + i + " has span [" + from + "," + to + ")");
+            }
+            if (offset < HEADER_BYTES || len < 0 || len > indexOffset - offset) {
+                throw corrupt(file, "block " + i + " blob lies outside the KV region");
+            }
+            // parents-first: every parent is the chain root or an entry already seen
+            if (!parentKey.equals(root) && !seen.contains(parentKey)) {
+                throw corrupt(
+                        file, "block " + i + " precedes its parent (index not parents-first)");
+            }
+            if (!seen.add(key)) {
+                throw corrupt(file, "block " + i + " duplicates an earlier key");
+            }
             entries.add(new Entry(key, parentKey, from, to, offset, map.asSlice(offset, len), crc));
         }
         return new FrozenBlocks(file, entries, indexOffset - HEADER_BYTES, indexOffset);
+    }
+
+    /** The one error a corrupt artifact fails with - stable wording for operators to grep. */
+    private static IllegalStateException corrupt(Path file, String what) {
+        return new IllegalStateException(
+                file + " is not a valid frozen prompt cache (" + what + ")");
     }
 
     List<Entry> entries() {
@@ -193,8 +230,9 @@ public final class FrozenBlocks {
      * only once everything is forced - a torn append leaves the old catalog intact behind the old
      * header. Blob cost is proportional to the new blocks; the index rewrite is small (96 bytes per
      * block) but each append leaves the PREVIOUS index as dead bytes, so a long-lived catalog
-     * accumulates O(appends^2) index garbage - compact by freezing to a fresh file when that ever
-     * matters. Partial state never touches disk: blocks only exist complete.
+     * accumulates O(appends^2) index garbage. Compaction needs no format support: mount the
+     * artifact and freeze to a FRESH file ({@link PromptCache#export} is exactly that) - only live
+     * blocks are re-serialized. Partial state never touches disk: blocks only exist complete.
      */
     void append(List<Entry> fresh) throws IOException {
         if (fresh.isEmpty()) return;
