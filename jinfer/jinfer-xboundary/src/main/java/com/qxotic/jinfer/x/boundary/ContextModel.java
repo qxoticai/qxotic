@@ -8,7 +8,12 @@ import java.util.Optional;
 public interface ContextModel<C extends ContextConfiguration, W, S extends ContextState>
         extends Model<C, W, S> {
 
-    /** Creates a state that owns its memory. */
+    /**
+     * Creates a state that owns its memory.
+     *
+     * @param contextCapacity positive positions allocated for the state; configuration sentinels
+     *     such as {@code 0} must be resolved before this call
+     */
     S newState(int contextCapacity, int batchCapacity);
 
     /**
@@ -16,6 +21,9 @@ public interface ContextModel<C extends ContextConfiguration, W, S extends Conte
      * just a lifetime scope: a GPU-shared arena (Metal, unified memory) places the KV cache and
      * activations where device kernels can reach them. Pinned to {@code MemorySegment} -
      * host-addressable memory only; device-private memory is a different engine's job.
+     *
+     * @param contextCapacity positive positions allocated for the state; configuration sentinels
+     *     such as {@code 0} must be resolved before this call
      */
     S newState(int contextCapacity, int batchCapacity, MemoryArena<MemorySegment> arena);
 
@@ -27,7 +35,15 @@ public interface ContextModel<C extends ContextConfiguration, W, S extends Conte
         return newState(contextCapacity, RuntimeFlags.BATCH_CAPACITY, arena);
     }
 
-    /** Safely ingests one batch and advances the context only after a successful forward. */
+    /**
+     * Safely ingests one batch and advances the context only after a successful forward.
+     *
+     * @implSpec Implementations must validate, compute and mutate the state while holding {@link
+     *     RuntimeState#exclusively(Runnable) exclusive access}; position and output metadata must
+     *     advance only after the computation succeeds. The model must remain strongly reachable
+     *     until the computation completes, normally through {@link
+     *     java.lang.ref.Reference#reachabilityFence(Object)}.
+     */
     void ingest(S state, Batch batch);
 
     /** Optional model-specific context checkpoint codec. */
