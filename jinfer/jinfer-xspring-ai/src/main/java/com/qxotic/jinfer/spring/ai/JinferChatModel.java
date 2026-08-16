@@ -655,9 +655,12 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         }
 
         /**
-         * A model you loaded yourself - the seam for a hand-built {@link LoadedModel}, e.g. one
-         * carrying your own tokenizer via {@code LoadedModel.withTokenizer(...)}. Mutually
-         * exclusive with {@link #modelPath}.
+         * A model you loaded yourself - the seam for a custom tokenizer or chat template. Supply a
+         * tokenizer while loading via {@link
+         * com.qxotic.jinfer.x.chat.Models#load(java.nio.file.Path, java.lang.foreign.Arena,
+         * java.util.Map, com.qxotic.toknroll.Tokenizer)}, or replace a bad embedded template via
+         * {@code LoadedModel.withChatTemplateSource(...)}. Mutually exclusive with {@link
+         * #modelPath}.
          *
          * <p>You own its weights arena: {@link JinferChatModel#close()} quiesces this model but
          * frees only what it allocated, so close your arena after it, never before.
