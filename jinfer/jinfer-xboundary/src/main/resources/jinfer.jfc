@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Add this to a JDK profile so inference remains visible beside GC, JIT and thread state:
+
+      java -XX:StartFlightRecording=settings=profile,settings=jinfer,filename=run.jfr ...
+
+  Decode is one event per generated token and is intentionally off by default.
+-->
+<configuration version="2.0" label="jinfer"
+               description="Model loading, inference, caching and media projection."
+               provider="qxotic">
+
+  <event name="jinfer.Inference">
+    <setting name="enabled">true</setting>
+    <setting name="threshold">0 ms</setting>
+  </event>
+
+  <event name="jinfer.ModelLoad">
+    <setting name="enabled">true</setting>
+  </event>
+
+  <event name="jinfer.Runtime">
+    <setting name="enabled">true</setting>
+    <setting name="period">everyChunk</setting>
+  </event>
+
+  <event name="jinfer.PromptCache">
+    <setting name="enabled">true</setting>
+    <setting name="period">1 s</setting>
+  </event>
+
+  <event name="jinfer.MediaCache">
+    <setting name="enabled">true</setting>
+    <setting name="period">1 s</setting>
+  </event>
+
+  <event name="jinfer.MediaProjection">
+    <setting name="enabled">true</setting>
+    <setting name="threshold">0 ms</setting>
+  </event>
+
+  <event name="jinfer.Speculation">
+    <setting name="enabled">true</setting>
+  </event>
+
+  <event name="jinfer.Decode">
+    <setting name="enabled">false</setting>
+  </event>
+
+</configuration>

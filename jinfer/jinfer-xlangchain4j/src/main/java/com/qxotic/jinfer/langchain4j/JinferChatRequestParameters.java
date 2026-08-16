@@ -38,7 +38,7 @@ import java.util.Objects;
  *         .build();
  * }</pre>
  *
- * <p>GBNF dialect and pitfalls: see {@code com.qxotic.jinfer.llm.Grammar}.
+ * <p>GBNF dialect and pitfalls: see {@code com.qxotic.jinfer.x.llm.Grammar}.
  */
 public class JinferChatRequestParameters extends DefaultChatRequestParameters {
 

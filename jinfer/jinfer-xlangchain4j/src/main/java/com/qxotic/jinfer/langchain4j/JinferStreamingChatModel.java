@@ -2,6 +2,7 @@ package com.qxotic.jinfer.langchain4j;
 
 import com.qxotic.jinfer.x.chat.Channel;
 import com.qxotic.jinfer.x.chat.ChatEngine;
+import com.qxotic.jinfer.x.chat.ReplyParser;
 import com.qxotic.jinfer.x.chat.TextStops;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.model.chat.Capability;

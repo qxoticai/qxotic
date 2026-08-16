@@ -1,16 +1,16 @@
 # Gemma 4 E2B audio encoder (projector_type `gemma4a`) - port spec
 
-Reverse-engineered from the reference `../llama.cpp` (a future/fictional fork) across
+Reverse-engineered from the reference `../llama.cpp` across
 `tools/mtmd/{clip.cpp,clip-impl.h,clip-model.h,mtmd-audio.cpp,models/gemma4a.cpp}`.
 The E2B (`gemma-4-E2B-it-GGUF/mmproj-F32.gguf`) uses `PROJECTOR_TYPE_GEMMA4A` = a real
 24-block **Conformer** ASR encoder. This is NOT the 12B's encoder-free `gemma4ua`
 (single `mm.a.input_projection` matmul, already ported in `Gemma4Audio.java`).
 
 ## Status
-- **Mel front-end**: implemented here (`AudioPreprocess.java`) - self-contained, spec below.
-- **Conformer body**: NOT implemented. Fully specified below. It needs ~5 primitives jinfer
-  lacks and cannot be brought to parity without iterative debugging, so it is out of scope
-  for a single pass. Recommend implementing scalar-correct first (parity), then batching.
+- **Mel front-end**: implemented by `AudioPreprocess` and covered by `Gemma4AudioTest`.
+- **Conformer body**: implemented by `Gemma4Conformer`; component, shape and end-to-end contracts
+  live in `Gemma4ConformerTest` and `Gemma4ConformerOpsTest`.
+- The details below remain the port's compact architecture and tensor-map reference.
 
 ## Mel front-end (`clip.cpp` GEMMA4A hparams + `mtmd-audio.cpp`)
 - sample_rate 16000, `n_fft = 512` (bins = 257), Hann `window_len = 320` (20 ms, periodic),
@@ -81,24 +81,18 @@ per block: `ffn_norm`, `ffn_up`, `ffn_down`, `ffn_post_norm`; `attn_pre_norm`,
 `conv_pw2`; `ffn_norm_1`, `ffn_up_1`, `ffn_down_1`, `ffn_post_norm_1`; `ln_2`.
 out: `a.pre_encode.out.*`, `mm.a.soft_emb_norm.weight`, `mm.a.input_projection.weight`.
 
-## jinfer primitive gap (why this is a large port, not a wiring job)
-Present: gemm/matmul, RMS norm, SiLU/sigmoid, FlashAttention (full/causal only), Parallel.
-MISSING (must be written):
+## Projector-specific primitives
+The port keeps the unusual operations explicit and independently tested:
 1. `conv2d` stride-2 pad-1 (subsampling) + channel LayerNorm.
 2. **Chunked-local attention** with overlapping-window K/V blocking (roll + strided view).
 3. **Transformer-XL blocked relative-shift RPE** (+ sinusoidal pos_emb generation).
 4. Attention **softcap** (tanh) path + the custom q/k scales + per-dim Q/K scaling.
 5. Causal **depthwise conv1d** (ggml_ssm_conv semantics) + **GLU**.
 6. **ClippableLinear** clamp wrapper on matmuls (feed per-weight min/max from the mmproj).
-7. Mel STFT front-end (this file's `AudioPreprocess`).
+7. Mel STFT front-end (`AudioPreprocess`).
 
-## Recommended implementation order
-1. Mel front-end (done) - verify vs llama.cpp's `log_mel_spectrogram.json` dump.
-2. Subsampling + FFN + conv module + output projection (standard ops) - unit-check shapes.
-3. Chunked-local attention + RPE (the parity-critical core) - build scalar/explicit first,
-   validate one block's output tensor against a llama.cpp intermediate dump, THEN batch.
-4. ClippableLinear clamps (get the min/max wiring right - silent parity killer if omitted).
-5. Wire into `Gemma4` (route `Media.Audio` -> conformer when projector_type == gemma4a),
-   E2E test the moon-landing clip for a coherent description.
-Correctness before speed: a scalar-correct encode that yields coherent text is the milestone;
-batched GEMMs (the "fast prefill" requirement) is a follow-up once parity holds.
+## Validation strategy
+Keep the mel front-end, subsampling, local attention/RPE, convolution module and output projection
+independently testable. A real E2B acceptance test remains the final check that tensor mapping,
+clamps and framing compose into coherent audio understanding; microbenchmarks should optimize only
+after these contracts remain green.

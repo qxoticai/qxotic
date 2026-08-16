@@ -38,11 +38,10 @@ public interface ContextModel<C extends ContextConfiguration, W, S extends Conte
     /**
      * Safely ingests one batch and advances the context only after a successful forward.
      *
-     * @implSpec Implementations must validate, compute and mutate the state while holding {@link
-     *     RuntimeState#exclusively(Runnable) exclusive access}; position and output metadata must
-     *     advance only after the computation succeeds. The model must remain strongly reachable
-     *     until the computation completes, normally through {@link
-     *     java.lang.ref.Reference#reachabilityFence(Object)}.
+     * <p><b>Implementation contract:</b> validate, compute and mutate the state while holding
+     * {@link RuntimeState#exclusively(Runnable) exclusive access}; advance position and output
+     * metadata only after computation succeeds. Keep the model strongly reachable until the call
+     * completes, normally through {@link java.lang.ref.Reference#reachabilityFence(Object)}.
      */
     void ingest(S state, Batch batch);
 

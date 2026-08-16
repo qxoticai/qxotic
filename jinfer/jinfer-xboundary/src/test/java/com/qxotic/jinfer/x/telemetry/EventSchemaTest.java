@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -14,6 +15,27 @@ import org.junit.jupiter.api.Test;
 
 /** Pins the JFR names and fields consumed by recordings, settings and exporters. */
 class EventSchemaTest {
+
+    @Test
+    void shippedJfrProfileCoversEveryPublicEvent() throws Exception {
+        String settings;
+        try (var in = EventSchemaTest.class.getResourceAsStream("/jinfer.jfc")) {
+            assertNotNull(in, "missing /jinfer.jfc");
+            settings = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        }
+        for (String name :
+                List.of(
+                        "jinfer.Inference",
+                        "jinfer.ModelLoad",
+                        "jinfer.Runtime",
+                        "jinfer.PromptCache",
+                        "jinfer.MediaCache",
+                        "jinfer.MediaProjection",
+                        "jinfer.Speculation",
+                        "jinfer.Decode")) {
+            assertTrue(settings.contains("event name=\"" + name + "\""), name);
+        }
+    }
 
     @Test
     void inferenceEventIsStable() {
