@@ -58,11 +58,12 @@ public final class Telemetry {
     }
 
     /**
-     * A registered prompt cache, sampled once a second. Deltas live here because a gauge needs the
-     * previous reading to subtract from.
+     * A registered engine's caches, sampled once a second. Deltas live here because a gauge needs
+     * the previous reading to subtract from.
      *
-     * <p>The gauge speaks {@link CacheSample} - telemetry's own vocabulary - so the event stream
-     * never names the cache module's domain types, and this package stays dependency-free.
+     * <p>The gauge speaks {@link CacheSample} and {@link MediaCacheSample} - telemetry's own
+     * vocabulary - so the event stream never names the cache modules' domain types, and this
+     * package stays dependency-free.
      *
      * <p>LIFECYCLE, and it is the codebase's usual one - deterministic, with a GC backstop: {@link
      * #register} on construction, {@link #unregister} from {@code close()}. That is the contract,
@@ -77,13 +78,19 @@ public final class Telemetry {
     public static final class CacheGauge {
         private final String model;
         private final Supplier<CacheSample> source;
+        private final Supplier<MediaCacheSample> mediaSource;
         private long lastSessionHits, lastStateAllocations;
         private long lastBlockHits, lastBlockMisses, lastBlockEvictions;
         private long lastBlockDiscards, lastBlockRefusals;
+        private long lastMediaHits, lastMediaMisses, lastMediaRefusals;
 
-        public CacheGauge(String model, Supplier<CacheSample> source) {
+        public CacheGauge(
+                String model,
+                Supplier<CacheSample> source,
+                Supplier<MediaCacheSample> mediaSource) {
             this.model = model;
             this.source = source;
+            this.mediaSource = mediaSource;
         }
 
         /** Visible for tests. */
@@ -119,12 +126,31 @@ public final class Telemetry {
             lastBlockRefusals = now.blockRefusals();
             event.commit();
         }
+
+        private void emitMedia() {
+            MediaCacheEvent event = new MediaCacheEvent();
+            if (!event.isEnabled()) return;
+            MediaCacheSample now = mediaSource.get();
+            if (now == null) return;
+            event.model = model;
+            event.entries = now.entries();
+            event.bytes = now.bytes();
+            event.budgetBytes = now.budgetBytes();
+            event.hits = now.hits() - lastMediaHits;
+            event.misses = now.misses() - lastMediaMisses;
+            event.refusals = now.refusals() - lastMediaRefusals;
+            lastMediaHits = now.hits();
+            lastMediaMisses = now.misses();
+            lastMediaRefusals = now.refusals();
+            event.commit();
+        }
     }
 
     private static final List<WeakReference<CacheGauge>> GAUGES = new CopyOnWriteArrayList<>();
 
     /**
-     * Registers a cache for sampling; pair it with {@link #unregister} in the owner's close.
+     * Registers an engine's caches for sampling; pair it with {@link #unregister} in the owner's
+     * close.
      *
      * <p>Prunes on the way in, because the periodic sweep only runs while a recording is active: a
      * process that never records and never closes its engines would otherwise accumulate one dead
@@ -172,6 +198,15 @@ public final class Telemetry {
                     for (WeakReference<CacheGauge> reference : GAUGES) {
                         CacheGauge gauge = reference.get();
                         if (gauge != null) gauge.emit();
+                    }
+                });
+        FlightRecorder.addPeriodicEvent(
+                MediaCacheEvent.class,
+                () -> {
+                    GAUGES.removeIf(reference -> reference.get() == null);
+                    for (WeakReference<CacheGauge> reference : GAUGES) {
+                        CacheGauge gauge = reference.get();
+                        if (gauge != null) gauge.emitMedia();
                     }
                 });
     }

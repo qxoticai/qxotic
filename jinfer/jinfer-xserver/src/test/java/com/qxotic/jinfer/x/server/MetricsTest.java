@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.x.cache.PromptCache;
+import com.qxotic.jinfer.x.chat.MediaEncodingCache;
 import com.qxotic.jinfer.x.llm.Generator;
 import com.qxotic.jinfer.x.llm.SpeculativeDecoding;
 import com.qxotic.toknroll.IntSequence;
@@ -44,7 +45,8 @@ class MetricsTest {
             String text =
                     metrics.exposition(
                             worker,
-                            new PromptCache.Sample(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13));
+                            new PromptCache.Sample(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13),
+                            new MediaEncodingCache.Sample(1, 2, 3, 4, 5, 6));
             assertTrue(text.contains("jinfer_generations_completed_total 1"), text);
             assertTrue(text.contains("jinfer_generation_requests_invalid_total 1"), text);
             assertTrue(text.contains("jinfer_generation_requests_rejected_total 1"), text);
@@ -77,6 +79,12 @@ class MetricsTest {
                             "jinfer_prompt_cache_block_removals_total{reason=\"discarded\"} 12"),
                     text);
             assertTrue(text.contains("jinfer_prompt_cache_block_refusals_total 13"), text);
+            assertTrue(text.contains("jinfer_media_cache_entry_count 1"), text);
+            assertTrue(text.contains("jinfer_media_cache_memory_usage_bytes 2"), text);
+            assertTrue(text.contains("jinfer_media_cache_memory_limit_bytes 3"), text);
+            assertTrue(text.contains("jinfer_media_cache_lookups_total{result=\"hit\"} 4"), text);
+            assertTrue(text.contains("jinfer_media_cache_lookups_total{result=\"miss\"} 5"), text);
+            assertTrue(text.contains("jinfer_media_cache_refusals_total 6"), text);
             assertFalse(text.contains("jinfer_session_pool_hits_total"), text);
             assertFalse(text.contains("jinfer_cached_tokens_total"), text);
         }

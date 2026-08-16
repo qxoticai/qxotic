@@ -69,6 +69,11 @@ public final class MediaEncodingCache {
     private final LinkedHashMap<Key, List<CachedBatch>> entries =
             new LinkedHashMap<>(16, 0.75f, true);
     private long usedBytes;
+    private long hits, misses, refusals; // refusals: oversized, served but not retained
+
+    /** The whole cache in one reading - what a server's /metrics reports. */
+    public record Sample(
+            int entries, long bytes, long budgetBytes, long hits, long misses, long refusals) {}
 
     public MediaEncodingCache() {
         this(DEFAULT_BUDGET_BYTES);
@@ -95,9 +100,11 @@ public final class MediaEncodingCache {
         Key key = key(contentKey, batchCapacity);
         List<CachedBatch> hit = entries.get(key);
         if (hit != null) {
+            hits++;
             hit.forEach(batch -> sink.accept(batch.replay()));
             return;
         }
+        misses++;
 
         List<CachedBatch> recorded = new ArrayList<>();
         projection.accept(
@@ -106,15 +113,27 @@ public final class MediaEncodingCache {
                     sink.accept(batch);
                 });
         List<CachedBatch> value = List.copyOf(recorded);
+        long valueBytes = bytes(value);
+        // The bound is HARD: an entry bigger than the whole budget is served but never
+        // retained - retaining it would make the budget a lie. Repeated use of such media
+        // re-projects every time; raise jinfer.mediaCacheMB to make it cacheable.
+        if (valueBytes > budgetBytes) {
+            refusals++;
+            return;
+        }
         entries.put(key, value);
-        usedBytes += bytes(value);
+        usedBytes += valueBytes;
         var eldest = entries.entrySet().iterator();
-        // Keep a single oversized item: evicting the value just computed makes every use a miss.
-        while (usedBytes > budgetBytes && entries.size() > 1) {
+        while (usedBytes > budgetBytes) {
             Map.Entry<Key, List<CachedBatch>> entry = eldest.next();
             usedBytes -= bytes(entry.getValue());
             eldest.remove();
         }
+    }
+
+    /** A consistent snapshot of the counters and the resident footprint. */
+    public synchronized Sample sample() {
+        return new Sample(entries.size(), usedBytes, budgetBytes, hits, misses, refusals);
     }
 
     synchronized void clear() {

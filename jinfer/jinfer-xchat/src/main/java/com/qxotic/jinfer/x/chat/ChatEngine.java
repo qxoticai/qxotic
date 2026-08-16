@@ -15,6 +15,7 @@ import com.qxotic.jinfer.x.llm.SpecialTokens;
 import com.qxotic.jinfer.x.llm.SpeculativeDecoding;
 import com.qxotic.jinfer.x.telemetry.CacheSample;
 import com.qxotic.jinfer.x.telemetry.InferenceEvent;
+import com.qxotic.jinfer.x.telemetry.MediaCacheSample;
 import com.qxotic.jinfer.x.telemetry.Telemetry;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.memory.MemoryView;
@@ -185,7 +186,11 @@ public final class ChatEngine implements AutoCloseable {
         this.cacheSnapshot = cache.sample();
         // registered after the cache exists, and after every throwing step: publishing `this`
         // to a registry from a constructor that may still fail would hand out a half-built engine.
-        this.cacheGauge = new Telemetry.CacheGauge(modelName, () -> sample(cacheSnapshot));
+        this.cacheGauge =
+                new Telemetry.CacheGauge(
+                        modelName,
+                        () -> sample(cacheSnapshot),
+                        () -> mediaSample(mediaCache.sample()));
         Telemetry.register(cacheGauge);
         // armed last: a ctor throw already cleaned up above and must not read as a leak
         this.leakWatch =
@@ -217,6 +222,12 @@ public final class ChatEngine implements AutoCloseable {
                 s.blockEvictions(),
                 s.blockDiscards(),
                 s.blockRefusals());
+    }
+
+    /** The media cache's sample in telemetry's vocabulary - same seam, same law. */
+    private static MediaCacheSample mediaSample(MediaEncodingCache.Sample s) {
+        return new MediaCacheSample(
+                s.entries(), s.bytes(), s.budgetBytes(), s.hits(), s.misses(), s.refusals());
     }
 
     public LoadedModel<?> loaded() {
@@ -1291,6 +1302,11 @@ public final class ChatEngine implements AutoCloseable {
      */
     public PromptCache.Sample cacheSample() {
         return cacheSnapshot;
+    }
+
+    /** The projected-media cache's latest health reading (hits, misses, oversized refusals). */
+    public MediaEncodingCache.Sample mediaCacheSample() {
+        return mediaCache.sample();
     }
 
     /** Whether the block layer exists for this model (codec present, blocks not disabled). */
