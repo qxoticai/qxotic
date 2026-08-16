@@ -257,7 +257,7 @@ public final class RoPE {
     /**
      * The angle-direct twin of {@link #applyNeox} for callers without materialized cos/sin tables
      * (Gemma4 vision 2D RoPE): rotates pairs {@code (base+i, base+i+pairs)} with angle {@code
-     * position * theta^(-2i/ropeDim)} computed inline. Angles match {@link Schedule#plain}.
+     * position * theta^(-2i/ropeDim)} computed inline. Angles match {@link #plain(int, double)}.
      */
     public static void rotatePairs(
             MemoryView<MemorySegment> value,

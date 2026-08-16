@@ -1,192 +1,176 @@
 # jinfer
 
-[![Java 21+](https://img.shields.io/badge/Java-21%2B-007396?logo=java&logoColor=white)](https://openjdk.org/projects/jdk/21/)
+[![Java 25](https://img.shields.io/badge/Java-25-007396?logo=java&logoColor=white)](https://openjdk.org/projects/jdk/25/)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-green.svg?logo=apache)](LICENSE)
 [![GraalVM](https://img.shields.io/badge/GraalVM-Native_Image-F29111?labelColor=00758F)](https://www.graalvm.org/latest/reference-manual/native-image/)
-![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey)
 
-**JVM (LLM) Inference Engine.** Model-agnostic, vector-accelerated, [JAM](../jam)-backed prefill,
-with an OpenAI-compatible server. Pure Java, no Python, no llama.cpp.
-
-**9 model families · Vector API (AVX2 / AVX-512 / NEON) · JAM GEMM · GGUF-native · GraalVM Native Image**
-
----
-
-## Why jinfer?
-
-- **Model-agnostic.** One `Model.forward()/generate()` interface, and each architecture is a single file.
-  Adding a model is writing one class — the sampler, tokenizer, chat templates, and server come for free.
-- **Vector API kernels.** F16 decode, Q8_0 GEMM, flash attention, and RoPE run on the Java Vector API —
-  portable SIMD that's fast on both x86 and ARM.
-- **JAM prefill.** Drop `jam.jar` on the classpath and Q8_0 GEMM quietly routes through hand-tuned native
-  kernels (SSE3 → AVX-512 VNNI, NEON → i8mm, Apple Metal). No code changes, no config.
-- **OpenAI-compatible server.** `/v1/chat/completions`, `/v1/completions`, `/v1/responses`, `/v1/models` —
-  with streaming, tool calls, and structured output.
-- **GraalVM Native Image.** `make native` gives you one self-contained binary; preload a GGUF into the
-  image for an instant first token.
-- **Zero Python.** Pure Java plus an optional native lib. No ONNX, no transformers, no llama.cpp.
-
----
+Pure-Java, in-process GGUF inference built around `MemoryView`: chat, embeddings, reranking,
+speech, multimodal projection, prompt caching and an OpenAI-compatible server. Vector API kernels
+provide the portable floor; [JAM](../jam) accelerates matrix multiplication when available.
 
 ## Quick start
 
-```java
-// High-level
-var engine = Engine.loadGGUF("model.gguf");
-engine.chat(List.of(Engine.message("user", "Tell me a joke")),
-            LLMOptions.builder().maxTokens(256).build(),
-            token -> System.out.print(token));
+Build the x CLI:
 
-// Low-level
-var model = Model.loadGGUF("model.gguf");        // architecture auto-detected
-var state = model.createInferenceState(model.tokenize("Hello!"));
-int token;
-while ((token = model.sample(state)) != model.eosTokenId()) {
-    System.out.print(model.detokenize(token));
-    model.forward(state, token);
+```bash
+mvn -pl jinfer-xcli -am package -DskipTests
+
+java --enable-preview \
+  --add-modules jdk.incubator.vector \
+  --enable-native-access=ALL-UNNAMED \
+  -jar jinfer-xcli/target/xjinfer.jar \
+  --model hf.co/LiquidAI/LFM2.5-350M-GGUF:LFM2.5-350M-Q8_0.gguf \
+  --chat
+```
+
+One-shot generation replaces `--chat` with `--prompt "..."`. `--context-capacity 0` uses the
+model's declared maximum; negative values and capacities above the model maximum are rejected.
+
+The smallest application-facing API is usually one of the framework adapters:
+
+```java
+try (var model = JinferChatModel.builder()
+        .model("hf.co/LiquidAI/LFM2.5-350M-GGUF:LFM2.5-350M-Q8_0.gguf")
+        .build()) {
+    System.out.println(model.chat("Tell me a short joke."));
 }
 ```
 
-### CLI
+Use artifact `com.qxotic:jinfer-xlangchain4j:0.1.0`; Spring AI users use
+`com.qxotic:jinfer-xspring-ai:0.1.0`. See the [LangChain4j guide](jinfer-xlangchain4j/README.md),
+[Spring AI guide](jinfer-xspring-ai/README.md), and [runnable jbang examples](examples/scripts/README.md).
+
+## OpenAI-compatible server
 
 ```bash
-mvn package
-java --enable-preview --add-modules jdk.incubator.vector \
-  -jar target/jinfer.jar --model ./model.gguf --chat
-java -jar target/jinfer.jar --model ./model.gguf --server --port 17341
+java --enable-preview \
+  --add-modules jdk.incubator.vector \
+  --enable-native-access=ALL-UNNAMED \
+  -jar jinfer-xcli/target/xjinfer.jar \
+  --model hf.co/LiquidAI/LFM2.5-350M-GGUF:LFM2.5-350M-Q8_0.gguf \
+  --server --port 17341
 ```
 
-For full speed add `--enable-native-access=ALL-UNNAMED` plus the inline hints from
-[Performance](#performance) — the Makefile and the native image set these for you.
+The server implements `/v1/chat/completions`, `/v1/completions`, `/v1/responses`, `/v1/models`,
+`/v1/tokenize`, `/v1/detokenize`, `/health`, and Prometheus `/metrics`. Chat supports streaming,
+tools/tool choice, structured output, reasoning, stop strings, deterministic seeds and
+multimodal content where the loaded model has a projector.
 
-Server: streaming, `temperature`, `top_p`, `seed`, `max_tokens`, `stop`, and function calling
-(`tools` / `tool_choice`: auto, none, required, named). Endpoints: `/v1/models`, `/v1/chat/completions`,
-`/v1/completions`, `/v1/responses`, `/health`, `/metrics`.
+Loopback is the safe default. Binding to a non-loopback host requires `--api-key`; queue, body,
+thread, generation and stalled-write limits have explicit CLI flags. Run `--help` for the complete
+contract.
 
----
+## Models and capabilities
 
-## Models
+Architecture dispatch comes from the model ports on the classpath. The aggregate x distribution
+currently carries:
 
-Auto-detected from GGUF metadata; each architecture is a single-file `Model`.
+- Gemma 4, including E2B/E4B vision, E2B conformer audio and MTP sidecars;
+- Qwen 3 and Qwen 3.5 dense/MoE, including embedding, reranking and Qwen 3.5 MTP;
+- LFM 2.5 chat, embedding, ColBERT reranking and LFM 2.5 VL projection;
+- Llama-family models, including Llama, Ministral, MiniCPM, SmolLM and Granite variants;
+- gpt-oss, Nemotron-H, Maple, and Inflect speech synthesis.
 
-| Model | Architecture | Variants | Key features |
-|---|---|---|---|
-| **Gemma 4** | Google Gemma 4 | E2B, E4B, A4B (MoE) | Per-layer embeddings, sliding-window attention, logit soft-capping |
-| **Qwen 3.5** | Qwen 3.5 | Dense, MoE | Hybrid gated-delta-net + periodic full attention |
-| **Nemotron 3** | NVIDIA Nemotron | Hybrid Mamba2 + Attention + MoE | Hybrid SSM-transformer |
-| **Llama 3** | Meta Llama 3.x | Dense | Standard Llama transformer, llama3 RoPE scaling |
-| **Ministral 3** | Mistral Ministral | Dense | YaRN RoPE, attention-temperature scaling, sliding window |
-| **gpt-oss** | OpenAI gpt-oss | MXFP4 MoE | MXFP4-quantized expert weights |
-| **LFM 2.5** | Liquid AI LFM 2.5 | Dense, MoE | Short-convolution layers |
-| **MiniCPM** | MiniCPM | Dense | Llama architecture + 3 extra scalars |
-| **IBM Granite 4.1** | Granite | Dense | Llama architecture + custom QK attention scale |
+The exact set is extensible through `ModelProvider`. GGUF support includes dense F32/F16/BF16 and
+the quantized formats used by those ports: Q4_0, Q4_1, Q5_1, Q4_K, Q5_K, Q6_K, Q8_0, MXFP4,
+NVFP4, Q1_0, TQ1_0 and TQ2_0.
 
-Supported GGUF dtypes: `F16` `BF16` `F32` `Q4_0` `Q4_1` `Q4_K` `Q5_K` `Q6_K` `Q8_0`.
-
----
-
-## Models from the hub
-
-Anywhere jinfer takes a model file, it also takes a **model ref** - or a pasted browser URL, which normalizes to the same ref.
-Downloads are parallel, resumable, and sha256-verified; a warm cache costs zero network requests.
-
-```
-[https://] host / owner/repo [@revision] [/path] [:quant]
-
-hf.co/unsloth/gemma-4-E2B-it-GGUF              Q4_K_M at the repository root
-hf.co/unsloth/gemma-4-E2B-it-GGUF:Q8_0         that quant
-hf.co/unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf   that exact file
-hf.co/ggml-org/models@a1b2c3d/bert-bge-small   at a pinned revision
-modelscope.cn/Qwen/Qwen3-0.6B-GGUF:Q8_0        the other host
-```
-
-A ref names its host, so remote and local are told apart by a closed table, never by probing the filesystem - the same string means the same bytes on every machine.
-The cache is the ref (`<cache>/hf.co/unsloth/...`), shared both ways with the HuggingFace hub cache: files fetched by `hf download` or `llama-server -hf` are found, not re-downloaded, and jinfer's own `hf.co` downloads land there for other tools to find.
-`JINFER_MODELS` moves the cache (a bigger disk); `HF_TOKEN` (or a prior `hf auth login`) unlocks gated repos.
+Multimodal models attach auxiliary files by capability:
 
 ```bash
-java -jar jinfer.jar --model hf.co/unsloth/gemma-4-E2B-it-GGUF:Q8_0 --server
-java -jar jinfer.jar pull hf.co/unsloth/gemma-4-E2B-it-GGUF:Q8_0    # download, print the path
-java -jar jinfer.jar list                                           # what is cached, as refs
+xjinfer \
+  --model hf.co/unsloth/gemma-4-E2B-it-GGUF:Q4_K_M \
+  --with media=hf.co/unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf \
+  --chat
 ```
 
-### Dockerfiles and CI
+`--mmproj` is shorthand for `--with media=...`. Other companion roles, such as
+`speculation=<mtp.gguf>`, are declared by the architecture port and validated at load time.
 
-`pull` exists so the download can be a **cached image layer**: bake the model once, rebuild the app freely.
+## Models from a hub
 
-```dockerfile
-RUN java -jar jinfer.jar pull hf.co/unsloth/gemma-4-E2B-it-GGUF:Q8_0
-COPY app.jar /app/
+Anywhere a tool or framework builder accepts a model string, it accepts a local GGUF path, a
+supported model reference, or a pasted browser URL:
+
+```text
+hf.co/unsloth/gemma-4-E2B-it-GGUF:Q8_0
+hf.co/unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf
+hf.co/ggml-org/models@a1b2c3d/bert-bge-small
+modelscope.cn/Qwen/Qwen3-0.6B-GGUF:Q8_0
 ```
 
-For integration tests, the blessed smoke-test model is tiny and downloads in seconds:
+Downloads are resumable and checksum-verified. Warm resolution makes no request. `JINFER_MODELS`
+moves the cache, `HF_TOKEN` unlocks gated Hugging Face repositories, and `JINFER_OFFLINE=1` (or
+`-Djinfer.offline`) forbids network access.
 
 ```bash
-java -jar jinfer.jar pull hf.co/ggml-org/stories15M_MOE:Q8_0
+java -jar jinfer-xcli/target/xjinfer.jar pull hf.co/ggml-org/stories15M_MOE:Q8_0
+java -jar jinfer-xcli/target/xjinfer.jar list
 ```
 
-### Offline and air-gapped
+Model resolution happens before loading; inference paths never fetch content. Media codecs likewise
+decode only caller-provided local files or bytes.
 
-`JINFER_OFFLINE=1` (or `-Djinfer.offline`) forbids the network entirely: a cached ref resolves without a single request, an uncached one fails fast and names what is missing.
-No surprise egress, ever - resolution happens before a model loads, and nothing on an inference path touches the network at all.
+## Caching
 
-The air-gap workflow is the cache being plain files.
-An explicit `JINFER_MODELS` means "my cache lives here, all of it" - it opts out of the shared HuggingFace-cache layout, so the one directory is self-contained and shippable:
+`PromptCache` is the single core entry point. It combines:
+
+- a bounded number of retained conversation states for append-only continuation;
+- a content-addressed checkpoint tree under a byte budget;
+- optionally one persisted catalog, mounted read-only or allowed to grow.
+
+Every restore stops one position short and re-ingests the last token so logits are fresh. Cache
+misses recompute; incompatible model identities cannot match. Framework users normally need only
+`retainSessions(n)`, `promptCache(path)`, and `withCachedPrompt(...)`; the framework guides show
+their exact semantics.
+
+The CLI exposes a growing catalog as `--cache file.jkv` and a read-only one as `--cache-ro
+file.jkv` in instruct and server modes.
+
+## Performance and observability
+
+- Vector API kernels run on x86 and ARM; JAM is selected automatically when a compatible backend
+  is on the classpath.
+- Prompt ingestion is batched; generation uses one serial state per pipeline. Create or fork
+  another pipeline for actual parallel inference.
+- JFR events cover model load, queue/prefill/decode/TTFT, cache state, media projection and MTP.
+  The packaged `jinfer.jfc` enables the useful aggregate events while leaving per-token decode off.
+- The server exports request outcomes, phase timings, token counters and cache/media gauges through
+  `/metrics`.
+
+For JVM runs, the repository's `hotspot_compiler` file contains the current inlining hints for hot
+Vector API helpers.
+
+## Native image
+
+With GraalVM Native Image 25.0.3 or newer:
 
 ```bash
-# on a connected machine
-JINFER_MODELS=/models/jinfer java -jar jinfer.jar pull hf.co/unsloth/gemma-4-E2B-it-GGUF:Q8_0
-# ship the directory (rsync, USB, artifact store)
-rsync -a /models/jinfer/ airgapped:/models/jinfer/
-# on the air-gapped machine: same ref, zero network
-JINFER_MODELS=/models/jinfer JINFER_OFFLINE=1 \
-  java -jar jinfer.jar --model hf.co/unsloth/gemma-4-E2B-it-GGUF:Q8_0 --server
+make native
+./xjinfer --model ./model.gguf --chat
 ```
 
-Pin refs to a `@revision` (a commit is immutable) and the same ref is byte-reproducible everywhere, forever.
-Behind a mirror or a blocked route, `HF_ENDPOINT` redirects the fetch while the ref and the cache entry stay canonical.
+`PRELOAD_GGUF=model.gguf make native` embeds load metadata/tokenizer data for faster startup. Media
+decoding uses ffmpeg in the native image so `java.desktop` does not have to be pulled into the
+binary.
 
----
+## Build and test
 
-## Performance
-
-- **Q8_0 GEMM tile** (`-Djinfer.Q8_0GemmTile`): `auto` picks `4x4` on AVX-512 (with a capable compiler),
-  `avx256` on AVX2, `neon` on ARM. Override if you know better.
-- **JAM backend:** `jam.jar` on the classpath routes Q8_0 GEMM through native assembly — no config, no
-  API change.
-- **Flash attention:** always on; wants the inline hints in `$JAVA_FLAGS`.
-- **GraalVM 25+** recommended — best JIT and Native Image Vector API support.
-
----
-
-## GraalVM Native Image
+Java 25 is required.
 
 ```bash
-make native                            # self-contained binary
-PRELOAD_GGUF=model.gguf make native    # embed the model, instant TTFT
-./jinfer --model ./model.gguf --chat
+mvn test
+mvn -pl jinfer-xcli -am package -DskipTests
+make jar       # copies jinfer-xcli/target/xjinfer.jar to ./xjinfer.jar
 ```
 
----
+Model-backed integration tests are opt-in and use the repository's `TestModels` cache lookup; unit
+tests and weights-free contract tests run without downloading models.
 
-## Build
+## Scope
 
-Java 25 (`--enable-preview` for `MemorySegment` mmap).
-
-```bash
-mvn package      # -> jinfer-cli/target/jinfer.jar
-make jar         # same thing, via the Makefile
-```
-
----
-
-## What jinfer doesn't do
-
-- **No training or fine-tuning** — inference only.
-- **No quantization** — it reads quantized GGUF, doesn't create it.
-- **No GPU scheduling** — Apple GPU matmul goes through JAM's Metal backend; there's no CUDA/Metal graph engine.
-
----
+jinfer performs inference. It does not train, fine-tune or quantize models. GPU matmul can be
+provided by a JAM backend, but jinfer is not a CUDA/Metal graph runtime.
 
 ## License
 
