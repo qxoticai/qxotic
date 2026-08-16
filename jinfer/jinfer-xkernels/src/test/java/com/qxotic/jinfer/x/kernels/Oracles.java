@@ -3,8 +3,6 @@ package com.qxotic.jinfer.x.kernels;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.qxotic.format.gguf.GGMLType;
-import com.qxotic.jinfer.F32FloatTensor;
-import com.qxotic.jinfer.FloatTensor;
 import com.qxotic.jinfer.x.Views;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Shape;
@@ -14,17 +12,7 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.Random;
 
-/**
- * Shared oracle plumbing for the differential tests.
- *
- * <p>Why not bit-equal: the Vector API is NOT deterministic across compilation tiers — the
- * interpreter evaluates lanewise {@code fma} as separate mul+add (two roundings) while the JIT
- * intrinsifies it to hardware FMA (one rounding), and parallel rows cross tiers arbitrarily. A
- * probe of old-vs-old (FloatTensor.matmul vs direct per-row dot on identical buffers) shows
- * 670/2048 rows differing by 1-2 ulp. So oracles assert an ulp-level bound: far above tier noise
- * (~1e-7 rel for a 2048-lane dot), far below real divergence (wrong block math, aliasing bugs —
- * observed 100%+).
- */
+/** Shared deterministic test data and numeric assertions for the x kernels. */
 final class Oracles {
 
     private Oracles() {}
@@ -90,11 +78,11 @@ final class Oracles {
     }
 
     /**
-     * Legacy-quant weights: random payload (every byte pattern is a valid encoding), with every f16
+     * Block-quant weights: random payload (every byte pattern is a valid encoding), with every f16
      * scale field pinned to a small sane value so random bits can't produce inf/NaN scales. NVFP4's
      * ue4m3 scales decode to a finite float for any byte.
      */
-    static MemorySegment legacy(Arena arena, GGMLType type, long elements, long seed) {
+    static MemorySegment blockQuant(Arena arena, GGMLType type, long elements, long seed) {
         Random rng = new Random(seed);
         MemorySegment seg = arena.allocate(type.byteSizeFor(elements), 64);
         for (long i = 0; i < seg.byteSize(); i++) {
@@ -117,23 +105,12 @@ final class Oracles {
         return seg;
     }
 
-    static MemoryView<MemorySegment> legacyView(MemorySegment seg, GGMLType type, long elements) {
+    static MemoryView<MemorySegment> blockQuantView(
+            MemorySegment seg, GGMLType type, long elements) {
         return Views.wrap(
                 seg,
                 GGMLDataTypes.toDataType(type),
                 Shape.flat(elements / type.getElementsPerBlock())); // shape counts BLOCKS
-    }
-
-    static F32FloatTensor oldF32(MemorySegment seg, long n) {
-        return (F32FloatTensor) FloatTensor.create(GGMLType.F32, n, seg);
-    }
-
-    static FloatTensor oldQ8(MemorySegment seg, long n) {
-        return FloatTensor.create(GGMLType.Q8_0, n, seg);
-    }
-
-    static FloatTensor oldMxfp4(MemorySegment seg, long n) {
-        return FloatTensor.create(GGMLType.MXFP4, n, seg);
     }
 
     static MemoryView<MemorySegment> f32View(MemorySegment seg, long n) {

@@ -20,13 +20,11 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /**
- * The x ColBERT gate: LFM2.5-ColBERT-350M-Q8_0 reranking parity against llama.cpp - the SAME golden
- * MaxSim scores the old tree's {@code Lfm2ColbertParityIT} asserts (computed by the reference flow:
+ * LFM2.5-ColBERT-350M-Q8_0 reranking parity against llama.cpp. The golden MaxSim scores come from
  * {@code llama-server --embeddings} per-token embeddings on this exact Q8_0 file, L2-normalized,
- * MaxSim with the model card's preprocessing). Both trees asserting the same absolute scores IS the
- * old-vs-x gate, transitively - and it catches what a ranking test never would: drift in the three
- * hand-offs (marker tokens, pad expansion rows, skiplist). Skipped when the checkpoint is not
- * cached.
+ * with the model card's preprocessing. The absolute scores catch drift in the three hand-offs
+ * (marker tokens, pad expansion rows, skiplist) that a ranking-only test would miss. Skipped when
+ * the checkpoint is not cached.
  */
 class XLfm2ColbertTest {
 

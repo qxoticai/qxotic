@@ -10,7 +10,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.qxotic.format.gguf.Builder;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.jinja.JinjaRenderer;
-import com.qxotic.jinfer.llm.Tokenizers;
 import com.qxotic.jinfer.testkit.TestModels;
 import com.qxotic.jinfer.x.PanamaMemoryArena;
 import com.qxotic.jinfer.x.Views;
@@ -51,7 +50,7 @@ final class Lfm2ChatTemplateTest {
         try (FileChannel file = FileChannel.open(path)) {
             GGUF gguf = ModelLoader.readGguf(file, path.toString());
             tokenizer = GGUFTokenizerLoader.createBuilderWithBuiltins().build().fromGGUF(gguf);
-            chatTemplate = Tokenizers.chatTemplateSource(gguf);
+            chatTemplate = gguf.getStringOrDefault("tokenizer.chat_template", "");
         }
     }
 
@@ -466,15 +465,11 @@ final class Lfm2ChatTemplateTest {
                                         "<|startoftext|>",
                                         "eos_token",
                                         "<|im_end|>"));
-        return com.qxotic.jinfer.llm.SpecialTokens.encoder(tokenizer)
-                .encode(tokenizer, rendered)
-                .toArray();
+        return SpecialTokens.encode(tokenizer, rendered).toArray();
     }
 
     private static int[] specials(String text) {
-        return com.qxotic.jinfer.llm.SpecialTokens.encoder(tokenizer)
-                .encode(tokenizer, text)
-                .toArray();
+        return SpecialTokens.encode(tokenizer, text).toArray();
     }
 
     private static int[] encode(Lfm2ChatTemplate template, Conversation conversation) {

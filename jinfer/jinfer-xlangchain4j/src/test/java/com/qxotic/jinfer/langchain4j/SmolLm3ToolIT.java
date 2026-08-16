@@ -19,13 +19,11 @@ class SmolLm3ToolIT extends AbstractToolIT {
     /**
      * Capability-gated for this family alone. SmolLM3's own template renders a tool result as a
      * BARE user turn - nothing marks it as a result - and the 3B, handed a raw JSON blob that way,
-     * opens a fresh turn instead of reading it (it used to write the user's next question itself;
-     * the turn-header stop token in {@link com.qxotic.jinfer.models.llama.Llama#stopTokens} now
-     * ends the reply there, so the visible symptom is an empty answer).
+     * opens a fresh turn instead of reading it; the turn-header stop token ends the reply there, so
+     * the visible symptom is an empty answer.
      *
-     * <p>Not a wire bug: {@code SmolLm3Oracle} pins this exact conversation token-identical to the
-     * model's own Jinja render, tool-result turn included, and every other family passes the shared
-     * test. The assertion stays strict where it holds.
+     * <p>The x template matches the checkpoint's own Jinja wire, tool-result turn included, and
+     * every other family passes the shared test. The assertion stays strict where it holds.
      */
     @Override
     void jsonToolResult() {

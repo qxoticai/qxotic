@@ -36,10 +36,7 @@ class XMtpBench {
         main(argv.isBlank() ? new String[0] : argv.trim().split("\\s+"));
     }
 
-    /**
-     * Direct entry, e.g. a hand-built classpath that includes the JAM backends (surefire's excludes
-     * exist for the differential oracles, not for measurement).
-     */
+    /** Direct entry for a hand-built classpath that includes the desired JAM backend. */
     public static void main(String[] args) throws Exception {
         int maxTokens = args.length > 0 ? Integer.parseInt(args[0]) : 128;
         int reps = args.length > 1 ? Integer.parseInt(args[1]) : 3;

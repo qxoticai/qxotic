@@ -26,11 +26,9 @@ import org.junit.jupiter.api.Test;
  * execution, where the pure-java backends (jam-vector, jam-scalar; jam-native stays excluded -
  * flaky in forked JVMs) ARE on the classpath, so {@code MatMul.mm}'s prefill rungs - and the
  * k-quant decode rungs via the C2 {@code slowDot} exception - actually fire. The routed result must
- * match {@code MatMul.mmFloor} (the no-jam floor) within dot tolerance; the floor itself is
- * oracle-tested against legacy in {@code MatMulTest}, pinning the jam rungs transitively. For
- * dtypes whose decode stays on the floor (dense, Q4_0, MXFP4, NVFP4, Q1_0 - see {@code
- * bytePackedDot}) the gemv arm is floor-vs-floor by construction; the gemm arm is the real jam
- * check.
+ * match {@code MatMul.mmFloor} (the no-jam x floor) within dot tolerance. For dtypes whose decode
+ * stays on the floor (dense, Q4_0, MXFP4, NVFP4, Q1_0 - see {@code bytePackedDot}) the gemv arm is
+ * floor-vs-floor by construction; the gemm arm is the real jam check.
  */
 class MatMulJamParityTest {
 
@@ -138,6 +136,8 @@ class MatMulJamParityTest {
         for (GGMLType type :
                 new GGMLType[] {
                     GGMLType.Q4_0,
+                    GGMLType.Q4_1,
+                    GGMLType.Q5_1,
                     GGMLType.Q4_K,
                     GGMLType.Q5_K,
                     GGMLType.Q6_K,
@@ -145,8 +145,8 @@ class MatMulJamParityTest {
                     GGMLType.Q1_0
                 }) {
             long elems = (long) m * k;
-            MemorySegment w = Oracles.legacy(arena, type, elems, type.ordinal() + 3L);
-            parity(type.name(), w, Oracles.legacyView(w, type, elems), m, k);
+            MemorySegment w = Oracles.blockQuant(arena, type, elems, type.ordinal() + 3L);
+            parity(type.name(), w, Oracles.blockQuantView(w, type, elems), m, k);
         }
     }
 }

@@ -41,12 +41,6 @@
       <!-- @AlwaysInline: compile-only, not bundled; GraalVM supplies it at native-image build -->
       <scope>provided</scope>
     </dependency>
-    <!-- differential oracles: the old loader -->
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-kernels</artifactId>
-      <scope>test</scope>
-    </dependency>
     <!-- test-only: checkpoint acquisition by ref (lookup only, never a download) -->
     <dependency>
       <groupId>com.qxotic</groupId>
@@ -78,10 +72,8 @@
               <goal>test</goal>
             </goals>
             <configuration>
-              <!-- Differential oracles compare against the JAVA floor: exclude the JAM backends
-                   so the old Dispatch routes gemm/gemv to the same dot-based code (jinfer-kernels
-                   pulls them in transitively, and jam-native crashes the forked JVM
-                   intermittently). -->
+              <!-- Keep ordinary kernel contracts on the Java floor; the dedicated execution below
+                   exercises the pure-Java JAM routes. -->
               <classpathDependencyExcludes>
                 <classpathDependencyExclude>com.qxotic:jam-native</classpathDependencyExclude>
                 <classpathDependencyExclude>com.qxotic:jam-vector</classpathDependencyExclude>

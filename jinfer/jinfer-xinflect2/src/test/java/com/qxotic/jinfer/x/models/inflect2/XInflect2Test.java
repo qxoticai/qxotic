@@ -10,7 +10,6 @@ import com.qxotic.jinfer.x.boundary.Media;
 import com.qxotic.jinfer.x.models.inflect2.frontend.TextNormalizer;
 import java.io.IOException;
 import java.lang.foreign.Arena;
-import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -18,8 +17,7 @@ import org.junit.jupiter.api.Test;
 /**
  * The frontend checks run everywhere; the model checks resolve their GGUF through {@link
  * TestModels} and SKIP when it is absent - {@code scripts/download-models.sh --only Inflect}
- * fetches it. The parity check synthesizes with the OLD FloatTensor port and the x port on the same
- * weights, tokens and seed and compares PCM.
+ * fetches it.
  */
 class XInflect2Test {
 
@@ -204,32 +202,5 @@ class XInflect2Test {
                                 IllegalArgumentException.class,
                                 () -> synthesize(model, HELLO, 1f, -1f, 1),
                                 "negative variation"));
-    }
-
-    // ── parity with the old FloatTensor port ──────────────────────────────
-
-    /**
-     * Old port vs x port, same weights/tokens/seed: the durations are deterministic, so the frame
-     * count - hence the PCM length - must be IDENTICAL, and the samples must agree to float
-     * accumulation noise (the kernels are byte-for-byte ports, but the two gemm dispatches route
-     * differently under JIT warmup, as {@link #repeatedSynthesisAgrees} documents).
-     */
-    @Test
-    void oldAndNewPortsAgree() throws IOException {
-        Path path = TestModels.require(REF);
-        var old = com.qxotic.jinfer.models.inflect2.Inflect2.load(path, Arena.ofAuto());
-        Inflect2 x = Inflect2.load(path, Arena.ofAuto());
-        assertEquals(old.parameterCount(), x.parameterCount(), "parameter count");
-        assertEquals(old.tensorCount(), x.tensorCount(), "tensor count");
-        float[] oldPcm;
-        try (var oldState = old.newState()) {
-            oldPcm = old.synthesize(oldState, HELLO, 1f, 0.667f, 42).pcm();
-        }
-        float[] xPcm = synthesize(x, HELLO, 1f, 0.667f, 42).pcm();
-        assertEquals(oldPcm.length, xPcm.length, "PCM length (deterministic durations)");
-        double worst = 0;
-        for (int i = 0; i < oldPcm.length; i++)
-            worst = Math.max(worst, Math.abs(oldPcm[i] - xPcm[i]));
-        assertTrue(worst < 1e-3, "old and x ports diverged by " + worst);
     }
 }
