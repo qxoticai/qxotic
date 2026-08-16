@@ -1,17 +1,17 @@
 package com.qxotic.jinfer.x.models.qwen3;
 
 import com.qxotic.jinfer.x.boundary.Batch;
-import com.qxotic.jinfer.x.boundary.Model;
 import com.qxotic.jinfer.x.boundary.Reranker;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
+import java.util.List;
+import java.util.function.DoubleConsumer;
 
 /**
  * The Qwen3-Reranker recipe: the model card's judge prompt, and its verdict read as {@code P(yes) /
  * (P(yes) + P(no))} from the two verdict tokens at the judged position - one prefill per pair, no
  * sampling, no parsing. The card is the oracle for every string here. (Port of the old tree's
- * Qwen3Reranker onto the x boundary; the frame-once-rewind-per-candidate loop is inherited from
- * {@link Reranker.CrossEncoder}.)
+ * Qwen3Reranker onto the x boundary; its frame-once-rewind-per-candidate loop is retained.)
  *
  * <p>Layout: {@code <|im_start|>system\n...only "yes" or "no".<|im_end|>\n<|im_start|>user\n
  * <Instruct>: {instruction}\n<Query>: {query}\n<Document>: {document}<|im_end|>\n
@@ -33,7 +33,7 @@ import com.qxotic.toknroll.Tokenizer;
  * {@code output.weight}) via {@link Qwen3#logit}, so a pair costs two dot products, not a
  * full-vocabulary matmul.
  */
-public final class Qwen3Reranker implements Reranker.CrossEncoder<Qwen3.State> {
+public final class Qwen3Reranker implements Reranker<Qwen3.State> {
 
     // the trusted scaffold stretches, cut at every special spelling (see the class javadoc)
     private static final String SYSTEM_RUN =
@@ -47,7 +47,7 @@ public final class Qwen3Reranker implements Reranker.CrossEncoder<Qwen3.State> {
     private final Qwen3 model;
 
     @Override
-    public Model<?, ?, Qwen3.State> model() {
+    public Qwen3 model() {
         return model;
     }
 
@@ -83,8 +83,7 @@ public final class Qwen3Reranker implements Reranker.CrossEncoder<Qwen3.State> {
         return DEFAULT_INSTRUCTION;
     }
 
-    @Override
-    public Batch head(String instruction, String query) {
+    Batch prefix(String instruction, String query) {
         Tokenizer tokenizer = model.tokenizer();
         IntSequence.Builder ids = IntSequence.newBuilder();
         ids.add(imStart);
@@ -103,8 +102,7 @@ public final class Qwen3Reranker implements Reranker.CrossEncoder<Qwen3.State> {
         return Batch.prefill(ids.build().toArray());
     }
 
-    @Override
-    public Batch document(String document) {
+    Batch document(String document) {
         Tokenizer tokenizer = model.tokenizer();
         IntSequence.Builder ids = IntSequence.newBuilder();
         // the leading space belongs to the document run (the seam law, class javadoc)
@@ -120,8 +118,7 @@ public final class Qwen3Reranker implements Reranker.CrossEncoder<Qwen3.State> {
         return Batch.prefill(ids.build().toArray());
     }
 
-    @Override
-    public double score(Qwen3.State state) {
+    private double score(Qwen3.State state) {
         float yesLogit = model.logit(state, yes);
         float noLogit = model.logit(state, no);
         // softmax over the {yes, no} pair, per the model card
@@ -129,5 +126,52 @@ public final class Qwen3Reranker implements Reranker.CrossEncoder<Qwen3.State> {
         double pYes = Math.exp(yesLogit - max);
         double pNo = Math.exp(noLogit - max);
         return pYes / (pYes + pNo);
+    }
+
+    @Override
+    public int scoreAll(
+            Qwen3.State state,
+            String instruction,
+            String query,
+            List<String> documents,
+            DoubleConsumer sink) {
+        return state.exclusively(() -> scoreAll0(state, instruction, query, documents, sink));
+    }
+
+    private int scoreAll0(
+            Qwen3.State state,
+            String instruction,
+            String query,
+            List<String> documents,
+            DoubleConsumer sink) {
+        Batch prefix = prefix(instruction, query);
+        int total = prefix.count();
+        state.reset();
+        ingest(state, prefix);
+        int prefixLength = state.position();
+        for (int i = 0; i < documents.size(); i++) {
+            Batch document = document(documents.get(i));
+            if (prefixLength + document.count() > state.contextCapacity()) {
+                throw new IllegalArgumentException(
+                        "document "
+                                + i
+                                + " frames to "
+                                + (prefixLength + document.count())
+                                + " tokens, over the "
+                                + state.contextCapacity()
+                                + "-token context");
+            }
+            total += document.count();
+            state.resumeAt(prefixLength);
+            ingest(state, document);
+            sink.accept(score(state));
+        }
+        return total;
+    }
+
+    private void ingest(Qwen3.State state, Batch batch) {
+        for (Batch chunk : Batch.prepare(List.of(batch), state.batchCapacity())) {
+            model.ingest(state, chunk);
+        }
     }
 }

@@ -55,7 +55,7 @@ final class Qwen35MtpCacheLifecycleTest {
                             SEED,
                             Optional.empty(),
                             LoadedModel.SamplingDefaults.NONE);
-            var options = new PromptCache.Options(1, 16, 0, null, false);
+            var options = options(1, 0);
             try (ChatEngine engine = new ChatEngine(loaded, "tiny-qwen35-mtp", options)) {
                 assertTrue(engine.speculationReady(), "weights are loaded independently of depth");
                 int[] firstPrompt = {1, 2, 3};
@@ -111,7 +111,7 @@ final class Qwen35MtpCacheLifecycleTest {
                             SEED,
                             Optional.empty(),
                             LoadedModel.SamplingDefaults.NONE);
-            var options = new PromptCache.Options(1, 16, 0, null, false);
+            var options = options(1, 0);
             try (ChatEngine engine = new ChatEngine(loaded, "tiny-qwen35", options)) {
                 assertFalse(engine.speculationReady());
                 engine.speculationDepth(2);
@@ -210,7 +210,7 @@ final class Qwen35MtpCacheLifecycleTest {
             Qwen35 model = tinyModel(weights);
             Path catalog = directory.resolve("qwen35-mtp.jkvf");
             List<Batch> prompt = List.of(Batch.prefill(new int[] {1, 2}), Batch.step(3));
-            var options = new PromptCache.Options(0, 16, 1 << 20, catalog, false);
+            var options = options(0, 1 << 20).withCatalog(catalog, false);
             try (PromptCache<Qwen35.State> writer = PromptCache.of(model, SEED, options)) {
                 writer.define(prompt);
                 writer.save();
@@ -289,8 +289,14 @@ final class Qwen35MtpCacheLifecycleTest {
     }
 
     private static PromptCache<Qwen35.State> cache(Qwen35 model, int retained, long bytes) {
-        return PromptCache.of(
-                model, SEED, new PromptCache.Options(retained, 16, bytes, null, false));
+        return PromptCache.of(model, SEED, options(retained, bytes));
+    }
+
+    private static PromptCache.Options options(int retained, long bytes) {
+        return PromptCache.Options.DEFAULTS
+                .withRetainedSessions(retained)
+                .withContextCapacity(16)
+                .withBlockBudget(bytes);
     }
 
     private static Pass freshRun(Qwen35 model, int[] prompt, boolean speculate) {

@@ -1,11 +1,11 @@
 package com.qxotic.jinfer.x.models.inflect2;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.testkit.TestModels;
+import com.qxotic.jinfer.x.PanamaMemoryArena;
 import com.qxotic.jinfer.x.boundary.SpeechOptions;
 import java.lang.foreign.Arena;
 import java.util.ConcurrentModificationException;
@@ -16,15 +16,15 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 /**
- * The five laws a speech state carries, the same ones {@code BaseStateLifecycleTest} pins for
- * generative states. These are memory-safety properties, not conveniences: every one of them is a
- * use-after-free or a double-free if it stops holding, and the FFM close handshake cannot save a
- * kernel that reads a raw address out of a freed arena.
+ * The lifecycle laws a speech state shares with every {@code RuntimeState}. These are memory-safety
+ * properties, not conveniences: every one of them is a use-after-free or a double-free if it stops
+ * holding, and the FFM close handshake cannot save a kernel that reads a raw address out of a freed
+ * arena.
  *
  * <p>Fixture-gated: the concurrency laws need a synthesis long enough to still be running when the
  * other thread acts, so they need real weights.
  */
-final class XSpeechStateLifecycleTest {
+final class Inflect2StateLifecycleTest {
 
     private static final String REF = "hf.co/remixerdec/Inflect-Nano-v2-GGUF:Q8_0";
 
@@ -41,31 +41,22 @@ final class XSpeechStateLifecycleTest {
     // ── ownership ─────────────────────────────────────────────────────────
 
     @Test
-    void anOwnedArenaIsFreedByClose() throws Exception {
+    void anOwnedStateIsReleasedByClose() throws Exception {
         InflectTTS tts = tts();
-        Arena arena = Arena.ofShared();
-        Inflect2.State state = tts.newState(arena, true); // ADOPTED
-        assertTrue(arena.scope().isAlive());
+        Inflect2.State state = tts.newState();
+        assertTrue(state.isAlive());
         state.close();
-        assertFalse(arena.scope().isAlive(), "adopt: the state's close must free the arena");
+        assertFalse(state.isAlive());
     }
 
     @Test
     void aBorrowedArenaIsNeverTouchedByClose() throws Exception {
         InflectTTS tts = tts();
         try (Arena arena = Arena.ofShared()) {
-            Inflect2.State state = tts.newState(arena); // BORROWED
+            Inflect2.State state = tts.newState(new PanamaMemoryArena(arena)); // BORROWED
             state.close();
             assertTrue(arena.scope().isAlive(), "borrow: close must not free an arena it was lent");
         }
-    }
-
-    @Test
-    void anAdoptedNonCloseableArenaMakesCloseANoOpOnTheMemory() throws Exception {
-        InflectTTS tts = tts();
-        // ofAuto/global manage themselves; owning one just means there is nothing to free eagerly
-        assertDoesNotThrow(() -> tts.newState(Arena.ofAuto(), true).close());
-        assertDoesNotThrow(() -> tts.newState(Arena.global(), true).close());
     }
 
     @Test
@@ -75,7 +66,7 @@ final class XSpeechStateLifecycleTest {
         state.close();
         state.close(); // Arena.close is one-shot: without the CAS this throws
         state.close();
-        assertTrue(state.isClosed());
+        assertFalse(state.isAlive());
     }
 
     // ── the lock ──────────────────────────────────────────────────────────
@@ -99,7 +90,8 @@ final class XSpeechStateLifecycleTest {
             Thread first =
                     new Thread(
                             () ->
-                                    // the sink runs INSIDE the claim, so the first clip is proof
+                                    // the sink runs INSIDE exclusive access, so the first clip
+                                    // proves
                                     // the state is held - a latch before speak() proves nothing
                                     tts.speak(
                                             state,
@@ -141,7 +133,7 @@ final class XSpeechStateLifecycleTest {
         CountDownLatch release = new CountDownLatch(1);
         AtomicBoolean closeReturned = new AtomicBoolean();
 
-        // The sink runs inside the state's claim, so parking there holds the synthesis open for
+        // The sink runs inside exclusive access, so parking there holds the synthesis open for
         // as long as we like - deterministic, unlike racing a real workload.
         Thread worker =
                 new Thread(
@@ -179,7 +171,7 @@ final class XSpeechStateLifecycleTest {
         closer.join(30_000);
         worker.join(30_000);
         assertTrue(closeReturned.get(), "close never returned after the synthesis finished");
-        assertTrue(state.isClosed());
+        assertFalse(state.isAlive());
     }
 
     @Test
@@ -202,7 +194,7 @@ final class XSpeechStateLifecycleTest {
             assertTrue(
                     thrown.get() instanceof IllegalStateException,
                     "expected ISE, got " + thrown.get());
-            assertFalse(state.isClosed(), "the self-close must not have taken effect");
+            assertTrue(state.isAlive(), "the self-close must not have taken effect");
         }
     }
 }

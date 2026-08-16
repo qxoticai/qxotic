@@ -1,6 +1,6 @@
 package com.qxotic.jinfer.x.models.gemma4;
 
-import com.qxotic.jinfer.x.boundary.StateCodec;
+import com.qxotic.jinfer.x.boundary.CheckpointCodec;
 import com.qxotic.jinfer.x.kernels.KvTransfer;
 import java.lang.foreign.MemorySegment;
 
@@ -12,12 +12,12 @@ import java.lang.foreign.MemorySegment;
  * is a resume point - no checkpoint, no residue. RoPE is baked into K at absolute positions, so a
  * restored row is valid at its true slot regardless of when it was saved.
  */
-final class Gemma4StateCodec implements StateCodec<Gemma4.State> {
+final class Gemma4CheckpointCodec extends CheckpointCodec<Gemma4.State> {
 
     private final Gemma4.Configuration config;
     private final long bytesPerPosition;
 
-    Gemma4StateCodec(Gemma4.Configuration config) {
+    Gemma4CheckpointCodec(Gemma4.Configuration config) {
         this.config = config;
         long rowBytes = 0;
         for (int layer = 0; layer < config.ownKvLayers(); layer++) {
@@ -29,23 +29,13 @@ final class Gemma4StateCodec implements StateCodec<Gemma4.State> {
     }
 
     @Override
-    public long checkpointBytes(int positions) {
-        if (positions < 0) throw new IllegalArgumentException("positions " + positions);
+    protected long sizeOf(int positions) {
         return Math.multiplyExact((long) positions, bytesPerPosition);
     }
 
     @Override
-    public void saveCheckpoint(Gemma4.State state, int from, int to, MemorySegment destination) {
-        transfer(state, from, to, destination, true);
-    }
-
-    @Override
-    public void restoreCheckpoint(Gemma4.State state, int from, int to, MemorySegment source) {
-        transfer(state, from, to, source, false);
-    }
-
-    private void transfer(Gemma4.State state, int from, int to, MemorySegment blob, boolean save) {
-        StateCodec.requireCheckpoint(this, state, from, to, blob, save);
+    protected void transfer(
+            Gemma4.State state, int from, int to, MemorySegment blob, boolean capture) {
         long offset = 0;
         for (int layer = 0; layer < config.ownKvLayers(); layer++) {
             int kvDim = config.kvDim(layer);
@@ -59,7 +49,7 @@ final class Gemma4StateCodec implements StateCodec<Gemma4.State> {
                                 kvDim,
                                 blob,
                                 offset,
-                                save);
+                                capture);
                 offset +=
                         KvTransfer.ringSpan(
                                 state.valueCache[layer],
@@ -69,13 +59,18 @@ final class Gemma4StateCodec implements StateCodec<Gemma4.State> {
                                 kvDim,
                                 blob,
                                 offset,
-                                save);
+                                capture);
             } else {
                 long elements = Math.multiplyExact((long) (to - from), kvDim);
                 long elementOffset = Math.multiplyExact((long) from, kvDim);
                 offset +=
                         KvTransfer.transfer(
-                                state.keyCache[layer], elementOffset, blob, offset, elements, save);
+                                state.keyCache[layer],
+                                elementOffset,
+                                blob,
+                                offset,
+                                elements,
+                                capture);
                 offset +=
                         KvTransfer.transfer(
                                 state.valueCache[layer],
@@ -83,7 +78,7 @@ final class Gemma4StateCodec implements StateCodec<Gemma4.State> {
                                 blob,
                                 offset,
                                 elements,
-                                save);
+                                capture);
             }
         }
     }

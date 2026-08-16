@@ -3,33 +3,35 @@ package com.qxotic.jinfer.x.models.gemma4;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import com.qxotic.jinfer.x.PanamaMemoryArena;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import org.junit.jupiter.api.Test;
 
-final class Gemma4StateCodecTest {
+final class Gemma4CheckpointCodecTest {
 
     @Test
     void restoresAMixedRingAndDenseChainByteExactly() {
         Gemma4.Configuration config = config();
-        Gemma4StateCodec codec = new Gemma4StateCodec(config);
-        assertEquals(0, codec.checkpointBytes(0), "rows alone resume, no residue");
-        assertEquals(48, codec.checkpointBytes(2));
-        assertEquals(96, codec.checkpointBytes(4));
+        Gemma4CheckpointCodec codec = new Gemma4CheckpointCodec(config);
+        assertEquals(0, codec.byteSize(0), "rows alone resume, no residue");
+        assertEquals(48, codec.byteSize(2));
+        assertEquals(96, codec.byteSize(4));
 
         try (Arena arena = Arena.ofConfined()) {
-            MemorySegment first = patterned(arena, codec.checkpointBytes(2), 11);
-            MemorySegment second = patterned(arena, codec.checkpointBytes(2), 71);
-            MemorySegment actual = arena.allocate(codec.checkpointBytes(4), 64);
-            MemorySegment expected = arena.allocate(codec.checkpointBytes(4), 64);
-            Gemma4.State state = new Gemma4.State(config, 8, 4, arena);
+            MemorySegment first = patterned(arena, codec.byteSize(2), 11);
+            MemorySegment second = patterned(arena, codec.byteSize(2), 71);
+            MemorySegment actual = arena.allocate(codec.byteSize(4), 64);
+            MemorySegment expected = arena.allocate(codec.byteSize(4), 64);
+            Gemma4.State state =
+                    new Gemma4.State(config, 8, 4, new PanamaMemoryArena(arena), false);
 
             // spans stay within W=4, so no ring slot aliases: every row lands on its own slot
-            codec.restoreCheckpoint(state, 0, 2, first);
-            codec.restoreCheckpoint(state, 2, 4, second);
+            codec.restore(state, 0, 2, first);
+            codec.restore(state, 2, 4, second);
             state.resumeAt(4);
-            codec.saveCheckpoint(state, 0, 4, actual);
+            codec.capture(state, 0, 4, actual);
 
             // layer 0 is SWA (ring, kvDim 2 -> 4B rows), layer 1 full (kvDim 4 -> 8B rows);
             // each chunk is L0 K,V then L1 K,V; the shared tail layer owns no KV
@@ -47,21 +49,17 @@ final class Gemma4StateCodecTest {
 
     @Test
     void rejectsInvalidSpansSizesAndSaveEndpoints() {
-        Gemma4StateCodec codec = new Gemma4StateCodec(config());
+        Gemma4CheckpointCodec codec = new Gemma4CheckpointCodec(config());
         try (Arena arena = Arena.ofConfined()) {
-            Gemma4.State state = new Gemma4.State(config(), 8, 4, arena);
-            MemorySegment block = arena.allocate(codec.checkpointBytes(2), 64);
+            Gemma4.State state =
+                    new Gemma4.State(config(), 8, 4, new PanamaMemoryArena(arena), false);
+            MemorySegment block = arena.allocate(codec.byteSize(2), 64);
+            assertThrows(IllegalArgumentException.class, () -> codec.restore(state, -1, 1, block));
+            assertThrows(IllegalArgumentException.class, () -> codec.restore(state, 0, 9, block));
             assertThrows(
                     IllegalArgumentException.class,
-                    () -> codec.restoreCheckpoint(state, -1, 1, block));
-            assertThrows(
-                    IllegalArgumentException.class,
-                    () -> codec.restoreCheckpoint(state, 0, 9, block));
-            assertThrows(
-                    IllegalArgumentException.class,
-                    () -> codec.restoreCheckpoint(state, 0, 2, block.asSlice(1)));
-            assertThrows(
-                    IllegalStateException.class, () -> codec.saveCheckpoint(state, 0, 2, block));
+                    () -> codec.restore(state, 0, 2, block.asSlice(1)));
+            assertThrows(IllegalStateException.class, () -> codec.capture(state, 0, 2, block));
         }
     }
 

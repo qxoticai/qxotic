@@ -1,11 +1,11 @@
 package com.qxotic.jinfer.x.models.lfm2;
 
 import com.qxotic.format.gguf.GGUF;
-import com.qxotic.jinfer.x.PanamaMemoryArena;
 import com.qxotic.jinfer.x.Parallel;
 import com.qxotic.jinfer.x.Views;
-import com.qxotic.jinfer.x.boundary.Embedder;
+import com.qxotic.jinfer.x.boundary.Arenas;
 import com.qxotic.jinfer.x.boundary.Media;
+import com.qxotic.jinfer.x.boundary.MediaProjector;
 import com.qxotic.jinfer.x.kernels.Activations;
 import com.qxotic.jinfer.x.kernels.Convert;
 import com.qxotic.jinfer.x.kernels.FlashAttention;
@@ -15,6 +15,7 @@ import com.qxotic.jinfer.x.kernels.Norms;
 import com.qxotic.jinfer.x.kernels.Ops;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Shape;
+import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import java.io.IOException;
 import java.lang.foreign.Arena;
@@ -27,7 +28,7 @@ import java.util.Objects;
 import java.util.function.Consumer;
 
 /** LFM2.5 SigLIP2-NaFlex vision tower and pixel-unshuffle projector. */
-public final class Lfm2Vision implements Embedder<Media.Image> {
+public final class Lfm2Vision implements MediaProjector<Media.Image> {
     private final int patchSize,
             visionDim,
             headCount,
@@ -162,7 +163,8 @@ public final class Lfm2Vision implements Embedder<Media.Image> {
         return Lfm2VisionPreprocess.positions(part, patchSize, merge);
     }
 
-    String planId() {
+    @Override
+    public String planId() {
         return "lfm2v patch="
                 + patchSize
                 + " merge="
@@ -180,7 +182,7 @@ public final class Lfm2Vision implements Embedder<Media.Image> {
     }
 
     @Override
-    public void embed(Media.Image image, int maxChunkSize, Consumer<MemoryView<?>> sink) {
+    public void project(Media.Image image, int maxChunkSize, Consumer<MemoryView<?>> sink) {
         Objects.requireNonNull(sink, "sink");
         for (Lfm2VisionPreprocess.Part part : plan(image).parts()) embed(part, maxChunkSize, sink);
     }
@@ -196,12 +198,16 @@ public final class Lfm2Vision implements Embedder<Media.Image> {
                             + rows
                             + " projected rows, exceeding maxChunkSize "
                             + maxChunkSize);
-        try (Arena arena = Arena.ofShared()) {
-            sink.accept(encode(part.image(), new PanamaMemoryArena(arena)));
+        MemoryArena<MemorySegment> scratch = Arenas.newCrossThreadMemoryArena();
+        try {
+            sink.accept(encode(part.image(), scratch));
+        } finally {
+            Arenas.close(scratch);
         }
     }
 
-    private MemoryView<MemorySegment> encode(Media.Image image, PanamaMemoryArena scratch) {
+    private MemoryView<MemorySegment> encode(
+            Media.Image image, MemoryArena<MemorySegment> scratch) {
         int patchesX = image.width() / patchSize, patchesY = image.height() / patchSize;
         int count = Math.multiplyExact(patchesX, patchesY);
         int patchVector = Math.multiplyExact(3, Math.multiplyExact(patchSize, patchSize));
@@ -281,7 +287,7 @@ public final class Lfm2Vision implements Embedder<Media.Image> {
             MemoryView<MemorySegment> current,
             int targetWidth,
             int targetHeight,
-            PanamaMemoryArena scratch) {
+            MemoryArena<MemorySegment> scratch) {
         float[] interpolated =
                 interpolatePositions(
                         positionEmbedding, positionSide, visionDim, targetWidth, targetHeight);
@@ -357,7 +363,7 @@ public final class Lfm2Vision implements Embedder<Media.Image> {
             int patchesY,
             int merge,
             int visionDim,
-            PanamaMemoryArena scratch) {
+            MemoryArena<MemorySegment> scratch) {
         if (patchesX % merge != 0 || patchesY % merge != 0)
             throw new IllegalArgumentException("patch grid must be divisible by merge");
         int outputX = patchesX / merge, outputY = patchesY / merge;
@@ -388,7 +394,7 @@ public final class Lfm2Vision implements Embedder<Media.Image> {
     }
 
     private MemoryView<MemorySegment> project(
-            MemoryView<MemorySegment> merged, PanamaMemoryArena scratch) {
+            MemoryView<MemorySegment> merged, MemoryArena<MemorySegment> scratch) {
         int rows = Math.toIntExact(merged.shape().flatAt(0));
         int mergedDim = Math.multiplyExact(visionDim, merge * merge);
         if (projectorNormWeight != null)

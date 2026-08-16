@@ -12,8 +12,7 @@
   <packaging>jar</packaging>
 
   <name>jinfer-xqwen3</name>
-  <description>MemoryView port of Qwen3 (cycle 2 of the FloatTensor migration; see
-    qxotic/.opencode/plans/memoryview-migration.md). The boundary cone lives in jinfer-xboundary.</description>
+  <description>MemoryView text, embedding, and reranking inference for Qwen3.</description>
 
   <dependencies>
     <dependency>

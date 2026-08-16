@@ -10,7 +10,7 @@ import com.qxotic.jinfer.testkit.TestModels;
 import com.qxotic.jinfer.x.Views;
 import com.qxotic.jinfer.x.boundary.Batch;
 import com.qxotic.jinfer.x.boundary.Media;
-import com.qxotic.jinfer.x.boundary.MultiModal;
+import com.qxotic.jinfer.x.boundary.Multimodal;
 import com.qxotic.jinfer.x.chat.Models;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
@@ -34,12 +34,12 @@ class Lfm2VisionModelTest {
             Lfm2Vision vision = Lfm2Vision.loadModel(path, arena);
             Media.Image image = shiftedRainbow(256);
             assertEquals(64, vision.positions(image));
-            vision.embed(
+            vision.project(
                     image,
                     64,
                     rows -> {
-                        assertEquals(64, rows.shape().flatAt(0));
-                        assertEquals(2048, rows.shape().flatAt(1));
+                        assertEquals(64L, rows.shape().flatAt(0));
+                        assertEquals(2048L, rows.shape().flatAt(1));
                         MemoryView<MemorySegment> segmentRows =
                                 Views.castToSegmentBacked(rows, "rows");
                         MemorySegment segment = (MemorySegment) segmentRows.memory().base();
@@ -74,17 +74,17 @@ class Lfm2VisionModelTest {
         try (Arena weights = Arena.ofShared()) {
             var loaded = Models.load(text, weights, Map.of("media", projector));
             Lfm2 model = assertInstanceOf(Lfm2.class, loaded.model());
-            MultiModal media = assertInstanceOf(MultiModal.class, model);
-            assertEquals(java.util.Set.of(Media.Image.class), media.modalities());
+            Multimodal media = assertInstanceOf(Multimodal.class, model);
+            assertTrue(media.projector(Media.Image.class).isPresent());
             assertTrue(loaded.template().isPresent());
 
             Media.Image image = new Media.Image(new float[64 * 64 * 3], 64, 64, 3);
             int[] prefix = loaded.tokenizer().encodeToArray("Look:");
             try (Lfm2.State state = model.newState(128, 64)) {
                 model.ingest(state, Batch.prefill(prefix));
-                media.embedder(Media.Image.class)
+                media.projector(Media.Image.class)
                         .orElseThrow()
-                        .embed(
+                        .project(
                                 image,
                                 64,
                                 rows -> model.ingest(state, Batch.embeddings(rows, 64, true)));

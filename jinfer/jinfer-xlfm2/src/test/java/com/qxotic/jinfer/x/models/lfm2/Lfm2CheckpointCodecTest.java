@@ -3,31 +3,32 @@ package com.qxotic.jinfer.x.models.lfm2;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import com.qxotic.jinfer.x.PanamaMemoryArena;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import org.junit.jupiter.api.Test;
 
-final class Lfm2StateCodecTest {
+final class Lfm2CheckpointCodecTest {
 
     @Test
     void restoresAChainWithTheLastBlocksRecurrentEndpoint() {
         Lfm2.Configuration config = config();
-        Lfm2StateCodec codec = new Lfm2StateCodec(config);
-        assertEquals(64, codec.checkpointBytes(0));
-        assertEquals(104, codec.checkpointBytes(5));
+        Lfm2CheckpointCodec codec = new Lfm2CheckpointCodec(config);
+        assertEquals(64, codec.byteSize(0));
+        assertEquals(104, codec.byteSize(5));
 
         try (Arena arena = Arena.ofConfined()) {
-            MemorySegment first = patterned(arena, codec.checkpointBytes(2), 11);
-            MemorySegment second = patterned(arena, codec.checkpointBytes(3), 71);
-            MemorySegment actual = arena.allocate(codec.checkpointBytes(5), 64);
-            MemorySegment expected = arena.allocate(codec.checkpointBytes(5), 64);
-            Lfm2.State state = new Lfm2.State(config, 8, 4, arena);
+            MemorySegment first = patterned(arena, codec.byteSize(2), 11);
+            MemorySegment second = patterned(arena, codec.byteSize(3), 71);
+            MemorySegment actual = arena.allocate(codec.byteSize(5), 64);
+            MemorySegment expected = arena.allocate(codec.byteSize(5), 64);
+            Lfm2.State state = new Lfm2.State(config, 8, 4, new PanamaMemoryArena(arena), false);
 
-            codec.restoreCheckpoint(state, 0, 2, first);
-            codec.restoreCheckpoint(state, 2, 5, second);
+            codec.restore(state, 0, 2, first);
+            codec.restore(state, 2, 5, second);
             state.resumeAt(5);
-            codec.saveCheckpoint(state, 0, 5, actual);
+            codec.capture(state, 0, 5, actual);
 
             // One attention layer: K rows, then V rows, then the final recurrent residue.
             MemorySegment.copy(first, 0, expected, 0, 8);
@@ -38,29 +39,24 @@ final class Lfm2StateCodecTest {
             assertEquals(-1, expected.mismatch(actual));
 
             state.reset();
-            MemorySegment reset = arena.allocate(codec.checkpointBytes(0), 64);
-            codec.saveCheckpoint(state, 0, 0, reset);
+            MemorySegment reset = arena.allocate(codec.byteSize(0), 64);
+            codec.capture(state, 0, 0, reset);
             assertEquals(-1, MemorySegment.ofArray(new byte[64]).mismatch(reset));
         }
     }
 
     @Test
     void rejectsInvalidSpansSizesAndSaveEndpoints() {
-        Lfm2StateCodec codec = new Lfm2StateCodec(config());
+        Lfm2CheckpointCodec codec = new Lfm2CheckpointCodec(config());
         try (Arena arena = Arena.ofConfined()) {
-            Lfm2.State state = new Lfm2.State(config(), 8, 4, arena);
-            MemorySegment block = arena.allocate(codec.checkpointBytes(2), 64);
+            Lfm2.State state = new Lfm2.State(config(), 8, 4, new PanamaMemoryArena(arena), false);
+            MemorySegment block = arena.allocate(codec.byteSize(2), 64);
+            assertThrows(IllegalArgumentException.class, () -> codec.restore(state, -1, 1, block));
+            assertThrows(IllegalArgumentException.class, () -> codec.restore(state, 0, 9, block));
             assertThrows(
                     IllegalArgumentException.class,
-                    () -> codec.restoreCheckpoint(state, -1, 1, block));
-            assertThrows(
-                    IllegalArgumentException.class,
-                    () -> codec.restoreCheckpoint(state, 0, 9, block));
-            assertThrows(
-                    IllegalArgumentException.class,
-                    () -> codec.restoreCheckpoint(state, 0, 2, block.asSlice(1)));
-            assertThrows(
-                    IllegalStateException.class, () -> codec.saveCheckpoint(state, 0, 2, block));
+                    () -> codec.restore(state, 0, 2, block.asSlice(1)));
+            assertThrows(IllegalStateException.class, () -> codec.capture(state, 0, 2, block));
         }
     }
 

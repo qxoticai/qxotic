@@ -3,11 +3,12 @@ package com.qxotic.jinfer.x.models.maple;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.x.Parallel;
 import com.qxotic.jinfer.x.Views;
-import com.qxotic.jinfer.x.boundary.BaseState;
+import com.qxotic.jinfer.x.boundary.Arenas;
 import com.qxotic.jinfer.x.boundary.Batch;
-import com.qxotic.jinfer.x.boundary.Config;
+import com.qxotic.jinfer.x.boundary.CheckpointCodec;
+import com.qxotic.jinfer.x.boundary.ContextConfiguration;
+import com.qxotic.jinfer.x.boundary.ContextState;
 import com.qxotic.jinfer.x.boundary.LanguageModel;
-import com.qxotic.jinfer.x.boundary.StateCodec;
 import com.qxotic.jinfer.x.kernels.Activations;
 import com.qxotic.jinfer.x.kernels.Convert;
 import com.qxotic.jinfer.x.kernels.FlashAttention;
@@ -19,12 +20,14 @@ import com.qxotic.jinfer.x.kernels.Ops;
 import com.qxotic.jinfer.x.kernels.RoPE;
 import com.qxotic.jinfer.x.kernels.Trace;
 import com.qxotic.jota.DataType;
+import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.lang.ref.Reference;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -45,7 +48,7 @@ public final class Maple implements LanguageModel<Maple.Configuration, Maple.Wei
     }
 
     @Override
-    public Configuration config() {
+    public Configuration configuration() {
         return configuration;
     }
 
@@ -59,25 +62,43 @@ public final class Maple implements LanguageModel<Maple.Configuration, Maple.Wei
     }
 
     @Override
-    public Optional<StateCodec<State>> stateCodec() {
-        return Optional.of(new MapleStateCodec(configuration));
+    public Optional<CheckpointCodec<State>> checkpointCodec() {
+        return Optional.of(new MapleCheckpointCodec(configuration));
     }
 
     @Override
-    public State newState(int contextCapacity, int batchCapacity, Arena arena) {
-        return new State(configuration, contextCapacity, batchCapacity, arena);
+    public State newState(
+            int contextCapacity, int batchCapacity, MemoryArena<MemorySegment> arena) {
+        return new State(configuration, contextCapacity, batchCapacity, arena, false);
     }
 
     @Override
-    public void forward(State state, Batch batch) {
+    public State newState(int contextCapacity, int batchCapacity) {
+        MemoryArena<MemorySegment> arena = Arenas.newCrossThreadMemoryArena();
+        try {
+            return new State(configuration, contextCapacity, batchCapacity, arena, true);
+        } catch (RuntimeException | Error failure) {
+            Arenas.close(arena);
+            throw failure;
+        }
+    }
+
+    @Override
+    public void ingest(State state, Batch batch) {
+        state.exclusively(() -> forward(state, batch));
+        Reference.reachabilityFence(this);
+    }
+
+    private void forward(State state, Batch batch) {
         int rows = batch.count();
-        if (rows > state.batchCapacity)
+        if (rows <= 0) throw new IllegalArgumentException("batch must not be empty");
+        if (rows > state.batchCapacity())
             throw new IllegalArgumentException(
-                    "batch " + rows + " exceeds batchCapacity " + state.batchCapacity);
+                    "batch " + rows + " exceeds batchCapacity " + state.batchCapacity());
         int startPos = state.position();
-        if (startPos + rows > state.contextCapacity)
+        if (startPos + rows > state.contextCapacity())
             throw new IllegalArgumentException(
-                    "ingest exceeds contextCapacity " + state.contextCapacity);
+                    "ingest exceeds contextCapacity " + state.contextCapacity());
         switch (batch.input()) {
             case Batch.Input.Tokens tokens -> {
                 for (int id : tokens.ids())
@@ -97,7 +118,7 @@ public final class Maple implements LanguageModel<Maple.Configuration, Maple.Wei
             case Batch.Input.Embeddings ignored ->
                     throw new UnsupportedOperationException("Maple is text-only");
         }
-        state.advance(rows, batch.outputs());
+        state.advance(batch);
     }
 
     private void forward(State state, int[] tokens, int startPos, int rows) {
@@ -320,9 +341,18 @@ public final class Maple implements LanguageModel<Maple.Configuration, Maple.Wei
     }
 
     @Override
-    public MemoryView<?> head(State state, int output) {
+    public MemoryView<?> logits(State state, int output) {
+        MemoryView<?> result = state.exclusively(() -> projectLogits(state, output));
+        Reference.reachabilityFence(this);
+        return result;
+    }
+
+    private MemoryView<?> projectLogits(State state, int output) {
+        if (output < 0 || output >= state.outputCount())
+            throw new IllegalArgumentException(
+                    "output " + output + " outside [0," + state.outputCount() + ")");
         int dim = configuration.embeddingLength;
-        int row = state.lastChunkLen - state.outputCount + output;
+        int row = state.lastBatchSize() - state.outputCount() + output;
         return Parallel.onDecodePool(
                 () -> {
                     Norms.rmsnorm(
@@ -361,7 +391,7 @@ public final class Maple implements LanguageModel<Maple.Configuration, Maple.Wei
             int expertFeedForwardLength,
             float expertWeightsScale,
             float[] swigluClamp)
-            implements Config {
+            implements ContextConfiguration {
         public Configuration {
             if (embeddingLength <= 0
                     || numberOfLayers <= 0
@@ -433,8 +463,7 @@ public final class Maple implements LanguageModel<Maple.Configuration, Maple.Wei
             MemoryView<MemorySegment> outputWeight,
             RoPE.Schedule rope) {}
 
-    public static final class State extends BaseState {
-        final int contextCapacity, batchCapacity;
+    public static final class State extends ContextState {
         final MemoryView<MemorySegment> residual, normed, branch, query, attnOut, head, logits;
         final MemoryView<MemorySegment> ropeCos, ropeSin;
         final MemoryView<MemorySegment> router, gather, expertOut, moeOut, hidden, hidden2;
@@ -446,13 +475,16 @@ public final class Maple implements LanguageModel<Maple.Configuration, Maple.Wei
         final MemoryView<MemorySegment>[] keyCache, valueCache, batchK, batchV;
 
         @SuppressWarnings("unchecked")
-        State(Configuration c, int contextCapacity, int batchCapacity, Arena arena) {
-            super(arena);
+        State(
+                Configuration c,
+                int contextCapacity,
+                int batchCapacity,
+                MemoryArena<MemorySegment> arena,
+                boolean ownsArena) {
+            super(contextCapacity, batchCapacity, arena, ownsArena);
             if (contextCapacity > c.contextLength)
                 throw new IllegalArgumentException("contextCapacity exceeds model context length");
-            this.contextCapacity = contextCapacity;
-            this.batchCapacity = Math.max(1, batchCapacity);
-            int rows = this.batchCapacity, dim = c.embeddingLength;
+            int rows = batchCapacity(), dim = c.embeddingLength;
             int qDim = c.queryDim(), kvDim = c.kvDim();
             residual = Views.allocateF32(memoryArena(), rows * dim);
             normed = Views.allocateF32(memoryArena(), rows * dim);
@@ -489,18 +521,10 @@ public final class Maple implements LanguageModel<Maple.Configuration, Maple.Wei
         }
 
         @Override
-        public int contextCapacity() {
-            return contextCapacity;
-        }
+        protected void clearHistory() {}
 
-        @Override
-        public int batchCapacity() {
-            return batchCapacity;
-        }
-
-        @Override
-        public void reset() {
-            resumeAt(0);
+        private void advance(Batch batch) {
+            advanceContext(batch.count(), batch.outputs());
         }
     }
 

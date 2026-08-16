@@ -54,13 +54,13 @@ final class XLfm2EmbeddingTest {
 
     @Test
     void matchesLlamaCppEmbeddings() throws Exception {
-        assertTrue(model.config().isEmbedder());
-        assertEquals(1024, model.config().embeddingLength());
+        assertTrue(model.configuration().isEmbedder());
+        assertEquals(1024, model.configuration().embeddingLength());
         List<double[]> golden = golden();
         List<float[]> actual = new ArrayList<>();
 
         try (var state = model.newState(2048, 64)) {
-            model.embed(
+            model.embedAll(
                     state,
                     sequences(TEXTS),
                     view ->
@@ -88,7 +88,7 @@ final class XLfm2EmbeddingTest {
                     assertThrows(
                             IllegalArgumentException.class,
                             () ->
-                                    model.embed(
+                                    model.embedAll(
                                             state,
                                             sequences(List.of("word ".repeat(64))),
                                             v -> {}));

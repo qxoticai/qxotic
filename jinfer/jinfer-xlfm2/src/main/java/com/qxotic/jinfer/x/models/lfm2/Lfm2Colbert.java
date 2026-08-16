@@ -2,7 +2,7 @@ package com.qxotic.jinfer.x.models.lfm2;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.x.Views;
-import com.qxotic.jinfer.x.boundary.Model;
+import com.qxotic.jinfer.x.boundary.ContextModel;
 import com.qxotic.jinfer.x.boundary.Reranker;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryOperations;
@@ -60,7 +60,7 @@ public final class Lfm2Colbert implements Reranker<Lfm2.State> {
 
     public Lfm2Colbert(Lfm2 model, int bos, int pad) {
         this.model = Objects.requireNonNull(model, "model");
-        if (!model.config().isColbert() || model.weights().dense2() == null) {
+        if (!model.configuration().isColbert() || model.weights().dense2() == null) {
             throw new IllegalArgumentException(
                     "this checkpoint is not LFM2.5-ColBERT (non-causal attention with a dense_2"
                             + " projection)");
@@ -110,7 +110,7 @@ public final class Lfm2Colbert implements Reranker<Lfm2.State> {
     }
 
     @Override
-    public Model<?, ?, Lfm2.State> model() {
+    public ContextModel<?, ?, Lfm2.State> model() {
         return model;
     }
 
@@ -121,6 +121,15 @@ public final class Lfm2Colbert implements Reranker<Lfm2.State> {
 
     @Override
     public int scoreAll(
+            Lfm2.State state,
+            String instruction,
+            String query,
+            List<String> documents,
+            DoubleConsumer sink) {
+        return state.exclusively(() -> scoreAll0(state, instruction, query, documents, sink));
+    }
+
+    private int scoreAll0(
             Lfm2.State state,
             String instruction,
             String query,
@@ -168,7 +177,7 @@ public final class Lfm2Colbert implements Reranker<Lfm2.State> {
     private float[] copyRow(Lfm2.State state, int row) {
         MemoryView<?> view = model.colbertRow(state, row);
         Views.requireDense(view, com.qxotic.jota.DataType.FP32, "colbertRow");
-        int outDim = model.config().embeddingLengthOut();
+        int outDim = model.configuration().embeddingLengthOut();
         float[] dst = new float[outDim];
         MemoryView<MemorySegment> src = Views.castToSegmentBacked(view, "colbertRow");
         Memory<MemorySegment> dstMem = MemoryFactory.ofMemorySegment(MemorySegment.ofArray(dst));
@@ -185,7 +194,7 @@ public final class Lfm2Colbert implements Reranker<Lfm2.State> {
      * see heap-array operands), and the dot itself is a plain auto-vectorizing array loop.
      */
     private double maxSim(float[][] queryRows, Lfm2.State state, int rowStart, int[] docIds) {
-        int outDim = model.config().embeddingLengthOut();
+        int outDim = model.configuration().embeddingLengthOut();
         double[] best = new double[queryRows.length];
         Arrays.fill(best, Double.NEGATIVE_INFINITY);
         for (int d = 0; d < docIds.length; d++) {

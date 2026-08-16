@@ -12,8 +12,7 @@
   <packaging>jar</packaging>
 
   <name>jinfer-xlfm2</name>
-  <description>MemoryView port of LFM2.5 (cycle 1 of the FloatTensor migration; see
-    qxotic/.opencode/plans/memoryview-migration.md). The boundary cone lives in jinfer-xboundary.</description>
+  <description>MemoryView text, vision, embedding, and reranking inference for LFM2.5.</description>
 
   <dependencies>
     <dependency>

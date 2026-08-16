@@ -27,10 +27,10 @@ class XMapleTest {
         try (FileChannel channel = FileChannel.open(path)) {
             GGUF gguf = ModelLoader.readGguf(channel, path.toString());
             Maple model = Maple.loadModel(channel, gguf, Arena.ofAuto());
-            assertEquals(24, model.config().numberOfLayers());
-            assertEquals(256, model.config().expertCount());
-            assertEquals(8, model.config().expertUsedCount());
-            assertEquals(512, model.config().slidingWindow());
+            assertEquals(24, model.configuration().numberOfLayers());
+            assertEquals(256, model.configuration().expertCount());
+            assertEquals(8, model.configuration().expertUsedCount());
+            assertEquals(512, model.configuration().slidingWindow());
             var reply =
                     ReplyParser.parse(
                             new MapleChatTemplate(model.tokenizer()).parser(model.tokenizer()),
@@ -44,8 +44,8 @@ class XMapleTest {
             try (Maple.State state = model.newState(2, 1)) {
                 model.ingest(state, Batch.step(0));
                 var logits = Views.castToSegmentBacked(model.logits(state), "logits");
-                int token = Ops.argmax(logits, 0, model.config().vocabularySize());
-                assertTrue(token >= 0 && token < model.config().vocabularySize());
+                int token = Ops.argmax(logits, 0, model.configuration().vocabularySize());
+                assertTrue(token >= 0 && token < model.configuration().vocabularySize());
                 assertTrue(Float.isFinite(Views.getFloat(logits, token, "logits")));
             }
         }

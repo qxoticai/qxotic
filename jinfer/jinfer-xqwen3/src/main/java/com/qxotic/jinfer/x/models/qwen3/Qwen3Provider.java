@@ -66,7 +66,7 @@ public final class Qwen3Provider implements ModelProvider {
                 model.tokenizer(),
                 new int[0],
                 new int[] {eos},
-                model.config().embeddingLength(),
+                model.configuration().embeddingLength(),
                 32, // model card: Matryoshka output supports every width from 32 to native
                 path.getFileName().toString(),
                 // the card's instructed-query framing, default retrieval task, verbatim

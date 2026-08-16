@@ -73,7 +73,7 @@ class XLfm2Bench {
     private static double benchX(FileChannel channel, GGUF gguf, Tokenizer tk, int[] ids)
             throws Exception {
         var m = Lfm2.loadModel(channel, gguf, Arena.ofAuto(), tk);
-        var c = m.config();
+        var c = m.configuration();
         try (var s =
                 m.newState(
                         Math.min(c.contextLength(), ids.length + WARMUP + TIMED + 16),

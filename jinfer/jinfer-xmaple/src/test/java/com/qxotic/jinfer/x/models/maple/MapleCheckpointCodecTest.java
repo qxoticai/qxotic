@@ -3,30 +3,31 @@ package com.qxotic.jinfer.x.models.maple;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import com.qxotic.jinfer.x.PanamaMemoryArena;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import org.junit.jupiter.api.Test;
 
-final class MapleStateCodecTest {
+final class MapleCheckpointCodecTest {
 
     @Test
     void restoresMixedRingAndDenseCacheByteExactly() {
         Maple.Configuration config = config();
-        MapleStateCodec codec = new MapleStateCodec(config);
-        assertEquals(32, codec.checkpointBytes(2));
+        MapleCheckpointCodec codec = new MapleCheckpointCodec(config);
+        assertEquals(32, codec.byteSize(2));
 
         try (Arena arena = Arena.ofConfined()) {
-            MemorySegment first = patterned(arena, codec.checkpointBytes(2), 11);
-            MemorySegment second = patterned(arena, codec.checkpointBytes(2), 71);
-            MemorySegment actual = arena.allocate(codec.checkpointBytes(4), 64);
-            MemorySegment expected = arena.allocate(codec.checkpointBytes(4), 64);
-            Maple.State state = new Maple.State(config, 8, 4, arena);
+            MemorySegment first = patterned(arena, codec.byteSize(2), 11);
+            MemorySegment second = patterned(arena, codec.byteSize(2), 71);
+            MemorySegment actual = arena.allocate(codec.byteSize(4), 64);
+            MemorySegment expected = arena.allocate(codec.byteSize(4), 64);
+            Maple.State state = new Maple.State(config, 8, 4, new PanamaMemoryArena(arena), false);
 
-            codec.restoreCheckpoint(state, 0, 2, first);
-            codec.restoreCheckpoint(state, 2, 4, second);
+            codec.restore(state, 0, 2, first);
+            codec.restore(state, 2, 4, second);
             state.resumeAt(4);
-            codec.saveCheckpoint(state, 0, 4, actual);
+            codec.capture(state, 0, 4, actual);
 
             MemorySegment.copy(first, 0, expected, 0, 8);
             MemorySegment.copy(second, 0, expected, 8, 8);
@@ -42,15 +43,13 @@ final class MapleStateCodecTest {
 
     @Test
     void rejectsInvalidCheckpoint() {
-        MapleStateCodec codec = new MapleStateCodec(config());
+        MapleCheckpointCodec codec = new MapleCheckpointCodec(config());
         try (Arena arena = Arena.ofConfined()) {
-            Maple.State state = new Maple.State(config(), 8, 4, arena);
-            MemorySegment block = arena.allocate(codec.checkpointBytes(2), 64);
-            assertThrows(
-                    IllegalArgumentException.class,
-                    () -> codec.restoreCheckpoint(state, -1, 1, block));
-            assertThrows(
-                    IllegalStateException.class, () -> codec.saveCheckpoint(state, 0, 2, block));
+            Maple.State state =
+                    new Maple.State(config(), 8, 4, new PanamaMemoryArena(arena), false);
+            MemorySegment block = arena.allocate(codec.byteSize(2), 64);
+            assertThrows(IllegalArgumentException.class, () -> codec.restore(state, -1, 1, block));
+            assertThrows(IllegalStateException.class, () -> codec.capture(state, 0, 2, block));
         }
     }
 

@@ -95,7 +95,7 @@ class Gemma4AudioTest {
             Gemma4Audio embedder, Media.Audio source, int maxChunkSize, int expectedRows) {
         List<float[]> output = new CopyOnWriteArrayList<>();
         int[] rows = {0};
-        embedder.embed(
+        embedder.project(
                 source,
                 maxChunkSize,
                 chunk -> {

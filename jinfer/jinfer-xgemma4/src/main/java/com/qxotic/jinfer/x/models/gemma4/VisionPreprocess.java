@@ -1,9 +1,9 @@
 package com.qxotic.jinfer.x.models.gemma4;
 
-import com.qxotic.jinfer.x.PanamaMemoryArena;
 import com.qxotic.jinfer.x.Parallel;
 import com.qxotic.jinfer.x.Views;
 import com.qxotic.jinfer.x.boundary.Media;
+import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.MemorySegment;
 
@@ -84,7 +84,7 @@ final class VisionPreprocess {
             int targetWidth,
             int targetHeight,
             int patchSize,
-            PanamaMemoryArena scratch) {
+            MemoryArena<MemorySegment> scratch) {
         if (patchSize <= 0 || targetWidth % patchSize != 0 || targetHeight % patchSize != 0)
             throw new IllegalArgumentException("target dimensions must be divisible by patchSize");
         int patchesX = targetWidth / patchSize, patchesY = targetHeight / patchSize;

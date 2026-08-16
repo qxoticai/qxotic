@@ -1,9 +1,9 @@
 package com.qxotic.jinfer.x.models.gemma4;
 
 import com.qxotic.jinfer.x.boundary.Batch;
-import com.qxotic.jinfer.x.boundary.Embedder;
 import com.qxotic.jinfer.x.boundary.Media;
-import com.qxotic.jinfer.x.boundary.MultiModal;
+import com.qxotic.jinfer.x.boundary.MediaProjector;
+import com.qxotic.jinfer.x.boundary.Multimodal;
 import com.qxotic.jinfer.x.chat.ChatTemplate;
 import com.qxotic.jinfer.x.chat.Content;
 import com.qxotic.jinfer.x.chat.Conversation;
@@ -36,7 +36,7 @@ public final class Gemma4ChatTemplate implements ChatTemplate {
     private static final String DECLARATION_CLOSE = "<tool|>";
 
     private final Tokenizer tokenizer;
-    private final MultiModal media;
+    private final Multimodal media;
     private final boolean scaffoldsNonThinking;
     private final int bos;
     private final int turnOpen;
@@ -56,7 +56,7 @@ public final class Gemma4ChatTemplate implements ChatTemplate {
         this(model.tokenizer(), model, scaffoldsNonThinking);
     }
 
-    public Gemma4ChatTemplate(Tokenizer tokenizer, MultiModal media, boolean scaffoldsNonThinking) {
+    public Gemma4ChatTemplate(Tokenizer tokenizer, Multimodal media, boolean scaffoldsNonThinking) {
         this.tokenizer = Objects.requireNonNull(tokenizer, "tokenizer");
         this.media = media;
         this.scaffoldsNonThinking = scaffoldsNonThinking;
@@ -366,15 +366,15 @@ public final class Gemma4ChatTemplate implements ChatTemplate {
             int open,
             int close,
             boolean bidirectional) {
-        Embedder<M> embedder = media == null ? null : media.embedder(type).orElse(null);
-        if (embedder == null)
+        MediaProjector<M> projector = media == null ? null : media.projector(type).orElse(null);
+        if (projector == null)
             throw new UnsupportedConversation(
                     type.getSimpleName().toLowerCase() + " input is not supported by this model");
         out.cachedMedia(
                 contentKey,
                 encoded ->
                         encoded.id(open)
-                                .media(value, contentKey, embedder, bidirectional)
+                                .media(value, contentKey, projector, bidirectional)
                                 .id(close));
     }
 
@@ -391,11 +391,11 @@ public final class Gemma4ChatTemplate implements ChatTemplate {
     }
 
     private <M extends Media> int plan(Class<M> type, M m) {
-        Embedder<M> embedder = media == null ? null : media.embedder(type).orElse(null);
-        if (embedder == null)
+        MediaProjector<M> projector = media == null ? null : media.projector(type).orElse(null);
+        if (projector == null)
             throw new UnsupportedOperationException(
                     type.getSimpleName().toLowerCase() + " input is not supported by this model");
-        return embedder.positions(m);
+        return projector.positions(m);
     }
 
     private static void requireText(Message message, Content part) {

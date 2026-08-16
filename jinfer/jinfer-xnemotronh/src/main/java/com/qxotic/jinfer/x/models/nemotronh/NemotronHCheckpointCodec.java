@@ -1,6 +1,6 @@
 package com.qxotic.jinfer.x.models.nemotronh;
 
-import com.qxotic.jinfer.x.boundary.StateCodec;
+import com.qxotic.jinfer.x.boundary.CheckpointCodec;
 import com.qxotic.jinfer.x.kernels.KvTransfer;
 import com.qxotic.jota.DataType;
 import java.lang.foreign.MemorySegment;
@@ -8,11 +8,10 @@ import java.lang.foreign.MemorySegment;
 /**
  * Nemotron-H resume-state codec: full-attention layers store per-position K/V rows (full context,
  * linear position indexing - no ring); Mamba2 layers contribute their conv ring plus the SSM state
- * ({@code ssmInnerSize x ssmStateSize} F32) as the block RESIDUE - MBs per SSM layer, so this model
- * is {@link #coarseCheckpoints()}: cached prompts commit as ONE block per prompt (one residue per
- * prompt, not one per turn). MoE routing is per-token and carries no cross-token state.
+ * ({@code ssmInnerSize x ssmStateSize} F32) as a large fixed checkpoint overhead. MoE routing is
+ * per-token and carries no cross-token state.
  */
-final class NemotronHStateCodec implements StateCodec<NemotronH.State> {
+final class NemotronHCheckpointCodec extends CheckpointCodec<NemotronH.State> {
 
     private final NemotronH.Configuration config;
     private final int recurrentFloats; // ssmInnerSize * ssmStateSize per SSM layer
@@ -20,7 +19,7 @@ final class NemotronHStateCodec implements StateCodec<NemotronH.State> {
     private final long bytesPerPosition;
     private final long residueBytes;
 
-    NemotronHStateCodec(NemotronH.Configuration config) {
+    NemotronHCheckpointCodec(NemotronH.Configuration config) {
         this.config = config;
         recurrentFloats = Math.multiplyExact(config.ssmInnerSize(), config.ssmStateSize());
         convFloats =
@@ -47,29 +46,13 @@ final class NemotronHStateCodec implements StateCodec<NemotronH.State> {
     }
 
     @Override
-    public long checkpointBytes(int positions) {
-        if (positions < 0) throw new IllegalArgumentException("positions " + positions);
+    protected long sizeOf(int positions) {
         return Math.addExact(Math.multiplyExact((long) positions, bytesPerPosition), residueBytes);
     }
 
     @Override
-    public boolean coarseCheckpoints() {
-        return true;
-    }
-
-    @Override
-    public void saveCheckpoint(NemotronH.State state, int from, int to, MemorySegment destination) {
-        transfer(state, from, to, destination, true);
-    }
-
-    @Override
-    public void restoreCheckpoint(NemotronH.State state, int from, int to, MemorySegment source) {
-        transfer(state, from, to, source, false);
-    }
-
-    private void transfer(
-            NemotronH.State state, int from, int to, MemorySegment blob, boolean save) {
-        StateCodec.requireCheckpoint(this, state, from, to, blob, save);
+    protected void transfer(
+            NemotronH.State state, int from, int to, MemorySegment blob, boolean capture) {
         long offset = 0;
         long elements = Math.multiplyExact((long) (to - from), config.kvDim());
         long elementOffset = Math.multiplyExact((long) from, config.kvDim());
@@ -77,10 +60,15 @@ final class NemotronHStateCodec implements StateCodec<NemotronH.State> {
             if (config.layerTypes()[layer] != NemotronH.LayerType.ATTENTION) continue;
             offset +=
                     KvTransfer.transfer(
-                            state.keyCache[layer], elementOffset, blob, offset, elements, save);
+                            state.keyCache[layer], elementOffset, blob, offset, elements, capture);
             offset +=
                     KvTransfer.transfer(
-                            state.valueCache[layer], elementOffset, blob, offset, elements, save);
+                            state.valueCache[layer],
+                            elementOffset,
+                            blob,
+                            offset,
+                            elements,
+                            capture);
         }
         for (int layer = 0; layer < config.numberOfLayers(); layer++) {
             if (config.layerTypes()[layer] != NemotronH.LayerType.SSM) continue;
@@ -92,7 +80,7 @@ final class NemotronHStateCodec implements StateCodec<NemotronH.State> {
                             blob,
                             offset,
                             recurrentFloats,
-                            save);
+                            capture);
             offset +=
                     KvTransfer.transfer(
                             state.convState[layer],
@@ -101,7 +89,7 @@ final class NemotronHStateCodec implements StateCodec<NemotronH.State> {
                             blob,
                             offset,
                             convFloats,
-                            save);
+                            capture);
         }
     }
 }

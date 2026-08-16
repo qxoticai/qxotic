@@ -25,7 +25,7 @@ class Gemma4ConformerParityTest {
                             .encode(new com.qxotic.jinfer.Media.Audio(pcm, 16_000, 1));
             Gemma4Conformer actual = Gemma4Conformer.loadModel(path, xArena);
             int[] offset = {0};
-            actual.embed(
+            actual.project(
                     new Media.Audio(pcm, 16_000, 1),
                     2,
                     rows -> {

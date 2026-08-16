@@ -17,10 +17,9 @@ import com.qxotic.jinfer.x.PanamaMemoryArena;
 import com.qxotic.jinfer.x.Parallel;
 import com.qxotic.jinfer.x.Views;
 import com.qxotic.jinfer.x.boundary.Arenas;
-import com.qxotic.jinfer.x.boundary.Config;
 import com.qxotic.jinfer.x.boundary.LeakWatch;
 import com.qxotic.jinfer.x.boundary.Media;
-import com.qxotic.jinfer.x.boundary.SpeechState;
+import com.qxotic.jinfer.x.boundary.RuntimeState;
 import com.qxotic.jinfer.x.kernels.Activations;
 import com.qxotic.jinfer.x.kernels.Convert;
 import com.qxotic.jinfer.x.kernels.Convolutions;
@@ -29,6 +28,7 @@ import com.qxotic.jinfer.x.kernels.ModelLoader;
 import com.qxotic.jinfer.x.kernels.Norms;
 import com.qxotic.jinfer.x.kernels.Ops;
 import com.qxotic.jota.DataType;
+import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import java.io.IOException;
 import java.lang.foreign.Arena;
@@ -37,11 +37,8 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
-import java.util.ConcurrentModificationException;
 import java.util.Map;
 import java.util.Random;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.locks.ReentrantLock;
 
 public final class Inflect2 {
 
@@ -78,17 +75,14 @@ public final class Inflect2 {
             int[] resblockKernelSizes,
             int[] resblockDilationSizes,
             int[] upsampleRates,
-            int[] upsampleKernelSizes)
-            implements Config {
+            int[] upsampleKernelSizes) {
 
         /** The phoneme symbol table this model consumes - its token space. */
-        @Override
         public int vocabularySize() {
             return symbolCount;
         }
 
         /** The frame ceiling: a runaway log-duration must fail, not exhaust memory. */
-        @Override
         public int contextLength() {
             return MAX_FRAMES;
         }
@@ -517,7 +511,7 @@ public final class Inflect2 {
 
     // ── model ─────────────────────────────────────────────────────────────
 
-    public Configuration config() {
+    public Configuration configuration() {
         return cfg;
     }
 
@@ -537,27 +531,13 @@ public final class Inflect2 {
         return parameterCount;
     }
 
-    /**
-     * A state over {@code arena}; {@code adopt} makes {@code state.close()} free that arena. See
-     * {@link com.qxotic.jinfer.x.boundary.SpeechModel#newState(Arena, boolean)} for the ownership
-     * contract.
-     */
-    public State newState(Arena arena, boolean adopt) {
-        if (arena == null) throw new IllegalArgumentException("null arena");
-        return new State(arena, adopt ? arena : null);
-    }
-
     /** A state that owns its scratch: an internal shared arena freed by {@code close()}. */
     public State newState() {
-        Arena arena = Arenas.newCrossThread(); // ofAuto in a native image
+        MemoryArena<MemorySegment> arena = Arenas.newCrossThreadMemoryArena();
         try {
-            return newState(arena, true);
+            return new State(arena, arena);
         } catch (RuntimeException | Error e) {
-            try {
-                arena.close();
-            } catch (UnsupportedOperationException ignored) {
-                // ofAuto (native image) frees at GC
-            }
+            Arenas.close(arena);
             throw e;
         }
     }
@@ -568,8 +548,9 @@ public final class Inflect2 {
      * this state returns - the kernels read raw addresses, so a live read from a closed arena is a
      * crash, not an exception.
      */
-    public State newState(Arena arena) {
-        return newState(arena, false);
+    public State newState(MemoryArena<MemorySegment> arena) {
+        if (arena == null) throw new IllegalArgumentException("null arena");
+        return new State(arena, null);
     }
 
     /**
@@ -581,15 +562,10 @@ public final class Inflect2 {
      */
     public Media.Audio synthesize(
             State state, int[] tokens, float lengthScale, float variation, long seed) {
-        // Claims the state for this synthesis: a concurrent one fails fast, and a close waits for
+        // Holds the state for this synthesis: a concurrent one fails fast, and a close waits for
         // this to return rather than freeing the arena under the kernels. Reentrant, so a caller
         // (InflectTTS.speak) may hold it across a whole multi-chunk utterance.
-        state.enter();
-        try {
-            return synthesize0(state, tokens, lengthScale, variation, seed);
-        } finally {
-            state.exit();
-        }
+        return state.exclusively(() -> synthesize0(state, tokens, lengthScale, variation, seed));
     }
 
     private Media.Audio synthesize0(
@@ -1202,81 +1178,31 @@ public final class Inflect2 {
      * - which is also why this state can live in a native image heap. A dropped unclosed state
      * leaks its arena until exit; {@code -Djinfer.leakDetection} names the line that dropped it.
      */
-    public static final class State implements SpeechState {
+    public static final class State extends RuntimeState {
 
-        private final Arena owned; // null when borrowed: closing this state must not free it
-        private final PanamaMemoryArena allocator;
+        private final MemoryArena<MemorySegment>
+                owned; // null when borrowed: closing this state must not free it
+        private final MemoryArena<MemorySegment> allocator;
         private final Runnable disarm;
-        // One lock, three laws - the same contract BaseState carries for generative states:
-        // concurrent synthesis fails fast, close BLOCKS to quiescence, entry after close throws.
-        private final ReentrantLock lock = new ReentrantLock();
-        private final AtomicBoolean closed = new AtomicBoolean();
 
-        State(Arena arena, Arena owned) {
+        State(MemoryArena<MemorySegment> arena, MemoryArena<MemorySegment> owned) {
             this.owned = owned;
-            this.allocator = new PanamaMemoryArena(arena);
+            this.allocator = arena;
             // armed last: nothing above can throw, and a ctor throw must not read as a leak
             this.disarm = LeakWatch.arm(this, "Inflect2.State");
         }
 
-        /**
-         * Claims this state for a synthesis on the current thread (reentrant - one utterance may
-         * hold it across many chunks). Fails fast: another thread synthesizing -> {@link
-         * java.util.ConcurrentModificationException}; closed -> {@link IllegalStateException}.
-         */
-        void enter() {
-            if (closed.get()) throw new IllegalStateException("speech state is closed");
-            if (!lock.tryLock()) {
-                // the holder is either another synthesis (a contract violation) or the winning
-                // closer draining us; `closed` says which
-                if (closed.get()) throw new IllegalStateException("speech state is closed");
-                throw new ConcurrentModificationException(
-                        "a speech state is a single serial pipeline (one synthesis at a time) -"
-                                + " for parallel pipelines create one state each");
-            }
-            if (closed.get()) { // barged the non-fair lock ahead of a draining closer
-                lock.unlock();
-                throw new IllegalStateException("speech state is closed");
-            }
-        }
-
-        /** Releases one {@link #enter} claim. */
-        void exit() {
-            lock.unlock();
-        }
-
-        /** True once {@link #close} has been called; entries then fail loudly. */
-        public boolean isClosed() {
-            return closed.get();
-        }
-
-        /**
-         * Idempotent, BLOCKING close: returns only after the in-flight synthesis (if any) has
-         * finished, then frees the arena iff this state owns it. Its returning is therefore the
-         * caller's quiescence certificate - closing DURING a synthesis is safe, because it waits
-         * rather than freeing memory the kernels are reading. After close every entry fails with
-         * {@link IllegalStateException}. Racing closers return immediately (the CAS winner waits);
-         * closing from within this state's own synthesis throws instead of self-freeing.
-         */
         @Override
-        public void close() {
-            if (lock.isHeldByCurrentThread()) {
-                throw new IllegalStateException(
-                        "cannot close a speech state from within its own synthesis");
-            }
-            if (!closed.compareAndSet(false, true)) return; // Arena.close is one-shot
-            lock.lock(); // BLOCKS until the in-flight synthesis returns
-            try {
-                disarm.run();
-                if (owned == null) return;
-                try {
-                    owned.close();
-                } catch (UnsupportedOperationException nonCloseable) {
-                    // an adopted ofAuto/global manages itself: owning it means nothing to free
-                }
-            } finally {
-                lock.unlock();
-            }
+        protected void checkResourcesAlive() {
+            if (!allocator.isAlive())
+                throw new IllegalStateException("the speech state's arena has been closed");
+        }
+
+        @Override
+        protected void releaseResources() {
+            disarm.run();
+            if (owned == null) return;
+            Arenas.close(owned);
         }
 
         private MemoryView<MemorySegment> columns, product, taps;

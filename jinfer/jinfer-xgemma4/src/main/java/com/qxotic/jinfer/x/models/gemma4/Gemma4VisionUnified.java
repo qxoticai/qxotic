@@ -1,17 +1,18 @@
 package com.qxotic.jinfer.x.models.gemma4;
 
 import com.qxotic.format.gguf.GGUF;
-import com.qxotic.jinfer.x.PanamaMemoryArena;
 import com.qxotic.jinfer.x.Parallel;
 import com.qxotic.jinfer.x.Views;
-import com.qxotic.jinfer.x.boundary.Embedder;
+import com.qxotic.jinfer.x.boundary.Arenas;
 import com.qxotic.jinfer.x.boundary.Media;
+import com.qxotic.jinfer.x.boundary.MediaProjector;
 import com.qxotic.jinfer.x.kernels.MatMul;
 import com.qxotic.jinfer.x.kernels.ModelLoader;
 import com.qxotic.jinfer.x.kernels.Norms;
 import com.qxotic.jinfer.x.kernels.Ops;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Shape;
+import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import java.io.IOException;
 import java.lang.foreign.Arena;
@@ -24,7 +25,7 @@ import java.util.Objects;
 import java.util.function.Consumer;
 
 /** Gemma 4 unified vision projector ({@code projector_type=gemma4uv}). */
-public final class Gemma4VisionUnified implements Embedder<Media.Image> {
+public final class Gemma4VisionUnified implements MediaProjector<Media.Image> {
     static final float LAYER_NORM_EPS = 1e-5f;
 
     private final int patchSize, visionDim, modelDim, positionSize, patchVector;
@@ -93,12 +94,13 @@ public final class Gemma4VisionUnified implements Embedder<Media.Image> {
         return Math.multiplyExact(size[0] / patchSize, size[1] / patchSize);
     }
 
-    String planId() {
+    @Override
+    public String planId() {
         return "gemma4uv patch=" + patchSize + " positions=" + positionSize;
     }
 
     @Override
-    public void embed(Media.Image image, int maxChunkSize, Consumer<MemoryView<?>> sink) {
+    public void project(Media.Image image, int maxChunkSize, Consumer<MemoryView<?>> sink) {
         Objects.requireNonNull(image, "image");
         Objects.requireNonNull(sink, "sink");
         if (maxChunkSize <= 0) throw new IllegalArgumentException("maxChunkSize must be positive");
@@ -110,14 +112,17 @@ public final class Gemma4VisionUnified implements Embedder<Media.Image> {
                             + count
                             + " projected rows, exceeding maxChunkSize "
                             + maxChunkSize);
-        try (Arena arena = Arena.ofShared()) {
-            MemoryView<MemorySegment> rows = encode(image, new PanamaMemoryArena(arena), size);
+        MemoryArena<MemorySegment> scratch = Arenas.newCrossThreadMemoryArena();
+        try {
+            MemoryView<MemorySegment> rows = encode(image, scratch, size);
             sink.accept(rows);
+        } finally {
+            Arenas.close(scratch);
         }
     }
 
     private MemoryView<MemorySegment> encode(
-            Media.Image image, PanamaMemoryArena scratch, int[] size) {
+            Media.Image image, MemoryArena<MemorySegment> scratch, int[] size) {
         int targetWidth = size[0], targetHeight = size[1];
         int patchesX = targetWidth / patchSize;
         int patchesY = targetHeight / patchSize;

@@ -3,31 +3,33 @@ package com.qxotic.jinfer.x.models.llama;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import com.qxotic.jinfer.x.PanamaMemoryArena;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import org.junit.jupiter.api.Test;
 
-final class GraniteStateCodecTest {
+final class GraniteCheckpointCodecTest {
 
     @Test
     void restoresAChainByteExactly() {
-        GraniteStateCodec codec = new GraniteStateCodec(config());
-        assertEquals(0, codec.checkpointBytes(0), "rows alone resume, no residue");
-        assertEquals(32, codec.checkpointBytes(2));
-        assertEquals(64, codec.checkpointBytes(4));
+        GraniteCheckpointCodec codec = new GraniteCheckpointCodec(config());
+        assertEquals(0, codec.byteSize(0), "rows alone resume, no residue");
+        assertEquals(32, codec.byteSize(2));
+        assertEquals(64, codec.byteSize(4));
 
         try (Arena arena = Arena.ofConfined()) {
-            MemorySegment first = patterned(arena, codec.checkpointBytes(2), 11);
-            MemorySegment second = patterned(arena, codec.checkpointBytes(2), 71);
-            MemorySegment actual = arena.allocate(codec.checkpointBytes(4), 64);
-            MemorySegment expected = arena.allocate(codec.checkpointBytes(4), 64);
-            Granite.State state = new Granite.State(config(), 8, 4, arena);
+            MemorySegment first = patterned(arena, codec.byteSize(2), 11);
+            MemorySegment second = patterned(arena, codec.byteSize(2), 71);
+            MemorySegment actual = arena.allocate(codec.byteSize(4), 64);
+            MemorySegment expected = arena.allocate(codec.byteSize(4), 64);
+            Granite.State state =
+                    new Granite.State(config(), 8, 4, new PanamaMemoryArena(arena), false);
 
-            codec.restoreCheckpoint(state, 0, 2, first);
-            codec.restoreCheckpoint(state, 2, 4, second);
+            codec.restore(state, 0, 2, first);
+            codec.restore(state, 2, 4, second);
             state.resumeAt(4);
-            codec.saveCheckpoint(state, 0, 4, actual);
+            codec.capture(state, 0, 4, actual);
 
             // each checkpoint chunk is L0 K,V then L1 K,V (8B each at kvDim 2); the full-span
             // save writes L0 K[0,4), L0 V[0,4), L1 K[0,4), L1 V[0,4)
@@ -45,21 +47,17 @@ final class GraniteStateCodecTest {
 
     @Test
     void rejectsInvalidSpansSizesAndSaveEndpoints() {
-        GraniteStateCodec codec = new GraniteStateCodec(config());
+        GraniteCheckpointCodec codec = new GraniteCheckpointCodec(config());
         try (Arena arena = Arena.ofConfined()) {
-            Granite.State state = new Granite.State(config(), 8, 4, arena);
-            MemorySegment block = arena.allocate(codec.checkpointBytes(2), 64);
+            Granite.State state =
+                    new Granite.State(config(), 8, 4, new PanamaMemoryArena(arena), false);
+            MemorySegment block = arena.allocate(codec.byteSize(2), 64);
+            assertThrows(IllegalArgumentException.class, () -> codec.restore(state, -1, 1, block));
+            assertThrows(IllegalArgumentException.class, () -> codec.restore(state, 0, 9, block));
             assertThrows(
                     IllegalArgumentException.class,
-                    () -> codec.restoreCheckpoint(state, -1, 1, block));
-            assertThrows(
-                    IllegalArgumentException.class,
-                    () -> codec.restoreCheckpoint(state, 0, 9, block));
-            assertThrows(
-                    IllegalArgumentException.class,
-                    () -> codec.restoreCheckpoint(state, 0, 2, block.asSlice(1)));
-            assertThrows(
-                    IllegalStateException.class, () -> codec.saveCheckpoint(state, 0, 2, block));
+                    () -> codec.restore(state, 0, 2, block.asSlice(1)));
+            assertThrows(IllegalStateException.class, () -> codec.capture(state, 0, 2, block));
         }
     }
 

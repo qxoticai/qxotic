@@ -1,15 +1,15 @@
 package com.qxotic.jinfer.x.models.maple;
 
-import com.qxotic.jinfer.x.boundary.StateCodec;
+import com.qxotic.jinfer.x.boundary.CheckpointCodec;
 import com.qxotic.jinfer.x.kernels.KvTransfer;
 import java.lang.foreign.MemorySegment;
 
 /** Checkpoint codec for Maple's sliding-window and global F16 KV rows. */
-final class MapleStateCodec implements StateCodec<Maple.State> {
+final class MapleCheckpointCodec extends CheckpointCodec<Maple.State> {
     private final Maple.Configuration config;
     private final long bytesPerPosition;
 
-    MapleStateCodec(Maple.Configuration config) {
+    MapleCheckpointCodec(Maple.Configuration config) {
         this.config = config;
         bytesPerPosition =
                 Math.multiplyExact(
@@ -17,23 +17,13 @@ final class MapleStateCodec implements StateCodec<Maple.State> {
     }
 
     @Override
-    public long checkpointBytes(int positions) {
-        if (positions < 0) throw new IllegalArgumentException("positions " + positions);
+    protected long sizeOf(int positions) {
         return Math.multiplyExact((long) positions, bytesPerPosition);
     }
 
     @Override
-    public void saveCheckpoint(Maple.State state, int from, int to, MemorySegment destination) {
-        transfer(state, from, to, destination, true);
-    }
-
-    @Override
-    public void restoreCheckpoint(Maple.State state, int from, int to, MemorySegment source) {
-        transfer(state, from, to, source, false);
-    }
-
-    private void transfer(Maple.State state, int from, int to, MemorySegment blob, boolean save) {
-        StateCodec.requireCheckpoint(this, state, from, to, blob, save);
+    protected void transfer(
+            Maple.State state, int from, int to, MemorySegment blob, boolean capture) {
         long offset = 0;
         int kvDim = config.kvDim();
         for (int layer = 0; layer < config.numberOfLayers(); layer++) {
@@ -47,7 +37,7 @@ final class MapleStateCodec implements StateCodec<Maple.State> {
                                 kvDim,
                                 blob,
                                 offset,
-                                save);
+                                capture);
                 offset +=
                         KvTransfer.ringSpan(
                                 state.valueCache[layer],
@@ -57,13 +47,18 @@ final class MapleStateCodec implements StateCodec<Maple.State> {
                                 kvDim,
                                 blob,
                                 offset,
-                                save);
+                                capture);
             } else {
                 long elements = Math.multiplyExact((long) (to - from), kvDim);
                 long elementOffset = Math.multiplyExact((long) from, kvDim);
                 offset +=
                         KvTransfer.transfer(
-                                state.keyCache[layer], elementOffset, blob, offset, elements, save);
+                                state.keyCache[layer],
+                                elementOffset,
+                                blob,
+                                offset,
+                                elements,
+                                capture);
                 offset +=
                         KvTransfer.transfer(
                                 state.valueCache[layer],
@@ -71,7 +66,7 @@ final class MapleStateCodec implements StateCodec<Maple.State> {
                                 blob,
                                 offset,
                                 elements,
-                                save);
+                                capture);
             }
         }
     }

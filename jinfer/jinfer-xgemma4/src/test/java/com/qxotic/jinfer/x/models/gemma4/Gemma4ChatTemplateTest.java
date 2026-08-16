@@ -10,9 +10,9 @@ import com.qxotic.jinfer.testkit.TestModels;
 import com.qxotic.jinfer.x.PanamaMemoryArena;
 import com.qxotic.jinfer.x.Views;
 import com.qxotic.jinfer.x.boundary.Batch;
-import com.qxotic.jinfer.x.boundary.Embedder;
 import com.qxotic.jinfer.x.boundary.Media;
-import com.qxotic.jinfer.x.boundary.MultiModal;
+import com.qxotic.jinfer.x.boundary.MediaProjector;
+import com.qxotic.jinfer.x.boundary.Multimodal;
 import com.qxotic.jinfer.x.chat.Channel;
 import com.qxotic.jinfer.x.chat.ChatTemplate;
 import com.qxotic.jinfer.x.chat.Content;
@@ -32,7 +32,6 @@ import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
@@ -89,7 +88,7 @@ final class Gemma4ChatTemplateTest {
                                 new Content.Text(".")));
 
         try (Arena arena = Arena.ofConfined()) {
-            MultiModal media = new TestMedia(arena);
+            Multimodal media = new TestMedia(arena);
             Gemma4ChatTemplate template = new Gemma4ChatTemplate(tokenizer, media, false);
             List<Batch> batches = new ArrayList<>();
             template.encode(new Conversation(List.of(message)), 4, batches::add);
@@ -194,27 +193,23 @@ final class Gemma4ChatTemplateTest {
         }
     }
 
-    private record TestMedia(Arena arena, AtomicInteger projections) implements MultiModal {
+    private record TestMedia(Arena arena, AtomicInteger projections) implements Multimodal {
         private TestMedia(Arena arena) {
             this(arena, new AtomicInteger());
         }
 
         @Override
-        public Set<Class<? extends Media>> modalities() {
-            return Set.of(Media.Image.class, Media.Audio.class);
-        }
-
-        @Override
         @SuppressWarnings("unchecked")
-        public <R extends Media> Optional<Embedder<R>> embedder(Class<R> modality) {
-            if (!modalities().contains(modality)) return Optional.empty();
+        public <R extends Media> Optional<MediaProjector<R>> projector(Class<R> modality) {
+            if (modality != Media.Image.class && modality != Media.Audio.class)
+                return Optional.empty();
             int rows = modality == Media.Image.class ? 2 : 1;
-            Embedder<R> embedder =
+            MediaProjector<R> projector =
                     (source, maxChunkSize, sink) -> {
                         projections.incrementAndGet();
                         sink.accept(Views.allocateF32(new PanamaMemoryArena(arena), rows, 3));
                     };
-            return Optional.of(embedder);
+            return Optional.of(projector);
         }
     }
 }

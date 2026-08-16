@@ -10,11 +10,12 @@ package com.qxotic.jinfer.x.models.llama;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.x.Parallel;
 import com.qxotic.jinfer.x.Views;
-import com.qxotic.jinfer.x.boundary.BaseState;
+import com.qxotic.jinfer.x.boundary.Arenas;
 import com.qxotic.jinfer.x.boundary.Batch;
-import com.qxotic.jinfer.x.boundary.Config;
+import com.qxotic.jinfer.x.boundary.CheckpointCodec;
+import com.qxotic.jinfer.x.boundary.ContextConfiguration;
+import com.qxotic.jinfer.x.boundary.ContextState;
 import com.qxotic.jinfer.x.boundary.LanguageModel;
-import com.qxotic.jinfer.x.boundary.StateCodec;
 import com.qxotic.jinfer.x.kernels.Activations;
 import com.qxotic.jinfer.x.kernels.Convert;
 import com.qxotic.jinfer.x.kernels.FlashAttention;
@@ -25,12 +26,14 @@ import com.qxotic.jinfer.x.kernels.Ops;
 import com.qxotic.jinfer.x.kernels.RoPE;
 import com.qxotic.jinfer.x.kernels.Trace;
 import com.qxotic.jota.DataType;
+import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.lang.ref.Reference;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -51,7 +54,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
     }
 
     @Override
-    public Configuration config() {
+    public Configuration configuration() {
         return configuration;
     }
 
@@ -65,32 +68,49 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
     }
 
     @Override
-    public Optional<StateCodec<State>> stateCodec() {
-        return Optional.of(new LlamaStateCodec(configuration));
+    public Optional<CheckpointCodec<State>> checkpointCodec() {
+        return Optional.of(new LlamaCheckpointCodec(configuration));
     }
 
     @Override
-    public State newState(int contextCapacity, int batchCapacity, Arena arena) {
-        return new State(configuration, contextCapacity, batchCapacity, arena);
+    public State newState(
+            int contextCapacity, int batchCapacity, MemoryArena<MemorySegment> arena) {
+        return new State(configuration, contextCapacity, batchCapacity, arena, false);
     }
 
     @Override
-    public void forward(State s, Batch batch) {
+    public State newState(int contextCapacity, int batchCapacity) {
+        MemoryArena<MemorySegment> arena = Arenas.newCrossThreadMemoryArena();
+        try {
+            return new State(configuration, contextCapacity, batchCapacity, arena, true);
+        } catch (RuntimeException | Error failure) {
+            Arenas.close(arena);
+            throw failure;
+        }
+    }
+
+    @Override
+    public void ingest(State s, Batch batch) {
+        s.exclusively(() -> forward(s, batch));
+        Reference.reachabilityFence(this);
+    }
+
+    private void forward(State s, Batch batch) {
         int n = batch.count();
         if (n <= 0) throw new IllegalArgumentException("Llama token batch must not be empty");
-        if (n > s.batchCapacity) {
+        if (n > s.batchCapacity()) {
             throw new IllegalArgumentException(
-                    "batch " + n + " exceeds batchCapacity " + s.batchCapacity);
+                    "batch " + n + " exceeds batchCapacity " + s.batchCapacity());
         }
         int from = s.position();
-        if (from + n > s.contextCapacity) {
+        if (from + n > s.contextCapacity()) {
             throw new IllegalArgumentException(
                     "ingest of "
                             + n
                             + " at position "
                             + from
                             + " exceeds contextCapacity "
-                            + s.contextCapacity);
+                            + s.contextCapacity());
         }
         int[] ids =
                 switch (batch.input()) {
@@ -114,15 +134,21 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                         return null;
                     });
         else forward(s, ids, from, n);
-        s.advance(n, batch.outputs());
+        s.advance(batch);
     }
 
     @Override
-    public MemoryView<?> head(State s, int output) {
-        if (output < 0 || output >= s.outputCount)
+    public MemoryView<?> logits(State s, int output) {
+        MemoryView<?> result = s.exclusively(() -> projectLogits(s, output));
+        Reference.reachabilityFence(this);
+        return result;
+    }
+
+    private MemoryView<?> projectLogits(State s, int output) {
+        if (output < 0 || output >= s.outputCount())
             throw new IllegalArgumentException("output " + output + " outside retained outputs");
         int dim = configuration.embeddingLength;
-        int row = s.lastChunkLen - s.outputCount + output;
+        int row = s.lastBatchSize() - s.outputCount() + output;
         return Parallel.onDecodePool(
                 () -> {
                     tailAt(s, row); // finish the deferred last-layer tail for this row -> s.th
@@ -146,7 +172,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
 
     // === Forward ===
 
-    void forward(State state, int[] tokens, int startPos, int seqLen) {
+    private void forward(State state, int[] tokens, int startPos, int seqLen) {
         Configuration config = configuration;
         Weights w = weights;
         // ONCE for the batch: an angle depends on the position and the schedule, never on the
@@ -249,7 +275,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
         float eps = config.rmsNormEps,
                 residScale = config.residualScale,
                 attScale = config.attentionScale();
-        int startPos = state.position - state.lastChunkLen; // global position of chunk row 0
+        int startPos = state.position() - state.lastBatchSize(); // global position of chunk row 0
         int pos = startPos + i; // global position of row i
 
         // pre-norm reads residual[i] directly (read-only)
@@ -443,7 +469,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
             int attnTempFloorScale,
             float attentionScaleValue,
             int noRopeLayerStep)
-            implements Config {
+            implements ContextConfiguration {
         public int queryDim() {
             return numberOfHeads * headSize;
         }
@@ -505,8 +531,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
 
     // === State ===
 
-    public static final class State extends BaseState {
-        final int contextCapacity, batchCapacity;
+    public static final class State extends ContextState {
 
         /** The residual stream every block adds back into. */
         final MemoryView<MemorySegment> residual;
@@ -543,13 +568,20 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
 
         /** Recycles this allocation: cursor to 0; stale KV rows beyond it are attention-masked. */
         @Override
-        public void reset() {
-            resumeAt(0);
+        protected void clearHistory() {}
+
+        private void advance(Batch batch) {
+            advanceContext(batch.count(), batch.outputs());
         }
 
         @SuppressWarnings("unchecked")
-        State(Configuration config, int contextCapacity, int batchCapacity, Arena arena) {
-            super(arena);
+        State(
+                Configuration config,
+                int contextCapacity,
+                int batchCapacity,
+                MemoryArena<MemorySegment> arena,
+                boolean ownsArena) {
+            super(contextCapacity, batchCapacity, arena, ownsArena);
             if (contextCapacity <= 0 || contextCapacity > config.contextLength()) {
                 throw new IllegalArgumentException(
                         "contextCapacity "
@@ -560,8 +592,6 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
             }
             if (batchCapacity <= 0)
                 throw new IllegalArgumentException("batchCapacity " + batchCapacity);
-            this.contextCapacity = contextCapacity;
-            this.batchCapacity = batchCapacity;
             int c = batchCapacity;
             int dim = config.embeddingLength;
             int queryDim = config.queryDim();
@@ -588,16 +618,6 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                 keyCache[l] = Views.allocateF16(memoryArena(), contextCapacity, kvDim);
                 valueCache[l] = Views.allocateF16(memoryArena(), contextCapacity, kvDim);
             }
-        }
-
-        @Override
-        public int contextCapacity() {
-            return contextCapacity;
-        }
-
-        @Override
-        public int batchCapacity() {
-            return batchCapacity;
         }
     }
 

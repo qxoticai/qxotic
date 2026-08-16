@@ -1,5 +1,4 @@
-// LFM2.5 (Liquid Foundation Model 2.5) against the MemoryView boundary: a call-site-by-call-site
-// port of jinfer-lfm2's Lfm2 (cycle 1 of the FloatTensor migration). Each layer is EITHER GQA
+// LFM2.5 (Liquid Foundation Model 2.5) against the MemoryView boundary. Each layer is EITHER GQA
 // attention (kv-heads > 0) OR a gated short-convolution mixer (kv-heads == 0); the FFN is EITHER
 // dense SwiGLU OR top-k MoE. Weights/state/KV are MemoryView<MemorySegment>; kernels are the x
 // statics; gemm/gemv entry shims resolve to x.MatMul.mm here (the old virtuals'). An optional
@@ -9,15 +8,16 @@ package com.qxotic.jinfer.x.models.lfm2;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.x.Parallel;
 import com.qxotic.jinfer.x.Views;
-import com.qxotic.jinfer.x.boundary.BaseState;
+import com.qxotic.jinfer.x.boundary.Arenas;
 import com.qxotic.jinfer.x.boundary.Batch;
-import com.qxotic.jinfer.x.boundary.Config;
-import com.qxotic.jinfer.x.boundary.Embedder;
+import com.qxotic.jinfer.x.boundary.CheckpointCodec;
+import com.qxotic.jinfer.x.boundary.ContextConfiguration;
+import com.qxotic.jinfer.x.boundary.ContextState;
 import com.qxotic.jinfer.x.boundary.EmbeddingModel;
 import com.qxotic.jinfer.x.boundary.LanguageModel;
 import com.qxotic.jinfer.x.boundary.Media;
-import com.qxotic.jinfer.x.boundary.MultiModal;
-import com.qxotic.jinfer.x.boundary.StateCodec;
+import com.qxotic.jinfer.x.boundary.MediaProjector;
+import com.qxotic.jinfer.x.boundary.Multimodal;
 import com.qxotic.jinfer.x.kernels.Activations;
 import com.qxotic.jinfer.x.kernels.Convert;
 import com.qxotic.jinfer.x.kernels.Convolutions;
@@ -31,12 +31,14 @@ import com.qxotic.jinfer.x.kernels.RoPE;
 import com.qxotic.jinfer.x.kernels.Trace;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.memory.MemoryAllocator;
+import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.lang.ref.Reference;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -44,13 +46,12 @@ import java.util.Arrays;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 import java.util.function.Consumer;
 
 public final class Lfm2
         implements LanguageModel<Lfm2.Configuration, Lfm2.Weights, Lfm2.State>,
                 EmbeddingModel<Lfm2.Configuration, Lfm2.Weights, Lfm2.State>,
-                MultiModal {
+                Multimodal {
 
     /** llama.cpp's pooling_type enum value for CLS - pool the sequence's FIRST row (its BOS). */
     static final int POOLING_CLS = 2;
@@ -76,7 +77,7 @@ public final class Lfm2
     }
 
     @Override
-    public Configuration config() {
+    public Configuration configuration() {
         return configuration;
     }
 
@@ -90,15 +91,10 @@ public final class Lfm2
     }
 
     @Override
-    public Set<Class<? extends Media>> modalities() {
-        return vision == null ? Set.of() : Set.of(Media.Image.class);
-    }
-
-    @Override
     @SuppressWarnings("unchecked")
-    public <R extends Media> Optional<Embedder<R>> embedder(Class<R> modality) {
+    public <R extends Media> Optional<MediaProjector<R>> projector(Class<R> modality) {
         if (modality == Media.Image.class && vision != null)
-            return Optional.of((Embedder<R>) vision);
+            return Optional.of((MediaProjector<R>) vision);
         return Optional.empty();
     }
 
@@ -107,35 +103,48 @@ public final class Lfm2
     }
 
     @Override
-    public String encodePlanId() {
-        return vision == null ? "" : "lfm2-media-v1 " + vision.planId();
+    public Optional<CheckpointCodec<State>> checkpointCodec() {
+        return Optional.of(new Lfm2CheckpointCodec(configuration));
     }
 
     @Override
-    public Optional<StateCodec<State>> stateCodec() {
-        return Optional.of(new Lfm2StateCodec(configuration));
+    public State newState(
+            int contextCapacity, int batchCapacity, MemoryArena<MemorySegment> arena) {
+        return new State(configuration, contextCapacity, batchCapacity, arena, false);
     }
 
     @Override
-    public State newState(int contextCapacity, int batchCapacity, Arena arena) {
-        return new State(configuration, contextCapacity, batchCapacity, arena);
+    public State newState(int contextCapacity, int batchCapacity) {
+        MemoryArena<MemorySegment> arena = Arenas.newCrossThreadMemoryArena();
+        try {
+            return new State(configuration, contextCapacity, batchCapacity, arena, true);
+        } catch (RuntimeException | Error failure) {
+            Arenas.close(arena);
+            throw failure;
+        }
     }
 
     @Override
-    public void forward(State s, Batch batch) {
+    public void ingest(State state, Batch batch) {
+        state.exclusively(() -> forward(state, batch));
+        Reference.reachabilityFence(this);
+    }
+
+    private void forward(State s, Batch batch) {
         int n = batch.count();
-        if (n > s.batchCapacity)
+        if (n <= 0) throw new IllegalArgumentException("batch must not be empty");
+        if (n > s.batchCapacity())
             throw new IllegalArgumentException(
-                    "batch " + n + " exceeds batchCapacity " + s.batchCapacity);
+                    "batch " + n + " exceeds batchCapacity " + s.batchCapacity());
         int from = s.position();
-        if (from + n > s.contextCapacity) {
+        if (from + n > s.contextCapacity()) {
             throw new IllegalArgumentException(
                     "ingest of "
                             + n
                             + " at position "
                             + from
                             + " exceeds contextCapacity "
-                            + s.contextCapacity);
+                            + s.contextCapacity());
         }
         switch (batch.input()) {
             case Batch.Input.Tokens t -> {
@@ -173,13 +182,18 @@ public final class Lfm2
                         e.bidirectional());
             }
         }
-        s.advance(n, batch.outputs());
+        s.advance(batch);
     }
 
     @Override
-    public MemoryView<?> head(State s, int output) {
+    public MemoryView<?> logits(State s, int output) {
+        return s.exclusively(() -> projectLogits(s, output));
+    }
+
+    private MemoryView<?> projectLogits(State s, int output) {
+        requireOutput(s, output);
         int dim = configuration.embeddingLength;
-        int row = s.lastChunkLen - s.outputCount + output;
+        int row = s.lastBatchSize() - s.outputCount() + output;
         return Parallel.onDecodePool(
                 () -> {
                     Norms.rmsnorm(
@@ -203,7 +217,7 @@ public final class Lfm2
 
     // === Forward ===
 
-    void forward(State state, int[] tokens, int tokenOffset, int startPos, int seqLen) {
+    private void forward(State state, int[] tokens, int tokenOffset, int startPos, int seqLen) {
         // ONCE for the batch: an angle never depends on the layer
         RoPE.fill(
                 state.ropeCos,
@@ -703,14 +717,24 @@ public final class Lfm2
     }
 
     /**
-     * The sentence embedding: final-norm the pooled row, L2-normalize - CLS pooling reads the
-     * sequence's FIRST retained row (its BOS). {@code index} addresses retained rows exactly as
-     * {@code logits}' output does. The returned view is a REUSED per-state buffer.
+     * The sentence embedding: final-norm the pooled row, then L2-normalize. CLS pooling reads the
+     * sequence's first retained row (its BOS); {@code outputIndex} addresses retained rows exactly
+     * as {@code logits} does.
      */
     @Override
-    public MemoryView<?> pool(State s, int index) {
+    public void projectEmbedding(State s, int outputIndex, Consumer<MemoryView<?>> consumer) {
+        Objects.requireNonNull(consumer, "consumer");
+        try {
+            s.exclusively(() -> consumer.accept(projectEmbedding0(s, outputIndex)));
+        } finally {
+            Reference.reachabilityFence(this);
+        }
+    }
+
+    private MemoryView<?> projectEmbedding0(State s, int outputIndex) {
+        requireOutput(s, outputIndex);
         int dim = configuration.embeddingLength;
-        int row = s.lastChunkLen - s.outputCount + index;
+        int row = s.lastBatchSize() - s.outputCount() + outputIndex;
         MemoryView<MemorySegment> out = s.embedScratch(configuration).embOut;
         Norms.rmsnorm(
                 out,
@@ -725,6 +749,12 @@ public final class Lfm2
         return out;
     }
 
+    private static void requireOutput(State state, int output) {
+        if (output < 0 || output >= state.outputCount())
+            throw new IllegalArgumentException(
+                    "output " + output + " outside [0," + state.outputCount() + ")");
+    }
+
     /** {@code 1/||t[0..n)||}, or 0 for a zero vector - the shared L2-normalization factor. */
     private static float l2Inv(MemoryView<MemorySegment> t, int n) {
         float ss = Norms.sumOfSquares(t, 0, n);
@@ -735,9 +765,8 @@ public final class Lfm2
      * The ColBERT per-token read for one retained row (LFM2.5-ColBERT): final-norm, {@code dense_2}
      * projection to {@code embeddingLengthOut}, L2-normalized - what llama.cpp's {@code
      * build_dense_out} does to {@code t_embd}, plus the client-side normalize the reference stack
-     * applies before MaxSim. The returned view is a REUSED per-state buffer (the {@link #pool}
-     * contract): valid until the next {@code colbertRow}/{@code pool} call - the caller copies it
-     * out per row. (The ColBERT face class itself is not part of this slice.)
+     * applies before MaxSim. The returned view is a reused per-state buffer, so the caller copies
+     * it before projecting another row.
      */
     MemoryView<?> colbertRow(State s, int row) {
         int dim = configuration.embeddingLength;
@@ -763,7 +792,10 @@ public final class Lfm2
      * sequence boundaries. Emits each sequence's CLS (first-row) embedding, in input order.
      */
     @Override
-    public void embed(State state, Batch.Input.Sequences seqs, Consumer<MemoryView<?>> sink) {
+    public void embedAll(State state, Batch.Input.Sequences seqs, Consumer<MemoryView<?>> sink) {
+        Objects.requireNonNull(seqs, "sequences");
+        Objects.requireNonNull(sink, "sink");
+        requireComplete(seqs);
         if (!configuration.isEmbedder())
             throw new UnsupportedOperationException(
                     "this LFM2.5 checkpoint is not an embedder - load LFM2.5-Embedding"
@@ -776,7 +808,22 @@ public final class Lfm2
         }
         // CLS: the sequence's FIRST row (its BOS)
         forEachSequence(
-                state, sequences, (index, rowStart) -> sink.accept(embedding(state, rowStart)));
+                state, sequences, (index, rowStart) -> projectEmbedding(state, rowStart, sink));
+    }
+
+    private static void requireComplete(Batch.Input.Sequences sequences) {
+        long total = 0;
+        int[] lengths = sequences.seqLen();
+        for (int i = 0; i < lengths.length; i++) {
+            if (lengths[i] <= 0)
+                throw new IllegalArgumentException(
+                        "sequence " + i + " has invalid length " + lengths[i]);
+            total += lengths[i];
+        }
+        int tokens = sequences.tokens().ids().length;
+        if (total != tokens)
+            throw new IllegalArgumentException(
+                    "packed token count " + tokens + " != sequence lengths " + total);
     }
 
     /** Visits each sequence right after its group's forward, while its rows are still retained. */
@@ -790,40 +837,39 @@ public final class Lfm2
      * be forwarded WHOLE, so one over the cap refuses by name - resets the state per group (groups
      * are independent: positions and conv history restart), ingests with ALL outputs, and hands
      * each sequence to {@code visitor} with its first retained row. Returns the total token count.
-     * Claims the state once across all groups; the per-ingest claims nest inside.
+     * Holds the state once across all groups; per-ingest access nests inside.
      */
     int forEachSequence(State state, int[][] seqs, SequenceVisitor visitor) {
-        int cap = Math.min(state.batchCapacity, state.contextCapacity);
+        return state.exclusively(() -> forEachSequence0(state, seqs, visitor));
+    }
+
+    private int forEachSequence0(State state, int[][] seqs, SequenceVisitor visitor) {
+        int cap = Math.min(state.batchCapacity(), state.contextCapacity());
         int total = 0, seq = 0;
-        state.enter();
-        try {
-            while (seq < seqs.length) {
-                int end = seq, tokens = 0;
-                while (end < seqs.length && tokens + seqs[end].length <= cap) {
-                    tokens += seqs[end].length;
-                    end++;
-                }
-                if (end == seq)
-                    throw new IllegalArgumentException(
-                            "sequence "
-                                    + seq
-                                    + " is "
-                                    + seqs[seq].length
-                                    + " tokens and bidirectional attention forwards a sequence"
-                                    + " whole (the cap here is "
-                                    + cap
-                                    + ") - raise -Djinfer.batchCapacity/contextLength above it,"
-                                    + " or chunk the text smaller");
-                total += tokens;
-                state.reset();
-                ingest(state, Batch.pack(Arrays.copyOfRange(seqs, seq, end)));
-                for (int i = seq, row = 0; i < end; row += seqs[i].length, i++) {
-                    visitor.sequence(i, row);
-                }
-                seq = end;
+        while (seq < seqs.length) {
+            int end = seq, tokens = 0;
+            while (end < seqs.length && tokens + seqs[end].length <= cap) {
+                tokens += seqs[end].length;
+                end++;
             }
-        } finally {
-            state.exit();
+            if (end == seq)
+                throw new IllegalArgumentException(
+                        "sequence "
+                                + seq
+                                + " is "
+                                + seqs[seq].length
+                                + " tokens and bidirectional attention forwards a sequence"
+                                + " whole (the cap here is "
+                                + cap
+                                + ") - raise -Djinfer.batchCapacity/contextLength above it,"
+                                + " or chunk the text smaller");
+            total += tokens;
+            state.reset();
+            ingest(state, Batch.pack(Arrays.copyOfRange(seqs, seq, end)));
+            for (int i = seq, row = 0; i < end; row += seqs[i].length, i++) {
+                visitor.sequence(i, row);
+            }
+            seq = end;
         }
         return total;
     }
@@ -851,7 +897,7 @@ public final class Lfm2
             boolean causalAttention,
             int poolingType,
             int embeddingLengthOut)
-            implements Config {
+            implements ContextConfiguration {
 
         /** The widest attention kvDim, for scratch that must fit any layer. */
         public int maxKvDim() {
@@ -945,8 +991,7 @@ public final class Lfm2
 
     // === State ===
 
-    public static final class State extends BaseState {
-        final int contextCapacity, batchCapacity;
+    public static final class State extends ContextState {
 
         /**
          * The residual stream every block adds back into (old jinfer {@code residual}; llama.cpp
@@ -1016,7 +1061,7 @@ public final class Lfm2
 
         EmbedScratch embedScratch(Configuration config) {
             if (embedScratch == null)
-                embedScratch = new EmbedScratch(config, batchCapacity, memoryArena());
+                embedScratch = new EmbedScratch(config, batchCapacity(), memoryArena());
             return embedScratch;
         }
 
@@ -1027,8 +1072,7 @@ public final class Lfm2
          * conversation into the next one.
          */
         @Override
-        public void reset() {
-            resumeAt(0);
+        protected void clearHistory() {
             for (MemoryView<MemorySegment> conv : shortConvState) {
                 if (conv != null) {
                     Ops.fillInPlace(conv, 0, Math.toIntExact(conv.logicalSize()), 0f);
@@ -1037,8 +1081,13 @@ public final class Lfm2
         }
 
         @SuppressWarnings("unchecked")
-        State(Configuration config, int contextCapacity, int batchCapacity, Arena arena) {
-            super(arena);
+        State(
+                Configuration config,
+                int contextCapacity,
+                int batchCapacity,
+                MemoryArena<MemorySegment> arena,
+                boolean ownsArena) {
+            super(contextCapacity, batchCapacity, arena, ownsArena);
             if (contextCapacity > config.contextLength()) {
                 throw new IllegalArgumentException(
                         "contextCapacity "
@@ -1046,9 +1095,7 @@ public final class Lfm2
                                 + " exceeds model contextLength "
                                 + config.contextLength());
             }
-            this.contextCapacity = contextCapacity;
-            int c = Math.max(1, batchCapacity);
-            this.batchCapacity = c;
+            int c = batchCapacity;
             int dim = config.embeddingLength;
             int maxQueryDim = config.queryDim();
             int maxHiddenDim = config.maxHiddenDim();
@@ -1101,14 +1148,8 @@ public final class Lfm2
             }
         }
 
-        @Override
-        public int contextCapacity() {
-            return contextCapacity;
-        }
-
-        @Override
-        public int batchCapacity() {
-            return batchCapacity;
+        private void advance(Batch batch) {
+            advanceContext(batch.count(), batch.outputs());
         }
     }
 

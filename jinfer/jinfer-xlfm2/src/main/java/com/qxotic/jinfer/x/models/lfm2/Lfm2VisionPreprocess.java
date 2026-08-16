@@ -1,9 +1,9 @@
 package com.qxotic.jinfer.x.models.lfm2;
 
-import com.qxotic.jinfer.x.PanamaMemoryArena;
 import com.qxotic.jinfer.x.Parallel;
 import com.qxotic.jinfer.x.Views;
 import com.qxotic.jinfer.x.boundary.Media;
+import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;
@@ -185,7 +185,7 @@ final class Lfm2VisionPreprocess {
     }
 
     static MemoryView<MemorySegment> patches(
-            Media.Image image, int patchSize, PanamaMemoryArena scratch) {
+            Media.Image image, int patchSize, MemoryArena<MemorySegment> scratch) {
         int width = image.width(), height = image.height();
         if (patchSize <= 0 || width % patchSize != 0 || height % patchSize != 0)
             throw new IllegalArgumentException("image dimensions must be divisible by patchSize");

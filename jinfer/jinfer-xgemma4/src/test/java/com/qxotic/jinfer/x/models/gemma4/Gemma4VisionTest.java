@@ -54,9 +54,9 @@ class Gemma4VisionTest {
                     new Media.Image(new float[] {0.25f, 0.5f, 0.75f, 1f, 0f, 0.5f}, 1, 2, 3);
             assertEquals(2, vision.positions(image));
             assertThrows(
-                    IllegalArgumentException.class, () -> vision.embed(image, 1, ignored -> {}));
+                    IllegalArgumentException.class, () -> vision.project(image, 1, ignored -> {}));
             AtomicInteger calls = new AtomicInteger();
-            vision.embed(
+            vision.project(
                     image,
                     2,
                     rows -> {

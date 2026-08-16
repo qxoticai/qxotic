@@ -78,10 +78,11 @@ class Gemma4VisionComponentsTest {
                             tensor(weights, 2, 0f, 0f));
             Media.Image image = new Media.Image(new float[] {0.25f, 0.5f, 0.75f}, 1, 1, 3);
             assertEquals(49, projector.positions(image));
-            assertThrows(IllegalArgumentException.class, () -> projector.embed(image, 48, v -> {}));
+            assertThrows(
+                    IllegalArgumentException.class, () -> projector.project(image, 48, v -> {}));
 
             int[] rows = {0};
-            projector.embed(
+            projector.project(
                     image,
                     49,
                     chunk -> {

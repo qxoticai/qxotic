@@ -4,14 +4,15 @@ import com.qxotic.format.gguf.GGUF;
 import com.qxotic.format.gguf.TensorEntry;
 import com.qxotic.jinfer.x.Parallel;
 import com.qxotic.jinfer.x.Views;
-import com.qxotic.jinfer.x.boundary.BaseState;
+import com.qxotic.jinfer.x.boundary.Arenas;
 import com.qxotic.jinfer.x.boundary.Batch;
-import com.qxotic.jinfer.x.boundary.Config;
-import com.qxotic.jinfer.x.boundary.Embedder;
+import com.qxotic.jinfer.x.boundary.CheckpointCodec;
+import com.qxotic.jinfer.x.boundary.ContextConfiguration;
+import com.qxotic.jinfer.x.boundary.ContextState;
 import com.qxotic.jinfer.x.boundary.LanguageModel;
 import com.qxotic.jinfer.x.boundary.Media;
-import com.qxotic.jinfer.x.boundary.MultiModal;
-import com.qxotic.jinfer.x.boundary.StateCodec;
+import com.qxotic.jinfer.x.boundary.MediaProjector;
+import com.qxotic.jinfer.x.boundary.Multimodal;
 import com.qxotic.jinfer.x.kernels.Activations;
 import com.qxotic.jinfer.x.kernels.Convert;
 import com.qxotic.jinfer.x.kernels.FlashAttention;
@@ -30,6 +31,7 @@ import com.qxotic.jinfer.x.llm.SpeculativeDecoding.SpeculationAudit;
 import com.qxotic.jinfer.x.llm.SpeculativeDecoding.SpeculationResult;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.memory.MemoryAllocator;
+import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
@@ -44,18 +46,17 @@ import java.util.Arrays;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 
 /** Gemma4 inference against the MemoryView boundary. */
 public final class Gemma4
         implements LanguageModel<Gemma4.Configuration, Gemma4.Weights, Gemma4.State>,
-                MultiModal,
+                Multimodal,
                 SpeculativeDecoding<Gemma4.State> {
     private final Configuration configuration;
     private final Tokenizer tokenizer;
     private final Weights weights;
-    private final Embedder<Media.Image> vision;
-    private final Embedder<Media.Audio> audio;
+    private final MediaProjector<Media.Image> vision;
+    private final MediaProjector<Media.Audio> audio;
     private Gemma4Mtp mtp; // MTP draft sidecar; null unless attachMtp loaded one
 
     Gemma4(Configuration configuration, Tokenizer tokenizer, Weights weights) {
@@ -66,8 +67,8 @@ public final class Gemma4
             Configuration configuration,
             Tokenizer tokenizer,
             Weights weights,
-            Embedder<Media.Image> vision,
-            Embedder<Media.Audio> audio) {
+            MediaProjector<Media.Image> vision,
+            MediaProjector<Media.Audio> audio) {
         this.configuration = configuration;
         this.tokenizer = tokenizer;
         this.weights = weights;
@@ -76,13 +77,13 @@ public final class Gemma4
     }
 
     @Override
-    public Configuration config() {
+    public Configuration configuration() {
         return configuration;
     }
 
     @Override
-    public Optional<StateCodec<State>> stateCodec() {
-        return Optional.of(new Gemma4StateCodec(configuration));
+    public Optional<CheckpointCodec<State>> checkpointCodec() {
+        return Optional.of(new Gemma4CheckpointCodec(configuration));
     }
 
     @Override
@@ -95,69 +96,53 @@ public final class Gemma4
     }
 
     @Override
-    public Set<Class<? extends Media>> modalities() {
-        if (vision != null && audio != null) return Set.of(Media.Image.class, Media.Audio.class);
-        if (vision != null) return Set.of(Media.Image.class);
-        if (audio != null) return Set.of(Media.Audio.class);
-        return Set.of();
-    }
-
-    @Override
     @SuppressWarnings("unchecked")
-    public <R extends Media> Optional<Embedder<R>> embedder(Class<R> modality) {
+    public <R extends Media> Optional<MediaProjector<R>> projector(Class<R> modality) {
         if (modality == Media.Image.class && vision != null)
-            return Optional.of((Embedder<R>) vision);
-        if (modality == Media.Audio.class && audio != null) return Optional.of((Embedder<R>) audio);
+            return Optional.of((MediaProjector<R>) vision);
+        if (modality == Media.Audio.class && audio != null)
+            return Optional.of((MediaProjector<R>) audio);
         return Optional.empty();
     }
 
     @Override
-    public String encodePlanId() {
-        String visionPlan =
-                switch (vision) {
-                    case null -> "";
-                    case Gemma4Vision v -> v.planId();
-                    case Gemma4VisionUnified v -> v.planId();
-                    default -> vision.getClass().getName();
-                };
-        String audioPlan =
-                switch (audio) {
-                    case null -> "";
-                    case Gemma4Audio a -> a.planId();
-                    case Gemma4Conformer a -> a.planId();
-                    default -> audio.getClass().getName();
-                };
-        if (visionPlan.isEmpty() && audioPlan.isEmpty()) return "";
-        return "gemma4-media-v1 vision="
-                + visionPlan
-                + " audio="
-                + audioPlan
-                + " smartResize="
-                + VisionPreprocess.SMART_RESIZE
-                + " imageBudget="
-                + VisionPreprocess.budget(280);
+    public State newState(
+            int contextCapacity, int batchCapacity, MemoryArena<MemorySegment> arena) {
+        return new State(configuration, contextCapacity, batchCapacity, arena, false);
     }
 
     @Override
-    public State newState(int contextCapacity, int batchCapacity, Arena arena) {
-        return new State(configuration, contextCapacity, batchCapacity, arena);
+    public State newState(int contextCapacity, int batchCapacity) {
+        MemoryArena<MemorySegment> arena = Arenas.newCrossThreadMemoryArena();
+        try {
+            return new State(configuration, contextCapacity, batchCapacity, arena, true);
+        } catch (RuntimeException | Error failure) {
+            Arenas.close(arena);
+            throw failure;
+        }
     }
 
     @Override
-    public void forward(State state, Batch batch) {
+    public void ingest(State state, Batch batch) {
+        state.exclusively(() -> forward(state, batch));
+        Reference.reachabilityFence(this);
+    }
+
+    private void forward(State state, Batch batch) {
         int n = batch.count();
-        if (n > state.batchCapacity)
+        if (n <= 0) throw new IllegalArgumentException("batch must not be empty");
+        if (n > state.batchCapacity())
             throw new IllegalArgumentException(
-                    "batch " + n + " exceeds batchCapacity " + state.batchCapacity);
+                    "batch " + n + " exceeds batchCapacity " + state.batchCapacity());
         int from = state.position();
-        if (from + n > state.contextCapacity)
+        if (from + n > state.contextCapacity())
             throw new IllegalArgumentException(
                     "ingest of "
                             + n
                             + " at position "
                             + from
                             + " exceeds contextCapacity "
-                            + state.contextCapacity);
+                            + state.contextCapacity());
         switch (batch.input()) {
             case Batch.Input.Tokens t -> {
                 int[] ids = t.ids();
@@ -195,13 +180,20 @@ public final class Gemma4
                     throw new UnsupportedOperationException(
                             "Gemma4 is generative: packed sequences are not supported");
         }
-        state.advance(n, batch.outputs());
+        state.advance(batch);
     }
 
     @Override
-    public MemoryView<?> head(State state, int output) {
+    public MemoryView<?> logits(State state, int output) {
+        return state.exclusively(() -> projectLogits(state, output));
+    }
+
+    private MemoryView<?> projectLogits(State state, int output) {
+        if (output < 0 || output >= state.outputCount())
+            throw new IllegalArgumentException(
+                    "output " + output + " outside [0," + state.outputCount() + ")");
         int dim = configuration.embeddingLength;
-        int row = state.lastChunkLen - state.outputCount + output;
+        int row = state.lastBatchSize() - state.outputCount() + output;
         return Parallel.onDecodePool(
                 () -> {
                     Norms.rmsnorm(
@@ -235,8 +227,8 @@ public final class Gemma4
     void logitsAll(State state, MemoryView<MemorySegment> dst) {
         int dim = configuration.embeddingLength;
         int vocab = configuration.vocabularySize;
-        int n = state.outputCount;
-        int first = state.lastChunkLen - n;
+        int n = state.outputCount();
+        int first = state.lastBatchSize() - n;
         Parallel.onDecodePool(
                 () -> {
                     for (int r = 0; r < n; r++) {
@@ -256,7 +248,7 @@ public final class Gemma4
         Reference.reachabilityFence(state);
     }
 
-    void forward(State state, int[] tokens, int tokenOffset, int startPos, int seqLen) {
+    private void forward(State state, int[] tokens, int tokenOffset, int startPos, int seqLen) {
         fillRotaryTables(state, startPos, seqLen);
         embed(state, tokens, tokenOffset, seqLen);
         buildPerLayerInputs(state, tokens, tokenOffset, seqLen);
@@ -664,7 +656,7 @@ public final class Gemma4
             int expertCount,
             int expertUsedCount,
             int expertFeedForwardLength)
-            implements Config {
+            implements ContextConfiguration {
         public Configuration {
             if (slidingWindow <= 0 || Integer.bitCount(slidingWindow) != 1)
                 throw new IllegalArgumentException(
@@ -755,8 +747,7 @@ public final class Gemma4
             MemoryView<MemorySegment> perLayerModelProjection,
             MemoryView<MemorySegment> perLayerProjectionNorm) {}
 
-    public static final class State extends BaseState {
-        final int contextCapacity, batchCapacity;
+    public static final class State extends ContextState {
         final MemoryView<MemorySegment> residual, normed, branchOut, attnOut, query;
         final MemoryView<MemorySegment> hidden, hidden2, logits;
         final MemoryView<MemorySegment> ropeCosFull, ropeSinFull, ropeCosSwa, ropeSinSwa;
@@ -786,17 +777,20 @@ public final class Gemma4
         }
 
         @SuppressWarnings("unchecked")
-        State(Configuration c, int contextCapacity, int batchCapacity, Arena arena) {
-            super(arena);
+        State(
+                Configuration c,
+                int contextCapacity,
+                int batchCapacity,
+                MemoryArena<MemorySegment> arena,
+                boolean ownsArena) {
+            super(contextCapacity, batchCapacity, arena, ownsArena);
             if (contextCapacity > c.contextLength)
                 throw new IllegalArgumentException(
                         "contextCapacity "
                                 + contextCapacity
                                 + " exceeds model contextLength "
                                 + c.contextLength);
-            this.contextCapacity = contextCapacity;
-            this.batchCapacity = Math.max(1, batchCapacity);
-            int rows = this.batchCapacity, dim = c.embeddingLength;
+            int rows = batchCapacity, dim = c.embeddingLength;
             residual = Views.allocateF32(memoryArena(), rows * dim);
             normed = Views.allocateF32(memoryArena(), rows * dim);
             branchOut = Views.allocateF32(memoryArena(), rows * dim);
@@ -852,20 +846,12 @@ public final class Gemma4
             }
         }
 
-        @Override
-        public int contextCapacity() {
-            return contextCapacity;
+        private void advance(Batch batch) {
+            advanceContext(batch.count(), batch.outputs());
         }
 
         @Override
-        public int batchCapacity() {
-            return batchCapacity;
-        }
-
-        @Override
-        public void reset() {
-            resumeAt(0);
-        }
+        protected void clearHistory() {}
     }
 
     public static Gemma4 loadModel(Path path, Arena arena) throws IOException {
@@ -905,29 +891,30 @@ public final class Gemma4
      * visible as near-zero acceptance.)
      */
     public Gemma4 attachMtp(Path mtpSidecar, Arena arena) throws IOException {
-        Gemma4Mtp sidecar = Gemma4Mtp.loadSidecar(mtpSidecar, config().vocabularySize(), arena);
-        if (sidecar.config().backboneDim() != config().embeddingLength()) {
+        Gemma4Mtp sidecar =
+                Gemma4Mtp.loadSidecar(mtpSidecar, configuration().vocabularySize(), arena);
+        if (sidecar.configuration().backboneDim() != configuration().embeddingLength()) {
             throw new IllegalArgumentException(
                     mtpSidecar.getFileName()
                             + " drafts for a backbone with hidden width "
-                            + sidecar.config().backboneDim()
+                            + sidecar.configuration().backboneDim()
                             + ", but this model's is "
-                            + config().embeddingLength()
+                            + configuration().embeddingLength()
                             + " - it is the MTP head of a different gemma-4 size; use the sidecar"
                             + " published for this exact model");
         }
-        int ownKv = config().ownKvLayers();
+        int ownKv = configuration().ownKvLayers();
         int swaHead = ownKv >= 2 ? kvHeadSize(ownKv - 2) : -1;
         int fullHead = ownKv >= 1 ? kvHeadSize(ownKv - 1) : -1;
         if (ownKv < 2
-                || sidecar.config().headSizeSWA() != swaHead
-                || sidecar.config().headSizeFull() != fullHead) {
+                || sidecar.configuration().headSizeSWA() != swaHead
+                || sidecar.configuration().headSizeFull() != fullHead) {
             throw new IllegalArgumentException(
                     mtpSidecar.getFileName()
                             + " drafts with head sizes "
-                            + sidecar.config().headSizeSWA()
+                            + sidecar.configuration().headSizeSWA()
                             + "/"
-                            + sidecar.config().headSizeFull()
+                            + sidecar.configuration().headSizeFull()
                             + " (swa/full), but this backbone's KV heads at the shared layers are "
                             + swaHead
                             + "/"
@@ -940,7 +927,8 @@ public final class Gemma4
     }
 
     private int kvHeadSize(int layer) {
-        return config().kvDim(layer) / config().numberOfKeyValueHeadsPerLayer()[layer];
+        return configuration().kvDim(layer)
+                / configuration().numberOfKeyValueHeadsPerLayer()[layer];
     }
 
     @Override
@@ -962,22 +950,18 @@ public final class Gemma4
                         ? capacity - state.position()
                         : Math.min(constraints.maxTokens(), capacity - state.position());
         long timeoutNanos = constraints.timeout().isZero() ? 0 : constraints.timeout().toNanos();
-        state.enter(); // the single-pipeline claim, held across the whole pass (as Generator)
-        try {
-            return Gemma4Speculative.generate(
-                    this,
-                    state,
-                    budget,
-                    timeoutNanos,
-                    constraints.stopTokens(),
-                    depth,
-                    sampler,
-                    listener,
-                    audit);
-        } finally {
-            state.exit();
-            Reference.reachabilityFence(this);
-        }
+        return state.exclusively(
+                () ->
+                        Gemma4Speculative.generate(
+                                this,
+                                state,
+                                budget,
+                                timeoutNanos,
+                                constraints.stopTokens(),
+                                depth,
+                                sampler,
+                                listener,
+                                audit));
     }
 
     /**
@@ -1017,7 +1001,7 @@ public final class Gemma4
                                 + configuration.embeddingLength);
             Map<String, MemoryView<MemorySegment>> tensors =
                     ModelLoader.loadTensors(channel, gguf, arena);
-            Embedder<Media.Image> visionEncoder =
+            MediaProjector<Media.Image> visionEncoder =
                     switch (visionType) {
                         case "" -> null;
                         case "gemma4v" -> Gemma4Vision.loadModel(mmprojPath, gguf, tensors);
@@ -1030,7 +1014,7 @@ public final class Gemma4
                                                 + visionType
                                                 + "' (expected gemma4v or gemma4uv)");
                     };
-            Embedder<Media.Audio> audioEncoder =
+            MediaProjector<Media.Audio> audioEncoder =
                     switch (audioType) {
                         case "" -> null;
                         case "gemma4a" ->

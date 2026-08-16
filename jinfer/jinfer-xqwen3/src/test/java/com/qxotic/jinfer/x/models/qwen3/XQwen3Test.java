@@ -86,7 +86,7 @@ class XQwen3Test {
         float[][] xVecs;
         try (var xs = xm.newState(ctx, BATCH_CAPACITY)) {
             List<float[]> out = new ArrayList<>();
-            xm.embed(
+            xm.embedAll(
                     xs,
                     new Batch.Input.Sequences(new Batch.Input.Tokens(ids), seqLen),
                     e -> out.add(snapshotX(e, dim)));
