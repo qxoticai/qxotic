@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.testkit.TestModels;
+import com.qxotic.jinfer.x.boundary.Arenas;
 import io.micrometer.observation.tck.TestObservationRegistry;
 import java.util.ArrayList;
 import java.util.List;
@@ -332,7 +333,7 @@ class JinferEmbeddingModelIT {
     @Test
     void sharedWeightsForkIsAParallelPipeline() throws Exception {
         // ONE load in the USER's arena; fork() mints a second pipeline for a context's price
-        try (java.lang.foreign.Arena arena = java.lang.foreign.Arena.ofShared()) {
+        try (java.lang.foreign.Arena arena = Arenas.newCrossThread()) {
             var loaded =
                     com.qxotic.jinfer.x.chat.Models.loadEmbedder(
                             TestModels.require(EMBED_REF), arena);

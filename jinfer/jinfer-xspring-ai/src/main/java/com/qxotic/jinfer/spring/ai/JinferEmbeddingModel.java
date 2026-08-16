@@ -1,7 +1,9 @@
 package com.qxotic.jinfer.spring.ai;
 
 import com.qxotic.jinfer.hub.ModelStore;
-import com.qxotic.jinfer.x.boundary.BaseState;
+import com.qxotic.jinfer.x.PanamaMemoryArena;
+import com.qxotic.jinfer.x.boundary.Arenas;
+import com.qxotic.jinfer.x.boundary.ContextState;
 import com.qxotic.jinfer.x.boundary.RuntimeState;
 import com.qxotic.jinfer.x.chat.LoadedEmbedder;
 import com.qxotic.jinfer.x.chat.Models;
@@ -51,6 +53,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
     private final LoadedEmbedder<?> loaded;
     final String modelName;
     private final RuntimeState state; // one reusable state; embed() resets it per group
+    private final Arena arena;
     private final int contextLength;
     private final boolean ownsWeights; // false = the caller loaded the model and keeps the arena
     private final ObservationRegistry observationRegistry;
@@ -58,11 +61,10 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
     private final ReentrantLock lock = new ReentrantLock(true); // single-stream, like ChatEngine
 
     private JinferEmbeddingModel(Builder b) {
-        // ONE arena adopted by the state: state.close() frees everything this instance allocated
-        // (idempotent, blocking, Cleaner-backstopped - all BaseState's laws, implemented once).
-        // Weights land in it only when THIS instance loads them; a caller-loaded model stays in
-        // the caller's arena, and this arena holds the state alone.
-        Arena arena = Arena.ofShared();
+        // ONE private arena. The state borrows it; close() closes the state first, then the arena.
+        // Weights land in it only when THIS instance loads them; caller-loaded weights stay in the
+        // caller's arena.
+        this.arena = Arenas.newCrossThread();
         try {
             this.ownsWeights = b.loaded == null;
             try {
@@ -76,7 +78,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
             this.contextLength =
                     Math.min(
                             b.contextLength <= 0 ? Integer.MAX_VALUE : b.contextLength,
-                            loaded.model().config().contextLength());
+                            loaded.model().configuration().contextLength());
             this.state = newState(loaded, contextLength, arena);
             this.observationRegistry =
                     b.observationRegistry == null
@@ -84,7 +86,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
                             : b.observationRegistry;
             this.observationConvention = b.observationConvention;
         } catch (RuntimeException | Error e) {
-            arena.close(); // a leaked ofShared arena has no Cleaner: free before failing
+            Arenas.close(arena); // free before failing (best-effort: ofAuto self-manages)
             throw e;
         }
     }
@@ -110,8 +112,8 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
                 .build();
     }
 
-    private static <S extends RuntimeState> S newState(LoadedEmbedder<S> l, int ctx, Arena arena) {
-        return l.model().newState(ctx, arena, true);
+    private static <S extends ContextState> S newState(LoadedEmbedder<S> l, int ctx, Arena arena) {
+        return l.model().newState(ctx, new PanamaMemoryArena(arena));
     }
 
     /**
@@ -123,7 +125,8 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
     public void close() {
         lock.lock();
         try {
-            ((BaseState) state).close();
+            state.close();
+            Arenas.close(arena);
         } finally {
             lock.unlock();
         }

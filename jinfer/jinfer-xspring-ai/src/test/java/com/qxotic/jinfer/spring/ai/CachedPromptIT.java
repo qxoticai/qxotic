@@ -25,9 +25,9 @@ import org.springframework.ai.tool.definition.DefaultToolDefinition;
 import org.springframework.ai.tool.definition.ToolDefinition;
 
 /**
- * Cached prompts end-to-end against a real GGUF (LFM2.5: native template port with a StateCodec).
- * Model-gated via {@link TestModels}. Run: {@code mvn test -Dsurefire.excludedGroups=
- * -Dgroups=integration -pl jinfer-xspring-ai}
+ * Cached prompts end-to-end against a real GGUF (LFM2.5 with context checkpoints). Model-gated via
+ * {@link TestModels}. Run: {@code mvn test -Dsurefire.excludedGroups= -Dgroups=integration -pl
+ * jinfer-xspring-ai}
  */
 @Tag("integration")
 class CachedPromptIT {
