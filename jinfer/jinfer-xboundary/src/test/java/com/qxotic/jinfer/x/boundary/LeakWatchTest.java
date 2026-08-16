@@ -51,7 +51,8 @@ class LeakWatchTest {
 
     @Test
     void properlyClosedStateStaysSilent() throws Exception {
-        BaseStateLifecycleTest.ProbeState s = new ModelArenaMatrixTest.ProbeModel().newState(8, 8);
+        RuntimeStateLifecycleTest.ProbeState s =
+                new ModelArenaMatrixTest.ProbeModel().newState(8, 8);
         s.close();
         for (int i = 0; i < 3; i++) {
             System.gc();

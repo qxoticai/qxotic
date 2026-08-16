@@ -1,101 +1,95 @@
 package com.qxotic.jinfer.x.boundary;
 
 import com.qxotic.jota.memory.MemoryView;
-import java.lang.ref.Reference;
 import java.util.Arrays;
+import java.util.Objects;
 import java.util.function.Consumer;
 
 /**
- * An encoder: a {@link Model} backbone whose head produces a pooled representation of the ingested
- * sequence (a sentence/document embedding), not vocabulary logits.
+ * A context model with a pooled semantic-embedding head.
  *
- * <p>Mirrors {@link LanguageModel}: the indexed method is the primitive and the no-arg is the last
- * retained row. {@code embedding} pools + normalizes the {@code index}-th retained hidden state
- * exactly as {@code logits} projects it — the two are the same computation up to the head. The
- * boundary speaks {@link MemoryView}: pooled rows are FP32 {@code [dim]}, REUSED per-state buffers.
+ * <p>Consumers run synchronously on the calling thread while the state is held exclusively. Each
+ * embedding is a state-owned borrowed view, guaranteed live and unchanged only until its consumer
+ * returns; copy it to retain it. Other-thread state operations fail fast, while a close from
+ * another thread waits. Consumers must not invoke model operations on the same state because nested
+ * operations may reuse its scratch memory. Consumer failures propagate and exclusive access is
+ * still released.
  */
-public interface EmbeddingModel<C extends Config, W, S extends RuntimeState>
-        extends Model<C, W, S> {
+public interface EmbeddingModel<C extends ContextConfiguration, W, S extends ContextState>
+        extends ContextModel<C, W, S> {
 
     /**
-     * Pool (+ L2-normalize) the {@code index}-th retained hidden state of the last ingest into an
-     * embedding.
-     */
-    default MemoryView<?> embedding(S state, int index) {
-        BaseState base = (BaseState) state;
-        base.enter();
-        MemoryView<?> embedding;
-        try {
-            embedding = pool(state, index);
-        } finally {
-            base.exit();
-        }
-        Reference.reachabilityFence(this);
-        return embedding;
-    }
-
-    /** The pooling head behind {@link #embedding} - the implementation seam. */
-    MemoryView<?> pool(S state, int index);
-
-    /** The last retained row — the pooled embedding of a single ingested sequence. */
-    default MemoryView<?> embedding(S state) {
-        return embedding(state, state.outputCount() - 1);
-    }
-
-    /**
-     * Embed packed ragged sequences (see {@link Batch.Input.Sequences}), streaming each sequence's
-     * pooled vector to {@code sink} in input order. The view handed to the sink may be a REUSED
-     * per-state buffer: it is valid only until the next sink call - copy it out before returning.
+     * Projects one output retained by the most recent ingestion.
      *
-     * <p>The default is the CAUSAL streaming law: the packed stream is ingested in {@code
-     * batchCapacity}-sized chunks over one KV context (a sequence may span chunks - the model's
-     * segmented attention carries its KV), and each sequence's LAST row is pooled as it completes.
-     * Bidirectional families (LFM2) override it outright: a sequence must be forwarded WHOLE, so
-     * they re-group on sequence boundaries instead.
+     * <p>{@code outputIndex} is relative to the retained outputs and must be in {@code [0,
+     * state.outputCount())}.
      */
-    default void embed(S state, Batch.Input.Sequences seqs, Consumer<MemoryView<?>> sink) {
-        // Claimed across the WHOLE operation, not per chunk: reset() below mutates the cursor, and
-        // releasing between chunks would let two concurrent embeds interleave their chunks into
-        // one KV context - corrupting both, with no CME to say so. Reentrant, so the per-chunk
-        // ingest/embedding claims nest inside this one.
-        BaseState base = (BaseState) state;
-        base.enter();
-        try {
-            embed0(state, seqs, sink);
-        } finally {
-            base.exit();
-        }
+    void projectEmbedding(S state, int outputIndex, Consumer<MemoryView<?>> consumer);
+
+    /** Projects the final output retained by the most recent ingestion. */
+    default void projectEmbedding(S state, Consumer<MemoryView<?>> consumer) {
+        Objects.requireNonNull(consumer, "consumer");
+        state.exclusively(
+                () -> {
+                    int outputs = state.outputCount();
+                    if (outputs == 0)
+                        throw new IllegalStateException("state has no retained outputs");
+                    projectEmbedding(state, outputs - 1, consumer);
+                });
     }
 
-    private void embed0(S state, Batch.Input.Sequences seqs, Consumer<MemoryView<?>> sink) {
-        int[] len = seqs.seqLen();
-        int[] ids = seqs.tokens().ids();
-        int n = ids.length;
-        if (n > state.contextCapacity())
+    /**
+     * Embeds packed sequences, delivering one borrowed view per sequence in input order while
+     * holding the state for the entire operation.
+     */
+    default void embedAll(S state, Batch.Input.Sequences sequences, Consumer<MemoryView<?>> sink) {
+        Objects.requireNonNull(sequences, "sequences");
+        Objects.requireNonNull(sink, "sink");
+        requireComplete(sequences);
+        state.exclusively(() -> embedAll0(state, sequences, sink));
+    }
+
+    private static void requireComplete(Batch.Input.Sequences sequences) {
+        long total = 0;
+        int[] lengths = sequences.seqLen();
+        for (int i = 0; i < lengths.length; i++) {
+            if (lengths[i] <= 0)
+                throw new IllegalArgumentException(
+                        "sequence " + i + " has invalid length " + lengths[i]);
+            total += lengths[i];
+        }
+        int tokens = sequences.tokens().ids().length;
+        if (total != tokens)
+            throw new IllegalArgumentException(
+                    "packed token count " + tokens + " != sequence lengths " + total);
+    }
+
+    private void embedAll0(S state, Batch.Input.Sequences sequences, Consumer<MemoryView<?>> sink) {
+        int[] lengths = sequences.seqLen();
+        int[] ids = sequences.tokens().ids();
+        if (ids.length > state.contextCapacity()) {
             throw new IllegalArgumentException(
                     "state contextCapacity "
                             + state.contextCapacity()
                             + " < packed length "
-                            + n
-                            + " (batchCapacity may be smaller; it only bounds the chunk)");
-        int bc = state.batchCapacity();
+                            + ids.length);
+        }
         state.reset();
-        int j = 0, seqStart = 0;
-        for (int cs = 0; cs < n; cs += bc) {
-            int ce = Math.min(cs + bc, n);
-            int[] chunkIds = Arrays.copyOfRange(ids, cs, ce);
-            // seqLen stays the FULL stream layout - the segmented attention resolves which
-            // segments intersect this chunk from the cursor (a sequence may span chunks)
+        int sequence = 0;
+        int sequenceStart = 0;
+        int batchCapacity = state.batchCapacity();
+        for (int from = 0; from < ids.length; from += batchCapacity) {
+            int to = Math.min(from + batchCapacity, ids.length);
             ingest(
                     state,
                     new Batch(
-                            new Batch.Input.Sequences(new Batch.Input.Tokens(chunkIds), len),
+                            new Batch.Input.Sequences(
+                                    new Batch.Input.Tokens(Arrays.copyOfRange(ids, from, to)),
+                                    lengths),
                             Batch.Outputs.ALL));
-            while (j < len.length && seqStart + len[j] - 1 < ce) {
-                sink.accept(
-                        embedding(state, (seqStart + len[j] - 1) - cs)); // index within this chunk
-                seqStart += len[j];
-                j++;
+            while (sequence < lengths.length && sequenceStart + lengths[sequence] - 1 < to) {
+                projectEmbedding(state, sequenceStart + lengths[sequence] - 1 - from, sink);
+                sequenceStart += lengths[sequence++];
             }
         }
     }

@@ -71,6 +71,18 @@ class BatchTest {
     }
 
     @Test
+    void rejectsMissingStructureAtConstruction() {
+        assertThrows(NullPointerException.class, () -> new Batch(null, Batch.Outputs.LAST));
+        assertThrows(
+                NullPointerException.class,
+                () -> new Batch(new Batch.Input.Tokens(new int[] {1}), null));
+        assertThrows(NullPointerException.class, () -> new Batch.Input.Tokens(null));
+        assertThrows(
+                NullPointerException.class,
+                () -> new Batch.Input.Sequences(new Batch.Input.Tokens(new int[] {1}), null));
+    }
+
+    @Test
     void embeddingBlocksAreAtomic() {
         try (Arena arena = Arena.ofConfined()) {
             var rows = Views.allocateF32(new PanamaMemoryArena(arena), 24).view(Shape.flat(6, 4));

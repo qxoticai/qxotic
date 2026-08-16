@@ -13,16 +13,15 @@ import java.util.Objects;
  * A jota {@link MemoryArena} over a caller-supplied JDK {@link Arena} - an HONEST adapter, no
  * ownership policy of its own: {@link #close()} always delegates to the wrapped arena (freeing
  * every allocation, or throwing {@link UnsupportedOperationException} for self-managing arenas like
- * {@code ofAuto}/global). Whether close is ever CALLED - borrowed vs owned vs adopted - is the
- * holder's decision ({@code BaseState}); the same arena can be owned by one state and borrowed by
- * another, so ownership is a property of the relationship, never of this object. (The non-closeable
- * case is not exotic: in a native image {@code boundary.Arenas} degrades every arena to {@code
- * ofAuto}, so UOE-on-close is the NORMAL path there.)
+ * {@code ofAuto}/global). Whether close is ever called belongs to the holder ({@code
+ * ContextState}), not this adapter. In a native image {@code boundary.Arenas} may supply {@code
+ * ofAuto}, making unsupported close the normal path.
  *
  * <p>jota's own native arenas ({@code NativeMemoryFactory.createArena/createManagedArena}) own
- * their lifecycle; jinfer's arenas are supplied at the boundary ({@code newState(..., Arena)},
- * runtime-adaptive shared/auto per {@code boundary.Arenas}), so this wraps rather than creates.
- * (ponytail: a candidate to push up to jota's nativeimpl if a second consumer appears.)
+ * their lifecycle; jinfer's default arenas are supplied at the boundary ({@code newState(...,
+ * MemoryArena)}, runtime-adaptive shared/auto per {@code boundary.Arenas}), so this wraps rather
+ * than creates. (ponytail: a candidate to push up to jota's nativeimpl if a second consumer
+ * appears.)
  */
 public record PanamaMemoryArena(Arena arena) implements MemoryArena<MemorySegment> {
 
@@ -56,7 +55,8 @@ public record PanamaMemoryArena(Arena arena) implements MemoryArena<MemorySegmen
         arena.close();
     }
 
-    /** The liveness canary {@link MemoryArena} doesn't expose; {@code BaseState.enter} runs it. */
+    /** The liveness canary state entry runs; {@code ofAuto}/global scopes never go dead. */
+    @Override
     public boolean isAlive() {
         return arena.scope().isAlive();
     }

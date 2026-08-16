@@ -12,12 +12,9 @@
   <packaging>jar</packaging>
 
   <name>jinfer-xboundary</name>
-  <description>The x boundary cone (FloatTensor migration; see qxotic/.opencode/plans/memoryview-migration.md):
-    the model-facing API every x model jar shares - Model/LanguageModel/EmbeddingModel/Reranker over
-    jota MemoryView, Batch, the BaseState ownership/claiming machine (one PanamaMemoryArena behind an
-    opaque MemoryArena accessor), Arenas.newCrossThread, LeakWatch. Extracted from jinfer-xlfm2 when
-    the second model family (xqwen3) landed. Model jars depend on this + jinfer-xkernels, never on
-    each other.</description>
+  <description>The model-facing API shared by every x model: MemoryView-based model capabilities,
+    batches, runtime state, context checkpoints, media projection, arena ownership and lifecycle
+    diagnostics. Model modules depend on this boundary and xkernels, never on each other.</description>
 
   <dependencies>
     <dependency>

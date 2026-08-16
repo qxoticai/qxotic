@@ -1,38 +1,28 @@
 package com.qxotic.jinfer.x.boundary;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.x.PanamaMemoryArena;
+import com.qxotic.jota.memory.MemoryArena;
 import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
+import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
-/**
- * The arena-ownership matrix through the {@link Model} API (not BaseState directly): every {@code
- * newState} flavor x every arena kind a caller can legally hand over. Owned frees on close;
- * borrowed is never touched; adopt fuses; non-closeable arenas (ofAuto/global) are safe to borrow
- * AND to adopt; a family constructor throwing inside the owned flavor must not leak the fresh
- * internal arena.
- */
+/** The public state factories make ownership unambiguous: owned or borrowed, never a flag. */
 class ModelArenaMatrixTest {
 
-    /** Minimal model over the lifecycle-test state: forward is a no-op, weights are nothing. */
-    static class ProbeModel implements Model<Config, Void, BaseStateLifecycleTest.ProbeState> {
-        @Override
-        public Config config() {
-            return new Config() {
-                @Override
-                public int vocabularySize() {
-                    return 8;
-                }
+    record Configuration(int vocabularySize, int contextLength) implements ContextConfiguration {}
 
-                @Override
-                public int contextLength() {
-                    return 8;
-                }
-            };
+    static class ProbeModel
+            implements LanguageModel<Configuration, Void, RuntimeStateLifecycleTest.ProbeState> {
+
+        @Override
+        public Configuration configuration() {
+            return new Configuration(8, 8);
         }
 
         @Override
@@ -41,81 +31,83 @@ class ModelArenaMatrixTest {
         }
 
         @Override
-        public BaseStateLifecycleTest.ProbeState newState(
-                int contextCapacity, int batchCapacity, Arena arena) {
-            return new BaseStateLifecycleTest.ProbeState(arena);
+        public RuntimeStateLifecycleTest.ProbeState newState(
+                int contextCapacity, int batchCapacity) {
+            MemoryArena<MemorySegment> arena = Arenas.newCrossThreadMemoryArena();
+            try {
+                return create(arena, true);
+            } catch (RuntimeException | Error failure) {
+                Arenas.close(arena);
+                throw failure;
+            }
         }
 
         @Override
-        public void forward(BaseStateLifecycleTest.ProbeState state, Batch batch) {}
-    }
+        public RuntimeStateLifecycleTest.ProbeState newState(
+                int contextCapacity, int batchCapacity, MemoryArena<MemorySegment> arena) {
+            return create(arena, false);
+        }
 
-    final ProbeModel model = new ProbeModel();
+        RuntimeStateLifecycleTest.ProbeState create(
+                MemoryArena<MemorySegment> arena, boolean ownsArena) {
+            return new RuntimeStateLifecycleTest.ProbeState(arena, ownsArena);
+        }
 
-    @Test
-    void ownedStateFreesItsInternalArenaOnClose() {
-        BaseStateLifecycleTest.ProbeState s = model.newState(8, 8);
-        Arena arena = s.jdkArena();
-        assertTrue(arena.scope().isAlive());
-        s.close();
-        assertFalse(arena.scope().isAlive(), "owned: the internal arena dies with the state");
-    }
+        @Override
+        public void ingest(RuntimeStateLifecycleTest.ProbeState state, Batch batch) {
+            state.exclusively(() -> {});
+        }
 
-    @Test
-    void borrowedArenaIsNeverTouched() {
-        try (Arena arena = Arena.ofShared()) {
-            BaseStateLifecycleTest.ProbeState s = model.newState(8, arena);
-            s.close();
-            assertTrue(
-                    arena.scope().isAlive(), "borrowed: close must not touch the caller's arena");
-            assertThrows(IllegalStateException.class, s::enter);
+        @Override
+        public com.qxotic.jota.memory.MemoryView<?> logits(
+                RuntimeStateLifecycleTest.ProbeState state, int output) {
+            return state.exclusively(() -> state.buffer);
         }
     }
 
+    private final ProbeModel model = new ProbeModel();
+
     @Test
-    void adoptTrueFusesTheCallerArenaIntoTheState() {
-        Arena arena = Arena.ofShared();
-        arena.allocate(32); // a weights-like co-tenant
-        BaseStateLifecycleTest.ProbeState s = model.newState(8, 8, arena, true);
-        s.close();
-        assertFalse(arena.scope().isAlive(), "adopt: the caller's arena dies with the state");
+    void ownedFactoryFreesItsPrivateArena() {
+        RuntimeStateLifecycleTest.ProbeState state = model.newState(8, 8);
+        Arena arena = state.jdkArena();
+        state.close();
+        assertFalse(arena.scope().isAlive());
     }
 
     @Test
-    void adoptFalseIsBorrowed() {
+    void borrowedFactoryNeverClosesTheCallersArena() {
         try (Arena arena = Arena.ofShared()) {
-            BaseStateLifecycleTest.ProbeState s = model.newState(8, 8, arena, false);
-            s.close();
+            RuntimeStateLifecycleTest.ProbeState state =
+                    model.newState(8, 8, new PanamaMemoryArena(arena));
+            state.close();
             assertTrue(arena.scope().isAlive());
         }
     }
 
     @Test
-    void nonCloseableArenasAreSafeBorrowedAndAdopted() {
-        for (Arena arena : new Arena[] {Arena.ofAuto(), Arena.global()}) {
-            BaseStateLifecycleTest.ProbeState borrowed = model.newState(8, arena);
-            assertDoesNotThrow(borrowed::close);
-            BaseStateLifecycleTest.ProbeState adopted = model.newState(8, 8, arena, true);
-            assertDoesNotThrow(adopted::close); // owning ofAuto/global = nothing to free eagerly
-            assertTrue(adopted.isClosed());
-        }
+    void noPublicFactoryExposesAnOwnershipBoolean() {
+        assertFalse(
+                Arrays.stream(ContextModel.class.getMethods())
+                        .filter(method -> method.getName().equals("newState"))
+                        .flatMap(method -> Arrays.stream(method.getParameterTypes()))
+                        .anyMatch(type -> type == boolean.class));
     }
 
     @Test
-    void familyConstructorThrowInOwnedFlavorFreesTheFreshArena() {
-        AtomicReference<Arena> seen = new AtomicReference<>();
+    void ownedFactoryClosesItsArenaWhenConstructionFails() {
+        AtomicReference<MemoryArena<MemorySegment>> seen = new AtomicReference<>();
         ProbeModel failing =
                 new ProbeModel() {
                     @Override
-                    public BaseStateLifecycleTest.ProbeState newState(
-                            int contextCapacity, int batchCapacity, Arena arena) {
+                    RuntimeStateLifecycleTest.ProbeState create(
+                            MemoryArena<MemorySegment> arena, boolean ownsArena) {
                         seen.set(arena);
-                        throw new IllegalArgumentException("family ctor failure");
+                        throw new IllegalArgumentException("family constructor failure");
                     }
                 };
+
         assertThrows(IllegalArgumentException.class, () -> failing.newState(8, 8));
-        assertFalse(
-                seen.get().scope().isAlive(),
-                "a leaked ofShared arena has no Cleaner: the owned flavor must free it on throw");
+        assertFalse(seen.get().isAlive());
     }
 }
