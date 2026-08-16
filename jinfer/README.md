@@ -10,15 +10,15 @@ provide the portable floor; [JAM](../jam) accelerates matrix multiplication when
 
 ## Quick start
 
-Build the x CLI:
+Build the CLI:
 
 ```bash
-mvn -pl jinfer-xcli -am package -DskipTests
+mvn -pl jinfer-cli -am package -DskipTests
 
 java --enable-preview \
   --add-modules jdk.incubator.vector \
   --enable-native-access=ALL-UNNAMED \
-  -jar jinfer-xcli/target/xjinfer.jar \
+  -jar jinfer-cli/target/jinfer.jar \
   --model hf.co/LiquidAI/LFM2.5-350M-GGUF:LFM2.5-350M-Q8_0.gguf \
   --chat
 ```
@@ -36,9 +36,9 @@ try (var model = JinferChatModel.builder()
 }
 ```
 
-Use artifact `com.qxotic:jinfer-xlangchain4j:0.1.0`; Spring AI users use
-`com.qxotic:jinfer-xspring-ai:0.1.0`. See the [LangChain4j guide](jinfer-xlangchain4j/README.md),
-[Spring AI guide](jinfer-xspring-ai/README.md), and [runnable jbang examples](examples/scripts/README.md).
+Use artifact `com.qxotic:jinfer-langchain4j:0.1.0`; Spring AI users use
+`com.qxotic:jinfer-spring-ai:0.1.0`. See the [LangChain4j guide](jinfer-langchain4j/README.md),
+[Spring AI guide](jinfer-spring-ai/README.md), and [runnable jbang examples](examples/scripts/README.md).
 
 ## OpenAI-compatible server
 
@@ -46,7 +46,7 @@ Use artifact `com.qxotic:jinfer-xlangchain4j:0.1.0`; Spring AI users use
 java --enable-preview \
   --add-modules jdk.incubator.vector \
   --enable-native-access=ALL-UNNAMED \
-  -jar jinfer-xcli/target/xjinfer.jar \
+  -jar jinfer-cli/target/jinfer.jar \
   --model hf.co/LiquidAI/LFM2.5-350M-GGUF:LFM2.5-350M-Q8_0.gguf \
   --server --port 17341
 ```
@@ -62,7 +62,7 @@ contract.
 
 ## Models and capabilities
 
-Architecture dispatch comes from the model ports on the classpath. The aggregate x distribution
+Architecture dispatch comes from the model providers on the classpath. The aggregate distribution
 currently carries:
 
 - Gemma 4, including E2B/E4B vision, E2B conformer audio and MTP sidecars;
@@ -78,7 +78,7 @@ NVFP4, Q1_0, TQ1_0 and TQ2_0.
 Multimodal models attach auxiliary files by capability:
 
 ```bash
-xjinfer \
+jinfer \
   --model hf.co/unsloth/gemma-4-E2B-it-GGUF:Q4_K_M \
   --with media=hf.co/unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf \
   --chat
@@ -104,8 +104,8 @@ moves the cache, `HF_TOKEN` unlocks gated Hugging Face repositories, and `JINFER
 `-Djinfer.offline`) forbids network access.
 
 ```bash
-java -jar jinfer-xcli/target/xjinfer.jar pull hf.co/ggml-org/stories15M_MOE:Q8_0
-java -jar jinfer-xcli/target/xjinfer.jar list
+java -jar jinfer-cli/target/jinfer.jar pull hf.co/ggml-org/stories15M_MOE:Q8_0
+java -jar jinfer-cli/target/jinfer.jar list
 ```
 
 Model resolution happens before loading; inference paths never fetch content. Media codecs likewise
@@ -147,7 +147,7 @@ With GraalVM Native Image 25.0.3 or newer:
 
 ```bash
 make native
-./xjinfer --model ./model.gguf --chat
+./jinfer --model ./model.gguf --chat
 ```
 
 `PRELOAD_GGUF=model.gguf make native` embeds load metadata/tokenizer data for faster startup. Media
@@ -160,8 +160,8 @@ Java 25 is required.
 
 ```bash
 mvn test
-mvn -pl jinfer-xcli -am package -DskipTests
-make jar       # copies jinfer-xcli/target/xjinfer.jar to ./xjinfer.jar
+mvn -pl jinfer-cli -am package -DskipTests
+make jar       # copies jinfer-cli/target/jinfer.jar to ./jinfer.jar
 ```
 
 Model-backed integration tests are opt-in and use the repository's `TestModels` cache lookup; unit

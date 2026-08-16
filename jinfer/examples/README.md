@@ -5,7 +5,7 @@ Runnable equivalents of every snippet on
 `transformers`. One-time setup publishes jinfer to your local Maven repo so jbang can resolve it:
 
 ```bash
-cd .. && mvn -q -DskipTests install     # installs com.qxotic:jinfer-xlangchain4j to ~/.m2
+cd .. && mvn -q -DskipTests install     # installs com.qxotic:jinfer-langchain4j to ~/.m2
 ```
 
 The examples default to Hugging Face model references, which jinfer downloads and caches. A local

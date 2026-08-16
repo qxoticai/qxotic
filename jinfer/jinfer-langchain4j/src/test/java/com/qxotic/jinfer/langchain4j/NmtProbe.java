@@ -1,0 +1,193 @@
+package com.qxotic.jinfer.langchain4j;
+
+import com.qxotic.jinfer.testkit.TestModels;
+import dev.langchain4j.data.message.UserMessage;
+import java.lang.foreign.FunctionDescriptor;
+import java.lang.foreign.Linker;
+import java.lang.foreign.ValueLayout;
+import java.lang.invoke.MethodHandle;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+
+/**
+ * The in-fork memory-growth forensic: cycles battery-like model load/chat/close in ONE JVM and
+ * prints, per cycle, RssAnon/RssFile, the NMT category deltas, and the effect of malloc_trim(0).
+ * Decision tree: NMT "Other" growing = an FFM allocation we failed to free; NMT flat but RssAnon
+ * growing = native memory NMT cannot see (a native library's own allocations) or glibc-retained
+ * freed pages - and malloc_trim collapsing RssAnon proves the latter. It pinned the 2026-07 battery
+ * OOMs on jam's repacked-weight cache (since deleted). Run with:
+ *
+ * <pre>
+ * JAVA_TOOL_OPTIONS=-XX:NativeMemoryTracking=summary mvn -f jinfer-langchain4j/pom.xml test \
+ *   -Dsurefire.excludedGroups= -Dgroups=bench -Dtest=NmtProbe
+ * </pre>
+ */
+@Tag("bench")
+class NmtProbe {
+
+    static final MethodHandle MALLOC_TRIM =
+            Linker.nativeLinker()
+                    .downcallHandle(
+                            Linker.nativeLinker().defaultLookup().find("malloc_trim").orElseThrow(),
+                            FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_INT));
+
+    record Cycle(String name, Path path) {}
+
+    private static final String LFM2_8B =
+            "hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF/LFM2.5-8B-A1B-Q8_0.gguf";
+    private static final String GRANITE_3B =
+            "hf.co/ibm-granite/granite-4.1-3b-GGUF/granite-4.1-3b-Q8_0.gguf";
+    private static final String QWEN35_2B = "hf.co/unsloth/Qwen3.5-2B-GGUF/Qwen3.5-2B-Q8_0.gguf";
+
+    @Test
+    void loadChatCloseRotation() throws Throwable {
+        List<Cycle> rotation =
+                List.of(
+                        new Cycle("lfm2-8b-moe", TestModels.require(LFM2_8B)),
+                        new Cycle("granite-3b", TestModels.require(GRANITE_3B)),
+                        new Cycle("qwen35-2b", TestModels.require(QWEN35_2B)),
+                        new Cycle(
+                                "minicpm5-1b",
+                                TestModels.require(
+                                        "hf.co/openbmb/MiniCPM5-1B-GGUF/MiniCPM5-1B-Q8_0.gguf")),
+                        new Cycle(
+                                "lfm2-350m",
+                                TestModels.require(
+                                        "hf.co/LiquidAI/LFM2.5-350M-GGUF/LFM2.5-350M-Q8_0.gguf")));
+        System.out.printf(
+                "%-14s %9s %9s %9s %9s %9s %9s %9s%n",
+                "cycle",
+                "anonMB",
+                "fileMB",
+                "nmtTotMB",
+                "otherMB",
+                "heapMB",
+                "threadMB",
+                "trimdMB");
+        snapshot("baseline", 0);
+        for (int round = 0; round < 2; round++) {
+            for (Cycle c : rotation) {
+                try (JinferChatModel m =
+                        JinferChatModel.builder()
+                                .modelPath(c.path())
+                                .contextLength(4096)
+                                .maxOutputTokens(16)
+                                .build()) {
+                    m.chat(UserMessage.from("Say hi in one word."));
+                }
+                snapshot(c.name() + "#" + round, 0);
+            }
+        }
+        // the levers, in order of coercion: trim glibc, then a full GC + cleaner pass
+        long trimmed = trim();
+        snapshot("post-trim", trimmed);
+        System.gc();
+        Thread.sleep(500);
+        long trimmed2 = trim();
+        snapshot("post-gc+trim", trimmed2);
+    }
+
+    @Test
+    void perModelAttribution() throws Throwable {
+        // CONFIRMATION experiment for the jam repack-cache attribution: each NEW model's
+        // load/chat/close leaves behind a residue ~ its jam-repacked weight bytes; REPEATING a
+        // model leaves ~0 (pointer+shape cache hit on the remapped-at-same-address weights).
+        // Residue is measured AFTER GC + malloc_trim, so arenas and glibc are out of the picture.
+        List<Cycle> order =
+                List.of(
+                        new Cycle("lfm2-8b-moe", TestModels.require(LFM2_8B)),
+                        new Cycle("lfm2-8b-AGAIN", TestModels.require(LFM2_8B)),
+                        new Cycle("lfm2-8b-3RD", TestModels.require(LFM2_8B)),
+                        new Cycle("granite-3b", TestModels.require(GRANITE_3B)),
+                        new Cycle("granite-3b-AGAIN", TestModels.require(GRANITE_3B)),
+                        new Cycle("qwen35-2b", TestModels.require(QWEN35_2B)));
+        System.out.printf("%-18s %12s %12s%n", "model", "residueMB", "fileGB");
+        settle();
+        long prev = rss("RssAnon") / 1024;
+        for (Cycle c : order) {
+            try (JinferChatModel m =
+                    JinferChatModel.builder()
+                            .modelPath(c.path())
+                            .contextLength(4096)
+                            .maxOutputTokens(16)
+                            .build()) {
+                m.chat(UserMessage.from("Say hi in one word."));
+            }
+            settle();
+            long anon = rss("RssAnon") / 1024;
+            System.out.printf(
+                    "%-18s %12d %12.1f%n", c.name(), anon - prev, Files.size(c.path()) / 1e9);
+            prev = anon;
+        }
+    }
+
+    /** GC + cleaner drain + glibc trim: what remains after this is live non-JVM native memory. */
+    static void settle() throws Throwable {
+        for (int i = 0; i < 3; i++) {
+            System.gc();
+            Thread.sleep(300);
+        }
+        MALLOC_TRIM.invoke(0);
+    }
+
+    static long trim() throws Throwable {
+        long before = rss("RssAnon");
+        MALLOC_TRIM.invoke(0);
+        return before - rss("RssAnon");
+    }
+
+    static void snapshot(String label, long trimmedKb) throws Exception {
+        long anon = rss("RssAnon") / 1024, file = rss("RssFile") / 1024;
+        long[] nmt = nmt();
+        System.out.printf(
+                "%-14s %9d %9d %9d %9d %9d %9d %9d%n",
+                label, anon, file, nmt[0], nmt[1], nmt[2], nmt[3], trimmedKb / 1024);
+    }
+
+    static long rss(String key) throws Exception {
+        for (String line : Files.readAllLines(Path.of("/proc/self/status"))) {
+            if (line.startsWith(key + ":")) return Long.parseLong(line.replaceAll("[^0-9]", ""));
+        }
+        return -1;
+    }
+
+    /** total-committed, Other-committed, JavaHeap-committed, Thread-committed - MB. */
+    static long[] nmt() throws Exception {
+        Process p =
+                new ProcessBuilder(
+                                "jcmd",
+                                String.valueOf(ProcessHandle.current().pid()),
+                                "VM.native_memory",
+                                "summary")
+                        .redirectErrorStream(true)
+                        .start();
+        long[] out = new long[4];
+        String category = "";
+        for (String line : new String(p.getInputStream().readAllBytes()).split("\n")) {
+            String t = line.strip();
+            if (t.startsWith("Total:")) {
+                out[0] = committedKb(t) / 1024;
+            } else if (t.startsWith("-")) {
+                category = t;
+                long kb = committedKb(t);
+                if (t.contains("Other")) out[1] = kb / 1024;
+                else if (t.contains("Java Heap")) out[2] = kb / 1024;
+                else if (t.contains("Thread")) out[3] = kb / 1024;
+            }
+        }
+        p.waitFor();
+        return out;
+    }
+
+    static long committedKb(String line) {
+        // formats: "committed=123456KB" (Total) / "(committed=123456KB)" (categories)
+        int i = line.indexOf("committed=");
+        if (i < 0) return 0;
+        int end = line.indexOf("KB", i);
+        if (end < 0) return 0;
+        return Long.parseLong(line.substring(i + "committed=".length(), end).trim());
+    }
+}

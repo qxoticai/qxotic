@@ -6,28 +6,28 @@ the prompt cache.
 ## Modules
 
 ```text
-jinfer-xcore       native-memory adapters, parallel execution and shared view utilities
-jinfer-xkernels    GGUF loading and CPU kernels over MemoryView
-jinfer-xboundary   model/configuration/weights/state contracts, media and telemetry
-jinfer-xcache      retained sessions and content-addressed checkpoint storage
-jinfer-xllm        sampling, grammar constraints, generation and speculative decoding
-jinfer-xchat       model loading, templates, conversations, tools and ChatEngine
-jinfer-x<model>    one ServiceLoader provider per supported GGUF architecture
-jinfer-xserver     OpenAI-compatible HTTP/SSE server
-jinfer-xcli        chat, completion, pull and server executable
-jinfer-xbench      generic language-model and embedding benchmarks
+jinfer-core       native-memory adapters, parallel execution and shared view utilities
+jinfer-kernels    GGUF loading and CPU kernels over MemoryView
+jinfer-boundary   model/configuration/weights/state contracts, media and telemetry
+jinfer-cache      retained sessions and content-addressed checkpoint storage
+jinfer-llm        sampling, grammar constraints, generation and speculative decoding
+jinfer-chat       model loading, templates, conversations, tools and ChatEngine
+jinfer-<model>     one ServiceLoader provider per supported GGUF architecture
+jinfer-server     OpenAI-compatible HTTP/SSE server
+jinfer-cli        chat, completion, pull and server executable
+jinfer-bench      generic language-model and embedding benchmarks
 
 jinfer-hub         model references, local cache and downloads
 jinfer-jinja       whole-template fallback renderer
 jinfer-testkit     shared model-fixture discovery for tests
 ```
 
-`jinfer-xmodels-all` is the convenience aggregate. Footprint-sensitive applications can depend on
+`jinfer-models-all` is the convenience aggregate. Footprint-sensitive applications can depend on
 only the architecture modules they need; `Models.load` discovers the available providers and gives
 an actionable error when a matching provider is absent.
 
-Dependencies point toward the small substrate: xcore and xboundary at the bottom, then kernels,
-cache and xllm, then xchat, model providers, integrations and executables. The CLI is a leaf.
+Dependencies point toward the small substrate: core and boundary at the bottom, then kernels,
+cache and LLM, then chat, model providers, integrations and executables. The CLI is a leaf.
 
 ## Model boundary
 

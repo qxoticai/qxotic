@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.qxotic</groupId>
+    <artifactId>jinfer-parent</artifactId>
+    <version>0.1.0</version>
+  </parent>
+
+  <artifactId>jinfer-cli</artifactId>
+  <packaging>jar</packaging>
+
+  <name>jinfer-cli</name>
+  <description>The jinfer command line on the MemoryView stack: one jar carrying the chat loop,
+    the one-shot instruct mode, the model hub and every model provider. Nothing depends on this
+    module - it is the deliverable, which is what lets it depend on everything. The OpenAI server
+    and speculation flags are provided by jinfer-server and model-specific draft heads.</description>
+
+  <properties>
+    <jinfer.image.name>jinfer</jinfer.image.name>
+    <jinfer.image.mainClass>com.qxotic.jinfer.cli.Main</jinfer.image.mainClass>
+    <jinfer.image.addModules>jdk.incubator.vector</jinfer.image.addModules>
+    <maven.deploy.skip>true</maven.deploy.skip>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <!-- model refs on the model and companion flags: resolve and download from HF / ModelScope.
+           A TOOL concern: the provider libraries take real paths and must never pull a downloader
+           onto an application classpath. -->
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-hub</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-chat</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-cache</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-server</artifactId>
+    </dependency>
+    <dependency>
+      <!-- the AOT preload reads GGUF headers itself (it must, to bake them) -->
+      <groupId>com.qxotic</groupId>
+      <artifactId>gguf</artifactId>
+    </dependency>
+    <dependency>
+      <!-- the AOT preload bakes tokenizers; the property-override escape hatch rides the same
+           builder the ports use -->
+      <groupId>com.qxotic</groupId>
+      <artifactId>toknroll-gguf</artifactId>
+    </dependency>
+
+    <!-- every architecture provider, as ServiceLoader cargo: ONE list to maintain, in
+         jinfer-models-all. Runtime scope lands it on the test classpath too. A shaded consumer
+         needs the ServicesResourceTransformer. -->
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-models-all</artifactId>
+      <type>pom</type>
+      <scope>runtime</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-testkit</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <!-- The shade + native-image configuration lives in jinfer-parent's pluginManagement; this
+       module only names the executable it produces (the jinfer.image.* properties above). -->
+  <build>
+    <finalName>${jinfer.image.name}</finalName>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-shade-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+
+  <profiles>
+    <profile>
+      <id>native</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.graalvm.buildtools</groupId>
+            <artifactId>native-maven-plugin</artifactId>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+</project>

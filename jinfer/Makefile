@@ -1,16 +1,16 @@
 # jinfer build entry points - thin wrappers over the Maven build. The poms are the source of
 # truth: jinfer-parent's pluginManagement owns the shared shade + native-image configuration,
-# jinfer-xcli/-xbench name their executable via the jinfer.image.* properties.
+# jinfer-cli and jinfer-bench name their executables via the jinfer.image.* properties.
 
 JAVA ?= java
-JAR_FILE = xjinfer.jar
+JAR_FILE = jinfer.jar
 
 ifeq ($(OS),Windows_NT)
     EXE := .exe
 else
     EXE :=
 endif
-NATIVE_FILE := xjinfer$(EXE)
+NATIVE_FILE := jinfer$(EXE)
 
 # Force-inline the hot Vector API helpers (see ./hotspot_compiler). Without the hint a weaker
 # inliner (GraalVM CE / plain C2 under budget) leaves a FloatVector-returning helper out-of-line,
@@ -35,8 +35,8 @@ test:
 	mvn -o test
 
 jar:
-	mvn -o -pl jinfer-xcli -am package -DskipTests
-	cp jinfer-xcli/target/xjinfer.jar $(JAR_FILE)
+	mvn -o -pl jinfer-cli -am clean package -DskipTests
+	cp jinfer-cli/target/jinfer.jar $(JAR_FILE)
 
 clean:
 	mvn clean
@@ -58,7 +58,7 @@ test-golden: jar
 	@diff /tmp/jinfer-golden-1.txt /tmp/jinfer-golden-2.txt && echo "test-golden: deterministic"
 
 # GraalVM Native Image, via the poms' -Pnative profile (single source of the image flags).
-#   make native                                     self-contained ./xjinfer
+#   make native                                     self-contained ./jinfer
 #   PRELOAD_GGUF=model.gguf make native             embed the model's header+tokenizer
 #   PRELOAD_GGUF="model.gguf:mmproj.gguf" make native   several files (File.pathSeparator-joined)
 NATIVE_IMAGE ?= $(if $(JAVA_HOME),$(JAVA_HOME)/bin/native-image,native-image)
@@ -73,7 +73,7 @@ check-native-image:
 	esac
 
 native: check-native-image
-	mvn -o -Pnative -pl jinfer-xcli -am package -DskipTests -Djinfer.preload=$(PRELOAD_GGUF)
-	cp jinfer-xcli/target/xjinfer$(EXE) $(NATIVE_FILE)
+	mvn -o -Pnative -pl jinfer-cli -am clean package -DskipTests -Djinfer.preload=$(PRELOAD_GGUF)
+	cp jinfer-cli/target/jinfer$(EXE) $(NATIVE_FILE)
 
 .PHONY: default compile test-compile test jar clean run-jar-command test-golden check-native-image native

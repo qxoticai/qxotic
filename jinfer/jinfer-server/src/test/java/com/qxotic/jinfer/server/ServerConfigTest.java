@@ -1,0 +1,64 @@
+package com.qxotic.jinfer.server;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.time.Duration;
+import java.util.Set;
+import org.junit.jupiter.api.Test;
+
+class ServerConfigTest {
+
+    @Test
+    void localDefaultsAreLoopbackAndBrowserFriendly() {
+        ServerConfig config = ServerConfig.local(0);
+        assertTrue(config.bind().getAddress().isLoopbackAddress());
+        assertTrue(config.access().allowedOrigins().contains("*"));
+    }
+
+    @Test
+    void accessDefensivelyCopiesOrigins() {
+        var source = new java.util.HashSet<>(Set.of("https://example.test"));
+        var access = new ServerConfig.Access("token", source);
+        source.clear();
+        assertEquals(Set.of("https://example.test"), access.allowedOrigins());
+    }
+
+    @Test
+    void badLimitsFailAtConstruction() {
+        ServerConfig.Limits d = ServerConfig.Limits.DEFAULTS;
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new ServerConfig.Limits(
+                                0,
+                                d.queueCapacity(),
+                                d.maxBodyBytes(),
+                                d.grammar(),
+                                Duration.ofSeconds(1),
+                                Duration.ZERO,
+                                Duration.ZERO));
+    }
+
+    @Test
+    void namedCopiesAvoidPositionalReconstruction() {
+        ServerConfig config =
+                ServerConfig.local(0)
+                        .withLimits(
+                                ServerConfig.Limits.DEFAULTS
+                                        .withThreads(3)
+                                        .withQueueCapacity(1)
+                                        .withGrammar(false)
+                                        .withRequestTimeout(Duration.ofSeconds(2)))
+                        .withAccess(
+                                new ServerConfig.Access("secret", Set.of("https://example.test")));
+
+        assertEquals(3, config.limits().threads());
+        assertEquals(1, config.limits().queueCapacity());
+        assertFalse(config.limits().grammar());
+        assertEquals(Duration.ofSeconds(2), config.limits().requestTimeout());
+        assertEquals("secret", config.access().bearerToken());
+    }
+}

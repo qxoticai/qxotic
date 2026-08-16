@@ -23,18 +23,18 @@
 # SITE on top of the already-forced qkTile/pvTile bodies blew Graal's compilation units in qwen35's
 # hybrid attention layers - measured 2.0x SLOWER prefill on Oracle GraalVM 25.1 (863 vs 1776 t/s,
 # Qwen3.5-0.8B-Q8_0). Bisect: the regression needs BOTH this line and the FlashAttention lines.
-inline com/qxotic/jinfer/x/kernels/Ops.siluVec
-inline com/qxotic/jinfer/x/kernels/Ops.tanhVec
-inline com/qxotic/jinfer/x/kernels/FlashAttention.loadF32
-inline com/qxotic/jinfer/x/kernels/FlashAttention.loadF16
-inline com/qxotic/jinfer/x/kernels/FlashAttention.accumulate
-inline com/qxotic/jinfer/x/kernels/FlashAttention.qkTile
-inline com/qxotic/jinfer/x/kernels/FlashAttention.qkTile64F32
-inline com/qxotic/jinfer/x/kernels/FlashAttention.qkTileWideF32
-inline com/qxotic/jinfer/x/kernels/FlashAttention.qkRowF32
-inline com/qxotic/jinfer/x/kernels/FlashAttention.pvTile
+inline com/qxotic/jinfer/kernels/Ops.siluVec
+inline com/qxotic/jinfer/kernels/Ops.tanhVec
+inline com/qxotic/jinfer/kernels/FlashAttention.loadF32
+inline com/qxotic/jinfer/kernels/FlashAttention.loadF16
+inline com/qxotic/jinfer/kernels/FlashAttention.accumulate
+inline com/qxotic/jinfer/kernels/FlashAttention.qkTile
+inline com/qxotic/jinfer/kernels/FlashAttention.qkTile64F32
+inline com/qxotic/jinfer/kernels/FlashAttention.qkTileWideF32
+inline com/qxotic/jinfer/kernels/FlashAttention.qkRowF32
+inline com/qxotic/jinfer/kernels/FlashAttention.pvTile
 # the bodies pvTile dispatches to (per element type): inlining the dispatcher alone still leaves
 # a vector-crossing boundary
-inline com/qxotic/jinfer/x/kernels/FlashAttention.pvTileF16
-inline com/qxotic/jinfer/x/kernels/FlashAttention.pvTileF32
-inline com/qxotic/jinfer/x/kernels/FlashAttention.normalize
+inline com/qxotic/jinfer/kernels/FlashAttention.pvTileF16
+inline com/qxotic/jinfer/kernels/FlashAttention.pvTileF32
+inline com/qxotic/jinfer/kernels/FlashAttention.normalize
