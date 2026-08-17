@@ -70,8 +70,8 @@ final class Generation {
                         tools,
                         thinking(request) && forcedTool(request) == null,
                         maxTokens(request),
-                        reasoningMax(request),
-                        reasoningMessage(request),
+                        reasoningMaxOrDefault(request),
+                        reasoningMessageOrDefault(request),
                         config.limits().requestTimeout(),
                         sampling(request, defaults),
                         grammar(request),
@@ -413,6 +413,17 @@ final class Generation {
      */
     static String reasoningMessage(Map<String, Object> request) {
         return Values.stringValue(request.get("reasoning_message"), null);
+    }
+
+    /** The request's value, else the server's configured default - as {@code think} does. */
+    private Integer reasoningMaxOrDefault(Map<String, Object> request) {
+        Integer value = reasoningMax(request);
+        return value != null ? value : config.defaults().reasoningMaxTokens();
+    }
+
+    private String reasoningMessageOrDefault(Map<String, Object> request) {
+        String value = reasoningMessage(request);
+        return value != null ? value : config.defaults().reasoningMessage();
     }
 
     private boolean thinking(Map<String, Object> request) {

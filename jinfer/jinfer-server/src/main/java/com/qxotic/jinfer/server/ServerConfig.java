@@ -40,12 +40,19 @@ public record ServerConfig(
 
     /** Request values clients may override. Null sampling means the model's own defaults. */
     public record Defaults(
-            Sampling sampling, int maxOutputTokens, boolean think, boolean rawPrompt) {
-        public static final Defaults DEFAULTS = new Defaults(null, -1, true, false);
+            Sampling sampling,
+            int maxOutputTokens,
+            boolean think,
+            boolean rawPrompt,
+            Integer reasoningMaxTokens,
+            String reasoningMessage) {
+        public static final Defaults DEFAULTS = new Defaults(null, -1, true, false, null, null);
 
         public Defaults {
             if (maxOutputTokens < -1)
                 throw new IllegalArgumentException("maxOutputTokens " + maxOutputTokens);
+            if (reasoningMaxTokens != null && reasoningMaxTokens < -1)
+                throw new IllegalArgumentException("reasoningMaxTokens " + reasoningMaxTokens);
         }
     }
 

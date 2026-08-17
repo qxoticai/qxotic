@@ -112,6 +112,26 @@ final class OptionsTest {
     }
 
     @Test
+    void reasoningFlagsFlowIntoTheEngineRequest(@TempDir Path dir) throws IOException {
+        Path model = Files.createFile(dir.resolve("m.gguf"));
+        Options options =
+                Options.parse(
+                        new String[] {
+                            "--model", model.toString(),
+                            "-p", "hi",
+                            "--reasoning-budget", "128",
+                            "--reasoning-budget-message", "... Let me wrap up."
+                        });
+        var request =
+                Requests.of(
+                        java.util.List.of(com.qxotic.jinfer.chat.Message.user("hi")),
+                        new com.qxotic.jinfer.llm.Sampling(0f, 1f, 0, 0f, null),
+                        options);
+        assertEquals(128, request.reasoningMaxTokens());
+        assertEquals("... Let me wrap up.", request.reasoningMessage());
+    }
+
+    @Test
     void aTransposedTemperatureAndTopPIsRejectedBeforeTheModelLoads() {
         IllegalArgumentException e =
                 assertThrows(
