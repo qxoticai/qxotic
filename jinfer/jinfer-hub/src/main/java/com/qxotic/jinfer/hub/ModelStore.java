@@ -270,9 +270,10 @@ public final class ModelStore {
         if (Files.isRegularFile(dest)) {
             return dest;
         }
+        // before the SIZE probe, not just the download: offline means no request at all
+        requireOnlineFor(url, dest);
         Map<String, String> headers = Map.of("User-Agent", "jinfer-hub");
         long size = Fetch.sizeOf(url, headers);
-        requireOnlineFor(url, dest);
         requireWritable(dest);
         requireDiskSpace(dest, Fetch.remainingBytes(dest, size));
         tagCacheDirectory(root);
@@ -315,10 +316,14 @@ public final class ModelStore {
     }
 
     private static void requireOnlineFor(String what, Path dest) {
-        if ("1".equals(System.getenv("JINFER_OFFLINE")) || Boolean.getBoolean("jinfer.offline")) {
+        if (offline()) {
             throw new IllegalStateException(
                     what + " is not cached at " + dest + " and JINFER_OFFLINE forbids downloading");
         }
+    }
+
+    private static boolean offline() {
+        return "1".equals(System.getenv("JINFER_OFFLINE")) || Boolean.getBoolean("jinfer.offline");
     }
 
     /**
@@ -507,15 +512,20 @@ public final class ModelStore {
                 if (last || !(e.getCause() instanceof Fetch.HttpStatusException)) {
                     throw e; // the best answer there is: the ref's fault, or the last word
                 }
-                LOG.log(Level.WARNING, "{0} could not serve {1}: {2}", source, ref, e.getMessage());
+                warn(source, ref, e);
             } catch (IOException e) {
                 if (last) {
                     throw new UncheckedIOException("could not resolve " + ref + ": " + e, e);
                 }
-                LOG.log(Level.WARNING, "{0} could not serve {1}: {2}", source, ref, e.getMessage());
+                warn(source, ref, e);
             }
         }
         throw new AssertionError("unreachable: the last source either serves or throws");
+    }
+
+    /** A fallback is never silent: who failed, on what, and why, before the next source tries. */
+    private static void warn(ModelSource source, ModelRef ref, Exception e) {
+        LOG.log(Level.WARNING, "{0} could not serve {1}: {2}", source, ref, e.getMessage());
     }
 
     private Path fetchPipeline(ModelRef ref, ModelSource source) throws IOException {
@@ -585,28 +595,22 @@ public final class ModelStore {
                     return file;
                 }
             }
+            String nothingThere =
+                    "no '"
+                            + last
+                            + "' in "
+                            + ref.repoId()
+                            + (parent.isEmpty() ? "" : "/" + parent)
+                            + ". Contains: "
+                            + names(siblings);
             List<RemoteFile> inside;
             try {
                 inside = source.list(ref, location);
             } catch (IOException | IllegalArgumentException notAFolder) {
-                throw new IllegalArgumentException(
-                        "no '"
-                                + last
-                                + "' in "
-                                + ref.repoId()
-                                + (parent.isEmpty() ? "" : "/" + parent)
-                                + ". Contains: "
-                                + names(siblings));
+                throw new IllegalArgumentException(nothingThere);
             }
             if (inside.isEmpty()) {
-                throw new IllegalArgumentException(
-                        "no '"
-                                + last
-                                + "' in "
-                                + ref.repoId()
-                                + (parent.isEmpty() ? "" : "/" + parent)
-                                + ". Contains: "
-                                + names(siblings));
+                throw new IllegalArgumentException(nothingThere);
             }
             return byQuant(ref, location, inside);
         }
@@ -767,9 +771,7 @@ public final class ModelStore {
     }
 
     private static void requireOnline(ModelRef ref, Path dest) {
-        boolean offline =
-                "1".equals(System.getenv("JINFER_OFFLINE")) || Boolean.getBoolean("jinfer.offline");
-        if (offline) {
+        if (offline()) {
             throw new IllegalStateException(
                     ref + " is not cached at " + dest + " and JINFER_OFFLINE forbids downloading");
         }

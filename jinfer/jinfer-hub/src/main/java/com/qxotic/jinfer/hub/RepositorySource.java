@@ -15,10 +15,10 @@ import java.util.Map;
  * The protocol of one repository host: listing, fetch URLs, credentials. Both shipped hosts serve a
  * repository the same way - {@code <base><prefix>/owner/repo/resolve/<revision>/<file>},
  * redirecting to a signed CDN URL - so only the listing API and the {@link ModelRef.Host} row
- * differ. Package-visible: the public door is a named wrapper ({@link HuggingFaceSource}, {@link
+ * differ. Package-visible: the public door is a named subclass ({@link HuggingFaceSource}, {@link
  * ModelScopeSource}), because the name is what the store's fallback log should say.
  */
-final class RepositorySource implements ModelSource {
+class RepositorySource implements ModelSource {
 
     private final ModelRef.Host host;
     private final String base;

@@ -849,9 +849,8 @@ final class Fetch {
      */
     private static Path lockFileFor(Path dest) throws IOException {
         // the AMBIENT root, whatever store instance is downloading: the SPI hands a source its
-        // destination, not the store's root, and a lock's home is a jinfer-internal detail. A
-        // store built on a custom root litters its locks here - the lock set is tiny and shared,
-        // which is also what makes cross-instance downloads of one file exclude each other.
+        // destination, not the store's root. The lock set is tiny, and sharing one home for it is
+        // what makes cross-instance downloads of one file exclude each other.
         Path locks = ModelStore.ambientRoot().resolve(".locks");
         Files.createDirectories(locks);
         String key =
