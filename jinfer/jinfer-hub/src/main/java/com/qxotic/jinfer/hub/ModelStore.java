@@ -39,8 +39,9 @@ import java.util.regex.Pattern;
  *
  * <p>SOURCES are tried in the order they were given; the first that serves the ref wins. A source
  * that fails (network down, repository answered "no") is not silently skipped: the fallback is
- * logged at WARNING and the success of a non-primary source at INFO. Only a miss everywhere is an
- * error, and it names every source that was tried and why it failed.
+ * logged at WARNING and the success of a non-primary source at INFO. A miss everywhere throws the
+ * LAST source's own answer - the most specific message there is, and the one a single-source store
+ * would have given - with every earlier failure loud in the log.
  *
  * <p>ONE exception to the flat layout, for sharing: with the DEFAULT root (by value - {@code
  * of(standard().root())} keeps it), an {@code hf.co} download is written into the HuggingFace hub
@@ -493,28 +494,28 @@ public final class ModelStore {
                                                     + " ModelStore.of(root) is the offline store)"
                                             : "")));
         }
-        List<String> failures = new ArrayList<>();
-        for (ModelSource source : serving) {
+        for (int i = 0; i < serving.size(); i++) {
+            ModelSource source = serving.get(i);
+            boolean last = i == serving.size() - 1;
             try {
                 Path path = fetchPipeline(ref, source);
-                if (source != serving.get(0)) {
+                if (i > 0) {
                     LOG.log(Level.INFO, "{0} resolved by {1}", ref, source);
                 }
                 return path;
             } catch (IllegalArgumentException e) {
-                if (!(e.getCause() instanceof Fetch.HttpStatusException)) {
-                    throw e; // the REF is at fault: selection, grammar, format policy
+                if (last || !(e.getCause() instanceof Fetch.HttpStatusException)) {
+                    throw e; // the best answer there is: the ref's fault, or the last word
                 }
-                failures.add(source + ": " + e.getMessage());
                 LOG.log(Level.WARNING, "{0} could not serve {1}: {2}", source, ref, e.getMessage());
             } catch (IOException e) {
-                failures.add(source + ": " + e.getMessage());
+                if (last) {
+                    throw new UncheckedIOException("could not resolve " + ref + ": " + e, e);
+                }
                 LOG.log(Level.WARNING, "{0} could not serve {1}: {2}", source, ref, e.getMessage());
             }
         }
-        throw new UncheckedIOException(
-                "could not resolve " + ref + ": " + String.join("; ", failures),
-                new IOException("all sources failed"));
+        throw new AssertionError("unreachable: the last source either serves or throws");
     }
 
     private Path fetchPipeline(ModelRef ref, ModelSource source) throws IOException {
