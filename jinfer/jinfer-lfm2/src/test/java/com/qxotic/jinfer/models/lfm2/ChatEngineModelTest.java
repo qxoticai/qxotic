@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.models.lfm2;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -7,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.boundary.Arenas;
+import com.qxotic.jinfer.boundary.Batch;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.Conversation;
@@ -14,6 +16,7 @@ import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.Sampling;
+import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.jinfer.testkit.TestModels;
 import com.qxotic.toknroll.IntSequence;
 import java.lang.foreign.Arena;
@@ -52,6 +55,20 @@ final class ChatEngineModelTest {
                 new ChatEngine(
                         Models.load(path, weights), "lfm2-test", PromptCache.Options.DEFAULTS);
         try {
+            int bos = SpecialTokens.require(engine.loaded().tokenizer(), "<|startoftext|>");
+            int[] bare = engine.loaded().tokenizer().encode("hello").toArray();
+            int[] explicit = IntSequence.of(bos).concat(IntSequence.of(bare)).toArray();
+            try (ChatEngine.Prepared prepared =
+                            engine.prepareRaw(bare, GREEDY, 1, Duration.ZERO, null, List.of());
+                    ChatEngine.Prepared alreadyStarted =
+                            engine.prepareRaw(
+                                    explicit, GREEDY, 1, Duration.ZERO, null, List.of())) {
+                assertArrayEquals(explicit, Batch.tokenIds(prepared.encoded().prompt()));
+                assertArrayEquals(explicit, Batch.tokenIds(alreadyStarted.encoded().prompt()));
+                assertEquals(explicit.length, prepared.promptTokens());
+                assertEquals(explicit.length, alreadyStarted.promptTokens());
+            }
+
             ChatEngine.Request request = request(List.of(Message.user("Name one color.")));
 
             // blocking: a fresh prompt computes every position

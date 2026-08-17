@@ -22,7 +22,7 @@ public final class Llama32ChatTemplate implements ChatTemplate {
 
     private final Tokenizer tokenizer;
     private final String systemPreamble;
-    private final int bos;
+    private final IntSequence promptStart;
     private final int startHeader;
     private final int endHeader;
     private final int endTurn;
@@ -37,10 +37,15 @@ public final class Llama32ChatTemplate implements ChatTemplate {
                 "Cutting Knowledge Date: December 2023\nToday Date: "
                         + Objects.requireNonNull(date, "date")
                         + "\n\n";
-        bos = SpecialTokens.require(tokenizer, "<|begin_of_text|>");
+        promptStart = IntSequence.of(SpecialTokens.require(tokenizer, "<|begin_of_text|>"));
         startHeader = SpecialTokens.require(tokenizer, "<|start_header_id|>");
         endHeader = SpecialTokens.require(tokenizer, "<|end_header_id|>");
         endTurn = SpecialTokens.require(tokenizer, "<|eot_id|>");
+    }
+
+    @Override
+    public IntSequence promptStart() {
+        return promptStart;
     }
 
     @Override
@@ -58,7 +63,7 @@ public final class Llama32ChatTemplate implements ChatTemplate {
             first = 1;
         }
 
-        out.id(bos);
+        out.verbatim(promptStart());
         writeTurn(out, Role.SYSTEM, systemPreamble + system, null);
         out.flush();
         for (int i = first; i < messages.size(); i++) {

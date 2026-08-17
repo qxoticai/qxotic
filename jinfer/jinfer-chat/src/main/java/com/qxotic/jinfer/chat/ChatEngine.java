@@ -443,6 +443,9 @@ public final class ChatEngine implements AutoCloseable {
         if (promptTokens == null || promptTokens.length == 0) {
             throw new IllegalArgumentException("a raw prompt needs at least one token");
         }
+        IntSequence promptStart =
+                loaded.template().map(ChatTemplate::promptStart).orElse(IntSequence.empty());
+        promptTokens = withPromptStart(promptTokens, promptStart);
         Sampler sampler = sampling.sampler(loaded.model().configuration().vocabularySize());
         if (contentGbnf != null) {
             ReplyLanguage.Walk walk =
@@ -453,6 +456,13 @@ public final class ChatEngine implements AutoCloseable {
             sampler = walk.sampler(sampler, endTurn());
         }
         return Prepared.raw(promptTokens, sampler, maxTokens, timeout, stops);
+    }
+
+    static int[] withPromptStart(int[] promptTokens, IntSequence promptStart) {
+        IntSequence prompt = IntSequence.wrap(promptTokens);
+        return promptStart.isEmpty() || prompt.startsWith(promptStart)
+                ? promptTokens
+                : promptStart.concat(prompt).toArray();
     }
 
     /**

@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -37,6 +38,26 @@ import org.junit.jupiter.api.Test;
 
 final class ChatApiTest {
     private static final ByteTokenizer TOKENIZER = new ByteTokenizer();
+
+    @Test
+    void chatTemplatesNeedNoPromptStartByDefault() {
+        ChatTemplate template = (conversation, batchCapacity, sink) -> null;
+
+        assertTrue(template.promptStart().isEmpty());
+    }
+
+    @Test
+    void rawPromptStartIsAddedExactlyOnce() {
+        int[] bare = {3, 4};
+        int[] explicit = {1, 2, 3, 4};
+        IntSequence start = IntSequence.of(1, 2);
+
+        assertArrayEquals(new int[] {1, 2, 3, 4}, ChatEngine.withPromptStart(bare, start));
+        assertSame(explicit, ChatEngine.withPromptStart(explicit, start));
+        assertArrayEquals(
+                new int[] {1, 2, 1, 3}, ChatEngine.withPromptStart(new int[] {1, 3}, start));
+        assertSame(bare, ChatEngine.withPromptStart(bare, IntSequence.empty()));
+    }
 
     @Test
     void promptWriterPreservesRunsAndBoundsBatches() {

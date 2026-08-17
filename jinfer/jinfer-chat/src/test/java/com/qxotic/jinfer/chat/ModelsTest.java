@@ -11,8 +11,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.format.gguf.Builder;
 import com.qxotic.format.gguf.GGUF;
+import com.qxotic.jinfer.boundary.Batch;
 import com.qxotic.jinfer.boundary.ContentKey;
 import com.qxotic.jinfer.boundary.LanguageModel;
+import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Vocabulary;
 import java.lang.foreign.Arena;
@@ -141,8 +143,23 @@ class ModelsTest {
     }
 
     @Test
-    void customChatTemplateSourceIsImmutableAndDropsTheNativeCodec() {
-        ChatTemplate nativeTemplate = (conversation, batchCapacity, sink) -> null;
+    void customChatTemplateSourceIsImmutableAndKeepsOnlyThePromptStart() {
+        IntSequence promptStart = IntSequence.of(7, 8);
+        ChatTemplate nativeTemplate =
+                new ChatTemplate() {
+                    @Override
+                    public IntSequence promptStart() {
+                        return promptStart;
+                    }
+
+                    @Override
+                    public ReplyState encode(
+                            Conversation conversation,
+                            int batchCapacity,
+                            java.util.function.Consumer<Batch> sink) {
+                        return null;
+                    }
+                };
         LoadedModel<?> base =
                 new LoadedModel<>(
                         loadedModel(ContentKey.sha256(new byte[] {0})).model(),
@@ -158,12 +175,21 @@ class ModelsTest {
         assertEquals("original", base.chatTemplateSource());
         assertSame(nativeTemplate, base.template().orElseThrow());
         assertEquals("replacement", changed.chatTemplateSource());
-        assertTrue(changed.template().isEmpty());
+        ChatTemplate fallback = changed.template().orElseThrow();
+        assertEquals(promptStart, fallback.promptStart());
+        assertThrows(UnsupportedConversation.class, () -> fallback.encode(null, 1, ignored -> {}));
         assertSame(base.model(), changed.model());
         assertSame(base.tokenizer(), changed.tokenizer());
         assertEquals(base.seed(), changed.seed());
         assertThrows(IllegalArgumentException.class, () -> base.withChatTemplateSource(null));
         assertThrows(IllegalArgumentException.class, () -> base.withChatTemplateSource("  "));
+    }
+
+    @Test
+    void customChatTemplateDoesNotRetainAnEmptyCodec() {
+        LoadedModel<?> base = loadedModel(ContentKey.sha256(new byte[] {0}));
+
+        assertTrue(base.withChatTemplateSource("replacement").template().isEmpty());
     }
 
     @Test

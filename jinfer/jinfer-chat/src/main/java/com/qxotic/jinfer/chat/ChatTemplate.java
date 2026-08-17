@@ -15,6 +15,14 @@ import java.util.function.Consumer;
 public interface ChatTemplate {
 
     /**
+     * Tokens written once at the beginning of a new model input sequence. This is model framing,
+     * not conversation content; empty means that the model requires no prompt prefix.
+     */
+    default IntSequence promptStart() {
+        return IntSequence.empty();
+    }
+
+    /**
      * Streams the complete prompt synchronously. Media chunks are borrowed: neither their liveness
      * nor their contents is guaranteed beyond the sink call ({@link
      * com.qxotic.jinfer.boundary.MediaProjector#project}), so a sink that ingests after {@code

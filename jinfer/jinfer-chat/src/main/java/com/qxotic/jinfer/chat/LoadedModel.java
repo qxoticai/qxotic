@@ -1,14 +1,17 @@
 package com.qxotic.jinfer.chat;
 
+import com.qxotic.jinfer.boundary.Batch;
 import com.qxotic.jinfer.boundary.ContentKey;
 import com.qxotic.jinfer.boundary.ContextState;
 import com.qxotic.jinfer.boundary.LanguageModel;
 import com.qxotic.jinfer.llm.Sampling;
+import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Consumer;
 
 /**
  * A loaded model and everything a generation needs around it, bound at load: the tokenizer, the
@@ -47,7 +50,8 @@ public record LoadedModel<S extends ContextState>(
      * <p>This is the narrow escape hatch for a GGUF whose embedded template is missing or wrong.
      * The native template is deliberately dropped: a model-family codec was written for the
      * original wire format and must not frame a replacement one. Rendering therefore falls back to
-     * {@code source}; replies use the generic parser.
+     * {@code source}; replies use the generic parser. The model's prompt start is retained because
+     * it also frames raw completions and is independent of the chat-template source.
      *
      * <p>The cache identity is unchanged. Cache entries also fingerprint the rendered token ids, so
      * a changed template naturally misses old prefixes without invalidating compatible ones.
@@ -56,8 +60,30 @@ public record LoadedModel<S extends ContextState>(
         if (source == null || source.isBlank()) {
             throw new IllegalArgumentException("blank chat template source");
         }
+        IntSequence promptStart =
+                template.map(ChatTemplate::promptStart).orElse(IntSequence.empty());
+        Optional<ChatTemplate> fallback =
+                promptStart.isEmpty()
+                        ? Optional.empty()
+                        : Optional.of(promptStartOnly(promptStart));
         return new LoadedModel<>(
-                model, tokenizer, source, stopTokens, seed, Optional.empty(), samplingDefaults);
+                model, tokenizer, source, stopTokens, seed, fallback, samplingDefaults);
+    }
+
+    private static ChatTemplate promptStartOnly(IntSequence promptStart) {
+        return new ChatTemplate() {
+            @Override
+            public IntSequence promptStart() {
+                return promptStart;
+            }
+
+            @Override
+            public ReplyState encode(
+                    Conversation conversation, int batchCapacity, Consumer<Batch> sink) {
+                throw new UnsupportedConversation(
+                        "native framing disabled by custom chat template source");
+            }
+        };
     }
 
     /**

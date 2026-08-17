@@ -36,7 +36,7 @@ public final class Lfm2ChatTemplate implements ChatTemplate {
     private final Tokenizer tokenizer;
     private final Lfm2Vision vision;
     private final boolean promptOpensThinking;
-    private final int bos;
+    private final IntSequence promptStart;
     private final int turnOpen;
     private final int turnClose;
     private final int callOpen;
@@ -64,7 +64,7 @@ public final class Lfm2ChatTemplate implements ChatTemplate {
         this.tokenizer = Objects.requireNonNull(tokenizer, "tokenizer");
         this.vision = vision;
         this.promptOpensThinking = promptOpensThinking;
-        bos = SpecialTokens.require(tokenizer, "<|startoftext|>");
+        promptStart = IntSequence.of(SpecialTokens.require(tokenizer, "<|startoftext|>"));
         turnOpen = SpecialTokens.require(tokenizer, "<|im_start|>");
         turnClose = SpecialTokens.require(tokenizer, "<|im_end|>");
         callOpen = SpecialTokens.require(tokenizer, CALL_OPEN);
@@ -84,6 +84,11 @@ public final class Lfm2ChatTemplate implements ChatTemplate {
                         Lfm2ToolCodec::parse,
                         mark("<|im_end|>"),
                         tokenizer);
+    }
+
+    @Override
+    public IntSequence promptStart() {
+        return promptStart;
     }
 
     @Override
@@ -110,7 +115,7 @@ public final class Lfm2ChatTemplate implements ChatTemplate {
             first = 1;
         }
 
-        out.id(bos);
+        out.verbatim(promptStart());
         if (!system.isEmpty() || !conversation.tools().isEmpty()) {
             out.id(turnOpen).text("system\n").text(system);
             if (!system.isEmpty() && !conversation.tools().isEmpty()) out.text("\n");

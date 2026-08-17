@@ -10,6 +10,8 @@ import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.chat.ToolCallSyntax;
 import com.qxotic.jinfer.chat.UnsupportedConversation;
 import com.qxotic.jinfer.llm.Grammar;
+import com.qxotic.jinfer.llm.SpecialTokens;
+import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import java.util.ArrayList;
 import java.util.List;
@@ -27,9 +29,16 @@ import java.util.function.Consumer;
 public final class MistralChatTemplate implements ChatTemplate {
 
     private final Tokenizer tokenizer;
+    private final IntSequence promptStart;
 
     public MistralChatTemplate(Tokenizer tokenizer) {
         this.tokenizer = Objects.requireNonNull(tokenizer, "tokenizer");
+        promptStart = IntSequence.of(SpecialTokens.require(tokenizer, "<s>"));
+    }
+
+    @Override
+    public IntSequence promptStart() {
+        return promptStart;
     }
 
     @Override
