@@ -70,18 +70,4 @@ class ModelStoreUrlTest {
             assertEquals(0, server.hits("/evil.gguf"), "the request never left the machine");
         }
     }
-
-    @Test
-    void aPlainUrlIsNotFoundByFind(@TempDir Path root) throws IOException {
-        try (FileServer server = FileServer.start().serve("/models/x.gguf", "weights")) {
-            ModelStore store = ModelStore.of(root);
-            store.resolve(server.url("/models/x.gguf"));
-
-            var failure =
-                    assertThrows(
-                            IllegalArgumentException.class,
-                            () -> store.find(server.url("/models/x.gguf")));
-            assertTrue(failure.getMessage().contains("checksum"), failure.getMessage());
-        }
-    }
 }

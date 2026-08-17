@@ -114,21 +114,18 @@ class ModelStoreCacheTest {
     }
 
     @Test
-    void aPartialDownloadIsAMissEvenWhenItLooksAlmostComplete(@TempDir Path root) {
+    void aPartialDownloadIsAMissEvenWhenItLooksAlmostComplete(@TempDir Path root)
+            throws IOException {
         System.setProperty("jinfer.offline", "true");
         Path dir = root.resolve("hf.co/acme/thing");
-        try {
-            Files.createDirectories(dir);
-            Files.writeString(dir.resolve("thing-Q8_0.gguf.part"), "nearly all of it");
+        Files.createDirectories(dir);
+        Files.writeString(dir.resolve("thing-Q8_0.gguf.part"), "nearly all of it");
 
-            var failure =
-                    assertThrows(
-                            IllegalStateException.class,
-                            () -> ModelStore.of(root).resolve("hf.co/acme/thing:Q8_0"));
-            assertTrue(failure.getMessage().contains("JINFER_OFFLINE"), failure.getMessage());
-        } catch (IOException e) {
-            throw new AssertionError(e);
-        }
+        var failure =
+                assertThrows(
+                        IllegalStateException.class,
+                        () -> ModelStore.of(root).resolve("hf.co/acme/thing:Q8_0"));
+        assertTrue(failure.getMessage().contains("JINFER_OFFLINE"), failure.getMessage());
     }
 
     // ---- local passthrough ----

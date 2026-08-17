@@ -1,10 +1,8 @@
 package com.qxotic.jinfer.hub;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
-import java.util.stream.Collectors;
 
 /**
  * A model reference: a URL with the scheme left off.
@@ -131,11 +129,6 @@ public record ModelRef(
     /** Whether this is a host a ref may name - the first segment of every repository ref. */
     static boolean isKnownHost(String name) {
         return lookup(name) != null;
-    }
-
-    /** The canonical host names, for a message that has to list what jinfer knows. */
-    static String knownHosts() {
-        return Arrays.stream(Host.values()).map(h -> h.name).collect(Collectors.joining(", "));
     }
 
     /** The host part of an explicit {@code scheme://host/...}, or null when there is no scheme. */
@@ -322,16 +315,6 @@ public record ModelRef(
         Host kind = hostKind();
         require(kind != null, "unknown host: " + host);
         return kind.base() + kind.prefix + "/" + repoId();
-    }
-
-    /** The download URL of {@code file}, repository-relative (a 302 to a signed CDN URL). */
-    String fileUrl(String file) {
-        return repoUrl() + "/resolve/" + revisionOrDefault() + "/" + file;
-    }
-
-    /** {@code path} joined onto {@code file}, the repository-relative path of a listed file. */
-    String inPath(String file) {
-        return path.isEmpty() ? file : path + "/" + file;
     }
 
     @Override

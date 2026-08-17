@@ -33,7 +33,7 @@ class ModelStoreFallbackTest {
         assertEquals(root.resolve("hf.co/acme/thing/thing-Q8_0.gguf"), file);
         assertEquals("weights", Files.readString(file));
         assertTrue(first.fetched());
-        assertFalse(second.requestedDirs().size() > 0, "a later source is never asked");
+        assertTrue(second.requestedDirs().isEmpty(), "a later source is never asked");
     }
 
     @Test
@@ -75,8 +75,8 @@ class ModelStoreFallbackTest {
                         IllegalArgumentException.class,
                         () -> ModelStore.of(root, empty, later).resolve(REF));
         assertTrue(failure.getMessage().contains("no .gguf files"), failure.getMessage());
-        assertFalse(
-                later.requestedDirs().size() > 0,
+        assertTrue(
+                later.requestedDirs().isEmpty(),
                 "the ref is at fault: asking another source would repeat it");
     }
 
