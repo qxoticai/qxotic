@@ -15,4 +15,14 @@ class GenerationTest {
         assertNull(Generation.sampling(Map.of(), defaults).seed());
         assertEquals(42L, Generation.sampling(Map.of("seed", 42), defaults).seed());
     }
+
+    @Test
+    void reasoningKnobsAreNullUnlessGiven() {
+        assertNull(Generation.reasoningMax(Map.of()));
+        assertNull(Generation.reasoningMessage(Map.of()));
+        assertEquals(64, Generation.reasoningMax(Map.of("reasoning_max_tokens", 64)));
+        assertEquals(
+                "... Let me wrap up.",
+                Generation.reasoningMessage(Map.of("reasoning_message", "... Let me wrap up.")));
+    }
 }

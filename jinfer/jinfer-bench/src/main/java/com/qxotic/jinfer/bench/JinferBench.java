@@ -482,6 +482,7 @@ public final class JinferBench {
                 false,
                 gen,
                 null,
+                null,
                 Duration.ZERO,
                 GREEDY,
                 null,

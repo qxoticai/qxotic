@@ -365,6 +365,8 @@ public final class ChatEngine implements AutoCloseable {
      *     the context
      * @param reasoningMaxTokens think-span cap override: null = the default policy (half of {@code
      *     maxTokens}), -1 = uncapped, else the cap
+     * @param reasoningMessage forced as the model's own words when the think-span cap fires, before
+     *     the close marker; null or blank = a bare paragraph break
      * @param timeout wall-clock budget for the whole pass (prefill AND decode); {@link
      *     Duration#ZERO} = none
      * @param contentGbnf constrains decoding to a GBNF grammar (JSON schema, ...); null = free
@@ -378,6 +380,7 @@ public final class ChatEngine implements AutoCloseable {
             boolean thinking,
             int maxTokens,
             Integer reasoningMaxTokens,
+            String reasoningMessage,
             Duration timeout,
             Sampling sampling,
             String contentGbnf,
@@ -537,6 +540,7 @@ public final class ChatEngine implements AutoCloseable {
                         think,
                         request.maxTokens(),
                         request.reasoningMaxTokens(),
+                        request.reasoningMessage(),
                         encoded.replyPrefix());
         if (request.contentGbnf() != null) {
             // ONE selection constrains every chat decode: content can only be the grammar,
@@ -599,14 +603,16 @@ public final class ChatEngine implements AutoCloseable {
     /**
      * The standard jinfer sampling stack: a resolved {@link Sampling} plus the reasoning policy -
      * thinking on caps the think span so it cannot starve the visible answer ({@code
-     * reasoningOverride}: null = half of {@code maxTokens}, -1 = uncapped); thinking off masks the
-     * think markers outright.
+     * reasoningOverride}: null = half of {@code maxTokens}, -1 = uncapped; {@code
+     * reasoningMessage}: what the model "decides" when the cap fires); thinking off masks the think
+     * markers outright.
      */
     private Sampler sampler(
             Sampling sampling,
             boolean think,
             int maxTokens,
             Integer reasoningOverride,
+            String reasoningMessage,
             IntSequence replyPrefix) {
         Sampler sampler = sampling.sampler(loaded.model().configuration().vocabularySize());
         if (!think) {
@@ -629,7 +635,8 @@ public final class ChatEngine implements AutoCloseable {
                 }
             }
         }
-        return Thinking.capBudget(sampler, loaded.tokenizer(), budget, startInThink);
+        return Thinking.capBudget(
+                sampler, loaded.tokenizer(), budget, startInThink, reasoningMessage);
     }
 
     /**

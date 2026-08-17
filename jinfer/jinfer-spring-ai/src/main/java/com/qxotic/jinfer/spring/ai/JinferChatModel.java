@@ -313,6 +313,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                         options.getThinking() != Boolean.FALSE,
                         options.getMaxTokens() == null ? -1 : options.getMaxTokens(),
                         null, // Spring AI has no reasoning-budget knob
+                        null, // nor a reasoning-message one
                         options.getTimeout() == null ? Duration.ZERO : options.getTimeout(),
                         engine.loaded()
                                 .samplingDefaults()
