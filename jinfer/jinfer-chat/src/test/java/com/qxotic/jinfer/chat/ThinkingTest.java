@@ -49,6 +49,67 @@ class ThinkingTest {
         assertEquals(A, capped.sampleToken(logits(A)));
     }
 
+    @Test
+    void aNullMessageIsExactlyTheBareBreak() {
+        Sampler capped = Thinking.capBudget(Sampler.ARGMAX, TOKENIZER, 2, true, null);
+        assertEquals(A, capped.sampleToken(logits(A)));
+        assertEquals(A, capped.sampleToken(logits(A)));
+        assertEquals(NEWLINE, capped.sampleToken(logits(A)));
+        assertEquals(NEWLINE, capped.sampleToken(logits(A)));
+        assertEquals(CLOSE, capped.sampleToken(logits(A)));
+    }
+
+    @Test
+    void aBlankMessageIsAlsoTheBareBreak() {
+        Sampler capped = Thinking.capBudget(Sampler.ARGMAX, TOKENIZER, 2, true, "  ");
+        assertEquals(A, capped.sampleToken(logits(A)));
+        assertEquals(A, capped.sampleToken(logits(A)));
+        assertEquals(NEWLINE, capped.sampleToken(logits(A)));
+        assertEquals(NEWLINE, capped.sampleToken(logits(A)));
+        assertEquals(CLOSE, capped.sampleToken(logits(A)));
+    }
+
+    @Test
+    void aMessageIsForcedBetweenParagraphBreaksThenBothMarkersStayBanned() {
+        Sampler capped = Thinking.capBudget(Sampler.ARGMAX, TOKENIZER, 2, true, "ab");
+        assertEquals(A, capped.sampleToken(logits(A)));
+        assertEquals(A, capped.sampleToken(logits(A)));
+        // "\n\n" + "ab" + "\n\n", then the close - the ONLY close id in the sequence:
+        // encoding is the non-special-aware path, so message text can never inject a marker
+        assertEquals(NEWLINE, capped.sampleToken(logits(A)));
+        assertEquals(NEWLINE, capped.sampleToken(logits(A)));
+        assertEquals(A, capped.sampleToken(logits(A)));
+        assertEquals(B, capped.sampleToken(logits(A)));
+        assertEquals(NEWLINE, capped.sampleToken(logits(A)));
+        assertEquals(NEWLINE, capped.sampleToken(logits(A)));
+        assertEquals(CLOSE, capped.sampleToken(logits(A)));
+        // the ping-pong guard holds with a message spent: both markers stay banned
+        assertEquals(A, capped.sampleToken(logits(OPEN)));
+        assertEquals(A, capped.sampleToken(logits(CLOSE)));
+    }
+
+    @Test
+    void startInThinkArmsTheMessagePath() {
+        Sampler capped = Thinking.capBudget(Sampler.ARGMAX, TOKENIZER, 1, false, "ab");
+        assertEquals(OPEN, capped.sampleToken(logits(OPEN))); // the model opens the span itself
+        assertEquals(A, capped.sampleToken(logits(A))); // thought = 1 = the budget
+        assertEquals(NEWLINE, capped.sampleToken(logits(A)));
+        assertEquals(NEWLINE, capped.sampleToken(logits(A)));
+        assertEquals(A, capped.sampleToken(logits(A)));
+        assertEquals(B, capped.sampleToken(logits(A)));
+        assertEquals(NEWLINE, capped.sampleToken(logits(A)));
+        assertEquals(NEWLINE, capped.sampleToken(logits(A)));
+        assertEquals(CLOSE, capped.sampleToken(logits(A)));
+    }
+
+    @Test
+    void aMessageTheTokenizerCannotEncodeClosesHard() {
+        // '<' is not in the fake's alphabet: the encode fails, and the close still lands
+        Sampler capped = Thinking.capBudget(Sampler.ARGMAX, TOKENIZER, 1, true, "<nope>");
+        assertEquals(A, capped.sampleToken(logits(A)));
+        assertEquals(CLOSE, capped.sampleToken(logits(A)));
+    }
+
     private static MemoryView<MemorySegment> logits(int favorite) {
         float[] values = new float[TOKENS.length];
         values[favorite] = 2;

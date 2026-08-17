@@ -46,6 +46,8 @@ public record Options(
         boolean echo,
         boolean think,
         boolean thinkInline,
+        Integer reasoningBudget,
+        String reasoningBudgetMessage,
         boolean colors,
         boolean rawPrompt,
         Path promptCache,
@@ -160,6 +162,8 @@ public record Options(
                 echo,
                 think,
                 thinkInline,
+                null,
+                null,
                 colors,
                 rawPrompt,
                 promptCache,
@@ -340,6 +344,8 @@ public record Options(
         boolean echo = false;
         boolean think = true;
         boolean thinkInline = false;
+        Integer reasoningBudget = null;
+        String reasoningBudgetMessage = null;
         String colorMode = "auto";
         boolean rawPrompt = false;
         Path promptCache = null;
@@ -420,6 +426,15 @@ public record Options(
                                 speculationDepth = parseInt(optionName, nextArg);
                         case "--stream" -> stream = parseBooleanOption(optionName, nextArg);
                         case "--echo" -> echo = parseBooleanOption(optionName, nextArg);
+                        case "--reasoning-budget" -> {
+                            reasoningBudget = parseInt(optionName, nextArg);
+                            require(
+                                    reasoningBudget >= -1,
+                                    "Invalid argument for %s: -1 (uncapped) or >= 0, got %s",
+                                    optionName,
+                                    nextArg);
+                        }
+                        case "--reasoning-budget-message" -> reasoningBudgetMessage = nextArg;
                         case "--color" -> colorMode = nextArg.toLowerCase(Locale.ROOT);
                         case "--cache" -> promptCache = Path.of(nextArg);
                         case "--cache-ro" -> {
@@ -513,6 +528,8 @@ public record Options(
                 echo,
                 think,
                 thinkInline,
+                reasoningBudget,
+                reasoningBudgetMessage,
                 color,
                 rawPrompt,
                 promptCache,
@@ -637,6 +654,12 @@ public record Options(
         out.println(
                 "  --think <off|on|inline>       on: show thinking (default), off: hide thinking"
                         + " from output (model still generates it), inline: thoughts to stdout");
+        out.println(
+                "  --reasoning-budget <int>      cap the thinking span at N tokens (default: half"
+                        + " of --max-output-tokens, -1: uncapped)");
+        out.println(
+                "  --reasoning-budget-message <s>  forced as the model's own words when the budget"
+                        + " runs out, e.g. \"... Let me wrap up.\" (default: a paragraph break)");
         out.println(
                 "  --raw-prompt                  bypass chat template and tokenize --prompt"
                         + " directly");

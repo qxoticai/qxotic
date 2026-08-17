@@ -48,13 +48,26 @@ final class Thinking {
      * LENGTH.
      */
     static Sampler capBudget(Sampler inner, Tokenizer tokenizer, int budget, boolean startInThink) {
+        return capBudget(inner, tokenizer, budget, startInThink, null);
+    }
+
+    /**
+     * As above, with a {@code message} forced between the paragraph breaks when the budget runs out
+     * - the model "deciding" to wrap up in its own words (llama.cpp's {@code
+     * --reasoning-budget-message}), so the visible answer continues coherently instead of from an
+     * unexplained stop. Null or blank = the bare break. Encoding is the ordinary, non-special-aware
+     * path, so message text can never inject a marker id; a tokenizer that cannot encode it closes
+     * hard.
+     */
+    static Sampler capBudget(
+            Sampler inner, Tokenizer tokenizer, int budget, boolean startInThink, String message) {
         Integer open = boxed(SpecialTokens.find(tokenizer, OPEN));
         Integer close = boxed(SpecialTokens.find(tokenizer, CLOSE));
         if (budget < 0 || open == null || close == null) {
             return inner;
         }
         int openToken = open, closeToken = close;
-        int[] filler = encode(tokenizer, "\n\n"); // empty = a tokenizer that cannot: close hard
+        int[] filler = encode(tokenizer, fillerText(message));
         Sampler markersBanned = Sampler.banning(inner, Set.of(open, close));
         return new Sampler() {
             boolean inThink = startInThink;
@@ -94,6 +107,19 @@ final class Thinking {
                 return token;
             }
         };
+    }
+
+    /**
+     * What a spent budget forces before the close: a paragraph break, or the caller's message
+     * wrapped in one on both sides. The breaks are unconditional - they are the
+     * on-training-distribution boundary the bake-off proved, and nobody writing a message should
+     * have to think about whitespace.
+     */
+    private static String fillerText(String message) {
+        if (message == null || message.isBlank()) {
+            return "\n\n";
+        }
+        return "\n\n" + message.strip() + "\n\n";
     }
 
     private static int[] encode(Tokenizer tokenizer, String text) {

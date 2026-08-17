@@ -40,7 +40,8 @@ final class ChatEngineModelTest {
 
     private static ChatEngine.Request request(List<Message> messages, Duration timeout) {
         return new ChatEngine.Request(
-                messages, List.of(), false, 32, null, timeout, GREEDY, null, null, List.of(), null);
+                messages, List.of(), false, 32, null, null, timeout, GREEDY, null, null, List.of(),
+                null);
     }
 
     @Test

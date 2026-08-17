@@ -71,6 +71,7 @@ final class Generation {
                         thinking(request) && forcedTool(request) == null,
                         maxTokens(request),
                         reasoningMax(request),
+                        reasoningMessage(request),
                         config.limits().requestTimeout(),
                         sampling(request, defaults),
                         grammar(request),
@@ -400,10 +401,18 @@ final class Generation {
         return Values.intValue(Requests.budget(request), config.defaults().maxOutputTokens());
     }
 
-    private static Integer reasoningMax(Map<String, Object> request) {
+    static Integer reasoningMax(Map<String, Object> request) {
         return request.get("reasoning_max_tokens") == null
                 ? null
                 : Values.intValue(request.get("reasoning_max_tokens"), -1);
+    }
+
+    /**
+     * What the model "decides" when the think-span cap fires (llama.cpp's {@code
+     * --reasoning-budget-message}); absent = a bare paragraph break.
+     */
+    static String reasoningMessage(Map<String, Object> request) {
+        return Values.stringValue(request.get("reasoning_message"), null);
     }
 
     private boolean thinking(Map<String, Object> request) {

@@ -349,6 +349,7 @@ final class Lfm2VisionAcceptanceDriver {
                         false,
                         maxTokens,
                         null,
+                        null,
                         Duration.ZERO,
                         GREEDY,
                         null,

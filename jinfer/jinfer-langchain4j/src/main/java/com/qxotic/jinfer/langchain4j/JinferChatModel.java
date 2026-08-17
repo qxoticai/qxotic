@@ -395,6 +395,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                         thinking,
                         p.maxOutputTokens() == null ? -1 : p.maxOutputTokens(),
                         null, // langchain4j has no reasoning-budget knob
+                        null, // nor a reasoning-message one
                         timeout,
                         engine.loaded()
                                 .samplingDefaults()

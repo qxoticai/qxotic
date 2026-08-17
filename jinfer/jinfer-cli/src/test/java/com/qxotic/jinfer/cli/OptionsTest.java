@@ -81,6 +81,37 @@ final class OptionsTest {
     }
 
     @Test
+    void reasoningBudgetFlagsParse(@TempDir Path dir) throws IOException {
+        Path model = Files.createFile(dir.resolve("m.gguf"));
+        Options options =
+                Options.parse(
+                        new String[] {
+                            "--model", model.toString(),
+                            "-p", "hi",
+                            "--reasoning-budget", "128",
+                            "--reasoning-budget-message", "... Let me wrap up."
+                        });
+        assertEquals(128, options.reasoningBudget());
+        assertEquals("... Let me wrap up.", options.reasoningBudgetMessage());
+    }
+
+    @Test
+    void reasoningBudgetBelowMinusOneNamesTheFlag(@TempDir Path dir) throws IOException {
+        Path model = Files.createFile(dir.resolve("m.gguf"));
+        IllegalArgumentException e =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                Options.parse(
+                                        new String[] {
+                                            "--model", model.toString(),
+                                            "-p", "hi",
+                                            "--reasoning-budget", "-2"
+                                        }));
+        assertTrue(e.getMessage().contains("--reasoning-budget"), e.getMessage());
+    }
+
+    @Test
     void aTransposedTemperatureAndTopPIsRejectedBeforeTheModelLoads() {
         IllegalArgumentException e =
                 assertThrows(
