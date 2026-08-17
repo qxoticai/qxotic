@@ -58,6 +58,9 @@ final class Gemma4ChatTemplateTest {
         try (Arena arena = Arena.ofConfined()) {
             Multimodal media = new TestMedia(arena);
             Gemma4ChatTemplate template = new Gemma4ChatTemplate(tokenizer, media, false);
+            assertEquals(
+                    IntSequence.of(SpecialTokens.require(tokenizer, "<bos>")),
+                    template.promptStart());
             List<Batch> batches = new ArrayList<>();
             template.encode(new Conversation(List.of(message)), 4, batches::add);
 

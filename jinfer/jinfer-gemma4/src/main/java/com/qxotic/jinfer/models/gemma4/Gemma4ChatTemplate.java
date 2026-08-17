@@ -39,7 +39,7 @@ public final class Gemma4ChatTemplate implements ChatTemplate {
     private final Tokenizer tokenizer;
     private final Multimodal media;
     private final boolean scaffoldsNonThinking;
-    private final int bos;
+    private final IntSequence promptStart;
     private final int turnOpen;
     private final int turnClose;
     private final int imageOpen;
@@ -61,7 +61,7 @@ public final class Gemma4ChatTemplate implements ChatTemplate {
         this.tokenizer = Objects.requireNonNull(tokenizer, "tokenizer");
         this.media = media;
         this.scaffoldsNonThinking = scaffoldsNonThinking;
-        bos = SpecialTokens.require(tokenizer, "<bos>");
+        promptStart = IntSequence.of(SpecialTokens.require(tokenizer, "<bos>"));
         turnOpen = SpecialTokens.require(tokenizer, "<|turn>");
         turnClose = SpecialTokens.require(tokenizer, "<turn|>");
         imageOpen = SpecialTokens.require(tokenizer, "<|image>");
@@ -85,6 +85,11 @@ public final class Gemma4ChatTemplate implements ChatTemplate {
     }
 
     @Override
+    public IntSequence promptStart() {
+        return promptStart;
+    }
+
+    @Override
     public ReplyState encode(Conversation conversation, int batchCapacity, Consumer<Batch> sink) {
         return encode(conversation, batchCapacity, null, sink);
     }
@@ -98,7 +103,7 @@ public final class Gemma4ChatTemplate implements ChatTemplate {
         Objects.requireNonNull(conversation, "conversation");
         requireSupported(conversation);
         PromptWriter out = new PromptWriter(tokenizer, batchCapacity, mediaCache, sink);
-        out.id(bos);
+        out.verbatim(promptStart());
         List<Message> msgs = conversation.messages();
         boolean systemFirst = !msgs.isEmpty() && msgs.get(0).role().equals(Role.SYSTEM);
         int start = 0;

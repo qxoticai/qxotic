@@ -68,6 +68,7 @@ final class Lfm2ChatTemplateTest {
                                 Message.user("And 3+3?")));
 
         Lfm2ChatTemplate template = new Lfm2ChatTemplate(tokenizer, true);
+        assertEquals(IntSequence.of(special("<|startoftext|>")), template.promptStart());
         for (List<Message> messages : cases) {
             int[] expected = renderJinja(messages);
             for (int capacity : List.of(1, 7, 512)) {

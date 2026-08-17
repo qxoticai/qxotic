@@ -14,6 +14,7 @@ import com.qxotic.jinfer.kernels.ModelLoader;
 import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.jinfer.testkit.TestModels;
 import com.qxotic.jota.memory.MemoryView;
+import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
 import java.lang.foreign.Arena;
@@ -61,8 +62,10 @@ class JsonEnvelopeReplyLanguageTest {
     @Test
     void mistralAdmitsItsForcedWire() throws Exception {
         Tokenizer tokenizer = tokenizer("hf.co/unsloth/Ministral-3-3B-Instruct-2512-GGUF:Q8_0");
-        ReplyLanguage.Selection selection =
-                new MistralChatTemplate(tokenizer).forcedCall(List.of(WEATHER)).orElseThrow();
+        MistralChatTemplate template = new MistralChatTemplate(tokenizer);
+        assertEquals(
+                IntSequence.of(SpecialTokens.require(tokenizer, "<s>")), template.promptStart());
+        ReplyLanguage.Selection selection = template.forcedCall(List.of(WEATHER)).orElseThrow();
         ReplyLanguage.Walk walk = selection.walk();
         feed(walk, selection.forcedPrefix());
         assertAdmitted(walk, tokenizer, "{\"city\": \"Paris\"}");
