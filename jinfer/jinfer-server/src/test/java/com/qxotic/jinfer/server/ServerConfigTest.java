@@ -43,6 +43,13 @@ class ServerConfigTest {
     }
 
     @Test
+    void aServerDefaultReasoningBudgetBelowMinusOneIsRefused() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new ServerConfig.Defaults(null, -1, true, false, -2, null));
+    }
+
+    @Test
     void namedCopiesAvoidPositionalReconstruction() {
         ServerConfig config =
                 ServerConfig.local(0)

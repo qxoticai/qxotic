@@ -181,7 +181,13 @@ public record Options(
     ServerConfig serverConfig(Sampling sampling) {
         return new ServerConfig(
                 new InetSocketAddress(host, port),
-                new ServerConfig.Defaults(sampling, maxOutputTokens, think, rawPrompt),
+                new ServerConfig.Defaults(
+                        sampling,
+                        maxOutputTokens,
+                        think,
+                        rawPrompt,
+                        reasoningBudget,
+                        reasoningBudgetMessage),
                 limits.withGrammar(!noGrammar),
                 new ServerConfig.Access(apiKey, allowedOrigins));
     }
