@@ -28,6 +28,11 @@ public final class Qwen35Provider implements ModelProvider {
     }
 
     @Override
+    public Map<String, String> companionFiles() {
+        return Map.of("media", "mmproj");
+    }
+
+    @Override
     public LoadedModel<?> load(
             FileChannel fileChannel,
             GGUF gguf,
@@ -36,6 +41,8 @@ public final class Qwen35Provider implements ModelProvider {
             Tokenizer tokenizer)
             throws IOException {
         Qwen35 model = Qwen35.loadModel(fileChannel, gguf, arena, tokenizer);
+        Path media = companions.get("media");
+        if (media != null) model = model.withMedia(media, arena);
         Tokenizer tok = model.tokenizer();
         int eos = gguf.getValueOrDefault(int.class, "tokenizer.ggml.eos_token_id", -1);
         return new LoadedModel<>(
@@ -46,7 +53,7 @@ public final class Qwen35Provider implements ModelProvider {
                 Models.modelSeed(fileChannel),
                 // the GGUF template frames; the attached codec keeps the family's reply grammar
                 // (call parsing, constrained decoding, forced calls) on the whole-render path
-                Optional.of(new Qwen35ChatTemplate(tok)),
+                Optional.of(new Qwen35ChatTemplate(model)),
                 LoadedModel.SamplingDefaults.NONE);
     }
 }
