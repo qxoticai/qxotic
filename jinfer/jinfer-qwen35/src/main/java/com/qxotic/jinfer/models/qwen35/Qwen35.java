@@ -9,6 +9,9 @@ import com.qxotic.jinfer.boundary.CheckpointCodec;
 import com.qxotic.jinfer.boundary.ContextConfiguration;
 import com.qxotic.jinfer.boundary.ContextState;
 import com.qxotic.jinfer.boundary.LanguageModel;
+import com.qxotic.jinfer.boundary.Media;
+import com.qxotic.jinfer.boundary.MediaProjector;
+import com.qxotic.jinfer.boundary.Multimodal;
 import com.qxotic.jinfer.kernels.Activations;
 import com.qxotic.jinfer.kernels.Convert;
 import com.qxotic.jinfer.kernels.Convolutions;
@@ -41,20 +44,35 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
-/** Text-only MemoryView port of the hybrid Qwen3.5 gated-delta/full-attention decoder. */
+/**
+ * MemoryView port of the hybrid Qwen3.5 gated-delta/full-attention decoder, optionally with the
+ * Qwen3-VL vision tower attached ({@link #withMedia}).
+ */
 public final class Qwen35
         implements LanguageModel<Qwen35.Configuration, Qwen35.Weights, Qwen35.State>,
-                SpeculativeDecoding<Qwen35.State> {
+                SpeculativeDecoding<Qwen35.State>,
+                Multimodal {
     private final Configuration configuration;
     private final Tokenizer tokenizer;
     private final Weights weights;
+    private final MediaProjector<Media.Image> vision;
 
     Qwen35(Configuration configuration, Tokenizer tokenizer, Weights weights) {
+        this(configuration, tokenizer, weights, null);
+    }
+
+    private Qwen35(
+            Configuration configuration,
+            Tokenizer tokenizer,
+            Weights weights,
+            MediaProjector<Media.Image> vision) {
         this.configuration = configuration;
         this.tokenizer = tokenizer;
         this.weights = weights;
+        this.vision = vision;
     }
 
     @Override
@@ -69,6 +87,42 @@ public final class Qwen35
 
     public Tokenizer tokenizer() {
         return tokenizer;
+    }
+
+    @Override
+    public <R extends Media> Optional<MediaProjector<R>> projector(Class<R> modality) {
+        if (modality == Media.Image.class && vision != null)
+            return Optional.of((MediaProjector<R>) vision);
+        return Optional.empty();
+    }
+
+    /**
+     * Returns a model sharing this backbone's weights with a validated vision sidecar attached.
+     *
+     * <p>ponytail: the sidecar borrows {@code arena}, so callers close it once after the model -
+     * never before, and never the sidecar separately.
+     */
+    public Qwen35 withMedia(Path mmprojPath, Arena arena) throws IOException {
+        Objects.requireNonNull(mmprojPath, "mmprojPath");
+        Objects.requireNonNull(arena, "arena");
+        try (FileChannel channel = FileChannel.open(mmprojPath, StandardOpenOption.READ)) {
+            GGUF gguf = ModelLoader.readGguf(channel, mmprojPath.toString());
+            // ponytail: this is the only check the backbone owns; the tower's own geometry
+            // (projector type included) is validated inside Qwen35Vision.loadModel.
+            int projected = gguf.getValueOrDefault(int.class, "clip.vision.projection_dim", 0);
+            if (projected != configuration.embeddingLength)
+                throw new IllegalArgumentException(
+                        "'"
+                                + mmprojPath.getFileName()
+                                + "' projector width "
+                                + projected
+                                + " does not match model width "
+                                + configuration.embeddingLength);
+            Qwen35Vision tower =
+                    Qwen35Vision.loadModel(
+                            mmprojPath, gguf, ModelLoader.loadTensors(channel, gguf, arena));
+            return new Qwen35(configuration, tokenizer, weights, tower);
+        }
     }
 
     @Override
@@ -120,10 +174,30 @@ public final class Qwen35
                     case Batch.Input.Sequences ignored ->
                             throw new UnsupportedOperationException(
                                     "Qwen3.5 does not support packed sequences");
-                    case Batch.Input.Embeddings ignored ->
+                    case Batch.Input.Embeddings e -> {
+                        if (vision == null)
                             throw new UnsupportedOperationException(
-                                    "Qwen3.5 is text-only and does not support embedding input");
+                                    "no media encoder loaded (attach --with media=<mmproj.gguf>)");
+                        if (e.rows().shape().flatAt(1) != configuration.embeddingLength)
+                            throw new IllegalArgumentException(
+                                    "embedding width "
+                                            + e.rows().shape().flatAt(1)
+                                            + " != model width "
+                                            + configuration.embeddingLength);
+                        MemoryView<MemorySegment> rowsView =
+                                Views.castToSegmentBacked(e.rows(), "embedding rows");
+                        if (rows == 1)
+                            Parallel.onDecodePool(
+                                    () -> {
+                                        forwardMedia(state, rowsView, start, 1);
+                                        return null;
+                                    });
+                        else forwardMedia(state, rowsView, start, rows);
+                        state.advance(batch);
+                        yield null;
+                    }
                 };
+        if (tokens == null) return; // embedding batch already forwarded
         for (int token : tokens)
             if (token < 0 || token >= configuration.vocabularySize)
                 throw new IllegalArgumentException(
@@ -136,6 +210,20 @@ public final class Qwen35
                     });
         else forward(state, tokens, start, rows);
         state.advance(batch);
+    }
+
+    /**
+     * Projected media rows: copy into the residual stream, then the decoder blocks (prefill-style
+     * batch; the draft-head synchronize path is token-only and skipped).
+     */
+    private void forwardMedia(
+            State state, MemoryView<MemorySegment> rowsView, int startPos, int rows) {
+        Configuration c = configuration;
+        if (weights.rope != null)
+            RoPE.fill(state.ropeCos, state.ropeSin, startPos, rows, weights.ropeHalf, weights.rope);
+        Convert.copyF32(rowsView, 0, state.residual, 0, (long) rows * c.embeddingLength);
+        for (int layer = 0; layer < c.numberOfLayers; layer++)
+            decoderBlock(state, layer, startPos, rows);
     }
 
     private void forward(State state, int[] tokens, int startPos, int rows) {

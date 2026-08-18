@@ -1,6 +1,9 @@
 package com.qxotic.jinfer.models.qwen35;
 
 import com.qxotic.jinfer.boundary.Batch;
+import com.qxotic.jinfer.boundary.Media;
+import com.qxotic.jinfer.boundary.MediaProjector;
+import com.qxotic.jinfer.boundary.Multimodal;
 import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.Conversation;
@@ -70,19 +73,33 @@ public final class Qwen35ChatTemplate implements ChatTemplate {
                 + "</IMPORTANT>";
 
     private final Tokenizer tokenizer;
+    private final Multimodal media;
     private final int imStart; // <|im_start|>
     private final int imEnd; // <|im_end|>
     private final int think; // <think>
     private final int endThink; // </think>
+    private final int visionOpen; // <|vision_start|>
+    private final int visionClose; // <|vision_end|>
     private final IntSequence seedThinking; // <think>\n
     private final IntSequence seedDirect; // <think>\n\n</think>\n\n
 
+    public Qwen35ChatTemplate(Qwen35 model) {
+        this(model.tokenizer(), model);
+    }
+
     public Qwen35ChatTemplate(Tokenizer tokenizer) {
+        this(tokenizer, null);
+    }
+
+    public Qwen35ChatTemplate(Tokenizer tokenizer, Multimodal media) {
         this.tokenizer = Objects.requireNonNull(tokenizer, "tokenizer");
+        this.media = media;
         imStart = SpecialTokens.require(tokenizer, "<|im_start|>");
         imEnd = SpecialTokens.require(tokenizer, "<|im_end|>");
         think = SpecialTokens.require(tokenizer, "<think>");
         endThink = SpecialTokens.require(tokenizer, "</think>");
+        visionOpen = SpecialTokens.require(tokenizer, "<|vision_start|>");
+        visionClose = SpecialTokens.require(tokenizer, "<|vision_end|>");
         IntSequence.Builder thinking = IntSequence.newBuilder();
         thinking.add(think).addAll(tokenizer.encode("\n"));
         seedThinking = thinking.build();
@@ -120,11 +137,59 @@ public final class Qwen35ChatTemplate implements ChatTemplate {
         return new ReplyState(replyPrefix, parser);
     }
 
-    /** {@code <|im_start|>{role}\n{content|trim}<|im_end|>\n} - one contiguous run per turn. */
+    /**
+     * {@code <|im_start|>{role}\n{content|trim}<|im_end|>\n} - one contiguous run per turn.
+     * Media-bearing turns write parts verbatim with images framed as the template's {@code
+     * <|vision_start|> rows <|vision_end|>}.
+     */
     private void writePlainTurn(PromptWriter out, Message m) {
+        boolean hasMedia = m.content().stream().anyMatch(Content.Media.class::isInstance);
+        if (hasMedia) {
+            out.id(imStart).text(m.role().name() + "\n");
+            for (Content part : m.content()) {
+                switch (part) {
+                    case Content.Text text -> out.text(text.text());
+                    case Content.Media value -> writeMedia(out, value);
+                    default ->
+                            throw new UnsupportedConversation(
+                                    "unsupported content type in Qwen3.5 message");
+                }
+            }
+            out.id(imEnd).text("\n");
+            return;
+        }
         String content = m.text().strip();
         if (m.role().equals(Role.ASSISTANT)) content = stripThinking(content);
         out.id(imStart).text(m.role().name() + "\n" + content).id(imEnd).text("\n");
+    }
+
+    private void writeMedia(PromptWriter out, Content.Media content) {
+        if (!(content.value() instanceof Media.Image image))
+            throw new UnsupportedConversation("Qwen3.5 vision supports images only");
+        MediaProjector<Media.Image> projector =
+                media == null ? null : media.projector(Media.Image.class).orElse(null);
+        if (projector == null)
+            throw new UnsupportedConversation(
+                    "image input is not supported by this model (attach --with"
+                            + " media=<mmproj.gguf>)");
+        out.cachedMedia(
+                image,
+                content.contentKey(),
+                encoded ->
+                        encoded.id(visionOpen)
+                                .media(image, content.contentKey(), projector, false)
+                                .id(visionClose));
+    }
+
+    /** Best-effort media positions via the modality's embedder plan (no encoding). */
+    @Override
+    public int mediaPositions(Media m) {
+        MediaProjector<Media.Image> projector =
+                media == null ? null : media.projector(Media.Image.class).orElse(null);
+        if (projector == null)
+            throw new UnsupportedOperationException("image input is not supported by this model");
+        if (m instanceof Media.Image img) return projector.positions(img);
+        throw new UnsupportedOperationException("Qwen3.5 vision supports images only");
     }
 
     /** {@code <|im_start|>assistant\n} + the thinking scaffold. */
@@ -266,7 +331,8 @@ public final class Qwen35ChatTemplate implements ChatTemplate {
     private static boolean plainShape(List<Message> msgs) {
         for (Message m : msgs) {
             for (Content part : m.content()) {
-                if (!(part instanceof Content.Text)) return false;
+                if (!(part instanceof Content.Text) && !(part instanceof Content.Media))
+                    return false;
             }
         }
         return true;
