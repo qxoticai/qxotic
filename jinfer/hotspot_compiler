@@ -27,6 +27,8 @@ inline com/qxotic/jinfer/kernels/Ops.siluVec
 inline com/qxotic/jinfer/kernels/Ops.tanhVec
 inline com/qxotic/jinfer/kernels/VectorGatedDeltaNet.load
 inline com/qxotic/jinfer/kernels/VectorGatedDeltaNet.store
+inline com/qxotic/jinfer/kernels/VectorMamba2.load
+inline com/qxotic/jinfer/kernels/VectorMamba2.store
 inline com/qxotic/jinfer/kernels/FlashAttention.loadF32
 inline com/qxotic/jinfer/kernels/FlashAttention.loadF16
 inline com/qxotic/jinfer/kernels/FlashAttention.accumulate
