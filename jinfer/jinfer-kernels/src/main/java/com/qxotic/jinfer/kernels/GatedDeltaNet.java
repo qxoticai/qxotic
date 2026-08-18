@@ -7,7 +7,7 @@ import com.qxotic.jinfer.Parallel;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.MemorySegment;
 
-/** Exact scalar preparation and recurrent scan used by Qwen3.5 gated-delta layers. */
+/** Preparation kernels and dispatched recurrent scan used by Qwen3.5 gated-delta layers. */
 public final class GatedDeltaNet {
     private GatedDeltaNet() {}
 
@@ -143,6 +143,30 @@ public final class GatedDeltaNet {
         Raw gr = Raw.f32(gate, "gate"), br = Raw.f32(beta, "beta");
         Raw sr = Raw.f32(state, "state"), or = Raw.f32(output, "output");
         Raw skr = Raw.f32(sk, "sk"), dr = Raw.f32(delta, "delta");
+        if (VectorGatedDeltaNet.applies(headDim)) {
+            VectorGatedDeltaNet.scan(qr, kr, vr, gr, br, sr, or, skr, dr, rows, heads, headDim);
+            return;
+        }
+        scanScalar(qr, kr, vr, gr, br, sr, or, skr, dr, rows, heads, headDim);
+    }
+
+    /**
+     * Scalar oracle and fallback. Package-private so the vector implementation's parity test can
+     * use it.
+     */
+    static void scanScalar(
+            Raw qr,
+            Raw kr,
+            Raw vr,
+            Raw gr,
+            Raw br,
+            Raw sr,
+            Raw or,
+            Raw skr,
+            Raw dr,
+            int rows,
+            int heads,
+            int headDim) {
         Parallel.parallelFor(
                 0,
                 heads,
