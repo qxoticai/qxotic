@@ -1,6 +1,8 @@
 package com.qxotic.jinfer.kernels;
 
+import static com.qxotic.jinfer.Segments.F_SPECIES;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -8,6 +10,66 @@ import java.lang.foreign.ValueLayout;
 import org.junit.jupiter.api.Test;
 
 class GatedDeltaNetTest {
+    @Test
+    void vectorScanMatchesScalarAtQwen35Shape() {
+        assumeTrue(F_SPECIES != null && 128 % F_SPECIES.length() == 0);
+        try (Arena arena = Arena.ofConfined()) {
+            int rows = 17, heads = 2, dim = 128;
+            float[] q = values(rows * heads * dim, .013f, .17f);
+            float[] k = values(rows * heads * dim, .017f, -.11f);
+            float[] v = values(rows * heads * dim, .019f, .07f);
+            float[] gate = values(rows * heads, .023f, -.2f);
+            float[] beta = values(rows * heads, .029f, .5f);
+            float[] initialState = values(heads * dim * dim, .003f, .01f);
+
+            var qv = view(arena, q);
+            var kv = view(arena, k);
+            var vv = view(arena, v);
+            var gv = view(arena, gate);
+            var bv = view(arena, beta);
+            var scalarState = view(arena, initialState);
+            var vectorState = view(arena, initialState);
+            var scalarOut = view(arena, new float[q.length]);
+            var vectorOut = view(arena, new float[q.length]);
+            var scalarSk = view(arena, new float[heads * dim]);
+            var vectorSk = view(arena, new float[heads * dim]);
+            var scalarDelta = view(arena, new float[heads * dim]);
+            var vectorDelta = view(arena, new float[heads * dim]);
+
+            GatedDeltaNet.scanScalar(
+                    Raw.f32(qv, "q"),
+                    Raw.f32(kv, "k"),
+                    Raw.f32(vv, "v"),
+                    Raw.f32(gv, "gate"),
+                    Raw.f32(bv, "beta"),
+                    Raw.f32(scalarState, "state"),
+                    Raw.f32(scalarOut, "output"),
+                    Raw.f32(scalarSk, "sk"),
+                    Raw.f32(scalarDelta, "delta"),
+                    rows,
+                    heads,
+                    dim);
+            VectorGatedDeltaNet.scan(
+                    Raw.f32(qv, "q"),
+                    Raw.f32(kv, "k"),
+                    Raw.f32(vv, "v"),
+                    Raw.f32(gv, "gate"),
+                    Raw.f32(bv, "beta"),
+                    Raw.f32(vectorState, "state"),
+                    Raw.f32(vectorOut, "output"),
+                    Raw.f32(vectorSk, "sk"),
+                    Raw.f32(vectorDelta, "delta"),
+                    rows,
+                    heads,
+                    dim);
+
+            assertArrayEquals(floats(scalarOut), floats(vectorOut), 2e-5f);
+            assertArrayEquals(floats(scalarState), floats(vectorState), 2e-5f);
+            assertArrayEquals(floats(scalarSk), floats(vectorSk), 2e-5f);
+            assertArrayEquals(floats(scalarDelta), floats(vectorDelta), 2e-5f);
+        }
+    }
+
     @Test
     void scanMatchesScalarOracleAcrossChunkBoundary() {
         try (Arena arena = Arena.ofConfined()) {
@@ -64,6 +126,19 @@ class GatedDeltaNetTest {
         MemorySegment segment = arena.allocate(4L * values.length, 64);
         segment.copyFrom(MemorySegment.ofArray(values));
         return Oracles.f32View(segment, values.length);
+    }
+
+    private static float[] floats(com.qxotic.jota.memory.MemoryView<MemorySegment> view) {
+        return view.memory()
+                .base()
+                .asSlice(view.byteOffset(), view.logicalSize() * Float.BYTES)
+                .toArray(ValueLayout.JAVA_FLOAT);
+    }
+
+    private static float[] values(int size, float frequency, float offset) {
+        float[] result = new float[size];
+        for (int i = 0; i < size; i++) result[i] = .1f * (float) Math.sin(i * frequency) + offset;
+        return result;
     }
 
     private static float[] scalar(
