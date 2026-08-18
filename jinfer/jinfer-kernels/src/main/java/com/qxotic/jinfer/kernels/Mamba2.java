@@ -27,6 +27,27 @@ public final class Mamba2 {
         Raw cv = Raw.f32(conv, "conv"), zv = Raw.f32(z, "z"), tv = Raw.f32(dt, "dt");
         Raw av = Raw.f32(a, "a"), dv = Raw.f32(d, "d"), sv = Raw.f32(state, "state");
         Raw out = Raw.f32(output, "output");
+        if (VectorMamba2.appliesScan(stateSize)) {
+            VectorMamba2.scan(cv, zv, tv, av, dv, sv, out, rows, inner, heads, groups, stateSize);
+            return;
+        }
+        scanScalar(cv, zv, tv, av, dv, sv, out, rows, inner, heads, groups, stateSize);
+    }
+
+    /** Scalar oracle and fallback for the selective scan. */
+    static void scanScalar(
+            Raw cv,
+            Raw zv,
+            Raw tv,
+            Raw av,
+            Raw dv,
+            Raw sv,
+            Raw out,
+            int rows,
+            int inner,
+            int heads,
+            int groups,
+            int stateSize) {
         int headDim = inner / heads, groupSize = heads / groups, qSize = groups * stateSize;
         Parallel.parallelFor(
                 0,
@@ -67,6 +88,16 @@ public final class Mamba2 {
             float eps) {
         Raw in = Raw.f32(input, "input"), w = Raw.f32(weight, "weight");
         Raw out = Raw.f32(output, "output");
+        if (VectorMamba2.appliesGroupedRmsNorm(inner / groups)) {
+            VectorMamba2.groupedRmsNorm(in, w, out, rows, inner, groups, eps);
+            return;
+        }
+        groupedRmsNormScalar(in, w, out, rows, inner, groups, eps);
+    }
+
+    /** Scalar oracle and fallback for grouped RMS normalization. */
+    static void groupedRmsNormScalar(
+            Raw in, Raw w, Raw out, int rows, int inner, int groups, float eps) {
         int groupDim = inner / groups;
         Parallel.forRows(
                 rows,
