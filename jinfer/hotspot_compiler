@@ -25,6 +25,8 @@
 # Qwen3.5-0.8B-Q8_0). Bisect: the regression needs BOTH this line and the FlashAttention lines.
 inline com/qxotic/jinfer/kernels/Ops.siluVec
 inline com/qxotic/jinfer/kernels/Ops.tanhVec
+inline com/qxotic/jinfer/kernels/VectorGatedDeltaNet.load
+inline com/qxotic/jinfer/kernels/VectorGatedDeltaNet.store
 inline com/qxotic/jinfer/kernels/FlashAttention.loadF32
 inline com/qxotic/jinfer/kernels/FlashAttention.loadF16
 inline com/qxotic/jinfer/kernels/FlashAttention.accumulate
