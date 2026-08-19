@@ -7,8 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.jinfer.boundary.Arenas;
-import com.qxotic.jinfer.boundary.Batch;
+import com.qxotic.jinfer.Arenas;
+import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.Conversation;

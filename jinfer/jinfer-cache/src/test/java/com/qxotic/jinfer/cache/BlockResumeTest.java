@@ -3,10 +3,10 @@ package com.qxotic.jinfer.cache;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.CheckpointCodec;
+import com.qxotic.jinfer.ContentKey;
+import com.qxotic.jinfer.ContextState;
 import com.qxotic.jinfer.PanamaMemoryArena;
-import com.qxotic.jinfer.boundary.CheckpointCodec;
-import com.qxotic.jinfer.boundary.ContentKey;
-import com.qxotic.jinfer.boundary.ContextState;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;

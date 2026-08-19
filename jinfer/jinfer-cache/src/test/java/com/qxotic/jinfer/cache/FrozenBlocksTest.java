@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.jinfer.boundary.ContentKey;
+import com.qxotic.jinfer.ContentKey;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;

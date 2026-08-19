@@ -4,11 +4,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.jinfer.boundary.media.VideoSampler;
 import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.Tool;
+import com.qxotic.jinfer.codecs.VideoSampler;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
@@ -171,7 +171,7 @@ class JinferMappingsTest {
                         .build();
         List<Message> out = JinferMappings.toMessages(List.of(u), VideoSampler.UNIFORM);
         Content.Media blob = (Content.Media) out.get(0).content().get(1);
-        assertTrue(blob.value() instanceof com.qxotic.jinfer.boundary.Media.Image);
+        assertTrue(blob.value() instanceof com.qxotic.jinfer.Media.Image);
     }
 
     @Test
@@ -187,7 +187,7 @@ class JinferMappingsTest {
                         .build();
         List<Message> out = JinferMappings.toMessages(List.of(u), VideoSampler.UNIFORM);
         Content.Media blob = (Content.Media) out.get(0).content().get(1);
-        assertTrue(blob.value() instanceof com.qxotic.jinfer.boundary.Media.Audio);
+        assertTrue(blob.value() instanceof com.qxotic.jinfer.Media.Audio);
     }
 
     @Test

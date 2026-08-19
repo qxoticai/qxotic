@@ -2,8 +2,8 @@ package com.qxotic.jinfer.cache;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import com.qxotic.jinfer.boundary.Batch;
-import com.qxotic.jinfer.boundary.ContentKey;
+import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.ContentKey;
 import com.qxotic.jinfer.cache.PromptCacheTest.FakeCodec;
 import com.qxotic.jinfer.cache.PromptCacheTest.FakeModel;
 import com.qxotic.jinfer.cache.PromptCacheTest.FakeState;

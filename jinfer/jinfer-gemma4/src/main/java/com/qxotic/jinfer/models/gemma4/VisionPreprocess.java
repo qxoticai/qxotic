@@ -1,8 +1,8 @@
 package com.qxotic.jinfer.models.gemma4;
 
+import com.qxotic.jinfer.Media;
 import com.qxotic.jinfer.Parallel;
 import com.qxotic.jinfer.Views;
-import com.qxotic.jinfer.boundary.Media;
 import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.MemorySegment;

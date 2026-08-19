@@ -1,10 +1,10 @@
 package com.qxotic.jinfer.cache;
 
-import com.qxotic.jinfer.boundary.Batch;
-import com.qxotic.jinfer.boundary.CheckpointCodec;
-import com.qxotic.jinfer.boundary.ContentKey;
-import com.qxotic.jinfer.boundary.ContextState;
-import com.qxotic.jinfer.boundary.LanguageModel;
+import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.CheckpointCodec;
+import com.qxotic.jinfer.ContentKey;
+import com.qxotic.jinfer.ContextState;
+import com.qxotic.jinfer.LanguageModel;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;

@@ -1,10 +1,7 @@
 package com.qxotic.jinfer.server;
 
-import com.qxotic.jinfer.boundary.ContentKey;
-import com.qxotic.jinfer.boundary.Media;
-import com.qxotic.jinfer.boundary.media.AudioCodec;
-import com.qxotic.jinfer.boundary.media.ImageCodec;
-import com.qxotic.jinfer.boundary.media.VideoSampler;
+import com.qxotic.jinfer.ContentKey;
+import com.qxotic.jinfer.Media;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.Channel;
 import com.qxotic.jinfer.chat.ChatEngine;
@@ -14,6 +11,9 @@ import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.TextStops;
 import com.qxotic.jinfer.chat.Tool;
+import com.qxotic.jinfer.codecs.AudioCodec;
+import com.qxotic.jinfer.codecs.ImageCodec;
+import com.qxotic.jinfer.codecs.VideoSampler;
 import com.qxotic.jinfer.llm.Grammar;
 import com.qxotic.jinfer.llm.Sampling;
 import com.qxotic.jinfer.llm.SpecialTokens;

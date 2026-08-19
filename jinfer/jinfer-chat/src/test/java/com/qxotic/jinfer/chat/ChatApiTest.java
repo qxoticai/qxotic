@@ -8,11 +8,11 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.ContentKey;
+import com.qxotic.jinfer.Media;
 import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.Views;
-import com.qxotic.jinfer.boundary.Batch;
-import com.qxotic.jinfer.boundary.ContentKey;
-import com.qxotic.jinfer.boundary.Media;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.StandardTokenType;
 import com.qxotic.toknroll.TokenType;

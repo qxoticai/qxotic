@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.jinfer.boundary.Arenas;
+import com.qxotic.jinfer.Arenas;
 import com.qxotic.jinfer.testkit.TestModels;
 import io.micrometer.observation.tck.TestObservationRegistry;
 import java.util.ArrayList;

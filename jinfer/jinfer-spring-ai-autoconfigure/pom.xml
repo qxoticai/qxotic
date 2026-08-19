@@ -29,6 +29,10 @@
   <dependencies>
     <dependency>
       <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-codecs</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
       <artifactId>jinfer-spring-ai</artifactId>
       <version>${project.version}</version>
     </dependency>

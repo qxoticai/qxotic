@@ -9,12 +9,12 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.Arenas;
+import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.ContextConfiguration;
+import com.qxotic.jinfer.ContextState;
+import com.qxotic.jinfer.EmbeddingModel;
 import com.qxotic.jinfer.Views;
-import com.qxotic.jinfer.boundary.Arenas;
-import com.qxotic.jinfer.boundary.Batch;
-import com.qxotic.jinfer.boundary.ContextConfiguration;
-import com.qxotic.jinfer.boundary.ContextState;
-import com.qxotic.jinfer.boundary.EmbeddingModel;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryArena;

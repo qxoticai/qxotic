@@ -1,12 +1,12 @@
 package com.qxotic.jinfer.chat;
 
+import com.qxotic.jinfer.Arenas;
+import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.ContextState;
+import com.qxotic.jinfer.LanguageModel;
+import com.qxotic.jinfer.LeakWatch;
 import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.Views;
-import com.qxotic.jinfer.boundary.Arenas;
-import com.qxotic.jinfer.boundary.Batch;
-import com.qxotic.jinfer.boundary.ContextState;
-import com.qxotic.jinfer.boundary.LanguageModel;
-import com.qxotic.jinfer.boundary.LeakWatch;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.Sampler;

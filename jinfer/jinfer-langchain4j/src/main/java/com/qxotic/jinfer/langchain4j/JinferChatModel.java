@@ -1,12 +1,12 @@
 package com.qxotic.jinfer.langchain4j;
 
-import com.qxotic.jinfer.boundary.media.VideoSampler;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.TextStops;
 import com.qxotic.jinfer.chat.Tool;
+import com.qxotic.jinfer.codecs.VideoSampler;
 import com.qxotic.jinfer.hub.ModelStore;
 import com.qxotic.jinfer.llm.Grammar;
 import dev.langchain4j.agent.tool.ToolSpecification;

@@ -3,9 +3,9 @@ package com.qxotic.jinfer.models.lfm2;
 import static com.qxotic.jinfer.chat.ReplyLanguage.mark;
 
 import com.qxotic.format.gguf.GGUF;
-import com.qxotic.jinfer.boundary.Batch;
-import com.qxotic.jinfer.boundary.ContentKey;
-import com.qxotic.jinfer.boundary.Media;
+import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.ContentKey;
+import com.qxotic.jinfer.Media;
 import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.Conversation;

@@ -32,15 +32,11 @@
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-boundary</artifactId>
+      <artifactId>jinfer-codecs</artifactId>
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-cache</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-llm</artifactId>
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>

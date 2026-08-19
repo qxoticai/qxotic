@@ -1,6 +1,6 @@
 package com.qxotic.jinfer.models.nemotronh;
 
-import com.qxotic.jinfer.boundary.Batch;
+import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.Conversation;

@@ -1,6 +1,6 @@
 package com.qxotic.jinfer.cli;
 
-import com.qxotic.jinfer.boundary.Batch;
+import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.chat.Channel;
 import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.llm.Generator;

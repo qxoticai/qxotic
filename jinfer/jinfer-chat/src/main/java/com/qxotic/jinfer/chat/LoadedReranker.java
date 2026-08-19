@@ -1,9 +1,9 @@
 package com.qxotic.jinfer.chat;
 
-import com.qxotic.jinfer.boundary.ContextModel;
-import com.qxotic.jinfer.boundary.ContextState;
-import com.qxotic.jinfer.boundary.Reranker;
-import com.qxotic.jinfer.boundary.RuntimeState;
+import com.qxotic.jinfer.ContextModel;
+import com.qxotic.jinfer.ContextState;
+import com.qxotic.jinfer.Reranker;
+import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.jinfer.telemetry.InferenceEvent;
 import java.util.List;
 import java.util.function.DoubleConsumer;

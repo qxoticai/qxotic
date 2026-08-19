@@ -1,8 +1,8 @@
 package com.qxotic.jinfer.chat;
 
+import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.ContentKey;
 import com.qxotic.jinfer.Views;
-import com.qxotic.jinfer.boundary.Batch;
-import com.qxotic.jinfer.boundary.ContentKey;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryView;

@@ -1,9 +1,9 @@
 package com.qxotic.jinfer.chat;
 
-import com.qxotic.jinfer.boundary.Batch;
-import com.qxotic.jinfer.boundary.ContentKey;
-import com.qxotic.jinfer.boundary.ContextState;
-import com.qxotic.jinfer.boundary.LanguageModel;
+import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.ContentKey;
+import com.qxotic.jinfer.ContextState;
+import com.qxotic.jinfer.LanguageModel;
 import com.qxotic.jinfer.llm.Sampling;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;

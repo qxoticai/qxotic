@@ -4,10 +4,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
- * Runtime flags read by the decode work-runners. Prompt, cache and batch defaults live with their
- * owning modules.
+ * Runtime flags read by the decode work-runners and the model boundary. Prompt and cache defaults
+ * live with their owning modules.
  */
 public final class RuntimeFlags {
+
+    /** Default scratch width for {@code newState}: prefill batches up to this many tokens. */
+    public static final int BATCH_CAPACITY = Integer.getInteger("jinfer.batchCapacity", 512);
 
     // decode runs at physical-core width on a spin-barrier pool (Parallel.onDecodePool /
     // SpinPool): decode is memory-bandwidth bound, so one thread per PHYSICAL core saturates DRAM

@@ -10,9 +10,9 @@
 package com.qxotic.jinfer.models.inflect2;
 
 import com.qxotic.format.gguf.GGUF;
-import com.qxotic.jinfer.boundary.Media;
-import com.qxotic.jinfer.boundary.SpeechOptions;
-import com.qxotic.jinfer.boundary.SpeechSynthesisModel;
+import com.qxotic.jinfer.Media;
+import com.qxotic.jinfer.SpeechOptions;
+import com.qxotic.jinfer.SpeechSynthesisModel;
 import com.qxotic.jinfer.models.inflect2.frontend.Phonemizer;
 import com.qxotic.jinfer.models.inflect2.frontend.TextNormalizer;
 import com.qxotic.jota.memory.MemoryArena;

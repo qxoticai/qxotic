@@ -1,7 +1,7 @@
 package com.qxotic.jinfer.models.qwen3;
 
-import com.qxotic.jinfer.boundary.Batch;
-import com.qxotic.jinfer.boundary.Reranker;
+import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.Reranker;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import java.util.List;

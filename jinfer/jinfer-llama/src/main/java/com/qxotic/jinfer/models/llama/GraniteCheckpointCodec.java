@@ -1,6 +1,6 @@
 package com.qxotic.jinfer.models.llama;
 
-import com.qxotic.jinfer.boundary.CheckpointCodec;
+import com.qxotic.jinfer.CheckpointCodec;
 import com.qxotic.jinfer.kernels.KvTransfer;
 import java.lang.foreign.MemorySegment;
 

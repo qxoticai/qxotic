@@ -3,10 +3,10 @@ package com.qxotic.jinfer.langchain4j;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.Arenas;
+import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.jinfer.Views;
-import com.qxotic.jinfer.boundary.Arenas;
-import com.qxotic.jinfer.boundary.Batch;
-import com.qxotic.jinfer.boundary.RuntimeState;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.testkit.TestModels;
@@ -88,8 +88,7 @@ final class VectorScalarParityTest {
         }
     }
 
-    private static <S extends com.qxotic.jinfer.boundary.ContextState> String greedy(
-            LoadedModel<S> loaded) {
+    private static <S extends com.qxotic.jinfer.ContextState> String greedy(LoadedModel<S> loaded) {
         var model = loaded.model();
         int vocab = model.configuration().vocabularySize();
         S state = model.newState(512, 512);

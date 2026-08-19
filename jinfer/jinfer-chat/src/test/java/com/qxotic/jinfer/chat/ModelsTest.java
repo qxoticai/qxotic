@@ -11,9 +11,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.format.gguf.Builder;
 import com.qxotic.format.gguf.GGUF;
-import com.qxotic.jinfer.boundary.Batch;
-import com.qxotic.jinfer.boundary.ContentKey;
-import com.qxotic.jinfer.boundary.LanguageModel;
+import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.ContentKey;
+import com.qxotic.jinfer.LanguageModel;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Vocabulary;

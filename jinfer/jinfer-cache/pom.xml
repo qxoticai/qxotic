@@ -28,10 +28,6 @@
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-boundary</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
       <artifactId>toknroll-core</artifactId>
     </dependency>
   </dependencies>

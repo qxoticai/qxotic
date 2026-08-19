@@ -1,8 +1,8 @@
 package com.qxotic.jinfer.spring.ai;
 
+import com.qxotic.jinfer.Arenas;
+import com.qxotic.jinfer.ContextState;
 import com.qxotic.jinfer.PanamaMemoryArena;
-import com.qxotic.jinfer.boundary.Arenas;
-import com.qxotic.jinfer.boundary.ContextState;
 import com.qxotic.jinfer.chat.LoadedEmbedder;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.hub.ModelStore;

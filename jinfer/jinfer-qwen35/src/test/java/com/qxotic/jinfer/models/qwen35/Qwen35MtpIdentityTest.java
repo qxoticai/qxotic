@@ -3,7 +3,7 @@ package com.qxotic.jinfer.models.qwen35;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.jinfer.boundary.Batch;
+import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.llm.Generator.Constraints;
 import com.qxotic.jinfer.llm.Sampler;
 import com.qxotic.jinfer.llm.SpeculativeDecoding.SpeculationResult;

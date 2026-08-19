@@ -3,13 +3,13 @@
 // a model you loaded and tuned yourself.
 package com.qxotic.jinfer.langchain4j;
 
-import com.qxotic.jinfer.boundary.Arenas;
-import com.qxotic.jinfer.boundary.Media;
-import com.qxotic.jinfer.boundary.RuntimeState;
-import com.qxotic.jinfer.boundary.SpeechOptions;
-import com.qxotic.jinfer.boundary.SpeechSynthesisModel;
-import com.qxotic.jinfer.boundary.media.AudioCodec;
+import com.qxotic.jinfer.Arenas;
+import com.qxotic.jinfer.Media;
+import com.qxotic.jinfer.RuntimeState;
+import com.qxotic.jinfer.SpeechOptions;
+import com.qxotic.jinfer.SpeechSynthesisModel;
 import com.qxotic.jinfer.chat.Models;
+import com.qxotic.jinfer.codecs.AudioCodec;
 import com.qxotic.jinfer.hub.ModelStore;
 import dev.langchain4j.data.audio.Audio;
 import dev.langchain4j.exception.UnsupportedFeatureException;

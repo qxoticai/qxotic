@@ -1,8 +1,8 @@
 package com.qxotic.jinfer.cache;
 
-import com.qxotic.jinfer.boundary.CheckpointCodec;
-import com.qxotic.jinfer.boundary.ContentKey;
-import com.qxotic.jinfer.boundary.ContextState;
+import com.qxotic.jinfer.CheckpointCodec;
+import com.qxotic.jinfer.ContentKey;
+import com.qxotic.jinfer.ContextState;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;

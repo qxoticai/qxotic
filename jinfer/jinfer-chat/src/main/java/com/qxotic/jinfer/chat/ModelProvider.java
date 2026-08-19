@@ -103,9 +103,9 @@ public interface ModelProvider {
 
     /**
      * Loads a RERANKER from an already-parsed GGUF ({@link Models#loadReranker}): the backbone plus
-     * this family's {@link com.qxotic.jinfer.boundary.Reranker} recipe. Ports with no reranker in
-     * the family keep this default. {@code tokenizer} is the validated caller override, or null for
-     * the GGUF's own.
+     * this family's {@link com.qxotic.jinfer.Reranker} recipe. Ports with no reranker in the family
+     * keep this default. {@code tokenizer} is the validated caller override, or null for the GGUF's
+     * own.
      */
     default LoadedReranker<?> loadReranker(
             FileChannel fileChannel, GGUF gguf, Path path, Arena arena, Tokenizer tokenizer)
@@ -122,7 +122,7 @@ public interface ModelProvider {
      * container does not carry - a phoneme port looks for its pronunciation lexicon beside the
      * model before falling back.
      */
-    default com.qxotic.jinfer.boundary.SpeechSynthesisModel<?, ?, ?> loadSpeech(
+    default com.qxotic.jinfer.SpeechSynthesisModel<?, ?, ?> loadSpeech(
             FileChannel fileChannel, GGUF gguf, Path path, Arena arena) throws IOException {
         throw new UnsupportedOperationException(
                 "'" + gguf.getString("general.architecture") + "' is not a speech architecture");
@@ -137,7 +137,7 @@ public interface ModelProvider {
      * no change: an empty map is the plain load, and a non-empty one is a caller asking for
      * something this architecture does not have.
      */
-    default com.qxotic.jinfer.boundary.SpeechSynthesisModel<?, ?, ?> loadSpeech(
+    default com.qxotic.jinfer.SpeechSynthesisModel<?, ?, ?> loadSpeech(
             FileChannel fileChannel,
             GGUF gguf,
             Path path,

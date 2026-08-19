@@ -1,6 +1,5 @@
 package com.qxotic.jinfer.spring.ai;
 
-import com.qxotic.jinfer.boundary.media.VideoSampler;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.Channel;
 import com.qxotic.jinfer.chat.ChatEngine;
@@ -8,6 +7,7 @@ import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.TextStops;
 import com.qxotic.jinfer.chat.Tool;
+import com.qxotic.jinfer.codecs.VideoSampler;
 import com.qxotic.jinfer.hub.ModelStore;
 import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.Grammar;
@@ -680,9 +680,9 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
 
         /**
          * How video content becomes frames - default {@link
-         * com.qxotic.jinfer.boundary.media.VideoSampler#UNIFORM} (the reference policy: 32 frames
-         * uniform across the whole duration). Any policy composes: {@code v ->
-         * VideoCodec.ffmpeg().span(v, 8)}, a window of a long source, caller-curated timestamps.
+         * com.qxotic.jinfer.codecs.VideoSampler#UNIFORM} (the reference policy: 32 frames uniform
+         * across the whole duration). Any policy composes: {@code v -> VideoCodec.ffmpeg().span(v,
+         * 8)}, a window of a long source, caller-curated timestamps.
          */
         public Builder videoSampler(VideoSampler videoSampler) {
             this.videoSampler = Objects.requireNonNull(videoSampler);

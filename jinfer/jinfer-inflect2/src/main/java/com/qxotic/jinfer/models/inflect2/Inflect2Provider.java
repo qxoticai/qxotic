@@ -1,7 +1,7 @@
 package com.qxotic.jinfer.models.inflect2;
 
 import com.qxotic.format.gguf.GGUF;
-import com.qxotic.jinfer.boundary.SpeechSynthesisModel;
+import com.qxotic.jinfer.SpeechSynthesisModel;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.ModelProvider;
 import com.qxotic.toknroll.Tokenizer;

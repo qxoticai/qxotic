@@ -29,10 +29,6 @@
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-boundary</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
       <artifactId>jinfer-chat</artifactId>
     </dependency>
     <dependency>

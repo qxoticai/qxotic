@@ -1,6 +1,6 @@
 package com.qxotic.jinfer.models.lfm2;
 
-import com.qxotic.jinfer.boundary.CheckpointCodec;
+import com.qxotic.jinfer.CheckpointCodec;
 import com.qxotic.jinfer.kernels.KvTransfer;
 import com.qxotic.jota.DataType;
 import java.lang.foreign.MemorySegment;

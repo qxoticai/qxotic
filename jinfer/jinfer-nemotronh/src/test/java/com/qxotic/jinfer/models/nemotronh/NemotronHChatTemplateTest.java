@@ -3,7 +3,7 @@ package com.qxotic.jinfer.models.nemotronh;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.format.gguf.GGUF;
-import com.qxotic.jinfer.boundary.Batch;
+import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.Message;

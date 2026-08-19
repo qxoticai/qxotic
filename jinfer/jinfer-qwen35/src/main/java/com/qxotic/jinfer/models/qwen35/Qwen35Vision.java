@@ -1,12 +1,12 @@
 package com.qxotic.jinfer.models.qwen35;
 
 import com.qxotic.format.gguf.GGUF;
+import com.qxotic.jinfer.Arenas;
+import com.qxotic.jinfer.Media;
+import com.qxotic.jinfer.MediaProjector;
 import com.qxotic.jinfer.Parallel;
 import com.qxotic.jinfer.Segments;
 import com.qxotic.jinfer.Views;
-import com.qxotic.jinfer.boundary.Arenas;
-import com.qxotic.jinfer.boundary.Media;
-import com.qxotic.jinfer.boundary.MediaProjector;
 import com.qxotic.jinfer.kernels.Convert;
 import com.qxotic.jinfer.kernels.MatMul;
 import com.qxotic.jinfer.kernels.Norms;
@@ -23,9 +23,9 @@ import java.util.function.Consumer;
 
 /**
  * Qwen3-VL vision tower and 2x2 spatial merger ({@code projector_type=qwen3vl_merger}) carried by
- * the Qwen3.5 mmproj: a fused-QKV ViT with a DUAL summed patch convolution, an absolute
- * position table bilinearly resized to the target grid, vision M-RoPE ({@code [yyyyxxxx]} per
- * head), tanh-GELU FFNs, and a final {mm.0 → GELU → mm.2} MLP over each 2x2 patch block.
+ * the Qwen3.5 mmproj: a fused-QKV ViT with a DUAL summed patch convolution, an absolute position
+ * table bilinearly resized to the target grid, vision M-RoPE ({@code [yyyyxxxx]} per head),
+ * tanh-GELU FFNs, and a final {mm.0 → GELU → mm.2} MLP over each 2x2 patch block.
  *
  * <p>Ported from llama.cpp's {@code clip_graph_qwen3vl}. The tower emits tokens in the 2x2-block
  * major order its mrope position table implies, so the merger is a plain contiguous copy.

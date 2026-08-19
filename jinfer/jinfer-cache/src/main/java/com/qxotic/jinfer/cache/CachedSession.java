@@ -2,11 +2,11 @@ package com.qxotic.jinfer.cache;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
-import com.qxotic.jinfer.boundary.Arenas;
-import com.qxotic.jinfer.boundary.Batch;
-import com.qxotic.jinfer.boundary.CheckpointCodec;
-import com.qxotic.jinfer.boundary.ContextModel;
-import com.qxotic.jinfer.boundary.ContextState;
+import com.qxotic.jinfer.Arenas;
+import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.CheckpointCodec;
+import com.qxotic.jinfer.ContextModel;
+import com.qxotic.jinfer.ContextState;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.toknroll.IntSequence;
 import java.lang.foreign.Arena;

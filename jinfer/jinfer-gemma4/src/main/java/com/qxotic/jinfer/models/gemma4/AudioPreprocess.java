@@ -1,7 +1,7 @@
 package com.qxotic.jinfer.models.gemma4;
 
+import com.qxotic.jinfer.Media;
 import com.qxotic.jinfer.Parallel;
-import com.qxotic.jinfer.boundary.Media;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;

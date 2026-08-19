@@ -6,10 +6,10 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.Media;
+import com.qxotic.jinfer.Multimodal;
 import com.qxotic.jinfer.Views;
-import com.qxotic.jinfer.boundary.Batch;
-import com.qxotic.jinfer.boundary.Media;
-import com.qxotic.jinfer.boundary.Multimodal;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.testkit.TestModels;
 import com.qxotic.jota.memory.MemoryView;
