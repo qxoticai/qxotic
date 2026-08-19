@@ -38,6 +38,28 @@ The JVM powers global finance, big data, and mission-critical infrastructure. Qu
 
 ---
 
+## What runs where
+
+jinfer dispatches by GGUF architecture; add the matching artifact (or `jinfer-models-all`) and the
+provider is discovered automatically.
+
+| Family | Capability | Artifact |
+|--------|-----------|----------|
+| Gemma 4 | chat, vision, audio, MTP | `jinfer-gemma4` |
+| Qwen 3 | chat, embeddings, reranking | `jinfer-qwen3` |
+| Qwen 3.5 / 3.8 | chat, vision, MTP | `jinfer-qwen35` |
+| LFM 2.5 | chat, embeddings, ColBERT reranking, vision | `jinfer-lfm2` |
+| Llama family | chat (Llama, Ministral, MiniCPM, SmolLM, Granite) | `jinfer-llama` |
+| gpt-oss / Nemotron-H / Maple | chat | `jinfer-gptoss`, `jinfer-nemotronh`, `jinfer-maple` |
+| Inflect | speech synthesis | `jinfer-inflect2` |
+
+Embeddings and reranking are exposed by `jinfer-lfm2` and `jinfer-qwen3`; multimodal models attach
+their projector with `--mmproj <clip.gguf>`. The OpenAI-compatible server lives in `jinfer-server`;
+`jinfer-chat`, `jinfer-cache` and `jinfer-hub` provide the conversation, prompt-cache and model-download
+layers. For a single version for the whole release, import `jinfer-bom`.
+
+---
+
 ## Building
 
 This is a single Maven reactor rooted at the repository root.
