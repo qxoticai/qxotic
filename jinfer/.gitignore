@@ -14,7 +14,7 @@ jinfer.pgo
 default.iprof
 *.iprof
 
-# Native GEMM library build artifacts (built from jinferjni.c via make libnative / libjinferjni.a)
+# Native image build artifacts
 *.o
 *.so
 *.a
