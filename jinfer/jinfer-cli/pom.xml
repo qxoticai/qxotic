@@ -20,7 +20,6 @@
   <properties>
     <jinfer.image.name>jinfer</jinfer.image.name>
     <jinfer.image.mainClass>com.qxotic.jinfer.cli.Main</jinfer.image.mainClass>
-    <jinfer.image.addModules>jdk.incubator.vector</jinfer.image.addModules>
     <maven.deploy.skip>true</maven.deploy.skip>
   </properties>
 

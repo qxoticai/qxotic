@@ -52,11 +52,9 @@
     <native-maven-plugin.version>0.10.6</native-maven-plugin.version>
 
     <!-- Per-executable knobs for the shared shade + native-image config below. A module that ships a
-         binary overrides jinfer.image.name/mainClass (and addModules, when it needs more than the
-         Vector API); everything else inherits the defaults. -->
+         binary overrides jinfer.image.name/mainClass; everything else inherits the defaults. -->
     <jinfer.image.name>jinfer</jinfer.image.name>
     <jinfer.image.mainClass>com.qxotic.jinfer.cli.Main</jinfer.image.mainClass>
-    <jinfer.image.addModules>jdk.incubator.vector</jinfer.image.addModules>
 
     <!-- native builder opt-in: wide 512-bit register tiles (needs a 32-ZMM Graal, GR-13757) -->
     <jam.wideTiles>false</jam.wideTiles>

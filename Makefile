@@ -25,7 +25,7 @@ install:
 
 # GraalVM Native Image for the CLI. PRELOAD_GGUF is forwarded unchanged.
 native:
-	$(MAVEN) -o -Pnative -pl jinfer/jinfer-cli -am clean package -DskipTests
+	$(MAVEN) -o -Pnative -pl jinfer/jinfer-cli -am clean package -DskipTests -Djinfer.preload=$(PRELOAD_GGUF)
 
 # Demo apps are not in the default reactor; build them explicitly.
 examples:
