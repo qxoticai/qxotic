@@ -75,6 +75,46 @@ The exact set is extensible through `ModelProvider`. GGUF support includes dense
 the quantized formats used by those ports: Q4_0, Q4_1, Q5_1, Q4_K, Q5_K, Q6_K, Q8_0, MXFP4,
 NVFP4, Q1_0, TQ1_0 and TQ2_0.
 
+### Capability → artifact map
+
+Depend on one architecture module, the `jinfer-models-all` aggregate, or the `jinfer-bom` catalog:
+
+| Capability | Artifact | Notes |
+|------------|----------|-------|
+| chat / instruct | `jinfer-<model>` | per-architecture port |
+| embeddings | `jinfer-lfm2`, `jinfer-qwen3` | `EmbeddingModel` |
+| reranking | `jinfer-lfm2` (ColBERT), `jinfer-qwen3` | `Reranker` |
+| vision | `jinfer-gemma4`, `jinfer-lfm2`, `jinfer-qwen35` | `--mmproj <clip.gguf>` |
+| audio input | `jinfer-gemma4` | E2B conformer |
+| speech synthesis | `jinfer-inflect2` | Inflect TTS |
+| MTP speculation | `jinfer-gemma4`, `jinfer-qwen35` | embedded MTP head |
+| OpenAI server | `jinfer-server` | `/v1/chat/completions`, `/v1/completions`, `/v1/responses` |
+| prompt cache | `jinfer-cache` | sessions + checkpoint tree + JKVF |
+| hub + downloads | `jinfer-hub` | `hf.co/...`, `modelscope.cn/...` |
+
+Add `jinfer-models-all` to get every architecture provider, or add individual `jinfer-<model>`
+artifacts to keep the footprint small. `Models.load` discovers the providers present and names the
+missing artifact when an architecture is unsupported.
+
+### Version catalog (BOM)
+
+```xml
+<dependencyManagement>
+  <dependencies>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-bom</artifactId>
+      <version>0.1.0</version>
+      <type>pom</type>
+      <scope>import</scope>
+    </dependency>
+  </dependencies>
+</dependencyManagement>
+```
+
+After the import, declare jinfer artifacts without versions; the BOM also pins the substrate
+(`jota-memory`, `gguf`, `toknroll`, `jam`) to the release they were built against.
+
 Multimodal models attach auxiliary files by capability:
 
 ```bash
