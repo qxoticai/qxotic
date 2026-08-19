@@ -1,5 +1,5 @@
 /**
- * Panama Foreign Function & Memory API backend for Jota.
+ * Panama Foreign Function &amp; Memory API backend for Jota.
  *
  * <p>This backend uses Java's Panama API to provide:
  *
@@ -12,7 +12,7 @@
  * <p><b>Runtime Requirements:</b>
  *
  * <ul>
- *   <li>Java 25+ with Panama Foreign Function & Memory API (preview)
+ *   <li>Java 25+ with Panama Foreign Function &amp; Memory API (preview)
  *   <li>No external compilers required - uses javax.tools.JavaCompiler
  * </ul>
  *

@@ -27,8 +27,8 @@ import java.util.List;
  *       and lets every other runtime exception propagate - the ref itself is at fault there.
  * </ul>
  *
- * <p>Implementations should carry a readable {@link #toString()}: it appears in the store's logs
- * when a fallback happens.
+ * <p>Implementations should carry a readable {@link Object#toString()}: it appears in the store's
+ * logs when a fallback happens.
  */
 public interface ModelSource {
 
