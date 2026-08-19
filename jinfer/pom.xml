@@ -43,8 +43,6 @@
     <module>jinfer-spring-ai</module>
     <module>jinfer-spring-ai-autoconfigure</module>
     <module>jinfer-spring-ai-spring-boot-starter</module>
-    <module>jinfer-example-judge-advisor</module>
-    <module>jinfer-example-local-rag</module>
   </modules>
 
   <properties>
@@ -374,4 +372,14 @@
       </plugins>
     </pluginManagement>
   </build>
+
+  <profiles>
+    <profile>
+      <id>examples</id>
+      <modules>
+        <module>jinfer-example-judge-advisor</module>
+        <module>jinfer-example-local-rag</module>
+      </modules>
+    </profile>
+  </profiles>
 </project>

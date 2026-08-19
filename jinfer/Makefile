@@ -34,6 +34,9 @@ test-compile:
 test:
 	mvn -o test
 
+install:
+	mvn -o -DskipTests install
+
 jar:
 	mvn -o -pl jinfer-cli -am clean package -DskipTests
 	cp jinfer-cli/target/jinfer.jar $(JAR_FILE)
@@ -64,7 +67,10 @@ test-golden: jar
 NATIVE_IMAGE ?= $(if $(JAVA_HOME),$(JAVA_HOME)/bin/native-image,native-image)
 
 check-native-image:
-	@v=$$($(NATIVE_IMAGE) --version 2>/dev/null | head -1 | grep -oP '[0-9]+\.[0-9]+\.[0-9]+' | head -1); \
+	@v=$$($(NATIVE_IMAGE) --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1); \
+	if [ -z "$$v" ]; then \
+		echo "ERROR: native-image not found or version unparseable ($(NATIVE_IMAGE))"; exit 1; \
+	fi; \
 	case "$$v" in \
 	25.0.0|25.0.1|25.0.2) \
 		echo "ERROR: native-image $$v is too old for the jinfer kernels (need >= 25.0.3)."; \
@@ -76,4 +82,4 @@ native: check-native-image
 	mvn -o -Pnative -pl jinfer-cli -am clean package -DskipTests -Djinfer.preload=$(PRELOAD_GGUF)
 	cp jinfer-cli/target/jinfer$(EXE) $(NATIVE_FILE)
 
-.PHONY: default compile test-compile test jar clean run-jar-command test-golden check-native-image native
+.PHONY: default compile test-compile test install jar clean run-jar-command test-golden check-native-image native
