@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.format.json.Json;
 import com.qxotic.jinfer.Arenas;
-import com.qxotic.jinfer.Media;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.Content;
@@ -16,6 +15,7 @@ import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.codecs.ImageCodec;
 import com.qxotic.jinfer.llm.Sampling;
+import com.qxotic.jinfer.media.Media;
 import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Font;

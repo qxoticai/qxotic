@@ -1,4 +1,4 @@
-package com.qxotic.jinfer;
+package com.qxotic.jinfer.media;
 
 import java.util.Optional;
 

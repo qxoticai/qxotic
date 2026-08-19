@@ -2,8 +2,6 @@ package com.qxotic.jinfer.models.gemma4;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.Arenas;
-import com.qxotic.jinfer.Media;
-import com.qxotic.jinfer.MediaProjector;
 import com.qxotic.jinfer.Parallel;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.kernels.Activations;
@@ -14,6 +12,8 @@ import com.qxotic.jinfer.kernels.ModelLoader;
 import com.qxotic.jinfer.kernels.Norms;
 import com.qxotic.jinfer.kernels.Ops;
 import com.qxotic.jinfer.kernels.RoPE;
+import com.qxotic.jinfer.media.Media;
+import com.qxotic.jinfer.media.MediaProjector;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;

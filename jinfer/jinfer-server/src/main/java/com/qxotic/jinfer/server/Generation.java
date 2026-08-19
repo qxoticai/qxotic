@@ -1,7 +1,7 @@
 package com.qxotic.jinfer.server;
 
 import com.qxotic.jinfer.ContentKey;
-import com.qxotic.jinfer.Media;
+import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.Channel;
 import com.qxotic.jinfer.chat.ChatEngine;

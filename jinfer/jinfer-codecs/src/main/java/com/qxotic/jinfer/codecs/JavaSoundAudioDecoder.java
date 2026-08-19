@@ -1,6 +1,6 @@
 package com.qxotic.jinfer.codecs;
 
-import com.qxotic.jinfer.Media;
+import com.qxotic.jinfer.media.Media;
 import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;

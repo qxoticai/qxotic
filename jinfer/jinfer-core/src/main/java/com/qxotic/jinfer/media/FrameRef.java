@@ -1,5 +1,6 @@
-package com.qxotic.jinfer;
+package com.qxotic.jinfer.media;
 
+import com.qxotic.jinfer.ContentKey;
 import java.time.Duration;
 import java.util.Objects;
 

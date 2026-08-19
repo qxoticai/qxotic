@@ -1,6 +1,6 @@
 package com.qxotic.jinfer.codecs;
 
-import com.qxotic.jinfer.Media;
+import com.qxotic.jinfer.media.Media;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -9,8 +9,8 @@ import java.nio.file.Path;
 
 /**
  * The audio seam in both directions: {@link #wav}/{@link #pcm16} encode a {@link
- * com.qxotic.jinfer.Media.Audio}, and {@link #decoder()} selects and caches an {@link AudioDecoder}
- * - ffmpeg under native-image, {@code javax.sound} on a JVM, overridden by {@code
+ * com.qxotic.jinfer.media.Media.Audio}, and {@link #decoder()} selects and caches an {@link
+ * AudioDecoder} - ffmpeg under native-image, {@code javax.sound} on a JVM, overridden by {@code
  * -Djinfer.audioDecoder=ffmpeg|javasound}. Decoded output is always 16 kHz mono.
  *
  * <p>{@code javax.sound} is loaded through a NON-CONSTANT class name on purpose (see {@link

@@ -1,19 +1,19 @@
 package com.qxotic.jinfer.codecs;
 
-import com.qxotic.jinfer.Media;
+import com.qxotic.jinfer.media.Media;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Duration;
 
 /**
- * Samples a video into a {@link com.qxotic.jinfer.Media.Video}. A backend supplies three primitives
- * - {@link #totalDuration}, {@link #framePeriod}, and {@link #framesAt} (frames at explicit
- * timestamps; {@link #frameAt} is its correctly-shaped singular) - and the sampling policies are
- * default methods of pure timestamp arithmetic on top: {@link #uniform} takes n equal-segment
- * representatives (centered), {@link #span} takes n frames end-to-end inclusive (fencepost) - both
- * over the whole source or a {@code [from, to]} window. The one shipped backend is {@link
- * #ffmpeg()} (the JDK cannot demux mp4/webm). Frames decode through {@link ImageCodec} (inheriting
- * its RGB/[0,1]/HWC contract) and carry their true timestamps. No audio track.
+ * Samples a video into a {@link com.qxotic.jinfer.media.Media.Video}. A backend supplies three
+ * primitives - {@link #totalDuration}, {@link #framePeriod}, and {@link #framesAt} (frames at
+ * explicit timestamps; {@link #frameAt} is its correctly-shaped singular) - and the sampling
+ * policies are default methods of pure timestamp arithmetic on top: {@link #uniform} takes n
+ * equal-segment representatives (centered), {@link #span} takes n frames end-to-end inclusive
+ * (fencepost) - both over the whole source or a {@code [from, to]} window. The one shipped backend
+ * is {@link #ffmpeg()} (the JDK cannot demux mp4/webm). Frames decode through {@link ImageCodec}
+ * (inheriting its RGB/[0,1]/HWC contract) and carry their true timestamps. No audio track.
  *
  * <p>DELIBERATE SHAPE - this is a SAMPLER, not a decoder, and its asymmetry with {@link
  * ImageDecoder}/{@link AudioDecoder} (whole payload in, media out) is intentional: "decode the

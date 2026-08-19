@@ -15,7 +15,7 @@ package com.qxotic.jinfer.models.inflect2;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.Arenas;
 import com.qxotic.jinfer.LeakWatch;
-import com.qxotic.jinfer.Media;
+import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.Parallel;
 import com.qxotic.jinfer.RuntimeState;

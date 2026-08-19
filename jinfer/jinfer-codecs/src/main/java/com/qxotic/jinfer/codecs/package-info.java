@@ -8,7 +8,7 @@
  * com.qxotic.jinfer.codecs.VideoCodec} decodes sampled video frames through ffmpeg.
  *
  * <p>Decoding is separate from model projection: codecs know files and bytes, while a model's
- * {@link com.qxotic.jinfer.MediaProjector} turns decoded media into borrowed embedding rows. No
- * codec fetches remote content.
+ * {@link com.qxotic.jinfer.media.MediaProjector} turns decoded media into borrowed embedding rows.
+ * No codec fetches remote content.
  */
 package com.qxotic.jinfer.codecs;

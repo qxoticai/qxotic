@@ -2,8 +2,6 @@ package com.qxotic.jinfer.models.qwen35;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.Arenas;
-import com.qxotic.jinfer.Media;
-import com.qxotic.jinfer.MediaProjector;
 import com.qxotic.jinfer.Parallel;
 import com.qxotic.jinfer.Segments;
 import com.qxotic.jinfer.Views;
@@ -11,6 +9,8 @@ import com.qxotic.jinfer.kernels.Convert;
 import com.qxotic.jinfer.kernels.MatMul;
 import com.qxotic.jinfer.kernels.Norms;
 import com.qxotic.jinfer.kernels.Ops;
+import com.qxotic.jinfer.media.Media;
+import com.qxotic.jinfer.media.MediaProjector;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryArena;

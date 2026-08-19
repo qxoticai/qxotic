@@ -1,7 +1,7 @@
 package com.qxotic.jinfer.langchain4j;
 
 import com.qxotic.format.json.Json;
-import com.qxotic.jinfer.Media;
+import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.codecs.VideoSampler;
 import com.qxotic.toknroll.Tokenizer;

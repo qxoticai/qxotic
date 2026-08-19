@@ -1,9 +1,6 @@
 package com.qxotic.jinfer.models.qwen35;
 
 import com.qxotic.jinfer.Batch;
-import com.qxotic.jinfer.Media;
-import com.qxotic.jinfer.MediaProjector;
-import com.qxotic.jinfer.Multimodal;
 import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.Conversation;
@@ -16,6 +13,9 @@ import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.chat.ToolCallSyntax;
 import com.qxotic.jinfer.chat.UnsupportedConversation;
 import com.qxotic.jinfer.llm.SpecialTokens;
+import com.qxotic.jinfer.media.Media;
+import com.qxotic.jinfer.media.MediaProjector;
+import com.qxotic.jinfer.media.Multimodal;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import java.util.List;

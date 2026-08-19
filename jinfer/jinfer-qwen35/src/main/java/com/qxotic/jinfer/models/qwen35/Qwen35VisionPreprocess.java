@@ -1,6 +1,6 @@
 package com.qxotic.jinfer.models.qwen35;
 
-import com.qxotic.jinfer.Media;
+import com.qxotic.jinfer.media.Media;
 
 /**
  * Qwen3-VL image sizing and normalization. llama.cpp's qwen3vl preprocessor caps the projected

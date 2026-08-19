@@ -2,9 +2,9 @@ package com.qxotic.jinfer.chat;
 
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.ContentKey;
-import com.qxotic.jinfer.Media;
-import com.qxotic.jinfer.MediaProjector;
 import com.qxotic.jinfer.llm.SpecialTokens;
+import com.qxotic.jinfer.media.Media;
+import com.qxotic.jinfer.media.MediaProjector;
 import com.qxotic.jinfer.telemetry.MediaProjectionEvent;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
