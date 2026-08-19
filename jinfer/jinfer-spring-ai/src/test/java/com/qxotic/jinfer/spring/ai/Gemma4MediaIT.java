@@ -3,8 +3,8 @@ package com.qxotic.jinfer.spring.ai;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.jinfer.Media;
-import com.qxotic.jinfer.Multimodal;
+import com.qxotic.jinfer.media.Media;
+import com.qxotic.jinfer.media.Multimodal;
 import com.qxotic.jinfer.testkit.TestModels;
 import java.awt.Color;
 import java.awt.image.BufferedImage;

@@ -10,9 +10,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.ContentKey;
-import com.qxotic.jinfer.Media;
 import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.Views;
+import com.qxotic.jinfer.media.Media;
+import com.qxotic.jinfer.media.MediaProjector;
+import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.StandardTokenType;
 import com.qxotic.toknroll.TokenType;
@@ -91,8 +93,20 @@ final class ChatApiTest {
             writer.media(
                     image,
                     key,
-                    (source, max, sink) ->
-                            sink.accept(Views.allocateF32(new PanamaMemoryArena(arena), 2, 4)),
+                    new MediaProjector<Media.Image>() {
+                        @Override
+                        public int positions(Media.Image source) {
+                            return 2;
+                        }
+
+                        @Override
+                        public void project(
+                                Media.Image source,
+                                int max,
+                                java.util.function.Consumer<MemoryView<?>> sink) {
+                            sink.accept(Views.allocateF32(new PanamaMemoryArena(arena), 2, 4));
+                        }
+                    },
                     true);
             writer.text("y").finish();
         }

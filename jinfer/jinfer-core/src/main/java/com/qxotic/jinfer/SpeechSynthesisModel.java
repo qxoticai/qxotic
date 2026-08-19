@@ -1,5 +1,6 @@
 package com.qxotic.jinfer;
 
+import com.qxotic.jinfer.media.Media;
 import com.qxotic.jota.memory.MemoryArena;
 import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;

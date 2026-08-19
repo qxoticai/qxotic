@@ -6,9 +6,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.jinfer.Media;
 import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.Views;
+import com.qxotic.jinfer.media.Media;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;

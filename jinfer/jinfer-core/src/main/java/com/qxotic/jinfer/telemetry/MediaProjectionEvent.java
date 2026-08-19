@@ -1,6 +1,6 @@
 package com.qxotic.jinfer.telemetry;
 
-import com.qxotic.jinfer.Media;
+import com.qxotic.jinfer.media.Media;
 import jdk.jfr.Category;
 import jdk.jfr.Description;
 import jdk.jfr.Event;

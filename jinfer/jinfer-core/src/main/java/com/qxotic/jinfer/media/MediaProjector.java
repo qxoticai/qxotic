@@ -1,4 +1,4 @@
-package com.qxotic.jinfer;
+package com.qxotic.jinfer.media;
 
 import com.qxotic.jota.memory.MemoryView;
 import java.util.function.Consumer;
@@ -6,11 +6,10 @@ import java.util.function.Consumer;
 /** Converts decoded media into model-specific context rows. */
 public interface MediaProjector<R extends Media> {
 
-    void project(R media, int maxChunkSize, Consumer<MemoryView<?>> sink);
+    /** Number of context rows {@link #project} will produce for {@code media}. */
+    int positions(R media);
 
-    default int positions(R media) {
-        throw new UnsupportedOperationException("projected position count is unavailable");
-    }
+    void project(R media, int maxChunkSize, Consumer<MemoryView<?>> sink);
 
     /** Stable identity of preprocessing choices that affect context-cache identity. */
     default String planId() {

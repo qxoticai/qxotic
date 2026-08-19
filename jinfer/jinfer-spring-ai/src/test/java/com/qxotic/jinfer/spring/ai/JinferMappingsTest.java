@@ -171,7 +171,7 @@ class JinferMappingsTest {
                         .build();
         List<Message> out = JinferMappings.toMessages(List.of(u), VideoSampler.UNIFORM);
         Content.Media blob = (Content.Media) out.get(0).content().get(1);
-        assertTrue(blob.value() instanceof com.qxotic.jinfer.Media.Image);
+        assertTrue(blob.value() instanceof com.qxotic.jinfer.media.Media.Image);
     }
 
     @Test
@@ -187,7 +187,7 @@ class JinferMappingsTest {
                         .build();
         List<Message> out = JinferMappings.toMessages(List.of(u), VideoSampler.UNIFORM);
         Content.Media blob = (Content.Media) out.get(0).content().get(1);
-        assertTrue(blob.value() instanceof com.qxotic.jinfer.Media.Audio);
+        assertTrue(blob.value() instanceof com.qxotic.jinfer.media.Media.Audio);
     }
 
     @Test

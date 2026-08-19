@@ -8,9 +8,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.ContentKey;
-import com.qxotic.jinfer.Media;
-import com.qxotic.jinfer.MediaProjector;
-import com.qxotic.jinfer.Multimodal;
 import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.chat.Channel;
@@ -22,7 +19,11 @@ import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.kernels.ModelLoader;
 import com.qxotic.jinfer.llm.SpecialTokens;
+import com.qxotic.jinfer.media.Media;
+import com.qxotic.jinfer.media.MediaProjector;
+import com.qxotic.jinfer.media.Multimodal;
 import com.qxotic.jinfer.testkit.TestModels;
+import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
@@ -161,9 +162,20 @@ final class Gemma4ChatTemplateTest {
                 return Optional.empty();
             int rows = modality == Media.Image.class ? 2 : 1;
             MediaProjector<R> projector =
-                    (source, maxChunkSize, sink) -> {
-                        projections.incrementAndGet();
-                        sink.accept(Views.allocateF32(new PanamaMemoryArena(arena), rows, 3));
+                    new MediaProjector<>() {
+                        @Override
+                        public int positions(R source) {
+                            return rows;
+                        }
+
+                        @Override
+                        public void project(
+                                R source,
+                                int maxChunkSize,
+                                java.util.function.Consumer<MemoryView<?>> sink) {
+                            projections.incrementAndGet();
+                            sink.accept(Views.allocateF32(new PanamaMemoryArena(arena), rows, 3));
+                        }
                     };
             return Optional.of(projector);
         }

@@ -2,7 +2,7 @@ package com.qxotic.jinfer.spring.ai;
 
 import com.qxotic.format.json.Json;
 import com.qxotic.jinfer.ContentKey;
-import com.qxotic.jinfer.Media;
+import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Role;

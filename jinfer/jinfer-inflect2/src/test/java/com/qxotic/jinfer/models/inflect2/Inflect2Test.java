@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.jinfer.Media;
+import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.models.inflect2.frontend.TextNormalizer;
 import com.qxotic.jinfer.testkit.TestModels;
 import java.io.IOException;

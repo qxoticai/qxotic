@@ -10,7 +10,7 @@
 package com.qxotic.jinfer.models.inflect2;
 
 import com.qxotic.format.gguf.GGUF;
-import com.qxotic.jinfer.Media;
+import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.SpeechOptions;
 import com.qxotic.jinfer.SpeechSynthesisModel;
 import com.qxotic.jinfer.models.inflect2.frontend.Phonemizer;

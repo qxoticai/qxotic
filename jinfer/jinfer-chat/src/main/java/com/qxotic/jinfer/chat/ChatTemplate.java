@@ -1,7 +1,7 @@
 package com.qxotic.jinfer.chat;
 
 import com.qxotic.jinfer.Batch;
-import com.qxotic.jinfer.Media;
+import com.qxotic.jinfer.media.Media;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import java.util.List;
@@ -25,7 +25,7 @@ public interface ChatTemplate {
     /**
      * Streams the complete prompt synchronously. Media chunks are borrowed: neither their liveness
      * nor their contents is guaranteed beyond the sink call ({@link
-     * com.qxotic.jinfer.MediaProjector#project}), so a sink that ingests after {@code encode}
+     * com.qxotic.jinfer.media.MediaProjector#project}), so a sink that ingests after {@code encode}
      * returns must copy them during the call. The returned parser is already seeded with the
      * prompt-owned reply prefix.
      */

@@ -60,12 +60,12 @@ public sealed interface Content {
     }
 
     /** Decoded media at its exact position in a message. */
-    record Media(com.qxotic.jinfer.Media value, ContentKey contentKey) implements Content {
+    record Media(com.qxotic.jinfer.media.Media value, ContentKey contentKey) implements Content {
         public Media {
             Objects.requireNonNull(value, "value");
         }
 
-        public Media(com.qxotic.jinfer.Media value) {
+        public Media(com.qxotic.jinfer.media.Media value) {
             this(value, null);
         }
     }
