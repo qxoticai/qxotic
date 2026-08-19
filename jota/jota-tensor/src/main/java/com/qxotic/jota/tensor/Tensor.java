@@ -595,7 +595,7 @@ public interface Tensor {
     /**
      * Clips (clamps) all elements to be within [min, max].
      *
-     * <p>Returns min where input < min, max where input > max, and input otherwise.
+     * <p>Returns min where input &lt; min, max where input > max, and input otherwise.
      *
      * <p>Bounds are cast to the input tensor's data type (JAX/NumPy semantics). For example, {@code
      * intTensor.clip(0.5, 2.5)} will truncate bounds to 0 and 2.
@@ -815,7 +815,7 @@ public interface Tensor {
      * @param dataType must be I8, I16, I32, or I64
      * @return a lazy tensor with random integers
      * @throws NullPointerException if randomKey or dataType is null
-     * @throws IllegalArgumentException if dataType is not an integer type, or if endExclusive <=
+     * @throws IllegalArgumentException if dataType is not an integer type, or if endExclusive &lt;=
      *     startInclusive, or if range doesn't fit in the target dtype
      */
     static Tensor randInt(
@@ -840,7 +840,7 @@ public interface Tensor {
      * @param dataType must be I8, I16, I32, or I64
      * @return a lazy tensor with random integers
      * @throws NullPointerException if randomKey, shape, or dataType is null
-     * @throws IllegalArgumentException if dataType is not an integer type, or if endExclusive <=
+     * @throws IllegalArgumentException if dataType is not an integer type, or if endExclusive &lt;=
      *     startInclusive, or if range doesn't fit in the target dtype
      */
     static Tensor randInt(
@@ -865,7 +865,7 @@ public interface Tensor {
      * @param dataType must be FP32 or FP64
      * @return a lazy tensor with random values
      * @throws NullPointerException if randomKey or dataType is null
-     * @throws IllegalArgumentException if dataType is not FP32 or FP64, or if endExclusive <=
+     * @throws IllegalArgumentException if dataType is not FP32 or FP64, or if endExclusive &lt;=
      *     startInclusive, or if range is NaN or infinite
      */
     static Tensor uniform(
@@ -890,7 +890,7 @@ public interface Tensor {
      * @param dataType must be FP32 or FP64
      * @return a lazy tensor with random values
      * @throws NullPointerException if randomKey, shape, or dataType is null
-     * @throws IllegalArgumentException if dataType is not FP32 or FP64, or if endExclusive <=
+     * @throws IllegalArgumentException if dataType is not FP32 or FP64, or if endExclusive &lt;=
      *     startInclusive, or if range is NaN or infinite
      */
     static Tensor uniform(
@@ -915,7 +915,7 @@ public interface Tensor {
      * @param dataType must be FP32 or FP64
      * @return a lazy tensor with normal random values
      * @throws NullPointerException if randomKey or dataType is null
-     * @throws IllegalArgumentException if dataType is not FP32 or FP64, or if std <= 0, or if
+     * @throws IllegalArgumentException if dataType is not FP32 or FP64, or if std &lt;= 0, or if
      *     parameters are NaN or infinite
      */
     static Tensor normal(
@@ -936,7 +936,7 @@ public interface Tensor {
      * @param dataType must be FP32 or FP64
      * @return a lazy tensor with normal random values
      * @throws NullPointerException if randomKey, shape, or dataType is null
-     * @throws IllegalArgumentException if dataType is not FP32 or FP64, or if std <= 0, or if
+     * @throws IllegalArgumentException if dataType is not FP32 or FP64, or if std &lt;= 0, or if
      *     parameters are NaN or infinite
      */
     static Tensor normal(
@@ -957,7 +957,7 @@ public interface Tensor {
      * @param dataType must be I8, I16, I32, or I64
      * @return a lazy tensor with random integers
      * @throws NullPointerException if randomKey or dataType is null
-     * @throws IllegalArgumentException if dataType is not an integer type, or if endExclusive <=
+     * @throws IllegalArgumentException if dataType is not an integer type, or if endExclusive &lt;=
      *     startInclusive, or if range doesn't fit in the target dtype, or if range overflows
      */
     static Tensor uniformInt(
@@ -982,7 +982,7 @@ public interface Tensor {
      * @param dataType must be I8, I16, I32, or I64
      * @return a lazy tensor with random integers
      * @throws NullPointerException if randomKey, shape, or dataType is null
-     * @throws IllegalArgumentException if dataType is not an integer type, or if endExclusive <=
+     * @throws IllegalArgumentException if dataType is not an integer type, or if endExclusive &lt;=
      *     startInclusive, or if range doesn't fit in the target dtype, or if range overflows
      */
     static Tensor uniformInt(
@@ -1010,8 +1010,8 @@ public interface Tensor {
      * @param dataType must be I8, I16, I32, or I64
      * @return a lazy tensor with random integers
      * @throws NullPointerException if randomKey or dataType is null
-     * @throws IllegalArgumentException if dataType is not an integer type, or if std <= 0 or std is
-     *     infinite
+     * @throws IllegalArgumentException if dataType is not an integer type, or if std &lt;= 0 or std
+     *     is infinite
      */
     static Tensor normalInt(
             RandomKey randomKey, long size, double mean, double std, DataType dataType) {
@@ -1034,8 +1034,8 @@ public interface Tensor {
      * @param dataType must be I8, I16, I32, or I64
      * @return a lazy tensor with random integers
      * @throws NullPointerException if randomKey, shape, or dataType is null
-     * @throws IllegalArgumentException if dataType is not an integer type, or if std <= 0 or std is
-     *     infinite
+     * @throws IllegalArgumentException if dataType is not an integer type, or if std &lt;= 0 or std
+     *     is infinite
      */
     static Tensor normalInt(
             RandomKey randomKey, Shape shape, double mean, double std, DataType dataType) {
