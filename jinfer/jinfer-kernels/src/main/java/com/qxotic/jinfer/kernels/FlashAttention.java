@@ -125,6 +125,21 @@ public final class FlashAttention {
      * to the direct F16 tiles.
      */
     static void decodeF16Run(Src src, int[] kvOff, int count, int headSize, Raw dst) {
+        if (!Segments.USE_VECTOR_API) {
+            for (int j = 0; j < count; j++) {
+                int so = kvOff[j];
+                long dstByte = dst.vbase() + (long) j * headSize * Float.BYTES;
+                for (int d = 0; d < headSize; d++) {
+                    writeFloat(
+                            dst.vseg(),
+                            dst.vbase() + ((long) j * headSize + d) * Float.BYTES,
+                            readFloat16(
+                                    src.raw().vseg(),
+                                    src.raw().vbase() + (long) (so + d) * F16_BYTES));
+                }
+            }
+            return;
+        }
         var sp = Segments.F_SPECIES;
         int len = sp.length();
         int bound = sp.loopBound(headSize);
