@@ -1,9 +1,9 @@
 package com.qxotic.jinfer.models.lfm2;
 
 import com.qxotic.format.gguf.GGUF;
+import com.qxotic.jinfer.ContextModel;
+import com.qxotic.jinfer.Reranker;
 import com.qxotic.jinfer.Views;
-import com.qxotic.jinfer.boundary.ContextModel;
-import com.qxotic.jinfer.boundary.Reranker;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryOperations;
 import com.qxotic.jota.memory.MemoryView;

@@ -1,8 +1,8 @@
 package com.qxotic.jinfer.bench;
 
+import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.ContextState;
 import com.qxotic.jinfer.Views;
-import com.qxotic.jinfer.boundary.Batch;
-import com.qxotic.jinfer.boundary.ContextState;
 import com.qxotic.jinfer.chat.LoadedEmbedder;
 import com.qxotic.jinfer.chat.Models;
 import java.io.PrintStream;

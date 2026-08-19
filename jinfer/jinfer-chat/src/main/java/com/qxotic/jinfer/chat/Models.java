@@ -2,11 +2,11 @@ package com.qxotic.jinfer.chat;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.format.gguf.GGUFFormatException;
-import com.qxotic.jinfer.boundary.ContentKey;
-import com.qxotic.jinfer.boundary.ContextState;
-import com.qxotic.jinfer.boundary.Media;
-import com.qxotic.jinfer.boundary.Multimodal;
-import com.qxotic.jinfer.boundary.media.ImageCodec;
+import com.qxotic.jinfer.ContentKey;
+import com.qxotic.jinfer.ContextState;
+import com.qxotic.jinfer.Media;
+import com.qxotic.jinfer.Multimodal;
+import com.qxotic.jinfer.codecs.ImageCodec;
 import com.qxotic.toknroll.Tokenizer;
 import java.io.BufferedInputStream;
 import java.io.IOException;
@@ -187,8 +187,8 @@ public final class Models {
     }
 
     /** Loads a SPEECH model at the port's own defaults. */
-    public static com.qxotic.jinfer.boundary.SpeechSynthesisModel<?, ?, ?> loadSpeech(
-            Path path, Arena arena) throws IOException {
+    public static com.qxotic.jinfer.SpeechSynthesisModel<?, ?, ?> loadSpeech(Path path, Arena arena)
+            throws IOException {
         return loadSpeech(path, arena, Map.of());
     }
 
@@ -198,7 +198,7 @@ public final class Models {
      * external tool) remains the DEFAULT; naming one here overrides that ladder rather than
      * extending it.
      */
-    public static com.qxotic.jinfer.boundary.SpeechSynthesisModel<?, ?, ?> loadSpeech(
+    public static com.qxotic.jinfer.SpeechSynthesisModel<?, ?, ?> loadSpeech(
             Path path, Arena arena, Map<String, Path> companions) throws IOException {
         Map<String, Path> attached = Map.copyOf(companions);
         return open(

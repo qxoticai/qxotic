@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.PanamaMemoryArena;
-import com.qxotic.jinfer.boundary.SpeechOptions;
+import com.qxotic.jinfer.SpeechOptions;
 import com.qxotic.jinfer.testkit.TestModels;
 import java.lang.foreign.Arena;
 import java.util.ConcurrentModificationException;

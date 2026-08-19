@@ -1,6 +1,6 @@
 package com.qxotic.jinfer.spring.ai.autoconfigure;
 
-import com.qxotic.jinfer.boundary.media.VideoSampler;
+import com.qxotic.jinfer.codecs.VideoSampler;
 import com.qxotic.jinfer.spring.ai.JinferChatModel;
 import io.micrometer.observation.ObservationRegistry;
 import java.nio.file.Path;

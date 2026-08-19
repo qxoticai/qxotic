@@ -1,6 +1,6 @@
 package com.qxotic.jinfer.server;
 
-import com.qxotic.jinfer.boundary.ContentKey;
+import com.qxotic.jinfer.ContentKey;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.file.Files;

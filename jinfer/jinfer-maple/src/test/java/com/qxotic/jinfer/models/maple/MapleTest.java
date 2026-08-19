@@ -5,8 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.format.gguf.GGUF;
+import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.Views;
-import com.qxotic.jinfer.boundary.Batch;
 import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.kernels.ModelLoader;

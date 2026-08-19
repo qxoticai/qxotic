@@ -1,7 +1,7 @@
 package com.qxotic.jinfer.cache;
 
-import com.qxotic.jinfer.boundary.Arenas;
-import com.qxotic.jinfer.boundary.LeakWatch;
+import com.qxotic.jinfer.Arenas;
+import com.qxotic.jinfer.LeakWatch;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.ref.Cleaner;

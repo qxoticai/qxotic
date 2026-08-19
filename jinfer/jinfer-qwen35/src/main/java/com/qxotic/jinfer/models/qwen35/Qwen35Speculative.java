@@ -1,7 +1,7 @@
 package com.qxotic.jinfer.models.qwen35;
 
+import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.Views;
-import com.qxotic.jinfer.boundary.Batch;
 import com.qxotic.jinfer.kernels.Ops;
 import com.qxotic.jinfer.llm.Generator.FinishReason;
 import com.qxotic.jinfer.llm.Generator.GenerationListener;

@@ -4,12 +4,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.ContentKey;
+import com.qxotic.jinfer.ContextConfiguration;
+import com.qxotic.jinfer.ContextState;
+import com.qxotic.jinfer.LanguageModel;
 import com.qxotic.jinfer.PanamaMemoryArena;
-import com.qxotic.jinfer.boundary.Batch;
-import com.qxotic.jinfer.boundary.ContentKey;
-import com.qxotic.jinfer.boundary.ContextConfiguration;
-import com.qxotic.jinfer.boundary.ContextState;
-import com.qxotic.jinfer.boundary.LanguageModel;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.Sampler;

@@ -1,9 +1,9 @@
 package com.qxotic.jinfer.chat;
 
+import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.ContextState;
+import com.qxotic.jinfer.EmbeddingModel;
 import com.qxotic.jinfer.Views;
-import com.qxotic.jinfer.boundary.Batch;
-import com.qxotic.jinfer.boundary.ContextState;
-import com.qxotic.jinfer.boundary.EmbeddingModel;
 import com.qxotic.jinfer.telemetry.InferenceEvent;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.toknroll.IntSequence;

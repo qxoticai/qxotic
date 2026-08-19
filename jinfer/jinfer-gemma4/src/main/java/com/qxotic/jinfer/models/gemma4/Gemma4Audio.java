@@ -1,11 +1,11 @@
 package com.qxotic.jinfer.models.gemma4;
 
 import com.qxotic.format.gguf.GGUF;
+import com.qxotic.jinfer.Arenas;
+import com.qxotic.jinfer.Media;
+import com.qxotic.jinfer.MediaProjector;
 import com.qxotic.jinfer.Parallel;
 import com.qxotic.jinfer.Views;
-import com.qxotic.jinfer.boundary.Arenas;
-import com.qxotic.jinfer.boundary.Media;
-import com.qxotic.jinfer.boundary.MediaProjector;
 import com.qxotic.jinfer.kernels.MatMul;
 import com.qxotic.jinfer.kernels.ModelLoader;
 import com.qxotic.jinfer.kernels.Norms;

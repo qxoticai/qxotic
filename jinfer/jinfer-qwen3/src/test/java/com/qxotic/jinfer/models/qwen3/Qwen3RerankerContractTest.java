@@ -3,7 +3,7 @@ package com.qxotic.jinfer.models.qwen3;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import com.qxotic.jinfer.boundary.Batch;
+import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.testkit.TestModels;
 import java.lang.foreign.Arena;
 import java.nio.file.Path;

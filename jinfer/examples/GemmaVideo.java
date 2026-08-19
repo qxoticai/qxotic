@@ -4,7 +4,7 @@
 //RUNTIME_OPTIONS --enable-preview --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED -Xmx24g
 //REPOS mavenLocal,central
 //DEPS com.qxotic:jinfer-langchain4j:0.1.0
-//DEPS com.qxotic:jinfer-boundary:0.1.0
+//DEPS com.qxotic:jinfer-codecs:0.1.0
 //SOURCES scripts/Models.java
 
 // Gemma 4 video understanding (equivalent of the docs' "Describe this video."):
@@ -25,7 +25,7 @@
 // the WHOLE duration, each stamped with its true timestamp).
 
 import com.qxotic.jinfer.langchain4j.JinferChatModel;
-import com.qxotic.jinfer.boundary.media.VideoCodec;
+import com.qxotic.jinfer.codecs.VideoCodec;
 import dev.langchain4j.data.message.TextContent;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.data.message.VideoContent;

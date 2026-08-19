@@ -1,11 +1,10 @@
 package com.qxotic.jinfer.bench;
 
+import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.ContentKey;
+import com.qxotic.jinfer.ContextState;
+import com.qxotic.jinfer.Multimodal;
 import com.qxotic.jinfer.Views;
-import com.qxotic.jinfer.boundary.Batch;
-import com.qxotic.jinfer.boundary.ContentKey;
-import com.qxotic.jinfer.boundary.ContextState;
-import com.qxotic.jinfer.boundary.Multimodal;
-import com.qxotic.jinfer.boundary.media.ImageCodec;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.Content;
@@ -13,6 +12,7 @@ import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.chat.Role;
+import com.qxotic.jinfer.codecs.ImageCodec;
 import com.qxotic.jinfer.llm.Sampler;
 import com.qxotic.jinfer.llm.Sampling;
 import java.io.PrintStream;
@@ -427,7 +427,7 @@ public final class JinferBench {
             // projected media, cold (encoder projection) vs warm (media-cache replay)
             if (mediaPath != null
                     && bench.loaded.model() instanceof Multimodal mm
-                    && mm.projector(com.qxotic.jinfer.boundary.Media.Image.class).isPresent()) {
+                    && mm.projector(com.qxotic.jinfer.Media.Image.class).isPresent()) {
                 byte[] bytes = Files.readAllBytes(mediaPath);
                 var image = ImageCodec.decode(bytes);
                 var request = mediaRequest(image, ContentKey.sha256(bytes), gen);
@@ -470,7 +470,7 @@ public final class JinferBench {
     }
 
     private static ChatEngine.Request mediaRequest(
-            com.qxotic.jinfer.boundary.Media.Image image, ContentKey contentKey, int gen) {
+            com.qxotic.jinfer.Media.Image image, ContentKey contentKey, int gen) {
         return new ChatEngine.Request(
                 List.of(
                         new Message(

@@ -1,17 +1,17 @@
 package com.qxotic.jinfer.models.qwen35;
 
 import com.qxotic.format.gguf.GGUF;
+import com.qxotic.jinfer.Arenas;
+import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.CheckpointCodec;
+import com.qxotic.jinfer.ContextConfiguration;
+import com.qxotic.jinfer.ContextState;
+import com.qxotic.jinfer.LanguageModel;
+import com.qxotic.jinfer.Media;
+import com.qxotic.jinfer.MediaProjector;
+import com.qxotic.jinfer.Multimodal;
 import com.qxotic.jinfer.Parallel;
 import com.qxotic.jinfer.Views;
-import com.qxotic.jinfer.boundary.Arenas;
-import com.qxotic.jinfer.boundary.Batch;
-import com.qxotic.jinfer.boundary.CheckpointCodec;
-import com.qxotic.jinfer.boundary.ContextConfiguration;
-import com.qxotic.jinfer.boundary.ContextState;
-import com.qxotic.jinfer.boundary.LanguageModel;
-import com.qxotic.jinfer.boundary.Media;
-import com.qxotic.jinfer.boundary.MediaProjector;
-import com.qxotic.jinfer.boundary.Multimodal;
 import com.qxotic.jinfer.kernels.Activations;
 import com.qxotic.jinfer.kernels.Convert;
 import com.qxotic.jinfer.kernels.Convolutions;

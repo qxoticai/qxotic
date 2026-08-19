@@ -1,6 +1,6 @@
 package com.qxotic.jinfer.cache;
 
-import com.qxotic.jinfer.boundary.ContentKey;
+import com.qxotic.jinfer.ContentKey;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;

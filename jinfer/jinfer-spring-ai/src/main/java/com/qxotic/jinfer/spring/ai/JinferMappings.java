@@ -1,15 +1,15 @@
 package com.qxotic.jinfer.spring.ai;
 
 import com.qxotic.format.json.Json;
-import com.qxotic.jinfer.boundary.ContentKey;
-import com.qxotic.jinfer.boundary.Media;
-import com.qxotic.jinfer.boundary.media.AudioCodec;
-import com.qxotic.jinfer.boundary.media.ImageCodec;
-import com.qxotic.jinfer.boundary.media.VideoSampler;
+import com.qxotic.jinfer.ContentKey;
+import com.qxotic.jinfer.Media;
 import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.Tool;
+import com.qxotic.jinfer.codecs.AudioCodec;
+import com.qxotic.jinfer.codecs.ImageCodec;
+import com.qxotic.jinfer.codecs.VideoSampler;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;

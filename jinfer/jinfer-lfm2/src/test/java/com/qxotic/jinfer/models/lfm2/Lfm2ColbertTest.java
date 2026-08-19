@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.format.gguf.GGUF;
-import com.qxotic.jinfer.boundary.Reranker;
+import com.qxotic.jinfer.Reranker;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.kernels.ModelLoader;
 import com.qxotic.jinfer.testkit.TestModels;

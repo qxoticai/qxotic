@@ -29,17 +29,8 @@
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-boundary</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
       <artifactId>jinfer-chat</artifactId>
       <!-- ModelProvider + the retrieval load path (ServiceLoader cargo) -->
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-llm</artifactId>
-      <!-- SpecialTokens: the embedder's trailing-EOS lookup -->
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>

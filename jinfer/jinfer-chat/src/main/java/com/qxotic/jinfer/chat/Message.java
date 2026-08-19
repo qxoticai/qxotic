@@ -19,7 +19,7 @@ public record Message(Role role, List<Content> content) {
         return new Message(Role.SYSTEM, text);
     }
 
-    public static Message user(String text, com.qxotic.jinfer.boundary.Media... media) {
+    public static Message user(String text, com.qxotic.jinfer.Media... media) {
         ArrayList<Content> content = new ArrayList<>(media.length + 1);
         content.add(new Content.Text(text));
         for (var value : media) content.add(new Content.Media(value));

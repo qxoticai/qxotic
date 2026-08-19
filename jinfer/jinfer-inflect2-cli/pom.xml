@@ -23,11 +23,15 @@
   <dependencies>
     <dependency>
       <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-inflect2</artifactId>
+      <artifactId>jinfer-core</artifactId>
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-boundary</artifactId>
+      <artifactId>jinfer-codecs</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-inflect2</artifactId>
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>

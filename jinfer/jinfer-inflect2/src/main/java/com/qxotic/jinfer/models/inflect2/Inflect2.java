@@ -13,13 +13,13 @@
 package com.qxotic.jinfer.models.inflect2;
 
 import com.qxotic.format.gguf.GGUF;
+import com.qxotic.jinfer.Arenas;
+import com.qxotic.jinfer.LeakWatch;
+import com.qxotic.jinfer.Media;
 import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.Parallel;
+import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.jinfer.Views;
-import com.qxotic.jinfer.boundary.Arenas;
-import com.qxotic.jinfer.boundary.LeakWatch;
-import com.qxotic.jinfer.boundary.Media;
-import com.qxotic.jinfer.boundary.RuntimeState;
 import com.qxotic.jinfer.kernels.Activations;
 import com.qxotic.jinfer.kernels.Convert;
 import com.qxotic.jinfer.kernels.Convolutions;
@@ -183,10 +183,10 @@ public final class Inflect2 {
 
     /**
      * Weights map into {@code arena}, and whoever provides it owns its lifetime - the same contract
-     * as {@link com.qxotic.jinfer.boundary.Model}: {@code ofAuto} is GC-managed, {@code global}
-     * lasts the process, a scoped arena is deterministic and must outlive every model sharing the
-     * weights. Closing one while a synthesis is running is a crash, not an exception: the kernels
-     * read raw addresses.
+     * as {@link com.qxotic.jinfer.Model}: {@code ofAuto} is GC-managed, {@code global} lasts the
+     * process, a scoped arena is deterministic and must outlive every model sharing the weights.
+     * Closing one while a synthesis is running is a crash, not an exception: the kernels read raw
+     * addresses.
      */
     public static Inflect2 load(Path path, Arena arena) throws IOException {
         try (FileChannel channel = FileChannel.open(path, StandardOpenOption.READ)) {

@@ -5,9 +5,9 @@
 package com.qxotic.jinfer.examples.inflect2;
 
 import com.qxotic.format.gguf.GGUF;
-import com.qxotic.jinfer.boundary.Media;
-import com.qxotic.jinfer.boundary.SpeechOptions;
-import com.qxotic.jinfer.boundary.media.AudioCodec;
+import com.qxotic.jinfer.Media;
+import com.qxotic.jinfer.SpeechOptions;
+import com.qxotic.jinfer.codecs.AudioCodec;
 import com.qxotic.jinfer.models.inflect2.Inflect2;
 import com.qxotic.jinfer.models.inflect2.InflectTTS;
 import java.io.ByteArrayInputStream;

@@ -16,12 +16,12 @@
   <description>Java LLM inference engine (multi-module)</description>
 
   <modules>
+    <module>jinfer-bom</module>
     <module>jinfer-testkit</module>
     <module>jinfer-core</module>
+    <module>jinfer-codecs</module>
     <module>jinfer-kernels</module>
-    <module>jinfer-boundary</module>
     <module>jinfer-cache</module>
-    <module>jinfer-llm</module>
     <module>jinfer-lfm2</module>
     <module>jinfer-qwen3</module>
     <module>jinfer-qwen35</module>
@@ -110,17 +110,12 @@
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
+        <artifactId>jinfer-codecs</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
         <artifactId>jinfer-kernels</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>com.qxotic</groupId>
-        <artifactId>jinfer-boundary</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>com.qxotic</groupId>
-        <artifactId>jinfer-llm</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
@@ -349,29 +344,16 @@
               <buildArg>-O3</buildArg>
               <buildArg>-Djam.vector.wideTiles=${jam.wideTiles}</buildArg>
               <buildArg>-march=native</buildArg>
-              <buildArg>-H:+UnlockExperimentalVMOptions</buildArg>
-              <buildArg>-H:+VectorAPISupport</buildArg>
-              <buildArg>-H:+ForeignAPISupport</buildArg>
-              <!-- SharedArenaSupport is mutually exclusive with VectorAPISupport on every current
-                   builder (verified through Oracle GraalVM 25.2.4+7.1: the check fires once the
-                   vector module is actually in the image), so the image runs with Arenas' ofAuto
-                   degrade (GC-eventual frees). When GraalVM lifts the restriction, re-enable real
-                   shared arenas with two args here: -H:+SharedArenaSupport and
+              <!-- Correctness flags (Vector/FFM support, preview, add-modules, native-access,
+                   build-time init policy and per-class run-time exemptions) come from each module's
+                   jar-resident native-image.properties; this recipe only adds the optimization and
+                   resource knobs that are specific to the shipped CLI binary.
+
+                   SharedArenaSupport stays OFF: it is mutually exclusive with VectorAPISupport on
+                   every current builder (verified through Oracle GraalVM 25.2.4+7.1), so the image
+                   runs with Arenas' ofAuto degrade (GC-eventual frees). When GraalVM lifts the
+                   restriction, re-enable real shared arenas with -H:+SharedArenaSupport and
                    -Djinfer.sharedArenas=true (the Arenas hook already honors it). -->
-              <buildArg>--enable-preview</buildArg>
-              <buildArg>--add-modules</buildArg>
-              <buildArg>${jinfer.image.addModules}</buildArg>
-              <buildArg>--enable-native-access=ALL-UNNAMED</buildArg>
-              <buildArg>-J--enable-native-access=ALL-UNNAMED</buildArg>
-              <buildArg>--initialize-at-build-time=com.qxotic.</buildArg>
-              <!-- LeakWatch, state owners and CacheStore for the same reason: their Cleaners cannot
-                   live in the image heap (the daemon thread does not survive the build); LeakWatch
-                   additionally because -Djinfer.leakDetection is a RUN-time flag that build-time
-                   initialization would freeze to the builder's value. -->
-              <buildArg>--initialize-at-run-time=com.qxotic.jinfer.boundary.RuntimeFlags,com.qxotic.jinfer.boundary.LeakWatch,com.qxotic.jinfer.boundary.LeakWatch$Holder,com.qxotic.jinfer.boundary.ContextState,com.qxotic.jinfer.cache.CacheStore,com.qxotic.jinfer.kernels.MatMul,com.qxotic.jinfer.RuntimeFlags,com.qxotic.jinfer.Parallel,com.qxotic.jinfer.models.gemma4.VisionPreprocess,com.qxotic.jinfer.hub.Fetch,com.qxotic.jinfer.hub.Proxies,com.qxotic.jam.NativeJAM,com.qxotic.jam.NativeLoader</buildArg>
-              <!-- hub.Fetch/Proxies: an HttpClient cannot live in the image heap, and both read
-                   JINFER_DOWNLOAD_THREADS and the proxy variables into statics - build-time init
-                   would freeze the BUILD machine's environment into the binary. -->
               <buildArg>-H:IncludeResources=com/qxotic/jam/native/.*</buildArg>
               <buildArg>-Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0</buildArg>
               <buildArg>-Djinfer.preload=${jinfer.preload}</buildArg>

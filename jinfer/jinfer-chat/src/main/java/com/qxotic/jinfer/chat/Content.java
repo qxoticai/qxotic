@@ -1,6 +1,6 @@
 package com.qxotic.jinfer.chat;
 
-import com.qxotic.jinfer.boundary.ContentKey;
+import com.qxotic.jinfer.ContentKey;
 import com.qxotic.toknroll.IntSequence;
 import java.util.List;
 import java.util.Map;
@@ -60,12 +60,12 @@ public sealed interface Content {
     }
 
     /** Decoded media at its exact position in a message. */
-    record Media(com.qxotic.jinfer.boundary.Media value, ContentKey contentKey) implements Content {
+    record Media(com.qxotic.jinfer.Media value, ContentKey contentKey) implements Content {
         public Media {
             Objects.requireNonNull(value, "value");
         }
 
-        public Media(com.qxotic.jinfer.boundary.Media value) {
+        public Media(com.qxotic.jinfer.Media value) {
             this(value, null);
         }
     }

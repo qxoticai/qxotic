@@ -6,12 +6,11 @@ the prompt cache.
 ## Modules
 
 ```text
-jinfer-core       native-memory adapters, parallel execution and shared view utilities
+jinfer-core       primitives, model contracts, media vocabulary and telemetry
+jinfer-codecs     image/audio/video decoding (bytes <-> Media)
 jinfer-kernels    GGUF loading and CPU kernels over MemoryView
-jinfer-boundary   model/configuration/weights/state contracts, media and telemetry
 jinfer-cache      retained sessions and content-addressed checkpoint storage
-jinfer-llm        sampling, grammar constraints, generation and speculative decoding
-jinfer-chat       model loading, templates, conversations, tools and ChatEngine
+jinfer-chat       sampling, grammar constraints, generation, chat, templates and tools
 jinfer-<model>     one ServiceLoader provider per supported GGUF architecture
 jinfer-server     OpenAI-compatible HTTP/SSE server
 jinfer-cli        chat, completion, pull and server executable
@@ -26,8 +25,8 @@ jinfer-testkit     shared model-fixture discovery for tests
 only the architecture modules they need; `Models.load` discovers the available providers and gives
 an actionable error when a matching provider is absent.
 
-Dependencies point toward the small substrate: core and boundary at the bottom, then kernels,
-cache and LLM, then chat, model providers, integrations and executables. The CLI is a leaf.
+Dependencies point toward the small substrate: core at the bottom, then codecs, kernels, cache
+and chat, then model providers, integrations and executables. The CLI is a leaf.
 
 ## Model boundary
 
