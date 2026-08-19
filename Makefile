@@ -2,7 +2,7 @@
 # dependency-closed, so `mvn -f jinfer` only works after the outer modules are installed.
 # These targets run the full reactor from the root, which is the only build that works cold.
 
-MAVEN ?= mvn
+MAVEN ?= $(shell command -v mvnd >/dev/null 2>&1 && echo mvnd || echo mvn)
 
 default: test
 
