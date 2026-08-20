@@ -5,6 +5,9 @@
 JAVA ?= java
 JAR_FILE = jinfer.jar
 
+# Extra flags for every Maven invocation, e.g. `make test MAVEN_FLAGS=-o` for offline builds.
+MAVEN_FLAGS ?=
+
 ifeq ($(OS),Windows_NT)
     EXE := .exe
 else
@@ -24,21 +27,21 @@ JAVA_RUNTIME_OPTIONS = --enable-preview --add-modules jdk.incubator.vector,jdk.h
 default: jar
 
 compile:
-	mvn -o compile
+	mvn $(MAVEN_FLAGS) compile
 
 test-compile:
-	mvn -o test-compile
+	mvn $(MAVEN_FLAGS) test-compile
 
 # Unit tests + weights-free oracles; integration/bench/driver suites are tag-gated (see the
 # surefire.excludedGroups comment in pom.xml for how to opt in).
 test:
-	mvn -o test
+	mvn $(MAVEN_FLAGS) test
 
 install:
-	mvn -o -DskipTests install
+	mvn $(MAVEN_FLAGS) -DskipTests install
 
 jar:
-	mvn -o -pl jinfer-cli -am clean package -DskipTests
+	mvn $(MAVEN_FLAGS) -pl jinfer-cli -am clean package -DskipTests
 	cp jinfer-cli/target/jinfer.jar $(JAR_FILE)
 
 clean:
@@ -79,7 +82,7 @@ check-native-image:
 	esac
 
 native: check-native-image
-	mvn -o -Pnative -pl jinfer-cli -am clean package -DskipTests -Djinfer.preload=$(PRELOAD_GGUF)
+	mvn $(MAVEN_FLAGS) -Pnative -pl jinfer-cli -am clean package -DskipTests -Djinfer.preload=$(PRELOAD_GGUF)
 	cp jinfer-cli/target/jinfer$(EXE) $(NATIVE_FILE)
 
 .PHONY: default compile test-compile test install jar clean run-jar-command test-golden check-native-image native
