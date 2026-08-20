@@ -153,12 +153,7 @@ public final class GptOss
                             weights.outputNorm,
                             dim,
                             configuration.rmsNormEps);
-                    MatMul.gemv(
-                            weights.outputWeight,
-                            state.normed,
-                            state.logits,
-                            configuration.vocabularySize,
-                            dim);
+                    MatMul.gemv(weights.outputWeight, state.normed, state.logits);
                     return state.logits;
                 });
     }
@@ -202,7 +197,7 @@ public final class GptOss
         MemoryView<MemorySegment> bK = state.batchK[l], bV = state.batchV[l];
 
         Norms.rmsnormRows(state.normed, state.residual, layer.attnNorm, seqLen, dim, c.rmsNormEps);
-        MatMul.gemm(attn.wq, state.normed, dim, state.query, queryDim, queryDim, seqLen, dim);
+        MatMul.gemm(attn.wq, state.normed, state.query, seqLen);
         Ops.addRowBiasInPlace(state.query, 0, attn.qBias, 0, seqLen, queryDim);
         Parallel.forRows(
                 seqLen,
@@ -217,8 +212,8 @@ public final class GptOss
                                 halfHead);
                 });
 
-        MatMul.gemm(attn.wk, state.normed, dim, bK, kvDim, kvDim, seqLen, dim);
-        MatMul.gemm(attn.wv, state.normed, dim, bV, kvDim, kvDim, seqLen, dim);
+        MatMul.gemm(attn.wk, state.normed, bK, seqLen);
+        MatMul.gemm(attn.wv, state.normed, bV, seqLen);
         Ops.addRowBiasInPlace(bK, 0, attn.kBias, 0, seqLen, kvDim);
         Ops.addRowBiasInPlace(bV, 0, attn.vBias, 0, seqLen, kvDim);
         Parallel.forRows(
@@ -274,7 +269,7 @@ public final class GptOss
                     attn.sinks,
                     state.decodeScratch);
 
-        MatMul.gemm(attn.wo, state.attnOut, queryDim, state.branchOut, dim, dim, seqLen, queryDim);
+        MatMul.gemm(attn.wo, state.attnOut, state.branchOut, seqLen);
         Ops.addRowBiasInPlace(state.branchOut, 0, attn.oBias, 0, seqLen, dim);
         Ops.addInPlace(state.residual, 0, state.branchOut, 0, seqLen * dim);
         commitKv(state, l, startPos, seqLen);
@@ -289,7 +284,7 @@ public final class GptOss
 
         Norms.rmsnormRows(
                 state.normed, residual, weights.layers[l].postAttnNorm, seqLen, dim, c.rmsNormEps);
-        MatMul.gemm(moe.router, state.normed, dim, state.moeRouter, experts, experts, seqLen, dim);
+        MatMul.gemm(moe.router, state.normed, state.moeRouter, seqLen);
         Ops.addRowBiasInPlace(state.moeRouter, 0, moe.routerBias, 0, seqLen, experts);
         selectExperts(state, seqLen);
 
@@ -303,27 +298,8 @@ public final class GptOss
                 state.moeOut,
                 null,
                 (e, n, gather, out) -> {
-                    long gateUpOffset = (long) e * expertFf * dim;
-                    MatMul.gemm(
-                            moe.gateExps,
-                            gateUpOffset,
-                            gather,
-                            dim,
-                            state.hidden,
-                            expertFf,
-                            expertFf,
-                            n,
-                            dim);
-                    MatMul.gemm(
-                            moe.upExps,
-                            gateUpOffset,
-                            gather,
-                            dim,
-                            state.hidden2,
-                            expertFf,
-                            expertFf,
-                            n,
-                            dim);
+                    MatMul.gemm(moe.gateExps[e], gather, state.hidden, n);
+                    MatMul.gemm(moe.upExps[e], gather, state.hidden2, n);
                     Ops.addRowBiasInPlace(
                             state.hidden, 0, moe.gateBias, (long) e * expertFf, n, expertFf);
                     Ops.addRowBiasInPlace(
@@ -337,16 +313,7 @@ public final class GptOss
                                             state.hidden2,
                                             row * expertFf,
                                             expertFf));
-                    MatMul.gemm(
-                            moe.downExps,
-                            (long) e * dim * expertFf,
-                            state.hidden,
-                            expertFf,
-                            out,
-                            dim,
-                            dim,
-                            n,
-                            expertFf);
+                    MatMul.gemm(moe.downExps[e], state.hidden, out, n);
                     Ops.addRowBiasInPlace(out, 0, moe.downBias, (long) e * dim, n, dim);
                 });
         Ops.addInPlace(residual, 0, state.moeOut, 0, seqLen * dim);
@@ -389,8 +356,8 @@ public final class GptOss
         MemoryView<MemorySegment> bK = state.batchK[l], bV = state.batchV[l];
 
         Norms.rmsnormRows(state.normed, state.residual, layer.attnNorm, seqLen, dim, c.rmsNormEps);
-        MatMul.gemm(attn.wk, state.normed, dim, bK, kvDim, kvDim, seqLen, dim);
-        MatMul.gemm(attn.wv, state.normed, dim, bV, kvDim, kvDim, seqLen, dim);
+        MatMul.gemm(attn.wk, state.normed, bK, seqLen);
+        MatMul.gemm(attn.wv, state.normed, bV, seqLen);
         Ops.addRowBiasInPlace(bK, 0, attn.kBias, 0, seqLen, kvDim);
         Ops.addRowBiasInPlace(bV, 0, attn.vBias, 0, seqLen, kvDim);
         Parallel.forRows(
@@ -443,7 +410,7 @@ public final class GptOss
                 layer.attnNorm,
                 dim,
                 c.rmsNormEps);
-        MatMul.gemm(attn.wq, state.tailScratch, dim, state.query, queryDim, queryDim, 1, dim);
+        MatMul.gemm(attn.wq, state.tailScratch, state.query, 1);
         Ops.addRowBiasInPlace(state.query, 0, attn.qBias, 0, 1, queryDim);
         RoPE.fill(state.ropeCos, state.ropeSin, position, 1, halfHead, weights.rope);
         for (int h = 0; h < heads; h++)
@@ -466,7 +433,7 @@ public final class GptOss
                 swa ? c.slidingWindow - 1 : 0,
                 attn.sinks,
                 state.decodeScratch);
-        MatMul.gemm(attn.wo, state.attnOut, queryDim, state.tailScratch, dim, dim, 1, queryDim);
+        MatMul.gemm(attn.wo, state.attnOut, state.tailScratch, 1);
         Ops.addRowBiasInPlace(state.tailScratch, 0, attn.oBias, 0, 1, dim);
         Ops.addScaledInto(state.tail, state.residual, (long) row * dim, state.tailScratch, dim, 1f);
         moeFeedForward(state, l, state.tail, 1);
@@ -556,11 +523,11 @@ public final class GptOss
     public record MoeFfnWeights(
             MemoryView<MemorySegment> router,
             MemoryView<MemorySegment> routerBias,
-            MemoryView<MemorySegment> gateExps,
+            MemoryView<MemorySegment>[] gateExps,
             MemoryView<MemorySegment> gateBias,
-            MemoryView<MemorySegment> upExps,
+            MemoryView<MemorySegment>[] upExps,
             MemoryView<MemorySegment> upBias,
-            MemoryView<MemorySegment> downExps,
+            MemoryView<MemorySegment>[] downExps,
             MemoryView<MemorySegment> downBias) {}
 
     public record LayerWeights(
@@ -610,22 +577,22 @@ public final class GptOss
                                 + c.contextLength);
             int rows = batchCapacity(), dim = c.embeddingLength;
             int queryDim = c.queryDim(), kvDim = c.kvDim();
-            residual = Views.allocateF32(memoryArena(), rows * dim);
-            normed = Views.allocateF32(memoryArena(), rows * dim);
-            branchOut = Views.allocateF32(memoryArena(), rows * dim);
-            attnOut = Views.allocateF32(memoryArena(), rows * queryDim);
-            query = Views.allocateF32(memoryArena(), rows * queryDim);
-            logits = Views.allocateF32(memoryArena(), c.vocabularySize);
-            tail = Views.allocateF32(memoryArena(), dim);
-            tailScratch = Views.allocateF32(memoryArena(), dim);
-            ropeCos = Views.allocateF32(memoryArena(), rows * c.headSize / 2);
-            ropeSin = Views.allocateF32(memoryArena(), rows * c.headSize / 2);
-            hidden = Views.allocateF32(memoryArena(), rows * c.expertFeedForwardLength);
-            hidden2 = Views.allocateF32(memoryArena(), rows * c.expertFeedForwardLength);
-            moeRouter = Views.allocateF32(memoryArena(), rows * c.expertCount);
-            moeGather = Views.allocateF32(memoryArena(), rows * dim);
-            moeExpertOut = Views.allocateF32(memoryArena(), rows * dim);
-            moeOut = Views.allocateF32(memoryArena(), rows * dim);
+            residual = Views.allocateF32(memoryArena(), rows, dim);
+            normed = Views.allocateF32(memoryArena(), rows, dim);
+            branchOut = Views.allocateF32(memoryArena(), rows, dim);
+            attnOut = Views.allocateF32(memoryArena(), rows, queryDim);
+            query = Views.allocateF32(memoryArena(), rows, queryDim);
+            logits = Views.allocateF32(memoryArena(), 1, c.vocabularySize);
+            tail = Views.allocateF32(memoryArena(), 1, dim);
+            tailScratch = Views.allocateF32(memoryArena(), 1, dim);
+            ropeCos = Views.allocateF32(memoryArena(), rows, c.headSize / 2);
+            ropeSin = Views.allocateF32(memoryArena(), rows, c.headSize / 2);
+            hidden = Views.allocateF32(memoryArena(), rows, c.expertFeedForwardLength);
+            hidden2 = Views.allocateF32(memoryArena(), rows, c.expertFeedForwardLength);
+            moeRouter = Views.allocateF32(memoryArena(), rows, c.expertCount);
+            moeGather = Views.allocateF32(memoryArena(), rows, dim);
+            moeExpertOut = Views.allocateF32(memoryArena(), rows, dim);
+            moeOut = Views.allocateF32(memoryArena(), rows, dim);
             moeExpertCounts = new int[c.expertCount];
             moeRowTopE = new int[rows * c.expertUsedCount];
             moeRowTopP = new float[rows * c.expertUsedCount];
@@ -640,8 +607,8 @@ public final class GptOss
                 int positions = c.kvCachePositions(l, contextCapacity);
                 keyCache[l] = Views.allocateF16(memoryArena(), positions, kvDim);
                 valueCache[l] = Views.allocateF16(memoryArena(), positions, kvDim);
-                batchK[l] = Views.allocateF32(memoryArena(), rows * kvDim);
-                batchV[l] = Views.allocateF32(memoryArena(), rows * kvDim);
+                batchK[l] = Views.allocateF32(memoryArena(), rows, kvDim);
+                batchV[l] = Views.allocateF32(memoryArena(), rows, kvDim);
             }
         }
 
@@ -709,6 +676,20 @@ public final class GptOss
         return Objects.requireNonNull(tensors.get(name), name);
     }
 
+    /**
+     * Pre-slice a stacked per-expert weight {@code [experts, rows, cols/elementsPerBlock]} into
+     * per-expert 2D views {@code [rows, cols/elementsPerBlock]} - zero-copy, computed once at load,
+     * so the hot MoE loop indexes the expert instead of doing offset arithmetic.
+     */
+    static MemoryView<MemorySegment>[] sliceExperts(
+            MemoryView<MemorySegment> stacked, int experts) {
+        MemoryView<MemorySegment>[] slices = Views.sliceLeadingAxis(stacked);
+        if (slices.length != experts)
+            throw new IllegalArgumentException(
+                    "stacked experts: expert axis " + slices.length + " != expertCount " + experts);
+        return slices;
+    }
+
     private static MemoryView<MemorySegment> requireF32(
             Map<String, MemoryView<MemorySegment>> tensors, String name) {
         MemoryView<MemorySegment> value = require(tensors, name);
@@ -737,11 +718,17 @@ public final class GptOss
                             new MoeFfnWeights(
                                     require(tensors, p + "ffn_gate_inp.weight"),
                                     requireF32(tensors, p + "ffn_gate_inp.bias"),
-                                    require(tensors, p + "ffn_gate_exps.weight"),
+                                    sliceExperts(
+                                            require(tensors, p + "ffn_gate_exps.weight"),
+                                            c.expertCount),
                                     requireF32(tensors, p + "ffn_gate_exps.bias"),
-                                    require(tensors, p + "ffn_up_exps.weight"),
+                                    sliceExperts(
+                                            require(tensors, p + "ffn_up_exps.weight"),
+                                            c.expertCount),
                                     requireF32(tensors, p + "ffn_up_exps.bias"),
-                                    require(tensors, p + "ffn_down_exps.weight"),
+                                    sliceExperts(
+                                            require(tensors, p + "ffn_down_exps.weight"),
+                                            c.expertCount),
                                     requireF32(tensors, p + "ffn_down_exps.bias")));
         }
         MemoryView<MemorySegment> tokenEmbeddings = require(tensors, "token_embd.weight");
