@@ -47,7 +47,7 @@ import java.util.function.Supplier;
  * Models.load(path, arena)}), build with {@code model(loaded)}, and {@code fork()} pipelines for
  * the price of a context each. Footprint: an instance holds its weights, up to the configured
  * number of retained full-context states, plus the block layer's KV (every served conversation,
- * best-effort, bounded by {@code jinfer.promptCacheMB}; defined prompts are pinned intent within
+ * best-effort within a 2 GiB LRU-evicted RAM-only budget; defined prompts are pinned intent within
  * it).
  *
  * <p>Lifecycle: base model, cached-prompt views and the streaming twin share ONE engine, so {@code
@@ -247,10 +247,9 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
      * declarations, so passing {@code List.of()} is the caller acknowledging this view welds no
      * tools - the cache is not tools-independent, and the signature should not suggest it is.
      *
-     * <p>(The tree serves the BASE model too: under the default {@code jinfer.promptCache=true},
-     * every conversation on a codec model is resumed from and committed to it, bounded by {@code
-     * jinfer.promptCacheMB} with LRU eviction. {@code -Djinfer.promptCache=false} turns that
-     * retention off; defined views still work through an explicitly mounted artifact.)
+     * <p>(The tree serves the BASE model too: every conversation on a codec model is resumed from
+     * and committed to it, best-effort within the block budget. Defined views still work through an
+     * explicitly mounted artifact.)
      *
      * <p>Typical shape:
      *

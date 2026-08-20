@@ -159,7 +159,7 @@ class JinferLifecycleIT {
         // A retained state is recycled when the prompt does not extend it, so an unrelated
         // request cannot see the previous conversation, and an identical request is never an
         // append-only EXTENSION of live state. (It may still restore KV from the block tree -
-        // that is the separate jinfer.promptCache tier, byte-identical by law.)
+        // that is the separate block-cache tier, byte-identical by law.)
         try (JinferChatModel model = load()) {
             String first = model.chat(UserMessage.from("name a colour")).aiMessage().text();
             model.chat(UserMessage.from("name a country"));
