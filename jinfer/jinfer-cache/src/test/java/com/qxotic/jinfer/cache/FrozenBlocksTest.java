@@ -254,6 +254,59 @@ public final class FrozenBlocksTest {
     }
 
     @Test
+    void corruptDeepChainDiscardsIterativelyNeverStackOverflows() throws Exception {
+        int depth = 65_536, victimDepth = depth / 2; // recursion over this depth would SO
+        ContentKey seed = ContentKey.sha256(new byte[] {43});
+        BlockResumeTest.FakeCodec codec = new BlockResumeTest.FakeCodec();
+
+        // one block per position: chain depth == depth
+        BlockTree<BlockResumeTest.FakeState> build =
+                new BlockTree<>(codec, CacheStore.inMemory(), 1L << 28, seed);
+        long[] fp = fp(depth, 1000);
+        BlockResumeTest.FakeState w = new BlockResumeTest.FakeState(depth);
+        BlockTree<BlockResumeTest.FakeState>.Block tip = build.resume(new long[0], 0, w);
+        for (int p = 0; p < depth; p++) {
+            w.ingestTo(p + 1);
+            tip = build.commit(tip, fp, p, 1, w);
+        }
+        Path file = Files.createTempFile("frozen-deep", ".jkv");
+        file.toFile().deleteOnExit();
+        build.freeze(file);
+
+        // corrupt the victim's blob BEFORE any restore verifies it (frozenVerified memoizes);
+        // in a linear chain the BFS index IS the depth
+        FrozenBlocks opened = FrozenBlocks.open(file, seed);
+        long victimOffset = opened.entries().get(victimDepth - 1).offset();
+        try (FileChannel ch =
+                FileChannel.open(file, StandardOpenOption.READ, StandardOpenOption.WRITE)) {
+            ByteBuffer one = ByteBuffer.allocate(1);
+            ch.read(one, victimOffset);
+            one.flip();
+            one.put(0, (byte) (one.get(0) ^ 0xFF));
+            ch.write(one, victimOffset);
+        }
+
+        BlockTree<BlockResumeTest.FakeState> mounted =
+                new BlockTree<>(codec, CacheStore.inMemory(), 1L << 28, seed, opened);
+        BlockResumeTest.FakeState r = new BlockResumeTest.FakeState(depth);
+        mounted.resume(fp, depth, r);
+        assertEquals(
+                victimDepth - 1,
+                r.position(),
+                "the corrupt block's subtree is discarded; the verified prefix survives");
+        assertEquals(
+                depth - victimDepth + 1, // the victim itself plus everything chained on it
+                mounted.sample().discards(),
+                "every block chained on the corrupt one is discarded, once");
+
+        // the surviving prefix serves cleanly afterwards
+        BlockResumeTest.FakeState again = new BlockResumeTest.FakeState(depth);
+        mounted.resume(fp, depth, again);
+        assertEquals(victimDepth - 1, again.position());
+        assertEquals(BlockResumeTest.FakeState.residueAt(victimDepth - 1), again.residue);
+    }
+
+    @Test
     void corruptArtifactsFailWithOneStableError() throws Exception {
         ContentKey seed = ContentKey.sha256(new byte[] {42});
         Path file = artifactWithTwoBlocks(seed);
