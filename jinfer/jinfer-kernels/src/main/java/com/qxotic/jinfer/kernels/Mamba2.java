@@ -4,6 +4,7 @@ import static com.qxotic.jinfer.Segments.readFloat;
 import static com.qxotic.jinfer.Segments.writeFloat;
 
 import com.qxotic.jinfer.Parallel;
+import com.qxotic.jinfer.telemetry.PerformanceCliff;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.MemorySegment;
 
@@ -31,6 +32,7 @@ public final class Mamba2 {
             VectorMamba2.scan(cv, zv, tv, av, dv, sv, out, rows, inner, heads, groups, stateSize);
             return;
         }
+        PerformanceCliff.MAMBA2_SCALAR.report();
         scanScalar(cv, zv, tv, av, dv, sv, out, rows, inner, heads, groups, stateSize);
     }
 
