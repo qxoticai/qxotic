@@ -26,12 +26,14 @@ import java.util.OptionalInt;
 final class JinjaChatTemplate {
 
     private final Tokenizer tokenizer;
-    private final CompiledTemplate template; // null: GGUF carries none or it failed to parse
+    private final CompiledTemplate template; // null: GGUF carries none (a parse failure throws)
     private final Specials specials; // compiled once per model
     private final List<String> specialNames; // longest-first, for the content scrub
 
     JinjaChatTemplate(Tokenizer tokenizer, String source) {
         this.tokenizer = tokenizer;
+        // A template that fails to parse throws here, at load, naming the offending construct -
+        // better a loud failure than a model silently chatting in foreign (ChatML) framing.
         this.template = source.isEmpty() ? null : JinjaRenderer.template(source);
         this.specials = SpecialTokens.encoder(tokenizer);
         // Think markers are exempt from the scrub: templates legitimately PROCESS them as text in
@@ -48,7 +50,8 @@ final class JinjaChatTemplate {
     /**
      * Renders the request maps to prompt tokens. {@code kwargs} merges extra template variables
      * ({@code chat_template_kwargs}); per-request keys win over the engine's defaults. Falls back
-     * to a best-effort ChatML framing when the GGUF has no compilable template.
+     * to a best-effort ChatML framing only when the GGUF carries no template at all — a template
+     * the parser rejects fails the model load instead (see {@link JinjaRenderer#template}).
      */
     IntSequence render(
             List<Object> messages,
@@ -98,7 +101,7 @@ final class JinjaChatTemplate {
     }
 
     /**
-     * Best-effort ChatML fallback for GGUFs without a compilable chat_template: {@code
+     * Best-effort ChatML fallback for GGUFs without a chat_template: {@code
      * <|im_start|>role\ncontent<|im_end|>\n} per message, tools flattened into the system turn,
      * tool results/calls rendered as text. The string is re-scanned with special-token awareness,
      * so the turn markers become real ids when the vocab has them. The maps are engine-built, so
