@@ -3,6 +3,7 @@ package com.qxotic.jinfer.server;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.llm.Generator;
 import java.time.Duration;
@@ -33,6 +34,11 @@ class StreamingProtocolTest {
                 Values.intValue(
                         Values.asObject(chunks.getLast().get("usage"), "usage").get("total_tokens"),
                         -1));
+        // llama.cpp convention: timings ride the LAST chunk (the usage-only chunk here), not the
+        // final content chunk
+        assertFalse(chunks.getFirst().containsKey("timings"));
+        assertTrue(chunks.getLast().containsKey("timings"));
+        assertEquals(9, Values.asObject(chunks.getLast().get("timings"), "timings").size());
     }
 
     @Test
