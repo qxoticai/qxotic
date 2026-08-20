@@ -61,6 +61,9 @@ public record Options(
         boolean noGrammar,
         ServerConfig.Limits limits) {
 
+    /** The default bind port for {@code --server} (overridable with {@code --port}). */
+    public static final int DEFAULT_PORT = 54154;
+
     public Options {
         // never null and never the caller's copy: every reader can iterate it without a guard, and
         // "no companions" and "an empty map" stop being two states that behave differently
@@ -171,7 +174,7 @@ public record Options(
                 speculationDepth,
                 false,
                 "127.0.0.1",
-                54154,
+                DEFAULT_PORT,
                 null,
                 Set.of("*"),
                 false,
@@ -336,7 +339,7 @@ public record Options(
         boolean interactive = false;
         boolean server = false;
         String host = "127.0.0.1";
-        int port = 54154;
+        int port = DEFAULT_PORT;
         String apiKey = null;
         Set<String> allowedOrigins = new TreeSet<>();
         boolean noGrammar = false;
@@ -612,7 +615,7 @@ public record Options(
         out.println("  --instruct                    run in instruct (once) mode, default mode");
         out.println("  --server                      run an OpenAI-compatible HTTP server");
         out.println("  --host <host>                 bind host, default 127.0.0.1");
-        out.println("  --port <int>                  bind port, default 54154");
+        out.println("  --port <int>                  bind port, default " + DEFAULT_PORT);
         out.println(
                 "  --api-key <token>             require a bearer token; mandatory off loopback");
         out.println(
