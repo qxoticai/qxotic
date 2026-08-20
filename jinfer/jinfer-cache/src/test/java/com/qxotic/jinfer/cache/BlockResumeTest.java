@@ -22,11 +22,16 @@ public final class BlockResumeTest {
 
     /** Rows are a visible array; the residue is a value that only exists "at" a position. */
     static final class FakeState extends ContextState {
-        final long[] rows = new long[1 << 10];
+        final long[] rows;
         long residue; // simulated recurrent state: must equal residueAt(position) when live
 
         FakeState() {
-            super(1 << 10, 512, new PanamaMemoryArena(Arena.ofAuto()), false);
+            this(1 << 10);
+        }
+
+        FakeState(int capacity) {
+            super(capacity, 512, new PanamaMemoryArena(Arena.ofAuto()), false);
+            rows = new long[capacity];
         }
 
         static long rowAt(int p) {

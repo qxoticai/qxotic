@@ -158,22 +158,27 @@ public final class BlockTree<S extends ContextState> {
      * re-ingests everything past {@code tip.to}. Returns the sentinel (position 0) on a cold start.
      */
     Block resume(long[] fingerprints, int len, S state) {
-        Block tip = sentinel;
-        while (true) {
-            Block next = null;
-            for (Block b : tip.children) { // few children; longest matching span wins
-                if (b.to <= len
-                        && (next == null || b.to > next.to)
-                        && digest(tip.key, fingerprints, b.from, b.to - b.from).equals(b.key)) {
-                    next = b;
+        while (true) { // re-match from scratch when a corrupt block was discarded mid-restore
+            Block tip = sentinel;
+            while (true) {
+                Block next = null;
+                for (Block b : tip.children) { // few children; longest matching span wins
+                    if (b.to <= len
+                            && (next == null || b.to > next.to)
+                            && digest(tip.key, fingerprints, b.from, b.to - b.from).equals(b.key)) {
+                        next = b;
+                    }
                 }
+                if (next == null) break;
+                touch(next);
+                tip = next;
             }
-            if (next == null) break;
-            touch(next);
-            tip = next;
-        }
-        if (tip != sentinel) {
+            if (tip == sentinel) {
+                misses++;
+                return tip;
+            }
             for (Block b = tip; b != sentinel; b = b.parent) chainScratch.add(b);
+            boolean corrupt = false;
             for (int i = chainScratch.size() - 1; i >= 0; i--) {
                 Block b = chainScratch.get(i);
                 boolean valid =
@@ -182,19 +187,17 @@ public final class BlockTree<S extends ContextState> {
                                 || (b.frozenVerified = FrozenBlocks.crc32c(b.mem) == b.frozenCrc);
                 if (!valid) { // failed verification = a miss, never restored
                     discard(b); // the block and everything chained on it
-                    chainScratch.clear();
-                    return resume(
-                            fingerprints, len, state); // the tree changed: re-match from scratch
+                    corrupt = true;
+                    break;
                 }
                 codec.restore(state, b.from, b.to, b.mem);
             }
             chainScratch.clear();
+            if (corrupt) continue; // the tree changed: re-match from scratch
             hits++;
             state.resumeAt(tip.to);
-        } else {
-            misses++;
+            return tip;
         }
-        return tip;
     }
 
     /**
@@ -238,14 +241,20 @@ public final class BlockTree<S extends ContextState> {
     }
 
     /**
-     * Removes a block and its whole subtree from the tree and frees their blobs — used when a
-     * stored blob fails verification: the cache degrades to a miss, never to a wrong answer.
+     * Removes a block and its whole subtree and frees their blobs - a failed blob verification
+     * degrades to a miss, never a wrong answer. Iterative, parent-first: chains run context-length
+     * deep, and recursion would stack-overflow on exactly the catalogs that need recovery.
      */
     private void discard(Block b) {
-        for (Block child : List.copyOf(b.children)) discard(child);
-        b.children.clear();
-        unlink(b);
-        discards++;
+        ArrayDeque<Block> stack = new ArrayDeque<>();
+        stack.push(b);
+        while (!stack.isEmpty()) {
+            Block x = stack.pop();
+            for (Block child : x.children) stack.push(child);
+            x.children.clear();
+            unlink(x);
+            discards++;
+        }
     }
 
     /** Detach one block from the tree and free its blob; leaf-promotes a live parent. */
