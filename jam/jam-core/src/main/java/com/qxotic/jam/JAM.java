@@ -4,7 +4,6 @@ import java.lang.foreign.MemorySegment;
 import java.util.Comparator;
 import java.util.List;
 import java.util.ServiceLoader;
-import java.util.function.Function;
 
 /**
  * jam - fast multithreaded CPU matmul ({@code R = W @ Aᵀ}) with quantized weights.
@@ -45,22 +44,22 @@ public interface JAM {
      * (system property only; only {@code true} disables). The flag names a provider {@link
      * Provider#id() id} - an id no installed provider carries is a silent no-op, and disabling
      * every provider yields an empty list (consumers fall back to their own floor).
+     *
+     * <p>Disabled providers are dropped BEFORE {@link Provider#isAvailable()} is probed, so a
+     * disabled backend disappears exactly as if it had never been discovered - no native library
+     * load, no availability side effect.
      */
     static List<Provider> providers() {
-        return select(
-                ServiceLoader.load(Provider.class).stream()
-                        .map(ServiceLoader.Provider::get)
-                        .toList(),
-                System::getProperty);
-    }
-
-    /** The disabled filter + availability + priority sort, factored out for in-memory tests. */
-    static List<Provider> select(List<Provider> discovered, Function<String, String> property) {
-        return discovered.stream()
-                .filter(p -> !Boolean.parseBoolean(property.apply("jam." + p.id() + ".disabled")))
+        return ServiceLoader.load(Provider.class).stream()
+                .map(ServiceLoader.Provider::get)
+                .filter(p -> !isDisabled(p))
                 .filter(JAM::available)
                 .sorted(Comparator.comparingInt(Provider::priority).reversed())
                 .toList();
+    }
+
+    private static boolean isDisabled(Provider provider) {
+        return Boolean.parseBoolean(System.getProperty("jam." + provider.id() + ".disabled"));
     }
 
     private static boolean available(Provider provider) {

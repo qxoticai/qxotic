@@ -40,7 +40,7 @@
     <module>safetensors</module>
     <module>toknroll</module>
     <module>jota</module>
-    <!-- jam: native (CMake) int8 GEMM backend, Java 22 (FFM). jinfer: LLM inference engine
+    <!-- jam: native (CMake) int8 GEMM backend, Java 25 (FFM). jinfer: LLM inference engine
          (multi-module), Java 25, depends on jam. Both raise maven.compiler.release above this
          parent's Java 11; neither subtree is dependency-closed, so build them from THIS root:
            mvnd -pl jinfer/jinfer-server,jinfer/jinfer-bench -am package

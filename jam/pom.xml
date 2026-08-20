@@ -29,7 +29,32 @@
   </modules>
 
   <properties>
-    <!-- FFM (java.lang.foreign) is stable in 22 -->
-    <maven.compiler.release>22</maven.compiler.release>
+    <!-- FFM (java.lang.foreign) is stable in 22; 25 is the current LTS and matches jinfer/jota. -->
+    <maven.compiler.release>25</maven.compiler.release>
   </properties>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-enforcer-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>enforce-jam-java</id>
+            <goals>
+              <goal>enforce</goal>
+            </goals>
+            <configuration>
+              <rules>
+                <requireJavaVersion>
+                  <version>[25,)</version>
+                  <message>jam requires JDK 25 (the current LTS)</message>
+                </requireJavaVersion>
+              </rules>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
 </project>
