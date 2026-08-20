@@ -268,7 +268,7 @@ public final class FrozenBlocks {
         long[] offsets = new long[fresh.size()];
         for (int i = 0; i < fresh.size(); i++) {
             offsets[i] = off;
-            ch.write(fresh.get(i).mem().asByteBuffer(), off);
+            writeFully(ch, fresh.get(i).mem().asByteBuffer(), off);
             off = align(off + fresh.get(i).mem().byteSize());
         }
         long newIndexOffset = off;
@@ -299,11 +299,11 @@ public final class FrozenBlocks {
                     e.crc());
         }
         idx.flip();
-        ch.write(idx, newIndexOffset);
+        writeFully(ch, idx, newIndexOffset);
         ch.force(true); // everything durable BEFORE the header flips
         ByteBuffer flip = ByteBuffer.allocate(12).order(ByteOrder.LITTLE_ENDIAN);
         flip.putInt(entries.size() + fresh.size()).putLong(newIndexOffset).flip();
-        ch.write(flip, COUNT_OFFSET);
+        writeFully(ch, flip, COUNT_OFFSET);
         ch.force(false); // in-place 12-byte publish: no size change to flush
         // keep the parsed view coherent so a later append re-serializes the right index
         for (int i = 0; i < fresh.size(); i++) {
@@ -319,6 +319,14 @@ public final class FrozenBlocks {
                             e.crc()));
         }
         indexOffset = newIndexOffset;
+    }
+
+    /**
+     * FileChannel.write is not all-or-nothing: loop until the buffer drains - a truncated blob or
+     * index would otherwise be PUBLISHED by the header flip, bricking the catalog.
+     */
+    private static void writeFully(FileChannel ch, ByteBuffer buf, long pos) throws IOException {
+        while (buf.hasRemaining()) pos += ch.write(buf, pos);
     }
 
     /** CRC32C of a blob - the frozen-block integrity stamp (store CRCs cover only pool blobs). */
