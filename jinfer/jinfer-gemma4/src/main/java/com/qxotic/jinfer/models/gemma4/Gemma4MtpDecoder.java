@@ -70,15 +70,15 @@ public final class Gemma4MtpDecoder {
 
         int dim = cfg.embeddingLength();
         int maxQ = cfg.numberOfHeads() * cfg.headSizeFull();
-        this.xh = Views.allocateF32(allocator, 2L * cfg.backboneDim());
-        this.cur = Views.allocateF32(allocator, dim);
-        this.xb = Views.allocateF32(allocator, dim);
-        this.q = Views.allocateF32(allocator, maxQ);
-        this.attn = Views.allocateF32(allocator, maxQ);
-        this.hb = Views.allocateF32(allocator, cfg.feedForwardLength());
-        this.hb2 = Views.allocateF32(allocator, cfg.feedForwardLength());
-        this.hNext = Views.allocateF32(allocator, cfg.backboneDim());
-        this.draftLogits = Views.allocateF32(allocator, cfg.vocabularySize());
+        this.xh = Views.allocateF32(allocator, 1, 2L * cfg.backboneDim());
+        this.cur = Views.allocateF32(allocator, 1, dim);
+        this.xb = Views.allocateF32(allocator, 1, dim);
+        this.q = Views.allocateF32(allocator, 1, maxQ);
+        this.attn = Views.allocateF32(allocator, 1, maxQ);
+        this.hb = Views.allocateF32(allocator, 1, cfg.feedForwardLength());
+        this.hb2 = Views.allocateF32(allocator, 1, cfg.feedForwardLength());
+        this.hNext = Views.allocateF32(allocator, 1, cfg.backboneDim());
+        this.draftLogits = Views.allocateF32(allocator, 1, cfg.vocabularySize());
     }
 
     /**
@@ -106,17 +106,17 @@ public final class Gemma4MtpDecoder {
         Convert.copyF32(hidden, hiddenOffset, xh, bd, bd);
 
         // cur = pre_projection @ xh   [3072] -> [256]
-        MatMul.gemv(w.preProjection, xh, cur, dim, 2 * bd);
+        MatMul.gemv(w.preProjection, xh, cur);
 
         for (int l = 0; l < cfg.numberOfLayers(); l++) {
             boolean swa = cfg.isSWA()[l];
-            int headSize = cfg.headSize(l), halfHead = headSize / 2, qDim = cfg.queryDim(l);
+            int headSize = cfg.headSize(l), halfHead = headSize / 2;
             MemoryView<MemorySegment> cos = swa ? cosSWA : cosFull, sin = swa ? sinSWA : sinFull;
 
             // attn: norm -> Q -> per-head q_norm + rope -> Q-only attention on backbone rings ->
             // wo -> post_norm -> +res
             Norms.rmsnorm(xb, 0, cur, 0, w.attnNorm[l], dim, eps);
-            MatMul.gemv(w.wq[l], xb, q, qDim, dim);
+            MatMul.gemv(w.wq[l], xb, q);
             for (int h = 0; h < cfg.numberOfHeads(); h++) {
                 Norms.rmsnorm(q, h * headSize, q, h * headSize, w.attnQNorm[l], headSize, eps);
             }
@@ -150,16 +150,16 @@ public final class Gemma4MtpDecoder {
                     swa ? window - 1 : 0,
                     null,
                     decodeScratch);
-            MatMul.gemv(w.wo[l], attn, xb, dim, qDim);
+            MatMul.gemv(w.wo[l], attn, xb);
             Norms.rmsnorm(xb, 0, xb, 0, w.attnPostNorm[l], dim, eps);
             Ops.addInPlace(cur, 0, xb, 0, dim);
 
             // ffn: norm -> gelu-par gate*up -> down -> post_norm -> +res, then * layer_output_scale
             Norms.rmsnorm(xb, 0, cur, 0, w.ffnNorm[l], dim, eps);
-            MatMul.gemv(w.ffnGate[l], xb, hb, cfg.feedForwardLength(), dim);
-            MatMul.gemv(w.ffnUp[l], xb, hb2, cfg.feedForwardLength(), dim);
+            MatMul.gemv(w.ffnGate[l], xb, hb);
+            MatMul.gemv(w.ffnUp[l], xb, hb2);
             Activations.geluMultiply(hb, 0, hb2, 0, cfg.feedForwardLength());
-            MatMul.gemv(w.ffnDown[l], hb, xb, dim, cfg.feedForwardLength());
+            MatMul.gemv(w.ffnDown[l], hb, xb);
             Norms.rmsnorm(xb, 0, xb, 0, w.ffnPostNorm[l], dim, eps);
             Ops.addInPlace(cur, 0, xb, 0, dim);
             final float outScale = w.layerOutputScales[l];
@@ -167,8 +167,8 @@ public final class Gemma4MtpDecoder {
         }
 
         Norms.rmsnorm(cur, 0, cur, 0, w.outputNorm, dim, eps);
-        MatMul.gemv(w.tokenEmbeddings, cur, draftLogits, cfg.vocabularySize(), dim);
-        MatMul.gemv(w.postProjection, cur, hNext, bd, dim);
+        MatMul.gemv(w.tokenEmbeddings, cur, draftLogits);
+        MatMul.gemv(w.postProjection, cur, hNext);
         return draftLogits;
     }
 

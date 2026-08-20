@@ -105,15 +105,7 @@ public final class Gemma4Audio implements MediaProjector<Media.Audio> {
                         });
                 MemoryView<MemorySegment> projected =
                         Views.allocateF32(scratch, chunkRows, modelDim);
-                MatMul.gemm(
-                        inputProjection,
-                        frames,
-                        frameSize,
-                        projected,
-                        modelDim,
-                        modelDim,
-                        chunkRows,
-                        frameSize);
+                MatMul.gemm(inputProjection, frames, projected, chunkRows);
                 sink.accept(projected);
             } finally {
                 Arenas.close(scratch);

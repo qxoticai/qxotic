@@ -430,7 +430,8 @@ public final class Gemma4Conformer implements MediaProjector<Media.Audio> {
 
         PanamaMemoryArena persistent = new PanamaMemoryArena(arena);
         MemoryView<MemorySegment> positions =
-                Views.fromFloatArray(persistent, buildPositionEmbedding(dim));
+                Views.fromFloatArray(persistent, buildPositionEmbedding(dim))
+                        .view(Shape.flat(RPE, dim));
 
         Block[] blocks = new Block[blockCount];
         for (int i = 0; i < blockCount; i++) {
@@ -440,12 +441,8 @@ public final class Gemma4Conformer implements MediaProjector<Media.Audio> {
                     Gemma4VisionUnified.requireWeight(
                             tensors, prefix + "attn_k_rel.weight", Shape.flat(dim, dim)),
                     positions,
-                    dim,
                     relative,
-                    dim,
-                    dim,
-                    RPE,
-                    dim);
+                    RPE);
             blocks[i] =
                     new Block(
                             requireF32(tensors, prefix + "ffn_norm.weight", dim),

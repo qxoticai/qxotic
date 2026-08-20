@@ -173,19 +173,10 @@ public final class Gemma4Vision implements MediaProjector<Media.Image> {
                             + " exceeds position table "
                             + positionSize);
         int count = Math.multiplyExact(patchesX, patchesY);
-        int patchVector = Math.multiplyExact(3, Math.multiplyExact(patchSize, patchSize));
         MemoryView<MemorySegment> flat =
                 VisionPreprocess.im2col(image, size[0], size[1], patchSize, scratch);
         MemoryView<MemorySegment> current = Views.allocateF32(scratch, count, visionDim);
-        MatMul.gemm(
-                patchEmbedding,
-                flat,
-                patchVector,
-                current,
-                visionDim,
-                visionDim,
-                count,
-                patchVector);
+        MatMul.gemm(patchEmbedding, flat, current, count);
         addPositions(current, count, patchesX);
 
         MemoryView<MemorySegment> normalized = Views.allocateF32(scratch, count, visionDim);
