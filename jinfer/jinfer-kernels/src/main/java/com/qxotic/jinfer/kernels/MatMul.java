@@ -135,6 +135,91 @@ public final class MatMul {
         mm(w, 0, k, a, 0, k, c, 0, m, m, 1, k);
     }
 
+    /**
+     * Shaped {@code C[0..n] = W · A[0..n]ᵀ}, every dimension derived from the views:
+     *
+     * <ul>
+     *   <li>{@code m = W.shape[0]} (output width)
+     *   <li>{@code k = W.shape[1] * W.dataType().elementsPerBlock()} (contraction)
+     *   <li>{@code aStride = A.stride[0]}, {@code cStride = C.stride[0]} (dense row widths)
+     *   <li>{@code n} is the ONE dynamic quantity: the leading rows of A/C this call computes. A/C
+     *       are shaped as {@code [batchCapacity, inner]} at allocation; n selects the live prefix,
+     *       so a call never reshapes or allocates.
+     * </ul>
+     *
+     * <p>Entry checks fail fast before any raw read: W is 2D contiguous, A/C are FP32 row-major 2D,
+     * n is within capacity, the contraction/output widths line up, and A/C are not the same region.
+     * The low-level {@link #mm} is unchanged - this is a checked, additive façade over it.
+     *
+     * <p>Row strides come from {@code stride()[0]}, not the inner shape, so a packed output (C's
+     * row wider than m) is expressed by its allocation and needs no explicit stride argument.
+     *
+     * <p>Callers combining a wider C with packed row arithmetic ({@code row * m}) must size the
+     * buffer to the LOGICAL width instead - the stride is the contract, and a mismatch is a silent
+     * corruption (the max-width-scratch MoE trap).
+     */
+    public static void gemm(
+            MemoryView<MemorySegment> w,
+            MemoryView<MemorySegment> a,
+            MemoryView<MemorySegment> c,
+            int n) {
+        shapedMm(w, a, c, n);
+    }
+
+    /** Shaped decode: the first row of A → the first row of C. */
+    public static void gemv(
+            MemoryView<MemorySegment> w, MemoryView<MemorySegment> a, MemoryView<MemorySegment> c) {
+        shapedMm(w, a, c, 1);
+    }
+
+    /** The shared implementation behind both shaped entry points: validate once, then call mm. */
+    private static void shapedMm(
+            MemoryView<MemorySegment> w,
+            MemoryView<MemorySegment> a,
+            MemoryView<MemorySegment> c,
+            int n) {
+        Views.requireContiguous(w, "w");
+        if (w.shape().flatRank() != 2)
+            throw new IllegalArgumentException(
+                    "w: expected a 2D [m, k/elementsPerBlock] view but was " + w.shape());
+        int m = Math.toIntExact(w.shape().flatAt(0));
+        int k = Math.toIntExact(w.shape().flatAt(1) * w.dataType().elementsPerBlock());
+        checkShapedOperand(a, k, n, "a");
+        checkShapedOperand(c, m, n, "c");
+        checkNotAliased(a, c);
+        // stride()[0] is the row width (not shape()[1]): it carries the packed-output width, and
+        // for the common dense case it is exactly k / m respectively.
+        int aStride = (int) a.stride().flatAt(0);
+        int cStride = (int) c.stride().flatAt(0);
+        mm(w, 0, k, a, 0, aStride, c, 0, cStride, m, n, k);
+    }
+
+    /** Fail-fast shape/stride check for a dense FP32 operand over {@code n} live rows. */
+    private static void checkShapedOperand(
+            MemoryView<MemorySegment> v, int inner, int n, String name) {
+        Views.requireDense(v, DataType.FP32, name);
+        if (v.shape().flatRank() != 2)
+            throw new IllegalArgumentException(
+                    name + ": expected a 2D [batchCapacity, inner] view but was " + v.shape());
+        if (n < 1 || n > v.shape().flatAt(0))
+            throw new IllegalArgumentException(
+                    name + ": n=" + n + " outside [1," + v.shape().flatAt(0) + "]");
+        if (v.stride().flatAt(1) != 1)
+            throw new IllegalArgumentException(
+                    name + ": expected row-major stride but was " + v.stride());
+        if (v.shape().flatAt(1) < inner)
+            throw new IllegalArgumentException(
+                    name + ": inner width " + v.shape().flatAt(1) + " < required " + inner);
+    }
+
+    /**
+     * A/C must not be the same region; in-place matmul is not expressible in the shaped contract.
+     */
+    private static void checkNotAliased(MemoryView<MemorySegment> a, MemoryView<MemorySegment> c) {
+        if (a.memory() == c.memory() && a.byteOffset() == c.byteOffset())
+            throw new IllegalArgumentException("gemm: a and c must not alias the same region");
+    }
+
     public static void mm(
             MemoryView<MemorySegment> w,
             long wOff,
