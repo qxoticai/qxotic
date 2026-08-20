@@ -86,8 +86,8 @@
  * }</pre>
  *
  * <p>If TTFT looks cold on a view, read those two numbers first; the usual cause is a request
- * overriding the welded tool set (a one-time stderr warning names the two sets), then {@code
- * -Djinfer.promptCache=false}. {@code Builder.promptCache(path)} mounts one read-only artifact and
- * rejects a missing or incompatible file at build time.
+ * overriding the welded tool set (a one-time stderr warning names the two sets). {@code
+ * Builder.promptCache(path)} mounts one read-only artifact and rejects a missing or incompatible
+ * file at build time.
  */
 package com.qxotic.jinfer.langchain4j;
