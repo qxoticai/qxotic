@@ -160,9 +160,9 @@ public final class Maple implements LanguageModel<Maple.Configuration, Maple.Wei
         boolean sliding = c.isSliding(layer);
 
         Norms.rmsnormRows(state.normed, state.residual, w.attnNorm, rows, dim, c.rmsNormEps);
-        MatMul.gemm(w.q, state.normed, dim, state.query, qDim, qDim, rows, dim);
-        MatMul.gemm(w.k, state.normed, dim, state.batchK[layer], kvDim, kvDim, rows, dim);
-        MatMul.gemm(w.v, state.normed, dim, state.batchV[layer], kvDim, kvDim, rows, dim);
+        MatMul.gemm(w.q, state.normed, state.query, rows);
+        MatMul.gemm(w.k, state.normed, state.batchK[layer], rows);
+        MatMul.gemm(w.v, state.normed, state.batchV[layer], rows);
 
         Parallel.forRows(
                 rows,
@@ -241,7 +241,7 @@ public final class Maple implements LanguageModel<Maple.Configuration, Maple.Wei
                     null,
                     state.decodeScratch);
 
-        MatMul.gemm(w.o, state.attnOut, qDim, state.branch, dim, dim, rows, qDim);
+        MatMul.gemm(w.o, state.attnOut, state.branch, rows);
         Ops.addInPlace(state.residual, 0, state.branch, 0, rows * dim);
         commitKv(state, layer, startPos, rows);
     }
@@ -272,7 +272,7 @@ public final class Maple implements LanguageModel<Maple.Configuration, Maple.Wei
         int topK = c.expertUsedCount, expertFf = c.expertFeedForwardLength;
 
         Norms.rmsnormRows(state.normed, state.residual, w.ffnNorm, rows, dim, c.rmsNormEps);
-        MatMul.gemm(w.router, state.normed, dim, state.router, experts, experts, rows, dim);
+        MatMul.gemm(w.router, state.normed, state.router, rows);
         for (int row = 0; row < rows; row++)
             Ops.softmaxInPlace(state.router, (long) row * experts, experts);
         Moe.selectTopK(
@@ -300,42 +300,14 @@ public final class Maple implements LanguageModel<Maple.Configuration, Maple.Wei
                 state.moeOut,
                 null,
                 (expert, count, gather, out) -> {
-                    long upOffset = (long) expert * expertFf * dim;
-                    MatMul.gemm(
-                            w.gateExperts,
-                            upOffset,
-                            gather,
-                            dim,
-                            state.hidden,
-                            expertFf,
-                            expertFf,
-                            count,
-                            dim);
-                    MatMul.gemm(
-                            w.upExperts,
-                            upOffset,
-                            gather,
-                            dim,
-                            state.hidden2,
-                            expertFf,
-                            expertFf,
-                            count,
-                            dim);
+                    MatMul.gemm(w.gateExperts[expert], gather, state.hidden, count);
+                    MatMul.gemm(w.upExperts[expert], gather, state.hidden2, count);
                     float clamp = c.swigluClamp[layer];
                     Ops.clampInPlace(
                             state.hidden, 0, count * expertFf, Float.NEGATIVE_INFINITY, clamp);
                     Ops.clampInPlace(state.hidden2, 0, count * expertFf, -clamp, clamp);
                     Activations.siluMultiply(state.hidden, 0, state.hidden2, 0, count * expertFf);
-                    MatMul.gemm(
-                            w.downExperts,
-                            (long) expert * dim * expertFf,
-                            state.hidden,
-                            expertFf,
-                            out,
-                            dim,
-                            dim,
-                            count,
-                            expertFf);
+                    MatMul.gemm(w.downExperts[expert], state.hidden, out, count);
                 });
         Ops.addInPlace(state.residual, 0, state.moeOut, 0, rows * dim);
     }
@@ -363,12 +335,7 @@ public final class Maple implements LanguageModel<Maple.Configuration, Maple.Wei
                             weights.outputNorm,
                             dim,
                             configuration.rmsNormEps);
-                    MatMul.gemv(
-                            weights.outputWeight,
-                            state.head,
-                            state.logits,
-                            configuration.vocabularySize,
-                            dim);
+                    MatMul.gemv(weights.outputWeight, state.head, state.logits);
                     return state.logits;
                 });
     }
@@ -452,9 +419,9 @@ public final class Maple implements LanguageModel<Maple.Configuration, Maple.Wei
             MemoryView<MemorySegment> o,
             MemoryView<MemorySegment> ffnNorm,
             MemoryView<MemorySegment> router,
-            MemoryView<MemorySegment> gateExperts,
-            MemoryView<MemorySegment> upExperts,
-            MemoryView<MemorySegment> downExperts) {}
+            MemoryView<MemorySegment>[] gateExperts,
+            MemoryView<MemorySegment>[] upExperts,
+            MemoryView<MemorySegment>[] downExperts) {}
 
     public record Weights(
             MemoryView<MemorySegment> tokenEmbeddings,
@@ -486,21 +453,21 @@ public final class Maple implements LanguageModel<Maple.Configuration, Maple.Wei
                 throw new IllegalArgumentException("contextCapacity exceeds model context length");
             int rows = batchCapacity(), dim = c.embeddingLength;
             int qDim = c.queryDim(), kvDim = c.kvDim();
-            residual = Views.allocateF32(memoryArena(), rows * dim);
-            normed = Views.allocateF32(memoryArena(), rows * dim);
-            branch = Views.allocateF32(memoryArena(), rows * dim);
-            query = Views.allocateF32(memoryArena(), rows * qDim);
-            attnOut = Views.allocateF32(memoryArena(), rows * qDim);
-            head = Views.allocateF32(memoryArena(), dim);
-            logits = Views.allocateF32(memoryArena(), c.vocabularySize);
-            ropeCos = Views.allocateF32(memoryArena(), rows * c.ropeDimension / 2);
-            ropeSin = Views.allocateF32(memoryArena(), rows * c.ropeDimension / 2);
-            router = Views.allocateF32(memoryArena(), rows * c.expertCount);
-            gather = Views.allocateF32(memoryArena(), rows * dim);
-            expertOut = Views.allocateF32(memoryArena(), rows * dim);
-            moeOut = Views.allocateF32(memoryArena(), rows * dim);
-            hidden = Views.allocateF32(memoryArena(), rows * c.expertFeedForwardLength);
-            hidden2 = Views.allocateF32(memoryArena(), rows * c.expertFeedForwardLength);
+            residual = Views.allocateF32(memoryArena(), rows, dim);
+            normed = Views.allocateF32(memoryArena(), rows, dim);
+            branch = Views.allocateF32(memoryArena(), rows, dim);
+            query = Views.allocateF32(memoryArena(), rows, qDim);
+            attnOut = Views.allocateF32(memoryArena(), rows, qDim);
+            head = Views.allocateF32(memoryArena(), 1, dim);
+            logits = Views.allocateF32(memoryArena(), 1, c.vocabularySize);
+            ropeCos = Views.allocateF32(memoryArena(), rows, c.ropeDimension / 2);
+            ropeSin = Views.allocateF32(memoryArena(), rows, c.ropeDimension / 2);
+            router = Views.allocateF32(memoryArena(), rows, c.expertCount);
+            gather = Views.allocateF32(memoryArena(), rows, dim);
+            expertOut = Views.allocateF32(memoryArena(), rows, dim);
+            moeOut = Views.allocateF32(memoryArena(), rows, dim);
+            hidden = Views.allocateF32(memoryArena(), rows, c.expertFeedForwardLength);
+            hidden2 = Views.allocateF32(memoryArena(), rows, c.expertFeedForwardLength);
             expertCounts = new int[c.expertCount];
             topExperts = new int[rows * c.expertUsedCount];
             topWeights = new float[rows * c.expertUsedCount];
@@ -515,8 +482,8 @@ public final class Maple implements LanguageModel<Maple.Configuration, Maple.Wei
                 int positions = c.kvCachePositions(layer, contextCapacity);
                 keyCache[layer] = Views.allocateF16(memoryArena(), positions, kvDim);
                 valueCache[layer] = Views.allocateF16(memoryArena(), positions, kvDim);
-                batchK[layer] = Views.allocateF32(memoryArena(), rows * kvDim);
-                batchV[layer] = Views.allocateF32(memoryArena(), rows * kvDim);
+                batchK[layer] = Views.allocateF32(memoryArena(), rows, kvDim);
+                batchV[layer] = Views.allocateF32(memoryArena(), rows, kvDim);
             }
         }
 
@@ -611,9 +578,9 @@ public final class Maple implements LanguageModel<Maple.Configuration, Maple.Wei
                             require(tensors, p + "attn_output.weight"),
                             requireF32(tensors, p + "ffn_norm.weight"),
                             requireF32(tensors, p + "ffn_gate_inp.weight"),
-                            require(tensors, p + "ffn_gate_exps.weight"),
-                            require(tensors, p + "ffn_up_exps.weight"),
-                            require(tensors, p + "ffn_down_exps.weight"));
+                            Views.sliceLeadingAxis(require(tensors, p + "ffn_gate_exps.weight")),
+                            Views.sliceLeadingAxis(require(tensors, p + "ffn_up_exps.weight")),
+                            Views.sliceLeadingAxis(require(tensors, p + "ffn_down_exps.weight")));
         }
         MemoryView<MemorySegment> embeddings = require(tensors, "token_embd.weight");
         return new Weights(
