@@ -2,7 +2,6 @@ package com.qxotic.jinfer.langchain4j;
 
 import com.qxotic.format.json.Json;
 import com.qxotic.jinfer.ContentKey;
-import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.Message;
@@ -12,6 +11,7 @@ import com.qxotic.jinfer.codecs.AudioCodec;
 import com.qxotic.jinfer.codecs.ImageCodec;
 import com.qxotic.jinfer.codecs.VideoSampler;
 import com.qxotic.jinfer.llm.Generator;
+import com.qxotic.jinfer.media.Media;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.AiMessage;

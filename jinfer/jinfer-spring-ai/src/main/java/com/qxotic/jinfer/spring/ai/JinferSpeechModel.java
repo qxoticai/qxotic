@@ -4,13 +4,13 @@
 package com.qxotic.jinfer.spring.ai;
 
 import com.qxotic.jinfer.Arenas;
-import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.jinfer.SpeechOptions;
 import com.qxotic.jinfer.SpeechSynthesisModel;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.codecs.AudioCodec;
 import com.qxotic.jinfer.hub.ModelStore;
+import com.qxotic.jinfer.media.Media;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.Arena;

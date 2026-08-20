@@ -1,7 +1,6 @@
 package com.qxotic.jinfer.server;
 
 import com.qxotic.jinfer.ContentKey;
-import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.Channel;
 import com.qxotic.jinfer.chat.ChatEngine;
@@ -17,6 +16,7 @@ import com.qxotic.jinfer.codecs.VideoSampler;
 import com.qxotic.jinfer.llm.Grammar;
 import com.qxotic.jinfer.llm.Sampling;
 import com.qxotic.jinfer.llm.SpecialTokens;
+import com.qxotic.jinfer.media.Media;
 import com.qxotic.toknroll.IntSequence;
 import java.io.IOException;
 import java.util.ArrayList;
