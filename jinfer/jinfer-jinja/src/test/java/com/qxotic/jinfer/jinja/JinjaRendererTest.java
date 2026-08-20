@@ -1008,6 +1008,16 @@ public final class JinjaRendererTest {
                 "{% continue %} throws", "{% for x in xs %}{{ x }}{% continue %}{% endfor %}", xs);
         // integer division // is not supported
         throwsErr("integer division `//` throws", "{{ 7 // 2 }}");
+        // the public template() entry point must propagate the failure too - swallowing it into
+        // a null template silently downgraded the model to ChatML framing at render time
+        try {
+            JinjaRenderer.template("{% for x in xs %}{{ x }}{% break %}{% endfor %}");
+            failures++;
+            System.err.println("FAIL: template() returned instead of throwing on {% break %}");
+        } catch (RuntimeException e) {
+            System.out.println(
+                    "ok: template() propagates unsupported features (" + e.getMessage() + ")");
+        }
     }
 
     // ── remaining lenient quirks (render, do NOT throw) ──────────

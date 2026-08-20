@@ -1082,26 +1082,19 @@ public final class JinjaRenderer {
 
     /**
      * The module's public entry point: turns a Jinja chat-template source into a {@link
-     * CompiledTemplate} prompt generator — parse once, render many times. Returns {@code null} if
-     * the source fails to parse. The AST and parser behind the returned template stay internal —
+     * CompiledTemplate} prompt generator — parse once, render many times. Throws on source the
+     * parser rejects — a syntax error or an unsupported feature — with a message naming the
+     * offending construct; a template that cannot be compiled must never silently degrade to a
+     * different prompt framing. The AST and parser behind the returned template stay internal —
      * callers only ever see a render-only template.
      */
     public static CompiledTemplate template(String source) {
-        try {
-            // jinja2 keep_trailing_newline=False (the default HF renders with): exactly one
-            // trailing newline of the template source is dropped.
-            if (source.endsWith("\r\n")) source = source.substring(0, source.length() - 2);
-            else if (source.endsWith("\n")) source = source.substring(0, source.length() - 1);
-            Prog program = parse(source);
-            return vars -> render(program, vars);
-        } catch (RuntimeException e) {
-            System.getLogger("jinfer.jinja")
-                    .log(
-                            System.Logger.Level.WARNING,
-                            "chat template failed to parse: {0}",
-                            e.getMessage());
-            return null;
-        }
+        // jinja2 keep_trailing_newline=False (the default HF renders with): exactly one
+        // trailing newline of the template source is dropped.
+        if (source.endsWith("\r\n")) source = source.substring(0, source.length() - 2);
+        else if (source.endsWith("\n")) source = source.substring(0, source.length() - 1);
+        Prog program = parse(source);
+        return vars -> render(program, vars);
     }
 
     private static final class Parser {
