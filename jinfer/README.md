@@ -48,7 +48,7 @@ java --enable-preview \
   --enable-native-access=ALL-UNNAMED \
   -jar jinfer-cli/target/jinfer.jar \
   --model hf.co/LiquidAI/LFM2.5-350M-GGUF:LFM2.5-350M-Q8_0.gguf \
-  --server --port 17341
+  --server --port 54154
 ```
 
 The server implements `/v1/chat/completions`, `/v1/completions`, `/v1/responses`, `/v1/models`,

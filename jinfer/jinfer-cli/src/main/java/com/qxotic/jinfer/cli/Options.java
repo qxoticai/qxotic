@@ -171,7 +171,7 @@ public record Options(
                 speculationDepth,
                 false,
                 "127.0.0.1",
-                17341,
+                54154,
                 null,
                 Set.of("*"),
                 false,
@@ -336,7 +336,7 @@ public record Options(
         boolean interactive = false;
         boolean server = false;
         String host = "127.0.0.1";
-        int port = 17341;
+        int port = 54154;
         String apiKey = null;
         Set<String> allowedOrigins = new TreeSet<>();
         boolean noGrammar = false;
@@ -612,7 +612,7 @@ public record Options(
         out.println("  --instruct                    run in instruct (once) mode, default mode");
         out.println("  --server                      run an OpenAI-compatible HTTP server");
         out.println("  --host <host>                 bind host, default 127.0.0.1");
-        out.println("  --port <int>                  bind port, default 17341");
+        out.println("  --port <int>                  bind port, default 54154");
         out.println(
                 "  --api-key <token>             require a bearer token; mandatory off loopback");
         out.println(
