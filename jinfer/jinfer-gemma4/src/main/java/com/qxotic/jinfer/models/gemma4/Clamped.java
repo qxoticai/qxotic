@@ -54,7 +54,7 @@ record Clamped(
             Ops.clampInPlace(clampScratch, 0, inputElements, inputMin, inputMax);
             source = clampScratch;
         }
-        MatMul.gemm(weight, source, inDim, output, outDim, outDim, rows, inDim);
+        MatMul.gemm(weight, source, output, rows);
         if (outputMin > -Float.MAX_VALUE || outputMax < Float.MAX_VALUE)
             Ops.clampInPlace(output, 0, Math.multiplyExact(rows, outDim), outputMin, outputMax);
     }

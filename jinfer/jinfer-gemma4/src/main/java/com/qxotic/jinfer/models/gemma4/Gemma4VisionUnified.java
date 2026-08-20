@@ -141,15 +141,7 @@ public final class Gemma4VisionUnified implements MediaProjector<Media.Image> {
         Norms.layerNorm(flat, flat, norm1Weight, norm1Bias, patchVector, count, LAYER_NORM_EPS);
 
         MemoryView<MemorySegment> current = Views.allocateF32(scratch, count, visionDim);
-        MatMul.gemm(
-                patchEmbedding,
-                flat,
-                patchVector,
-                current,
-                visionDim,
-                visionDim,
-                count,
-                patchVector);
+        MatMul.gemm(patchEmbedding, flat, current, count);
         Ops.addRowBiasInPlace(current, 0, patchBias, 0, count, visionDim);
         Norms.layerNorm(current, current, norm2Weight, norm2Bias, visionDim, count, LAYER_NORM_EPS);
 
@@ -167,15 +159,7 @@ public final class Gemma4VisionUnified implements MediaProjector<Media.Image> {
                                 rmsEps));
 
         MemoryView<MemorySegment> projected = Views.allocateF32(scratch, count, modelDim);
-        MatMul.gemm(
-                inputProjection,
-                current,
-                visionDim,
-                projected,
-                modelDim,
-                modelDim,
-                count,
-                visionDim);
+        MatMul.gemm(inputProjection, current, projected, count);
         return projected;
     }
 

@@ -204,12 +204,7 @@ public final class Gemma4
                             weights.finalNorm,
                             dim,
                             configuration.rmsNormEps);
-                    MatMul.gemv(
-                            weights.classifier,
-                            state.normed,
-                            state.logits,
-                            configuration.vocabularySize,
-                            dim);
+                    MatMul.gemv(weights.classifier, state.normed, state.logits);
                     Activations.softcap(
                             state.logits,
                             0,
@@ -241,7 +236,7 @@ public final class Gemma4
                                 dim,
                                 configuration.rmsNormEps);
                     }
-                    MatMul.gemm(weights.classifier, state.normed, dim, dst, vocab, vocab, n, dim);
+                    MatMul.gemm(weights.classifier, state.normed, dst, n);
                     Activations.softcap(dst, 0, n * vocab, configuration.logitSoftcapping);
                     return null;
                 });
@@ -308,15 +303,7 @@ public final class Gemma4
         int plDim = c.embeddingLengthPerLayer;
         if (plDim == 0 || weights.perLayerTokenEmbeddings == null) return;
         int dim = c.embeddingLength, total = plDim * c.numberOfLayers;
-        MatMul.gemm(
-                weights.perLayerModelProjection,
-                state.residual,
-                dim,
-                state.perLayerInputs,
-                total,
-                total,
-                seqLen,
-                dim);
+        MatMul.gemm(weights.perLayerModelProjection, state.residual, state.perLayerInputs, seqLen);
         float projectionScale = (float) (1.0 / Math.sqrt(dim));
         float tokenScale = (float) Math.sqrt(plDim);
         float inputScale = (float) (1.0 / Math.sqrt(2.0));
@@ -372,12 +359,12 @@ public final class Gemma4
         MemoryView<MemorySegment> sin = swa ? state.ropeSinSwa : state.ropeSinFull;
 
         Norms.rmsnormRows(state.normed, state.residual, w.attnNorm, seqLen, dim, c.rmsNormEps);
-        MatMul.gemm(w.wq, state.normed, dim, state.query, queryDim, queryDim, seqLen, dim);
+        MatMul.gemm(w.wq, state.normed, state.query, seqLen);
         headNormRope(state.query, queryDim, c.numberOfHeads, headSize, w.qNorm, seqLen, cos, sin);
         if (c.hasKv(l)) {
             MemoryView<MemorySegment> bK = state.batchK[l], bV = state.batchV[l];
-            MatMul.gemm(w.wk, state.normed, dim, bK, kvDim, kvDim, seqLen, dim);
-            if (w.wv != null) MatMul.gemm(w.wv, state.normed, dim, bV, kvDim, kvDim, seqLen, dim);
+            MatMul.gemm(w.wk, state.normed, bK, seqLen);
+            if (w.wv != null) MatMul.gemm(w.wv, state.normed, bV, seqLen);
             else Convert.copyF32(bK, 0, bV, 0, (long) seqLen * kvDim);
             headNormRope(bK, kvDim, nKvHeads, headSize, w.kNorm, seqLen, cos, sin);
             Parallel.forRows(
@@ -433,7 +420,7 @@ public final class Gemma4
                     swa ? c.slidingWindow - 1 : 0,
                     null,
                     state.decodeScratch);
-        MatMul.gemm(w.wo, state.attnOut, queryDim, state.branchOut, dim, dim, seqLen, queryDim);
+        MatMul.gemm(w.wo, state.attnOut, state.branchOut, seqLen);
         Norms.rmsnormRows(
                 state.branchOut, state.branchOut, w.postAttnNorm, seqLen, dim, c.rmsNormEps);
         Ops.addInPlace(state.residual, 0, state.branchOut, 0, seqLen * dim);
@@ -479,14 +466,14 @@ public final class Gemma4
         int dim = configuration.embeddingLength, hidden = configuration.feedForwardLength[layer];
         Norms.rmsnormRows(
                 state.normed, state.residual, w.ffnNorm, seqLen, dim, configuration.rmsNormEps);
-        MatMul.gemm(w.gate, state.normed, dim, state.hidden, hidden, hidden, seqLen, dim);
-        MatMul.gemm(w.up, state.normed, dim, state.hidden2, hidden, hidden, seqLen, dim);
+        MatMul.gemm(w.gate, state.normed, state.hidden, seqLen);
+        MatMul.gemm(w.up, state.normed, state.hidden2, seqLen);
         Parallel.forRows(
                 seqLen,
                 s ->
                         Activations.geluMultiply(
                                 state.hidden, s * hidden, state.hidden2, s * hidden, hidden));
-        MatMul.gemm(w.down, state.hidden, hidden, output, dim, dim, seqLen, hidden);
+        MatMul.gemm(w.down, state.hidden, output, seqLen);
         Norms.rmsnormRows(output, output, postNorm, seqLen, dim, configuration.rmsNormEps);
     }
 
@@ -496,7 +483,7 @@ public final class Gemma4
         if (plDim == 0 || weights.layers[l].inputGate == null) return;
         int dim = c.embeddingLength, total = plDim * c.numberOfLayers;
         LayerWeights w = weights.layers[l];
-        MatMul.gemm(w.inputGate, state.residual, dim, state.plGate, plDim, plDim, seqLen, dim);
+        MatMul.gemm(w.inputGate, state.residual, state.plGate, seqLen);
         Parallel.forRows(
                 seqLen,
                 s ->
@@ -506,7 +493,7 @@ public final class Gemma4
                                 state.perLayerInputs,
                                 s * total + l * plDim,
                                 plDim));
-        MatMul.gemm(w.projection, state.plGate, plDim, state.plProjection, dim, dim, seqLen, plDim);
+        MatMul.gemm(w.projection, state.plGate, state.plProjection, seqLen);
         Norms.rmsnormRows(
                 state.plProjection,
                 state.plProjection,
@@ -550,15 +537,7 @@ public final class Gemma4
                             dim,
                             rms * invSqrtDim);
                 });
-        MatMul.gemm(
-                moe.router,
-                state.moeRouterInput,
-                dim,
-                state.moeRouter,
-                experts,
-                experts,
-                seqLen,
-                dim);
+        MatMul.gemm(moe.router, state.moeRouterInput, state.moeRouter, seqLen);
         selectTopExperts(state, seqLen, experts, topK);
         Moe.Routing routing = state.moeRouting;
         routing.seqLen = seqLen;
@@ -571,35 +550,17 @@ public final class Gemma4
                 state.moeOut,
                 moe.downScale,
                 (e, n, gather, out) -> {
-                    MatMul.gemm(
-                            moe.gateUp,
-                            (long) e * gateUp * dim,
-                            gather,
-                            dim,
-                            state.hidden,
-                            gateUp,
-                            gateUp,
-                            n,
-                            dim);
+                    MatMul.gemm(moe.gateUp[e], gather, state.moeHidden, n);
                     Parallel.forRows(
                             n,
                             row ->
                                     Activations.geluMultiply(
-                                            state.hidden,
+                                            state.moeHidden,
                                             row * gateUp,
-                                            state.hidden,
+                                            state.moeHidden,
                                             row * gateUp + expertFf,
                                             expertFf));
-                    MatMul.gemm(
-                            moe.down,
-                            (long) e * dim * expertFf,
-                            state.hidden,
-                            gateUp,
-                            out,
-                            dim,
-                            dim,
-                            n,
-                            expertFf);
+                    MatMul.gemm(moe.down[e], state.moeHidden, out, n);
                 });
         Norms.rmsnormRows(state.moeOut, state.moeOut, moe.postNorm2, seqLen, dim, c.rmsNormEps);
         Ops.addInPlace(state.moeShared, 0, state.moeOut, 0, seqLen * dim);
@@ -709,8 +670,8 @@ public final class Gemma4
     public record MoeWeights(
             MemoryView<MemorySegment> router,
             MemoryView<MemorySegment> routerScale,
-            MemoryView<MemorySegment> gateUp,
-            MemoryView<MemorySegment> down,
+            MemoryView<MemorySegment>[] gateUp,
+            MemoryView<MemorySegment>[] down,
             MemoryView<MemorySegment> downScale,
             MemoryView<MemorySegment> postNorm1,
             MemoryView<MemorySegment> preNorm2,
@@ -762,6 +723,10 @@ public final class Gemma4
                 moeOut,
                 moeGather,
                 moeExpertOut;
+        // Per-expert packed gate|up at EXACTLY 2*expertFeedForwardLength wide: hidden is sized to
+        // the model's max FFN width (dense layers can be wider), and the gelu-multiply between
+        // gate|up and down addresses rows packed at the gateUp width.
+        final MemoryView<MemorySegment> moeHidden;
         final int[] moeExpertCounts, moeRowTopE;
         final float[] moeRowTopP;
         final Moe.Routing moeRouting;
@@ -791,18 +756,18 @@ public final class Gemma4
                                 + " exceeds model contextLength "
                                 + c.contextLength);
             int rows = batchCapacity, dim = c.embeddingLength;
-            residual = Views.allocateF32(memoryArena(), rows * dim);
-            normed = Views.allocateF32(memoryArena(), rows * dim);
-            branchOut = Views.allocateF32(memoryArena(), rows * dim);
-            attnOut = Views.allocateF32(memoryArena(), rows * c.maxQueryDim());
-            query = Views.allocateF32(memoryArena(), rows * c.maxQueryDim());
-            hidden = Views.allocateF32(memoryArena(), rows * c.maxHiddenDim());
-            hidden2 = Views.allocateF32(memoryArena(), rows * c.maxHiddenDim());
-            logits = Views.allocateF32(memoryArena(), c.vocabularySize);
-            ropeCosFull = Views.allocateF32(memoryArena(), rows * c.headSizeFull / 2);
-            ropeSinFull = Views.allocateF32(memoryArena(), rows * c.headSizeFull / 2);
-            ropeCosSwa = Views.allocateF32(memoryArena(), rows * c.headSizeSwa / 2);
-            ropeSinSwa = Views.allocateF32(memoryArena(), rows * c.headSizeSwa / 2);
+            residual = Views.allocateF32(memoryArena(), rows, dim);
+            normed = Views.allocateF32(memoryArena(), rows, dim);
+            branchOut = Views.allocateF32(memoryArena(), rows, dim);
+            attnOut = Views.allocateF32(memoryArena(), rows, c.maxQueryDim());
+            query = Views.allocateF32(memoryArena(), rows, c.maxQueryDim());
+            hidden = Views.allocateF32(memoryArena(), rows, c.maxHiddenDim());
+            hidden2 = Views.allocateF32(memoryArena(), rows, c.maxHiddenDim());
+            logits = Views.allocateF32(memoryArena(), 1, c.vocabularySize);
+            ropeCosFull = Views.allocateF32(memoryArena(), rows, c.headSizeFull / 2);
+            ropeSinFull = Views.allocateF32(memoryArena(), rows, c.headSizeFull / 2);
+            ropeCosSwa = Views.allocateF32(memoryArena(), rows, c.headSizeSwa / 2);
+            ropeSinSwa = Views.allocateF32(memoryArena(), rows, c.headSizeSwa / 2);
             keyCache = new MemoryView[c.ownKvLayers];
             valueCache = new MemoryView[c.ownKvLayers];
             batchK = new MemoryView[c.ownKvLayers];
@@ -815,22 +780,23 @@ public final class Gemma4
                 valueCache[l] =
                         Views.allocateF16(
                                 memoryArena(), c.kvCachePositions(l, contextCapacity), kvDim);
-                batchK[l] = Views.allocateF32(memoryArena(), rows * kvDim);
-                batchV[l] = Views.allocateF32(memoryArena(), rows * kvDim);
+                batchK[l] = Views.allocateF32(memoryArena(), rows, kvDim);
+                batchV[l] = Views.allocateF32(memoryArena(), rows, kvDim);
             }
             int plDim = c.embeddingLengthPerLayer, plTotal = plDim * c.numberOfLayers;
-            perLayerInputs = plDim == 0 ? null : Views.allocateF32(memoryArena(), rows * plTotal);
+            perLayerInputs = plDim == 0 ? null : Views.allocateF32(memoryArena(), rows, plTotal);
             perLayerTokenRow = plDim == 0 ? null : Views.allocateF32(memoryArena(), plTotal);
-            plGate = plDim == 0 ? null : Views.allocateF32(memoryArena(), rows * plDim);
-            plProjection = plDim == 0 ? null : Views.allocateF32(memoryArena(), rows * dim);
+            plGate = plDim == 0 ? null : Views.allocateF32(memoryArena(), rows, plDim);
+            plProjection = plDim == 0 ? null : Views.allocateF32(memoryArena(), rows, dim);
             if (c.isMoe()) {
-                moeShared = Views.allocateF32(memoryArena(), rows * dim);
-                moeInput = Views.allocateF32(memoryArena(), rows * dim);
-                moeRouterInput = Views.allocateF32(memoryArena(), rows * dim);
-                moeRouter = Views.allocateF32(memoryArena(), rows * c.expertCount);
-                moeOut = Views.allocateF32(memoryArena(), rows * dim);
-                moeGather = Views.allocateF32(memoryArena(), rows * dim);
-                moeExpertOut = Views.allocateF32(memoryArena(), rows * dim);
+                moeShared = Views.allocateF32(memoryArena(), rows, dim);
+                moeInput = Views.allocateF32(memoryArena(), rows, dim);
+                moeRouterInput = Views.allocateF32(memoryArena(), rows, dim);
+                moeRouter = Views.allocateF32(memoryArena(), rows, c.expertCount);
+                moeOut = Views.allocateF32(memoryArena(), rows, dim);
+                moeGather = Views.allocateF32(memoryArena(), rows, dim);
+                moeExpertOut = Views.allocateF32(memoryArena(), rows, dim);
+                moeHidden = Views.allocateF32(memoryArena(), rows, 2 * c.expertFeedForwardLength);
                 moeExpertCounts = new int[c.expertCount];
                 moeRowTopE = new int[rows * c.expertUsedCount];
                 moeRowTopP = new float[rows * c.expertUsedCount];
@@ -840,6 +806,7 @@ public final class Gemma4
             } else {
                 moeShared = moeInput = moeRouterInput = moeRouter = null;
                 moeOut = moeGather = moeExpertOut = null;
+                moeHidden = null;
                 moeExpertCounts = moeRowTopE = null;
                 moeRowTopP = null;
                 moeRouting = null;
@@ -1177,8 +1144,10 @@ public final class Gemma4
                             ? new MoeWeights(
                                     require(tensors, p + "ffn_gate_inp.weight"),
                                     requireF32(tensors, p + "ffn_gate_inp.scale"),
-                                    require(tensors, p + "ffn_gate_up_exps.weight"),
-                                    require(tensors, p + "ffn_down_exps.weight"),
+                                    Views.sliceLeadingAxis(
+                                            require(tensors, p + "ffn_gate_up_exps.weight")),
+                                    Views.sliceLeadingAxis(
+                                            require(tensors, p + "ffn_down_exps.weight")),
                                     requireF32(tensors, p + "ffn_down_exps.scale"),
                                     requireF32(tensors, p + "post_ffw_norm_1.weight"),
                                     requireF32(tensors, p + "pre_ffw_norm_2.weight"),

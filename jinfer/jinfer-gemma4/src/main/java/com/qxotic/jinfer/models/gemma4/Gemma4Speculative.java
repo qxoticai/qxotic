@@ -58,7 +58,7 @@ public final class Gemma4Speculative {
             this.decoder = model.mtpDecoder(arena);
             this.vlogits =
                     Views.allocateF32(
-                            arena, (long) (depth + 1) * model.configuration().vocabularySize());
+                            arena, (long) depth + 1, model.configuration().vocabularySize());
             this.row = Views.allocateF32(arena, model.configuration().vocabularySize());
             this.h = Views.allocateF32(arena, model.configuration().embeddingLength());
             this.depth = depth;
@@ -179,7 +179,7 @@ public final class Gemma4Speculative {
             int nextAfter = -1;
             while (accepted < depth) {
                 // sample the TARGET at this row; the draft survives only by agreeing with it
-                Convert.copyF32(vlogits, (long) accepted * vocab, row, 0, vocab);
+                Convert.copyF32(vlogits.slice(0, accepted, accepted + 1), 0, row, 0, vocab);
                 if (rowArgmax != null) rowArgmax[accepted] = Ops.argmax(row, 0, vocab);
                 int target = sampler.sampleToken(row);
                 if (cand[accepted + 1] == target) accepted++;
@@ -189,7 +189,7 @@ public final class Gemma4Speculative {
                 }
             }
             if (nextAfter < 0) {
-                Convert.copyF32(vlogits, (long) accepted * vocab, row, 0, vocab);
+                Convert.copyF32(vlogits.slice(0, accepted, accepted + 1), 0, row, 0, vocab);
                 if (rowArgmax != null) rowArgmax[accepted] = Ops.argmax(row, 0, vocab);
                 nextAfter = sampler.sampleToken(row);
             }
