@@ -4,6 +4,7 @@ import static com.qxotic.jinfer.Segments.readFloat;
 import static com.qxotic.jinfer.Segments.writeFloat;
 
 import com.qxotic.jinfer.Parallel;
+import com.qxotic.jinfer.telemetry.PerformanceCliff;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.MemorySegment;
 
@@ -147,6 +148,7 @@ public final class GatedDeltaNet {
             VectorGatedDeltaNet.scan(qr, kr, vr, gr, br, sr, or, skr, dr, rows, heads, headDim);
             return;
         }
+        PerformanceCliff.GDN_SCALAR.report();
         scanScalar(qr, kr, vr, gr, br, sr, or, skr, dr, rows, heads, headDim);
     }
 

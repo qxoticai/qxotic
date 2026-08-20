@@ -16,6 +16,7 @@ import static com.qxotic.jinfer.Segments.writeFloat;
 import com.qxotic.jam.JAM;
 import com.qxotic.jinfer.Parallel;
 import com.qxotic.jinfer.Views;
+import com.qxotic.jinfer.telemetry.PerformanceCliff;
 import com.qxotic.jota.BFloat16;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.memory.MemoryView;
@@ -1684,6 +1685,13 @@ public final class MatMul {
     private static final JamMm NATIVE = boolFlag("jinfer.disableJam") ? null : load("native");
     private static final JamMm VECTOR = load("vector");
 
+    static {
+        // Both rungs absent: every prefill is on the Java floor for the whole run. (A present
+        // but broken backend already logged at load(); explicit -Djam.<id>.disabled is the
+        // caller's choice and needs no reminder.)
+        if (NATIVE == null && VECTOR == null) PerformanceCliff.JAM_ABSENT.report();
+    }
+
     /**
      * One JAM backend over Raw pointers; {@code false} = runtime decline (caller falls through).
      */
@@ -1728,6 +1736,10 @@ public final class MatMul {
                             m,
                             n,
                             k);
+            // OK: handled; EUNSUPPORTED: this backend simply has no kernel for the dtype - the
+            // dispatch falling to the next rung is working as designed, silence. Anything else
+            // (EINVAL, EBUSY) is a shape/offer the kernels should have taken: a cliff.
+            if (st != JAM.OK && st != JAM.EUNSUPPORTED) PerformanceCliff.JAM_DECLINE.report();
             return st == JAM.OK;
         }
     }

@@ -5,6 +5,7 @@ import com.qxotic.jinfer.CheckpointCodec;
 import com.qxotic.jinfer.ContentKey;
 import com.qxotic.jinfer.ContextState;
 import com.qxotic.jinfer.LanguageModel;
+import com.qxotic.jinfer.telemetry.PerformanceCliff;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
@@ -216,6 +217,7 @@ public final class PromptCache<S extends ContextState> implements AutoCloseable 
                                 ? modelCapacity
                                 : Math.min(requestedCapacity, modelCapacity));
         CheckpointCodec<S> codec = model.checkpointCodec().orElse(null);
+        if (codec == null) PerformanceCliff.CACHE_SESSIONS_ONLY.report();
         if (codec == null && o.catalog != null) {
             // never silently ignore a file the caller pointed at: without a codec nothing can
             // ever be written to it, so the configured cache would degrade into an unnoticed

@@ -1,6 +1,7 @@
 package com.qxotic.jinfer;
 
 import com.oracle.svm.shared.AlwaysInline;
+import com.qxotic.jinfer.telemetry.PerformanceCliff;
 import com.sun.management.HotSpotDiagnosticMXBean;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -129,6 +130,13 @@ public final class Segments {
         } catch (Throwable t) {
             return null;
         }
+    }
+
+    // Boot-time cliffs: report once the environment is known. (The missing Vector API module is
+    // not a cliff - vectorBitSize() above already fails hard with the fix in the message.)
+    static {
+        if (USE_VECTOR_API && !FAST_VECTOR_JIT) PerformanceCliff.SLOW_JIT.report();
+        if (GLOBAL_SEGMENT == null) PerformanceCliff.NATIVE_ACCESS_RESTRICTED.report();
     }
 
     /**

@@ -1,5 +1,6 @@
 package com.qxotic.jinfer;
 
+import com.qxotic.jinfer.telemetry.PerformanceCliff;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.atomic.AtomicReference;
@@ -59,12 +60,17 @@ public final class Parallel {
      * Unchecked exceptions from {@code step} propagate unchanged.
      */
     public static <T> T onDecodePool(Supplier<T> step) {
-        if (RuntimeFlags.DECODE_SPIN && SPIN_OWNER.compareAndSet(null, Thread.currentThread())) {
-            try {
-                return step.get();
-            } finally {
-                SPIN_OWNER.set(null);
+        if (RuntimeFlags.DECODE_SPIN) {
+            if (SPIN_OWNER.compareAndSet(null, Thread.currentThread())) {
+                try {
+                    return step.get();
+                } finally {
+                    SPIN_OWNER.set(null);
+                }
             }
+            // The CAS was lost to another decode. (Spin explicitly disabled takes the same pool
+            // silently - that was the caller's choice, not a cliff.)
+            PerformanceCliff.DECODE_CONTENTION.report();
         }
         return DECODE_POOL
                 .submit((Callable<T>) step::get)
