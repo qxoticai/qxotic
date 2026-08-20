@@ -258,34 +258,18 @@ public final class Qwen35Vision implements MediaProjector<Media.Image> {
         MemoryView<MemorySegment> ffn = Views.allocateF32(scratch, nPos, ffnDim);
         for (Layer layer : layers) {
             Norms.layerNorm(hidden, tokens, layer.ln1W(), layer.ln1B(), visionDim, nPos, normEps);
-            MatMul.gemm(
-                    layer.qkvW(),
-                    hidden,
-                    visionDim,
-                    qkv,
-                    3 * visionDim,
-                    3 * visionDim,
-                    nPos,
-                    visionDim);
+            MatMul.gemm(layer.qkvW(), hidden, qkv, nPos);
             Ops.addRowBiasInPlace(qkv, 0, layer.qkvB(), 0, nPos, 3 * visionDim);
             attention(qkv, attn, scores, q, k, vT, o, nPos, patchesX);
-            MatMul.gemm(
-                    layer.attnOutW(),
-                    attn,
-                    visionDim,
-                    hidden,
-                    visionDim,
-                    visionDim,
-                    nPos,
-                    visionDim);
+            MatMul.gemm(layer.attnOutW(), attn, hidden, nPos);
             Ops.addRowBiasInPlace(hidden, 0, layer.attnOutB(), 0, nPos, visionDim);
             Ops.addInPlace(tokens, 0, hidden, 0, nPos * visionDim);
 
             Norms.layerNorm(hidden, tokens, layer.ln2W(), layer.ln2B(), visionDim, nPos, normEps);
-            MatMul.gemm(layer.ffnUpW(), hidden, visionDim, ffn, ffnDim, ffnDim, nPos, visionDim);
+            MatMul.gemm(layer.ffnUpW(), hidden, ffn, nPos);
             Ops.addRowBiasInPlace(ffn, 0, layer.ffnUpB(), 0, nPos, ffnDim);
             geluTanhInPlace(ffn, nPos, ffnDim);
-            MatMul.gemm(layer.ffnDownW(), ffn, ffnDim, hidden, visionDim, visionDim, nPos, ffnDim);
+            MatMul.gemm(layer.ffnDownW(), ffn, hidden, nPos);
             Ops.addRowBiasInPlace(hidden, 0, layer.ffnDownB(), 0, nPos, visionDim);
             Ops.addInPlace(tokens, 0, hidden, 0, nPos * visionDim);
         }
@@ -296,26 +280,10 @@ public final class Qwen35Vision implements MediaProjector<Media.Image> {
         MemoryView<MemorySegment> mergedRows = Views.allocateF32(scratch, merged, 4 * visionDim);
         MemoryView<MemorySegment> out = Views.allocateF32(scratch, merged, modelDim);
         Convert.copyF32(tokens, 0, mergedRows, 0, (long) nPos * visionDim);
-        MatMul.gemm(
-                mm0.weight(),
-                mergedRows,
-                mm0.inputDim(),
-                hidden,
-                mm0.outputDim(),
-                mm0.outputDim(),
-                merged,
-                mm0.inputDim());
+        MatMul.gemm(mm0.weight(), mergedRows, hidden, merged);
         Ops.addRowBiasInPlace(hidden, 0, mm0.bias(), 0, merged, mm0.outputDim());
         geluTanhInPlace(hidden, merged, mm0.outputDim());
-        MatMul.gemm(
-                mm2.weight(),
-                hidden,
-                mm2.inputDim(),
-                out,
-                modelDim,
-                modelDim,
-                merged,
-                mm2.inputDim());
+        MatMul.gemm(mm2.weight(), hidden, out, merged);
         Ops.addRowBiasInPlace(out, 0, mm2.bias(), 0, merged, modelDim);
         return out;
     }
@@ -354,14 +322,14 @@ public final class Qwen35Vision implements MediaProjector<Media.Image> {
                 rope(k, (long) t * headDim, py, px);
             }
             // C[s][row] = W[row] · A[s] with W=k, A=q puts s=query, row=key.
-            MatMul.gemm(k, 0, q, headDim, scores, nPos, nPos, nPos, headDim);
+            MatMul.gemm(k, q, scores, nPos);
             for (int i = 0; i < nPos; i++) {
                 long row = (long) i * nPos;
                 for (int j = 0; j < nPos; j++) putF(scores, row + j, getF(scores, row + j) * scale);
                 Ops.softmaxInPlace(scores, row, nPos);
             }
             // o[t][d] = Σ_j vT[d][j] · scores[t][j].
-            MatMul.gemm(vT, 0, scores, nPos, o, headDim, headDim, nPos, nPos);
+            MatMul.gemm(vT, scores, o, nPos);
             for (int t = 0; t < nPos; t++) {
                 long dst = (long) t * visionDim + hb;
                 for (int j = 0; j < headDim; j++)
