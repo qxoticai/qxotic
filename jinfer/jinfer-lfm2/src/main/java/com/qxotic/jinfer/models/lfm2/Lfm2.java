@@ -204,8 +204,7 @@ public final class Lfm2
                             weights.finalNorm,
                             dim,
                             configuration.rmsNormEps);
-                    MatMul.gemv(
-                            weights.wcls, s.normed, s.logits, configuration.vocabularySize, dim);
+                    MatMul.gemv(weights.wcls, s.normed, s.logits);
                     Activations.softcap(
                             s.logits,
                             0,
@@ -283,15 +282,7 @@ public final class Lfm2
                 weights.layers[l].attnNorm(); // conv layers use attn_norm as the mixer pre-norm
         Norms.rmsnormRows(
                 state.normed, state.residual, preNorm, seqLen, dim, configuration.rmsNormEps);
-        MatMul.gemm(
-                sc.inProj(),
-                state.normed,
-                dim,
-                state.shortConvTmp,
-                SHORTCONV_PARTS * dim,
-                SHORTCONV_PARTS * dim,
-                seqLen,
-                dim);
+        MatMul.gemm(sc.inProj(), state.normed, state.shortConvTmp, seqLen);
         Convolutions.shortConvScan(
                 weights.layers[l].shortConv().kernel(),
                 state.shortConvState[l],
@@ -301,7 +292,7 @@ public final class Lfm2
                 configuration.embeddingLength,
                 configuration.shortConvLCache,
                 SHORTCONV_PARTS);
-        MatMul.gemm(sc.outProj(), state.branchOut, dim, state.shortConvOut, dim, dim, seqLen, dim);
+        MatMul.gemm(sc.outProj(), state.branchOut, state.shortConvOut, seqLen);
         Ops.addInPlace(state.residual, 0, state.shortConvOut, 0, seqLen * dim);
     }
 
@@ -380,12 +371,11 @@ public final class Lfm2
         MemoryView<MemorySegment> attNormW = weights.layers[l].attnNorm();
         Norms.rmsnormRows(
                 state.normed, state.residual, attNormW, seqLen, dim, configuration.rmsNormEps);
-        MatMul.gemm(attn.wq(), state.normed, dim, state.query, queryDim, queryDim, seqLen, dim);
+        MatMul.gemm(attn.wq(), state.normed, state.query, seqLen);
         headNormRope(state, state.query, queryDim, config.numberOfHeads, attn.qNorm(), seqLen);
         MemoryView<MemorySegment> bK = state.batchK[l], bV = state.batchV[l];
-        MatMul.gemm(attn.wk(), state.normed, dim, bK, kvDim, kvDim, seqLen, dim);
-        if (attn.wv() != null)
-            MatMul.gemm(attn.wv(), state.normed, dim, bV, kvDim, kvDim, seqLen, dim);
+        MatMul.gemm(attn.wk(), state.normed, bK, seqLen);
+        if (attn.wv() != null) MatMul.gemm(attn.wv(), state.normed, bV, seqLen);
         else Convert.copyF32(bK, 0, bV, 0, (long) seqLen * kvDim);
         headNormRope(state, bK, kvDim, nKvHeads, attn.kNorm(), seqLen);
     }
@@ -394,15 +384,7 @@ public final class Lfm2
     private void attentionFinish(State state, int l, int seqLen) {
         int dim = configuration.embeddingLength;
         AttentionWeights attn = weights.layers[l].attention();
-        MatMul.gemm(
-                attn.wo(),
-                state.attnOut,
-                configuration.queryDim(),
-                state.branchOut,
-                dim,
-                dim,
-                seqLen,
-                configuration.queryDim());
+        MatMul.gemm(attn.wo(), state.attnOut, state.branchOut, seqLen);
         MemoryView<MemorySegment> postAttW = weights.layers[l].postAttnNorm();
         if (postAttW != null)
             Norms.rmsnormRows(
@@ -460,8 +442,8 @@ public final class Lfm2
                 postFfwW = weights.layers[l].postFfnNorm();
         Norms.rmsnormRows(
                 state.normed, state.residual, ffnNormW, seqLen, dim, configuration.rmsNormEps);
-        MatMul.gemm(ffn.gate(), state.normed, dim, state.hidden, hiddenDim, hiddenDim, seqLen, dim);
-        MatMul.gemm(ffn.up(), state.normed, dim, state.hidden2, hiddenDim, hiddenDim, seqLen, dim);
+        MatMul.gemm(ffn.gate(), state.normed, state.hidden, seqLen);
+        MatMul.gemm(ffn.up(), state.normed, state.hidden2, seqLen);
         Parallel.forRows(
                 seqLen,
                 s ->
@@ -471,7 +453,7 @@ public final class Lfm2
                                 state.hidden2,
                                 s * hiddenDim,
                                 hiddenDim));
-        MatMul.gemm(ffn.down(), state.hidden, hiddenDim, state.normed, dim, dim, seqLen, hiddenDim);
+        MatMul.gemm(ffn.down(), state.hidden, state.normed, seqLen);
         if (postFfwW != null)
             Norms.rmsnormRows(
                     state.normed, state.normed, postFfwW, seqLen, dim, configuration.rmsNormEps);
@@ -495,8 +477,7 @@ public final class Lfm2
         // pre-norm into normed, then route on it
         Norms.rmsnormRows(
                 state.normed, state.residual, ffnNormW, seqLen, dim, configuration.rmsNormEps);
-        MatMul.gemm(
-                moe.router(), state.normed, dim, state.moeRouterB, nExperts, nExperts, seqLen, dim);
+        MatMul.gemm(moe.router(), state.normed, state.moeRouterB, seqLen);
 
         for (int s = 0; s < seqLen; s++) {
             long ro = (long) s * nExperts;
@@ -534,45 +515,18 @@ public final class Lfm2
                 state.moeOutB,
                 null,
                 (e, n, gather, out) -> {
-                    MatMul.gemm(
-                            moe.gateExps(),
-                            (long) e * expertFF * dim,
-                            gather,
-                            dim,
-                            state.hidden,
-                            expertFF,
-                            expertFF,
-                            n,
-                            dim);
-                    MatMul.gemm(
-                            moe.upExps(),
-                            (long) e * expertFF * dim,
-                            gather,
-                            dim,
-                            state.hidden2,
-                            expertFF,
-                            expertFF,
-                            n,
-                            dim);
+                    MatMul.gemm(moe.gateExps()[e], gather, state.moeHidden, n);
+                    MatMul.gemm(moe.upExps()[e], gather, state.moeHidden2, n);
                     Parallel.forRows(
                             n,
                             j ->
                                     Activations.siluMultiply(
-                                            state.hidden,
+                                            state.moeHidden,
                                             j * expertFF,
-                                            state.hidden2,
+                                            state.moeHidden2,
                                             j * expertFF,
                                             expertFF));
-                    MatMul.gemm(
-                            moe.downExps(),
-                            (long) e * dim * expertFF,
-                            state.hidden,
-                            expertFF,
-                            out,
-                            dim,
-                            dim,
-                            n,
-                            expertFF);
+                    MatMul.gemm(moe.downExps()[e], state.moeHidden, out, n);
                 });
 
         Parallel.forRows(
@@ -654,15 +608,7 @@ public final class Lfm2
         MemoryView<MemorySegment> preNorm = weights.layers[l].attnNorm();
         Norms.rmsnormRows(
                 state.normed, state.residual, preNorm, seqLen, dim, configuration.rmsNormEps);
-        MatMul.gemm(
-                sc.inProj(),
-                state.normed,
-                dim,
-                state.shortConvTmp,
-                SHORTCONV_PARTS * dim,
-                SHORTCONV_PARTS * dim,
-                seqLen,
-                dim);
+        MatMul.gemm(sc.inProj(), state.normed, state.shortConvTmp, seqLen);
 
         Convolutions.segmentedShortConv(
                 sc.kernel(),
@@ -674,7 +620,7 @@ public final class Lfm2
                 configuration.embeddingLength,
                 configuration.shortConvLCache,
                 SHORTCONV_PARTS);
-        MatMul.gemm(sc.outProj(), state.branchOut, dim, state.shortConvOut, dim, dim, seqLen, dim);
+        MatMul.gemm(sc.outProj(), state.branchOut, state.shortConvOut, seqLen);
         Ops.addInPlace(state.residual, 0, state.shortConvOut, 0, seqLen * dim);
     }
 
@@ -780,7 +726,7 @@ public final class Lfm2
                 weights.finalNorm,
                 dim,
                 configuration.rmsNormEps);
-        MatMul.gemv(weights.dense2(), es.embOut, es.colbertOut, outDim, dim);
+        MatMul.gemv(weights.dense2(), es.embOut, es.colbertOut);
         float inv = l2Inv(es.colbertOut, outDim);
         Ops.mapInPlace(es.colbertOut, 0, outDim, v -> v * inv);
         return es.colbertOut;
@@ -966,9 +912,9 @@ public final class Lfm2
 
     public record MoeFfnWeights(
             MemoryView<MemorySegment> router,
-            MemoryView<MemorySegment> gateExps,
-            MemoryView<MemorySegment> upExps,
-            MemoryView<MemorySegment> downExps,
+            MemoryView<MemorySegment>[] gateExps,
+            MemoryView<MemorySegment>[] upExps,
+            MemoryView<MemorySegment>[] downExps,
             MemoryView<MemorySegment> expProbsBias) {}
 
     public record LayerWeights(
@@ -1053,6 +999,10 @@ public final class Lfm2
         // MoE scratch (chunk-wide CSR routing); allocated only when the model has experts, else
         // null.
         final MemoryView<MemorySegment> moeRouterB, moeGather, moeDownB, moeOutB;
+        // Per-expert gate/up at EXACTLY expertFeedForwardLength wide: hidden/hidden2 are sized to
+        // the model's max FFN width (dense layers can be wider), and the silu-multiply between
+        // gate/up and down addresses rows packed at the expert width.
+        final MemoryView<MemorySegment> moeHidden, moeHidden2;
         final int[] moeExpertCounts, moeRowTopE;
         final float[] moeRowTopP;
         final Moe.Routing moeRouting;
@@ -1099,19 +1049,19 @@ public final class Lfm2
             int dim = config.embeddingLength;
             int maxQueryDim = config.queryDim();
             int maxHiddenDim = config.maxHiddenDim();
-            this.residual = Views.allocateF32(memoryArena(), c * dim);
-            this.normed = Views.allocateF32(memoryArena(), c * dim);
-            this.branchOut = Views.allocateF32(memoryArena(), c * dim);
-            this.attnOut = Views.allocateF32(memoryArena(), c * maxQueryDim);
-            this.query = Views.allocateF32(memoryArena(), c * maxQueryDim);
-            this.hidden = Views.allocateF32(memoryArena(), c * maxHiddenDim);
-            this.hidden2 = Views.allocateF32(memoryArena(), c * maxHiddenDim);
-            this.logits = Views.allocateF32(memoryArena(), config.vocabularySize);
+            this.residual = Views.allocateF32(memoryArena(), c, dim);
+            this.normed = Views.allocateF32(memoryArena(), c, dim);
+            this.branchOut = Views.allocateF32(memoryArena(), c, dim);
+            this.attnOut = Views.allocateF32(memoryArena(), c, maxQueryDim);
+            this.query = Views.allocateF32(memoryArena(), c, maxQueryDim);
+            this.hidden = Views.allocateF32(memoryArena(), c, maxHiddenDim);
+            this.hidden2 = Views.allocateF32(memoryArena(), c, maxHiddenDim);
+            this.logits = Views.allocateF32(memoryArena(), 1, config.vocabularySize);
             // rotary values for the batch about to be ingested: sized by BATCH, never context
-            this.ropeCos = Views.allocateF32(memoryArena(), c * (config.headSize / 2));
-            this.ropeSin = Views.allocateF32(memoryArena(), c * (config.headSize / 2));
-            this.shortConvTmp = Views.allocateF32(memoryArena(), c * SHORTCONV_PARTS * dim);
-            this.shortConvOut = Views.allocateF32(memoryArena(), c * dim);
+            this.ropeCos = Views.allocateF32(memoryArena(), c, config.headSize / 2);
+            this.ropeSin = Views.allocateF32(memoryArena(), c, config.headSize / 2);
+            this.shortConvTmp = Views.allocateF32(memoryArena(), c, SHORTCONV_PARTS * dim);
+            this.shortConvOut = Views.allocateF32(memoryArena(), c, dim);
             int n = config.numberOfLayers;
             this.keyCache = new MemoryView[n];
             this.valueCache = new MemoryView[n];
@@ -1126,22 +1076,27 @@ public final class Lfm2
                     int kvDim = config.kvDim(l);
                     keyCache[l] = Views.allocateF16(memoryArena(), contextCapacity, kvDim);
                     valueCache[l] = Views.allocateF16(memoryArena(), contextCapacity, kvDim);
-                    batchK[l] = Views.allocateF32(memoryArena(), c * kvDim);
-                    batchV[l] = Views.allocateF32(memoryArena(), c * kvDim);
+                    batchK[l] = Views.allocateF32(memoryArena(), c, kvDim);
+                    batchV[l] = Views.allocateF32(memoryArena(), c, kvDim);
                 }
             }
             if (config.isMoE()) {
                 int e = config.expertCount, tk = config.expertUsedCount;
-                this.moeRouterB = Views.allocateF32(memoryArena(), c * e);
-                this.moeGather = Views.allocateF32(memoryArena(), c * dim);
-                this.moeDownB = Views.allocateF32(memoryArena(), c * dim);
-                this.moeOutB = Views.allocateF32(memoryArena(), c * dim);
+                this.moeRouterB = Views.allocateF32(memoryArena(), c, e);
+                this.moeGather = Views.allocateF32(memoryArena(), c, dim);
+                this.moeDownB = Views.allocateF32(memoryArena(), c, dim);
+                this.moeOutB = Views.allocateF32(memoryArena(), c, dim);
+                this.moeHidden =
+                        Views.allocateF32(memoryArena(), c, config.expertFeedForwardLength);
+                this.moeHidden2 =
+                        Views.allocateF32(memoryArena(), c, config.expertFeedForwardLength);
                 this.moeExpertCounts = new int[e];
                 this.moeRowTopE = new int[c * tk];
                 this.moeRowTopP = new float[c * tk];
                 this.moeRouting = new Moe.Routing(moeRowTopE, moeRowTopP, moeExpertCounts);
             } else {
                 this.moeRouterB = this.moeGather = this.moeDownB = this.moeOutB = null;
+                this.moeHidden = this.moeHidden2 = null;
                 this.moeExpertCounts = this.moeRowTopE = null;
                 this.moeRowTopP = null;
                 this.moeRouting = null;
@@ -1166,12 +1121,13 @@ public final class Lfm2
         EmbedScratch(
                 Configuration config, int batchCapacity, MemoryAllocator<MemorySegment> memory) {
             int queryDim = config.queryDim(), kvDim = config.maxKvDim();
-            this.segQ = Views.allocateF32(memory, batchCapacity * queryDim);
-            this.segOut = Views.allocateF32(memory, batchCapacity * queryDim);
-            this.segK = Views.allocateF32(memory, batchCapacity * kvDim);
-            this.segV = Views.allocateF32(memory, batchCapacity * kvDim);
-            this.embOut = Views.allocateF32(memory, config.embeddingLength());
-            this.colbertOut = Views.allocateF32(memory, Math.max(1, config.embeddingLengthOut()));
+            this.segQ = Views.allocateF32(memory, batchCapacity, queryDim);
+            this.segOut = Views.allocateF32(memory, batchCapacity, queryDim);
+            this.segK = Views.allocateF32(memory, batchCapacity, kvDim);
+            this.segV = Views.allocateF32(memory, batchCapacity, kvDim);
+            this.embOut = Views.allocateF32(memory, 1, config.embeddingLength());
+            this.colbertOut =
+                    Views.allocateF32(memory, 1, Math.max(1, config.embeddingLengthOut()));
             this.posOf = new int[batchCapacity];
             this.segRow0 = new int[batchCapacity]; // a segment per row is the densest packing
         }
@@ -1385,9 +1341,11 @@ public final class Lfm2
                 moe =
                         new MoeFfnWeights(
                                 require(tensors, p + "ffn_gate_inp.weight"),
-                                require(tensors, p + "ffn_gate_exps.weight"),
-                                require(tensors, p + "ffn_up_exps.weight"),
-                                require(tensors, p + "ffn_down_exps.weight"),
+                                Views.sliceLeadingAxis(
+                                        require(tensors, p + "ffn_gate_exps.weight")),
+                                Views.sliceLeadingAxis(require(tensors, p + "ffn_up_exps.weight")),
+                                Views.sliceLeadingAxis(
+                                        require(tensors, p + "ffn_down_exps.weight")),
                                 findF32(tensors, p + "exp_probs_b.bias"));
             } else {
                 dense =
