@@ -165,7 +165,7 @@ public final class NemotronH
         SsmWeights w = weights.ssm[layer];
         int dim = c.embeddingLength, inner = c.ssmInnerSize, channels = c.ssmConvChannels();
         int heads = c.ssmTimeStepRank, projection = c.ssmInProjSize();
-        MatMul.gemm(w.inProj, s.normed, dim, s.ssmProjection, projection, projection, rows, dim);
+        MatMul.gemm(w.inProj, s.normed, s.ssmProjection, rows);
         float[] dtValues = s.ssmDtValues;
         for (int row = 0; row < rows; row++) {
             long source = (long) row * projection;
@@ -212,16 +212,16 @@ public final class NemotronH
                 c.ssmStateSize);
         Mamba2.groupedRmsNorm(
                 s.ssmOutput, w.norm, s.ssmTmp, rows, inner, c.ssmGroupCount, c.rmsNormEps);
-        MatMul.gemm(w.outProj, s.ssmTmp, inner, s.branch, dim, dim, rows, inner);
+        MatMul.gemm(w.outProj, s.ssmTmp, s.branch, rows);
     }
 
     private void attention(State s, int layer, int startPos, int rows) {
         Configuration c = configuration;
         AttentionWeights w = weights.attention[layer];
         int dim = c.embeddingLength, queryDim = c.queryDim(), kvDim = c.kvDim();
-        MatMul.gemm(w.wq, s.normed, dim, s.q, queryDim, queryDim, rows, dim);
-        MatMul.gemm(w.wk, s.normed, dim, s.k, kvDim, kvDim, rows, dim);
-        MatMul.gemm(w.wv, s.normed, dim, s.v, kvDim, kvDim, rows, dim);
+        MatMul.gemm(w.wq, s.normed, s.q, rows);
+        MatMul.gemm(w.wk, s.normed, s.k, rows);
+        MatMul.gemm(w.wv, s.normed, s.v, rows);
         for (int row = 0; row < rows; row++) {
             Convert.f32ToF16(
                     s.k,
@@ -248,7 +248,7 @@ public final class NemotronH
                 kvDim,
                 queryDim,
                 c.numberOfHeads / c.numberOfKeyValueHeads);
-        MatMul.gemm(w.wo, s.attentionOut, queryDim, s.branch, dim, dim, rows, queryDim);
+        MatMul.gemm(w.wo, s.attentionOut, s.branch, rows);
     }
 
     private void moe(State s, int layer, int rows) {
@@ -256,7 +256,7 @@ public final class NemotronH
         MoeWeights w = weights.moe[layer];
         int dim = c.embeddingLength, experts = c.expertCount;
         int topK = Math.min(c.expertUsedCount, experts), expertFfn = c.expertFeedForwardLength;
-        MatMul.gemm(w.router, s.normed, dim, s.moeRouter, experts, experts, rows, dim);
+        MatMul.gemm(w.router, s.normed, s.moeRouter, rows);
         Ops.mapInPlace(s.moeRouter, 0, rows * experts, Activations::sigmoid);
         Arrays.fill(s.moeExpertCounts, 0);
         for (int row = 0; row < rows; row++) {
@@ -285,35 +285,17 @@ public final class NemotronH
                 s.branch,
                 null,
                 (expert, n, gather, out) -> {
-                    MatMul.gemm(
-                            w.upExps,
-                            (long) expert * expertFfn * dim,
-                            gather,
-                            dim,
-                            s.moeHidden,
-                            expertFfn,
-                            expertFfn,
-                            n,
-                            dim);
+                    MatMul.gemm(w.upExps[expert], gather, s.moeHidden, n);
                     Parallel.forRows(
                             n, row -> Activations.reluSqr(s.moeHidden, row * expertFfn, expertFfn));
-                    MatMul.gemm(
-                            w.downExps,
-                            (long) expert * dim * expertFfn,
-                            s.moeHidden,
-                            expertFfn,
-                            out,
-                            dim,
-                            dim,
-                            n,
-                            expertFfn);
+                    MatMul.gemm(w.downExps[expert], s.moeHidden, out, n);
                 });
         if (w.upShared != null) {
             int shared = c.expertSharedFeedForwardLength;
-            MatMul.gemm(w.upShared, s.normed, dim, s.sharedHidden, shared, shared, rows, dim);
+            MatMul.gemm(w.upShared, s.normed, s.sharedHidden, rows);
             Parallel.forRows(
                     rows, row -> Activations.reluSqr(s.sharedHidden, row * shared, shared));
-            MatMul.gemm(w.downShared, s.sharedHidden, shared, s.sharedOut, dim, dim, rows, shared);
+            MatMul.gemm(w.downShared, s.sharedHidden, s.sharedOut, rows);
             Ops.addInPlace(s.branch, 0, s.sharedOut, 0, rows * dim);
         }
     }
@@ -366,12 +348,7 @@ public final class NemotronH
                             weights.outputNorm,
                             c.embeddingLength,
                             c.rmsNormEps);
-                    MatMul.gemv(
-                            weights.outputWeight,
-                            state.normed,
-                            state.logits,
-                            c.vocabularySize,
-                            c.embeddingLength);
+                    MatMul.gemv(weights.outputWeight, state.normed, state.logits);
                     return state.logits;
                 });
     }
@@ -440,8 +417,8 @@ public final class NemotronH
     public record MoeWeights(
             MemoryView<MemorySegment> router,
             MemoryView<MemorySegment> expProbsB,
-            MemoryView<MemorySegment> upExps,
-            MemoryView<MemorySegment> downExps,
+            MemoryView<MemorySegment>[] upExps,
+            MemoryView<MemorySegment>[] downExps,
             MemoryView<MemorySegment> upShared,
             MemoryView<MemorySegment> downShared) {}
 
@@ -489,7 +466,7 @@ public final class NemotronH
             residual = Views.allocateF32(memoryArena(), b, dim);
             normed = Views.allocateF32(memoryArena(), b, dim);
             branch = Views.allocateF32(memoryArena(), b, dim);
-            logits = Views.allocateF32(memoryArena(), c.vocabularySize);
+            logits = Views.allocateF32(memoryArena(), 1, c.vocabularySize);
             q = Views.allocateF32(memoryArena(), b, qd);
             k = Views.allocateF32(memoryArena(), b, kvd);
             v = Views.allocateF32(memoryArena(), b, kvd);
@@ -689,8 +666,10 @@ public final class NemotronH
                                 new MoeWeights(
                                         require(tensors, p + "ffn_gate_inp.weight"),
                                         findF32(tensors, p + "exp_probs_b.bias"),
-                                        require(tensors, p + "ffn_up_exps.weight"),
-                                        require(tensors, p + "ffn_down_exps.weight"),
+                                        Views.sliceLeadingAxis(
+                                                require(tensors, p + "ffn_up_exps.weight")),
+                                        Views.sliceLeadingAxis(
+                                                require(tensors, p + "ffn_down_exps.weight")),
                                         tensors.get(p + "ffn_up_shexp.weight"),
                                         tensors.get(p + "ffn_down_shexp.weight"));
             }
