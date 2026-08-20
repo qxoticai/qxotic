@@ -305,15 +305,7 @@ public final class Qwen35
                     c.rmsNormEps);
         }
         Convert.copyF32(state.targetHidden, (long) (rows - 1) * dim, state.pendingHidden, 0, dim);
-        MatMul.gemm(
-                nextn.inputProjection,
-                state.mtpConcat,
-                2 * dim,
-                state.residual,
-                dim,
-                dim,
-                rows,
-                2 * dim);
+        MatMul.gemm(nextn.inputProjection, state.mtpConcat, state.residual, rows);
         decoderBlock(state, c.mtpLayer(), startPos, rows);
     }
 
@@ -343,18 +335,18 @@ public final class Qwen35
         Norms.rmsnorm(state.mtpConcat, dim, hidden, 0, nextn.hiddenNorm, dim, c.rmsNormEps);
         Convert.copyToF32(nextn.tokenEmbedding, (long) token * dim, state.normed, 0, dim);
         Norms.rmsnorm(state.mtpConcat, 0, state.normed, 0, nextn.embeddingNorm, dim, c.rmsNormEps);
-        MatMul.gemv(nextn.inputProjection, state.mtpConcat, state.residual, dim, 2 * dim);
+        MatMul.gemv(nextn.inputProjection, state.mtpConcat, state.residual);
         decoderBlock(state, c.mtpLayer(), position, 1);
         Norms.rmsnorm(state.normed, 0, state.residual, 0, nextn.outputNorm, dim, c.rmsNormEps);
-        MatMul.gemv(nextn.outputWeight, state.normed, state.logits, c.vocabularySize, dim);
+        MatMul.gemv(nextn.outputWeight, state.normed, state.logits);
     }
 
     private void attention(State s, int layer, int startPos, int rows) {
         Configuration c = configuration;
         int dim = c.embeddingLength, qDim = c.queryDim(), kvDim = c.kvDim();
-        MatMul.gemm(weights.attnQ[layer], s.normed, dim, s.packedQ, 2 * qDim, 2 * qDim, rows, dim);
-        MatMul.gemm(weights.attnK[layer], s.normed, dim, s.k, kvDim, kvDim, rows, dim);
-        MatMul.gemm(weights.attnV[layer], s.normed, dim, s.v, kvDim, kvDim, rows, dim);
+        MatMul.gemm(weights.attnQ[layer], s.normed, s.packedQ, rows);
+        MatMul.gemm(weights.attnK[layer], s.normed, s.k, rows);
+        MatMul.gemm(weights.attnV[layer], s.normed, s.v, rows);
         GatedDeltaNet.unpackAttentionQGate(
                 s.packedQ, s.q, s.attentionGate, rows, c.numberOfHeads, c.headSize);
         Parallel.forRows(
@@ -416,19 +408,17 @@ public final class Qwen35
                 qDim,
                 c.numberOfHeads / c.numberOfKeyValueHeads);
         GatedDeltaNet.sigmoidMultiply(s.attentionOut, s.attentionGate, rows * qDim);
-        MatMul.gemm(
-                weights.attnOutput[layer], s.attentionOut, qDim, s.branch, dim, dim, rows, qDim);
+        MatMul.gemm(weights.attnOutput[layer], s.attentionOut, s.branch, rows);
     }
 
     private void delta(State s, int layer, int rows) {
         Configuration c = configuration;
         int dim = c.embeddingLength, inner = c.ssmInnerSize, heads = c.ssmTimeStepRank;
         int headDim = c.headVDim(), channels = c.convChannels();
-        MatMul.gemm(weights.attnQkv[layer], s.normed, dim, s.ssmQkv, channels, channels, rows, dim);
-        MatMul.gemm(weights.attnGate[layer], s.normed, dim, s.z, inner, inner, rows, dim);
-        MatMul.gemm(weights.ssmAlpha[layer], s.normed, dim, s.alpha, heads, heads, rows, dim);
-        MatMul.gemm(
-                weights.ssmBeta[layer], s.normed, dim, s.betaProjection, heads, heads, rows, dim);
+        MatMul.gemm(weights.attnQkv[layer], s.normed, s.ssmQkv, rows);
+        MatMul.gemm(weights.attnGate[layer], s.normed, s.z, rows);
+        MatMul.gemm(weights.ssmAlpha[layer], s.normed, s.alpha, rows);
+        MatMul.gemm(weights.ssmBeta[layer], s.normed, s.betaProjection, rows);
         Convolutions.causalDepthwiseSilu(
                 s.ssmQkv,
                 weights.ssmConv1d[layer],
@@ -481,47 +471,22 @@ public final class Qwen35
                 heads,
                 headDim,
                 c.rmsNormEps);
-        MatMul.gemm(weights.ssmOut[layer], s.ssmTmp, inner, s.branch, dim, dim, rows, inner);
+        MatMul.gemm(weights.ssmOut[layer], s.ssmTmp, s.branch, rows);
     }
 
     private void denseFfn(State s, int layer, int rows) {
         Configuration c = configuration;
-        MatMul.gemm(
-                weights.ffnGate[layer],
-                s.normed,
-                c.embeddingLength,
-                s.hidden,
-                c.hiddenDim,
-                c.hiddenDim,
-                rows,
-                c.embeddingLength);
-        MatMul.gemm(
-                weights.ffnUp[layer],
-                s.normed,
-                c.embeddingLength,
-                s.hidden2,
-                c.hiddenDim,
-                c.hiddenDim,
-                rows,
-                c.embeddingLength);
+        MatMul.gemm(weights.ffnGate[layer], s.normed, s.hidden, rows);
+        MatMul.gemm(weights.ffnUp[layer], s.normed, s.hidden2, rows);
         Activations.siluMultiply(s.hidden, 0, s.hidden2, 0, rows * c.hiddenDim);
-        MatMul.gemm(
-                weights.ffnDown[layer],
-                s.hidden,
-                c.hiddenDim,
-                s.branch,
-                c.embeddingLength,
-                c.embeddingLength,
-                rows,
-                c.hiddenDim);
+        MatMul.gemm(weights.ffnDown[layer], s.hidden, s.branch, rows);
     }
 
     private void moe(State s, int layer, int rows) {
         Configuration c = configuration;
         int dim = c.embeddingLength, experts = c.expertCount;
         int topK = Math.min(c.expertUsedCount, experts), expertFfn = c.expertFeedForwardLength;
-        MatMul.gemm(
-                weights.moeRouter[layer], s.normed, dim, s.moeRouter, experts, experts, rows, dim);
+        MatMul.gemm(weights.moeRouter[layer], s.normed, s.moeRouter, rows);
         for (int row = 0; row < rows; row++)
             Ops.softmaxInPlace(s.moeRouter, (long) row * experts, experts);
         Moe.selectTopK(
@@ -544,80 +509,21 @@ public final class Qwen35
                 s.branch,
                 null,
                 (expert, n, gather, out) -> {
-                    MatMul.gemm(
-                            weights.moeExpertGate[layer],
-                            (long) expert * expertFfn * dim,
-                            gather,
-                            dim,
-                            s.hidden,
-                            expertFfn,
-                            expertFfn,
-                            n,
-                            dim);
-                    MatMul.gemm(
-                            weights.moeExpertUp[layer],
-                            (long) expert * expertFfn * dim,
-                            gather,
-                            dim,
-                            s.hidden2,
-                            expertFfn,
-                            expertFfn,
-                            n,
-                            dim);
-                    Activations.siluMultiply(s.hidden, 0, s.hidden2, 0, n * expertFfn);
-                    MatMul.gemm(
-                            weights.moeExpertDown[layer],
-                            (long) expert * dim * expertFfn,
-                            s.hidden,
-                            expertFfn,
-                            out,
-                            dim,
-                            dim,
-                            n,
-                            expertFfn);
+                    MatMul.gemm(weights.moeExpertGate[layer][expert], gather, s.moeHidden, n);
+                    MatMul.gemm(weights.moeExpertUp[layer][expert], gather, s.moeHidden2, n);
+                    Activations.siluMultiply(s.moeHidden, 0, s.moeHidden2, 0, n * expertFfn);
+                    MatMul.gemm(weights.moeExpertDown[layer][expert], s.moeHidden, out, n);
                 });
         if (c.expertSharedFeedForwardLength > 0 && weights.moeSharedGate[layer] != null) {
             int shared = c.expertSharedFeedForwardLength;
-            MatMul.gemm(
-                    weights.moeSharedGate[layer],
-                    s.normed,
-                    dim,
-                    s.sharedGate,
-                    shared,
-                    shared,
-                    rows,
-                    dim);
-            MatMul.gemm(
-                    weights.moeSharedUp[layer],
-                    s.normed,
-                    dim,
-                    s.sharedUp,
-                    shared,
-                    shared,
-                    rows,
-                    dim);
+            MatMul.gemm(weights.moeSharedGate[layer], s.normed, s.sharedGate, rows);
+            MatMul.gemm(weights.moeSharedUp[layer], s.normed, s.sharedUp, rows);
             Activations.siluMultiply(s.sharedGate, 0, s.sharedUp, 0, rows * shared);
-            MatMul.gemm(
-                    weights.moeSharedDown[layer],
-                    s.sharedGate,
-                    shared,
-                    s.sharedOut,
-                    dim,
-                    dim,
-                    rows,
-                    shared);
+            MatMul.gemm(weights.moeSharedDown[layer], s.sharedGate, s.sharedOut, rows);
             if (weights.moeSharedInputGate[layer] == null) {
                 Ops.addInPlace(s.branch, 0, s.sharedOut, 0, rows * dim);
             } else {
-                MatMul.gemm(
-                        weights.moeSharedInputGate[layer],
-                        s.normed,
-                        dim,
-                        s.sharedScale,
-                        1,
-                        1,
-                        rows,
-                        dim);
+                MatMul.gemm(weights.moeSharedInputGate[layer], s.normed, s.sharedScale, rows);
                 // sigmoid scalars read on the OWNING thread (checked access; a confined arena
                 // would reject reads from forRows workers), the saxpy rows stay parallel
                 float[] scales = new float[rows];
@@ -663,12 +569,7 @@ public final class Qwen35
                                 dim,
                                 configuration.rmsNormEps);
                     }
-                    MatMul.gemv(
-                            weights.outputWeight,
-                            state.normed,
-                            state.logits,
-                            configuration.vocabularySize,
-                            dim);
+                    MatMul.gemv(weights.outputWeight, state.normed, state.logits);
                     return state.logits;
                 });
     }
@@ -697,15 +598,7 @@ public final class Qwen35
                                     dim,
                                     configuration.rmsNormEps);
                     }
-                    MatMul.gemm(
-                            weights.outputWeight,
-                            state.normed,
-                            dim,
-                            destination,
-                            configuration.vocabularySize,
-                            configuration.vocabularySize,
-                            rows,
-                            dim);
+                    MatMul.gemm(weights.outputWeight, state.normed, destination, rows);
                     return null;
                 });
         Reference.reachabilityFence(state);
@@ -835,9 +728,9 @@ public final class Qwen35
             MemoryView<MemorySegment>[] ffnUp,
             MemoryView<MemorySegment>[] ffnDown,
             MemoryView<MemorySegment>[] moeRouter,
-            MemoryView<MemorySegment>[] moeExpertGate,
-            MemoryView<MemorySegment>[] moeExpertUp,
-            MemoryView<MemorySegment>[] moeExpertDown,
+            MemoryView<MemorySegment>[][] moeExpertGate,
+            MemoryView<MemorySegment>[][] moeExpertUp,
+            MemoryView<MemorySegment>[][] moeExpertDown,
             MemoryView<MemorySegment>[] moeSharedGate,
             MemoryView<MemorySegment>[] moeSharedUp,
             MemoryView<MemorySegment>[] moeSharedDown,
@@ -863,6 +756,10 @@ public final class Qwen35
         final MemoryView<MemorySegment> hidden, hidden2;
         final MemoryView<MemorySegment>[] keyCache, valueCache, convState, recurrentState;
         final MemoryView<MemorySegment> moeRouter, moeGather, moeDown;
+        // Per-expert gate/up at EXACTLY expertFeedForwardLength wide: hidden/hidden2 are sized to
+        // max(dense, expert) FFN width, and the silu-multiply between gate/up and down addresses
+        // rows packed at the expert width.
+        final MemoryView<MemorySegment> moeHidden, moeHidden2;
         final MemoryView<MemorySegment> sharedGate, sharedUp, sharedOut, sharedScale;
         final int[] moeExpertCounts, moeRowTopE;
         final float[] moeRowTopP;
@@ -896,7 +793,7 @@ public final class Qwen35
             residual = Views.allocateF32(memoryArena(), b, dim);
             normed = Views.allocateF32(memoryArena(), b, dim);
             branch = Views.allocateF32(memoryArena(), b, dim);
-            logits = Views.allocateF32(memoryArena(), c.vocabularySize);
+            logits = Views.allocateF32(memoryArena(), 1, c.vocabularySize);
             targetHidden = c.hasMtp() ? Views.allocateF32(memoryArena(), b, dim) : null;
             mtpConcat = c.hasMtp() ? Views.allocateF32(memoryArena(), b, 2L * dim) : null;
             pendingHidden = c.hasMtp() ? Views.allocateF32(memoryArena(), dim) : null;
@@ -946,17 +843,20 @@ public final class Qwen35
                 moeRouter = Views.allocateF32(memoryArena(), b, c.expertCount);
                 moeGather = Views.allocateF32(memoryArena(), b, dim);
                 moeDown = Views.allocateF32(memoryArena(), b, dim);
+                moeHidden = Views.allocateF32(memoryArena(), b, c.expertFeedForwardLength);
+                moeHidden2 = Views.allocateF32(memoryArena(), b, c.expertFeedForwardLength);
                 int shared = Math.max(1, c.expertSharedFeedForwardLength);
                 sharedGate = Views.allocateF32(memoryArena(), b, shared);
                 sharedUp = Views.allocateF32(memoryArena(), b, shared);
                 sharedOut = Views.allocateF32(memoryArena(), b, dim);
-                sharedScale = Views.allocateF32(memoryArena(), b);
+                sharedScale = Views.allocateF32(memoryArena(), b, 1);
                 moeExpertCounts = new int[c.expertCount];
                 moeRowTopE = new int[b * topK];
                 moeRowTopP = new float[b * topK];
                 moeRouting = new Moe.Routing(moeRowTopE, moeRowTopP, moeExpertCounts);
             } else {
                 moeRouter = moeGather = moeDown = null;
+                moeHidden = moeHidden2 = null;
                 sharedGate = sharedUp = sharedOut = sharedScale = null;
                 moeExpertCounts = moeRowTopE = null;
                 moeRowTopP = null;
@@ -1162,9 +1062,27 @@ public final class Qwen35
                                         moe,
                                         p(i) + "ffn_gate_inp.weight",
                                         p(i) + "ffn_router.weight")),
-                array(n, i -> requireIf(tensors, moe, p(i) + "ffn_gate_exps.weight")),
-                array(n, i -> requireIf(tensors, moe, p(i) + "ffn_up_exps.weight")),
-                array(n, i -> requireIf(tensors, moe, p(i) + "ffn_down_exps.weight")),
+                array2(
+                        n,
+                        i -> {
+                            MemoryView<MemorySegment> v =
+                                    requireIf(tensors, moe, p(i) + "ffn_gate_exps.weight");
+                            return v == null ? null : Views.sliceLeadingAxis(v);
+                        }),
+                array2(
+                        n,
+                        i -> {
+                            MemoryView<MemorySegment> v =
+                                    requireIf(tensors, moe, p(i) + "ffn_up_exps.weight");
+                            return v == null ? null : Views.sliceLeadingAxis(v);
+                        }),
+                array2(
+                        n,
+                        i -> {
+                            MemoryView<MemorySegment> v =
+                                    requireIf(tensors, moe, p(i) + "ffn_down_exps.weight");
+                            return v == null ? null : Views.sliceLeadingAxis(v);
+                        }),
                 array(
                         n,
                         i ->
@@ -1206,9 +1124,18 @@ public final class Qwen35
         MemoryView<MemorySegment> get(int i);
     }
 
-    @SuppressWarnings("unchecked")
     private static MemoryView<MemorySegment>[] array(int n, ViewAt supplier) {
         MemoryView<MemorySegment>[] out = new MemoryView[n];
+        for (int i = 0; i < n; i++) out[i] = supplier.get(i);
+        return out;
+    }
+
+    private interface ViewArrayAt {
+        MemoryView<MemorySegment>[] get(int i);
+    }
+
+    private static MemoryView<MemorySegment>[][] array2(int n, ViewArrayAt supplier) {
+        MemoryView<MemorySegment>[][] out = new MemoryView[n][];
         for (int i = 0; i < n; i++) out[i] = supplier.get(i);
         return out;
     }

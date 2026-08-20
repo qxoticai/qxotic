@@ -14,6 +14,7 @@ import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.Sampler;
+import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryAllocator;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.toknroll.IntSequence;
@@ -332,48 +333,52 @@ final class Qwen35MtpCacheLifecycleTest {
         float[] embedding = new float[c.vocabularySize() * c.embeddingLength()];
         for (int i = 0; i < embedding.length; i++)
             embedding[i] = (i % c.embeddingLength() + 1) / 8f;
-        t.put("token_embd.weight", Views.fromFloatArray(memory, embedding));
+        t.put(
+                "token_embd.weight",
+                matrix(memory, c.vocabularySize(), c.embeddingLength(), embedding));
         t.put("output_norm.weight", ones(memory, c.embeddingLength()));
         float[] head = new float[c.vocabularySize() * c.embeddingLength()];
         head[c.embeddingLength()] = 1f; // positive hidden -> token 1; zero carry -> token 0
-        t.put("output.weight", Views.fromFloatArray(memory, head));
+        t.put("output.weight", matrix(memory, c.vocabularySize(), c.embeddingLength(), head));
 
         for (int layer = 0; layer < c.storedLayers(); layer++) {
             String p = "blk." + layer + ".";
             t.put(p + "attn_norm.weight", ones(memory, c.embeddingLength()));
             t.put(p + "post_attention_norm.weight", ones(memory, c.embeddingLength()));
             if (c.isFullAttention()[layer]) {
-                t.put(p + "attn_q.weight", zero(memory, 2L * c.queryDim() * c.embeddingLength()));
-                t.put(p + "attn_k.weight", zero(memory, (long) c.kvDim() * c.embeddingLength()));
-                t.put(p + "attn_v.weight", zero(memory, (long) c.kvDim() * c.embeddingLength()));
+                t.put(
+                        p + "attn_q.weight",
+                        zeroMatrix(memory, 2L * c.queryDim(), c.embeddingLength()));
+                t.put(p + "attn_k.weight", zeroMatrix(memory, c.kvDim(), c.embeddingLength()));
+                t.put(p + "attn_v.weight", zeroMatrix(memory, c.kvDim(), c.embeddingLength()));
                 t.put(
                         p + "attn_output.weight",
-                        zero(memory, (long) c.embeddingLength() * c.queryDim()));
+                        zeroMatrix(memory, c.embeddingLength(), c.queryDim()));
                 t.put(p + "attn_q_norm.weight", ones(memory, c.headSize()));
                 t.put(p + "attn_k_norm.weight", ones(memory, c.headSize()));
             } else {
                 int channels = c.convChannels();
-                t.put(p + "attn_qkv.weight", zero(memory, (long) channels * c.embeddingLength()));
+                t.put(p + "attn_qkv.weight", zeroMatrix(memory, channels, c.embeddingLength()));
                 t.put(
                         p + "attn_gate.weight",
-                        zero(memory, (long) c.ssmInnerSize() * c.embeddingLength()));
+                        zeroMatrix(memory, c.ssmInnerSize(), c.embeddingLength()));
                 t.put(
                         p + "ssm_alpha.weight",
-                        zero(memory, (long) c.ssmTimeStepRank() * c.embeddingLength()));
+                        zeroMatrix(memory, c.ssmTimeStepRank(), c.embeddingLength()));
                 t.put(
                         p + "ssm_beta.weight",
-                        zero(memory, (long) c.ssmTimeStepRank() * c.embeddingLength()));
+                        zeroMatrix(memory, c.ssmTimeStepRank(), c.embeddingLength()));
                 t.put(
                         p + "ssm_out.weight",
-                        zero(memory, (long) c.embeddingLength() * c.ssmInnerSize()));
-                t.put(p + "ssm_conv1d.weight", zero(memory, (long) channels * c.ssmConvKernel()));
+                        zeroMatrix(memory, c.embeddingLength(), c.ssmInnerSize()));
+                t.put(p + "ssm_conv1d.weight", zeroMatrix(memory, channels, c.ssmConvKernel()));
                 t.put(p + "ssm_a", zero(memory, c.ssmTimeStepRank()));
                 t.put(p + "ssm_dt.bias", zero(memory, c.ssmTimeStepRank()));
                 t.put(p + "ssm_norm.weight", ones(memory, c.headVDim()));
             }
-            t.put(p + "ffn_gate.weight", zero(memory, (long) c.hiddenDim() * c.embeddingLength()));
-            t.put(p + "ffn_up.weight", zero(memory, (long) c.hiddenDim() * c.embeddingLength()));
-            t.put(p + "ffn_down.weight", zero(memory, (long) c.embeddingLength() * c.hiddenDim()));
+            t.put(p + "ffn_gate.weight", zeroMatrix(memory, c.hiddenDim(), c.embeddingLength()));
+            t.put(p + "ffn_up.weight", zeroMatrix(memory, c.hiddenDim(), c.embeddingLength()));
+            t.put(p + "ffn_down.weight", zeroMatrix(memory, c.embeddingLength(), c.hiddenDim()));
         }
         if (mtp) {
             String nextn = "blk." + c.mtpLayer() + ".nextn.";
@@ -382,7 +387,9 @@ final class Qwen35MtpCacheLifecycleTest {
             float[] projection = new float[2 * c.embeddingLength() * c.embeddingLength()];
             for (int d = 0; d < c.embeddingLength(); d++)
                 projection[d * 2 * c.embeddingLength() + c.embeddingLength() + d] = 1f;
-            t.put(nextn + "eh_proj.weight", Views.fromFloatArray(memory, projection));
+            t.put(
+                    nextn + "eh_proj.weight",
+                    matrix(memory, c.embeddingLength(), 2L * c.embeddingLength(), projection));
         }
         return new Qwen35(c, null, Qwen35.loadWeights(t, c));
     }
@@ -390,6 +397,16 @@ final class Qwen35MtpCacheLifecycleTest {
     private static MemoryView<MemorySegment> zero(
             MemoryAllocator<MemorySegment> memory, long elements) {
         return Views.allocateF32(memory, elements);
+    }
+
+    private static MemoryView<MemorySegment> zeroMatrix(
+            MemoryAllocator<MemorySegment> memory, long rows, long cols) {
+        return Views.allocateF32(memory, rows, cols);
+    }
+
+    private static MemoryView<MemorySegment> matrix(
+            MemoryAllocator<MemorySegment> memory, long rows, long cols, float[] values) {
+        return Views.fromFloatArray(memory, values).view(Shape.flat(rows, cols));
     }
 
     private static MemoryView<MemorySegment> ones(

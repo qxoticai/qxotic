@@ -30,7 +30,7 @@ final class Qwen35Speculative {
         Scratch(Qwen35 model, Qwen35.State state, int depth) {
             var arena = state.specArena();
             int vocab = model.configuration().vocabularySize();
-            verificationLogits = Views.allocateF32(arena, (long) (depth + 1) * vocab);
+            verificationLogits = Views.allocateF32(arena, (long) depth + 1, vocab);
             codec = new Qwen35CheckpointCodec(model.configuration());
             checkpoint = arena.allocateMemory(codec.byteSize(0), 64).base();
             this.depth = depth;
@@ -150,7 +150,7 @@ final class Qwen35Speculative {
             int accepted = 0;
             int nextAfter = -1;
             while (accepted < drafts) {
-                MemoryView<MemorySegment> logits = row(scratch.verificationLogits, accepted, vocab);
+                MemoryView<MemorySegment> logits = row(scratch.verificationLogits, accepted);
                 if (targetArgmax != null) targetArgmax[accepted] = Ops.argmax(logits, 0, vocab);
                 int target = sample(sampler, logits, vocab);
                 if (candidates[accepted + 1] == target) accepted++;
@@ -160,7 +160,7 @@ final class Qwen35Speculative {
                 }
             }
             if (nextAfter < 0) {
-                MemoryView<MemorySegment> logits = row(scratch.verificationLogits, accepted, vocab);
+                MemoryView<MemorySegment> logits = row(scratch.verificationLogits, accepted);
                 if (targetArgmax != null) targetArgmax[accepted] = Ops.argmax(logits, 0, vocab);
                 nextAfter = sample(sampler, logits, vocab);
             }
@@ -252,10 +252,8 @@ final class Qwen35Speculative {
         return token;
     }
 
-    private static MemoryView<MemorySegment> row(
-            MemoryView<MemorySegment> matrix, int row, int width) {
-        long from = (long) row * width;
-        return matrix.slice(0, from, from + width);
+    private static MemoryView<MemorySegment> row(MemoryView<MemorySegment> matrix, int row) {
+        return matrix.slice(0, row, row + 1);
     }
 
     private static SpeculationResult result(

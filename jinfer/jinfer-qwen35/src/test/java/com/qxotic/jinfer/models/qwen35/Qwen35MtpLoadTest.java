@@ -87,8 +87,10 @@ final class Qwen35MtpLoadTest {
 
     private static Map<String, MemoryView<MemorySegment>> tensors(
             Qwen35.Configuration config, Arena arena) {
-        MemoryView<MemorySegment> view =
-                Views.allocateF32(new PanamaMemoryArena(arena), 2L * config.embeddingLength());
+        PanamaMemoryArena memory = new PanamaMemoryArena(arena);
+        // One placeholder view shared by every tensor whose shape is never inspected during load;
+        // the expert stacks are the only tensors that must carry a real 3D shape.
+        MemoryView<MemorySegment> view = Views.allocateF32(memory, 2L * config.embeddingLength());
         Map<String, MemoryView<MemorySegment>> tensors = new HashMap<>();
         tensors.put("token_embd.weight", view);
         tensors.put("output_norm.weight", view);
@@ -117,9 +119,27 @@ final class Qwen35MtpLoadTest {
             }
             if (config.isMoE()) {
                 tensors.put(p + "ffn_gate_inp.weight", view);
-                tensors.put(p + "ffn_gate_exps.weight", view);
-                tensors.put(p + "ffn_up_exps.weight", view);
-                tensors.put(p + "ffn_down_exps.weight", view);
+                tensors.put(
+                        p + "ffn_gate_exps.weight",
+                        expertStack(
+                                memory,
+                                config.expertCount(),
+                                config.expertFeedForwardLength(),
+                                config.embeddingLength()));
+                tensors.put(
+                        p + "ffn_up_exps.weight",
+                        expertStack(
+                                memory,
+                                config.expertCount(),
+                                config.expertFeedForwardLength(),
+                                config.embeddingLength()));
+                tensors.put(
+                        p + "ffn_down_exps.weight",
+                        expertStack(
+                                memory,
+                                config.expertCount(),
+                                config.embeddingLength(),
+                                config.expertFeedForwardLength()));
                 tensors.put(p + "ffn_gate_inp_shexp.weight", view);
                 tensors.put(p + "ffn_gate_shexp.weight", view);
                 tensors.put(p + "ffn_up_shexp.weight", view);
@@ -137,6 +157,11 @@ final class Qwen35MtpLoadTest {
             tensors.put(nextn + "eh_proj.weight", view);
         }
         return tensors;
+    }
+
+    private static MemoryView<MemorySegment> expertStack(
+            PanamaMemoryArena memory, int experts, int rows, int cols) {
+        return Views.allocateF32(memory, experts, rows, cols);
     }
 
     static Qwen35.Configuration withoutMtp() {
