@@ -20,6 +20,7 @@ import com.qxotic.jota.memory.MemoryView;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.lang.ref.Reference;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -141,6 +142,7 @@ public final class Gemma4Vision implements MediaProjector<Media.Image> {
         Objects.requireNonNull(image, "image");
         Objects.requireNonNull(sink, "sink");
         if (maxChunkSize <= 0) throw new IllegalArgumentException("maxChunkSize must be positive");
+        Views.checkAlive(patchEmbedding, "patchEmbedding"); // fail-fast on freed weights
         int[] size = targetSize(image, VisionPreprocess.budget(280));
         int patchesX = size[0] / patchSize, patchesY = size[1] / patchSize;
         int rows = Math.multiplyExact(Math.max(1, patchesX / merge), Math.max(1, patchesY / merge));
@@ -156,6 +158,7 @@ public final class Gemma4Vision implements MediaProjector<Media.Image> {
         } finally {
             Arenas.close(scratch);
         }
+        Reference.reachabilityFence(this); // kernels read weights via raw bases; pin `this`
     }
 
     private MemoryView<MemorySegment> encode(

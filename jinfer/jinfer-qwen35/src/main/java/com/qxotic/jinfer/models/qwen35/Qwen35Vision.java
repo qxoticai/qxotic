@@ -16,6 +16,7 @@ import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.MemorySegment;
+import java.lang.ref.Reference;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.Objects;
@@ -167,6 +168,7 @@ public final class Qwen35Vision implements MediaProjector<Media.Image> {
         Objects.requireNonNull(image, "image");
         Objects.requireNonNull(sink, "sink");
         if (maxChunkSize <= 0) throw new IllegalArgumentException("maxChunkSize must be positive");
+        Views.checkAlive(patch0, "patch0"); // fail-fast on freed weights
         int[] size =
                 Qwen35VisionPreprocess.smartResize(
                         image.width(),
@@ -185,6 +187,7 @@ public final class Qwen35Vision implements MediaProjector<Media.Image> {
         } finally {
             Arenas.close(scratch);
         }
+        Reference.reachabilityFence(this); // kernels read weights via raw bases; pin `this`
     }
 
     private MemoryView<MemorySegment> encode(
