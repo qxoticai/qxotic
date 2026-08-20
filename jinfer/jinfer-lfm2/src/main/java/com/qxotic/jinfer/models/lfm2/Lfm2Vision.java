@@ -20,6 +20,7 @@ import com.qxotic.jota.memory.MemoryView;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.lang.ref.Reference;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -184,7 +185,9 @@ public final class Lfm2Vision implements MediaProjector<Media.Image> {
     @Override
     public void project(Media.Image image, int maxChunkSize, Consumer<MemoryView<?>> sink) {
         Objects.requireNonNull(sink, "sink");
+        Views.checkAlive(patchWeight, "patchWeight"); // fail-fast on freed weights
         for (Lfm2VisionPreprocess.Part part : plan(image).parts()) embed(part, maxChunkSize, sink);
+        Reference.reachabilityFence(this); // kernels read weights via raw bases; pin `this`
     }
 
     void embed(Lfm2VisionPreprocess.Part part, int maxChunkSize, Consumer<MemoryView<?>> sink) {

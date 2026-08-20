@@ -16,6 +16,7 @@ import com.qxotic.jota.memory.MemoryView;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.lang.ref.Reference;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -71,6 +72,7 @@ public final class Gemma4Audio implements MediaProjector<Media.Audio> {
         Objects.requireNonNull(audio, "audio");
         Objects.requireNonNull(sink, "sink");
         if (maxChunkSize <= 0) throw new IllegalArgumentException("maxChunkSize must be positive");
+        Views.checkAlive(inputProjection, "inputProjection"); // fail-fast on freed weights
 
         float[] pcm = AudioPreprocess.toMono16k(audio);
         int rows = Math.max(1, Math.toIntExact(((long) pcm.length + frameSize - 1) / frameSize));
@@ -118,6 +120,7 @@ public final class Gemma4Audio implements MediaProjector<Media.Audio> {
             }
             firstRow += chunkRows;
         }
+        Reference.reachabilityFence(this); // kernels read weights via raw bases; pin `this`
     }
 
     public static Gemma4Audio loadModel(Path path, Arena arena) throws IOException {

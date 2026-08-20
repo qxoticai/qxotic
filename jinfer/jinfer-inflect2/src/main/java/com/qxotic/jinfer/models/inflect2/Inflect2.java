@@ -33,6 +33,7 @@ import com.qxotic.jota.memory.MemoryView;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.lang.ref.Reference;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -565,7 +566,10 @@ public final class Inflect2 {
         // Holds the state for this synthesis: a concurrent one fails fast, and a close waits for
         // this to return rather than freeing the arena under the kernels. Reentrant, so a caller
         // (InflectTTS.speak) may hold it across a whole multi-chunk utterance.
-        return state.exclusively(() -> synthesize0(state, tokens, lengthScale, variation, seed));
+        Media.Audio result =
+                state.exclusively(() -> synthesize0(state, tokens, lengthScale, variation, seed));
+        Reference.reachabilityFence(this); // kernels read weights via raw bases; pin `this`
+        return result;
     }
 
     private Media.Audio synthesize0(
