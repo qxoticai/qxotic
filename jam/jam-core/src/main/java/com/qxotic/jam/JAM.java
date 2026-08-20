@@ -30,8 +30,10 @@ public interface JAM {
         boolean isAvailable();
 
         /**
-         * Returns a usable backend. The returned backend may be shared; callers must handle {@link
-         * JAM#EBUSY} from {@link JAM#mm} when a provider uses a single shared context.
+         * Returns a usable backend. The returned backend may be shared; a shared backend either
+         * serializes concurrent {@link JAM#mm} calls internally or surfaces {@link JAM#EBUSY} (e.g.
+         * {@code NativeJAM} serializes by default, surfaces EBUSY with {@code
+         * -Djam.native.serial=false}) — callers must handle EBUSY either way.
          */
         JAM create();
     }

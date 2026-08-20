@@ -578,9 +578,11 @@ class JamTest {
     }
 
     @Test
-    void concurrentCallsHitEbusy()
-            throws Exception { // global ctx is a serial stream: collisions -> EBUSY, never
-        // corruption
+    void concurrentCallsSerialize()
+            throws Exception { // default (-Djam.native.serial=true): contended calls wait their
+        // turn through the fair lock — every call OK, none EBUSY, never corruption. The raw
+        // EBUSY behavior requires -Djam.native.serial=false at JVM launch (SERIAL is a
+        // class-init constant, so it can't be flipped in this JVM).
         int m = 256,
                 n = 256,
                 k = 256; // ~0.3ms/call — window wide enough to overlap concurrent callers
@@ -620,9 +622,10 @@ class JamTest {
             for (Future<?> f : futs) f.get();
             pool.shutdown();
         }
-        assertEquals(0, other.get(), "every concurrent call returns OK or EBUSY, nothing else");
-        assertTrue(ok.get() > 0, "some calls win the serial stream");
-        assertTrue(ebusy.get() > 0, "concurrent calls on the global context hit the EBUSY guard");
+        assertEquals(0, other.get(), "every concurrent call returns OK, nothing else");
+        assertEquals(0, ebusy.get(), "serial mode: contended calls wait, never EBUSY");
+        assertEquals(
+                threads * rounds, ok.get(), "serial mode: every contended call eventually runs");
     }
 
     @Test
