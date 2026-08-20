@@ -234,4 +234,52 @@ public final class Views {
         }
         return (MemoryView<MemorySegment>) view;
     }
+
+    /**
+     * Split a 3D {@code [groups, rows, cols]} view along its leading axis into {@code groups}
+     * zero-copy 2D {@code [rows, cols]} views. This is the common per-expert (or per-head,
+     * per-batch) un-stacking step: the leading axis is a logical outer axis, the trailing two are
+     * kept and flattened, and no element is copied or reordered.
+     *
+     * <p>Safety is enforced at the physical-vs-logical boundary: the view must be contiguous and
+     * suffix-contiguous on axis 0, so slicing the outer axis leaves each trailing {@code [rows,
+     * cols]} span row-major; the innermost (blocked) dtype axis is untouched and stays a physical
+     * axis in the result (a quantized weight becomes {@code [rows, cols/elementsPerBlock]}).
+     *
+     * <p>This is a generic view primitive - it knows nothing about experts or any model tensor
+     * naming. Model loaders call it with their stacked weights and read the result by index.
+     */
+    public static MemoryView<MemorySegment>[] sliceLeadingAxis(MemoryView<MemorySegment> stacked) {
+        requireContiguous(stacked, "stacked");
+        if (stacked.shape().flatRank() != 3)
+            throw new IllegalArgumentException(
+                    "stacked: expected a 3D [groups, rows, cols/elementsPerBlock] view but was "
+                            + stacked.shape());
+        long groups = stacked.shape().flatAt(0);
+        long rows = stacked.shape().flatAt(1);
+        long cols = stacked.shape().flatAt(2);
+        if (groups <= 0 || rows <= 0 || cols <= 0)
+            throw new IllegalArgumentException(
+                    "stacked: expected positive [groups, rows, cols/elementsPerBlock] but was "
+                            + stacked.shape());
+        if (!stacked.layout().isSuffixContiguous(0))
+            throw new IllegalArgumentException(
+                    "stacked: leading axis is not suffix-contiguous; cannot split + flatten"
+                            + " zero-copy (layout "
+                            + stacked.layout()
+                            + ")");
+        MemoryView<MemorySegment>[] slices = new MemoryView[Math.toIntExact(groups)];
+        for (int g = 0; g < slices.length; g++) {
+            MemoryView<MemorySegment> slice =
+                    stacked.slice(0, g, g + 1).view(Shape.flat(rows, cols));
+            if (slice.shape().flatRank() != 2
+                    || slice.shape().flatAt(0) != rows
+                    || slice.shape().flatAt(1) != cols
+                    || !slice.isRowMajorContiguous())
+                throw new IllegalStateException(
+                        "stacked: group " + g + " flattened to " + slice.shape());
+            slices[g] = slice;
+        }
+        return slices;
+    }
 }
