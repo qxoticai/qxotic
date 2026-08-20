@@ -343,21 +343,11 @@ public final class Qwen3
 
         Norms.rmsnormRows(
                 state.normed, state.residual, lw.attnNorm(), seqLen, dim, config.rmsNormEps);
-        MatMul.gemm(
-                lw.wq(),
-                state.normed,
-                dim,
-                state.query,
-                config.queryDim,
-                config.queryDim,
-                seqLen,
-                dim);
+        MatMul.gemm(lw.wq(), state.normed, state.query, seqLen);
         headNormRope(
                 state, state.query, config.queryDim, config.numberOfHeads, lw.attnQNorm(), seqLen);
-        MatMul.gemm(
-                lw.wk(), state.normed, dim, state.batchK, config.kvDim, config.kvDim, seqLen, dim);
-        MatMul.gemm(
-                lw.wv(), state.normed, dim, state.batchV, config.kvDim, config.kvDim, seqLen, dim);
+        MatMul.gemm(lw.wk(), state.normed, state.batchK, seqLen);
+        MatMul.gemm(lw.wv(), state.normed, state.batchV, seqLen);
         headNormRope(
                 state,
                 state.batchK,
@@ -370,15 +360,7 @@ public final class Qwen3
     /** The shared tail: output projection, added to the residual. */
     private void attentionFinish(State state, int l, int seqLen) {
         int dim = configuration.embeddingLength;
-        MatMul.gemm(
-                weights.layers[l].wo(),
-                state.attnOut,
-                configuration.queryDim,
-                state.branchOut,
-                dim,
-                dim,
-                seqLen,
-                configuration.queryDim);
+        MatMul.gemm(weights.layers[l].wo(), state.attnOut, state.branchOut, seqLen);
         Ops.addInPlace(state.residual, 0, state.branchOut, 0, seqLen * dim);
     }
 
@@ -420,8 +402,8 @@ public final class Qwen3
         LayerWeights lw = weights.layers[l];
         Norms.rmsnormRows(
                 state.normed, state.residual, lw.ffnNorm(), seqLen, dim, configuration.rmsNormEps);
-        MatMul.gemm(lw.w1(), state.normed, dim, state.hidden, hiddenDim, hiddenDim, seqLen, dim);
-        MatMul.gemm(lw.w3(), state.normed, dim, state.hidden2, hiddenDim, hiddenDim, seqLen, dim);
+        MatMul.gemm(lw.w1(), state.normed, state.hidden, seqLen);
+        MatMul.gemm(lw.w3(), state.normed, state.hidden2, seqLen);
         Parallel.forRows(
                 seqLen,
                 s ->
@@ -431,7 +413,7 @@ public final class Qwen3
                                 state.hidden2,
                                 s * hiddenDim,
                                 hiddenDim));
-        MatMul.gemm(lw.w2(), state.hidden, hiddenDim, state.normed, dim, dim, seqLen, hiddenDim);
+        MatMul.gemm(lw.w2(), state.hidden, state.normed, seqLen);
         Ops.addInPlace(state.residual, 0, state.normed, 0, seqLen * dim);
     }
 
@@ -475,8 +457,7 @@ public final class Qwen3
                             weights.finalNorm(),
                             dim,
                             configuration.rmsNormEps);
-                    MatMul.gemv(
-                            weights.wcls(), s.normed, s.logits, configuration.vocabularySize, dim);
+                    MatMul.gemv(weights.wcls(), s.normed, s.logits);
                     return s.logits;
                 });
     }
@@ -642,21 +623,21 @@ public final class Qwen3
             }
             int c = batchCapacity;
             int dim = config.embeddingLength;
-            this.residual = Views.allocateF32(memoryArena(), c * dim);
-            this.normed = Views.allocateF32(memoryArena(), c * dim);
-            this.branchOut = Views.allocateF32(memoryArena(), c * dim);
-            this.attnOut = Views.allocateF32(memoryArena(), c * config.queryDim);
-            this.query = Views.allocateF32(memoryArena(), c * config.queryDim);
-            this.hidden = Views.allocateF32(memoryArena(), c * config.hiddenDim);
-            this.hidden2 = Views.allocateF32(memoryArena(), c * config.hiddenDim);
-            this.logits = Views.allocateF32(memoryArena(), config.vocabularySize);
-            this.pooled = Views.allocateF32(memoryArena(), dim);
+            this.residual = Views.allocateF32(memoryArena(), c, dim);
+            this.normed = Views.allocateF32(memoryArena(), c, dim);
+            this.branchOut = Views.allocateF32(memoryArena(), c, dim);
+            this.attnOut = Views.allocateF32(memoryArena(), c, config.queryDim);
+            this.query = Views.allocateF32(memoryArena(), c, config.queryDim);
+            this.hidden = Views.allocateF32(memoryArena(), c, config.hiddenDim);
+            this.hidden2 = Views.allocateF32(memoryArena(), c, config.hiddenDim);
+            this.logits = Views.allocateF32(memoryArena(), 1, config.vocabularySize);
+            this.pooled = Views.allocateF32(memoryArena(), 1, dim);
             // rotary values for the batch about to be ingested: sized by BATCH, never context
-            this.ropeCos = Views.allocateF32(memoryArena(), c * (config.ropeDim / 2));
-            this.ropeSin = Views.allocateF32(memoryArena(), c * (config.ropeDim / 2));
+            this.ropeCos = Views.allocateF32(memoryArena(), c, config.ropeDim / 2);
+            this.ropeSin = Views.allocateF32(memoryArena(), c, config.ropeDim / 2);
             this.decodeScratch = new FlashAttention.DecodeScratch(memoryArena());
-            this.batchK = Views.allocateF32(memoryArena(), c * config.kvDim);
-            this.batchV = Views.allocateF32(memoryArena(), c * config.kvDim);
+            this.batchK = Views.allocateF32(memoryArena(), c, config.kvDim);
+            this.batchV = Views.allocateF32(memoryArena(), c, config.kvDim);
             int n = config.numberOfLayers;
             this.keyCache = new MemoryView[n];
             this.valueCache = new MemoryView[n];
