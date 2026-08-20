@@ -9,6 +9,7 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.SymbolLookup;
 import java.lang.invoke.MethodHandle;
 import java.lang.ref.Reference;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * The native ({@code libjam}) {@link JAM} implementation — a handle to a jam context (a {@code
@@ -21,12 +22,29 @@ import java.lang.ref.Reference;
  * jam_mm} is reached via the JNI shim (default) or a Panama downcall, selected once via {@code
  * -Djam.native.binding} (or {@code JAM_NATIVE_BINDING}).
  *
- * <p><b>Concurrency:</b> a context is a single serial stream — concurrent calls return {@code
- * EBUSY}.
+ * <p><b>Concurrency:</b> a context is a single serial stream — concurrent calls on one context
+ * serialize through a fair (FIFO) lock, so each waits its turn. {@code -Djam.native.serial=false}
+ * (or {@code JAM_NATIVE_SERIAL=false}) restores the raw behavior where a contended call surfaces
+ * {@link JAM#EBUSY} from the native guard (callers typically fall back to another backend).
  */
 public final class NativeJAM implements JAM {
 
     private final long ctx; // jam_ctx* (0 = global)
+
+    /**
+     * {@code -Djam.native.serial} (or {@code JAM_NATIVE_SERIAL}): default {@code true} — concurrent
+     * mm calls on one context serialize through a fair (FIFO) lock, so contended callers wait their
+     * turn; {@code false} restores the raw behavior where a contended call surfaces {@code EBUSY}
+     * from the native guard and callers fall back. Declared before {@link #global()}'s
+     * instantiation: the instance field {@link #mmLock} reads it during class init.
+     */
+    private static final boolean SERIAL =
+            Boolean.parseBoolean(NativeLoader.config("jam.native.serial", "true"));
+
+    // Non-null only when SERIAL: concurrent mm calls then serialize FIFO instead of bouncing off
+    // the native serial-stream guard (EBUSY). Per-instance, so a future NativeJAM.create(...)
+    // gets its own lock + ctx for free.
+    private final ReentrantLock mmLock = SERIAL ? new ReentrantLock(true) : null;
 
     private NativeJAM(long ctx) {
         this.ctx = ctx;
@@ -76,11 +94,13 @@ public final class NativeJAM implements JAM {
                     "result R", r, rOff, rt, ldr, n, m); // [m×n] token-major: n tokens × m features
         }
         long wa = w.address() + wOff, aa = a.address() + aOff, ra = r.address() + rOff;
+        if (SERIAL) mmLock.lock();
         try {
             return FFM
                     ? mmFfm(ctx, wa, wt, ldw, aa, at, lda, ra, rt, ldr, m, n, k)
                     : mmJni(ctx, wa, wt, ldw, aa, at, lda, ra, rt, ldr, m, n, k);
         } finally {
+            if (SERIAL) mmLock.unlock();
             Reference.reachabilityFence(w);
             Reference.reachabilityFence(a);
             Reference.reachabilityFence(r);

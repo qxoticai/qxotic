@@ -2,6 +2,7 @@ package com.qxotic.jam;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.ref.Reference;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Java Vector API {@link JAM} backend - jam-vector's self-contained matmul, peer to the scalar and
@@ -23,11 +24,14 @@ public final class VectorJAM implements JAM {
 
     /**
      * Context-owned dequant scratch for the band kernels - reused across every {@code mm}, GC'd
-     * with this instance (no static/ThreadLocal retention). Assumes single-threaded {@code mm} per
-     * instance, like the other JAM backends; the pool is concurrency-safe across band workers
-     * within one call.
+     * with this instance (no static/ThreadLocal retention). Because the scratch is reused,
+     * concurrent {@code mm} calls on one instance serialize through a fair (FIFO) lock ({@link
+     * #mmLock}); the pool is concurrency-safe across band workers within one call.
      */
     private final Scratch scratch;
+
+    /** Serializes {@link #mm} so the reused {@link #scratch} stays single-threaded per call. */
+    private final ReentrantLock mmLock = new ReentrantLock(true);
 
     /**
      * Create the Vector API backend. Throws {@link IllegalStateException} if the {@code
@@ -87,6 +91,7 @@ public final class VectorJAM implements JAM {
         MemorySegment g = VectorSupport.GLOBAL;
         long ab = a.address() + aOff;
         long ob = r.address() + rOff;
+        mmLock.lock();
         try {
             switch (wt) {
                 case Q8_0 -> Q8Kernel.gemm(ws, g, ab, g, ob, lda, ldr, n, m, k, 0L);
@@ -103,6 +108,7 @@ public final class VectorJAM implements JAM {
             }
             return OK;
         } finally {
+            mmLock.unlock();
             // The kernels read every operand through GLOBAL at raw absolute addresses, which the
             // GC cannot see: these fences keep the operands' (auto-)arenas alive across the whole
             // gemm - without them the JIT may drop the last reference after the address() hoist
