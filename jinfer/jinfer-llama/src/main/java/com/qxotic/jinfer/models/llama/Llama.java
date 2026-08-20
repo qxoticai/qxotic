@@ -160,8 +160,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                             weights.finalNorm(),
                             dim,
                             configuration.rmsNormEps);
-                    MatMul.gemv(
-                            weights.wcls(), s.normed, s.logits, configuration.vocabularySize, dim);
+                    MatMul.gemv(weights.wcls(), s.normed, s.logits);
                     float ls = configuration.logitScale;
                     if (ls != 1.0f) {
                         Ops.divideInPlace(s.logits, 0, configuration.vocabularySize, ls);
@@ -236,8 +235,8 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
         int kvHeads = config.numberOfKeyValueHeads, ropeHalf = config.ropeHalf();
         float eps = config.rmsNormEps;
         Norms.rmsnormRows(state.normed, state.residual, lw.attnNorm(), seqLen, dim, eps);
-        MatMul.gemm(lw.wk(), state.normed, dim, state.batchK, kvDim, kvDim, seqLen, dim);
-        MatMul.gemm(lw.wv(), state.normed, dim, state.batchV, kvDim, kvDim, seqLen, dim);
+        MatMul.gemm(lw.wk(), state.normed, state.batchK, seqLen);
+        MatMul.gemm(lw.wv(), state.normed, state.batchV, seqLen);
         if (config.useRope(l)) {
             Parallel.forRows(
                     seqLen,
@@ -282,7 +281,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
         Norms.rmsnorm(
                 state.tailScratch, 0, state.residual, (long) i * dim, lw.attnNorm(), dim, eps);
         // Q for this row (query is free scratch outside a forward)
-        MatMul.gemm(lw.wq(), state.tailScratch, dim, state.query, queryDim, queryDim, 1, dim);
+        MatMul.gemm(lw.wq(), state.tailScratch, state.query, 1);
         if (config.useRope(L)) {
             // the lazy tail runs outside any ingest, so it fills row 0 for its own position
             // rather than trusting whatever range the last fill covered
@@ -320,7 +319,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                 0,
                 null,
                 state.decodeScratch);
-        MatMul.gemm(lw.wo(), state.attnOut, queryDim, state.tailScratch, dim, dim, 1, queryDim);
+        MatMul.gemm(lw.wo(), state.attnOut, state.tailScratch, 1);
         // th = residual[i] + residScale*O (born, no seed copy)
         Ops.addScaledInto(
                 state.th, state.residual, (long) i * dim, state.tailScratch, dim, residScale);
@@ -347,9 +346,9 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
         int kvMul = heads / kvHeads;
         int ropeHalf = config.ropeHalf();
 
-        MatMul.gemm(lw.wq(), state.normed, dim, state.query, queryDim, queryDim, seqLen, dim);
-        MatMul.gemm(lw.wk(), state.normed, dim, state.batchK, kvDim, kvDim, seqLen, dim);
-        MatMul.gemm(lw.wv(), state.normed, dim, state.batchV, kvDim, kvDim, seqLen, dim);
+        MatMul.gemm(lw.wq(), state.normed, state.query, seqLen);
+        MatMul.gemm(lw.wk(), state.normed, state.batchK, seqLen);
+        MatMul.gemm(lw.wv(), state.normed, state.batchV, seqLen);
         boolean useRope = config.useRope(layer); // SmolLM3 NoPE: some layers skip RoPE entirely
         Parallel.forRows(
                 seqLen,
@@ -424,28 +423,28 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                     null);
         }
         commitKv(state, layer, startPos, seqLen);
-        MatMul.gemm(lw.wo(), state.attnOut, queryDim, state.normed, dim, dim, seqLen, queryDim);
+        MatMul.gemm(lw.wo(), state.attnOut, state.normed, seqLen);
     }
 
     /** Dense SwiGLU FFN over the pre-normed rows in {@code state.normed}, written back in place. */
     private void feedForward(State state, int l, int seqLen) {
         int dim = configuration.embeddingLength, hiddenDim = configuration.hiddenDim;
         LayerWeights lw = weights.layers()[l];
-        MatMul.gemm(lw.w1(), state.normed, dim, state.hidden, hiddenDim, hiddenDim, seqLen, dim);
-        MatMul.gemm(lw.w3(), state.normed, dim, state.hidden2, hiddenDim, hiddenDim, seqLen, dim);
+        MatMul.gemm(lw.w1(), state.normed, state.hidden, seqLen);
+        MatMul.gemm(lw.w3(), state.normed, state.hidden2, seqLen);
         Activations.siluMultiply(
                 state.hidden, 0, state.hidden2, 0, Math.multiplyExact(seqLen, hiddenDim));
-        MatMul.gemm(lw.w2(), state.hidden, hiddenDim, state.normed, dim, dim, seqLen, hiddenDim);
+        MatMul.gemm(lw.w2(), state.hidden, state.normed, seqLen);
     }
 
     /** The one-row FFN of the lazy tail, over {@code io} in place (gate into hidden/hidden2). */
     private void feedForwardRow(State state, int l, MemoryView<MemorySegment> io) {
         int dim = configuration.embeddingLength, hiddenDim = configuration.hiddenDim;
         LayerWeights lw = weights.layers()[l];
-        MatMul.gemm(lw.w1(), io, dim, state.hidden, hiddenDim, hiddenDim, 1, dim);
-        MatMul.gemm(lw.w3(), io, dim, state.hidden2, hiddenDim, hiddenDim, 1, dim);
+        MatMul.gemm(lw.w1(), io, state.hidden, 1);
+        MatMul.gemm(lw.w3(), io, state.hidden2, 1);
         Activations.siluMultiply(state.hidden, 0, state.hidden2, 0, hiddenDim);
-        MatMul.gemm(lw.w2(), state.hidden, hiddenDim, io, dim, dim, 1, hiddenDim);
+        MatMul.gemm(lw.w2(), state.hidden, io, 1);
     }
 
     // === Configuration ===
@@ -592,25 +591,24 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
             }
             if (batchCapacity <= 0)
                 throw new IllegalArgumentException("batchCapacity " + batchCapacity);
-            int c = batchCapacity;
             int dim = config.embeddingLength;
             int queryDim = config.queryDim();
             int kvDim = config.kvDim();
             int hidden = config.hiddenDim;
-            this.residual = Views.allocateF32(memoryArena(), c * dim);
-            this.normed = Views.allocateF32(memoryArena(), c * dim);
-            this.batchK = Views.allocateF32(memoryArena(), c * kvDim);
-            this.batchV = Views.allocateF32(memoryArena(), c * kvDim);
-            this.query = Views.allocateF32(memoryArena(), c * queryDim);
-            this.attnOut = Views.allocateF32(memoryArena(), c * queryDim);
-            this.hidden = Views.allocateF32(memoryArena(), c * hidden);
-            this.hidden2 = Views.allocateF32(memoryArena(), c * hidden);
-            this.logits = Views.allocateF32(memoryArena(), config.vocabularySize);
-            this.th = Views.allocateF32(memoryArena(), dim);
-            this.tailScratch = Views.allocateF32(memoryArena(), dim);
+            this.residual = Views.allocateF32(memoryArena(), batchCapacity, dim);
+            this.normed = Views.allocateF32(memoryArena(), batchCapacity, dim);
+            this.batchK = Views.allocateF32(memoryArena(), batchCapacity, kvDim);
+            this.batchV = Views.allocateF32(memoryArena(), batchCapacity, kvDim);
+            this.query = Views.allocateF32(memoryArena(), batchCapacity, queryDim);
+            this.attnOut = Views.allocateF32(memoryArena(), batchCapacity, queryDim);
+            this.hidden = Views.allocateF32(memoryArena(), batchCapacity, hidden);
+            this.hidden2 = Views.allocateF32(memoryArena(), batchCapacity, hidden);
+            this.logits = Views.allocateF32(memoryArena(), 1, config.vocabularySize);
+            this.th = Views.allocateF32(memoryArena(), 1, dim);
+            this.tailScratch = Views.allocateF32(memoryArena(), 1, dim);
             // rotary values for the batch about to be ingested: sized by BATCH, never context
-            this.ropeCos = Views.allocateF32(memoryArena(), c * config.ropeHalf());
-            this.ropeSin = Views.allocateF32(memoryArena(), c * config.ropeHalf());
+            this.ropeCos = Views.allocateF32(memoryArena(), batchCapacity, config.ropeHalf());
+            this.ropeSin = Views.allocateF32(memoryArena(), batchCapacity, config.ropeHalf());
             this.decodeScratch = new FlashAttention.DecodeScratch(memoryArena());
             this.keyCache = new MemoryView[config.numberOfLayers];
             this.valueCache = new MemoryView[config.numberOfLayers];
