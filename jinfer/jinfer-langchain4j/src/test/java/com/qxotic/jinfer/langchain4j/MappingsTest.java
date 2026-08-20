@@ -6,13 +6,13 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.codecs.VideoSampler;
 import com.qxotic.jinfer.llm.Generator;
+import com.qxotic.jinfer.media.Media;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.AiMessage;
