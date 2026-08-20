@@ -19,11 +19,20 @@ final class OpenAiSchema {
                 "prompt_tokens_details", Map.of("cached_tokens", result.cachedTokens()));
     }
 
-    /** llama.cpp-compatible timings extension: per-phase durations and rates. */
+    /**
+     * llama.cpp-compatible timings extension ({@code server_slot_stats::to_json}): per-phase
+     * durations and rates.
+     */
     static Map<String, Object> timings(Reply result) {
         Map<String, Object> timings = new LinkedHashMap<>();
+        timings.put("cache_n", result.cachedTokens());
         timings.put("prompt_n", result.promptTokens());
         timings.put("prompt_ms", Math.round(result.promptMillis() * 100.0) / 100.0);
+        timings.put(
+                "prompt_per_token_ms",
+                result.promptTokens() > 0
+                        ? Math.round(result.promptMillis() / result.promptTokens() * 100.0) / 100.0
+                        : 0.0);
         timings.put(
                 "prompt_per_second",
                 result.promptMillis() > 0
@@ -33,6 +42,12 @@ final class OpenAiSchema {
         timings.put("predicted_n", result.completionTokens());
         timings.put("predicted_ms", Math.round(result.predictedMillis() * 100.0) / 100.0);
         timings.put(
+                "predicted_per_token_ms",
+                result.completionTokens() > 0
+                        ? Math.round(result.predictedMillis() / result.completionTokens() * 100.0)
+                                / 100.0
+                        : 0.0);
+        timings.put(
                 "predicted_per_second",
                 result.predictedMillis() > 0
                         ? Math.round(
@@ -41,7 +56,6 @@ final class OpenAiSchema {
                                                 * 100_000.0)
                                 / 100.0
                         : 0.0);
-        timings.put("cached_n", result.cachedTokens());
         return timings;
     }
 
@@ -70,7 +84,9 @@ final class OpenAiSchema {
                 "choices",
                 List.of(choice),
                 "usage",
-                usage(result));
+                usage(result),
+                "timings",
+                timings(result));
     }
 
     static Map<String, Object> chatCompletionChunk(
@@ -114,7 +130,9 @@ final class OpenAiSchema {
                                 "finish_reason",
                                 result.finishReason())),
                 "usage",
-                usage(result));
+                usage(result),
+                "timings",
+                timings(result));
     }
 
     static Map<String, Object> completionChunk(
@@ -181,7 +199,10 @@ final class OpenAiSchema {
             long created,
             Reply result,
             List<Map<String, Object>> output) {
-        return responseEnvelope(id, modelId, created, "completed", output, responseUsage(result));
+        Map<String, Object> response =
+                responseEnvelope(id, modelId, created, "completed", output, responseUsage(result));
+        response.put("timings", timings(result));
+        return response;
     }
 
     static Map<String, Object> responseEnvelope(

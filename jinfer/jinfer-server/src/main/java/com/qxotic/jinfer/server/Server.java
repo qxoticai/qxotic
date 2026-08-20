@@ -587,10 +587,18 @@ public final class Server {
             Reply result,
             Map<String, Object> finalChunk,
             Map<String, Object> usageOnlyChunk) {
-        if (!includeUsage(request)) return List.of(finalChunk);
+        // The SSE response headers are committed by Sse.begin before generation, so per-phase
+        // timings ride the LAST chunk (llama.cpp's server does the same: deltas.back() carries
+        // timings). With include_usage the last chunk is the usage-only chunk; without it, the
+        // final content chunk.
+        if (!includeUsage(request)) {
+            finalChunk.put("timings", OpenAiSchema.timings(result));
+            return List.of(finalChunk);
+        }
         finalChunk.put("usage", null);
         usageOnlyChunk.put("choices", List.of());
         usageOnlyChunk.put("usage", OpenAiSchema.usage(result));
+        usageOnlyChunk.put("timings", OpenAiSchema.timings(result));
         return List.of(finalChunk, usageOnlyChunk);
     }
 
@@ -757,6 +765,8 @@ public final class Server {
                                 Map.of(
                                         "type",
                                         "response.completed",
+                                        "timings",
+                                        OpenAiSchema.timings(result),
                                         "response",
                                         // the SAME items just emitted, not a rebuild: see the
                                         // overload's note on clock-minted call ids
@@ -833,15 +843,9 @@ public final class Server {
                         worker, generation.cacheSample(), generation.mediaCacheSample()));
     }
 
-    private static void setTimingHeader(HttpExchange exchange, Reply result) {
-        exchange.getResponseHeaders()
-                .set("X-Jinfer-Timing", JsonCodec.stringify(OpenAiSchema.timings(result)));
-    }
-
-    /** Non-streaming reply: attach the timing header, then send the schema body as JSON. */
+    /** Non-streaming reply: send the schema body as JSON. Timings ride in the body. */
     private static void respond(HttpExchange exchange, Reply result, Object body)
             throws IOException {
-        setTimingHeader(exchange, result);
         Http.sendJson(exchange, 200, body);
     }
 
