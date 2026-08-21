@@ -65,6 +65,22 @@
       <scope>runtime</scope>
     </dependency>
 
+    <!-- the JAM matmul backends: native first (fast, per-platform lib bundled as a resource),
+         VectorJAM as the portable preview-flag rung. Runtime scope keeps them out of the
+         compile classpath; the shade plugin merges their META-INF/services entries. ScalarJAM is
+         intentionally NOT bundled: MatMul only dispatches to the native and vector rungs and falls
+         through to the Java floor, so the scalar backend would be dead weight here. -->
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jam-native</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jam-vector</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-testkit</artifactId>
