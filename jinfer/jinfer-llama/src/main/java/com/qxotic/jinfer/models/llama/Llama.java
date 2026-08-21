@@ -25,7 +25,6 @@ import com.qxotic.jinfer.kernels.Norms;
 import com.qxotic.jinfer.kernels.Ops;
 import com.qxotic.jinfer.kernels.RoPE;
 import com.qxotic.jinfer.kernels.Trace;
-import com.qxotic.jota.DataType;
 import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.toknroll.Tokenizer;
@@ -38,7 +37,6 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 
 public final class Llama implements LanguageModel<Llama.Configuration, Llama.Weights, Llama.State> {
@@ -737,30 +735,19 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
             float logMul =
                     gguf.getValueOrDefault(
                             float.class, arch + ".rope.scaling.yarn_log_multiplier", 0f);
-            float kMscale = factor <= 1f ? 1f : (float) (1.0 + 0.1 * Math.log(factor));
-            float attnFactor = logMul != 0f ? 1.0f / kMscale : 1.0f;
+            // llama.cpp net amplitude: get_mscale(f,1)/get_mscale(f,logMul), with
+            // get_mscale(f,m) = f<=1 ? 1 : 1+0.1·m·ln f  (logMul=0 → denominator 1). RoPE.yarn
+            // multiplies attnFactor by ggml's internal (1+0.1 ln f), so divide that back out.
+            float lnF = (float) Math.log(factor);
+            float mscale1 = factor <= 1f ? 1f : 1f + 0.1f * lnF;
+            float mscaleAll = factor <= 1f ? 1f : 1f + 0.1f * logMul * lnF;
+            float attnFactor = mscale1 / mscaleAll / (1f + 0.1f * lnF);
             return RoPE.yarn(
                     ropeDim, config.ropeTheta, factor, origCtx, betaFast, betaSlow, 1f, attnFactor);
         }
-        float[] ropeFreqs = ModelLoader.ropeFreqFactors(tensors);
-        return ropeFreqs != null
-                ? RoPE.withFreqFactors(ropeDim, config.ropeTheta, ropeFreqs)
-                : RoPE.plain(ropeDim, config.ropeTheta);
-    }
-
-    // ---- loadWeights helpers: the old ModelLoader.toF32Tensor/loadQuantized fail-fast contract --
-
-    private static MemoryView<MemorySegment> require(
-            Map<String, MemoryView<MemorySegment>> tensors, String name) {
-        return Objects.requireNonNull(tensors.get(name), name);
-    }
-
-    /** F32 view by name (dtype checked AT LOAD, the old toF32Tensor fail-fast), or throw. */
-    private static MemoryView<MemorySegment> requireF32(
-            Map<String, MemoryView<MemorySegment>> tensors, String name) {
-        MemoryView<MemorySegment> v = require(tensors, name);
-        Views.requireDatatype(v, DataType.FP32, name);
-        return v;
+        return ModelLoader.ropeFreqFactors(tensors)
+                .map(freqs -> RoPE.withFreqFactors(ropeDim, config.ropeTheta, freqs))
+                .orElseGet(() -> RoPE.plain(ropeDim, config.ropeTheta));
     }
 
     static Weights loadWeights(
@@ -768,27 +755,26 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
             Configuration config,
             RoPE.Schedule rope) {
         int n = config.numberOfLayers;
-        MemoryView<MemorySegment> tokenEmbeddings = require(tensors, "token_embd.weight");
+        MemoryView<MemorySegment> tokenEmbeddings =
+                ModelLoader.require(tensors, "token_embd.weight");
         MemoryView<MemorySegment> wcls =
-                tensors.containsKey("output.weight")
-                        ? require(tensors, "output.weight")
-                        : tokenEmbeddings; // tied embeddings
-        MemoryView<MemorySegment> finalNorm = requireF32(tensors, "output_norm.weight");
+                ModelLoader.find(tensors, "output.weight").orElse(tokenEmbeddings);
+        MemoryView<MemorySegment> finalNorm = ModelLoader.requireF32(tensors, "output_norm.weight");
 
         LayerWeights[] layers = new LayerWeights[n];
         for (int i = 0; i < n; i++) {
             String p = "blk." + i + ".";
             layers[i] =
                     new LayerWeights(
-                            requireF32(tensors, p + "attn_norm.weight"),
-                            require(tensors, p + "attn_q.weight"),
-                            require(tensors, p + "attn_k.weight"),
-                            require(tensors, p + "attn_v.weight"),
-                            require(tensors, p + "attn_output.weight"),
-                            requireF32(tensors, p + "ffn_norm.weight"),
-                            require(tensors, p + "ffn_gate.weight"),
-                            require(tensors, p + "ffn_down.weight"),
-                            require(tensors, p + "ffn_up.weight"));
+                            ModelLoader.requireF32(tensors, p + "attn_norm.weight"),
+                            ModelLoader.require(tensors, p + "attn_q.weight"),
+                            ModelLoader.require(tensors, p + "attn_k.weight"),
+                            ModelLoader.require(tensors, p + "attn_v.weight"),
+                            ModelLoader.require(tensors, p + "attn_output.weight"),
+                            ModelLoader.requireF32(tensors, p + "ffn_norm.weight"),
+                            ModelLoader.require(tensors, p + "ffn_gate.weight"),
+                            ModelLoader.require(tensors, p + "ffn_down.weight"),
+                            ModelLoader.require(tensors, p + "ffn_up.weight"));
         }
         return new Weights(tokenEmbeddings, layers, finalNorm, rope, wcls);
     }

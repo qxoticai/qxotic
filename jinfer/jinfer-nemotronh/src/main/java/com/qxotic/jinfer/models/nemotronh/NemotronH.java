@@ -20,7 +20,6 @@ import com.qxotic.jinfer.kernels.Moe;
 import com.qxotic.jinfer.kernels.Norms;
 import com.qxotic.jinfer.kernels.Ops;
 import com.qxotic.jinfer.kernels.Trace;
-import com.qxotic.jota.DataType;
 import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.toknroll.Tokenizer;
@@ -32,9 +31,7 @@ import java.lang.ref.Reference;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
-import java.util.Arrays;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 
 /** Text-only MemoryView port of the Nemotron-H SSM/attention/MoE decoder. */
@@ -258,18 +255,38 @@ public final class NemotronH
         int topK = Math.min(c.expertUsedCount, experts), expertFfn = c.expertFeedForwardLength;
         MatMul.gemm(w.router, s.normed, s.moeRouter, rows);
         Ops.mapInPlace(s.moeRouter, 0, rows * experts, Activations::sigmoid);
-        Arrays.fill(s.moeExpertCounts, 0);
+        // exp_probs_b is a selection-time bias only (llama.cpp build_moe_ffn): added to a scratch
+        // copy of the gating probabilities to pick the top-k; the routed weights stay unbiased
+        // (the two sources of Moe.selectTopK).
+        MemoryView<MemorySegment> selection = s.moeRouter;
+        if (w.expProbsB != null) {
+            selection = s.moeSelection;
+            for (int row = 0; row < rows; row++) {
+                long ro = (long) row * experts;
+                Ops.copyStrided(selection, ro, 1, s.moeRouter, ro, experts);
+                Ops.addInPlace(selection, ro, w.expProbsB, 0, experts);
+            }
+        }
+        Moe.selectTopK(
+                selection,
+                s.moeRouter,
+                rows,
+                experts,
+                topK,
+                s.moeRowTopE,
+                s.moeRowTopP,
+                s.moeExpertCounts);
         for (int row = 0; row < rows; row++) {
-            selectTopK(s, w.expProbsB, row, experts, topK);
+            // llama.cpp norm_w: w /= clamp(Σw, 6.1e-5, ∞), then the arch's weights scale
             float sum = 0f;
-            if (c.expertWeightsNorm)
+            if (c.expertWeightsNorm) {
                 for (int k = 0; k < topK; k++) sum += s.moeRowTopP[row * topK + k];
-            sum = Math.max(sum, 6.103515625e-5f);
+                sum = Math.max(sum, 6.103515625e-5f);
+            }
             for (int k = 0; k < topK; k++) {
                 int index = row * topK + k;
                 if (c.expertWeightsNorm) s.moeRowTopP[index] /= sum;
                 s.moeRowTopP[index] *= c.expertWeightsScale;
-                s.moeExpertCounts[s.moeRowTopE[index]]++;
             }
         }
         Moe.Routing routing = s.moeRouting;
@@ -297,32 +314,6 @@ public final class NemotronH
                     rows, row -> Activations.reluSqr(s.sharedHidden, row * shared, shared));
             MatMul.gemm(w.downShared, s.sharedHidden, s.sharedOut, rows);
             Ops.addInPlace(s.branch, 0, s.sharedOut, 0, rows * dim);
-        }
-    }
-
-    private static void selectTopK(
-            State s, MemoryView<MemorySegment> bias, int row, int experts, int topK) {
-        long base = (long) row * experts;
-        for (int k = 0; k < topK; k++) {
-            int best = -1;
-            float bestScore = Float.NEGATIVE_INFINITY;
-            for (int expert = 0; expert < experts; expert++) {
-                boolean taken = false;
-                for (int j = 0; j < k; j++)
-                    if (s.moeRowTopE[row * topK + j] == expert) {
-                        taken = true;
-                        break;
-                    }
-                float score =
-                        Views.getFloat(s.moeRouter, base + expert, "router")
-                                + (bias == null ? 0f : Views.getFloat(bias, expert, "routerBias"));
-                if (!taken && score > bestScore) {
-                    bestScore = score;
-                    best = expert;
-                }
-            }
-            s.moeRowTopE[row * topK + k] = best;
-            s.moeRowTopP[row * topK + k] = Views.getFloat(s.moeRouter, base + best, "router");
         }
     }
 
@@ -437,7 +428,7 @@ public final class NemotronH
         final MemoryView<MemorySegment> ssmProjection, ssmZ, ssmXbc, ssmDt, ssmConvOut;
         final MemoryView<MemorySegment> ssmOutput, ssmTmp;
         final float[] ssmDtValues;
-        final MemoryView<MemorySegment> moeRouter, moeGather, moeDown, moeHidden;
+        final MemoryView<MemorySegment> moeRouter, moeSelection, moeGather, moeDown, moeHidden;
         final MemoryView<MemorySegment> sharedHidden, sharedOut;
         final MemoryView<MemorySegment>[] keyCache, valueCache, convState, recurrentState;
         final int[] moeRowTopE, moeExpertCounts;
@@ -484,6 +475,7 @@ public final class NemotronH
                     expertFfn = Math.max(1, c.expertFeedForwardLength);
             int shared = Math.max(1, c.expertSharedFeedForwardLength);
             moeRouter = Views.allocateF32(memoryArena(), b, experts);
+            moeSelection = Views.allocateF32(memoryArena(), b, experts);
             moeGather = Views.allocateF32(memoryArena(), b, dim);
             moeDown = Views.allocateF32(memoryArena(), b, dim);
             moeHidden = Views.allocateF32(memoryArena(), b, expertFfn);
@@ -550,7 +542,11 @@ public final class NemotronH
             tokenizer = GGUFTokenizerLoader.createBuilderWithBuiltins().build().fromGGUF(gguf);
         int context = gguf.getValue(int.class, arch + ".context_length");
         int dim = gguf.getValue(int.class, arch + ".embedding_length");
-        int layers = gguf.getValue(int.class, arch + ".block_count");
+        // block_count includes the MTP (nextn) block when the GGUF was converted with it; the
+        // trunk excludes it (llama.cpp llama-hparams.cpp: n_layer = block_count - nextn)
+        int layers =
+                gguf.getValue(int.class, arch + ".block_count")
+                        - gguf.getValueOrDefault(int.class, arch + ".nextn_predict_layers", 0);
         int heads = gguf.getValue(int.class, arch + ".attention.head_count");
         int headSize =
                 gguf.getValueOrDefault(int.class, arch + ".attention.key_length", dim / heads);
@@ -574,6 +570,10 @@ public final class NemotronH
         int stateSize = gguf.getValueOrDefault(int.class, arch + ".ssm.state_size", 0);
         int kernel = gguf.getValueOrDefault(int.class, arch + ".ssm.conv_kernel", 0);
         int experts = gguf.getValueOrDefault(int.class, arch + ".expert_count", 0);
+        int expertGroups = gguf.getValueOrDefault(int.class, arch + ".expert_group_count", 0);
+        if (expertGroups > 1)
+            throw new IllegalArgumentException(
+                    "unsupported nemotron_h_moe: expert_group_count > 1 (group-masked routing)");
         int used = gguf.getValueOrDefault(int.class, arch + ".expert_used_count", 0);
         int expertFfn = gguf.getValueOrDefault(int.class, arch + ".expert_feed_forward_length", 0);
         int shared =
@@ -629,11 +629,9 @@ public final class NemotronH
 
     static Weights loadWeights(Map<String, MemoryView<MemorySegment>> tensors, Configuration c) {
         int n = c.numberOfLayers;
-        MemoryView<MemorySegment> embedding = require(tensors, "token_embd.weight");
+        MemoryView<MemorySegment> embedding = ModelLoader.require(tensors, "token_embd.weight");
         MemoryView<MemorySegment> output =
-                tensors.containsKey("output.weight")
-                        ? require(tensors, "output.weight")
-                        : embedding;
+                ModelLoader.find(tensors, "output.weight").orElse(embedding);
         @SuppressWarnings("unchecked")
         MemoryView<MemorySegment>[] norms = new MemoryView[n];
         AttentionWeights[] attention = new AttentionWeights[n];
@@ -641,65 +639,52 @@ public final class NemotronH
         MoeWeights[] moe = new MoeWeights[n];
         for (int layer = 0; layer < n; layer++) {
             String p = "blk." + layer + ".";
-            norms[layer] = requireF32(tensors, p + "attn_norm.weight");
+            norms[layer] = ModelLoader.requireF32(tensors, p + "attn_norm.weight");
             switch (c.layerTypes[layer]) {
                 case ATTENTION ->
                         attention[layer] =
                                 new AttentionWeights(
-                                        require(tensors, p + "attn_q.weight"),
-                                        require(tensors, p + "attn_k.weight"),
-                                        require(tensors, p + "attn_v.weight"),
-                                        require(tensors, p + "attn_output.weight"));
+                                        ModelLoader.require(tensors, p + "attn_q.weight"),
+                                        ModelLoader.require(tensors, p + "attn_k.weight"),
+                                        ModelLoader.require(tensors, p + "attn_v.weight"),
+                                        ModelLoader.require(tensors, p + "attn_output.weight"));
                 case SSM ->
                         ssm[layer] =
                                 new SsmWeights(
-                                        require(tensors, p + "ssm_in.weight"),
-                                        requireF32(tensors, p + "ssm_conv1d.weight"),
-                                        findF32(tensors, p + "ssm_conv1d.bias"),
-                                        requireF32(tensors, p + "ssm_a"),
-                                        requireF32(tensors, p + "ssm_d"),
-                                        requireF32(tensors, p + "ssm_dt.bias"),
-                                        requireF32(tensors, p + "ssm_norm.weight"),
-                                        require(tensors, p + "ssm_out.weight"));
+                                        ModelLoader.require(tensors, p + "ssm_in.weight"),
+                                        ModelLoader.requireF32(tensors, p + "ssm_conv1d.weight"),
+                                        ModelLoader.findF32(tensors, p + "ssm_conv1d.bias")
+                                                .orElse(null),
+                                        ModelLoader.requireF32(tensors, p + "ssm_a"),
+                                        ModelLoader.requireF32(tensors, p + "ssm_d"),
+                                        ModelLoader.requireF32(tensors, p + "ssm_dt.bias"),
+                                        ModelLoader.requireF32(tensors, p + "ssm_norm.weight"),
+                                        ModelLoader.require(tensors, p + "ssm_out.weight"));
                 case MOE ->
                         moe[layer] =
                                 new MoeWeights(
-                                        require(tensors, p + "ffn_gate_inp.weight"),
-                                        findF32(tensors, p + "exp_probs_b.bias"),
+                                        ModelLoader.require(tensors, p + "ffn_gate_inp.weight"),
+                                        ModelLoader.findF32(tensors, p + "exp_probs_b.bias")
+                                                .orElse(null),
                                         Views.sliceLeadingAxis(
-                                                require(tensors, p + "ffn_up_exps.weight")),
+                                                ModelLoader.require(
+                                                        tensors, p + "ffn_up_exps.weight")),
                                         Views.sliceLeadingAxis(
-                                                require(tensors, p + "ffn_down_exps.weight")),
-                                        tensors.get(p + "ffn_up_shexp.weight"),
-                                        tensors.get(p + "ffn_down_shexp.weight"));
+                                                ModelLoader.require(
+                                                        tensors, p + "ffn_down_exps.weight")),
+                                        ModelLoader.find(tensors, p + "ffn_up_shexp.weight")
+                                                .orElse(null),
+                                        ModelLoader.find(tensors, p + "ffn_down_shexp.weight")
+                                                .orElse(null));
             }
         }
         return new Weights(
                 embedding,
-                requireF32(tensors, "output_norm.weight"),
+                ModelLoader.requireF32(tensors, "output_norm.weight"),
                 output,
                 norms,
                 attention,
                 ssm,
                 moe);
-    }
-
-    private static MemoryView<MemorySegment> require(
-            Map<String, MemoryView<MemorySegment>> tensors, String name) {
-        return Objects.requireNonNull(tensors.get(name), name);
-    }
-
-    private static MemoryView<MemorySegment> requireF32(
-            Map<String, MemoryView<MemorySegment>> tensors, String name) {
-        MemoryView<MemorySegment> view = require(tensors, name);
-        Views.requireDatatype(view, DataType.FP32, name);
-        return view;
-    }
-
-    private static MemoryView<MemorySegment> findF32(
-            Map<String, MemoryView<MemorySegment>> tensors, String name) {
-        MemoryView<MemorySegment> view = tensors.get(name);
-        if (view != null) Views.requireDatatype(view, DataType.FP32, name);
-        return view;
     }
 }

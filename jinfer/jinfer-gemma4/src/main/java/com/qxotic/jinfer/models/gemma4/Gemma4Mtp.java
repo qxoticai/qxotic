@@ -246,7 +246,7 @@ public final class Gemma4Mtp {
                             0,
                             b + "layer_output_scale.weight");
         }
-        float[] ropeFreqFactors = ModelLoader.ropeFreqFactors(t);
+        float[] ropeFreqFactors = ModelLoader.ropeFreqFactors(t).orElse(null);
         return new Weights(
                 tokenEmbeddings,
                 preProjection,
@@ -268,8 +268,7 @@ public final class Gemma4Mtp {
 
     private static MemoryView<MemorySegment> req(
             Map<String, MemoryView<MemorySegment>> t, String name, long expectedElems) {
-        MemoryView<MemorySegment> view = t.get(name);
-        if (view == null) throw new IllegalStateException("MTP sidecar missing tensor " + name);
+        MemoryView<MemorySegment> view = ModelLoader.require(t, name);
         long got = view.logicalSize();
         if (got != expectedElems) {
             throw new IllegalStateException(

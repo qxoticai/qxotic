@@ -29,7 +29,6 @@ import com.qxotic.jinfer.kernels.Trace;
 import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.media.MediaProjector;
 import com.qxotic.jinfer.media.Multimodal;
-import com.qxotic.jota.DataType;
 import com.qxotic.jota.memory.MemoryAllocator;
 import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
@@ -439,7 +438,7 @@ public final class Lfm2
         int dim = config.embeddingLength, hiddenDim = config.feedForwardLength[l];
         DenseFfnWeights ffn = weights.layers[l].dense();
         MemoryView<MemorySegment> ffnNormW = weights.layers[l].ffnNorm(),
-                postFfwW = weights.layers[l].postFfnNorm();
+                postFfnNormW = weights.layers[l].postFfnNorm();
         Norms.rmsnormRows(
                 state.normed, state.residual, ffnNormW, seqLen, dim, configuration.rmsNormEps);
         MatMul.gemm(ffn.gate(), state.normed, state.hidden, seqLen);
@@ -454,16 +453,22 @@ public final class Lfm2
                                 s * hiddenDim,
                                 hiddenDim));
         MatMul.gemm(ffn.down(), state.hidden, state.normed, seqLen);
-        if (postFfwW != null)
+        if (postFfnNormW != null)
             Norms.rmsnormRows(
-                    state.normed, state.normed, postFfwW, seqLen, dim, configuration.rmsNormEps);
+                    state.normed,
+                    state.normed,
+                    postFfnNormW,
+                    seqLen,
+                    dim,
+                    configuration.rmsNormEps);
         Ops.addInPlace(state.residual, 0, state.normed, 0, seqLen * dim);
     }
 
     /**
-     * Top-k MoE FFN (LFM-style): no shared MLP, no expert pre/post norms. Router → optional {@code
-     * exp_probs_b} bias → softmax|sigmoid → top-k → normalize the k weights → per-expert (separate)
-     * gate/up/SiLU/down, prob-weighted into the residual via the shared CSR {@link Moe#dispatch}.
+     * Top-k MoE FFN (LFM-style): no shared MLP, no expert pre/post norms. Router → softmax|sigmoid
+     * → top-k (optional {@code exp_probs_b} bias steers selection only, DeepSeek-style; the expert
+     * weights stay unbiased) → normalize the k weights → per-expert (separate) gate/up/SiLU/down,
+     * prob-weighted into the residual via the shared CSR {@link Moe#dispatch}.
      */
     private void moeFeedForward(State state, int l, int seqLen) {
         Configuration config = configuration;
@@ -481,14 +486,25 @@ public final class Lfm2
 
         for (int s = 0; s < seqLen; s++) {
             long ro = (long) s * nExperts;
-            if (moe.expProbsBias() != null)
-                Ops.addInPlace(state.moeRouterB, ro, moe.expProbsBias(), 0, nExperts);
             if (config.expertGatingFunc == 2)
                 Ops.mapInPlace(
                         state.moeRouterB, ro, nExperts, v -> (float) (1.0 / (1.0 + Math.exp(-v))));
             else Ops.softmaxInPlace(state.moeRouterB, ro, nExperts);
         }
+        // exp_probs_b is a selection-time bias only (llama.cpp build_moe_ffn): it is added to a
+        // scratch copy of the gating probabilities to pick the top-k, while the routed weights are
+        // read from the UNBIASED probabilities (the two sources of Moe.selectTopK).
+        MemoryView<MemorySegment> selection = state.moeRouterB;
+        if (moe.expProbsBias() != null) {
+            selection = state.moeSelectionB;
+            for (int s = 0; s < seqLen; s++) {
+                long ro = (long) s * nExperts;
+                Ops.copyStrided(selection, ro, 1, state.moeRouterB, ro, nExperts);
+                Ops.addInPlace(selection, ro, moe.expProbsBias(), 0, nExperts);
+            }
+        }
         Moe.selectTopK(
+                selection,
                 state.moeRouterB,
                 seqLen,
                 nExperts,
@@ -496,11 +512,7 @@ public final class Lfm2
                 state.moeRowTopE,
                 state.moeRowTopP,
                 state.moeExpertCounts);
-        for (int s = 0; s < seqLen; s++) {
-            float sum = 0f; // normalize the k routed weights
-            for (int ki = 0; ki < topK; ki++) sum += state.moeRowTopP[s * topK + ki];
-            for (int ki = 0; ki < topK; ki++) state.moeRowTopP[s * topK + ki] /= sum;
-        }
+        Moe.normalizeTopP(state.moeRowTopP, seqLen, topK);
 
         Moe.Routing r = state.moeRouting;
         r.seqLen = seqLen;
@@ -998,7 +1010,7 @@ public final class Lfm2
         final MemoryView<MemorySegment> shortConvTmp, shortConvOut;
         // MoE scratch (chunk-wide CSR routing); allocated only when the model has experts, else
         // null.
-        final MemoryView<MemorySegment> moeRouterB, moeGather, moeDownB, moeOutB;
+        final MemoryView<MemorySegment> moeRouterB, moeSelectionB, moeGather, moeDownB, moeOutB;
         // Per-expert gate/up at EXACTLY expertFeedForwardLength wide: hidden/hidden2 are sized to
         // the model's max FFN width (dense layers can be wider), and the silu-multiply between
         // gate/up and down addresses rows packed at the expert width.
@@ -1083,6 +1095,7 @@ public final class Lfm2
             if (config.isMoE()) {
                 int e = config.expertCount, tk = config.expertUsedCount;
                 this.moeRouterB = Views.allocateF32(memoryArena(), c, e);
+                this.moeSelectionB = Views.allocateF32(memoryArena(), c, e);
                 this.moeGather = Views.allocateF32(memoryArena(), c, dim);
                 this.moeDownB = Views.allocateF32(memoryArena(), c, dim);
                 this.moeOutB = Views.allocateF32(memoryArena(), c, dim);
@@ -1095,7 +1108,8 @@ public final class Lfm2
                 this.moeRowTopP = new float[c * tk];
                 this.moeRouting = new Moe.Routing(moeRowTopE, moeRowTopP, moeExpertCounts);
             } else {
-                this.moeRouterB = this.moeGather = this.moeDownB = this.moeOutB = null;
+                this.moeRouterB =
+                        this.moeSelectionB = this.moeGather = this.moeDownB = this.moeOutB = null;
                 this.moeHidden = this.moeHidden2 = null;
                 this.moeExpertCounts = this.moeRowTopE = null;
                 this.moeRowTopP = null;
@@ -1261,47 +1275,19 @@ public final class Lfm2
         return new Lfm2(config, tokenizer, loadWeights(tensors, config));
     }
 
-    // ---- loadWeights helpers: the old ModelLoader.toF32Tensor/loadQuantized fail-fast contract --
-
-    private static MemoryView<MemorySegment> require(
-            Map<String, MemoryView<MemorySegment>> tensors, String name) {
-        return Objects.requireNonNull(tensors.get(name), name);
-    }
-
-    /** F32 view by name (dtype checked AT LOAD, the old toF32Tensor fail-fast), or throw. */
-    private static MemoryView<MemorySegment> requireF32(
-            Map<String, MemoryView<MemorySegment>> tensors, String name) {
-        MemoryView<MemorySegment> v = require(tensors, name);
-        Views.requireDatatype(v, DataType.FP32, name);
-        return v;
-    }
-
-    private static MemoryView<MemorySegment> find(
-            Map<String, MemoryView<MemorySegment>> tensors, String name) {
-        return tensors.get(name);
-    }
-
-    private static MemoryView<MemorySegment> findF32(
-            Map<String, MemoryView<MemorySegment>> tensors, String name) {
-        MemoryView<MemorySegment> v = find(tensors, name);
-        if (v != null) Views.requireDatatype(v, DataType.FP32, name);
-        return v;
-    }
-
     static Weights loadWeights(
             Map<String, MemoryView<MemorySegment>> tensors, Configuration config) {
         int n = config.numberOfLayers;
         RoPE.Schedule rope = RoPE.plain(config.headSize, config.ropeTheta);
 
-        MemoryView<MemorySegment> tokenEmbeddings = require(tensors, "token_embd.weight");
+        MemoryView<MemorySegment> tokenEmbeddings =
+                ModelLoader.require(tensors, "token_embd.weight");
         MemoryView<MemorySegment> wcls =
-                tensors.containsKey("output.weight")
-                        ? require(tensors, "output.weight")
-                        : tokenEmbeddings; // tied embeddings
+                ModelLoader.find(tensors, "output.weight").orElse(tokenEmbeddings);
         // LFM2.5 names the final norm token_embd_norm (no separate output_norm); embeddings are
         // tied.
         MemoryView<MemorySegment> finalNorm =
-                requireF32(
+                ModelLoader.requireF32(
                         tensors,
                         tensors.containsKey("output_norm.weight")
                                 ? "output_norm.weight"
@@ -1310,29 +1296,32 @@ public final class Lfm2
         LayerWeights[] layers = new LayerWeights[n];
         for (int i = 0; i < n; i++) {
             String p = "blk." + i + ".";
-            MemoryView<MemorySegment> attnNorm = requireF32(tensors, p + "attn_norm.weight");
+            MemoryView<MemorySegment> attnNorm =
+                    ModelLoader.requireF32(tensors, p + "attn_norm.weight");
             MemoryView<MemorySegment> postAttnNorm =
-                    findF32(tensors, p + "post_attention_norm.weight");
-            MemoryView<MemorySegment> ffnNorm = requireF32(tensors, p + "ffn_norm.weight");
-            MemoryView<MemorySegment> postFfnNorm = findF32(tensors, p + "post_ffw_norm.weight");
+                    ModelLoader.findF32(tensors, p + "post_attention_norm.weight").orElse(null);
+            MemoryView<MemorySegment> ffnNorm =
+                    ModelLoader.requireF32(tensors, p + "ffn_norm.weight");
+            MemoryView<MemorySegment> postFfnNorm =
+                    ModelLoader.findF32(tensors, p + "post_ffw_norm.weight").orElse(null);
 
             AttentionWeights attention = null;
             ShortConvWeights shortConv = null;
             if (config.isRecurrentLayer(i)) {
                 shortConv =
                         new ShortConvWeights(
-                                requireF32(tensors, p + "shortconv.conv.weight"),
-                                require(tensors, p + "shortconv.in_proj.weight"),
-                                require(tensors, p + "shortconv.out_proj.weight"));
+                                ModelLoader.requireF32(tensors, p + "shortconv.conv.weight"),
+                                ModelLoader.require(tensors, p + "shortconv.in_proj.weight"),
+                                ModelLoader.require(tensors, p + "shortconv.out_proj.weight"));
             } else {
                 attention =
                         new AttentionWeights(
-                                require(tensors, p + "attn_q.weight"),
-                                require(tensors, p + "attn_k.weight"),
-                                find(tensors, p + "attn_v.weight"),
-                                require(tensors, p + "attn_output.weight"),
-                                requireF32(tensors, p + "attn_q_norm.weight"),
-                                requireF32(tensors, p + "attn_k_norm.weight"));
+                                ModelLoader.require(tensors, p + "attn_q.weight"),
+                                ModelLoader.require(tensors, p + "attn_k.weight"),
+                                ModelLoader.find(tensors, p + "attn_v.weight").orElse(null),
+                                ModelLoader.require(tensors, p + "attn_output.weight"),
+                                ModelLoader.requireF32(tensors, p + "attn_q_norm.weight"),
+                                ModelLoader.requireF32(tensors, p + "attn_k_norm.weight"));
             }
 
             DenseFfnWeights dense = null;
@@ -1340,19 +1329,20 @@ public final class Lfm2
             if (config.isMoELayer(i)) {
                 moe =
                         new MoeFfnWeights(
-                                require(tensors, p + "ffn_gate_inp.weight"),
+                                ModelLoader.require(tensors, p + "ffn_gate_inp.weight"),
                                 Views.sliceLeadingAxis(
-                                        require(tensors, p + "ffn_gate_exps.weight")),
-                                Views.sliceLeadingAxis(require(tensors, p + "ffn_up_exps.weight")),
+                                        ModelLoader.require(tensors, p + "ffn_gate_exps.weight")),
                                 Views.sliceLeadingAxis(
-                                        require(tensors, p + "ffn_down_exps.weight")),
-                                findF32(tensors, p + "exp_probs_b.bias"));
+                                        ModelLoader.require(tensors, p + "ffn_up_exps.weight")),
+                                Views.sliceLeadingAxis(
+                                        ModelLoader.require(tensors, p + "ffn_down_exps.weight")),
+                                ModelLoader.findF32(tensors, p + "exp_probs_b.bias").orElse(null));
             } else {
                 dense =
                         new DenseFfnWeights(
-                                require(tensors, p + "ffn_gate.weight"),
-                                require(tensors, p + "ffn_up.weight"),
-                                require(tensors, p + "ffn_down.weight"));
+                                ModelLoader.require(tensors, p + "ffn_gate.weight"),
+                                ModelLoader.require(tensors, p + "ffn_up.weight"),
+                                ModelLoader.require(tensors, p + "ffn_down.weight"));
             }
             layers[i] =
                     new LayerWeights(
@@ -1365,8 +1355,7 @@ public final class Lfm2
                             dense,
                             moe);
         }
-        MemoryView<MemorySegment> dense2 =
-                tensors.containsKey("dense_2.weight") ? require(tensors, "dense_2.weight") : null;
+        MemoryView<MemorySegment> dense2 = ModelLoader.find(tensors, "dense_2.weight").orElse(null);
         return new Weights(tokenEmbeddings, layers, finalNorm, rope, wcls, dense2);
     }
 }

@@ -232,13 +232,14 @@ public final class Inflect2 {
             Configuration config,
             PanamaMemoryArena allocator) {
         int hidden = config.hiddenChannels(), latent = config.interChannels();
-        MemoryView<MemorySegment> embedding = require(tensors, "enc_p.emb.weight");
+        MemoryView<MemorySegment> embedding = ModelLoader.require(tensors, "enc_p.emb.weight");
 
         EncoderLayer[] encoder = new EncoderLayer[config.nLayers()];
         for (int i = 0; i < encoder.length; i++) {
             String attention = "enc_p.encoder.attn_layers." + i + ".";
             String ffn = "enc_p.encoder.ffn_layers." + i + ".";
-            MemoryView<MemorySegment> relativeKeys = require(tensors, attention + "emb_rel_k");
+            MemoryView<MemorySegment> relativeKeys =
+                    ModelLoader.require(tensors, attention + "emb_rel_k");
             encoder[i] =
                     new EncoderLayer(
                             conv(tensors, allocator, attention + "conv_q", POINTWISE, hidden),
@@ -248,7 +249,7 @@ public final class Inflect2 {
                             dequantToF32(allocator, relativeKeys, attention + "emb_rel_k"),
                             dequantToF32(
                                     allocator,
-                                    require(tensors, attention + "emb_rel_v"),
+                                    ModelLoader.require(tensors, attention + "emb_rel_v"),
                                     attention + "emb_rel_v"),
                             // [2*window+1, headChannels]: keys this far either side get an
                             // embedding (the view's dims are the GGUF's, reversed)
@@ -362,14 +363,14 @@ public final class Inflect2 {
                                 allocator,
                                 "dp.conv_2",
                                 DURATION_KERNEL,
-                                outChannels(require(tensors, "dp.conv_1.weight"))),
+                                outChannels(ModelLoader.require(tensors, "dp.conv_1.weight"))),
                         norm(tensors, allocator, "dp.norm_2"),
                         conv(
                                 tensors,
                                 allocator,
                                 "dp.proj",
                                 POINTWISE,
-                                outChannels(require(tensors, "dp.conv_2.weight")))),
+                                outChannels(ModelLoader.require(tensors, "dp.conv_2.weight")))),
                 flow,
                 new Decoder(
                         pre,
@@ -393,7 +394,7 @@ public final class Inflect2 {
             String name,
             int kernel,
             int inChannels) {
-        MemoryView<MemorySegment> weight = require(tensors, name + ".weight");
+        MemoryView<MemorySegment> weight = ModelLoader.require(tensors, name + ".weight");
         return conv(tensors, allocator, weight, name, kernel, inChannels, outChannels(weight));
     }
 
@@ -410,7 +411,7 @@ public final class Inflect2 {
             String name,
             int kernel,
             int inChannels) {
-        MemoryView<MemorySegment> weight = require(tensors, name + ".weight");
+        MemoryView<MemorySegment> weight = ModelLoader.require(tensors, name + ".weight");
         return conv(
                 tensors,
                 allocator,
@@ -448,8 +449,9 @@ public final class Inflect2 {
             Map<String, MemoryView<MemorySegment>> tensors,
             PanamaMemoryArena allocator,
             String name) {
-        MemoryView<MemorySegment> view = tensors.get(name);
-        return view == null ? null : dequantToF32(allocator, view, name);
+        return ModelLoader.find(tensors, name)
+                .map(view -> dequantToF32(allocator, view, name))
+                .orElse(null);
     }
 
     private static int outChannels(MemoryView<MemorySegment> weight) {
@@ -464,10 +466,11 @@ public final class Inflect2 {
             Map<String, MemoryView<MemorySegment>> tensors,
             PanamaMemoryArena allocator,
             String name) {
-        MemoryView<MemorySegment> gamma = require(tensors, name + ".gamma");
+        MemoryView<MemorySegment> gamma = ModelLoader.require(tensors, name + ".gamma");
         return new Norm(
                 dequantToF32(allocator, gamma, name + ".gamma"),
-                dequantToF32(allocator, require(tensors, name + ".beta"), name + ".beta"),
+                dequantToF32(
+                        allocator, ModelLoader.require(tensors, name + ".beta"), name + ".beta"),
                 Math.toIntExact(gamma.logicalSize()));
     }
 
@@ -484,13 +487,6 @@ public final class Inflect2 {
         MemoryView<MemorySegment> copy = Views.allocateF32(allocator, size);
         Convert.copyToF32(view, 0, copy, 0, size);
         return copy;
-    }
-
-    private static MemoryView<MemorySegment> require(
-            Map<String, MemoryView<MemorySegment>> tensors, String name) {
-        MemoryView<MemorySegment> tensor = tensors.get(name);
-        if (tensor == null) throw new IllegalArgumentException("missing tensor: " + name);
-        return tensor;
     }
 
     private static Configuration readConfig(GGUF gguf) {
