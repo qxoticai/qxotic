@@ -1,5 +1,8 @@
 package com.qxotic.jinfer.models.gemma4;
 
+import static com.qxotic.jinfer.Segments.readFloat;
+import static com.qxotic.jinfer.Segments.writeFloat;
+
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.Arenas;
 import com.qxotic.jinfer.Parallel;
@@ -11,6 +14,7 @@ import com.qxotic.jinfer.kernels.MatMul;
 import com.qxotic.jinfer.kernels.ModelLoader;
 import com.qxotic.jinfer.kernels.Norms;
 import com.qxotic.jinfer.kernels.Ops;
+import com.qxotic.jinfer.kernels.Raw;
 import com.qxotic.jinfer.kernels.RoPE;
 import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.media.MediaProjector;
@@ -43,6 +47,9 @@ public final class Gemma4Vision implements MediaProjector<Media.Image> {
             positionSize;
     private final float normEps;
     private final MemoryView<MemorySegment> patchEmbedding, positionEmbedding;
+    // Gemma4MultimodalEmbedder standardization (llama.cpp gemma4v.cpp): (x - std_bias) * std_scale
+    // after the sqrt(n_embd) pool scale, before the pre-projection RMS norm; both or neither.
+    private final MemoryView<MemorySegment> stdBias, stdScale;
     private final Clamped inputProjection;
     private final Layer[] layers;
 
@@ -73,6 +80,8 @@ public final class Gemma4Vision implements MediaProjector<Media.Image> {
             float normEps,
             MemoryView<MemorySegment> patchEmbedding,
             MemoryView<MemorySegment> positionEmbedding,
+            MemoryView<MemorySegment> stdBias,
+            MemoryView<MemorySegment> stdScale,
             Clamped inputProjection,
             Layer[] layers) {
         if (imageSize <= 0
@@ -104,13 +113,21 @@ public final class Gemma4Vision implements MediaProjector<Media.Image> {
         this.normEps = normEps;
         int patchVector = Math.multiplyExact(3, Math.multiplyExact(patchSize, patchSize));
         this.patchEmbedding =
-                Gemma4VisionUnified.requirePatchWeight(
-                        patchEmbedding, "v.patch_embd.weight", Shape.flat(visionDim, patchVector));
+                Gemma4VisionUnified.patchEmbedding2d(
+                        patchEmbedding, "v.patch_embd.weight", visionDim, patchVector);
         this.positionEmbedding =
                 Gemma4VisionUnified.requireF32(
                         positionEmbedding,
                         "v.position_embd.weight",
                         Shape.flat(2, positionSize, visionDim));
+        if ((stdBias == null) != (stdScale == null))
+            throw new IllegalArgumentException("v.std_bias and v.std_scale must come as a pair");
+        if (stdBias != null) {
+            Gemma4VisionUnified.requireF32(stdBias, "v.std_bias", Shape.flat(visionDim));
+            Gemma4VisionUnified.requireF32(stdScale, "v.std_scale", Shape.flat(visionDim));
+        }
+        this.stdBias = stdBias;
+        this.stdScale = stdScale;
         this.inputProjection =
                 requireClamped(inputProjection, "mm.input_projection", modelDim, visionDim);
         this.layers = Objects.requireNonNull(layers, "layers").clone();
@@ -297,12 +314,35 @@ public final class Gemma4Vision implements MediaProjector<Media.Image> {
                 row -> {
                     long destinationBase = (long) row * visionDim;
                     Ops.mapInPlace(pooled, destinationBase, visionDim, value -> value * scale);
+                    if (stdBias != null)
+                        standardizeInPlace(pooled, destinationBase, stdBias, stdScale, visionDim);
                     Norms.rmsnormNoWeight(
                             pooled, destinationBase, pooled, destinationBase, visionDim, normEps);
                 });
         MemoryView<MemorySegment> projected = Views.allocateF32(scratch, rows, modelDim);
         inputProjection.gemm(pooled, visionDim, projected, modelDim, rows, clampScratch);
         return projected;
+    }
+
+    /** {@code row[offset..offset+n) = (row - bias) .* scale} — bias/scale are [n] FP32 rows. */
+    static void standardizeInPlace(
+            MemoryView<MemorySegment> row,
+            long offset,
+            MemoryView<MemorySegment> bias,
+            MemoryView<MemorySegment> scale,
+            int n) {
+        Raw v = Raw.f32(row, "row");
+        Raw b = Raw.f32(bias, "v.std_bias");
+        Raw s = Raw.f32(scale, "v.std_scale");
+        for (int i = 0; i < n; i++) {
+            long bo = v.vbase() + (offset + i) * Float.BYTES;
+            writeFloat(
+                    v.vseg(),
+                    bo,
+                    (readFloat(v.vseg(), bo)
+                                    - readFloat(b.vseg(), b.vbase() + (long) i * Float.BYTES))
+                            * readFloat(s.vseg(), s.vbase() + (long) i * Float.BYTES));
+        }
     }
 
     private void addPositions(MemoryView<MemorySegment> current, int count, int patchesX) {
@@ -468,6 +508,8 @@ public final class Gemma4Vision implements MediaProjector<Media.Image> {
                 normEps,
                 require(tensors, "v.patch_embd.weight"),
                 position,
+                tensors.get("v.std_bias"),
+                tensors.get("v.std_scale"),
                 Clamped.load(tensors, "mm.input_projection", modelDim, visionDim),
                 layers);
     }

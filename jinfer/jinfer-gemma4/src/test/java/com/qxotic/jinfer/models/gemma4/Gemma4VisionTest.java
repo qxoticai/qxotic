@@ -43,6 +43,8 @@ class Gemma4VisionTest {
                             1e-6f,
                             tensor(memory, 4, 3, 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 1),
                             tensor(memory, 2, 2, 4, new float[16]),
+                            null, // no v.std_bias/v.std_scale in this synthetic model
+                            null,
                             new Clamped(
                                     tensor(memory, 2, 4, 1, 0, 0, 0, 0, 1, 0, 0),
                                     -Float.MAX_VALUE,

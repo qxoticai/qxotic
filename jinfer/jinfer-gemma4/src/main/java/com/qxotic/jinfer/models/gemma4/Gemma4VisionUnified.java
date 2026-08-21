@@ -66,8 +66,7 @@ public final class Gemma4VisionUnified implements MediaProjector<Media.Image> {
         this.patchVector = Math.multiplyExact(3, Math.multiplyExact(patchSize, patchSize));
         this.rmsEps = rmsEps;
         this.patchEmbedding =
-                requirePatchWeight(
-                        patchEmbedding, "v.patch_embd.weight", Shape.flat(visionDim, patchVector));
+                patchEmbedding2d(patchEmbedding, "v.patch_embd.weight", visionDim, patchVector);
         this.patchBias = requireF32(patchBias, "v.patch_embd.bias", Shape.flat(visionDim));
         this.positionEmbedding =
                 requireF32(
@@ -271,6 +270,30 @@ public final class Gemma4VisionUnified implements MediaProjector<Media.Image> {
             throw new IllegalArgumentException(
                     name + ": expected output/input shape " + expected + " but was " + actual);
         return value;
+    }
+
+    /**
+     * The patch-embedding kernel is a conv weight {@code [out, 3, patch, patch]}, which the GGUF
+     * stores as a 4D tensor; the projector applies it as a gemm over im2col rows. Re-view the
+     * row-major 4D FP32/BF16 kernel as the 2D {@code [out, 3*patch*patch]} matrix over the same
+     * memory (flattening dims 1..3 preserves the {@code [c][ky][kx]} patch order), so MatMul gets
+     * the 2D {@code [m, k/elementsPerBlock]} view it requires. Quantized block views already arrive
+     * as 2D and pass through untouched.
+     */
+    static MemoryView<MemorySegment> patchEmbedding2d(
+            MemoryView<MemorySegment> value, String name, int outputDim, int inputDim) {
+        requirePatchWeight(value, name, Shape.flat(outputDim, inputDim));
+        if (value.shape().flatRank() == 2) return value;
+        DataType type = value.dataType();
+        if (type != DataType.FP32 && type != DataType.BF16)
+            throw new IllegalArgumentException(
+                    name
+                            + ": "
+                            + value.shape()
+                            + " kernel must be FP32/BF16 to flatten to a 2D gemm view");
+        MemorySegment segment =
+                value.memory().base().asSlice(value.byteOffset(), type.byteSizeFor(value.shape()));
+        return Views.wrap(segment, type, Shape.flat(outputDim, inputDim));
     }
 
     static MemoryView<MemorySegment> requireF32(
