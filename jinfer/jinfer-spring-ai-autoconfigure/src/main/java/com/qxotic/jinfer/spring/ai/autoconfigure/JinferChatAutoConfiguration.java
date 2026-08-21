@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.spring.ai.autoconfigure;
 
 import com.qxotic.jinfer.codecs.VideoSampler;
+import com.qxotic.jinfer.hub.ModelStore;
 import com.qxotic.jinfer.spring.ai.JinferChatModel;
 import io.micrometer.observation.ObservationRegistry;
 import java.nio.file.Path;
@@ -30,16 +31,20 @@ public class JinferChatAutoConfiguration {
             ObjectProvider<VideoSampler> videoSampler) {
         if (!StringUtils.hasText(properties.model())) {
             throw new IllegalStateException(
-                    "spring.ai.jinfer.chat.model is required: a local GGUF path or a hub ref like"
-                            + " hf.co/unsloth/gemma-4-E2B-it-GGUF:Q4_K_M");
+                    "spring.ai.jinfer.chat.model is required: a local GGUF path, or a model ref"
+                            + " (hf.co/unsloth/gemma-4-E2B-it-GGUF:Q4_K_M)");
         }
         JinferChatModel.Builder builder =
                 JinferChatModel.builder()
-                        .model(properties.model())
                         .contextLength(properties.contextLength())
                         .retainSessions(properties.retainedSessions())
                         .options(properties.toOptions())
                         .speculationDepth(properties.speculationDepth());
+        if (ModelStore.isRef(properties.model())) {
+            builder.model(properties.model());
+        } else {
+            builder.modelPath(Path.of(properties.model())); // local path: the explicit door
+        }
         observationRegistry.ifAvailable(builder::observationRegistry);
         observationConvention.ifAvailable(builder::observationConvention);
         videoSampler.ifAvailable(builder::videoSampler); // a VideoSampler bean overrides UNIFORM

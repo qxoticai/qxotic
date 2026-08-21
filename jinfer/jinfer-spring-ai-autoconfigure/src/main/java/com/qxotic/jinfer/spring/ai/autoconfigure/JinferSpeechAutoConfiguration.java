@@ -1,6 +1,8 @@
 package com.qxotic.jinfer.spring.ai.autoconfigure;
 
+import com.qxotic.jinfer.hub.ModelStore;
 import com.qxotic.jinfer.spring.ai.JinferSpeechModel;
+import java.nio.file.Path;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -31,7 +33,12 @@ public class JinferSpeechAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public JinferSpeechModel jinferSpeechModel(JinferSpeechProperties properties) {
-        JinferSpeechModel.Builder builder = JinferSpeechModel.builder().model(properties.model());
+        JinferSpeechModel.Builder builder = JinferSpeechModel.builder();
+        if (ModelStore.isRef(properties.model())) {
+            builder.model(properties.model());
+        } else {
+            builder.modelPath(Path.of(properties.model()));
+        }
         // 0 means "leave the model's own default alone" - passing it through would override the
         // port's choice with a meaningless value
         if (properties.speed() > 0) builder.speed(properties.speed());

@@ -68,6 +68,9 @@ public final class ModelStore {
 
     private static final System.Logger LOG = System.getLogger(ModelStore.class.getName());
 
+    /** llama.cpp's default, so a bare repository means the same file in both tools. */
+    private static final String DEFAULT_QUANT = "Q4_K_M";
+
     private final Path root;
     private final boolean hubShare;
     private final List<ModelSource> sources;
@@ -160,33 +163,93 @@ public final class ModelStore {
 
     // ---- the API ----
 
+    /** Whether {@code model} is a model ref ({@code host/owner/repo[@rev][/path][:quant]}). */
+    public static boolean isRef(String model) {
+        return ModelRef.isRef(model);
+    }
+
     /**
-     * Whether {@code pathOrRef} names something remote - a ref on a known host ({@code hf.co/...},
-     * {@code modelscope.cn/...}) or any explicit {@code scheme://} URL. False means {@link
-     * #resolve} will treat it as a file on this machine. The answer comes from the string alone,
-     * never from what happens to exist on disk, so it is the same on every machine.
+     * The one door for a remote model. A model ref names its host, and nothing else qualifies: a
+     * local path, a URL, and a bare {@code owner/repo} each get their own remedy.
      */
-    public static boolean isRemote(String pathOrRef) {
-        return pathOrRef != null
-                && (ModelRef.isRef(pathOrRef) || ModelRef.hostOfUrl(pathOrRef) != null);
+    public static void requireRef(String model) {
+        if (isRef(model)) {
+            return;
+        }
+        String value = model == null ? "" : model.strip();
+        if (value.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "a model ref is required: hf.co/owner/repo[:quant] or"
+                            + " modelscope.cn/owner/repo[:quant]");
+        }
+        if (value.contains("://")) {
+            throw new IllegalArgumentException(
+                    "'"
+                            + model
+                            + "' is a URL, not a model ref. Download it first, then pass the file"
+                            + " with modelPath(...).");
+        }
+        if (isLocalPathShape(value)) {
+            throw new IllegalArgumentException(
+                    "'"
+                            + model
+                            + "' is a local path, not a model ref. Use modelPath(...) for a local"
+                            + " file, or name a host: hf.co/owner/repo[:quant].");
+        }
+        if (value.indexOf('/') > 0 && value.indexOf('/') == value.lastIndexOf('/')) {
+            throw new IllegalArgumentException(
+                    "'" + model + "' is missing its host. Did you mean hf.co/" + model + "?");
+        }
+        throw new IllegalArgumentException(
+                "'"
+                        + model
+                        + "' is not a model ref. A model ref names its host, for example"
+                        + " hf.co/unsloth/gemma-4-E2B-it-GGUF:Q4_K_M or"
+                        + " modelscope.cn/Qwen/Qwen3-0.6B-GGUF:Q8_0");
+    }
+
+    private static String quantOf(ModelRef ref) {
+        return ref.quant() == null ? DEFAULT_QUANT : ref.quant();
+    }
+
+    private static boolean isLocalPathShape(String value) {
+        return value.startsWith("/")
+                || value.startsWith(".")
+                || value.startsWith("~")
+                || value.indexOf('\\') >= 0
+                || (value.length() >= 2
+                        && Character.isLetter(value.charAt(0))
+                        && value.charAt(1) == ':');
+    }
+
+    /** A plain {@code http(s)} URL, distinct from a model ref. */
+    private static boolean isHttpUrl(String value) {
+        if (value == null) {
+            return false;
+        }
+        String scheme = value.indexOf("://") < 0 ? null : value.substring(0, value.indexOf("://"));
+        return "http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme);
     }
 
     /**
      * A local path or a remote ref, told apart by ONE visible rule: a ref names its host,
-     * everything else is a file on this machine. Nothing is inferred from the shape of the string
-     * or from what happens to exist on disk, so the same argument means the same thing on every
-     * machine. This is the only door that touches the network.
+     * everything else is a file on this machine.
      */
     public Path resolve(String pathOrRef) {
         if (ModelRef.isRef(pathOrRef)) {
             return resolveRef(ModelRef.parse(pathOrRef)); // a repository a source may talk to
         }
-        if (ModelRef.hostOfUrl(pathOrRef) != null) {
+        if (isHttpUrl(pathOrRef)) {
             return url(pathOrRef); // any other URL: bytes, and nothing else
         }
         Path local = localFile(pathOrRef);
         if (local == null) {
-            throw new IllegalArgumentException(unresolvable(pathOrRef));
+            throw new IllegalArgumentException(
+                    "no such model file: '"
+                            + pathOrRef
+                            + "'. A model ref names its host, for example"
+                            + " hf.co/unsloth/gemma-4-E2B-it-GGUF:Q4_K_M or"
+                            + " modelscope.cn/Qwen/Qwen3-0.6B-GGUF:Q8_0");
         }
         return local;
     }
@@ -308,11 +371,28 @@ public final class ModelStore {
                 throw new UncheckedIOException("could not look up " + pathOrRef + ": " + e, e);
             }
         }
-        if (ModelRef.hostOfUrl(pathOrRef) != null) {
+        if (isHttpUrl(pathOrRef)) {
             throw new IllegalArgumentException(
                     "plain URLs can only be resolved (they carry no checksum): " + pathOrRef);
         }
         return Optional.ofNullable(localFile(pathOrRef));
+    }
+
+    /**
+     * The file this string names, or null when it names none. A directory is refused by name rather
+     * than reported as missing.
+     */
+    private static Path localFile(String path) {
+        try {
+            Path candidate = Path.of(path);
+            if (Files.isDirectory(candidate)) {
+                throw new IllegalArgumentException(
+                        "'" + path + "' is a directory; a model or companion is a single file");
+            }
+            return Files.isRegularFile(candidate) ? candidate : null;
+        } catch (InvalidPathException notAPath) {
+            return null;
+        }
     }
 
     private static void requireOnlineFor(String what, Path dest) {
@@ -429,46 +509,6 @@ public final class ModelStore {
             return false;
         } catch (IOException e) {
             throw new UncheckedIOException("could not evict " + ref + ": " + e, e);
-        }
-    }
-
-    /**
-     * Why this string is neither a ref nor a file. A URL naming an unknown host gets its own
-     * answer: it plainly meant to be remote, and telling someone to "name its host" when they just
-     * did is the kind of message that makes people doubt the tool rather than the argument.
-     */
-    private static String unresolvable(String pathOrRef) {
-        return "no such model file: '"
-                + pathOrRef
-                + "'. A REMOTE model names its host, for example"
-                + " hf.co/unsloth/gemma-4-E2B-it-GGUF:Q4_K_M or"
-                + " modelscope.cn/Qwen/Qwen3-0.6B-GGUF:Q8_0";
-    }
-
-    /**
-     * The file this string names, or null when it names none.
-     *
-     * <p>A model and a companion are each ONE FILE. A directory is refused by name rather than
-     * reported as missing, because "no such file" about a path that plainly exists sends people
-     * looking in the wrong place.
-     *
-     * <p>WINDOWS: a string that is not a valid path there throws {@link
-     * java.nio.file.InvalidPathException} instead of reporting a missing file. By the time we look,
-     * a path is the only reading left, so one that cannot be parsed is simply not a file.
-     */
-    // ponytail: single files only. A directory-shaped companion (a LoRA with its config, a
-    // converted checkpoint) needs a subtree download - the snapshot() this module deliberately
-    // does not have. Relax this the day one exists, not before.
-    private static Path localFile(String path) {
-        try {
-            Path candidate = Path.of(path);
-            if (Files.isDirectory(candidate)) {
-                throw new IllegalArgumentException(
-                        "'" + path + "' is a directory; a model or companion is a single file");
-            }
-            return Files.isRegularFile(candidate) ? candidate : null;
-        } catch (InvalidPathException notAPath) {
-            return null;
         }
     }
 
@@ -632,16 +672,14 @@ public final class ModelStore {
             return models.get(0);
         }
         List<RemoteFile> matches =
-                models.stream()
-                        .filter(f -> matchesQuant(nameOf(f.path()), ref.quantOrDefault()))
-                        .toList();
+                models.stream().filter(f -> matchesQuant(nameOf(f.path()), quantOf(ref))).toList();
         if (matches.size() == 1) {
             return matches.get(0);
         }
         if (matches.isEmpty()) {
             throw new IllegalArgumentException(
                     "no "
-                            + ref.quantOrDefault()
+                            + quantOf(ref)
                             + " in "
                             + ref.repoId()
                             + (folder.isEmpty() ? "" : "/" + folder)
@@ -649,7 +687,7 @@ public final class ModelStore {
                             + names(models));
         }
         throw new IllegalArgumentException(
-                ref.quantOrDefault()
+                quantOf(ref)
                         + " matches "
                         + matches.size()
                         + " files in "
@@ -760,11 +798,7 @@ public final class ModelStore {
             }
             List<Path> matches =
                     models.stream()
-                            .filter(
-                                    p ->
-                                            matchesQuant(
-                                                    p.getFileName().toString(),
-                                                    ref.quantOrDefault()))
+                            .filter(p -> matchesQuant(p.getFileName().toString(), quantOf(ref)))
                             .toList();
             return matches.size() == 1 ? matches.get(0) : null; // ambiguity goes to the listing
         }
