@@ -3,6 +3,7 @@ package com.qxotic.jinfer.models.gemma4;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -99,6 +100,55 @@ class Gemma4VisionComponentsTest {
             assertEquals(49, rows[0]);
         }
         assertFalse(((MemorySegment) borrowed.getFirst().memory().base()).scope().isAlive());
+    }
+
+    @Test
+    void patchEmbedding4dKernelFlattensTo2dGemmView() {
+        try (Arena arena = Arena.ofConfined()) {
+            PanamaMemoryArena memory = new PanamaMemoryArena(arena);
+            // conv kernel [out=2][c=3][ky=1][kx=1]: patchVector = 3*1*1 = 3
+            MemoryView<MemorySegment> kernel =
+                    tensor(memory, new long[] {2, 3, 1, 1}, new float[] {1f, 2f, 3f, 4f, 5f, 6f});
+            MemoryView<MemorySegment> flat =
+                    Gemma4VisionUnified.patchEmbedding2d(kernel, "v.patch_embd.weight", 2, 3);
+            assertEquals(2, flat.shape().flatRank());
+            assertEquals(2, flat.shape().flatAt(0));
+            assertEquals(3, flat.shape().flatAt(1));
+            assertArrayEquals(new float[] {1f, 2f, 3f, 4f, 5f, 6f}, values(flat), 0f);
+            // 2D views pass through untouched
+            MemoryView<MemorySegment> already = tensor(memory, 2, 3, 1f, 2f, 3f, 4f, 5f, 6f);
+            assertSame(
+                    already,
+                    Gemma4VisionUnified.patchEmbedding2d(already, "v.patch_embd.weight", 2, 3));
+            // wrong output dim rejected
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () ->
+                            Gemma4VisionUnified.patchEmbedding2d(
+                                    kernel, "v.patch_embd.weight", 3, 3));
+        }
+    }
+
+    @Test
+    void standardizeAppliesPerDimAffine() {
+        try (Arena arena = Arena.ofConfined()) {
+            PanamaMemoryArena memory = new PanamaMemoryArena(arena);
+            // (x - bias) .* scale per dim, exactly representable values
+            MemoryView<MemorySegment> bias = tensor(memory, 4, 0.5f, -1f, 0f, 2f);
+            MemoryView<MemorySegment> scale = tensor(memory, 4, 2f, 2f, 0.5f, -1f);
+            MemoryView<MemorySegment> row = tensor(memory, 4, 1f, 2f, 3f, 4f);
+            Gemma4Vision.standardizeInPlace(row, 0, bias, scale, 4);
+            assertArrayEquals(new float[] {1f, 6f, 1.5f, -2f}, values(row), 0f);
+            // offset variant: only the addressed span changes
+            MemoryView<MemorySegment> wide = tensor(memory, 8, 1f, 2f, 3f, 4f, 5f, 6f, 7f, 8f);
+            Gemma4Vision.standardizeInPlace(wide, 4, bias, scale, 4);
+            assertArrayEquals(new float[] {1f, 2f, 3f, 4f, 9f, 14f, 3.5f, -6f}, values(wide), 0f);
+        }
+    }
+
+    private static MemoryView<MemorySegment> tensor(
+            PanamaMemoryArena arena, long d0, long d1, long d2, long d3, float[] values) {
+        return tensor(arena, new long[] {d0, d1, d2, d3}, values);
     }
 
     private static MemoryView<MemorySegment> tensor(
