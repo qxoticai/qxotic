@@ -249,25 +249,20 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
         }
 
         /**
-         * The model as ONE string: a local GGUF path, a hub ref ({@code hf.co/owner/repo:Q4_K_M})
-         * or a pasted browser URL - resolved by {@link #build()} with the rest of the load, so a
-         * remote ref downloads there (see the package doc) and the chain never blocks.
+         * The model as a model ref ({@code hf.co/owner/repo:Q4_K_M} or {@code
+         * modelscope.cn/owner/repo:Q4_K_M}), resolved by {@link #build()}. For a local file use
+         * {@link #modelPath(Path)} - a URL is not a model ref; download it first, then pass the
+         * path.
          */
-        public Builder model(String pathOrRef) {
-            this.source = pathOrRef;
+        public Builder model(String modelRef) {
+            ModelStore.requireRef(modelRef);
+            this.source = modelRef;
             return this;
         }
 
         /**
-         * A model you loaded yourself ({@code Models.loadEmbedder(path, arena)}) - the
-         * weight-sharing seam: several instances (and their {@link #fork() forks}) over ONE loaded
-         * copy are parallel pipelines for the price of one load.
-         *
-         * <p>You own its weights arena: {@link JinferEmbeddingModel#close()} frees only this
-         * instance's state, so close your arena after every instance built on it, never before.
-         * Getting the order wrong sequentially is caught fail-fast (a safety canary throws
-         * IllegalStateException at the next request); freeing the arena DURING a request is a data
-         * race and can still crash the VM.
+         * A model you loaded yourself. Its weights arena stays yours; close the arena only after
+         * this model and every fork on it.
          */
         public Builder model(LoadedEmbedder<?> loaded) {
             this.source = loaded;

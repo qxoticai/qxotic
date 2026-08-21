@@ -2,66 +2,58 @@ package com.qxotic.jinfer.langchain4j;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * The {@code .model(String)} front door: one string that is a local path, a hub ref, or a URL. The
- * resolver itself is jinfer-hub's and tested there; what THIS module owes is that the builders
- * actually route through it - a local path string must load without touching the network, and a
- * string that names nothing must fail with the hub's teaching message, not an NPE at build().
+ * The builder's two model doors are explicit: {@code .model(String)} is a model ref, {@code
+ * .modelPath(Path)} is local. This module only owes that the boundary is enforced and the remote
+ * ref is resolved at build time, not in the setter.
  */
 class ModelStringTest {
 
     @Test
-    void aLocalPathStringResolvesWithoutTheNetwork(@TempDir Path dir) throws IOException {
+    void aLocalPathStringIsRefusedAndPointsToModelPath(@TempDir Path dir) throws Exception {
         Path gguf = dir.resolve("tiny.gguf");
         Files.write(gguf, new byte[] {'G', 'G', 'U', 'F'});
-        // resolution succeeds offline; the (invalid) GGUF then fails at load, which proves the
-        // string reached the load path as a file
-        assertThatThrownBy(() -> JinferChatModel.builder().model(gguf.toString()).build().close())
+        assertThatThrownBy(() -> JinferChatModel.builder().model(gguf.toString()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("modelPath");
+    }
+
+    @Test
+    void aUrlIsRefusedAndPointsToModelPath() {
+        assertThatThrownBy(() -> JinferChatModel.builder().model("https://example.org/model.gguf"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("URL")
+                .hasMessageContaining("modelPath");
+    }
+
+    @Test
+    void aBareRepoIsToldItsMissingHost() {
+        assertThatThrownBy(() -> JinferChatModel.builder().model("unsloth/Qwen3.5-4B-GGUF:Q4_K_M"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("missing its host")
+                .hasMessageContaining("hf.co/unsloth/Qwen3.5-4B-GGUF:Q4_K_M");
+    }
+
+    @Test
+    void aLocalPathStillResolvesThroughModelPath(@TempDir Path dir) throws Exception {
+        Path gguf = dir.resolve("tiny.gguf");
+        Files.write(gguf, new byte[] {'G', 'G', 'U', 'F'});
+        // the path reaches the load stage; the invalid GGUF then fails there, proving it was NOT
+        // treated as a remote ref
+        assertThatThrownBy(() -> JinferChatModel.builder().modelPath(gguf).build().close())
                 .isInstanceOf(RuntimeException.class)
                 .hasMessageNotContaining("no such model file");
     }
 
     @Test
-    void resolutionHappensAtBuildNotInTheSetter() {
-        // the setter RECORDS - the chain never blocks or throws; build() is where acquisition
-        // lives, alongside the load, so there is one failure point and no download mid-chain
-        JinferChatModel.Builder builder = JinferChatModel.builder().model("no/such/file.gguf");
-        assertThatThrownBy(builder::build)
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("no such model file")
-                .hasMessageContaining("hf.co/"); // the message teaches the ref grammar
-    }
-
-    @Test
-    void theLastModelSetterWins(@TempDir Path dir) throws IOException {
-        Path gguf = dir.resolve("tiny.gguf");
-        Files.write(gguf, new byte[] {'G', 'G', 'U', 'F'});
-        // the earlier ref is CLEARED, never fetched: build fails on the (invalid) local file,
-        // which proves the path won - a hub message here would mean the ref was resolved
-        assertThatThrownBy(
-                        () ->
-                                JinferChatModel.builder()
-                                        .model("hf.co/nobody/nothing-GGUF")
-                                        .modelPath(gguf)
-                                        .build()
-                                        .close())
-                .isInstanceOf(RuntimeException.class)
-                .hasMessageNotContaining("hf.co/nobody");
-
-        // and the other way around: the string set last is the one that resolves
-        assertThatThrownBy(
-                        () ->
-                                JinferChatModel.builder()
-                                        .modelPath(gguf)
-                                        .model("no/such/file.gguf")
-                                        .build())
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("no such model file");
+    void aRemoteStringIsResolvedAtBuildNotInTheSetter() {
+        JinferChatModel.Builder builder =
+                JinferChatModel.builder().model("hf.co/nobody/nothing-GGUF:Q4_K_M");
+        assertThatThrownBy(builder::build).isInstanceOf(RuntimeException.class);
     }
 }

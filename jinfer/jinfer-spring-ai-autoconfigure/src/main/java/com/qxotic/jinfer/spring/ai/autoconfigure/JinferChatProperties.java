@@ -10,10 +10,10 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * Flat properties for {@link JinferChatAutoConfiguration}, bound under {@code
  * spring.ai.jinfer.chat} (constructor binding; a record needs no setter boilerplate).
  *
- * @param model the model as ONE string (required): a local GGUF path, a hub ref ({@code
- *     hf.co/unsloth/gemma-4-E2B-it-GGUF:Q4_K_M}), or a pasted browser URL. A remote ref resolves
- *     (and downloads, when absent) at context startup, so a typo fails the boot with the hub's own
- *     message, never the first request
+ * @param model the model as ONE string (required): a local GGUF path, or a model ref ({@code
+ *     hf.co/unsloth/gemma-4-E2B-it-GGUF:Q4_K_M}). A remote ref resolves (and downloads, when
+ *     absent) at context startup, so a typo fails the boot with the hub's own message, never the
+ *     first request; a local path stays local and never touches the network
  * @param companions capability to file: auxiliary files such as a multimodal projector; values take
  *     the same path-or-ref form as {@code model}
  * @param promptCache path to a cached-prompt artifact (.jkv) to mount read-only at startup;

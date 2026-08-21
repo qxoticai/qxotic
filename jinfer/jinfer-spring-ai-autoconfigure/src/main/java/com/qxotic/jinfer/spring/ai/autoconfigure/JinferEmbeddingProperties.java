@@ -7,7 +7,7 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * Configuration properties for jinfer embeddings, bound under {@code spring.ai.jinfer.embedding}
  * (constructor binding).
  *
- * @param model the embedding GGUF (e.g. a Qwen3-Embedding model) as a local path, hub ref or URL;
+ * @param model the embedding GGUF (e.g. a Qwen3-Embedding model) as a local path or model ref;
  *     required. A remote ref resolves at context startup
  * @param contextLength upper bound on the packing window and each embedded sequence (default 2048):
  *     larger packs more sequences per forward pass and admits longer sequences, at the cost of a

@@ -545,24 +545,20 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         }
 
         /**
-         * The model as ONE string: a local GGUF path, a hub ref ({@code hf.co/owner/repo:Q4_K_M})
-         * or a pasted browser URL - resolved by {@link #build()} with the rest of the load, so a
-         * remote ref downloads there (see the package doc) and the chain never blocks.
+         * The model as a model ref ({@code hf.co/owner/repo:Q4_K_M} or {@code
+         * modelscope.cn/owner/repo:Q4_K_M}), resolved by {@link #build()}. For a local file use
+         * {@link #modelPath(Path)} - a URL is not a model ref; download it first, then pass the
+         * path.
          */
-        public Builder model(String pathOrRef) {
-            this.source = pathOrRef;
+        public Builder model(String modelRef) {
+            ModelStore.requireRef(modelRef);
+            this.source = modelRef;
             return this;
         }
 
         /**
-         * A model you loaded yourself - the seam for a custom tokenizer or chat template. Supply a
-         * tokenizer while loading via {@link com.qxotic.jinfer.chat.Models#load(java.nio.file.Path,
-         * java.lang.foreign.Arena, java.util.Map, com.qxotic.toknroll.Tokenizer)}, or replace a bad
-         * embedded template via {@code LoadedModel.withChatTemplateSource(...)}. Mutually exclusive
-         * with {@link #modelPath}.
-         *
-         * <p>You own its weights arena: {@link JinferChatModel#close()} quiesces this model but
-         * frees only what it allocated, so close your arena after it, never before.
+         * A model you loaded yourself. Its weights arena stays yours; close the arena only after
+         * this model and every fork on it.
          */
         public Builder model(LoadedModel<?> loaded) {
             this.source = loaded;
@@ -608,7 +604,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         }
 
         /**
-         * As {@link #companion(String, Path)}, taking a path, hub ref or URL like {@link
+         * As {@link #companion(String, Path)}, taking a local path or a model ref like {@link
          * #model(String)} - resolved at {@link #build()}.
          */
         public Builder companion(String capability, String pathOrRef) {

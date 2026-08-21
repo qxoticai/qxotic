@@ -29,7 +29,6 @@ class ModelRefTest {
         assertEquals("gemma-4-E2B-it-GGUF", ref.repo());
         assertEquals("", ref.path());
         assertNull(ref.quant(), "an unwritten quant stays null: it is what permits the fallback");
-        assertEquals("Q4_K_M", ref.quantOrDefault());
         assertEquals("main", ref.revisionOrDefault());
     }
 
@@ -70,40 +69,22 @@ class ModelRefTest {
         assertEquals("b", ModelRef.parse("modelscope.cn/a/b").cacheRepo());
     }
 
-    // ---- what people actually paste ----
+    // ---- what people actually paste - now strict - canonical only ----
 
     @Test
-    void everySpellingOfARepositoryUrlIsTheSameRef() {
+    void canonicalSpellingsParseAndRoundTrip() {
         String canonical = ModelRef.parse("hf.co/unsloth/gemma-4-E2B-it-GGUF").toString();
-        for (String spelling :
-                new String[] {
-                    "HF.CO/unsloth/gemma-4-E2B-it-GGUF",
-                    "hf.co/unsloth/gemma-4-E2B-it-GGUF/",
-                    "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF",
-                    "https://www.huggingface.co/unsloth/gemma-4-E2B-it-GGUF",
-                }) {
-            assertEquals(canonical, ModelRef.parse(spelling).toString(), spelling);
-        }
+        assertEquals(canonical, ModelRef.parse("hf.co/unsloth/gemma-4-E2B-it-GGUF").toString());
+        assertEquals(canonical, ModelRef.parse("hf.co/unsloth/gemma-4-E2B-it-GGUF/").toString());
+        assertEquals(
+                "modelscope.cn/Qwen/Qwen3-0.6B-GGUF:Q8_0",
+                ModelRef.parse("modelscope.cn/Qwen/Qwen3-0.6B-GGUF:Q8_0").toString());
     }
 
     @Test
-    void theHubsOwnViewUrlsNormalize() {
-        ModelRef blob =
-                ModelRef.parse(
-                        "https://hf.co/ggml-org/models/blob/main/bert-bge-small/ggml-model-f16.gguf");
-        assertEquals("main", blob.revision());
-        assertEquals("bert-bge-small/ggml-model-f16.gguf", blob.path());
-
-        ModelRef download =
-                ModelRef.parse(
-                        "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/"
-                                + "mmproj-F32.gguf?download=true");
-        assertEquals("main", download.revision());
-        assertEquals("mmproj-F32.gguf", download.path());
-
-        ModelRef tree = ModelRef.parse("https://hf.co/ggml-org/models/tree/main/bert-bge-small");
-        assertEquals("main", tree.revision());
-        assertEquals("bert-bge-small", tree.path());
+    void aSchemeIsNotARef() {
+        assertFalse(ModelRef.isRef("https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF"));
+        assertFalse(ModelRef.isRef("https://hf.co/unsloth/gemma-4-E2B-it-GGUF"));
     }
 
     // ---- remote versus local ----
@@ -112,8 +93,8 @@ class ModelRefTest {
     void onlyAKnownHostMakesARef() {
         assertTrue(ModelRef.isRef("hf.co/a/b"));
         assertTrue(ModelRef.isRef("modelscope.cn/a/b:Q8_0"));
-        assertTrue(ModelRef.isRef("https://huggingface.co/a/b"));
 
+        assertFalse(ModelRef.isRef("https://huggingface.co/a/b"));
         assertFalse(ModelRef.isRef("unsloth/gemma-4-E2B-it-GGUF"), "a bare repo is a path");
         assertFalse(ModelRef.isRef("/models/mine.gguf"));
         assertFalse(ModelRef.isRef("./mine.gguf"));
@@ -123,16 +104,11 @@ class ModelRefTest {
     }
 
     @Test
-    void isRemoteIsThePublicFormOfTheSameRule() {
-        assertTrue(ModelStore.isRemote("hf.co/a/b:Q8_0"));
-        assertTrue(ModelStore.isRemote("https://huggingface.co/a/b"));
-        assertTrue(
-                ModelStore.isRemote("https://example.org/models/x.gguf"), "a plain URL is remote");
-
-        assertFalse(ModelStore.isRemote("/models/mine.gguf"));
-        assertFalse(ModelStore.isRemote("./hf.co/a/b"), "the explicit-local escape stays local");
-        assertFalse(ModelStore.isRemote("example.org/models/x.gguf"), "no scheme, unknown host");
-        assertFalse(ModelStore.isRemote(null));
+    void requireRefRejectsANonRef() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ModelStore.requireRef("https://huggingface.co/a/b"));
+        assertThrows(IllegalArgumentException.class, () -> ModelStore.requireRef("/models/x.gguf"));
     }
 
     @Test

@@ -7,8 +7,8 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * Configuration properties for jinfer reranking, bound under {@code spring.ai.jinfer.rerank}
  * (constructor binding).
  *
- * @param model the reranker GGUF (e.g. Qwen3-Reranker or LFM2.5-ColBERT) as a local path, hub ref
- *     or URL; configuring it is what activates the post-processor
+ * @param model the reranker GGUF (e.g. Qwen3-Reranker or LFM2.5-ColBERT) as a local path or model
+ *     ref; configuring it is what activates the post-processor
  * @param contextLength upper bound on the encoded query-and-document context (default 2048); {@code
  *     0} uses the model's declared context length; negative values are rejected
  * @param instruction the task instruction in the judge frame; empty = the model card's own wording

@@ -1,6 +1,8 @@
 package com.qxotic.jinfer.spring.ai.autoconfigure;
 
+import com.qxotic.jinfer.hub.ModelStore;
 import com.qxotic.jinfer.spring.ai.JinferDocumentPostProcessor;
+import java.nio.file.Path;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -31,10 +33,14 @@ public class JinferRerankAutoConfiguration {
             JinferRerankProperties properties) {
         JinferDocumentPostProcessor.Builder builder =
                 JinferDocumentPostProcessor.builder()
-                        .model(properties.model())
                         .contextLength(properties.contextLength())
                         .topK(properties.topK())
                         .minScore(properties.minScore());
+        if (ModelStore.isRef(properties.model())) {
+            builder.model(properties.model());
+        } else {
+            builder.modelPath(Path.of(properties.model()));
+        }
         if (StringUtils.hasText(properties.instruction())) {
             builder.instruction(properties.instruction());
         }

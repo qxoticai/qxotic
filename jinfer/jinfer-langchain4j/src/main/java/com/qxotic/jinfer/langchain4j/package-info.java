@@ -6,10 +6,14 @@
  * segments (a {@code ScoringModel}, so langchain4j's {@code ReRankingContentAggregator} takes it
  * as-is).
  *
- * <p>Every builder takes the model as ONE string - {@code .model("hf.co/owner/model-GGUF:Q4_K_M")}
- * - a local path, a hub ref, or a pasted browser URL, downloaded into the shared model cache when
- * absent (resumable, checksum-verified; {@code JINFER_OFFLINE=1} forbids the network). {@code
- * .modelPath(Path)} stays the never-network form.
+ * <p>Every builder takes the model as a MODEL REF - {@code .model("hf.co/owner/model-GGUF:Q4_K_M")}
+ * - downloaded into the shared model cache when absent (resumable, checksum-verified; {@code
+ * JINFER_OFFLINE=1} forbids the network). {@code .modelPath(Path)} is the explicit local form - the
+ * two doors never overlap, and a URL is not a model ref: download it first, then pass the path.
+ *
+ * <p>Resolution of a remote {@code model(String)} goes through the ambient {@code ModelStore};
+ * {@code .modelPath(Path)} is the preferred, explicit local form and touches neither the cache nor
+ * the network.
  *
  * <p>One model instance is ONE serial inference pipeline: concurrent calls queue fairly on it. For
  * parallel pipelines, load the weights once into YOUR arena and fork - every builder has a {@code

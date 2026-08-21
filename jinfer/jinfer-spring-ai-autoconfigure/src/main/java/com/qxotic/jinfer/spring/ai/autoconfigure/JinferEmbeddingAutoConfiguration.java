@@ -1,7 +1,9 @@
 package com.qxotic.jinfer.spring.ai.autoconfigure;
 
+import com.qxotic.jinfer.hub.ModelStore;
 import com.qxotic.jinfer.spring.ai.JinferEmbeddingModel;
 import io.micrometer.observation.ObservationRegistry;
+import java.nio.file.Path;
 import org.springframework.ai.embedding.observation.EmbeddingModelObservationConvention;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -35,9 +37,12 @@ public class JinferEmbeddingAutoConfiguration {
                             + " Qwen3-Embedding or LFM2.5-Embedding) as a local path or a hub ref");
         }
         JinferEmbeddingModel.Builder builder =
-                JinferEmbeddingModel.builder()
-                        .model(properties.model())
-                        .contextLength(properties.contextLength());
+                JinferEmbeddingModel.builder().contextLength(properties.contextLength());
+        if (ModelStore.isRef(properties.model())) {
+            builder.model(properties.model());
+        } else {
+            builder.modelPath(Path.of(properties.model()));
+        }
         observationRegistry.ifAvailable(builder::observationRegistry);
         observationConvention.ifAvailable(builder::observationConvention);
         return builder.build();
