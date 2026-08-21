@@ -1,10 +1,11 @@
-// Shared Mixture-of-Experts dispatch over FP32-checked views. Gather is a raw row copy and
-// scatter-add uses Ops.saxpyInPlace.
-// The router/gating (softmax/sigmoid, top-k, normalization) is a model's identity and stays
-// per-architecture; this owns only the architecture-independent plumbing: the CSR grouping of
-// tokens by routed expert, the gather, and the prob-weighted scatter-add. The per-expert FFN math
-// (gated/ungated, activation, biases, layout) is supplied as an ExpertKernel closure — called once
-// per expert (never per element), so the vector kernels inside stay monomorphic.
+// Shared Mixture-of-Experts plumbing over FP32-checked views. Shared here: the top-k selection
+// (selectTopK, with an optional separate weights source for llama.cpp's selection-only exp_probs_b
+// bias), the softmax+renormalize spine (softmaxSelectTopK), the CSR grouping of tokens by routed
+// expert, the gather (a raw row copy), and the prob-weighted scatter-add (Ops.saxpyInPlace).
+// Per-architecture — the model's identity — stay the gating flavor (softmax/sigmoid, extra
+// scales), the normalization policy, and the per-expert FFN math (gated/ungated, activation,
+// biases, layout), the latter supplied as an ExpertKernel closure — called once per expert
+// (never per element), so the vector kernels inside stay monomorphic.
 package com.qxotic.jinfer.kernels;
 
 import static com.qxotic.jinfer.Segments.readFloat;
@@ -67,9 +68,10 @@ public final class Moe {
     /**
      * The shared top-k selection over gated logits (every architecture's loop is identical: k times
      * argmax, mask the winner to -Infinity, count the route). Gating (bias/softmax/sigmoid) runs
-     * BEFORE this and normalization AFTER, both per-architecture. Fills {@code rowTopE}/{@code
-     * rowTopP} ({@code s*topK+k}) and re-zeros then fills {@code counts}; {@code logits} is
-     * [rows][experts] and is consumed (masked) in place.
+     * BEFORE this and normalization ({@link #normalizeTopP}, when the architecture wants it) AFTER,
+     * both per-architecture. Fills {@code rowTopE}/{@code rowTopP} ({@code s*topK+k}) and re-zeros
+     * then fills {@code counts}; {@code logits} is [rows][experts] and is consumed (masked) in
+     * place.
      */
     public static void selectTopK(
             MemoryView<MemorySegment> logits,
@@ -79,7 +81,27 @@ public final class Moe {
             int[] rowTopE,
             float[] rowTopP,
             int[] counts) {
-        Raw r = Raw.f32(logits, "logits");
+        selectTopK(logits, logits, rows, experts, topK, rowTopE, rowTopP, counts);
+    }
+
+    /**
+     * Two-source variant: the argmax runs over {@code selection} (consumed, masked in place) but
+     * the recorded combine weight is read from {@code weights}. This is llama.cpp's {@code
+     * exp_probs_b} semantics (build_moe_ffn): the bias steers WHICH experts are picked, not HOW
+     * MUCH they contribute — callers pass a bias-added scratch as {@code selection} and the
+     * unbiased gating probabilities as {@code weights}.
+     */
+    public static void selectTopK(
+            MemoryView<MemorySegment> selection,
+            MemoryView<MemorySegment> weights,
+            int rows,
+            int experts,
+            int topK,
+            int[] rowTopE,
+            float[] rowTopP,
+            int[] counts) {
+        Raw sel = Raw.f32(selection, "selection");
+        Raw w = Raw.f32(weights, "weights");
         Arrays.fill(counts, 0);
         for (int s = 0; s < rows; s++) {
             long ro = (long) s * experts;
@@ -87,18 +109,52 @@ public final class Moe {
                 int best = 0;
                 float bestVal = Float.NEGATIVE_INFINITY;
                 for (int ei = 0; ei < experts; ei++) {
-                    float v = readFloat(r.vseg(), r.vbase() + (ro + ei) * Float.BYTES);
+                    float v = readFloat(sel.vseg(), sel.vbase() + (ro + ei) * Float.BYTES);
                     if (v > bestVal) {
                         bestVal = v;
                         best = ei;
                     }
                 }
                 rowTopE[s * topK + ki] = best;
-                rowTopP[s * topK + ki] = bestVal;
+                rowTopP[s * topK + ki] = readFloat(w.vseg(), w.vbase() + (ro + best) * Float.BYTES);
                 writeFloat(
-                        r.vseg(), r.vbase() + (ro + best) * Float.BYTES, Float.NEGATIVE_INFINITY);
+                        sel.vseg(),
+                        sel.vbase() + (ro + best) * Float.BYTES,
+                        Float.NEGATIVE_INFINITY);
                 counts[best]++;
             }
+        }
+    }
+
+    /**
+     * The common softmax-routing spine (llama.cpp build_moe_ffn with softmax gating and {@code
+     * norm_w=true}): softmax each row of {@code routerLogits} in place, select the top-k, then
+     * renormalize the k weights to sum to 1. Architectures with other gating (sigmoid,
+     * selection-time bias) compose the pieces themselves.
+     */
+    public static void softmaxSelectTopK(
+            MemoryView<MemorySegment> routerLogits,
+            int rows,
+            int experts,
+            int topK,
+            int[] rowTopE,
+            float[] rowTopP,
+            int[] counts) {
+        for (int s = 0; s < rows; s++)
+            Ops.softmaxInPlace(routerLogits, (long) s * experts, experts);
+        selectTopK(routerLogits, rows, experts, topK, rowTopE, rowTopP, counts);
+        normalizeTopP(rowTopP, rows, topK);
+    }
+
+    /**
+     * Renormalize every row's k selected weights to sum to 1 (llama.cpp build_moe_ffn {@code
+     * norm_w}). Runs on {@link #selectTopK}'s {@code rowTopP} output.
+     */
+    public static void normalizeTopP(float[] rowTopP, int rows, int topK) {
+        for (int s = 0; s < rows; s++) {
+            float sum = 0f;
+            for (int k = 0; k < topK; k++) sum += rowTopP[s * topK + k];
+            for (int k = 0; k < topK; k++) rowTopP[s * topK + k] /= sum;
         }
     }
 
@@ -116,8 +172,8 @@ public final class Moe {
      * expert's rows out of {@code input}, run its {@code kernel}, and scatter-add the result into
      * {@code out} weighted by the route's combine weight. {@code expertScale} (nullable) folds a
      * per-expert output scale into the combine weight at build time (e.g. Gemma's per-expert down
-     * scale) — byte-identical to applying it at the scatter. {@code expertOut} is the kernel's
-     * per-group output scratch.
+     * scale) — equivalent to applying it at the scatter, up to float rounding. {@code expertOut} is
+     * the kernel's per-group output scratch.
      */
     public static void dispatch(
             Routing r,
@@ -136,16 +192,13 @@ public final class Moe {
         for (int s = 0; s < r.seqLen; s++) {
             for (int k = 0; k < r.topK; k++) {
                 int e = r.rowTopE[s * r.topK + k];
-                if (e < 0)
-                    continue; // unfilled top-k slot (e.g. Qwen's insertion sort); not counted
-                // either
                 int pos = r.cursor[e]++;
                 r.rowByExpert[pos] = s;
                 r.probByExpert[pos] =
                         scaleRaw == null
                                 ? r.rowTopP[s * r.topK + k]
                                 : r.rowTopP[s * r.topK + k]
-                                        * com.qxotic.jinfer.Segments.readFloat(
+                                        * readFloat(
                                                 scaleRaw.vseg(),
                                                 scaleRaw.vbase() + (long) e * Float.BYTES);
             }

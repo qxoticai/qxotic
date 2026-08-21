@@ -29,7 +29,6 @@ import com.qxotic.jinfer.llm.SpeculativeDecoding.SpeculationResult;
 import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.media.MediaProjector;
 import com.qxotic.jinfer.media.Multimodal;
-import com.qxotic.jota.DataType;
 import com.qxotic.jota.memory.MemoryAllocator;
 import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
@@ -547,7 +546,14 @@ public final class Gemma4
                             rms * invSqrtDim);
                 });
         MatMul.gemm(moe.router, state.moeRouterInput, state.moeRouter, seqLen);
-        selectTopExperts(state, seqLen, experts, topK);
+        Moe.softmaxSelectTopK(
+                state.moeRouter,
+                seqLen,
+                experts,
+                topK,
+                state.moeRowTopE,
+                state.moeRowTopP,
+                state.moeExpertCounts);
         Moe.Routing routing = state.moeRouting;
         routing.seqLen = seqLen;
         Moe.dispatch(
@@ -576,20 +582,6 @@ public final class Gemma4
         Norms.rmsnormRows(
                 state.moeShared, state.moeShared, w.postFfnNorm, seqLen, dim, c.rmsNormEps);
         Ops.addInPlace(state.residual, 0, state.moeShared, 0, seqLen * dim);
-    }
-
-    private static void selectTopExperts(State state, int seqLen, int experts, int topK) {
-        for (int row = 0; row < seqLen; row++) {
-            Ops.softmaxInPlace(state.moeRouter, (long) row * experts, experts);
-        }
-        Moe.selectTopK(
-                state.moeRouter,
-                seqLen,
-                experts,
-                topK,
-                state.moeRowTopE,
-                state.moeRowTopP,
-                state.moeExpertCounts);
     }
 
     private void commitKv(State state, int startPos, int seqLen) {
@@ -1111,39 +1103,20 @@ public final class Gemma4
         return n;
     }
 
-    private static MemoryView<MemorySegment> require(
-            Map<String, MemoryView<MemorySegment>> tensors, String name) {
-        return Objects.requireNonNull(tensors.get(name), name);
-    }
-
-    private static MemoryView<MemorySegment> requireF32(
-            Map<String, MemoryView<MemorySegment>> tensors, String name) {
-        MemoryView<MemorySegment> value = require(tensors, name);
-        Views.requireDatatype(value, DataType.FP32, name);
-        return value;
-    }
-
-    private static MemoryView<MemorySegment> findF32(
-            Map<String, MemoryView<MemorySegment>> tensors, String name) {
-        MemoryView<MemorySegment> value = tensors.get(name);
-        if (value != null) Views.requireDatatype(value, DataType.FP32, name);
-        return value;
-    }
-
     static Weights loadWeights(Map<String, MemoryView<MemorySegment>> tensors, Configuration c) {
         int n = c.numberOfLayers;
-        float[] freqs = ModelLoader.ropeFreqFactors(tensors);
         RoPE.Schedule full =
-                freqs == null
-                        ? RoPE.plain(c.headSizeFull, c.ropeThetaFull)
-                        : RoPE.withFreqFactors(c.headSizeFull, c.ropeThetaFull, freqs);
+                ModelLoader.ropeFreqFactors(tensors)
+                        .map(freqs -> RoPE.withFreqFactors(c.headSizeFull, c.ropeThetaFull, freqs))
+                        .orElseGet(() -> RoPE.plain(c.headSizeFull, c.ropeThetaFull));
         RoPE.Schedule swa = RoPE.plain(c.headSizeSwa, c.ropeThetaSwa);
         boolean ple =
                 c.embeddingLengthPerLayer > 0 && tensors.containsKey("per_layer_token_embd.weight");
         LayerWeights[] layers = new LayerWeights[n];
         for (int l = 0; l < n; l++) {
             String p = "blk." + l + ".";
-            MemoryView<MemorySegment> scale = findF32(tensors, p + "layer_output_scale.weight");
+            MemoryView<MemorySegment> scale =
+                    ModelLoader.findF32(tensors, p + "layer_output_scale.weight").orElse(null);
             float outputScale = 1f;
             if (scale != null) {
                 outputScale = Views.getFloat(scale, 0, p + "layer_output_scale.weight");
@@ -1151,52 +1124,54 @@ public final class Gemma4
             MoeWeights moe =
                     c.isMoe() && tensors.containsKey(p + "ffn_gate_inp.weight")
                             ? new MoeWeights(
-                                    require(tensors, p + "ffn_gate_inp.weight"),
-                                    requireF32(tensors, p + "ffn_gate_inp.scale"),
+                                    ModelLoader.require(tensors, p + "ffn_gate_inp.weight"),
+                                    ModelLoader.requireF32(tensors, p + "ffn_gate_inp.scale"),
                                     Views.sliceLeadingAxis(
-                                            require(tensors, p + "ffn_gate_up_exps.weight")),
+                                            ModelLoader.require(
+                                                    tensors, p + "ffn_gate_up_exps.weight")),
                                     Views.sliceLeadingAxis(
-                                            require(tensors, p + "ffn_down_exps.weight")),
-                                    requireF32(tensors, p + "ffn_down_exps.scale"),
-                                    requireF32(tensors, p + "post_ffw_norm_1.weight"),
-                                    requireF32(tensors, p + "pre_ffw_norm_2.weight"),
-                                    requireF32(tensors, p + "post_ffw_norm_2.weight"))
+                                            ModelLoader.require(
+                                                    tensors, p + "ffn_down_exps.weight")),
+                                    ModelLoader.requireF32(tensors, p + "ffn_down_exps.scale"),
+                                    ModelLoader.requireF32(tensors, p + "post_ffw_norm_1.weight"),
+                                    ModelLoader.requireF32(tensors, p + "pre_ffw_norm_2.weight"),
+                                    ModelLoader.requireF32(tensors, p + "post_ffw_norm_2.weight"))
                             : null;
             layers[l] =
                     new LayerWeights(
-                            requireF32(tensors, p + "attn_norm.weight"),
-                            require(tensors, p + "attn_q.weight"),
-                            tensors.get(p + "attn_k.weight"),
-                            tensors.get(p + "attn_v.weight"),
-                            require(tensors, p + "attn_output.weight"),
-                            requireF32(tensors, p + "attn_q_norm.weight"),
+                            ModelLoader.requireF32(tensors, p + "attn_norm.weight"),
+                            ModelLoader.require(tensors, p + "attn_q.weight"),
+                            ModelLoader.find(tensors, p + "attn_k.weight").orElse(null),
+                            ModelLoader.find(tensors, p + "attn_v.weight").orElse(null),
+                            ModelLoader.require(tensors, p + "attn_output.weight"),
+                            ModelLoader.requireF32(tensors, p + "attn_q_norm.weight"),
                             c.hasKv(l)
-                                    ? requireF32(tensors, p + "attn_k_norm.weight")
-                                    : findF32(tensors, p + "attn_k_norm.weight"),
-                            requireF32(tensors, p + "post_attention_norm.weight"),
-                            requireF32(tensors, p + "ffn_norm.weight"),
-                            require(tensors, p + "ffn_gate.weight"),
-                            require(tensors, p + "ffn_down.weight"),
-                            require(tensors, p + "ffn_up.weight"),
-                            requireF32(tensors, p + "post_ffw_norm.weight"),
+                                    ? ModelLoader.requireF32(tensors, p + "attn_k_norm.weight")
+                                    : ModelLoader.findF32(tensors, p + "attn_k_norm.weight")
+                                            .orElse(null),
+                            ModelLoader.requireF32(tensors, p + "post_attention_norm.weight"),
+                            ModelLoader.requireF32(tensors, p + "ffn_norm.weight"),
+                            ModelLoader.require(tensors, p + "ffn_gate.weight"),
+                            ModelLoader.require(tensors, p + "ffn_down.weight"),
+                            ModelLoader.require(tensors, p + "ffn_up.weight"),
+                            ModelLoader.requireF32(tensors, p + "post_ffw_norm.weight"),
                             outputScale,
-                            ple ? require(tensors, p + "inp_gate.weight") : null,
-                            ple ? require(tensors, p + "proj.weight") : null,
-                            ple ? requireF32(tensors, p + "post_norm.weight") : null,
+                            ple ? ModelLoader.require(tensors, p + "inp_gate.weight") : null,
+                            ple ? ModelLoader.require(tensors, p + "proj.weight") : null,
+                            ple ? ModelLoader.requireF32(tensors, p + "post_norm.weight") : null,
                             moe);
         }
-        MemoryView<MemorySegment> tokenEmbeddings = require(tensors, "token_embd.weight");
+        MemoryView<MemorySegment> tokenEmbeddings =
+                ModelLoader.require(tensors, "token_embd.weight");
         return new Weights(
                 tokenEmbeddings,
                 layers,
-                requireF32(tensors, "output_norm.weight"),
+                ModelLoader.requireF32(tensors, "output_norm.weight"),
                 full,
                 swa,
-                tensors.containsKey("output.weight")
-                        ? require(tensors, "output.weight")
-                        : tokenEmbeddings,
-                ple ? require(tensors, "per_layer_token_embd.weight") : null,
-                ple ? require(tensors, "per_layer_model_proj.weight") : null,
-                ple ? requireF32(tensors, "per_layer_proj_norm.weight") : null);
+                ModelLoader.find(tensors, "output.weight").orElse(tokenEmbeddings),
+                ple ? ModelLoader.require(tensors, "per_layer_token_embd.weight") : null,
+                ple ? ModelLoader.require(tensors, "per_layer_model_proj.weight") : null,
+                ple ? ModelLoader.requireF32(tensors, "per_layer_proj_norm.weight") : null);
     }
 }

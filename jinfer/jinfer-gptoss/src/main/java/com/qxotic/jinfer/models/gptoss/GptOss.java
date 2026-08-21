@@ -19,7 +19,6 @@ import com.qxotic.jinfer.kernels.Norms;
 import com.qxotic.jinfer.kernels.Ops;
 import com.qxotic.jinfer.kernels.RoPE;
 import com.qxotic.jinfer.kernels.Trace;
-import com.qxotic.jota.DataType;
 import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.toknroll.Tokenizer;
@@ -32,7 +31,6 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 
 /** GPT-OSS inference against the MemoryView boundary. */
@@ -671,11 +669,6 @@ public final class GptOss
                 gguf.getValueOrDefault(float.class, arch + ".expert_weights_scale", 1f));
     }
 
-    private static MemoryView<MemorySegment> require(
-            Map<String, MemoryView<MemorySegment>> tensors, String name) {
-        return Objects.requireNonNull(tensors.get(name), name);
-    }
-
     /**
      * Pre-slice a stacked per-expert weight {@code [experts, rows, cols/elementsPerBlock]} into
      * per-expert 2D views {@code [rows, cols/elementsPerBlock]} - zero-copy, computed once at load,
@@ -690,55 +683,49 @@ public final class GptOss
         return slices;
     }
 
-    private static MemoryView<MemorySegment> requireF32(
-            Map<String, MemoryView<MemorySegment>> tensors, String name) {
-        MemoryView<MemorySegment> value = require(tensors, name);
-        Views.requireDatatype(value, DataType.FP32, name);
-        return value;
-    }
-
     static Weights loadWeights(Map<String, MemoryView<MemorySegment>> tensors, Configuration c) {
         LayerWeights[] layers = new LayerWeights[c.numberOfLayers];
         for (int l = 0; l < layers.length; l++) {
             String p = "blk." + l + ".";
             layers[l] =
                     new LayerWeights(
-                            requireF32(tensors, p + "attn_norm.weight"),
-                            requireF32(tensors, p + "post_attention_norm.weight"),
+                            ModelLoader.requireF32(tensors, p + "attn_norm.weight"),
+                            ModelLoader.requireF32(tensors, p + "post_attention_norm.weight"),
                             new AttentionWeights(
-                                    require(tensors, p + "attn_q.weight"),
-                                    require(tensors, p + "attn_k.weight"),
-                                    require(tensors, p + "attn_v.weight"),
-                                    require(tensors, p + "attn_output.weight"),
-                                    requireF32(tensors, p + "attn_q.bias"),
-                                    requireF32(tensors, p + "attn_k.bias"),
-                                    requireF32(tensors, p + "attn_v.bias"),
-                                    requireF32(tensors, p + "attn_output.bias"),
-                                    requireF32(tensors, p + "attn_sinks.weight")),
+                                    ModelLoader.require(tensors, p + "attn_q.weight"),
+                                    ModelLoader.require(tensors, p + "attn_k.weight"),
+                                    ModelLoader.require(tensors, p + "attn_v.weight"),
+                                    ModelLoader.require(tensors, p + "attn_output.weight"),
+                                    ModelLoader.requireF32(tensors, p + "attn_q.bias"),
+                                    ModelLoader.requireF32(tensors, p + "attn_k.bias"),
+                                    ModelLoader.requireF32(tensors, p + "attn_v.bias"),
+                                    ModelLoader.requireF32(tensors, p + "attn_output.bias"),
+                                    ModelLoader.requireF32(tensors, p + "attn_sinks.weight")),
                             new MoeFfnWeights(
-                                    require(tensors, p + "ffn_gate_inp.weight"),
-                                    requireF32(tensors, p + "ffn_gate_inp.bias"),
+                                    ModelLoader.require(tensors, p + "ffn_gate_inp.weight"),
+                                    ModelLoader.requireF32(tensors, p + "ffn_gate_inp.bias"),
                                     sliceExperts(
-                                            require(tensors, p + "ffn_gate_exps.weight"),
+                                            ModelLoader.require(
+                                                    tensors, p + "ffn_gate_exps.weight"),
                                             c.expertCount),
-                                    requireF32(tensors, p + "ffn_gate_exps.bias"),
+                                    ModelLoader.requireF32(tensors, p + "ffn_gate_exps.bias"),
                                     sliceExperts(
-                                            require(tensors, p + "ffn_up_exps.weight"),
+                                            ModelLoader.require(tensors, p + "ffn_up_exps.weight"),
                                             c.expertCount),
-                                    requireF32(tensors, p + "ffn_up_exps.bias"),
+                                    ModelLoader.requireF32(tensors, p + "ffn_up_exps.bias"),
                                     sliceExperts(
-                                            require(tensors, p + "ffn_down_exps.weight"),
+                                            ModelLoader.require(
+                                                    tensors, p + "ffn_down_exps.weight"),
                                             c.expertCount),
-                                    requireF32(tensors, p + "ffn_down_exps.bias")));
+                                    ModelLoader.requireF32(tensors, p + "ffn_down_exps.bias")));
         }
-        MemoryView<MemorySegment> tokenEmbeddings = require(tensors, "token_embd.weight");
+        MemoryView<MemorySegment> tokenEmbeddings =
+                ModelLoader.require(tensors, "token_embd.weight");
         return new Weights(
                 tokenEmbeddings,
                 layers,
-                requireF32(tensors, "output_norm.weight"),
-                tensors.containsKey("output.weight")
-                        ? require(tensors, "output.weight")
-                        : tokenEmbeddings,
+                ModelLoader.requireF32(tensors, "output_norm.weight"),
+                ModelLoader.find(tensors, "output.weight").orElse(tokenEmbeddings),
                 RoPE.yarn(
                         c.headSize,
                         c.ropeTheta,

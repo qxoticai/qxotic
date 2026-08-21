@@ -19,7 +19,6 @@ import com.qxotic.jinfer.kernels.Norms;
 import com.qxotic.jinfer.kernels.Ops;
 import com.qxotic.jinfer.kernels.RoPE;
 import com.qxotic.jinfer.kernels.Trace;
-import com.qxotic.jota.DataType;
 import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.toknroll.Tokenizer;
@@ -32,7 +31,6 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 
 /** Maple sparse-transformer inference against the MemoryView boundary. */
@@ -551,45 +549,34 @@ public final class Maple implements LanguageModel<Maple.Configuration, Maple.Wei
                 gguf.getValue(float[].class, arch + ".swiglu_clamp_exp"));
     }
 
-    private static MemoryView<MemorySegment> require(
-            Map<String, MemoryView<MemorySegment>> tensors, String name) {
-        return Objects.requireNonNull(tensors.get(name), name);
-    }
-
-    private static MemoryView<MemorySegment> requireF32(
-            Map<String, MemoryView<MemorySegment>> tensors, String name) {
-        MemoryView<MemorySegment> value = require(tensors, name);
-        Views.requireDatatype(value, DataType.FP32, name);
-        return value;
-    }
-
     static Weights loadWeights(Map<String, MemoryView<MemorySegment>> tensors, Configuration c) {
         LayerWeights[] layers = new LayerWeights[c.numberOfLayers];
         for (int layer = 0; layer < layers.length; layer++) {
             String p = "blk." + layer + ".";
             layers[layer] =
                     new LayerWeights(
-                            requireF32(tensors, p + "attn_norm.weight"),
-                            require(tensors, p + "attn_q.weight"),
-                            require(tensors, p + "attn_k.weight"),
-                            require(tensors, p + "attn_v.weight"),
-                            requireF32(tensors, p + "attn_q_norm.weight"),
-                            requireF32(tensors, p + "attn_k_norm.weight"),
-                            require(tensors, p + "attn_output.weight"),
-                            requireF32(tensors, p + "ffn_norm.weight"),
-                            requireF32(tensors, p + "ffn_gate_inp.weight"),
-                            Views.sliceLeadingAxis(require(tensors, p + "ffn_gate_exps.weight")),
-                            Views.sliceLeadingAxis(require(tensors, p + "ffn_up_exps.weight")),
-                            Views.sliceLeadingAxis(require(tensors, p + "ffn_down_exps.weight")));
+                            ModelLoader.requireF32(tensors, p + "attn_norm.weight"),
+                            ModelLoader.require(tensors, p + "attn_q.weight"),
+                            ModelLoader.require(tensors, p + "attn_k.weight"),
+                            ModelLoader.require(tensors, p + "attn_v.weight"),
+                            ModelLoader.requireF32(tensors, p + "attn_q_norm.weight"),
+                            ModelLoader.requireF32(tensors, p + "attn_k_norm.weight"),
+                            ModelLoader.require(tensors, p + "attn_output.weight"),
+                            ModelLoader.requireF32(tensors, p + "ffn_norm.weight"),
+                            ModelLoader.requireF32(tensors, p + "ffn_gate_inp.weight"),
+                            Views.sliceLeadingAxis(
+                                    ModelLoader.require(tensors, p + "ffn_gate_exps.weight")),
+                            Views.sliceLeadingAxis(
+                                    ModelLoader.require(tensors, p + "ffn_up_exps.weight")),
+                            Views.sliceLeadingAxis(
+                                    ModelLoader.require(tensors, p + "ffn_down_exps.weight")));
         }
-        MemoryView<MemorySegment> embeddings = require(tensors, "token_embd.weight");
+        MemoryView<MemorySegment> embeddings = ModelLoader.require(tensors, "token_embd.weight");
         return new Weights(
                 embeddings,
                 layers,
-                requireF32(tensors, "output_norm.weight"),
-                tensors.containsKey("output.weight")
-                        ? require(tensors, "output.weight")
-                        : embeddings,
+                ModelLoader.requireF32(tensors, "output_norm.weight"),
+                ModelLoader.find(tensors, "output.weight").orElse(embeddings),
                 RoPE.plain(c.ropeDimension, c.ropeTheta));
     }
 }

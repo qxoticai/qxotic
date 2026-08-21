@@ -30,7 +30,7 @@ import com.qxotic.jinfer.llm.SpeculativeDecoding.SpeculationResult;
 import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.media.MediaProjector;
 import com.qxotic.jinfer.media.Multimodal;
-import com.qxotic.jota.DataType;
+import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryAllocator;
 import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
@@ -487,15 +487,8 @@ public final class Qwen35
         int dim = c.embeddingLength, experts = c.expertCount;
         int topK = Math.min(c.expertUsedCount, experts), expertFfn = c.expertFeedForwardLength;
         MatMul.gemm(weights.moeRouter[layer], s.normed, s.moeRouter, rows);
-        for (int row = 0; row < rows; row++)
-            Ops.softmaxInPlace(s.moeRouter, (long) row * experts, experts);
-        Moe.selectTopK(
+        Moe.softmaxSelectTopK(
                 s.moeRouter, rows, experts, topK, s.moeRowTopE, s.moeRowTopP, s.moeExpertCounts);
-        for (int row = 0; row < rows; row++) {
-            float sum = 0f;
-            for (int k = 0; k < topK; k++) sum += s.moeRowTopP[row * topK + k];
-            for (int k = 0; k < topK; k++) s.moeRowTopP[row * topK + k] /= sum;
-        }
         Moe.Routing routing = s.moeRouting;
         routing.seqLen = rows;
         routing.topK = topK;
@@ -756,9 +749,8 @@ public final class Qwen35
         final MemoryView<MemorySegment> hidden, hidden2;
         final MemoryView<MemorySegment>[] keyCache, valueCache, convState, recurrentState;
         final MemoryView<MemorySegment> moeRouter, moeGather, moeDown;
-        // Per-expert gate/up at EXACTLY expertFeedForwardLength wide: hidden/hidden2 are sized to
-        // max(dense, expert) FFN width, and the silu-multiply between gate/up and down addresses
-        // rows packed at the expert width.
+        // Per-expert gate/up at EXACTLY expertFeedForwardLength wide: the silu-multiply between
+        // gate/up and down addresses rows packed at the expert width.
         final MemoryView<MemorySegment> moeHidden, moeHidden2;
         final MemoryView<MemorySegment> sharedGate, sharedUp, sharedOut, sharedScale;
         final int[] moeExpertCounts, moeRowTopE;
@@ -789,7 +781,6 @@ public final class Qwen35
                 throw new IllegalArgumentException("batchCapacity " + batchCapacity);
             int b = batchCapacity, dim = c.embeddingLength, qd = c.queryDim(), kvd = c.kvDim();
             int hd = c.headVDim(), heads = c.ssmTimeStepRank, channels = c.convChannels();
-            int maxHidden = Math.max(c.hiddenDim, c.expertFeedForwardLength);
             residual = Views.allocateF32(memoryArena(), b, dim);
             normed = Views.allocateF32(memoryArena(), b, dim);
             branch = Views.allocateF32(memoryArena(), b, dim);
@@ -823,8 +814,8 @@ public final class Qwen35
             ssmTmp = Views.allocateF32(memoryArena(), b, c.ssmInnerSize);
             ssmSk = Views.allocateF32(memoryArena(), heads, hd);
             ssmDelta = Views.allocateF32(memoryArena(), heads, hd);
-            hidden = Views.allocateF32(memoryArena(), b, Math.max(1, maxHidden));
-            hidden2 = Views.allocateF32(memoryArena(), b, Math.max(1, maxHidden));
+            hidden = Views.allocateF32(memoryArena(), b, Math.max(1, c.hiddenDim));
+            hidden2 = Views.allocateF32(memoryArena(), b, Math.max(1, c.hiddenDim));
             keyCache = new MemoryView[c.storedLayers()];
             valueCache = new MemoryView[c.storedLayers()];
             convState = new MemoryView[c.storedLayers()];
@@ -984,34 +975,34 @@ public final class Qwen35
             throw new IllegalArgumentException(
                     "Qwen3.5 GGUF contains nextn tensors but declares nextn_predict_layers=0");
         int n = c.storedLayers();
-        MemoryView<MemorySegment> embedding = require(tensors, "token_embd.weight");
-        MemoryView<MemorySegment> outputNorm = requireF32(tensors, "output_norm.weight");
+        MemoryView<MemorySegment> embedding = ModelLoader.require(tensors, "token_embd.weight");
+        MemoryView<MemorySegment> outputNorm =
+                ModelLoader.requireF32(tensors, "output_norm.weight");
         MemoryView<MemorySegment> output =
-                tensors.containsKey("output.weight")
-                        ? require(tensors, "output.weight")
-                        : embedding;
+                ModelLoader.find(tensors, "output.weight").orElse(embedding);
         int ropeDim = Math.max(0, Math.min(c.ropeDimensionCount, c.headSize) & ~1);
         NextNWeights nextn = null;
         if (c.hasMtp()) {
             String block = p(c.mtpLayer()) + "nextn.";
             nextn =
                     new NextNWeights(
-                            tensors.getOrDefault(block + "embed_tokens.weight", embedding),
-                            requireF32(tensors, block + "enorm.weight"),
-                            requireF32(tensors, block + "hnorm.weight"),
-                            require(tensors, block + "eh_proj.weight"),
-                            tensors.containsKey(block + "shared_head_norm.weight")
-                                    ? requireF32(tensors, block + "shared_head_norm.weight")
-                                    : outputNorm,
-                            tensors.getOrDefault(block + "shared_head_head.weight", output));
+                            ModelLoader.find(tensors, block + "embed_tokens.weight")
+                                    .orElse(embedding),
+                            ModelLoader.requireF32(tensors, block + "enorm.weight"),
+                            ModelLoader.requireF32(tensors, block + "hnorm.weight"),
+                            ModelLoader.require(tensors, block + "eh_proj.weight"),
+                            ModelLoader.findF32(tensors, block + "shared_head_norm.weight")
+                                    .orElse(outputNorm),
+                            ModelLoader.find(tensors, block + "shared_head_head.weight")
+                                    .orElse(output));
         }
         boolean moe = c.isMoE(), shared = moe && c.expertSharedFeedForwardLength > 0;
         return new Weights(
                 embedding,
                 outputNorm,
                 output,
-                array(n, i -> requireF32(tensors, p(i) + "attn_norm.weight")),
-                array(n, i -> requireF32(tensors, p(i) + "post_attention_norm.weight")),
+                array(n, i -> ModelLoader.requireF32(tensors, p(i) + "attn_norm.weight")),
+                array(n, i -> ModelLoader.requireF32(tensors, p(i) + "post_attention_norm.weight")),
                 array(n, i -> requireIf(tensors, c.isFullAttention[i], p(i) + "attn_q.weight")),
                 array(n, i -> requireIf(tensors, c.isFullAttention[i], p(i) + "attn_k.weight")),
                 array(n, i -> requireIf(tensors, c.isFullAttention[i], p(i) + "attn_v.weight")),
@@ -1107,14 +1098,7 @@ public final class Qwen35
                                         shared,
                                         p(i) + "ffn_down_shexp.weight",
                                         p(i) + "ffn_shared_expert_down.weight")),
-                array(
-                        n,
-                        i ->
-                                requireFirstIf(
-                                        tensors,
-                                        shared,
-                                        p(i) + "ffn_gate_inp_shexp.weight",
-                                        p(i) + "ffn_shared_expert_gate_inp.weight")),
+                array(n, i -> sharedExpertInputGate(tensors, shared, p(i))),
                 ropeDim == 0 ? null : RoPE.plain(ropeDim, c.ropeTheta),
                 ropeDim / 2,
                 nextn);
@@ -1128,6 +1112,26 @@ public final class Qwen35
         MemoryView<MemorySegment>[] out = new MemoryView[n];
         for (int i = 0; i < n; i++) out[i] = supplier.get(i);
         return out;
+    }
+
+    /**
+     * The shared-expert input gate ({@code ffn_gate_inp_shexp}), producing one scalar per token.
+     * GGUF stores it as 1D [dim]; MatMul needs a 2D [1, dim] view, so the tensor segment is
+     * rewrapped (zero-copy).
+     */
+    private static MemoryView<MemorySegment> sharedExpertInputGate(
+            Map<String, MemoryView<MemorySegment>> tensors, boolean shared, String prefix) {
+        MemoryView<MemorySegment> v =
+                requireFirstIf(
+                        tensors,
+                        shared,
+                        prefix + "ffn_gate_inp_shexp.weight",
+                        prefix + "ffn_shared_expert_gate_inp.weight");
+        if (v == null || v.shape().flatRank() == 2) return v;
+        MemoryView<MemorySegment> sv = Views.castToSegmentBacked(v, "ffn_gate_inp_shexp");
+        long bytes = sv.dataType().byteSizeFor(sv.dataType().physicalShape(sv.shape()));
+        MemorySegment seg = sv.memory().base().asSlice(sv.byteOffset(), bytes);
+        return Views.wrap(seg, sv.dataType(), Shape.flat(1, sv.shape().flatAt(0)));
     }
 
     private interface ViewArrayAt {
@@ -1144,28 +1148,14 @@ public final class Qwen35
         return "blk." + i + ".";
     }
 
-    private static MemoryView<MemorySegment> require(
-            Map<String, MemoryView<MemorySegment>> tensors, String name) {
-        MemoryView<MemorySegment> view = tensors.get(name);
-        if (view == null) throw new IllegalArgumentException("Qwen3.5 GGUF is missing " + name);
-        return view;
-    }
-
-    private static MemoryView<MemorySegment> requireF32(
-            Map<String, MemoryView<MemorySegment>> tensors, String name) {
-        MemoryView<MemorySegment> view = require(tensors, name);
-        Views.requireDatatype(view, DataType.FP32, name);
-        return view;
-    }
-
     private static MemoryView<MemorySegment> requireIf(
             Map<String, MemoryView<MemorySegment>> tensors, boolean required, String name) {
-        return required ? require(tensors, name) : null;
+        return required ? ModelLoader.require(tensors, name) : null;
     }
 
     private static MemoryView<MemorySegment> requireF32If(
             Map<String, MemoryView<MemorySegment>> tensors, boolean required, String name) {
-        return required ? requireF32(tensors, name) : null;
+        return required ? ModelLoader.requireF32(tensors, name) : null;
     }
 
     private static MemoryView<MemorySegment> requireFirstIf(
@@ -1174,8 +1164,10 @@ public final class Qwen35
             String first,
             String second) {
         if (!required) return null;
-        MemoryView<MemorySegment> view = ModelLoader.firstPresent(tensors, first, second);
-        if (view == null) throw new IllegalArgumentException("Qwen3.5 GGUF is missing " + first);
-        return view;
+        return ModelLoader.findFirst(tensors, first, second)
+                .orElseThrow(
+                        () ->
+                                new IllegalArgumentException(
+                                        "missing tensor: " + first + " (or " + second + ")"));
     }
 }

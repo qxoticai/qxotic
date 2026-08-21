@@ -5,6 +5,7 @@ package com.qxotic.jinfer.kernels;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.format.gguf.TensorEntry;
+import com.qxotic.jinfer.Views;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
@@ -21,6 +22,7 @@ import java.nio.channels.FileChannel;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 
 public final class ModelLoader {
 
@@ -105,44 +107,58 @@ public final class ModelLoader {
     }
 
     /**
-     * The optional "llama3" RoPE frequency-scaling factors ({@code rope_freqs.weight}), or null if
+     * The optional "llama3" RoPE frequency-scaling factors ({@code rope_freqs.weight}), empty if
      * the model uses plain RoPE. These are per-frequency divisors (1.0 for high frequencies, up to
      * the long-context factor for low frequencies); see {@code RoPE.withFreqFactors}.
      */
-    public static float[] ropeFreqFactors(Map<String, MemoryView<MemorySegment>> tensorViews) {
-        MemoryView<MemorySegment> e = tensorViews.get("rope_freqs.weight");
-        if (e == null) return null;
-        long n = e.logicalSize();
-        return e.memory()
-                .base()
-                .asSlice(e.byteOffset(), n * Float.BYTES)
-                .toArray(ValueLayout.JAVA_FLOAT);
+    public static Optional<float[]> ropeFreqFactors(
+            Map<String, MemoryView<MemorySegment>> tensorViews) {
+        return findF32(tensorViews, "rope_freqs.weight")
+                .map(
+                        e ->
+                                e.memory()
+                                        .base()
+                                        .asSlice(e.byteOffset(), e.logicalSize() * Float.BYTES)
+                                        .toArray(ValueLayout.JAVA_FLOAT));
     }
 
-    /** View by name, or null if absent (dtype rides on the view; kernels check at entry). */
-    public static MemoryView<MemorySegment> viewOrNull(
+    /** View by name; throws {@link IllegalArgumentException} if absent. */
+    public static MemoryView<MemorySegment> require(
             Map<String, MemoryView<MemorySegment>> views, String name) {
-        return views.get(name);
+        MemoryView<MemorySegment> view = views.get(name);
+        if (view == null) throw new IllegalArgumentException("missing tensor: " + name);
+        return view;
     }
 
-    /** First present view among alternate tensor names (GGUF converter naming drift), or null. */
-    public static MemoryView<MemorySegment> firstPresent(
+    /** FP32 view by name (dtype checked AT LOAD), or throw if absent. */
+    public static MemoryView<MemorySegment> requireF32(
+            Map<String, MemoryView<MemorySegment>> views, String name) {
+        MemoryView<MemorySegment> view = require(views, name);
+        Views.requireDatatype(view, DataType.FP32, name);
+        return view;
+    }
+
+    /** View by name if present — any dtype (it rides on the view; kernels check at entry). */
+    public static Optional<MemoryView<MemorySegment>> find(
+            Map<String, MemoryView<MemorySegment>> views, String name) {
+        return Optional.ofNullable(views.get(name));
+    }
+
+    /** FP32 view by name if present; when present the dtype is checked AT LOAD. */
+    public static Optional<MemoryView<MemorySegment>> findF32(
+            Map<String, MemoryView<MemorySegment>> views, String name) {
+        MemoryView<MemorySegment> view = views.get(name);
+        if (view != null) Views.requireDatatype(view, DataType.FP32, name);
+        return Optional.ofNullable(view);
+    }
+
+    /** First present view among alternate tensor names (GGUF converter naming drift). */
+    public static Optional<MemoryView<MemorySegment>> findFirst(
             Map<String, MemoryView<MemorySegment>> views, String... names) {
         for (String name : names) {
             MemoryView<MemorySegment> view = views.get(name);
-            if (view != null) return view;
+            if (view != null) return Optional.of(view);
         }
-        return null;
-    }
-
-    /** Per-layer array of views; a slot is null when its tensor is absent. */
-    public static MemoryView<MemorySegment>[] viewArray(
-            int n, java.util.function.IntFunction<MemoryView<MemorySegment>> get) {
-        @SuppressWarnings("unchecked")
-        MemoryView<MemorySegment>[] a = new MemoryView[n];
-        for (int i = 0; i < n; i++) {
-            a[i] = get.apply(i);
-        }
-        return a;
+        return Optional.empty();
     }
 }
