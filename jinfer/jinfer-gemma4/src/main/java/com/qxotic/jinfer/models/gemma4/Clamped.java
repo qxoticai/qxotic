@@ -52,7 +52,17 @@ record Clamped(
             requireActivation(clampScratch, "clampScratch", rows, inDim);
             Convert.copyF32(input, 0, clampScratch, 0, inputElements);
             Ops.clampInPlace(clampScratch, 0, inputElements, inputMin, inputMax);
-            source = clampScratch;
+            // ponytail: the clamp scratch is a shared max-width buffer ([count, 3072] here), and
+            // MatMul strides A by stride()[0] - not by the contraction width. Passing the raw
+            // scratch would read row r at r*3072 while the copy packed rows at r*inDim: row 0
+            // correct, every row >= 1 garbage (the docstring's "max-width-scratch MoE trap").
+            // Re-view the live prefix at the LOGICAL [rows, inDim] so the stride matches.
+            MemorySegment prefix =
+                    clampScratch
+                            .memory()
+                            .base()
+                            .asSlice(clampScratch.byteOffset(), (long) inputElements * Float.BYTES);
+            source = Views.wrap(prefix, DataType.FP32, Shape.flat(rows, inDim));
         }
         MatMul.gemm(weight, source, output, rows);
         if (outputMin > -Float.MAX_VALUE || outputMax < Float.MAX_VALUE)
