@@ -351,7 +351,7 @@ public final class Gemma4
         LayerWeights w = weights.layers[l];
         int dim = c.embeddingLength;
         boolean swa = c.isSwa[l];
-        int headSize = c.headSize(l), queryDim = c.queryDim(l), kvDim = c.kvDim(l);
+        int headSize = c.headSize(l), kvDim = c.kvDim(l);
         int nKvHeads = c.numberOfKeyValueHeadsPerLayer[l];
         int kvMul = c.numberOfHeads / nKvHeads;
         int kvLayer = c.kvSourceLayer(l);
@@ -360,13 +360,13 @@ public final class Gemma4
 
         Norms.rmsnormRows(state.normed, state.residual, w.attnNorm, seqLen, dim, c.rmsNormEps);
         MatMul.gemm(w.wq, state.normed, state.query, seqLen);
-        headNormRope(state.query, queryDim, c.numberOfHeads, headSize, w.qNorm, seqLen, cos, sin);
+        headNormRope(state.query, c.numberOfHeads, headSize, w.qNorm, seqLen, cos, sin);
         if (c.hasKv(l)) {
             MemoryView<MemorySegment> bK = state.batchK[l], bV = state.batchV[l];
             MatMul.gemm(w.wk, state.normed, bK, seqLen);
             if (w.wv != null) MatMul.gemm(w.wv, state.normed, bV, seqLen);
             else Convert.copyF32(bK, 0, bV, 0, (long) seqLen * kvDim);
-            headNormRope(bK, kvDim, nKvHeads, headSize, w.kNorm, seqLen, cos, sin);
+            headNormRope(bK, nKvHeads, headSize, w.kNorm, seqLen, cos, sin);
             Parallel.forRows(
                     seqLen,
                     s -> {
@@ -394,7 +394,9 @@ public final class Gemma4
                     seqLen,
                     headSize,
                     kvDim,
-                    queryDim,
+                    // query/attnOut rows are packed at the shared buffer's stride (max query
+                    // width), which is wider than this layer's queryDim on SWA layers
+                    (int) state.query.stride().flatAt(0),
                     kvDim,
                     kvMul,
                     1f,
@@ -426,20 +428,23 @@ public final class Gemma4
         Ops.addInPlace(state.residual, 0, state.branchOut, 0, seqLen * dim);
     }
 
+    // Rows are addressed at the view's own stride: shared scratch (query, attnOut) is sized to
+    // the model's max query width, while SWA layers pack narrower rows.
     private void headNormRope(
             MemoryView<MemorySegment> t,
-            int stride,
             int heads,
             int headSize,
             MemoryView<MemorySegment> norm,
             int seqLen,
             MemoryView<MemorySegment> cos,
             MemoryView<MemorySegment> sin) {
+        long stride = t.stride().flatAt(0);
         Parallel.forRows(
                 seqLen,
                 s -> {
+                    long row = s * stride;
                     for (int h = 0; h < heads; h++) {
-                        long off = (long) s * stride + (long) h * headSize;
+                        long off = row + (long) h * headSize;
                         Norms.rmsnorm(t, off, t, off, norm, headSize, configuration.rmsNormEps);
                         RoPE.applyNeox(t, off, s, cos, sin, headSize / 2);
                     }
@@ -468,11 +473,15 @@ public final class Gemma4
                 state.normed, state.residual, w.ffnNorm, seqLen, dim, configuration.rmsNormEps);
         MatMul.gemm(w.gate, state.normed, state.hidden, seqLen);
         MatMul.gemm(w.up, state.normed, state.hidden2, seqLen);
+        // hidden/hidden2 are sized to the model's max FFN width: address rows at the buffers'
+        // own strides, not this layer's (possibly narrower) FFN width
+        int gateStride = (int) state.hidden.stride().flatAt(0),
+                upStride = (int) state.hidden2.stride().flatAt(0);
         Parallel.forRows(
                 seqLen,
                 s ->
                         Activations.geluMultiply(
-                                state.hidden, s * hidden, state.hidden2, s * hidden, hidden));
+                                state.hidden, s * gateStride, state.hidden2, s * upStride, hidden));
         MatMul.gemm(w.down, state.hidden, output, seqLen);
         Norms.rmsnormRows(output, output, postNorm, seqLen, dim, configuration.rmsNormEps);
     }
