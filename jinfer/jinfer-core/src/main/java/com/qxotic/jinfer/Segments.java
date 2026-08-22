@@ -32,7 +32,7 @@ public final class Segments {
     static final int VECTOR_BIT_SIZE = vectorBitSize();
 
     private static int vectorBitSize() {
-        Integer override = Integer.getInteger("jinfer.VectorBitSize");
+        Integer override = Integer.getInteger("jinfer.vectorBitSize");
         try {
             int preferred = VectorShape.preferredShape().vectorBitSize();
             return override != null ? override : preferred;
@@ -44,7 +44,7 @@ public final class Segments {
                     "jinfer needs the Vector API: add '--add-modules jdk.incubator.vector' to the"
                         + " JVM arguments (or JAVA_TOOL_OPTIONS). It is an incubator module, so the"
                         + " flag is required until the Vector API is finalized."
-                        + " -Djinfer.VectorBitSize=0 selects jinfer's scalar kernels but still"
+                        + " -Djinfer.vectorBitSize=0 selects jinfer's scalar kernels but still"
                         + " needs the module present.",
                     noVectorApi);
         }
