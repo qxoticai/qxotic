@@ -21,4 +21,4 @@
  *
  * @since 0.1.0
  */
-package com.qxotic.jota.runtime;
+package com.qxotic.jota.runtime.hip;
