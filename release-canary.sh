@@ -12,25 +12,28 @@
 # Not part of the default build: the empty repository re-downloads plugins and
 # third-party deps (slow, online). Run it before publishing, not per commit.
 # CANARY_WORK=/some/dir keeps the work dir (and its repo) for debugging instead of
-# deleting it on exit.
+# deleting it on exit. Honors MAVEN / MAVEN_FLAGS like the Makefiles.
 
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")" && pwd)
-MVN=${MAVEN:-mvn}
+# unquoted MAVEN_FLAGS: word-splitting intended, same convention as the Makefiles
+MVN="${MAVEN:-mvn} ${MAVEN_FLAGS:-}"
 
 WORK=${CANARY_WORK:-$(mktemp -d /tmp/release-canary.XXXXXX)}
 if [ -z "${CANARY_WORK:-}" ]; then trap 'rm -rf "$WORK"' EXIT; fi
 REPO=$WORK/repo
 
-VERSION=$("$MVN" -q -B -f "$ROOT/pom.xml" help:evaluate -Dexpression=project.version \
+VERSION=$($MVN -q -B -f "$ROOT/pom.xml" help:evaluate -Dexpression=project.version \
     -DforceStdout 2>/dev/null | tail -1)
 case "$VERSION" in
     ''|*' '*) echo "canary: could not determine project version (got '$VERSION')" >&2; exit 1 ;;
 esac
 
 echo "==> installing the $VERSION release build into throwaway repo $REPO"
-"$MVN" -B -q -f "$ROOT/pom.xml" -Prelease install \
+# jam.native.skip: the canary exercises pom/artifact resolution, not the cmake build.
+# shellcheck disable=SC2086
+$MVN -B -q -f "$ROOT/pom.xml" -Prelease install \
     -pl jinfer/jinfer-bom,jinfer/jinfer-langchain4j -am \
     -DskipTests -Dspotless.check.skip=true -Dgpg.skip=true -Djam.native.skip=true \
     -Dmaven.repo.local="$REPO"
@@ -83,6 +86,7 @@ public class Canary {
 EOF
 
 echo "==> compiling the consumer against ONLY the throwaway repository"
-( cd "$WORK/consumer" && "$MVN" -B -q compile -Dmaven.repo.local="$REPO" )
+# shellcheck disable=SC2086
+( cd "$WORK/consumer" && $MVN -B -q compile -Dmaven.repo.local="$REPO" )
 
 echo "==> canary green: jinfer-bom $VERSION manages jinfer-langchain4j and its flattened poms resolve"
