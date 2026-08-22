@@ -76,10 +76,11 @@ public final class ChatEngine implements AutoCloseable {
     private final MediaEncodingCache mediaCache = new MediaEncodingCache();
     // the streaming driver: at most ONE lazy platform thread, reused while streams keep coming,
     // gone after an idle minute. One is enough - generations serialize on the engine lock anyway,
-    // and a fresh thread per request would just park extras on that lock. The queue is BOUNDED:
-    // an unbounded one lets concurrent streaming requests accumulate without limit behind a long
-    // generation, an accidental memory-pressure failure; excess work is rejected loudly instead.
-    private static final int STREAM_QUEUE_CAPACITY = 8;
+    // and a fresh thread per request would just park extras on that lock. The queue is BOUNDED so
+    // concurrent streaming requests cannot accumulate without limit behind a long generation (an
+    // accidental memory-pressure failure); excess work is rejected loudly instead.
+    private static final int STREAM_QUEUE_CAPACITY =
+            Integer.getInteger("jinfer.streamQueueCapacity", 1024);
 
     private final ThreadPoolExecutor streamDriver =
             new ThreadPoolExecutor(
@@ -321,9 +322,9 @@ public final class ChatEngine implements AutoCloseable {
             throw new IllegalStateException(
                     "the model is busy: one stream is generating and "
                             + STREAM_QUEUE_CAPACITY
-                            + " more are already queued - run concurrent streams on a second"
-                            + " ChatEngine over the same loaded model, or retry when the current"
-                            + " stream ends");
+                            + " more are already queued - raise -Djinfer.streamQueueCapacity, run"
+                            + " concurrent streams on a second ChatEngine over the same loaded"
+                            + " model, or retry when the current stream ends");
         }
     }
 
