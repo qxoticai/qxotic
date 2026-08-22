@@ -31,6 +31,15 @@ fail at least the first answer.
 
 ## Run
 
+The example is not dependency-closed - on a clean clone, install what it depends on once, from
+the repository root:
+
+```
+mvn -Pexamples -pl jinfer/jinfer-example-judge-advisor -am install -DskipTests
+```
+
+Then, from this directory:
+
 ```
 export KIMI_API_KEY=sk-kimi-...      # kimi.com (Kimi for Coding); api.moonshot.ai keys work too
 export JINFER_JUDGE_MODEL=/path/to/judge.gguf   # e.g. LFM2.5-8B-A1B-Q8_0.gguf

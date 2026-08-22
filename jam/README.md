@@ -130,11 +130,13 @@ You need **CMake ≥ 3.16**, a **C11 compiler** (clang preferred), and a **JDK �
 On macOS, `xcode-select --install` covers clang, cmake, and the Metal frameworks. On Windows, clang is
 required (MSVC can't build the SIMD kernels).
 
-**Maven** runs cmake, javac, and the tests in one step:
+**Maven** runs cmake, javac, and the tests in one step - from the **repository root**: jam is not
+dependency-closed (`jam-core` builds on `jota-core`), so `mvn` inside this directory only works
+after a root `mvn install`:
 
 ```sh
-mvn package      # -> dist/jam.jar  (native lib built for you)
-mvn test         # configure + build + JUnit
+mvn -pl jam/jam-vector -am package -DskipTests   # jars under jam/*/target (the native lib builds first)
+mvn -pl jam/jam-vector -am verify                # configure + build + JUnit incl. the parity suite
 ```
 
 **Or build just the native library with cmake** (no JVM — for the C API, or to pre-stage `dist/native/`
@@ -146,10 +148,10 @@ cmake --build build           # -> build/libjam.so, staged into dist/native/
 ```
 
 Flags: `-DJAM_METAL=OFF` (no Metal), `-DJAM_JNI=OFF` (C only), `-DJAM_TESTS=OFF`, `-DJAM_STRIP=ON`.
-`mvn package -Djam.native.skip=true` reuses a pre-staged `dist/native/`.
+`mvn -pl jam/jam-vector -am package -Djam.native.skip=true` reuses a pre-staged `dist/native/`.
 
 Each host builds only the kernels it can run, and the library picks the best at runtime, so it works on
-any CPU. CI builds each platform natively and merges them into one fat `jam.jar`.
+any CPU.
 
 ---
 
