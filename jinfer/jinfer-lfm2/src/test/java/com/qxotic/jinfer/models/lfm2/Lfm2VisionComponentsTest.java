@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.media.Media;
+import com.qxotic.jinfer.testkit.MediaProjectorContract;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -77,6 +78,48 @@ class Lfm2VisionComponentsTest {
                 new float[] {2.5f, 25f},
                 Lfm2Vision.interpolatePositions(source, 2, 2, 1, 1),
                 1e-6f);
+    }
+
+    @Test
+    void tinyTowerHonoursTheSharedProjectorContract() {
+        // Same synthetic tower Lfm2ChatTemplateTest uses, this time actually projecting: the
+        // shared contract checks positions == rows, chunk shape/expiry and determinism.
+        try (Arena arena = Arena.ofConfined()) {
+            PanamaMemoryArena memory = new PanamaMemoryArena(arena);
+            MediaProjectorContract.assertContract(tinyVision(memory), image(32, 32), 1);
+        }
+    }
+
+    private static Lfm2Vision tinyVision(PanamaMemoryArena arena) {
+        int patchVector = 3 * 16 * 16;
+        return new Lfm2Vision(
+                16,
+                1,
+                1,
+                1,
+                2,
+                1,
+                1,
+                16,
+                1e-6f,
+                Views.allocateF32(arena, 1, patchVector),
+                Views.allocateF32(arena, 1),
+                new float[16 * 16],
+                one(arena),
+                Views.allocateF32(arena, 1),
+                null,
+                null,
+                new Lfm2Vision.Linear(
+                        Views.allocateF32(arena, 1, 4), Views.allocateF32(arena, 1), 1, 4),
+                new Lfm2Vision.Linear(
+                        Views.allocateF32(arena, 1, 1), Views.allocateF32(arena, 1), 1, 1),
+                new Lfm2Vision.Layer[0]);
+    }
+
+    private static MemoryView<MemorySegment> one(PanamaMemoryArena arena) {
+        MemoryView<MemorySegment> value = Views.allocateF32(arena, 1);
+        Views.copyFromArray(value, 0, new float[] {1}, 0, 1, "test weight");
+        return value;
     }
 
     private static Media.Image image(int width, int height) {
