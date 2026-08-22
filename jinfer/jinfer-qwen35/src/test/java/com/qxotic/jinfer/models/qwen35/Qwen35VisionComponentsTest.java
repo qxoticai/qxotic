@@ -8,10 +8,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.Views;
+import com.qxotic.jinfer.kernels.Convert;
 import com.qxotic.jinfer.media.Media;
+import com.qxotic.jota.DataType;
+import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -88,55 +92,23 @@ class Qwen35VisionComponentsTest {
 
     @Test
     void tinyTowerRunsEndToEndAndExpiresSinkView() {
-        int patchSize = 1, visionDim = 8, headCount = 2, ffnDim = 8, merge = 2;
-        int modelDim = 4, positionSide = 1, projectorDim = 8;
+        int visionDim = 8, merge = 2, modelDim = 4;
+        // projectorDim != visionDim on purpose: Qwen3.5's mmproj MLP runs wider than the tower
+        // (4096 vs 1024), and an equal-width toy would mask a merger buffer sized at visionDim.
+        int projectorDim = 16;
         int patchVector = 3;
         int projectorInput = merge * merge * visionDim;
 
         List<MemoryView<MemorySegment>> borrowed = new ArrayList<>();
         try (Arena arena = Arena.ofConfined()) {
             PanamaMemoryArena memory = new PanamaMemoryArena(arena);
-            Qwen35Vision.Layer layer =
-                    new Qwen35Vision.Layer(
-                            ones(memory, visionDim),
-                            zeros(memory, visionDim),
-                            zeros(memory, 3 * visionDim, visionDim),
-                            zeros(memory, 3 * visionDim),
-                            zeros(memory, visionDim, visionDim),
-                            zeros(memory, visionDim),
-                            ones(memory, visionDim),
-                            zeros(memory, visionDim),
-                            zeros(memory, ffnDim, visionDim),
-                            zeros(memory, ffnDim),
-                            zeros(memory, visionDim, ffnDim),
-                            zeros(memory, visionDim));
             Qwen35Vision tower =
-                    new Qwen35Vision(
-                            patchSize,
-                            visionDim,
-                            modelDim,
-                            headCount,
-                            ffnDim,
-                            merge,
-                            positionSide,
-                            1e-6f,
+                    tinyTower(
+                            memory,
                             zeros(memory, visionDim, patchVector),
                             zeros(memory, visionDim, patchVector),
-                            zeros(memory, visionDim),
-                            zeros(memory, positionSide * positionSide, visionDim),
-                            ones(memory, visionDim),
-                            zeros(memory, visionDim),
-                            new Qwen35Vision.Linear(
-                                    zeros(memory, projectorDim, projectorInput),
-                                    zeros(memory, projectorDim),
-                                    projectorDim,
-                                    projectorInput),
-                            new Qwen35Vision.Linear(
-                                    zeros(memory, modelDim, projectorDim),
-                                    zeros(memory, modelDim),
-                                    modelDim,
-                                    projectorDim),
-                            new Qwen35Vision.Layer[] {layer});
+                            zeros(memory, projectorDim, projectorInput),
+                            zeros(memory, modelDim, projectorDim));
 
             Media.Image image = new Media.Image(new float[2 * 2 * 3], 2, 2, 3);
             // A 2x2 image is upscaled by the 8-token minimum to a 6x6 patch grid (merge 2 -> 9
@@ -161,6 +133,121 @@ class Qwen35VisionComponentsTest {
             assertEquals(9, rows[0]);
         }
         assertFalse(borrowed.getFirst().memory().base().scope().isAlive());
+    }
+
+    @Test
+    void fp16AndBf16PatchKernelsRunBitIdenticalToFp32() {
+        // The patch embedding honors the kernel FILE dtype (im2col + gemm, no widening copy).
+        // One-hot kernel rows over exactly-representable pixels keep every product and partial
+        // sum exact in both dtypes, so the towers must agree bitwise - a difference would mean
+        // the F16 path computed something else, not just something rounder.
+        int visionDim = 8, patchVector = 3, modelDim = 4;
+        int projectorDim = 16, projectorInput = 32;
+        try (Arena arena = Arena.ofConfined()) {
+            PanamaMemoryArena memory = new PanamaMemoryArena(arena);
+            float[] kernel = new float[visionDim * patchVector];
+            for (int c = 0; c < visionDim; c++) kernel[c * patchVector + c % 3] = 1f;
+            MemoryView<MemorySegment> patchF32 =
+                    tensor(memory, new long[] {visionDim, patchVector}, kernel);
+            MemoryView<MemorySegment> patchF16 = Views.allocateF16(memory, visionDim, patchVector);
+            Convert.f32ToF16(patchF32, 0, patchF16, 0, kernel.length);
+            // BF16 = the top 16 bits of F32; the one-hot/exact-value setup is exact there too
+            MemorySegment bf16Seg = arena.allocate(2L * kernel.length, 64);
+            for (int i = 0; i < kernel.length; i++)
+                bf16Seg.set(
+                        ValueLayout.JAVA_SHORT_UNALIGNED,
+                        2L * i,
+                        (short) (Float.floatToRawIntBits(kernel[i]) >>> 16));
+            MemoryView<MemorySegment> patchBF16 =
+                    Views.wrap(bf16Seg, DataType.BF16, Shape.flat(visionDim, patchVector));
+
+            // Nonzero merger weights: with zero mm matrices the merger zeroes the tokens and the
+            // patch dtype becomes invisible downstream.
+            float[] mm0 = new float[projectorDim * projectorInput];
+            for (int r = 0; r < projectorDim; r++)
+                mm0[r * projectorInput + r % projectorInput] = 1f;
+            float[] mm2 = new float[modelDim * projectorDim];
+            for (int r = 0; r < modelDim; r++) mm2[r * projectorDim + r % projectorDim] = 1f;
+            MemoryView<MemorySegment> mm0W =
+                    tensor(memory, new long[] {projectorDim, projectorInput}, mm0);
+            MemoryView<MemorySegment> mm2W =
+                    tensor(memory, new long[] {modelDim, projectorDim}, mm2);
+
+            Qwen35Vision f32Tower = tinyTower(memory, patchF32, patchF32, mm0W, mm2W);
+            Qwen35Vision f16Tower = tinyTower(memory, patchF16, patchF16, mm0W, mm2W);
+            Qwen35Vision bf16Tower = tinyTower(memory, patchBF16, patchBF16, mm0W, mm2W);
+
+            // 2x2, exactly-representable channels; normalize maps them onto {-1, -0.5, 0, 0.5, 1}.
+            Media.Image image =
+                    new Media.Image(
+                            new float[] {
+                                0.25f, 0.5f, 0.75f, 1f, 0f, 0.5f,
+                                0.75f, 0.25f, 1f, 0.5f, 0f, 0.25f
+                            },
+                            2,
+                            2,
+                            3);
+            float[] expected = projectAll(f32Tower, image);
+            assertArrayEquals(expected, projectAll(f16Tower, image), 0f);
+            assertArrayEquals(expected, projectAll(bf16Tower, image), 0f);
+        }
+    }
+
+    private static float[] projectAll(Qwen35Vision tower, Media.Image image) {
+        List<float[]> chunks = new ArrayList<>();
+        tower.project(
+                image,
+                tower.positions(image),
+                chunk ->
+                        chunks.add(
+                                Views.toFloatArray(
+                                        Views.castToSegmentBacked(chunk, "chunk"), "chunk")));
+        assertEquals(1, chunks.size(), "tiny tower emits a single chunk");
+        return chunks.get(0);
+    }
+
+    private static Qwen35Vision tinyTower(
+            PanamaMemoryArena memory,
+            MemoryView<MemorySegment> patch0,
+            MemoryView<MemorySegment> patch1,
+            MemoryView<MemorySegment> mm0Weight,
+            MemoryView<MemorySegment> mm2Weight) {
+        int patchSize = 1, visionDim = 8, headCount = 2, ffnDim = 8, merge = 2;
+        int modelDim = 4, positionSide = 1, projectorDim = 16;
+        int patchVector = 3, projectorInput = merge * merge * visionDim;
+        Qwen35Vision.Layer layer =
+                new Qwen35Vision.Layer(
+                        ones(memory, visionDim),
+                        zeros(memory, visionDim),
+                        zeros(memory, 3 * visionDim, visionDim),
+                        zeros(memory, 3 * visionDim),
+                        zeros(memory, visionDim, visionDim),
+                        zeros(memory, visionDim),
+                        ones(memory, visionDim),
+                        zeros(memory, visionDim),
+                        zeros(memory, ffnDim, visionDim),
+                        zeros(memory, ffnDim),
+                        zeros(memory, visionDim, ffnDim),
+                        zeros(memory, visionDim));
+        return new Qwen35Vision(
+                patchSize,
+                visionDim,
+                modelDim,
+                headCount,
+                ffnDim,
+                merge,
+                positionSide,
+                1e-6f,
+                patch0,
+                patch1,
+                zeros(memory, visionDim),
+                zeros(memory, positionSide * positionSide, visionDim),
+                ones(memory, visionDim),
+                zeros(memory, visionDim),
+                new Qwen35Vision.Linear(
+                        mm0Weight, zeros(memory, projectorDim), projectorDim, projectorInput),
+                new Qwen35Vision.Linear(mm2Weight, zeros(memory, modelDim), modelDim, projectorDim),
+                new Qwen35Vision.Layer[] {layer});
     }
 
     private static MemoryView<MemorySegment> ones(PanamaMemoryArena arena, long d0) {

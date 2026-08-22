@@ -113,11 +113,12 @@ public final class Qwen35Vision implements MediaProjector<Media.Image> {
         this.merge = merge;
         this.positionSide = positionSide;
         this.normEps = normEps;
-        // The dual conv reads the two kernel planes as raw FP32 (the kernel is not a plain gemm
-        // over patch rows), so patch weights must be FP32 even though the linear weights below may
-        // be quantized.
-        this.patch0 = requirePatchF32(patch0, "v.patch_embd.weight", visionDim, patchVector);
-        this.patch1 = requirePatchF32(patch1, "v.patch_embd.weight.1", visionDim, patchVector);
+        // The patch embedding runs as im2col + gemm, so the kernels follow MatMul's weight
+        // contract (FP32/FP16/BF16) like every other gemm weight in the tower. The file stores
+        // each kernel 4D [out, channel, ky, kx]; the contiguous flat view is the [out, in]
+        // gemm matrix.
+        this.patch0 = requirePatchKernel(patch0, "v.patch_embd.weight", visionDim, patchVector);
+        this.patch1 = requirePatchKernel(patch1, "v.patch_embd.weight.1", visionDim, patchVector);
         this.patchBias = requireF32(patchBias, "v.patch_embd.bias", Shape.flat(visionDim));
         this.positionEmbedding =
                 requireF32(
@@ -135,7 +136,7 @@ public final class Qwen35Vision implements MediaProjector<Media.Image> {
         this.layers = Objects.requireNonNull(layers, "layers").clone();
         for (int i = 0; i < this.layers.length; i++) validateLayer(this.layers[i], i);
 
-        // ponytail: ggml_rope_multi receives n_dims = headDim/2, so theta_scale is
+        // ggml_rope_multi receives n_dims = headDim/2, so theta_scale is
         // base^(-2/(headDim/2)) and each M-RoPE section restarts its theta at base^0. Section 0
         // (j < headDim/4) reads tokenY, section 1 reads tokenX - the [yyyyxxxx] layout.
         this.invFreq = new float[headDim / 4];
@@ -201,41 +202,41 @@ public final class Qwen35Vision implements MediaProjector<Media.Image> {
         float[] pixels = Qwen35VisionPreprocess.normalize(image, size[0], size[1]);
         int plane = Math.multiplyExact(size[0], size[1]);
 
-        // ponytail: the dual conv writes tokens directly in the 2x2-block-major order llama's
-        // spatial-merge permute implies; do not "fix" this to raster - it is what makes the merger
-        // below a single contiguous copy.
+        // the patch embedding is im2col + TWO gemms (one per kernel), with the im2col
+        // rows built in the 2x2-block-major token order llama's spatial-merge permute implies;
+        // do not "fix" this to raster - it is what makes the merger below a single contiguous
+        // copy. im2col+gemm (rather than a scalar conv loop) is what lets the kernels keep their
+        // FILE dtype: MatMul's shaped contract takes FP32/FP16/BF16/Q8_0 weights, so an F16
+        // mmproj runs as F16 instead of being widened to F32 (F32's cost, F16's precision).
+        int pp = Math.multiplyExact(patchSize, patchSize);
+        MemoryView<MemorySegment> patchCols = Views.allocateF32(scratch, nPos, patchVector);
         MemoryView<MemorySegment> tokens = Views.allocateF32(scratch, nPos, visionDim);
+        MemoryView<MemorySegment> patch1Out = Views.allocateF32(scratch, nPos, visionDim);
         MemoryView<MemorySegment> positions = resizePositions(scratch, patchesX, patchesY);
         Parallel.forRows(
                 nPos,
                 t -> {
                     int py = tokenY(t, patchesX), px = tokenX(t, patchesX);
-                    long row = (long) t * visionDim;
+                    long row = (long) t * patchVector;
                     int base = (py * patchSize) * size[0] + px * patchSize;
-                    for (int c = 0; c < visionDim; c++) {
-                        long kBase = (long) c * patchVector;
-                        float sum = 0f;
-                        for (int ky = 0; ky < patchSize; ky++) {
-                            int rowOff = base + ky * size[0];
-                            long kRow = kBase + (long) ky * patchSize;
-                            for (int kx = 0; kx < patchSize; kx++) {
-                                float r = pixels[rowOff + kx];
-                                float g = pixels[plane + rowOff + kx];
-                                float b = pixels[2 * plane + rowOff + kx];
-                                long i0 = kRow + kx;
-                                long i1 = i0 + (long) patchSize * patchSize;
-                                long i2 = i1 + (long) patchSize * patchSize;
-                                sum +=
-                                        getF(patch0, i0) * r
-                                                + getF(patch0, i1) * g
-                                                + getF(patch0, i2) * b
-                                                + getF(patch1, i0) * r
-                                                + getF(patch1, i1) * g
-                                                + getF(patch1, i2) * b;
-                            }
+                    for (int ky = 0; ky < patchSize; ky++) {
+                        int rowOff = base + ky * size[0];
+                        long xRow = row + (long) ky * patchSize;
+                        for (int kx = 0; kx < patchSize; kx++) {
+                            putF(patchCols, xRow + kx, pixels[rowOff + kx]);
+                            putF(patchCols, xRow + pp + kx, pixels[plane + rowOff + kx]);
+                            putF(patchCols, xRow + 2 * pp + kx, pixels[2 * plane + rowOff + kx]);
                         }
-                        putF(tokens, row + c, sum);
                     }
+                });
+        MatMul.gemm(patch0, patchCols, tokens, nPos);
+        MatMul.gemm(patch1, patchCols, patch1Out, nPos);
+        Ops.addInPlace(tokens, 0, patch1Out, 0, nPos * visionDim);
+        Parallel.forRows(
+                nPos,
+                t -> {
+                    int py = tokenY(t, patchesX), px = tokenX(t, patchesX);
+                    long row = (long) t * visionDim;
                     long posRow = (long) py * patchesX + px;
                     for (int c = 0; c < visionDim; c++) {
                         float v = getF(tokens, row + c);
@@ -276,14 +277,19 @@ public final class Qwen35Vision implements MediaProjector<Media.Image> {
 
         // Post-layernorm then the merger. The tower's block-major layout already places each 2x2
         // block's four rows consecutively, so the merger input is a single contiguous copy.
+        // the merger hidden width is mm0's OUTPUT dim, not visionDim - for Qwen3.5's
+        // mmproj they differ (1024 vs 4096), so the tower's `hidden` scratch cannot be reused
+        // here (MatMul's shaped contract rejects a c narrower than the weight rows).
         Norms.layerNorm(tokens, tokens, postLnW, postLnB, visionDim, nPos, normEps);
         MemoryView<MemorySegment> mergedRows = Views.allocateF32(scratch, merged, 4 * visionDim);
+        MemoryView<MemorySegment> mergerHidden =
+                Views.allocateF32(scratch, merged, mm0.outputDim());
         MemoryView<MemorySegment> out = Views.allocateF32(scratch, merged, modelDim);
         Convert.copyF32(tokens, 0, mergedRows, 0, (long) nPos * visionDim);
-        MatMul.gemm(mm0.weight(), mergedRows, hidden, merged);
-        Ops.addRowBiasInPlace(hidden, 0, mm0.bias(), 0, merged, mm0.outputDim());
-        geluTanhInPlace(hidden, merged, mm0.outputDim());
-        MatMul.gemm(mm2.weight(), hidden, out, merged);
+        MatMul.gemm(mm0.weight(), mergedRows, mergerHidden, merged);
+        Ops.addRowBiasInPlace(mergerHidden, 0, mm0.bias(), 0, merged, mm0.outputDim());
+        geluTanhInPlace(mergerHidden, merged, mm0.outputDim());
+        MatMul.gemm(mm2.weight(), mergerHidden, out, merged);
         Ops.addRowBiasInPlace(out, 0, mm2.bias(), 0, merged, modelDim);
         return out;
     }
@@ -292,10 +298,9 @@ public final class Qwen35Vision implements MediaProjector<Media.Image> {
      * Fused-QKV attention for one tower layer. Q/K are gathered per head, vision M-RoPE'd, then
      * attended over all tokens. V is gathered transposed so the OV gemm contracts tokens.
      *
-     * <p>ponytail: this keeps the hand-rolled no-mask softmax instead of FlashAttention - the flash
-     * kernel's online softmax differs in last-ulp from llama.cpp's flash-disabled reference this
-     * tower is matched against, so switching to flash is a correctness regression, not an
-     * optimization.
+     * <p>this keeps the hand-rolled no-mask softmax instead of FlashAttention - the flash kernel's
+     * online softmax differs in last-ulp from llama.cpp's flash-disabled reference this tower is
+     * matched against, so switching to flash is a correctness regression, not an optimization.
      */
     private void attention(
             MemoryView<MemorySegment> qkv,
@@ -619,11 +624,14 @@ public final class Qwen35Vision implements MediaProjector<Media.Image> {
         return value;
     }
 
-    private static MemoryView<MemorySegment> requirePatchF32(
+    private static MemoryView<MemorySegment> requirePatchKernel(
             MemoryView<MemorySegment> value, String name, int outputDim, int inputDim) {
         Objects.requireNonNull(value, name);
-        Views.requireDense(value, DataType.FP32, name);
-        Shape actual = value.dataType().logicalShape(value.shape());
+        Views.requireContiguous(value, name);
+        DataType type = value.dataType();
+        if (type != DataType.FP32 && type != DataType.FP16 && type != DataType.BF16)
+            throw new IllegalArgumentException(name + ": unsupported weight type " + type.name());
+        Shape actual = type.logicalShape(value.shape());
         if (!actual.isFlat()
                 || actual.flatAt(0) != outputDim
                 || actual.size() != (long) outputDim * inputDim)
@@ -635,7 +643,7 @@ public final class Qwen35Vision implements MediaProjector<Media.Image> {
                             + inputDim
                             + " but was "
                             + actual);
-        return value;
+        return value.view(Shape.flat(outputDim, inputDim));
     }
 
     private static MemoryView<MemorySegment> requireF32(
