@@ -89,6 +89,11 @@ jinfer-clean: ## Wipe jinfer plus the sibling output its -am closure built (same
 jota-clean: ## Wipe just the jota subtree's output
 	$(MAVEN) $(MAVEN_FLAGS) -f jota/pom.xml clean
 
+##@ Release
+
+release-canary: ## Prove the published shape works: install the release build into a throwaway repo, compile a BOM consumer against ONLY it
+	./release-canary.sh
+
 ##@ Miscellaneous
 
 examples: ## Build the demo apps (not part of the default reactor)
@@ -103,4 +108,4 @@ help: ## Show this help
 	@echo '  Subtrees: make -C jinfer help (run, test-golden, ...) | make -C jota help'
 
 .PHONY: default help package compile install jar jinfer-jar test jinfer-test jota-test \
-	jam-test native format clean jinfer-clean jota-clean examples
+	jam-test native format clean jinfer-clean jota-clean examples release-canary

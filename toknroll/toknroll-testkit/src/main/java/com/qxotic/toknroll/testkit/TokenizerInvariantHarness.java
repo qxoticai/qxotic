@@ -242,7 +242,8 @@ public final class TokenizerInvariantHarness {
 
     /**
      * Verifies that the {@code int[]}-based convenience overloads produce the same results as their
-     * {@link com.qxotic.toknroll.IntSequence}-based counterparts.
+     * {@code com.qxotic.toknroll.IntSequence}-based counterparts. (Not a {@code @link}: this module
+     * deliberately does not depend on toknroll-core.)
      */
     public static void runConvenienceOverloadInvariants(
             String tokenizerLabel,
