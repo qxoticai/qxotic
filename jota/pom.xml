@@ -42,9 +42,11 @@
     <jota.native.backend>native</jota.native.backend>
     <jota.cuda.requested>false</jota.cuda.requested>
 
-    <!-- Backend test skipping (all disabled by default) -->
+    <!-- Backend test skipping: panama (pure Java, no toolchain) is always on; the native and
+         GPU backends stay opt-in via their profiles (-Pc, -Phip, -Pcuda, -Pmojo, -Pmetal,
+         -Popencl, -Pall) -->
     <skipTests.backend.c>true</skipTests.backend.c>
-    <skipTests.backend.panama>true</skipTests.backend.panama>
+    <skipTests.backend.panama>false</skipTests.backend.panama>
     <skipTests.backend.hip>true</skipTests.backend.hip>
     <skipTests.backend.cuda>true</skipTests.backend.cuda>
     <skipTests.backend.mojo>true</skipTests.backend.mojo>
@@ -176,17 +178,6 @@
   </build>
 
   <profiles>
-    <!-- Panama Backend Profile -->
-    <profile>
-      <id>panama</id>
-      <properties>
-        <jota.test.device>panama</jota.test.device>
-        <jota.test.backends>single</jota.test.backends>
-        <jota.native.backend>panama</jota.native.backend>
-        <skipTests.backend.panama>false</skipTests.backend.panama>
-      </properties>
-    </profile>
-
     <!-- C Backend Profile -->
     <profile>
       <id>c</id>
@@ -446,8 +437,7 @@ exit 1)</argument>
       <id>all</id>
       <properties>
         <jota.test.backends>available</jota.test.backends>
-        <!-- Enable all backends for testing -->
-        <skipTests.backend.panama>false</skipTests.backend.panama>
+        <!-- Enable all backends for testing (panama is always on) -->
         <skipTests.backend.c>false</skipTests.backend.c>
         <skipTests.backend.hip>false</skipTests.backend.hip>
         <skipTests.backend.mojo>false</skipTests.backend.mojo>

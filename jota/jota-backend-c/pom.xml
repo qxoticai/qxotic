@@ -44,6 +44,15 @@
       <type>test-jar</type>
       <scope>test</scope>
     </dependency>
+    <!-- the scanned tensor suite extends jota-memory's AbstractMemoryTest; test-jar deps are
+         not transitive, so the memory test-jar must be declared here explicitly -->
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jota-memory</artifactId>
+      <version>${project.version}</version>
+      <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
