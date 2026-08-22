@@ -12,9 +12,10 @@
   <packaging>jar</packaging>
 
   <name>jinfer-core</name>
-  <description>Memory plumbing over com.qxotic.jota.memory.MemoryView&lt;MemorySegment&gt;: views, segment access,
-    dtype conversion, the Panama arena adapter, and the decode execution pool. The compute kernels
-    live in jinfer-kernels.</description>
+  <description>The central model contracts - Model, ContextModel, LanguageModel, EmbeddingModel,
+    Reranker, SpeechSynthesisModel and their state/lifetime rules - plus memory plumbing over
+    com.qxotic.jota.memory.MemoryView&lt;MemorySegment&gt;, the decode execution pool, and telemetry.
+    The compute kernels live in jinfer-kernels.</description>
 
   <dependencies>
     <dependency>

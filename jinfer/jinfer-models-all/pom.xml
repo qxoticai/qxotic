@@ -11,6 +11,13 @@
   <artifactId>jinfer-models-all</artifactId>
   <packaging>pom</packaging>
 
+  <properties>
+    <!-- POM-only: no sources, no javadoc. Without this the javadoc plugin tries to invoke the
+         javadoc goal here while linking reactor dependencies of downstream modules, then every
+         such module's build logs "Error fetching link: .../jinfer-models-all/target/reports/apidocs" -->
+    <maven.javadoc.skip>true</maven.javadoc.skip>
+  </properties>
+
   <name>jinfer (all models)</name>
   <description>Convenience aggregator: depend on this one artifact to get every model provider on the
     classpath. Users who care about footprint depend on individual ports instead (jinfer-llama,

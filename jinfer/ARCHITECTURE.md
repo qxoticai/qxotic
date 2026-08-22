@@ -34,9 +34,10 @@ and chat, then model providers, integrations and executables. The CLI is a leaf.
 Model<C, W, S extends RuntimeState>
 ├── ContextModel             incremental bounded ingestion
 │   ├── LanguageModel        logits projection
-│   ├── EmbeddingModel       pooled embedding projection
-│   └── RerankingModel       relevance projection
+│   └── EmbeddingModel       pooled embedding projection
 └── SpeechSynthesisModel     text-to-audio generation
+
+Reranker<S extends ContextState>   relevance projection - a sibling of Model, not a subtype
 ```
 
 Configuration and weights are immutable. Runtime state owns mutable inference memory and admits one
