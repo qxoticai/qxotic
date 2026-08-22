@@ -113,6 +113,20 @@ class ModelStoreSelectionTest {
     }
 
     @Test
+    void aBareRepositoryUsesLlamaCppsDefaultQuant(@TempDir Path root) throws IOException {
+        FakeSource source =
+                new FakeSource("fake")
+                        .serving(
+                                "",
+                                new RemoteFile("model-Q4_K_M.gguf", 4, null),
+                                new RemoteFile("model-Q8_0.gguf", 8, null));
+
+        Path file = ModelStore.of(root, source).resolve("hf.co/acme/repo");
+
+        assertEquals(root.resolve("hf.co/acme/repo/model-Q4_K_M.gguf"), file);
+    }
+
+    @Test
     void anAmbiguousQuantShowsTheMenuInsteadOfGuessing(@TempDir Path root) {
         FakeSource source =
                 new FakeSource("fake")
