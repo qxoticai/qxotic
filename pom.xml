@@ -233,11 +233,6 @@
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
-        <artifactId>span</artifactId>
-        <version>${qxotic.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>com.qxotic</groupId>
         <artifactId>jam-core</artifactId>
         <version>${qxotic.version}</version>
       </dependency>
