@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.langchain4j;
 
+import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.nio.file.Files;
@@ -55,5 +56,30 @@ class ModelStringTest {
         JinferChatModel.Builder builder =
                 JinferChatModel.builder().model("hf.co/nobody/nothing-GGUF:Q4_K_M");
         assertThatThrownBy(builder::build).isInstanceOf(RuntimeException.class);
+    }
+
+    @Test
+    void companionSourcesHaveTheSameExplicitBoundary() {
+        assertThatNoException()
+                .isThrownBy(
+                        () ->
+                                JinferChatModel.builder()
+                                        .companion("media", "hf.co/owner/repo/mmproj-F16.gguf"));
+        assertThatNoException()
+                .isThrownBy(
+                        () ->
+                                JinferChatModel.builder()
+                                        .companionPath("media", Path.of("models/mmproj.gguf")));
+
+        assertThatThrownBy(() -> JinferChatModel.builder().companion("media", "models/mmproj.gguf"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("companionPath");
+        assertThatThrownBy(
+                        () ->
+                                JinferChatModel.builder()
+                                        .companion("media", "https://example.org/mmproj.gguf"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("companionPath")
+                .hasMessageContaining("download");
     }
 }

@@ -252,7 +252,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
     }
 
     public static final class Builder {
-        private Object source; // Path | ref/URL String | LoadedEmbedder: the last setter wins
+        private Object source; // Path | model-ref String | LoadedEmbedder: the last setter wins
         private Path modelPath; // derived from source at build()
         private LoadedEmbedder<?> loaded; // derived from source at build()
         private int contextLength = 2048;

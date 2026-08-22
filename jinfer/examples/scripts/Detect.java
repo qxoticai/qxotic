@@ -43,7 +43,7 @@ public class Detect {
 
     public static void main(String[] args) throws IOException {
         if (args.length < 1) {
-            System.err.println("usage: Detect <image> [labels] [model] [mmproj]");
+            System.err.println("usage: Detect <image> [labels] [model-ref] [mmproj-ref]");
             System.exit(2);
         }
         Path image = Path.of(args[0]);

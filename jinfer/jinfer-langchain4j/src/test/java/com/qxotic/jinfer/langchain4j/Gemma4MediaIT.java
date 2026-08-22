@@ -54,7 +54,7 @@ class Gemma4MediaIT extends AbstractMediaIT {
         try (JinferChatModel audioModel =
                 JinferChatModel.builder()
                         .modelPath(TestModels.require(AUDIO_MODEL_REF))
-                        .companion("media", TestModels.require(AUDIO_MMPROJ_REF))
+                        .companionPath("media", TestModels.require(AUDIO_MMPROJ_REF))
                         .contextLength(4096)
                         .maxOutputTokens(512)
                         .build()) {

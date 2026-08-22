@@ -36,7 +36,8 @@ public class GemmaVideo {
 
     public static void main(String[] args) {
         if (args.length < 1) {
-            System.err.println("usage: GemmaVideo <video> [prompt] [model] [mmproj]");
+            System.err.println(
+                    "usage: GemmaVideo <video> [prompt] [model-ref] [mmproj-ref]");
             System.exit(2);
         }
         Path video = Path.of(args[0]);

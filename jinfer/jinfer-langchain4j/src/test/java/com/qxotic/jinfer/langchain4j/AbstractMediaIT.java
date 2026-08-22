@@ -75,7 +75,7 @@ abstract class AbstractMediaIT {
         if (mediaCompanion() != null) {
             Assumptions.assumeTrue(
                     Files.exists(mediaCompanion()), "companion not found: " + mediaCompanion());
-            builder.companion("media", mediaCompanion());
+            builder.companionPath("media", mediaCompanion());
         }
         model = builder.build();
     }

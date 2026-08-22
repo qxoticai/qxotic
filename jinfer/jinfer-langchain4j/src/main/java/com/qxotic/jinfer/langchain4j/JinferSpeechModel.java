@@ -136,7 +136,7 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
 
     public static final class Builder {
 
-        private Object source; // Path | ref/URL String | SpeechSynthesisModel: last setter wins
+        private Object source; // Path | model-ref String | SpeechSynthesisModel: last setter wins
         private SpeechSynthesisModel<?, ?, ?> model; // derived from source at build()
         private Path modelPath; // derived from source at build()
         private Double speed;

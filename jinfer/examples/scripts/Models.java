@@ -1,5 +1,5 @@
-// Shared defaults for the examples. Jinfer accepts one string: a local path, hub ref, or URL.
-// Pass a trailing model argument to override the default without changing the script.
+// Shared remote-ref defaults for the examples. Pass a trailing model ref to override one without
+// changing the script; local files use the builders' modelPath/companionPath methods instead.
 
 public final class Models {
     private Models() {}

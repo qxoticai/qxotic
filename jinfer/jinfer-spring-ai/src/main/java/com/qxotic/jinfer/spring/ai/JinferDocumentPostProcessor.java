@@ -169,7 +169,7 @@ public final class JinferDocumentPostProcessor implements DocumentPostProcessor,
     }
 
     public static final class Builder {
-        private Object source; // Path | ref/URL String | LoadedReranker: the last setter wins
+        private Object source; // Path | model-ref String | LoadedReranker: the last setter wins
         private Path modelPath; // derived from source at build()
         private LoadedReranker<?> loaded; // derived from source at build()
         private int contextLength = 2048;

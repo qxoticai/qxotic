@@ -28,9 +28,14 @@ ChatModel model = JinferChatModel.builder()
 String answer = model.chat("What is the capital of France?");
 ```
 
-`.model(String)` takes whatever you have: a local GGUF path, a hub ref, or a pasted browser URL.
-A remote ref downloads at `build()` into the shared model cache (resumable, sha256-verified; warm builds cost zero requests, `JINFER_OFFLINE=1` forbids the network - see [models from the hub](../README.md#models-from-the-hub)).
-`.modelPath(Path)` stays the never-network form.
+`.model(String)` accepts a supported model reference (`hf.co/...` or `modelscope.cn/...`) and
+resolves it at `build()` into the shared model cache (resumable, sha256-verified; warm builds cost
+zero requests, `JINFER_OFFLINE=1` forbids the network). `.modelPath(Path)` accepts a local GGUF file
+and never touches the network. A plain URL is not a model reference; download it first, then pass
+its path. See [models from the hub](../README.md#models-from-a-hub).
+
+Companions use the same split: `.companion(capability, String)` accepts a model reference;
+`.companionPath(capability, Path)` accepts a local file.
 
 ## Parameters
 
