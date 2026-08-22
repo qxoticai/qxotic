@@ -270,10 +270,11 @@ public final class ChatEngine implements AutoCloseable {
     }
 
     /**
-     * Idempotent, blocking: waits out any in-flight generation (the lock) and the stream driver,
-     * closes every pooled state (each frees its owned arena NOW - deterministic, not GC-eventual),
-     * and frees the tree's blobs; later use fails loudly. Returning is the quiescence certificate:
-     * no kernel of this engine touches state memory afterwards.
+     * Idempotent, blocking: waits out any in-flight preparation or generation (the lock) and the
+     * stream driver, closes every pooled state (each frees its owned arena NOW - deterministic, not
+     * GC-eventual), and frees the tree's blobs; later use fails loudly. Returning is the quiescence
+     * certificate: no kernel of this engine touches state memory afterwards. Interruption does not
+     * shorten the wait; the interrupted status is restored before returning.
      */
     @Override
     public void close() {
@@ -292,25 +293,38 @@ public final class ChatEngine implements AutoCloseable {
         }
         lock.lock();
         try {
-            if (closed) return; // idempotent: the JDK arena close below is one-shot
-            closed = true;
-            leakWatch.run(); // disarm: this engine was closed properly
-            Telemetry.unregister(cacheGauge); // stop sampling a cache that is about to be freed
-            cache.close(); // every retained state and block blob - NOW
-            mediaCache.clear();
+            if (!closed) {
+                closed = true;
+                leakWatch.run(); // disarm: this engine was closed properly
+                Telemetry.unregister(cacheGauge); // stop sampling a cache that is about to be freed
+                cache.close(); // every retained state and block blob - NOW
+                mediaCache.clear();
+            }
         } finally {
             lock.unlock();
         }
         // no interrupt: an in-flight generation finishes; queued streams fail loudly at checkOpen
         streamDriver.shutdown();
+        boolean interrupted = false;
         try {
-            // await the driver: a live streaming generation may still be reading state memory
-            streamDriver.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+            while (!streamDriver.isTerminated()) {
+                try {
+                    // a live stream may still be preparing outside the generation lock
+                    streamDriver.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
+                } catch (InterruptedException ignored) {
+                    interrupted = true;
+                }
+            }
+            // Multiple close callers may wait above; serialize their idempotent arena close.
+            lock.lock();
+            try {
+                freeOwnedWeights();
+            } finally {
+                lock.unlock();
+            }
+        } finally {
+            if (interrupted) Thread.currentThread().interrupt();
         }
-        // provably quiescent (lock held once, driver drained): the weights can die now
-        freeOwnedWeights();
     }
 
     /** Runs a streaming generation on the engine's single lazy driver thread. */
@@ -485,22 +499,28 @@ public final class ChatEngine implements AutoCloseable {
             Duration timeout,
             String contentGbnf,
             List<String> stops) {
-        if (promptTokens == null || promptTokens.length == 0) {
-            throw new IllegalArgumentException("a raw prompt needs at least one token");
+        lock.lock();
+        try {
+            checkOpen();
+            if (promptTokens == null || promptTokens.length == 0) {
+                throw new IllegalArgumentException("a raw prompt needs at least one token");
+            }
+            IntSequence promptStart =
+                    loaded.template().map(ChatTemplate::promptStart).orElse(IntSequence.empty());
+            promptTokens = withPromptStart(promptTokens, promptStart);
+            Sampler sampler = sampling.sampler(loaded.model().configuration().vocabularySize());
+            if (contentGbnf != null) {
+                ReplyLanguage.Walk walk =
+                        ReplyLanguage.Selection.of(
+                                        ReplyLanguage.content(ReplyLanguage.gbnf(contentGbnf)),
+                                        loaded.tokenizer())
+                                .walk();
+                sampler = walk.sampler(sampler, endTurn());
+            }
+            return Prepared.raw(promptTokens, sampler, maxTokens, timeout, stops);
+        } finally {
+            lock.unlock();
         }
-        IntSequence promptStart =
-                loaded.template().map(ChatTemplate::promptStart).orElse(IntSequence.empty());
-        promptTokens = withPromptStart(promptTokens, promptStart);
-        Sampler sampler = sampling.sampler(loaded.model().configuration().vocabularySize());
-        if (contentGbnf != null) {
-            ReplyLanguage.Walk walk =
-                    ReplyLanguage.Selection.of(
-                                    ReplyLanguage.content(ReplyLanguage.gbnf(contentGbnf)),
-                                    loaded.tokenizer())
-                            .walk();
-            sampler = walk.sampler(sampler, endTurn());
-        }
-        return Prepared.raw(promptTokens, sampler, maxTokens, timeout, stops);
     }
 
     static int[] withPromptStart(int[] promptTokens, IntSequence promptStart) {
@@ -566,17 +586,18 @@ public final class ChatEngine implements AutoCloseable {
      * </ul>
      */
     public Prepared prepare(Request request) {
-        // deliberately LOCK-FREE: encoding touches only per-call state (the request's arena, a
-        // fresh parser, the synchronized media cache, the stateless vision projector) - a media
-        // encode must never head-of-line block generations. A close() mid-prepare fails loudly
-        // at generate()'s checkOpen.
-        checkOpen();
-        Arena memory = Arenas.newCrossThread();
+        lock.lock();
         try {
-            return prepare(request, memory);
-        } catch (RuntimeException | Error failure) {
-            Arenas.close(memory);
-            throw failure;
+            checkOpen();
+            Arena memory = Arenas.newCrossThread();
+            try {
+                return prepare(request, memory);
+            } catch (RuntimeException | Error failure) {
+                Arenas.close(memory);
+                throw failure;
+            }
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -774,7 +795,13 @@ public final class ChatEngine implements AutoCloseable {
      * their framework's exception type.
      */
     public Encoded encode(Conversation conversation, Map<String, Object> templateKwargs) {
-        return encode(conversation, templateKwargs, new PanamaMemoryArena(Arena.ofAuto()));
+        lock.lock();
+        try {
+            checkOpen();
+            return encode(conversation, templateKwargs, new PanamaMemoryArena(Arena.ofAuto()));
+        } finally {
+            lock.unlock();
+        }
     }
 
     private Encoded encode(
@@ -1288,7 +1315,13 @@ public final class ChatEngine implements AutoCloseable {
      * native codec; integrations map it.
      */
     public Encoded encodeNative(Conversation conversation) {
-        return encodeNative(conversation, new PanamaMemoryArena(Arena.ofAuto()));
+        lock.lock();
+        try {
+            checkOpen();
+            return encodeNative(conversation, new PanamaMemoryArena(Arena.ofAuto()));
+        } finally {
+            lock.unlock();
+        }
     }
 
     private Encoded encodeNative(Conversation conversation, PanamaMemoryArena mediaRows) {
