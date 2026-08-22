@@ -5,12 +5,14 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.Map;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -23,6 +25,13 @@ class FetchDownloadTest {
 
     private static final String PAYLOAD =
             "weights, but long enough to have a middle worth resuming from";
+
+    @AfterEach
+    void pathLocksAreReleased() throws ReflectiveOperationException {
+        Field registry = Fetch.class.getDeclaredField("LOCK_REGISTRY");
+        registry.setAccessible(true);
+        assertTrue(((Map<?, ?>) registry.get(null)).isEmpty());
+    }
 
     private static String sha256(String value) {
         try {

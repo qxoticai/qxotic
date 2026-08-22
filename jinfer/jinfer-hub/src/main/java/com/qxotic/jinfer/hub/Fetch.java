@@ -22,6 +22,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -96,7 +97,14 @@ final class Fetch {
     private static final Duration LISTING_TIMEOUT = Duration.ofSeconds(20);
 
     /** Two threads of one JVM cannot both hold a {@link FileLock}, so they queue here first. */
-    private static final Map<Path, ReentrantLock> IN_PROCESS = new ConcurrentHashMap<>();
+    private static final ReentrantLock LOCK_REGISTRY_GUARD = new ReentrantLock();
+
+    private static final Map<Path, PathLock> LOCK_REGISTRY = new HashMap<>();
+
+    private static final class PathLock {
+        final ReentrantLock lock = new ReentrantLock();
+        int users;
+    }
 
     /**
      * The terminal's live region, docker-pull shaped: one row per transfer, repainted in place as
@@ -437,11 +445,11 @@ final class Fetch {
             Map<String, String> headers)
             throws IOException {
         Files.createDirectories(dest.getParent());
-        ReentrantLock local =
-                IN_PROCESS.computeIfAbsent(dest.toAbsolutePath(), p -> new ReentrantLock());
-        local.lock();
+        Path path = dest.toAbsolutePath().normalize();
+        PathLock local = retain(path);
+        local.lock.lock();
         try {
-            Path lockFile = lockFileFor(dest);
+            Path lockFile = lockFileFor(path);
             // NOT delete-on-close: on Windows a pending delete makes another process's open of the
             // same lock file fail outright, turning "wait your turn" into "crash"
             try (FileChannel channel =
@@ -454,7 +462,30 @@ final class Fetch {
                 transfer(url, dest, label, expectedSize, sha256, headers);
             }
         } finally {
-            local.unlock();
+            local.lock.unlock();
+            release(path, local);
+        }
+    }
+
+    private static PathLock retain(Path path) {
+        LOCK_REGISTRY_GUARD.lock();
+        try {
+            PathLock retained = LOCK_REGISTRY.computeIfAbsent(path, ignored -> new PathLock());
+            retained.users++;
+            return retained;
+        } finally {
+            LOCK_REGISTRY_GUARD.unlock();
+        }
+    }
+
+    private static void release(Path path, PathLock released) {
+        LOCK_REGISTRY_GUARD.lock();
+        try {
+            if (--released.users == 0) {
+                LOCK_REGISTRY.remove(path, released);
+            }
+        } finally {
+            LOCK_REGISTRY_GUARD.unlock();
         }
     }
 
