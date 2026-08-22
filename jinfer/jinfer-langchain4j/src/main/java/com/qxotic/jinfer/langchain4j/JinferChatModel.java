@@ -545,10 +545,17 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         }
 
         /**
-         * The model as a model ref ({@code hf.co/owner/repo:Q4_K_M} or {@code
-         * modelscope.cn/owner/repo:Q4_K_M}), resolved by {@link #build()}. For a local file use
-         * {@link #modelPath(Path)} - a URL is not a model ref; download it first, then pass the
-         * path.
+         * The model as a model ref, resolved - downloading to the local cache on first use - by
+         * {@link #build()}.
+         *
+         * <pre>{@code
+         * model("hf.co/unsloth/gemma-4-E2B-it-GGUF:Q8_0");
+         * }</pre>
+         *
+         * <p>The full grammar - the default quant, pinned revisions, a file inside a repository,
+         * ModelScope - is documented once in {@link com.qxotic.jinfer.hub.ModelRef}. For a file
+         * already on disk use {@link #modelPath(Path)}. A URL is not a model ref: download it
+         * first, then pass the path.
          */
         public Builder model(String modelRef) {
             ModelStore.requireRef(modelRef);
