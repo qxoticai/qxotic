@@ -10,15 +10,16 @@ provide the portable floor; [JAM](../jam) accelerates matrix multiplication when
 
 ## Quick start
 
-Build the CLI:
+Build the CLI from the repository root - the jinfer subtree is not dependency-closed, so only
+the root reactor sees the sibling trees (gguf, toknroll, jota, jam) it needs on a clean clone:
 
 ```bash
-mvn -pl jinfer-cli -am package -DskipTests
+mvn -pl jinfer/jinfer-cli -am package -DskipTests
 
 java --enable-preview \
   --add-modules jdk.incubator.vector \
   --enable-native-access=ALL-UNNAMED \
-  -jar jinfer-cli/target/jinfer.jar \
+  -jar jinfer/jinfer-cli/target/jinfer.jar \
   --model hf.co/LiquidAI/LFM2.5-350M-GGUF:LFM2.5-350M-Q8_0.gguf \
   --chat
 ```
@@ -46,7 +47,7 @@ Use artifact `com.qxotic:jinfer-langchain4j:0.1.0`; Spring AI users use
 java --enable-preview \
   --add-modules jdk.incubator.vector \
   --enable-native-access=ALL-UNNAMED \
-  -jar jinfer-cli/target/jinfer.jar \
+  -jar jinfer/jinfer-cli/target/jinfer.jar \
   --model hf.co/LiquidAI/LFM2.5-350M-GGUF:LFM2.5-350M-Q8_0.gguf \
   --server --port 54154
 ```
@@ -186,22 +187,25 @@ Vector API helpers.
 With GraalVM Native Image 25.0.3 or newer:
 
 ```bash
-make native
-./jinfer --model ./model.gguf --chat
+make -C jinfer native
+./jinfer/jinfer --model ./model.gguf --chat
 ```
 
-`PRELOAD_GGUF=model.gguf make native` embeds load metadata/tokenizer data for faster startup. Media
+`PRELOAD_GGUF=model.gguf make -C jinfer native` embeds load metadata/tokenizer data for faster
+startup. Media
 decoding uses ffmpeg in the native image so `java.desktop` does not have to be pulled into the
 binary.
 
 ## Build and test
 
-Java 25 is required.
+Java 25 is required. All commands run from the repository root (plain `mvn` inside `jinfer/`
+works only after a root `mvn install` has put the sibling trees in the local repository):
 
 ```bash
-mvn test
-mvn -pl jinfer-cli -am package -DskipTests
-make jar       # copies jinfer-cli/target/jinfer.jar to ./jinfer.jar
+mvn test                                            # the whole reactor
+mvn -pl jinfer/jinfer-cli -am package -DskipTests   # the CLI and everything it needs
+make -C jinfer test                                 # just the jinfer subtree's tests
+make -C jinfer jar                                  # the CLI jar, copied to jinfer/jinfer.jar
 ```
 
 Model-backed integration tests are opt-in and use the repository's `TestModels` cache lookup; unit

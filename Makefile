@@ -1,41 +1,106 @@
-# Single root-reactor entry points. Always build from here: the subtrees are not
-# dependency-closed, so `mvn -f jinfer` only works after the outer modules are installed.
-# These targets run the full reactor from the root, which is the only build that works cold.
+# All Maven entry points for the repository - `make` (or `make help`) lists them. Maven runs
+# at this root reactor or at a dependency-closed subtree's own: jinfer is NOT closed (it pulls
+# gguf, json, toknroll, jota and jam), so only this reactor resolves it from a clean clone;
+# jota IS closed, so its targets drive jota/pom.xml directly. jinfer/Makefile and
+# jota/Makefile hold thin aliases into here plus their local helpers.
 
-MAVEN ?= $(shell command -v mvnd >/dev/null 2>&1 && echo mvnd || echo mvn)
+# Plain mvn by default: a long-lived mvnd daemon can serve a stale effective pom (observed:
+# tests silently skipped after a pom edit until `mvnd --stop`). Opt in with MAVEN=mvnd.
+MAVEN ?= mvn
 
 # Extra flags for every Maven invocation, e.g. `make test MAVEN_FLAGS=-o` for offline builds.
 MAVEN_FLAGS ?=
 
-default: test
+ifeq ($(OS),Windows_NT)
+    EXE := .exe
+else
+    EXE :=
+endif
 
-# Build and test everything in the reactor (weights-free oracles; model-backed suites are
-# tag-gated, see jinfer/pom.xml's surefire.excludedGroups).
-test:
-	$(MAVEN) $(MAVEN_FLAGS) test
+# The jinfer subtree, cold-safe: `jinfer` selects the aggregator and -amd follows parentage to
+# every module beneath it, so a NEW module joins automatically; `jinfer/jinfer-cli` anchors -am
+# so the sibling trees build too - -am does not traverse projects pulled in by -amd. A
+# dependency outside the CLI's closure fails the build loudly instead of skipping silently.
+JINFER = -pl jinfer,jinfer/jinfer-cli -amd -am
 
-# Compile everything without running tests.
-compile:
-	$(MAVEN) $(MAVEN_FLAGS) test-compile
+default: help
 
-# Build every artifact, skipping tests.
-package:
+##@ Build
+
+package: ## Build every artifact, skipping tests
 	$(MAVEN) $(MAVEN_FLAGS) -DskipTests package
 
-# Install every artifact into the local repository (the prerequisite for `mvn -f <subtree>`).
-install:
+compile: ## Compile everything without running tests
+	$(MAVEN) $(MAVEN_FLAGS) test-compile
+
+install: ## Install every artifact into ~/.m2 (the prerequisite for `mvn -f <subtree>`)
 	$(MAVEN) $(MAVEN_FLAGS) -DskipTests install
 
-# GraalVM Native Image for the CLI. PRELOAD_GGUF is forwarded unchanged.
-native:
-	$(MAVEN) $(MAVEN_FLAGS) -Pnative -pl jinfer/jinfer-cli -am clean package -DskipTests -Djinfer.preload=$(PRELOAD_GGUF)
+jar: jinfer-jar ## Alias for jinfer-jar
 
-# Demo apps are not in the default reactor; build them explicitly.
-examples:
-	$(MAVEN) $(MAVEN_FLAGS) -Pexamples package
+jinfer-jar: ## The jinfer CLI jar, copied to jinfer/jinfer.jar (incremental)
+	$(MAVEN) $(MAVEN_FLAGS) -pl jinfer/jinfer-cli -am package -DskipTests
+	cp jinfer/jinfer-cli/target/jinfer.jar jinfer/jinfer.jar
 
-# Apply Spotless across the reactor.
-format:
+##@ Test
+
+test: ## Build and test the whole reactor (model-backed suites are tag-gated, see jinfer/pom.xml)
+	$(MAVEN) $(MAVEN_FLAGS) test
+
+jinfer-test: ## Just the jinfer subtree's tests
+	$(MAVEN) $(MAVEN_FLAGS) $(JINFER) test
+
+jota-test: ## jota full suite (closed subtree): core, memory + the tensor suite on the Java backend
+	$(MAVEN) $(MAVEN_FLAGS) -f jota/pom.xml test
+
+jam-test: ## jam and its cross-backend parity suite (NativeJAM included when libjam loads)
+	$(MAVEN) $(MAVEN_FLAGS) -pl jam/jam-vector -am verify
+
+##@ Native image (GraalVM)
+
+NATIVE_IMAGE ?= $(if $(JAVA_HOME),$(JAVA_HOME)/bin/native-image,native-image)
+
+native: ## jinfer CLI native image -> jinfer/jinfer; PRELOAD_GGUF=model.gguf embeds metadata
+	@v=$$($(NATIVE_IMAGE) --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1); \
+	if [ -z "$$v" ]; then \
+		echo "ERROR: native-image not found or version unparseable ($(NATIVE_IMAGE))"; exit 1; \
+	fi; \
+	major=$${v%%.*}; rest=$${v#*.}; minor=$${rest%%.*}; patch=$${v##*.}; \
+	if [ "$$major" -lt 25 ] || { [ "$$major" -eq 25 ] && [ "$$minor" -eq 0 ] && [ "$$patch" -lt 3 ]; }; then \
+		echo "ERROR: native-image $$v is too old for the jinfer kernels (need >= 25.0.3)."; \
+		exit 1; \
+	fi
+	$(MAVEN) $(MAVEN_FLAGS) -Pnative -pl jinfer/jinfer-cli -am package -DskipTests -Djinfer.preload=$(PRELOAD_GGUF)
+	cp jinfer/jinfer-cli/target/jinfer$(EXE) jinfer/jinfer$(EXE)
+
+##@ Tidy
+
+format: ## Apply Spotless across the reactor
 	$(MAVEN) $(MAVEN_FLAGS) spotless:apply
 
-.PHONY: default test compile package install native examples format
+clean: ## Wipe the whole reactor's output
+	$(MAVEN) $(MAVEN_FLAGS) clean
+	rm -f jinfer/jinfer.jar jinfer/jinfer$(EXE)
+
+jinfer-clean: ## Wipe jinfer plus the sibling output its -am closure built (same incrementality state)
+	$(MAVEN) $(MAVEN_FLAGS) $(JINFER) clean
+	rm -f jinfer/jinfer.jar jinfer/jinfer$(EXE)
+
+jota-clean: ## Wipe just the jota subtree's output
+	$(MAVEN) $(MAVEN_FLAGS) -f jota/pom.xml clean
+
+##@ Miscellaneous
+
+examples: ## Build the demo apps (not part of the default reactor)
+	$(MAVEN) $(MAVEN_FLAGS) -Pexamples package
+
+help: ## Show this help
+	@awk 'BEGIN { FS = " *## *" } \
+		/^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5); next } \
+		NF >= 2 && $$1 ~ /^[a-zA-Z_-]+:/ { t = $$1; sub(/:.*/, "", t); \
+			printf "  \033[36m%-14s\033[0m %s\n", t, $$2 }' $(MAKEFILE_LIST)
+	@echo
+	@echo '  Subtrees: make -C jinfer help (run, test-golden, ...) | make -C jota help'
+
+.PHONY: default help package compile install jar jinfer-jar test jinfer-test jota-test \
+	jam-test native format clean jinfer-clean jota-clean examples
