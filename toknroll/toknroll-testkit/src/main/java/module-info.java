@@ -1,5 +1,5 @@
 module com.qxotic.toknroll.testkit {
-    requires com.qxotic.json;
+    requires com.qxotic.format.json;
     requires java.net.http;
 
     exports com.qxotic.toknroll.testkit;

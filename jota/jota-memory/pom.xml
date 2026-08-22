@@ -31,6 +31,14 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-jar-plugin</artifactId>
+        <configuration>
+          <archive>
+            <manifestEntries>
+              <!-- Stable JPMS name, reserved without committing to module-info.java yet. -->
+              <Automatic-Module-Name>com.qxotic.jota.memory</Automatic-Module-Name>
+            </manifestEntries>
+          </archive>
+        </configuration>
         <executions>
           <execution>
             <id>attach-test-jar-early</id>
