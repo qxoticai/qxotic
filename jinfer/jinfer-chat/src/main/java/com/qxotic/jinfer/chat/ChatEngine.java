@@ -76,14 +76,18 @@ public final class ChatEngine implements AutoCloseable {
     private final MediaEncodingCache mediaCache = new MediaEncodingCache();
     // the streaming driver: at most ONE lazy platform thread, reused while streams keep coming,
     // gone after an idle minute. One is enough - generations serialize on the engine lock anyway,
-    // and a fresh thread per request would just park extras on that lock
+    // and a fresh thread per request would just park extras on that lock. The queue is BOUNDED:
+    // an unbounded one lets concurrent streaming requests accumulate without limit behind a long
+    // generation, an accidental memory-pressure failure; excess work is rejected loudly instead.
+    private static final int STREAM_QUEUE_CAPACITY = 8;
+
     private final ThreadPoolExecutor streamDriver =
             new ThreadPoolExecutor(
                     0,
                     1,
                     60,
                     TimeUnit.SECONDS,
-                    new LinkedBlockingQueue<>(),
+                    new LinkedBlockingQueue<>(STREAM_QUEUE_CAPACITY),
                     r -> new Thread(r, "jinfer-stream"));
     private final AtomicReference<Thread> streamThread = new AtomicReference<>();
     private volatile boolean closed;
@@ -311,9 +315,15 @@ public final class ChatEngine implements AutoCloseable {
                             streamThread.compareAndSet(Thread.currentThread(), null);
                         }
                     });
-        } catch (RejectedExecutionException closed) {
-            // the unbounded queue never rejects; rejection means the driver was shut down
-            throw new IllegalStateException("the model is closed");
+        } catch (RejectedExecutionException rejected) {
+            // rejection has two causes now: the driver was shut down, or the bounded queue is full
+            if (closed) throw new IllegalStateException("the model is closed");
+            throw new IllegalStateException(
+                    "the model is busy: one stream is generating and "
+                            + STREAM_QUEUE_CAPACITY
+                            + " more are already queued - run concurrent streams on a second"
+                            + " ChatEngine over the same loaded model, or retry when the current"
+                            + " stream ends");
         }
     }
 
