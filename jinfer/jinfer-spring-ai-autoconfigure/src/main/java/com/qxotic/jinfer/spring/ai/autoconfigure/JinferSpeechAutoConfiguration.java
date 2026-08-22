@@ -34,7 +34,11 @@ public class JinferSpeechAutoConfiguration {
     @ConditionalOnMissingBean
     public JinferSpeechModel jinferSpeechModel(JinferSpeechProperties properties) {
         JinferSpeechModel.Builder builder = JinferSpeechModel.builder();
-        if (ModelStore.isRef(properties.model())) {
+        if (properties.model().contains("://")) {
+            throw new IllegalStateException(
+                    "spring.ai.jinfer.speech.model is a URL; download it first and configure its"
+                            + " local path");
+        } else if (ModelStore.isRef(properties.model())) {
             builder.model(properties.model());
         } else {
             builder.modelPath(Path.of(properties.model()));

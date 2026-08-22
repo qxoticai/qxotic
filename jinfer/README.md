@@ -130,8 +130,13 @@ jinfer \
 
 ## Models from a hub
 
-Anywhere a tool or framework builder accepts a model string, it accepts a local GGUF path, a
-supported model reference, or a pasted browser URL:
+Java framework builders keep remote and local sources explicit: `model(String)` accepts a
+supported model reference, while `modelPath(Path)` accepts a local GGUF file and never touches the
+network. A plain URL is not a model reference; download it first, then pass its path. Model
+references use one of these forms:
+
+Companions follow the same rule: `companion(capability, String)` accepts a model reference and
+`companionPath(capability, Path)` accepts a local file.
 
 ```text
 hf.co/unsloth/gemma-4-E2B-it-GGUF:Q8_0

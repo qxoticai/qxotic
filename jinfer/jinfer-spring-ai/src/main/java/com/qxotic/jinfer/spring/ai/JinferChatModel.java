@@ -623,12 +623,13 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     }
 
     public static final class Builder {
-        private Object source; // Path | ref/URL String | LoadedModel: the last setter wins
+        private Object source; // Path | model-ref String | LoadedModel: the last setter wins
         private Path modelPath; // derived from source at build()
         private LoadedModel<?> loaded; // derived from source at build()
         private Map<String, Path> companionPaths; // resolved at build()
         private String modelName;
-        private final Map<String, String> companions = new LinkedHashMap<>();
+        private final Map<String, String> companionRefs = new LinkedHashMap<>();
+        private final Map<String, Path> localCompanions = new LinkedHashMap<>();
         private VideoSampler videoSampler = VideoSampler.UNIFORM;
         private Path promptCache;
         private int retainedSessions = 1;
@@ -691,22 +692,30 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             return this;
         }
 
-        /**
-         * Attaches a COMPANION: an auxiliary file that gives the model a capability it does not
-         * have alone, keyed by that capability - {@code "media"} for the mmproj GGUF carrying the
-         * vision and audio encoders. What an architecture accepts is {@code Models.companions}.
-         */
-        public Builder companion(String capability, Path file) {
-            this.companions.put(capability, file.toString());
+        /** Attaches a local companion file. This method never touches the network. */
+        public Builder companionPath(String capability, Path companionPath) {
+            Objects.requireNonNull(capability, "capability");
+            Objects.requireNonNull(companionPath, "companionPath");
+            companionRefs.remove(capability);
+            localCompanions.put(capability, companionPath);
             return this;
         }
 
         /**
-         * As {@link #companion(String, Path)}, taking a local path or a model ref like {@link
-         * #model(String)} - resolved at {@link #build()}.
+         * Attaches a companion from a supported model repository. The reference is resolved at
+         * {@link #build()}.
          */
-        public Builder companion(String capability, String pathOrRef) {
-            this.companions.put(capability, pathOrRef);
+        public Builder companion(String capability, String companionRef) {
+            Objects.requireNonNull(capability, "capability");
+            if (!ModelStore.isRef(companionRef)) {
+                throw new IllegalArgumentException(
+                        "'"
+                                + companionRef
+                                + "' is not a companion model ref. Use companionPath(...) for a"
+                                + " local file; download plain URLs first.");
+            }
+            localCompanions.remove(capability);
+            companionRefs.put(capability, companionRef);
             return this;
         }
 
@@ -797,7 +806,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             if (source instanceof LoadedModel<?> l) {
                 // contextLength stays legal here: state capacity is an ENGINE setting resolved
                 // from cacheOptions, not a load-time one - a forked 32k pipeline needs it
-                if (!companions.isEmpty())
+                if (!companionRefs.isEmpty() || !localCompanions.isEmpty())
                     throw new IllegalArgumentException(
                             "companions are load-time settings; apply them when you build the"
                                     + " LoadedModel passed to model(...)");
@@ -809,12 +818,12 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             // start pays the slowest download, not the sum
             List<String> wanted = new ArrayList<>();
             if (source instanceof String ref) wanted.add(ref);
-            wanted.addAll(companions.values());
+            wanted.addAll(companionRefs.values());
             List<Path> resolved = ModelStore.standard().resolveAll(wanted);
             int at = 0;
             modelPath = source instanceof Path path ? path : resolved.get(at++);
-            var resolvedCompanions = new LinkedHashMap<String, Path>();
-            for (String capability : companions.keySet()) {
+            var resolvedCompanions = new LinkedHashMap<>(localCompanions);
+            for (String capability : companionRefs.keySet()) {
                 resolvedCompanions.put(capability, resolved.get(at++));
             }
             companionPaths = Collections.unmodifiableMap(resolvedCompanions);

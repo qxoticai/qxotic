@@ -50,6 +50,47 @@ class JinferChatAutoConfigurationTest {
     }
 
     @Test
+    void modelUrlIsRejectedBeforeResolution() {
+        runner.withPropertyValues("spring.ai.jinfer.chat.model=https://example.org/model.gguf")
+                .run(
+                        context -> {
+                            assertThat(context).hasFailed();
+                            assertThat(context.getStartupFailure())
+                                    .hasStackTraceContaining("download it first");
+                        });
+    }
+
+    @Test
+    void companionUrlIsRejectedBeforeResolution() {
+        runner.withPropertyValues(
+                        "spring.ai.jinfer.chat.model=/missing.gguf",
+                        "spring.ai.jinfer.chat.companions.media=https://example.org/mmproj.gguf")
+                .run(
+                        context -> {
+                            assertThat(context).hasFailed();
+                            assertThat(context.getStartupFailure())
+                                    .hasStackTraceContaining(
+                                            "spring.ai.jinfer.chat.companions.media")
+                                    .hasStackTraceContaining("download it first");
+                        });
+    }
+
+    @Test
+    void blankCompanionIsRejectedBeforeResolution() {
+        runner.withPropertyValues(
+                        "spring.ai.jinfer.chat.model=/missing.gguf",
+                        "spring.ai.jinfer.chat.companions.media=")
+                .run(
+                        context -> {
+                            assertThat(context).hasFailed();
+                            assertThat(context.getStartupFailure())
+                                    .hasStackTraceContaining(
+                                            "spring.ai.jinfer.chat.companions.media must not be"
+                                                    + " blank");
+                        });
+    }
+
+    @Test
     void propertiesBind() {
         // binding only: the model bean needs a real GGUF, so this runs without the auto-config
         new ApplicationContextRunner()

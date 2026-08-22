@@ -216,7 +216,7 @@ final class BuilderContractTest {
                             () ->
                                     JinferChatModel.builder()
                                             .model(loaded)
-                                            .companion(
+                                            .companionPath(
                                                     "media",
                                                     TestModels.require(
                                                             "hf.co/LiquidAI/LFM2.5-350M-GGUF/LFM2.5-350M-Q8_0.gguf"))

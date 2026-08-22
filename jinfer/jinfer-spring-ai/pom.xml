@@ -65,8 +65,8 @@
       <groupId>com.qxotic</groupId>
       <artifactId>json</artifactId>
     </dependency>
-    <!-- the model cache behind .model(String): path, hub ref or URL, one resolver. Only the
-         builders touch it - nothing on an inference path ever resolves or downloads. -->
+    <!-- the model cache behind remote model and companion refs. Only the builders touch it -
+         nothing on an inference path ever resolves or downloads. -->
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-hub</artifactId>

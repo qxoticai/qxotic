@@ -44,6 +44,17 @@ class JinferSpeechAutoConfigurationTest {
     }
 
     @Test
+    void modelUrlIsRejectedBeforeResolution() {
+        runner.withPropertyValues("spring.ai.jinfer.speech.model=https://example.org/model.gguf")
+                .run(
+                        context -> {
+                            assertThat(context).hasFailed();
+                            assertThat(context.getStartupFailure())
+                                    .hasStackTraceContaining("download it first");
+                        });
+    }
+
+    @Test
     void defaultsLeaveTheAdaptersOwnChoices() {
         new ApplicationContextRunner()
                 .withUserConfiguration(PropsOnly.class)

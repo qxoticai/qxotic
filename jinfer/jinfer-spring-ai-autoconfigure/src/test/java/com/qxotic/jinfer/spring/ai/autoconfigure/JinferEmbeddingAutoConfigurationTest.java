@@ -38,6 +38,19 @@ class JinferEmbeddingAutoConfigurationTest {
     }
 
     @Test
+    void modelUrlIsRejectedBeforeResolution() {
+        runner.withPropertyValues(
+                        "spring.ai.model.embedding=jinfer",
+                        "spring.ai.jinfer.embedding.model=https://example.org/model.gguf")
+                .run(
+                        context -> {
+                            assertThat(context).hasFailed();
+                            assertThat(context.getStartupFailure())
+                                    .hasStackTraceContaining("download it first");
+                        });
+    }
+
+    @Test
     void backsOffWhenAnotherProviderIsSelected() {
         runner.withPropertyValues(
                         "spring.ai.model.embedding=ollama",

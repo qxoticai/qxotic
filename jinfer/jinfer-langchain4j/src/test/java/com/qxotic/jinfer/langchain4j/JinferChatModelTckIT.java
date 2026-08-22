@@ -79,7 +79,7 @@ class JinferChatModelTckIT extends AbstractChatModelIT {
                             .temperature(0.0)
                             .thinking(tckThinking())
                             .seed(7L);
-            if (mediaAvailable()) builder.companion("media", Path.of(MEDIA));
+            if (mediaAvailable()) builder.companionPath("media", Path.of(MEDIA));
             model = builder.build();
         }
         JinferChatModel m = model;
@@ -214,7 +214,7 @@ class JinferChatModelTckIT extends AbstractChatModelIT {
                         .temperature(0.0)
                         .thinking(tckThinking())
                         .seed(7L);
-        if (mediaAvailable()) builder.companion("media", Path.of(MEDIA));
+        if (mediaAvailable()) builder.companionPath("media", Path.of(MEDIA));
         JinferChatModel m = builder.build();
         created.add(m);
         return m;

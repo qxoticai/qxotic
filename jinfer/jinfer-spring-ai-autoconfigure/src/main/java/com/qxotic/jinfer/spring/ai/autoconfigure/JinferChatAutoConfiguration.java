@@ -40,7 +40,11 @@ public class JinferChatAutoConfiguration {
                         .retainSessions(properties.retainedSessions())
                         .options(properties.toOptions())
                         .speculationDepth(properties.speculationDepth());
-        if (ModelStore.isRef(properties.model())) {
+        if (properties.model().contains("://")) {
+            throw new IllegalStateException(
+                    "spring.ai.jinfer.chat.model is a URL; download it first and configure its"
+                            + " local path");
+        } else if (ModelStore.isRef(properties.model())) {
             builder.model(properties.model());
         } else {
             builder.modelPath(Path.of(properties.model())); // local path: the explicit door
@@ -49,7 +53,29 @@ public class JinferChatAutoConfiguration {
         observationConvention.ifAvailable(builder::observationConvention);
         videoSampler.ifAvailable(builder::videoSampler); // a VideoSampler bean overrides UNIFORM
         if (properties.companions() != null) {
-            properties.companions().forEach(builder::companion); // path-or-ref, like model
+            properties
+                    .companions()
+                    .forEach(
+                            (capability, value) -> {
+                                if (!StringUtils.hasText(value)) {
+                                    throw new IllegalStateException(
+                                            "spring.ai.jinfer.chat.companions."
+                                                    + capability
+                                                    + " must not be blank");
+                                }
+                                if (value.contains("://")) {
+                                    throw new IllegalStateException(
+                                            "spring.ai.jinfer.chat.companions."
+                                                    + capability
+                                                    + " is a URL; download it first and configure"
+                                                    + " its local path");
+                                }
+                                if (ModelStore.isRef(value)) {
+                                    builder.companion(capability, value);
+                                } else {
+                                    builder.companionPath(capability, Path.of(value));
+                                }
+                            });
         }
         if (StringUtils.hasText(properties.promptCache())) {
             builder.promptCache(Path.of(properties.promptCache()));

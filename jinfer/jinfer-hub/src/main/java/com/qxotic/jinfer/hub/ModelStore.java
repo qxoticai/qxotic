@@ -232,8 +232,8 @@ public final class ModelStore {
     }
 
     /**
-     * A local path or a remote ref, told apart by ONE visible rule: a ref names its host,
-     * everything else is a file on this machine.
+     * A local path, remote ref, or plain HTTP(S) URL. A ref names its host; an explicit URL names
+     * bytes to download; everything else is a file on this machine.
      */
     public Path resolve(String pathOrRef) {
         if (ModelRef.isRef(pathOrRef)) {

@@ -48,6 +48,17 @@ class JinferRerankAutoConfigurationTest {
     }
 
     @Test
+    void modelUrlIsRejectedBeforeResolution() {
+        runner.withPropertyValues("spring.ai.jinfer.rerank.model=https://example.org/model.gguf")
+                .run(
+                        context -> {
+                            assertThat(context).hasFailed();
+                            assertThat(context.getStartupFailure())
+                                    .hasStackTraceContaining("download it first");
+                        });
+    }
+
+    @Test
     void defaultsMatchTheAdapter() {
         new ApplicationContextRunner()
                 .withUserConfiguration(PropsOnly.class)

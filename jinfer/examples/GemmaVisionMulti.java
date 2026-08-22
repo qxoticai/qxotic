@@ -33,7 +33,8 @@ public class GemmaVisionMulti {
         int separator = List.of(args).indexOf("--");
         if (args.length < 3 || (separator >= 0 && (separator < 3 || args.length != separator + 3))) {
             System.err.println(
-                    "usage: GemmaVisionMulti <prompt> <image1> <image2> [image3 ...] [-- <model> <mmproj>]");
+                    "usage: GemmaVisionMulti <prompt> <image1> <image2> [image3 ...]"
+                            + " [-- <model-ref> <mmproj-ref>]");
             System.exit(2);
         }
         String prompt = args[0];

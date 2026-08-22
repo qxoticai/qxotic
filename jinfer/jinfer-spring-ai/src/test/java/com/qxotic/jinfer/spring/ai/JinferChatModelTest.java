@@ -57,6 +57,28 @@ class JinferChatModelTest {
     }
 
     @Test
+    void companionSourcesHaveTheSameExplicitBoundary() {
+        JinferChatModel.builder()
+                .companion("media", "hf.co/owner/repo/mmproj-F16.gguf")
+                .companionPath("speculation", Path.of("models/mtp.gguf"));
+
+        IllegalArgumentException path =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> JinferChatModel.builder().companion("media", "models/mmproj.gguf"));
+        assertTrue(path.getMessage().contains("companionPath"));
+
+        IllegalArgumentException url =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                JinferChatModel.builder()
+                                        .companion("media", "https://example.org/mmproj.gguf"));
+        assertTrue(url.getMessage().contains("companionPath"));
+        assertTrue(url.getMessage().contains("download"));
+    }
+
+    @Test
     void builderHasOneGenerationOptionsDoor() {
         assertThrows(NullPointerException.class, () -> JinferChatModel.builder().options(null));
         var methods =

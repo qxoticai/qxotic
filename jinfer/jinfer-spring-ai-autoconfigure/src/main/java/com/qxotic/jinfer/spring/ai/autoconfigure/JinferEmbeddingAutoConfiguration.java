@@ -38,7 +38,11 @@ public class JinferEmbeddingAutoConfiguration {
         }
         JinferEmbeddingModel.Builder builder =
                 JinferEmbeddingModel.builder().contextLength(properties.contextLength());
-        if (ModelStore.isRef(properties.model())) {
+        if (properties.model().contains("://")) {
+            throw new IllegalStateException(
+                    "spring.ai.jinfer.embedding.model is a URL; download it first and configure"
+                            + " its local path");
+        } else if (ModelStore.isRef(properties.model())) {
             builder.model(properties.model());
         } else {
             builder.modelPath(Path.of(properties.model()));

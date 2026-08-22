@@ -33,9 +33,14 @@ ChatModel model = JinferChatModel.builder()
 String answer = model.call("What is the capital of France?");
 ```
 
-`model(String)` accepts a local path, hub reference or URL. `modelPath(Path)` is the explicitly
-offline form. Generation defaults are one `JinferChatOptions` value; a prompt can supply another
-value for request-local overrides:
+`model(String)` accepts a supported model reference (`hf.co/...` or `modelscope.cn/...`) and may
+download it at `build()`. `modelPath(Path)` accepts a local GGUF file and never touches the network.
+A plain URL is not a model reference; download it first, then pass its path. Generation defaults
+are one `JinferChatOptions` value; a prompt can supply another value for request-local overrides:
+
+Companions use the same split: `companion(capability, String)` accepts a model reference;
+`companionPath(capability, Path)` accepts a local file. Spring Boot properties remain path-or-ref
+strings and the autoconfiguration routes them to the matching method.
 
 ```java
 ChatResponse response = model.call(new Prompt(

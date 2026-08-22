@@ -156,7 +156,7 @@ class JinferStreamingChatModelTckIT extends AbstractStreamingChatModelIT {
                         .thinking(JinferChatModelTckIT.tckThinking())
                         .seed(7L);
         if (JinferChatModelTckIT.mediaAvailable()) {
-            builder.companion("media", java.nio.file.Path.of(JinferChatModelTckIT.MEDIA));
+            builder.companionPath("media", java.nio.file.Path.of(JinferChatModelTckIT.MEDIA));
         }
         return track(builder.build()).streaming();
     }
@@ -180,7 +180,7 @@ class JinferStreamingChatModelTckIT extends AbstractStreamingChatModelIT {
                         .seed(7L)
                         .listeners(listeners);
         if (JinferChatModelTckIT.mediaAvailable()) {
-            builder.companion("media", java.nio.file.Path.of(JinferChatModelTckIT.MEDIA));
+            builder.companionPath("media", java.nio.file.Path.of(JinferChatModelTckIT.MEDIA));
         }
         return builder.build();
     }

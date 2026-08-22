@@ -34,7 +34,7 @@ class Lfm2MediaIT extends AbstractMediaIT {
                         () ->
                                 JinferChatModel.builder()
                                         .modelPath(model)
-                                        .companion("media", mmproj)
+                                        .companionPath("media", mmproj)
                                         .build());
         assertTrue(e.getMessage().contains("does not match model width"), e.getMessage());
     }

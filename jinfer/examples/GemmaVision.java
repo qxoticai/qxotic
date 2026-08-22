@@ -37,7 +37,8 @@ public class GemmaVision {
 
     public static void main(String[] args) {
         if (args.length < 2) {
-            System.err.println("usage: GemmaVision <image> <prompt> [model] [mmproj]");
+            System.err.println(
+                    "usage: GemmaVision <image> <prompt> [model-ref] [mmproj-ref]");
             System.exit(2);
         }
         Path image = Path.of(args[0]);
