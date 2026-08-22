@@ -10,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.media.Media;
+import com.qxotic.jinfer.testkit.MediaProjectorContract;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -98,6 +99,9 @@ class Gemma4VisionComponentsTest {
                         borrowed.add(chunk);
                     });
             assertEquals(49, rows[0]);
+
+            // The shared contract on top of the specifics above.
+            MediaProjectorContract.assertContract(projector, image, 2);
         }
         assertFalse(((MemorySegment) borrowed.getFirst().memory().base()).scope().isAlive());
     }

@@ -10,6 +10,7 @@ import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.kernels.Convert;
 import com.qxotic.jinfer.media.Media;
+import com.qxotic.jinfer.testkit.MediaProjectorContract;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryView;
@@ -131,6 +132,10 @@ class Qwen35VisionComponentsTest {
                         borrowed.add(view);
                     });
             assertEquals(9, rows[0]);
+
+            // The shared contract on top of the specifics above: positions == rows, FP32
+            // [rows, modelDim] chunks, arena expiry, determinism, maxChunkSize gates.
+            MediaProjectorContract.assertContract(tower, image, modelDim);
         }
         assertFalse(borrowed.getFirst().memory().base().scope().isAlive());
     }

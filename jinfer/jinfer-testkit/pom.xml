@@ -21,6 +21,11 @@
   </properties>
 
   <dependencies>
+    <!-- the MediaProjector contract lives here too: Media, Views and MemoryView come from core -->
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-core</artifactId>
+    </dependency>
     <!-- model resolution: a ref in, a cached path out, never the network -->
     <dependency>
       <groupId>com.qxotic</groupId>
