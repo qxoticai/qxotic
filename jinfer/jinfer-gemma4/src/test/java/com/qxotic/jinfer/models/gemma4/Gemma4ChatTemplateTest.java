@@ -32,6 +32,7 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -63,7 +64,8 @@ final class Gemma4ChatTemplateTest {
                     IntSequence.of(SpecialTokens.require(tokenizer, "<bos>")),
                     template.promptStart());
             List<Batch> batches = new ArrayList<>();
-            template.encode(new Conversation(List.of(message)), 4, batches::add);
+            template.encode(
+                    new Conversation(List.of(message), List.of(), false, ""), 4, batches::add);
 
             List<Batch.Input.Embeddings> embeddings =
                     batches.stream()
@@ -113,6 +115,108 @@ final class Gemma4ChatTemplateTest {
 
         assertFalse(reply.replyPrefix().isEmpty());
         assertEquals(Channel.CONTENT, reply.parser().channel());
+    }
+
+    @Test
+    void thinkMarkersDeclaresTheChannelSpan() throws Exception {
+        Tokenizer tokenizer = tokenizer();
+        ChatTemplate.ThinkMarkers markers =
+                new Gemma4ChatTemplate(tokenizer, null, true).thinkMarkers();
+        assertEquals("<|channel>", markers.open());
+        assertEquals("<channel|>", markers.close());
+        // the declared spellings resolve in the family vocabulary - the engine's ban/cap keys on
+        // their ids, so a spelling that does not resolve would silently disable both policies
+        assertTrue(SpecialTokens.find(tokenizer, markers.open()).isPresent());
+        assertTrue(SpecialTokens.find(tokenizer, markers.close()).isPresent());
+    }
+
+    @Test
+    void thinkingWithoutSystemOrToolsStillEmitsTheSeededSystemTurn() throws Exception {
+        Tokenizer tokenizer = tokenizer();
+        List<Batch> batches = new ArrayList<>();
+        new Gemma4ChatTemplate(tokenizer, null, true)
+                .encode(
+                        new Conversation(List.of(Message.user("hi")), List.of(), true, ""),
+                        32,
+                        batches::add);
+        int[] ids = tokenIds(batches);
+
+        // the E2B dual-mode template: bos, then <|turn>system\n<|think|>\n<turn|> even with no
+        // system message and no tools - the seed primes the <|channel>thought span in the reply
+        IntSequence.Builder prefix = IntSequence.newBuilder();
+        prefix.add(SpecialTokens.require(tokenizer, "<bos>"));
+        prefix.add(SpecialTokens.require(tokenizer, "<|turn>"));
+        prefix.addAll(tokenizer.encode("system\n"));
+        prefix.add(SpecialTokens.require(tokenizer, "<|think|>"));
+        prefix.addAll(tokenizer.encode("\n"));
+        prefix.add(SpecialTokens.require(tokenizer, "<turn|>"));
+        int[] expected = prefix.build().toArray();
+        assertTrue(ids.length > expected.length);
+        assertArrayEquals(expected, Arrays.copyOf(ids, expected.length));
+    }
+
+    @Test
+    void theSeedLandsAheadOfTheSystemText() throws Exception {
+        Tokenizer tokenizer = tokenizer();
+        List<Batch> batches = new ArrayList<>();
+        new Gemma4ChatTemplate(tokenizer, null, true)
+                .encode(
+                        new Conversation(
+                                List.of(Message.system("be terse"), Message.user("hi")),
+                                List.of(),
+                                true,
+                                ""),
+                        32,
+                        batches::add);
+        int[] ids = tokenIds(batches);
+
+        int seed = indexOf(ids, SpecialTokens.require(tokenizer, "<|think|>"));
+        assertTrue(seed > 0, "seed present");
+        int systemText = indexOf(ids, tokenizer.encode("be terse").intAt(0));
+        assertTrue(systemText > seed, "system text follows the seed");
+    }
+
+    @Test
+    void thinkingOffNeverEmitsTheSeed() throws Exception {
+        Tokenizer tokenizer = tokenizer();
+        List<Batch> batches = new ArrayList<>();
+        new Gemma4ChatTemplate(tokenizer, null, true)
+                .encode(
+                        new Conversation(
+                                List.of(Message.system("be terse"), Message.user("hi")),
+                                List.of(),
+                                false,
+                                ""),
+                        32,
+                        batches::add);
+        int[] ids = tokenIds(batches);
+        assertEquals(-1, indexOf(ids, SpecialTokens.require(tokenizer, "<|think|>")));
+    }
+
+    @Test
+    void thinkingLeavesTheChannelOpenToTheModel() throws Exception {
+        Tokenizer tokenizer = tokenizer();
+        ChatTemplate.ReplyState reply =
+                new Gemma4ChatTemplate(tokenizer, null, true)
+                        .encode(
+                                new Conversation(
+                                        List.of(Message.user("think about it")),
+                                        List.of(),
+                                        true,
+                                        ""),
+                                32,
+                                ignored -> {});
+        // a seeded model opens <|channel>thought itself: no scaffolded prefix (contrast with the
+        // non-thinking load, which carries the content-channel prefix)
+        assertTrue(reply.replyPrefix().isEmpty());
+        assertEquals(Channel.CONTENT, reply.parser().channel());
+    }
+
+    private static int indexOf(int[] ids, int id) {
+        for (int i = 0; i < ids.length; i++) {
+            if (ids[i] == id) return i;
+        }
+        return -1;
     }
 
     private static int[] expectedMediaTokens(Tokenizer tokenizer) {

@@ -656,6 +656,15 @@ public final class ChatEngine implements AutoCloseable {
     }
 
     /**
+     * The loaded family's think-span markers, {@link ChatTemplate.ThinkMarkers#GENERIC} by default.
+     */
+    private ChatTemplate.ThinkMarkers thinkMarkers() {
+        return loaded.template()
+                .map(ChatTemplate::thinkMarkers)
+                .orElse(ChatTemplate.ThinkMarkers.GENERIC);
+    }
+
+    /**
      * The standard jinfer sampling stack: a resolved {@link Sampling} plus the reasoning policy -
      * thinking on caps the think span so it cannot starve the visible answer ({@code
      * reasoningOverride}: null = half of {@code maxTokens}, -1 = uncapped; {@code
@@ -670,8 +679,10 @@ public final class ChatEngine implements AutoCloseable {
             String reasoningMessage,
             IntSequence replyPrefix) {
         Sampler sampler = sampling.sampler(loaded.model().configuration().vocabularySize());
+        ChatTemplate.ThinkMarkers markers = thinkMarkers();
         if (!think) {
-            return Thinking.banMarkers(sampler, loaded.tokenizer());
+            return Thinking.banMarkers(
+                    sampler, loaded.tokenizer(), markers.open(), markers.close());
         }
         int budget =
                 reasoningOverride != null
@@ -680,7 +691,7 @@ public final class ChatEngine implements AutoCloseable {
         // prompt-opened spans (replyPrefix carries the open id): the cap must start ARMED - the
         // open token never passes through the sampler on those families
         boolean startInThink = false;
-        OptionalInt open = SpecialTokens.find(loaded.tokenizer(), Thinking.OPEN);
+        OptionalInt open = SpecialTokens.find(loaded.tokenizer(), markers.open());
         if (open.isPresent()) {
             int openId = open.getAsInt();
             for (int i = 0; i < replyPrefix.length(); i++) {
@@ -691,7 +702,13 @@ public final class ChatEngine implements AutoCloseable {
             }
         }
         return Thinking.capBudget(
-                sampler, loaded.tokenizer(), budget, startInThink, reasoningMessage);
+                sampler,
+                loaded.tokenizer(),
+                budget,
+                startInThink,
+                reasoningMessage,
+                markers.open(),
+                markers.close());
     }
 
     /**
@@ -712,18 +729,18 @@ public final class ChatEngine implements AutoCloseable {
         }
         ReplyLanguage.Selection selection =
                 family.orElseGet(
-                        () ->
-                                ReplyLanguage.Selection.of(
-                                        ReplyLanguage.seq(
-                                                ReplyLanguage.opt(
-                                                        ReplyLanguage.think(
-                                                                ReplyLanguage.mark(Thinking.OPEN),
-                                                                ReplyLanguage.free(),
-                                                                ReplyLanguage.mark(
-                                                                        Thinking.CLOSE))),
-                                                ReplyLanguage.content(
-                                                        ReplyLanguage.gbnf(contentGbnf))),
-                                        loaded.tokenizer()));
+                        () -> {
+                            ChatTemplate.ThinkMarkers markers = thinkMarkers();
+                            return ReplyLanguage.Selection.of(
+                                    ReplyLanguage.seq(
+                                            ReplyLanguage.opt(
+                                                    ReplyLanguage.think(
+                                                            ReplyLanguage.mark(markers.open()),
+                                                            ReplyLanguage.free(),
+                                                            ReplyLanguage.mark(markers.close()))),
+                                            ReplyLanguage.content(ReplyLanguage.gbnf(contentGbnf))),
+                                    loaded.tokenizer());
+                        });
         ReplyLanguage.Walk walk = selection.walk();
         walk.seed(replyPrefix);
         return walk.sampler(base, endTurn());
@@ -805,7 +822,7 @@ public final class ChatEngine implements AutoCloseable {
         // can never mint (the render scrubs), so its last occurrence is the scaffold.
         IntSequence replyPrefix = IntSequence.empty();
         if (conversation.thinking()) {
-            OptionalInt open = SpecialTokens.find(loaded.tokenizer(), Thinking.OPEN);
+            OptionalInt open = SpecialTokens.find(loaded.tokenizer(), thinkMarkers().open());
             if (open.isPresent()) {
                 int[] all = ids.toArray();
                 int at = all.length;

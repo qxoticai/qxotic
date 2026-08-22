@@ -29,6 +29,9 @@ import java.util.function.Consumer;
 public final class Gemma4ChatTemplate implements ChatTemplate {
     private static final String CHANNEL_OPEN = "<|channel>";
     private static final String CHANNEL_CLOSE = "<channel|>";
+    private static final String THINK_SEED = "<|think|>";
+    private static final ThinkMarkers CHANNEL_MARKERS =
+            new ThinkMarkers(CHANNEL_OPEN, CHANNEL_CLOSE);
     private static final String CALL_OPEN = "<|tool_call>";
     private static final String CALL_CLOSE = "<tool_call|>";
     private static final String RESPONSE_OPEN = "<|tool_response>";
@@ -42,6 +45,7 @@ public final class Gemma4ChatTemplate implements ChatTemplate {
     private final IntSequence promptStart;
     private final int turnOpen;
     private final int turnClose;
+    private final int thinkSeed;
     private final int imageOpen;
     private final int imageClose;
     private final int audioOpen;
@@ -64,6 +68,7 @@ public final class Gemma4ChatTemplate implements ChatTemplate {
         promptStart = IntSequence.of(SpecialTokens.require(tokenizer, "<bos>"));
         turnOpen = SpecialTokens.require(tokenizer, "<|turn>");
         turnClose = SpecialTokens.require(tokenizer, "<turn|>");
+        thinkSeed = SpecialTokens.require(tokenizer, THINK_SEED);
         imageOpen = SpecialTokens.require(tokenizer, "<|image>");
         imageClose = SpecialTokens.require(tokenizer, "<image|>");
         audioOpen = SpecialTokens.require(tokenizer, "<|audio>");
@@ -107,8 +112,12 @@ public final class Gemma4ChatTemplate implements ChatTemplate {
         List<Message> msgs = conversation.messages();
         boolean systemFirst = !msgs.isEmpty() && msgs.get(0).role().equals(Role.SYSTEM);
         int start = 0;
-        if (systemFirst || !conversation.tools().isEmpty()) {
-            systemBlock(out, systemFirst ? msgs.get(0) : null, conversation.tools());
+        if (systemFirst || !conversation.tools().isEmpty() || conversation.thinking()) {
+            systemBlock(
+                    out,
+                    systemFirst ? msgs.get(0) : null,
+                    conversation.tools(),
+                    conversation.thinking());
             out.flush();
             if (systemFirst) start = 1;
         }
@@ -249,9 +258,16 @@ public final class Gemma4ChatTemplate implements ChatTemplate {
         return new ReplyState(replyPrefix, parser);
     }
 
-    /** {@code <|turn>system\n} + trimmed system text + one declaration block per tool. */
-    private void systemBlock(PromptWriter out, Message system, List<Tool> tools) {
+    /**
+     * {@code <|turn>system\n} + (thinking) {@code <|think|>\n} + trimmed system text + one
+     * declaration block per tool. The template emits the system turn - with the think seed - even
+     * with no system message or tools when {@code enable_thinking} is set (the E2B dual-mode
+     * template); the seed primes the model to open the {@code <|channel>thought} span in its reply,
+     * which the family's reply language routes to reasoning.
+     */
+    private void systemBlock(PromptWriter out, Message system, List<Tool> tools, boolean thinking) {
         out.id(turnOpen).text("system\n");
+        if (thinking) out.id(thinkSeed).text("\n");
         if (system != null) out.text(system.text().strip());
         for (Tool tool : tools) {
             out.id(require(DECLARATION_OPEN));
@@ -448,6 +464,11 @@ public final class Gemma4ChatTemplate implements ChatTemplate {
     public Optional<ReplyLanguage.Selection> constrainedReply(
             String contentGbnf, List<Tool> callableTools) {
         return Optional.of(spans().constrainedAuto(contentGbnf, !callableTools.isEmpty()));
+    }
+
+    @Override
+    public ThinkMarkers thinkMarkers() {
+        return CHANNEL_MARKERS;
     }
 
     /** Forced calls: the header carries an OFFERED name, the arguments stay the model's own. */
