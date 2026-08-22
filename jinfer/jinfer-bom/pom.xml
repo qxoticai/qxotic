@@ -67,13 +67,7 @@
         <artifactId>jinfer-jinja</artifactId>
         <version>${project.version}</version>
       </dependency>
-      <dependency>
-        <groupId>com.qxotic</groupId>
-        <artifactId>jinfer-testkit</artifactId>
-        <version>${project.version}</version>
-      </dependency>
 
-      <!-- framework adapters -->
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-langchain4j</artifactId>
@@ -154,47 +148,47 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jota-memory</artifactId>
-        <version>0.1.0</version>
+        <version>${project.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>gguf</artifactId>
-        <version>0.1.0</version>
+        <version>${project.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>json</artifactId>
-        <version>0.1.0</version>
+        <version>${project.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>toknroll-core</artifactId>
-        <version>0.1.0</version>
+        <version>${project.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>toknroll-gguf</artifactId>
-        <version>0.1.0</version>
+        <version>${project.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jam-core</artifactId>
-        <version>0.1.0</version>
+        <version>${project.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jam-scalar</artifactId>
-        <version>0.1.0</version>
+        <version>${project.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jam-vector</artifactId>
-        <version>0.1.0</version>
+        <version>${project.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jam-native</artifactId>
-        <version>0.1.0</version>
+        <version>${project.version}</version>
       </dependency>
     </dependencies>
   </dependencyManagement>
