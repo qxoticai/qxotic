@@ -32,8 +32,9 @@ public class LogicalShapeTest {
         assertEquals(Shape.flat(2048), DataType.Q8_0.logicalShape(Shape.flat(64)));
         assertEquals(Shape.flat(2048, 2048), DataType.Q8_0.logicalShape(Shape.flat(2048, 64)));
         assertEquals(Shape.flat(2048, 2048), DataType.Q4_0.logicalShape(Shape.flat(2048, 64)));
-        // scalar shape passes through even for block dtypes
-        assertEquals(Shape.scalar(), DataType.Q8_0.logicalShape(Shape.scalar()));
+        // a block-quantized scalar is not representable: rank 0 has no innermost axis to tile
+        assertThrows(
+                IllegalArgumentException.class, () -> DataType.Q8_0.logicalShape(Shape.scalar()));
     }
 
     @Test
@@ -53,11 +54,11 @@ public class LogicalShapeTest {
     }
 
     @Test
-    void nestedShapeRejectedForBlockDtypes() {
+    void nestedShapePreservedForBlockDtypes() {
         Shape nested = Shape.of(2, Shape.of(3, 4));
-        assertThrows(UnsupportedOperationException.class, () -> DataType.Q8_0.logicalShape(nested));
-        assertThrows(
-                UnsupportedOperationException.class, () -> DataType.Q8_0.physicalShape(nested));
+        // nested structure is preserved; only the last dim in flatten order is scaled
+        assertEquals(Shape.of(2, Shape.of(3, 128)), DataType.Q8_0.logicalShape(nested));
+        assertEquals(nested, DataType.Q8_0.physicalShape(Shape.of(2, Shape.of(3, 128))));
         // identity dtypes never inspect the shape
         assertSame(nested, DataType.FP32.logicalShape(nested));
     }

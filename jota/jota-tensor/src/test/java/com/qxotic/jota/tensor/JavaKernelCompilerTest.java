@@ -3,13 +3,13 @@ package com.qxotic.jota.tensor;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.qxotic.jota.DataType;
-import com.qxotic.jota.Environment;
 import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.memory.impl.MemoryViewFactory;
+import com.qxotic.jota.runtime.nativeimpl.NativeMemoryFactory;
 import com.qxotic.jota.testutil.TestKernels;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -21,7 +21,11 @@ import org.junit.jupiter.api.Test;
 
 class JavaKernelCompilerTest {
 
-    @AutoClose private final MemoryDomain<MemorySegment> domain = Environment.nativeMemoryDomain();
+    // Own private domain: @AutoClose closes it after every test method, so it must not be
+    // Environment.nativeMemoryDomain()'s - that arena is the runtime registry's shared
+    // instance, and closing it poisons every later test in the fork ("arena already closed").
+    @AutoClose
+    private final MemoryDomain<MemorySegment> domain = NativeMemoryFactory.createDomain();
 
     private static Tensor tensorGelu(Tensor value) {
         Tensor cubic = value.multiply(value).multiply(value);
