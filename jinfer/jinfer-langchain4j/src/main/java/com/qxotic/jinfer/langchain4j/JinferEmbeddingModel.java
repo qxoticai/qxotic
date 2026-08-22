@@ -39,7 +39,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * it instead of returning an arbitrary prefix.
  *
  * <p>Token counts in the returned usage are exact (the real tokenizer, not an estimate). Run with
- * jinfer's JVM flags: {@code --enable-preview --add-modules jdk.incubator.vector
+ * jinfer's JVM flags: {@code --add-modules jdk.incubator.vector
  * --enable-native-access=ALL-UNNAMED}.
  */
 public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable {

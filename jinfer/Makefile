@@ -45,7 +45,7 @@ clean: ## Wipe the subtree's build output (and the sibling output its closure bu
 # SIMD register - measured ~45% slower prefill on GraalVM CE. A strong inliner (Oracle GraalVM)
 # does it anyway. The file form keeps the (growing) list in one place.
 INLINE_HINTS = -XX:CompileCommandFile=$(DIR)/hotspot_compiler
-JAVA_RUNTIME_OPTIONS = --enable-preview --add-modules jdk.incubator.vector,jdk.httpserver \
+JAVA_RUNTIME_OPTIONS = --add-modules jdk.incubator.vector,jdk.httpserver \
 	--enable-native-access=ALL-UNNAMED $(INLINE_HINTS)
 
 run: jar ## Build, then launch the CLI: make run ARGS="--model hf.co/... --chat"

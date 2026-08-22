@@ -14,8 +14,8 @@
   <!-- Spring AI chat-model provider backed by jinfer: in-process CPU
        inference over GGUF models, native chat-template codec first (token-exact, injection-inert),
        hardened Jinja whole-render fallback for unported models. Blocking + streaming, tools,
-       media, embeddings, reranking, speech. Runtime needs jinfer's JVM flags: enable-preview,
-       jdk.incubator.vector, enable-native-access.
+       media, embeddings, reranking, speech. Runtime needs jinfer's JVM flags:
+       jdk.incubator.vector and enable-native-access.
 
        Named jinfer-spring-ai, NOT spring-ai-jinfer: the spring-ai- prefix belongs to
        modules released by that project, and wearing it under com.qxotic would read on Maven

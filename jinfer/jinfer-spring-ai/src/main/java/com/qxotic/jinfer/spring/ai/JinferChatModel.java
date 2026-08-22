@@ -65,7 +65,7 @@ import reactor.core.publisher.FluxSink;
  * defined prompts as an immutable artifact that mounts zero-prefill in later processes. None
  * changes output - byte-identity to a cold run is the law.
  *
- * <p>Run with jinfer's JVM flags: {@code --enable-preview --add-modules jdk.incubator.vector
+ * <p>Run with jinfer's JVM flags: {@code --add-modules jdk.incubator.vector
  * --enable-native-access=ALL-UNNAMED}.
  */
 public final class JinferChatModel implements ChatModel, AutoCloseable {

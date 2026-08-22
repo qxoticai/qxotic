@@ -1,7 +1,7 @@
 ///usr/bin/env jbang "$0" "$@" ; exit $?
 //JAVA 25
-//COMPILE_OPTIONS --enable-preview --release 25
-//RUNTIME_OPTIONS --enable-preview --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED -Xmx24g
+//COMPILE_OPTIONS --release 25
+//RUNTIME_OPTIONS --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED -Xmx24g
 //REPOS mavenLocal,central
 //DEPS com.qxotic:jinfer-langchain4j:0.1.0
 //SOURCES scripts/Models.java

@@ -9,7 +9,6 @@ Small executable example for `jinfer-inflect2`. It writes a WAV file or streams 
 mvnd -pl jinfer/jinfer-inflect2-cli -am -DskipTests package
 
 java \
-  --enable-preview \
   --add-modules jdk.incubator.vector \
   --enable-native-access=ALL-UNNAMED \
   -jar jinfer/jinfer-inflect2-cli/target/inflect.jar \

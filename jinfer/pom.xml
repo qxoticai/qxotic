@@ -236,7 +236,6 @@
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-compiler-plugin</artifactId>
           <configuration>
-            <enablePreview>true</enablePreview>
             <compilerArgs>
               <arg>--add-modules</arg>
               <arg>jdk.incubator.vector,jdk.httpserver</arg>
@@ -250,11 +249,10 @@
             <!-- doclint checks CORRECTNESS, not presence: broken @link, bad references and
                  malformed HTML fail the build; a missing @param on a self-evident argument does
                  not. A doc that says "@param n the n" is noise, and a policy that demands one
-                 produces a hundred of them. Preview + incubator flags mirror the compiler's, or
-                 javadoc cannot parse the sources it is documenting. -->
+                 produces a hundred of them. Incubator module flags mirror the compiler's, or
+                 javadoc cannot resolve the types it is documenting. -->
             <doclint>all,-missing</doclint>
             <additionalOptions>
-              <additionalOption>--enable-preview</additionalOption>
               <additionalOption>--add-modules</additionalOption>
               <additionalOption>jdk.incubator.vector,jdk.httpserver</additionalOption>
             </additionalOptions>
@@ -270,7 +268,7 @@
             <!-- Every src/test class is JUnit; discovery scans all classes (non-@Test helpers are
                  ignored). Integration/bench/driver tags are opt-in; see surefire.excludedGroups
                  above. -->
-            <argLine>--add-modules jdk.incubator.vector,jdk.httpserver --enable-preview --enable-native-access=ALL-UNNAMED</argLine>
+            <argLine>--add-modules jdk.incubator.vector,jdk.httpserver --enable-native-access=ALL-UNNAMED</argLine>
             <excludedGroups>${surefire.excludedGroups}</excludedGroups>
             <includes>
               <include>**/*.java</include>
@@ -325,7 +323,7 @@
           <artifactId>spring-boot-maven-plugin</artifactId>
           <version>${spring-boot.version}</version>
           <configuration>
-            <jvmArguments>--enable-preview --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED</jvmArguments>
+            <jvmArguments>--add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED</jvmArguments>
           </configuration>
         </plugin>
         <plugin>
@@ -340,7 +338,7 @@
               <buildArg>-O3</buildArg>
               <buildArg>-Djam.vector.wideTiles=${jam.wideTiles}</buildArg>
               <buildArg>-march=native</buildArg>
-              <!-- Correctness flags (Vector/FFM support, preview, add-modules, native-access,
+              <!-- Correctness flags (Vector/FFM support, add-modules, native-access,
                    build-time init policy and per-class run-time exemptions) come from each module's
                    jar-resident native-image.properties; this recipe only adds the optimization and
                    resource knobs that are specific to the shipped CLI binary.

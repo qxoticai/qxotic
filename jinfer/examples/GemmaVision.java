@@ -1,7 +1,7 @@
 ///usr/bin/env jbang "$0" "$@" ; exit $?
 //JAVA 25
-//COMPILE_OPTIONS --enable-preview --release 25
-//RUNTIME_OPTIONS --enable-preview --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED -Xmx24g
+//COMPILE_OPTIONS --release 25
+//RUNTIME_OPTIONS --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED -Xmx24g
 // jinfer is a local (unpublished) build - install it to your ~/.m2 once, then jbang resolves it:
 //     cd jinfer && mvn -q -DskipTests install
 //REPOS mavenLocal,central

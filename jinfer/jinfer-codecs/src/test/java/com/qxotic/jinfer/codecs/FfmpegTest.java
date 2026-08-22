@@ -39,7 +39,6 @@ class FfmpegTest {
     private static List<String> command(String mode) {
         return List.of(
                 Path.of(System.getProperty("java.home"), "bin", "java").toString(),
-                "--enable-preview",
                 "-cp",
                 System.getProperty("java.class.path"),
                 Fixture.class.getName(),
