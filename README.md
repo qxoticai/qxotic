@@ -62,6 +62,11 @@ layers. For a single version for the whole release, import `jinfer-bom`.
 
 ## Building
 
+`make help` lists the build's entry points (`test`, `jinfer-test`, `jota-test`, `jar`,
+`native`, `format`, `clean`, ...); `make -C jinfer help` and `make -C jota help` list the
+subtree-local ones. The Makefiles wrap the Maven reactor below - use it directly when you need
+finer selection.
+
 This is a single Maven reactor rooted at the repository root.
 No subtree is dependency-closed - `jinfer` alone pulls in `gguf`, `json`, `toknroll` and four `jam` artifacts - so always build from the root and select what you want with `-pl … -am`:
 
