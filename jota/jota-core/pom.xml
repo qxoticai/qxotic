@@ -10,8 +10,8 @@
   </parent>
 
   <artifactId>jota-core</artifactId>
-  <name>Jota Core</name>
-  <description>Foundational Jota data types, devices, shapes, strides, and layouts</description>
+  <name>jota-core</name>
+  <description>Foundational Jota data types: devices, shapes, strides, and layouts.</description>
 
   <dependencies>
     <dependency>

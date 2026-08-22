@@ -21,6 +21,10 @@
        modules released by that project, and wearing it under com.qxotic would read on Maven
        Central as an official integration. Same convention as jinfer-langchain4j. -->
   <name>jinfer-spring-ai</name>
+  <description>Spring AI provider for fast, local, in-process LLM inference on the JVM. No
+    server, no HTTP, no external processes. Chat, embeddings, document reranking, and
+    text-to-speech. End to end in Java.</description>
+
   <dependencyManagement>
     <dependencies>
       <dependency>

@@ -11,6 +11,11 @@
   <artifactId>jinfer-example-judge-advisor</artifactId>
   <packaging>jar</packaging>
 
+  <name>jinfer-example-judge-advisor</name>
+  <description>Demo: a remote OpenAI-compatible generator with a local in-JVM jinfer judge. A
+    self-refine advisor loops generation until the judge's grammar-pinned verdict passes. Not
+    published to Maven Central.</description>
+
   <properties>
     <maven.deploy.skip>true</maven.deploy.skip>
   </properties>

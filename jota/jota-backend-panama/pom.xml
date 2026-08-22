@@ -10,8 +10,9 @@
   </parent>
 
   <artifactId>jota-backend-panama</artifactId>
-  <name>Jota Backend Panama</name>
-  <description>Panama/FFM runtime backend for Jota tensor operations</description>
+  <name>jota-backend-panama</name>
+  <description>Pure-Java backend for Jota tensor operations built on the FFM (Panama) API; the
+    default backend on the JVM.</description>
 
   <dependencies>
     <dependency>

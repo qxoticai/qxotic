@@ -21,6 +21,10 @@
        com.qxotic would read on Maven Central as an official integration. It flips only if this is
        ever upstreamed. Same convention as jinfer-spring-ai. -->
   <name>jinfer-langchain4j</name>
+  <description>LangChain4j provider for fast, local, in-process LLM inference on the JVM. No
+    server, no HTTP, no external processes. Chat, embeddings, scoring, and speech. End to end in
+    Java.</description>
+
   <properties>
     <langchain4j.version>1.18.0</langchain4j.version>
   </properties>

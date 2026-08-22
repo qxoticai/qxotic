@@ -15,6 +15,10 @@
        ChatClient stack (tool-calling advisor, chat memory) so a @Bean-less app gets the full
        tool loop. -->
   <name>jinfer-spring-ai-spring-boot-starter</name>
+  <description>Spring Boot starter for jinfer. Auto-configured ChatModel plus the full
+    ChatClient stack: tool advisors, chat memory, and structured output. Zero @Bean configuration
+    required.</description>
+
   <dependencyManagement>
     <dependencies>
       <dependency>

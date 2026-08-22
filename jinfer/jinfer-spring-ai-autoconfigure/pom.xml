@@ -14,6 +14,9 @@
   <!-- Spring Boot auto-configuration for jinfer-spring-ai: one JinferChatModel bean from
        spring.ai.jinfer.chat.* properties, selected via spring.ai.model.chat=jinfer. -->
   <name>jinfer-spring-ai-autoconfigure</name>
+  <description>Spring Boot auto-configuration for jinfer-spring-ai. Wires a JinferChatModel bean
+    from spring.ai.jinfer.chat.* properties.</description>
+
   <dependencyManagement>
     <dependencies>
       <dependency>
