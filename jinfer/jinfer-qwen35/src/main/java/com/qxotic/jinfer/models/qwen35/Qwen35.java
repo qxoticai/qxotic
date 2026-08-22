@@ -99,15 +99,15 @@ public final class Qwen35
     /**
      * Returns a model sharing this backbone's weights with a validated vision sidecar attached.
      *
-     * <p>ponytail: the sidecar borrows {@code arena}, so callers close it once after the model -
-     * never before, and never the sidecar separately.
+     * <p>the sidecar borrows {@code arena}, so callers close it once after the model - never
+     * before, and never the sidecar separately.
      */
     public Qwen35 withMedia(Path mmprojPath, Arena arena) throws IOException {
         Objects.requireNonNull(mmprojPath, "mmprojPath");
         Objects.requireNonNull(arena, "arena");
         try (FileChannel channel = FileChannel.open(mmprojPath, StandardOpenOption.READ)) {
             GGUF gguf = ModelLoader.readGguf(channel, mmprojPath.toString());
-            // ponytail: this is the only check the backbone owns; the tower's own geometry
+            // this is the only check the backbone owns; the tower's own geometry
             // (projector type included) is validated inside Qwen35Vision.loadModel.
             int projected = gguf.getValueOrDefault(int.class, "clip.vision.projection_dim", 0);
             if (projected != configuration.embeddingLength)

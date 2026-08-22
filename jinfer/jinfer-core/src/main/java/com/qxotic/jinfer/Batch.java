@@ -135,7 +135,7 @@ public record Batch(Input input, Outputs outputs) {
      * embedding blocks pass through for now.
      *
      * <p>Same output, less copying than the old {@code flushRun}: a single already-legal batch
-     * passes through with NO new array (ponytail: aliased, not defensively copied - the contract is
+     * passes through with NO new array (aliased, not defensively copied - the contract is
      * produce-then-ingest; revisit if a caller ever mutates between prepare and ingest), a single
      * oversized batch slices straight from the source, and only a genuine multi-batch run pays the
      * concat. Equivalence with the old algorithm is property-tested in {@code BatchTest}.

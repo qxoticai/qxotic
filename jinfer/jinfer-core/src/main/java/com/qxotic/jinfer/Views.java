@@ -221,8 +221,8 @@ public final class Views {
      * — same reference, no wrap, no copy, fail-fast. The wildcard at the boundary exists for a
      * future non-segment backing (a GPU buffer); today every weight mmap and state scratch in the
      * slice IS MemorySegment-backed, so this is the ONE sanctioned downcast — everywhere else the
-     * compiler already knows. (ponytail: when a non-segment backing lands, this seam grows a second
-     * arm rather than the cast spreading back out.)
+     * compiler already knows. (when a non-segment backing lands, this seam grows a second arm
+     * rather than the cast spreading back out.)
      */
     @SuppressWarnings("unchecked")
     public static MemoryView<MemorySegment> castToSegmentBacked(MemoryView<?> view, String name) {

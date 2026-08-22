@@ -104,7 +104,7 @@ final class Mappings {
                 case VideoContent v -> {
                     // no base64 door here, unlike image/audio: the frame sampler reads a FILE
                     // (ffmpeg seam), so the refusal must not advise the base64 the user just sent
-                    // ponytail: inline bytes deferred - the fix is byte[] overloads on VideoCodec
+                    // inline bytes deferred - the fix is byte[] overloads on VideoCodec
                     // when a caller actually holds bytes, NOT per-adapter temp-file handling
                     if (v.video().base64Data() != null)
                         throw new UnsupportedFeatureException(

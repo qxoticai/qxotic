@@ -20,8 +20,7 @@ import java.util.Objects;
  * <p>jota's own native arenas ({@code NativeMemoryFactory.createArena/createManagedArena}) own
  * their lifecycle; jinfer's default arenas are supplied at the boundary ({@code newState(...,
  * MemoryArena)}, runtime-adaptive shared/auto per {@code boundary.Arenas}), so this wraps rather
- * than creates. (ponytail: a candidate to push up to jota's nativeimpl if a second consumer
- * appears.)
+ * than creates. (a candidate to push up to jota's nativeimpl if a second consumer appears.)
  */
 public record PanamaMemoryArena(Arena arena) implements MemoryArena<MemorySegment> {
 
