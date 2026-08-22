@@ -33,6 +33,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -79,17 +80,25 @@ public final class ChatEngine implements AutoCloseable {
     // and a fresh thread per request would just park extras on that lock. The queue is BOUNDED so
     // concurrent streaming requests cannot accumulate without limit behind a long generation (an
     // accidental memory-pressure failure); excess work is rejected loudly instead.
+    // -Djinfer.chat.streamQueueCapacity: -1 unbounded (the old behavior), >= 1 bounded FIFO.
     private static final int STREAM_QUEUE_CAPACITY =
-            Integer.getInteger("jinfer.streamQueueCapacity", 1024);
+            Integer.getInteger("jinfer.chat.streamQueueCapacity", 1024);
+
+    private static BlockingQueue<Runnable> streamQueue() {
+        if (STREAM_QUEUE_CAPACITY == 0) {
+            // 0 admits nothing, not even the one generating stream - a config bug, say so
+            throw new IllegalArgumentException(
+                    "jinfer.chat.streamQueueCapacity=0 leaves no room for any stream; use -1"
+                            + " (unbounded) or >= 1");
+        }
+        return STREAM_QUEUE_CAPACITY < 0
+                ? new LinkedBlockingQueue<>()
+                : new LinkedBlockingQueue<>(STREAM_QUEUE_CAPACITY);
+    }
 
     private final ThreadPoolExecutor streamDriver =
             new ThreadPoolExecutor(
-                    0,
-                    1,
-                    60,
-                    TimeUnit.SECONDS,
-                    new LinkedBlockingQueue<>(STREAM_QUEUE_CAPACITY),
-                    r -> new Thread(r, "jinfer-stream"));
+                    0, 1, 60, TimeUnit.SECONDS, streamQueue(), r -> new Thread(r, "jinfer-stream"));
     private final AtomicReference<Thread> streamThread = new AtomicReference<>();
     private volatile boolean closed;
     // self-speculation drafts per verify block when the model carries a draft head: 0 disables,
@@ -322,8 +331,8 @@ public final class ChatEngine implements AutoCloseable {
             throw new IllegalStateException(
                     "the model is busy: one stream is generating and "
                             + STREAM_QUEUE_CAPACITY
-                            + " more are already queued - raise -Djinfer.streamQueueCapacity, run"
-                            + " concurrent streams on a second ChatEngine over the same loaded"
+                            + " more are already queued - raise -Djinfer.chat.streamQueueCapacity,"
+                            + " run concurrent streams on a second ChatEngine over the same loaded"
                             + " model, or retry when the current stream ends");
         }
     }
