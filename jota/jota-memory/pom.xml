@@ -10,8 +10,8 @@
   </parent>
 
   <artifactId>jota-memory</artifactId>
-  <name>Jota Memory</name>
-  <description>Memory, MemoryView, allocation, access, and transfer APIs</description>
+  <name>jota-memory</name>
+  <description>Memory, MemoryView, allocators, access, and transfer APIs for Jota.</description>
 
   <dependencies>
     <dependency>

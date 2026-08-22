@@ -10,8 +10,8 @@
   </parent>
 
   <artifactId>jota-backend-metal</artifactId>
-  <name>Jota Backend Metal</name>
-  <description>Apple Metal GPU backend for Jota tensor operations (macOS only)</description>
+  <name>jota-backend-metal</name>
+  <description>Apple Metal GPU backend for Jota tensor operations (macOS only).</description>
 
   <properties>
     <metal.configure.extraArgs />

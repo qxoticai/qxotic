@@ -10,8 +10,8 @@
   </parent>
 
   <artifactId>jota-backend-mojo</artifactId>
-  <name>Jota Backend Mojo</name>
-  <description>Mojo backend for Jota on AMD HIP</description>
+  <name>jota-backend-mojo</name>
+  <description>Experimental Mojo backend for Jota on AMD HIP.</description>
 
   <properties>
     <mojo.configure.extraArgs />

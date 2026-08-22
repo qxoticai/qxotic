@@ -10,8 +10,8 @@
   </parent>
 
   <artifactId>jota-graal</artifactId>
-  <name>Jota Graal Support</name>
-  <description>Core GraalVM Native Image support for Jota</description>
+  <name>jota-graal</name>
+  <description>GraalVM Native Image support for Jota.</description>
 
   <dependencies>
     <dependency>

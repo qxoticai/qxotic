@@ -10,8 +10,8 @@
   </parent>
 
   <artifactId>jota-backend-cuda</artifactId>
-  <name>Jota Backend CUDA</name>
-  <description>NVIDIA CUDA GPU backend for Jota tensor operations</description>
+  <name>jota-backend-cuda</name>
+  <description>NVIDIA GPU backend for Jota tensor operations over CUDA (Linux/Windows).</description>
 
   <properties>
     <cuda.configure.extraArgs />

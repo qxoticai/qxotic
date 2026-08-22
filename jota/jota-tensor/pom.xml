@@ -10,8 +10,9 @@
   </parent>
 
   <artifactId>jota-tensor</artifactId>
-  <name>Jota Tensor</name>
-  <description>Tensor algebra, execution runtimes, IR, and kernel compilation</description>
+  <name>jota-tensor</name>
+  <description>Tensors, execution runtimes, the TIR/LIR intermediate representations, and kernel
+    compilation.</description>
 
   <dependencies>
     <dependency>
