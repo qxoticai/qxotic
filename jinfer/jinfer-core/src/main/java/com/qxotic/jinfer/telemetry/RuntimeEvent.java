@@ -11,7 +11,7 @@ import jdk.jfr.StackTrace;
 /**
  * How this JVM actually executes inference. Check it first when jinfer is slow: {@code vectorBits}
  * of 0 means the Java kernels fell back to scalar, either a missing {@code --add-modules
- * jdk.incubator.vector} or an explicit {@code -Djinfer.VectorBitSize=0}. That single fact explains
+ * jdk.incubator.vector} or an explicit {@code -Djinfer.vectorBitSize=0}. That single fact explains
  * most "why is this slow" reports.
  *
  * <p>Sampled every chunk rather than once at startup, so a recording attached to an already-running
