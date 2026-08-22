@@ -22,12 +22,12 @@ final class Thinking {
     private Thinking() {}
 
     /**
-     * Bans the {@code <think>}/{@code </think>} markers so a non-thinking request can never open a
-     * reasoning span. No-op for models without think markers.
+     * Bans the think markers so a non-thinking request can never open a reasoning span. No-op for
+     * models without think markers.
      */
-    static Sampler banMarkers(Sampler inner, Tokenizer tokenizer) {
-        Integer thinkStart = boxed(SpecialTokens.find(tokenizer, OPEN));
-        Integer thinkEnd = boxed(SpecialTokens.find(tokenizer, CLOSE));
+    static Sampler banMarkers(Sampler inner, Tokenizer tokenizer, String open, String close) {
+        Integer thinkStart = boxed(SpecialTokens.find(tokenizer, open));
+        Integer thinkEnd = boxed(SpecialTokens.find(tokenizer, close));
         Set<Integer> banned = new HashSet<>();
         if (thinkStart != null) banned.add(thinkStart);
         if (thinkEnd != null) banned.add(thinkEnd);
@@ -45,30 +45,28 @@ final class Thinking {
      * {@code startInThink} starts INSIDE the think span - for templates whose generation prompt
      * opens {@code <think>} itself: the open token never passes through the sampler, so without
      * this the budget silently never arms and a long reasoning run can starve the visible answer to
-     * LENGTH.
-     */
-    static Sampler capBudget(Sampler inner, Tokenizer tokenizer, int budget, boolean startInThink) {
-        return capBudget(inner, tokenizer, budget, startInThink, null);
-    }
-
-    /**
-     * As above, with a {@code message} forced between the paragraph breaks when the budget runs out
-     * - the model "deciding" to wrap up in its own words (llama.cpp's {@code
+     * LENGTH. A non-blank {@code message} is forced between the paragraph breaks when the budget
+     * runs out - the model "deciding" to wrap up in its own words (llama.cpp's {@code
      * --reasoning-budget-message}), so the visible answer continues coherently instead of from an
-     * unexplained stop. Null or blank = the bare break. Encoding is the ordinary, non-special-aware
-     * path, so message text can never inject a marker id; a tokenizer that cannot encode it closes
-     * hard.
+     * unexplained stop. Encoding is the ordinary, non-special-aware path, so message text can never
+     * inject a marker id; a tokenizer that cannot encode it closes hard.
      */
     static Sampler capBudget(
-            Sampler inner, Tokenizer tokenizer, int budget, boolean startInThink, String message) {
-        Integer open = boxed(SpecialTokens.find(tokenizer, OPEN));
-        Integer close = boxed(SpecialTokens.find(tokenizer, CLOSE));
-        if (budget < 0 || open == null || close == null) {
+            Sampler inner,
+            Tokenizer tokenizer,
+            int budget,
+            boolean startInThink,
+            String message,
+            String open,
+            String close) {
+        Integer openId = boxed(SpecialTokens.find(tokenizer, open));
+        Integer closeId = boxed(SpecialTokens.find(tokenizer, close));
+        if (budget < 0 || openId == null || closeId == null) {
             return inner;
         }
-        int openToken = open, closeToken = close;
+        int openToken = openId, closeToken = closeId;
         int[] filler = encode(tokenizer, fillerText(message));
-        Sampler markersBanned = Sampler.banning(inner, Set.of(open, close));
+        Sampler markersBanned = Sampler.banning(inner, Set.of(openId, closeId));
         return new Sampler() {
             boolean inThink = startInThink;
             int thought;

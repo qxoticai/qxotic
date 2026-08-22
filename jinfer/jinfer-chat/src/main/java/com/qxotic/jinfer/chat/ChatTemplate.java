@@ -57,6 +57,27 @@ public interface ChatTemplate {
     }
 
     /**
+     * The model's think-span marker spellings - {@link ThinkMarkers#GENERIC} unless the family
+     * frames reasoning differently (Gemma 4's {@code <|channel>}/{@code <channel|>} channel span).
+     * The sampling policy - masking the markers when thinking is off, capping the span when on -
+     * keys on these spellings.
+     */
+    default ThinkMarkers thinkMarkers() {
+        return ThinkMarkers.GENERIC;
+    }
+
+    /** One family's think-span marker spellings. */
+    record ThinkMarkers(String open, String close) {
+        /** The {@code <think>}/{@code </think>} convention. */
+        static final ThinkMarkers GENERIC = new ThinkMarkers(Thinking.OPEN, Thinking.CLOSE);
+
+        public ThinkMarkers {
+            Objects.requireNonNull(open, "open");
+            Objects.requireNonNull(close, "close");
+        }
+    }
+
+    /**
      * Forces the reply to begin a call to one offered tool; argument constraints are
      * family-specific.
      */
