@@ -54,7 +54,7 @@ class BatchTest {
 
     @Test
     void legalSingleBatchPassesThroughUncopied() {
-        // the ponytail, documented by test: prepare ALIASES a legal single batch's array
+        // documented by test: prepare ALIASES a legal single batch's array
         int[] prompt = ids(512);
         List<Batch> out = Batch.prepare(List.of(Batch.prefill(prompt)), 512);
         assertEquals(1, out.size());

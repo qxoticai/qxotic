@@ -148,7 +148,7 @@ final class JinferMappings {
         if (data instanceof String s && s.startsWith("file:")) {
             return Path.of(URI.create(s));
         }
-        // ponytail: inline bytes deferred - the fix is byte[] overloads on VideoCodec when a
+        // inline bytes deferred - the fix is byte[] overloads on VideoCodec when a
         // caller actually holds bytes, NOT per-adapter temp-file handling
         if (data instanceof byte[])
             throw new UnsupportedOperationException(

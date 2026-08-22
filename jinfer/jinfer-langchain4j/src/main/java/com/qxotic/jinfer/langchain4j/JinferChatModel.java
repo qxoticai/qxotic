@@ -290,7 +290,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
      * GC-managed arena would free only at a GC a native-heavy JVM never runs. A model built with
      * {@code model(...)} borrows its weights instead - close YOUR arena after this, never before.
      */
-    // ponytail: shared engine - any close() closes the base, every view and the streaming twin;
+    // shared engine - any close() closes the base, every view and the streaming twin;
     // if independent closing is ever a demonstrated need, explicit engine owner + non-owning views
     @Override
     public void close() {

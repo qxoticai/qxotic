@@ -260,13 +260,13 @@ public final class ModelStore {
      * input order; the first failure cancels the rest (their partial state resumes later) and is
      * the one thrown. Warm entries never spawn anything: one argument short-circuits entirely.
      */
-    // ponytail: no dedup, no aggregate progress bar (concurrent downloads print named lines, see
+    // no dedup, no aggregate progress bar (concurrent downloads print named lines, see
     // Fetch.Progress), no shared disk-space budget. Add each when someone actually hits it.
     public List<Path> resolveAll(List<String> pathOrRefs) {
         if (pathOrRefs.size() <= 1 || Fetch.oneAtATime()) {
             return pathOrRefs.stream().map(this::resolve).toList();
         }
-        // ponytail: at most 4 files in flight (x up to 8 chunk connections each, see
+        // at most 4 files in flight (x up to 8 chunk connections each, see
         // JINFER_DOWNLOAD_THREADS). A fixed constant, not a knob - add the env var when a real
         // pull is throttled by it.
         try (var pool = Executors.newFixedThreadPool(Math.min(4, pathOrRefs.size()))) {

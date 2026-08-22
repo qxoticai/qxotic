@@ -70,9 +70,9 @@ final class Qwen35VisionPreprocess {
      * Align-corners bilinear resize to {@code targetWidth x targetHeight}, normalized to [-1,1]
      * (mean = std = 0.5) in CHW plane order.
      *
-     * <p>ponytail: llama.cpp's qwen3vl preprocessor uses PAD_CEIL (scale-to-fit, center, fill the
-     * remainder black), not scale-to-fill. The black pad is applied in [0,1] value space before the
-     * {@code 2*v-1} normalization.
+     * <p>llama.cpp's qwen3vl preprocessor uses PAD_CEIL (scale-to-fit, center, fill the remainder
+     * black), not scale-to-fill. The black pad is applied in [0,1] value space before the {@code
+     * 2*v-1} normalization.
      */
     static float[] normalize(Media.Image image, int targetWidth, int targetHeight) {
         int plane = Math.multiplyExact(targetHeight, targetWidth);

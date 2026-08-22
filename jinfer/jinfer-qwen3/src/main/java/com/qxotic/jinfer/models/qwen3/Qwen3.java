@@ -206,7 +206,7 @@ public final class Qwen3
     private void embedTokens(State state, int[] tokens, int seqLen) {
         Views.checkAlive(weights.tokenEmbeddings, "tokenEmbeddings"); // fail-fast on freed weights
         int dim = configuration.embeddingLength;
-        // ponytail: per-row dispatch via Convert.copyToF32 (the cost profile of the old per-row
+        // per-row dispatch via Convert.copyToF32 (the cost profile of the old per-row
         // virtual copyTo it replaces); the batched gather-dequant - dispatch hoisted once per
         // table - is a planned, separately-benchmarked commit, not a polish
         for (int s = 0; s < seqLen; s++) {

@@ -85,7 +85,7 @@ public final class MediaEncodingCache {
     }
 
     /** Replays a hit, or records one synchronous projection while forwarding it to {@code sink}. */
-    // ponytail: the monitor covers the whole projection, so concurrent misses for DIFFERENT
+    // the monitor covers the whole projection, so concurrent misses for DIFFERENT
     // content serialize (same-content misses dedupe into one projection, which is the point).
     // Upgrade to a per-key in-flight future if multimodal concurrency ever shows in a profile.
     synchronized void replayOrRecord(

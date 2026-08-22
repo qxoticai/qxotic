@@ -17,7 +17,7 @@
     against.</description>
 
   <!--
-    ponytail: a BOM is a dependencyManagement section with no jars behind it. This one manages the
+    a BOM is a dependencyManagement section with no jars behind it. This one manages the
     jinfer artifacts that are meant to be depended on (the shaded executables jinfer-cli,
     jinfer-bench and jinfer-inflect2-cli are excluded - nobody consumes a fat jar as a library) plus
     the substrate versions jinfer's transitive graph resolves against. Keeping the substrate here,
@@ -200,7 +200,7 @@
   </dependencyManagement>
 
   <!--
-    ponytail: the root release profile flattens every module with `oss` mode, which strips
+    the root release profile flattens every module with `oss` mode, which strips
     dependencyManagement - exactly what a BOM is. Override the same profile id here so a `mvn
     -Prelease` build publishes this catalog with the `bom` flatten mode instead of an empty POM.
   -->
