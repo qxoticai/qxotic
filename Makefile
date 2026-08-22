@@ -92,7 +92,7 @@ jota-clean: ## Wipe just the jota subtree's output
 ##@ Release
 
 release-canary: ## Prove the published shape works: install the release build into a throwaway repo, compile a BOM consumer against ONLY it
-	./release-canary.sh
+	MAVEN="$(MAVEN)" MAVEN_FLAGS="$(MAVEN_FLAGS)" ./release-canary.sh
 
 ##@ Miscellaneous
 
