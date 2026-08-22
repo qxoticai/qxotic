@@ -369,6 +369,13 @@
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-javadoc-plugin</artifactId>
           <version>${maven-javadoc-plugin.version}</version>
+          <configuration>
+            <!-- default true cross-links reactor modules' javadoc via each module's project URL -
+                 but every module inherits the same https://qxotic.ai, so the links are wrong, and
+                 POM-only reactor deps (jinfer-models-all) have no apidocs to link: every consumer
+                 logs "Error fetching link: .../jinfer-models-all/target/reports/apidocs" -->
+            <detectOfflineLinks>false</detectOfflineLinks>
+          </configuration>
         </plugin>
         <plugin>
           <groupId>org.sonatype.central</groupId>
