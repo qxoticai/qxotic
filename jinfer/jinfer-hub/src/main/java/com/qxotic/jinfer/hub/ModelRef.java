@@ -5,27 +5,27 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * A model reference. One exact grammar, no scheme, no query, no aliases, no browser views:
+ * A model reference: one string that names a model in a remote repository.
  *
  * <pre>
- *   host / owner/repo [@revision] [/path] [:quant]
+ *   host/owner/repo[@revision][/path][:quant]
  *
- *   hf.co/unsloth/gemma-4-E2B-it-GGUF                      Q4_K_M at the repository root
- *   hf.co/unsloth/gemma-4-E2B-it-GGUF:Q8_0                 that quant
- *   hf.co/unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf      that exact file
- *   hf.co/ggml-org/models/bert-bge-small:F16               that quant inside a subfolder
- *   hf.co/ggml-org/models@a1b2c3d/bert-bge-small           at a pinned revision
- *   modelscope.cn/Qwen/Qwen3-0.6B-GGUF:Q8_0                the other host
+ *   hf.co/unsloth/Qwen3.5-4B-GGUF                                        the default quant at the root
+ *   hf.co/unsloth/Qwen3.5-4B-GGUF:Q8_0                                   pick a quant
+ *   hf.co/LiquidAI/LFM2.5-VL-3B-GGUF/mmproj-LFM2.5-VL-3B-Q8_0.gguf       pick a file: the vision projector
+ *   hf.co/unsloth/gemma-4-E2B-it-GGUF/mtp-gemma-4-E2B-it.gguf            or the MTP draft head
+ *   hf.co/unsloth/gemma-4-E2B-it-GGUF/MTP/mtp-gemma-4-E2B-it-Q8_0.gguf   a file in a subfolder
+ *   hf.co/unsloth/Qwen3.5-4B-GGUF@a1b2c3d:Q8_0                           pin a revision (branch, tag, commit)
+ *   modelscope.cn/unsloth/Qwen3.5-4B-GGUF:Q8_0                           ModelScope, the other host
  * </pre>
  *
- * <p>Position carries the meaning, so nothing is polymorphic: the path says WHERE, the {@code
- * :quant} tag says WHICH, and neither can stand in for the other. A ref names its host, so remote
- * and local are told apart by a closed table rather than by probing the filesystem - the same
- * argument therefore means the same thing on every machine, in a script and in a config file.
+ * <p>Position is the whole grammar: {@code /path} says WHERE, {@code :quant} says WHICH, {@code
+ * @revision} says WHEN. A ref is never a URL - no scheme, no query, no {@code /blob/} browser
+ * view. The host table ({@link Host}) is closed, so one string means one thing on every machine,
+ * in a script and in a config file alike.
  *
- * <p>NOTHING here knows about file formats. Whether a path names a file or a folder is answered by
- * the repository listing, not by an extension. What jinfer is willing to LOAD is a separate
- * question, answered once in {@link ModelStore}.
+ * <p>Whether a path names a file or a folder is answered by the repository listing, never by an
+ * extension. What jinfer will LOAD is {@link ModelStore}'s call, not this record's.
  */
 public record ModelRef(
         String host, String owner, String repo, String revision, String path, String quant) {
