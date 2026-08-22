@@ -63,7 +63,7 @@ import java.util.function.Supplier;
  * changes output - byte-identity to a cold run is the law. Every response accounts for what the
  * cache did: {@link JinferTokenUsage#cachedInputTokens} is the read, per request.
  *
- * <p>Run with jinfer's JVM flags: {@code --enable-preview --add-modules jdk.incubator.vector
+ * <p>Run with jinfer's JVM flags: {@code --add-modules jdk.incubator.vector
  * --enable-native-access=ALL-UNNAMED}.
  */
 public final class JinferChatModel implements ChatModel, AutoCloseable {

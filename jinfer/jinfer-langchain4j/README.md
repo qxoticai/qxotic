@@ -15,7 +15,7 @@ Prompts go through jinfer's hand-written, oracle-validated chat-template codecs 
 Run your JVM with jinfer's flags:
 
 ```
---enable-preview --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED
+--add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED
 ```
 
 ## Chat

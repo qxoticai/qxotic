@@ -36,8 +36,8 @@ import org.springframework.ai.rag.postretrieval.document.DocumentPostProcessor;
  *
  * <p>Concurrency contract as everywhere: an instance is ONE serial pipeline (one reusable
  * full-context state, rewound between documents); for parallel pipelines build several instances -
- * weights are shared via the OS page cache. Run with jinfer's JVM flags: {@code --enable-preview
- * --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED}.
+ * weights are shared via the OS page cache. Run with jinfer's JVM flags: {@code --add-modules
+ * jdk.incubator.vector --enable-native-access=ALL-UNNAMED}.
  */
 public final class JinferDocumentPostProcessor implements DocumentPostProcessor, AutoCloseable {
 

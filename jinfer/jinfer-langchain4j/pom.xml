@@ -14,7 +14,7 @@
   <!-- langchain4j chat-model provider backed by jinfer: in-process CPU inference over GGUF models,
        native chat-template codec first (token-exact, injection-inert), hardened Jinja whole-render
        fallback for unported models. Blocking + streaming, tools, reasoning lane. Runtime needs
-       jinfer's JVM flags: enable-preview, jdk.incubator.vector, enable-native-access.
+       jinfer's JVM flags: jdk.incubator.vector and enable-native-access.
 
        Named jinfer-langchain4j, NOT langchain4j-jinfer: the langchain4j- prefix belongs to modules
        released by that project (dev.langchain4j / dev.langchain4j.community), and wearing it under

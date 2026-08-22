@@ -14,7 +14,7 @@ hop: jinfer runs the model inside the application JVM.
 Run with:
 
 ```text
---enable-preview --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED
+--add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED
 ```
 
 ## Chat

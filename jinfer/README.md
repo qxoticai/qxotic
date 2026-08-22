@@ -16,8 +16,7 @@ the root reactor sees the sibling trees (gguf, toknroll, jota, jam) it needs on 
 ```bash
 mvn -pl jinfer/jinfer-cli -am package -DskipTests
 
-java --enable-preview \
-  --add-modules jdk.incubator.vector \
+java --add-modules jdk.incubator.vector \
   --enable-native-access=ALL-UNNAMED \
   -jar jinfer/jinfer-cli/target/jinfer.jar \
   --model hf.co/LiquidAI/LFM2.5-350M-GGUF:LFM2.5-350M-Q8_0.gguf \
@@ -44,8 +43,7 @@ Use artifact `com.qxotic:jinfer-langchain4j:0.1.0`; Spring AI users use
 ## OpenAI-compatible server
 
 ```bash
-java --enable-preview \
-  --add-modules jdk.incubator.vector \
+java --add-modules jdk.incubator.vector \
   --enable-native-access=ALL-UNNAMED \
   -jar jinfer/jinfer-cli/target/jinfer.jar \
   --model hf.co/LiquidAI/LFM2.5-350M-GGUF:LFM2.5-350M-Q8_0.gguf \

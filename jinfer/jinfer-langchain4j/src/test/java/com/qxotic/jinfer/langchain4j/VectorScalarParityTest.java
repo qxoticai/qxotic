@@ -59,7 +59,6 @@ final class VectorScalarParityTest {
         cmd.add(Path.of(System.getProperty("java.home"), "bin", "java").toString());
         cmd.add("--add-modules");
         cmd.add("jdk.incubator.vector");
-        cmd.add("--enable-preview");
         cmd.add("--enable-native-access=ALL-UNNAMED");
         if (extraFlag != null) cmd.add(extraFlag);
         cmd.add("-cp");
