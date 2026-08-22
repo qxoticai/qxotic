@@ -68,15 +68,19 @@ subtree-local ones. The Makefiles wrap the Maven reactor below - use it directly
 finer selection.
 
 This is a single Maven reactor rooted at the repository root.
-No subtree is dependency-closed - `jinfer` alone pulls in `gguf`, `json`, `toknroll` and four `jam` artifacts - so always build from the root and select what you want with `-pl … -am`:
+`jota` is dependency-closed - build it standalone via `mvn -f jota/pom.xml` or `make -C jota …`. The
+other subtrees are not - `jinfer` alone pulls in `gguf`, `json`, `toknroll` and four `jam` artifacts - so
+build them from the root and select what you want with `-pl … -am`:
 
 ```bash
-mvnd -pl jinfer/jinfer-cli,jinfer/jinfer-bench -am package   # the jinfer CLI + benchmark
-mvnd -pl jam/jam-vector -am verify                              # jam and its backend parity tests
-mvnd package                                                    # everything
+mvn -pl jinfer/jinfer-cli,jinfer/jinfer-bench -am package   # the jinfer CLI + benchmark
+mvn -pl jam/jam-vector -am verify                           # jam and its backend parity tests
+mvn package                                                 # everything
 ```
 
 Add `-Pnative` to produce GraalVM native images (`jinfer`, `jinfer-bench`), and `-Pformat` to apply Spotless.
+`mvnd` (Maven Daemon) works everywhere `mvn` does here - opt in per command or via `MAVEN=mvnd`
+on the Makefiles; be aware a long-lived daemon can serve a stale effective pom after pom edits.
 
 Running Maven inside a subdirectory (`mvn -f jinfer`) only works once the outer modules are already installed, because that reactor cannot see them.
 `mvn install` from the root once, or just use `-pl … -am`.

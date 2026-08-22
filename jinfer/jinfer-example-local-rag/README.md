@@ -12,6 +12,15 @@ documents - a grounded answer proves the retrieve-then-generate flow, not model 
 
 ## Run
 
+The example is not dependency-closed - on a clean clone, install what it depends on once, from
+the repository root:
+
+```
+mvn -Pexamples -pl jinfer/jinfer-example-local-rag -am install -DskipTests
+```
+
+Then, from this directory:
+
 ```
 export JINFER_CHAT_MODEL=/path/to/chat.gguf          # e.g. LFM2.5-8B-A1B-Q8_0.gguf
 export JINFER_EMBEDDING_MODEL=/path/to/emb.gguf      # e.g. Qwen3-Embedding-0.6B-Q8_0.gguf
