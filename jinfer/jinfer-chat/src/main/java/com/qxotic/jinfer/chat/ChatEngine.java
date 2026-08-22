@@ -377,7 +377,8 @@ public final class ChatEngine implements AutoCloseable {
      * One request in jinfer terms - what every integration means once its own option types are
      * mapped away. The framework-specific parts stay in the adapters: validating their own knobs,
      * compiling a {@code contentGbnf} from their schema type, and resolving their defaults into
-     * these fields.
+     * these fields. Direct, framework-free callers: {@link #of(List, Sampling)} covers the common
+     * case without the 12 positional slots.
      *
      * @param thinking the caller's intent; {@link #prepare} still applies the {@link #THINK_FLOOR}
      *     and a forced call's override, so a request cannot ask for a think span it cannot afford
@@ -439,6 +440,30 @@ public final class ChatEngine implements AutoCloseable {
                 }
             }
             templateKwargs = templateKwargs == null ? null : Map.copyOf(templateKwargs);
+        }
+
+        /**
+         * The conservative default request over {@code messages}: no tools, no thinking, an
+         * unlimited token budget, no timeout, no grammar, no forced tool, no extra stops, no
+         * template kwargs. {@code sampling} stays explicit - model metadata ships its own defaults
+         * ({@link LoadedModel.SamplingDefaults}), so there is no honest engine-wide value.
+         * Framework adapters mapping their own option types keep the full constructor; direct,
+         * framework-free callers should start here instead of juggling 12 slots.
+         */
+        public static Request of(List<Message> messages, Sampling sampling) {
+            return new Request(
+                    messages,
+                    List.of(),
+                    false,
+                    Generator.Constraints.UNLIMITED,
+                    null,
+                    null,
+                    Duration.ZERO,
+                    sampling,
+                    null,
+                    ForcedTool.NONE,
+                    List.of(),
+                    null);
         }
     }
 

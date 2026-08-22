@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.cache.PromptCache;
+import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.Sampling;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -24,6 +25,23 @@ final class ChatEngineRequestTest {
     private static final List<Message> ONE_TURN = List.of(Message.user("hi"));
     private static final List<Tool> ONE_TOOL = List.of(new Tool("f", Map.of("name", "f")));
     private static final Sampling SAMPLING = new Sampling(0.7f, 0.95f, 40, 0.05f, 42L);
+
+    @Test
+    void ofGivesTheConservativeDefaults() {
+        ChatEngine.Request r = ChatEngine.Request.of(ONE_TURN, SAMPLING);
+        assertEquals(ONE_TURN, r.messages());
+        assertEquals(SAMPLING, r.sampling());
+        assertTrue(r.tools().isEmpty());
+        assertFalse(r.thinking());
+        assertEquals(Generator.Constraints.UNLIMITED, r.maxTokens());
+        assertNull(r.reasoningMaxTokens());
+        assertNull(r.reasoningMessage());
+        assertEquals(Duration.ZERO, r.timeout());
+        assertNull(r.contentGbnf());
+        assertEquals(ChatEngine.ForcedTool.NONE, r.forcedTool());
+        assertTrue(r.stops().isEmpty());
+        assertNull(r.templateKwargs());
+    }
 
     @Test
     void anEmptyConversationIsRejected() {
