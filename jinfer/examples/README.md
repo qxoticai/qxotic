@@ -1,41 +1,66 @@
-# Gemma 4 vision examples (jbang)
+# Gemma 4 multimodal examples
 
-Runnable equivalents of every snippet on
-<https://ai.google.dev/gemma/docs/capabilities/vision/image>, using jinfer instead of
-`transformers`. One-time setup publishes jinfer to your local Maven repo so jbang can resolve it:
+[![Java 25+](https://img.shields.io/badge/Java-25%2B-007396?logo=java&logoColor=white)](https://openjdk.org/projects/jdk/25/)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-green.svg?logo=apache)](../LICENSE)
+
+These single-file Java programs run tasks from Google's Gemma guides for
+[images](https://ai.google.dev/gemma/docs/capabilities/vision/image) and
+[video](https://ai.google.dev/gemma/docs/capabilities/vision/video) with Jinfer. They cover image
+questions, multiple images, OCR, object detection, video understanding and variable image token
+budgets.
+
+## Run
+
+Install [JBang](https://www.jbang.dev/), then run the scripts from a repository checkout:
 
 ```bash
-cd .. && mvn -q -DskipTests install     # installs com.qxotic:jinfer-langchain4j to ~/.m2
+cd jinfer/examples
 ```
 
-The examples default to Hugging Face model references, which jinfer downloads and caches. A local
-GGUF path, URL or another hub reference can be supplied in the same argument position.
+Each script declares Java 25, its Jinfer dependencies and its model provider in the source header.
+The default models download on first use and remain in the Jinfer cache. Pass another supported
+model reference in the same argument position to override a default.
 
-Pass `-Djam.native.library.path=/path/to/libjam.so` for native-speed matmul (otherwise the Java
-Vector backend is used automatically).
-
-| Google snippet | jbang equivalent |
+| Task | JBang command |
 |---|---|
-| 1. Single image Q&A ("What is shown in this image?") | `jbang GemmaVision.java img.png "What is shown in this image?"` |
-| 2. Multiple images ("Caption these images.") | `jbang GemmaVisionMulti.java "Caption these images." a.png b.jpg` |
-| 3. OCR ("What does the sign say?") | `jbang GemmaVision.java sign.png "What does the sign say?"` |
-| 4. Object detection ("detect person and cat") | `jbang GemmaVision.java street.jpg "detect person and cat, output only json"` |
-| 5-6. Token-budget comparison (70/140/280/560) | `./gemma-budget-sweep.sh city.jpg "detect person and car, output only json"` |
+| Single image Q&A | `jbang GemmaVision.java img.png "What is shown in this image?"` |
+| Multiple images | `jbang GemmaVisionMulti.java "Caption these images." a.png b.jpg` |
+| OCR | `jbang GemmaVision.java sign.png "What does the sign say?"` |
+| Object detection | `jbang GemmaVision.java street.jpg "detect person and cat, output only json"` |
+| Token-budget comparison | `./gemma-budget-sweep.sh city.jpg "detect person and car, output only json"` |
+| Video understanding | `jbang GemmaVideo.java clip.mp4 "Summarize the main events."` |
 
-1, 3 and 4 are the same script — Gemma's vision is prompt-driven, so describe / OCR / detect differ
-only by the prompt (detection returns normalized 0-1024 box coordinates as JSON).
-
-Model sizes (any Gemma 4 works — only the model references change; E-variants share the E2B
-projector):
+Description, OCR and detection use the same script and differ only by the prompt. Detection returns
+normalized 0-1000 box coordinates as JSON. For an annotated PNG instead, run
+[`Detect.java`](scripts/Detect.java):
 
 ```bash
-# E2B (default, fastest)   E4B                                  12B (sharpest)
-jbang GemmaVision.java cat.jpg "Describe it"
-jbang GemmaVision.java cat.jpg "Describe it" ~/m/gemma-4-E4B-it-Q8_0.gguf ~/m/gemma-4-E2B-it-GGUF/mmproj-F32.gguf
-jbang GemmaVision.java cat.jpg "Describe it" ~/m/gemma-4-12b-it-GGUF/gemma-4-12b-it-Q8_0.gguf ~/m/gemma-4-12b-it-GGUF/mmproj-F32.gguf
+cd scripts
+jbang Detect.java ../street.jpg "person, bicycle, traffic light"
 ```
 
-Image token budget (trade detail for speed, per the docs' 70/140/280/560/1120):
+`GemmaVideo.java` requires `ffmpeg` on `PATH` and samples 16 frames by default. Override the count
+with `-Djinfer.video.frames=<count>`.
+
+The scripts support every Jinfer-compatible Gemma 4 size. E variants use the E2B projector:
+
+```bash
+# E2B (default)
+jbang GemmaVision.java cat.jpg "Describe it"
+
+# E4B
+jbang GemmaVision.java cat.jpg "Describe it" \
+  hf.co/unsloth/gemma-4-E4B-it-GGUF:Q8_0 \
+  hf.co/unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf
+
+# 12B
+jbang GemmaVision.java cat.jpg "Describe it" \
+  hf.co/unsloth/gemma-4-12b-it-GGUF:Q8_0 \
+  hf.co/unsloth/gemma-4-12b-it-GGUF/mmproj-F32.gguf
+```
+
+Set the image token budget to trade speed for visual detail. Supported values are 70, 140, 280,
+560 and 1120:
 
 ```bash
 jbang -Djinfer.gemma4.imageTokenBudget=1120 GemmaVision.java chart.png "Read every value"
