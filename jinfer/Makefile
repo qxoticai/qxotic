@@ -39,12 +39,12 @@ clean: ## Wipe the subtree's build output (and the sibling output its closure bu
 
 ##@ Run
 
-# Force-inline the hot Vector API helpers (see ./hotspot_compiler). Without the hint a weaker
+# Force-inline the hot Vector API helpers (see ./hotspot_compile_commands). Without the hint a weaker
 # inliner (GraalVM CE / plain C2 under budget) leaves a FloatVector-returning helper out-of-line,
 # so the vector escapes the call and is boxed (heap-allocated) instead of scalar-replaced into a
 # SIMD register - measured ~45% slower prefill on GraalVM CE. A strong inliner (Oracle GraalVM)
 # does it anyway. The file form keeps the (growing) list in one place.
-INLINE_HINTS = -XX:CompileCommandFile=$(DIR)/hotspot_compiler
+INLINE_HINTS = -XX:CompileCommandFile=$(DIR)/hotspot_compile_commands
 JAVA_RUNTIME_OPTIONS = --add-modules jdk.incubator.vector,jdk.httpserver \
 	--enable-native-access=ALL-UNNAMED $(INLINE_HINTS)
 

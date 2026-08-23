@@ -8,7 +8,7 @@
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 JAM=${JAM:-$(cd "$HERE/.." && pwd)}
-LLAMA=${LLAMA:-/home/mukel/Desktop/playground/llama.cpp}
+: "${LLAMA:?set LLAMA to the llama.cpp checkout}"
 LLAMA_BUILD=${LLAMA_BUILD:-build}
 
 cc -O3 -march=native -o "$HERE/jam_vs_tinyblas" "$HERE/jam_vs_tinyblas.c" \

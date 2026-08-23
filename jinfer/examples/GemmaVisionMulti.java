@@ -2,19 +2,18 @@
 //JAVA 25
 //COMPILE_OPTIONS --release 25
 //RUNTIME_OPTIONS --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED -Xmx24g
-//REPOS mavenLocal,central
-//DEPS com.qxotic:jinfer-langchain4j:0.1.0
+//DEPS com.qxotic:jinfer-bom:0.1.0@pom
+//DEPS com.qxotic:jinfer-langchain4j com.qxotic:jinfer-gemma4
+//DEPS com.qxotic:jam-native com.qxotic:jam-vector
 //SOURCES scripts/Models.java
 
-// Gemma 4 with MULTIPLE images in one prompt (per the docs: several image blocks per turn).
-// Each image becomes its own <|image>...<image|> soft-token span; the model reasons across all of them.
+// Ask Gemma 4 to compare multiple images in one prompt.
 //
-//   Install once:  cd jinfer && mvn -q -DskipTests install
-//   Run (12B is worth it for cross-image reasoning):
+//   Run with the 12B model for stronger cross-image reasoning:
 //     jbang GemmaVisionMulti.java "Which image has more animals, and by how many?" a.jpg b.jpg \
 //         -- \
-//         ~/models/unsloth/gemma-4-12b-it-GGUF/gemma-4-12b-it-Q8_0.gguf \
-//         ~/models/unsloth/gemma-4-12b-it-GGUF/mmproj-F32.gguf
+//         hf.co/unsloth/gemma-4-12b-it-GGUF:Q8_0 \
+//         hf.co/unsloth/gemma-4-12b-it-GGUF/mmproj-F32.gguf
 //   Defaults to E2B if no model references are given.
 
 import com.qxotic.jinfer.langchain4j.JinferChatModel;

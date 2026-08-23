@@ -17,14 +17,14 @@ mvn -q -pl jinfer/jinfer-bench dependency:build-classpath -Dmdep.outputFile=targ
 ```
 
 Every harness below uses the same JVM flags and the inlining hints in
-[`hotspot_compiler`](../hotspot_compiler). The hints force hot Vector API helpers to inline. Without
+[`hotspot_compile_commands`](../hotspot_compile_commands). The hints force hot Vector API helpers to inline. Without
 them, some JIT configurations leave a helper out of line, causing vector boxing and slower prefill.
 Using the file keeps runs comparable across JVMs:
 
 ```bash
 BENCH_FLAGS="--add-modules jdk.incubator.vector,jdk.httpserver \
   --enable-native-access=ALL-UNNAMED \
-  -XX:CompileCommandFile=jinfer/hotspot_compiler \
+  -XX:CompileCommandFile=jinfer/hotspot_compile_commands \
   -Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0"
 CP="jinfer/jinfer-bench/target/classes:$(< jinfer/jinfer-bench/target/cp.txt)"
 ```
@@ -133,7 +133,7 @@ The rules behind `BENCHMARKS.md`:
 - **Match the worker counts.** Pass the same physical-core count to pp and tg with `-t N`. This
   configures Jinfer and JAM together. A provider-specific `JAM_<PROVIDER>_THREADS` setting still
   takes precedence. Record the resolved counts printed by the harness.
-- **Same JVM flags.** The `BENCH_FLAGS` above, verbatim. The `hotspot_compiler` hints and the
+- **Same JVM flags.** The `BENCH_FLAGS` above, verbatim. The `hotspot_compile_commands` hints and the
   `VECTOR_ACCESS_OOB_CHECK=0` flag are part of the measurement.
 - **ABBA reruns.** When comparing two engines or two configurations, alternate the order (A-B-B-A)
   so thermal drift and background load hit both sides equally. Use a fresh JVM per run, because

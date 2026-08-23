@@ -296,7 +296,7 @@ prompt-cache hits, MTP and projected media. Its README defines the workloads and
 - The server exports request outcomes, phase timings, token counters and cache/media gauges through
   `/metrics`.
 
-For JVM runs, [`hotspot_compiler`](hotspot_compiler) contains the current inlining hints for hot
+For JVM runs, [`hotspot_compile_commands`](hotspot_compile_commands) contains the current inlining hints for hot
 Vector API helpers.
 
 ## Native image

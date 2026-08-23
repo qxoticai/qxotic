@@ -275,7 +275,7 @@ public final class FlashAttention {
 
     /** out[outOffset, +headSize] *= scale (rescale the running output on a new row max). */
     @AlwaysInline(
-            "hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compiler)")
+            "hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compile_commands)")
     static void normalize(Raw out, int outOffset, int headSize, float scale) {
         if (Segments.USE_VECTOR_API) {
             FloatVector scaleVector = FloatVector.broadcast(Segments.F_SPECIES, scale);
@@ -301,7 +301,7 @@ public final class FlashAttention {
 
     /** out[outOffset, +headSize] += scale * value[valueOffset, +headSize]. */
     @AlwaysInline(
-            "hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compiler)")
+            "hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compile_commands)")
     static void accumulate(
             Raw out, int outOffset, Src value, int valueOffset, int headSize, float scale) {
         if (Segments.USE_VECTOR_API) {
@@ -379,7 +379,7 @@ public final class FlashAttention {
     }
 
     @AlwaysInline(
-            "hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compiler)")
+            "hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compile_commands)")
     private static void pvTileF16(
             Raw out,
             Raw value,
@@ -443,7 +443,7 @@ public final class FlashAttention {
     }
 
     @AlwaysInline(
-            "hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compiler)")
+            "hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compile_commands)")
     private static void pvTileF32(
             Raw out,
             Raw value,
@@ -495,7 +495,7 @@ public final class FlashAttention {
     }
 
     @AlwaysInline(
-            "hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compiler)")
+            "hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compile_commands)")
     private static FloatVector loadF32(Raw t, int off) {
         return FloatVector.fromMemorySegment(
                 Segments.F_SPECIES,
@@ -506,7 +506,7 @@ public final class FlashAttention {
 
     /** Decode F_SPECIES.length() consecutive F16 values to an F32 vector (IEEE half -> single). */
     @AlwaysInline(
-            "hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compiler)")
+            "hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compile_commands)")
     private static FloatVector loadF16(Raw t, int off) {
         return Convert.f16ToF32Vector(t.vseg(), t.vbase() + (long) off * F16_BYTES);
     }
@@ -522,7 +522,7 @@ public final class FlashAttention {
      * bit-identical.
      */
     @AlwaysInline(
-            "hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compiler)")
+            "hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compile_commands)")
     private static void qkTile64F32(
             Raw q,
             int qb0,
@@ -591,7 +591,7 @@ public final class FlashAttention {
      * decode-first.
      */
     @AlwaysInline(
-            "hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compiler)")
+            "hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compile_commands)")
     private static void qkRowF32(
             Raw q,
             int qOffset,
@@ -624,7 +624,7 @@ public final class FlashAttention {
     }
 
     @AlwaysInline(
-            "hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compiler)")
+            "hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compile_commands)")
     private static void qkTileWideF32(
             Raw q,
             int qb0,
@@ -676,7 +676,7 @@ public final class FlashAttention {
     }
 
     @AlwaysInline(
-            "hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compiler)")
+            "hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compile_commands)")
     static void qkTile(
             Raw q,
             int qBase,
@@ -763,7 +763,7 @@ public final class FlashAttention {
      * P[(t)*BcRows + runStart+k]}.
      */
     @AlwaysInline(
-            "hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compiler)")
+            "hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compile_commands)")
     static void pvTile(
             Raw out,
             int oBase,

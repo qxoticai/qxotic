@@ -71,15 +71,13 @@
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-hub</artifactId>
     </dependency>
-    <!-- every architecture provider, as ServiceLoader cargo: ONE list to maintain, in
-         jinfer-models-all. Runtime scope lands it on the test classpath too, so the ITs
-         double as the smoke test that the aggregation carries every family. A shaded consumer
-         needs the ServicesResourceTransformer. -->
+    <!-- Exercise every architecture in this module's integration tests. Applications choose
+         jinfer-models-all or individual providers explicitly. -->
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-models-all</artifactId>
       <type>pom</type>
-      <scope>runtime</scope>
+      <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>

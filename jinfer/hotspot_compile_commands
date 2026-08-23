@@ -7,7 +7,7 @@
 # (Oracle GraalVM) this happens automatically; weaker inliners (GraalVM CE, plain C2 under budget pressure)
 # need the hint. Forcing the inline makes the whole loop allocation-free — measured +~45% prefill on GraalVM CE.
 #
-# Use with:  -XX:CompileCommandFile=<path>/hotspot_compiler
+# Use with:  -XX:CompileCommandFile=<path>/hotspot_compile_commands
 # Format:    one "inline <class-with-slashes>.<method>" per line; '#' starts a comment.
 #
 # Stock C2 alternative (no per-method list): -XX:InlineSmallCode=1000000 alone recovers the same

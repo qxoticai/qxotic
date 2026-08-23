@@ -2,25 +2,26 @@
 //JAVA 25
 //COMPILE_OPTIONS --release 25
 //RUNTIME_OPTIONS --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED -Xmx16g
-//REPOS mavenLocal,central
-//DEPS com.qxotic:jinfer-langchain4j:0.1.0
-//DEPS com.qxotic:json:0.1.0
+//DEPS com.qxotic:jinfer-bom:0.1.0@pom
+//DEPS com.qxotic:jinfer-langchain4j com.qxotic:jinfer-gemma4
+//DEPS com.qxotic:jam-native com.qxotic:jam-vector
+//DEPS com.qxotic:json
 //SOURCES Models.java
 
-// Object detection with boxes DRAWN, not printed. Gemma 4 returns normalized 0-1024 coordinates as
-// JSON; this rescales them to the image and writes an annotated PNG you can actually look at.
+// Object detection with an annotated image. Gemma 4 returns normalized 0-1000 coordinates as JSON;
+// this script rescales the boxes to the source image and writes them to detected.png.
 //
 //   jbang Detect.java photo.jpg "person, dog, bicycle"
 //   -> detected.png
 //
-// Detection is prompt-driven - the same model that describes an image also localizes in it, so
-// there is no detector to train, load or wire up.
+// Detection is prompt-driven. The same model describes and locates objects, with no separate
+// detector to configure.
 //
-// USE A BIG MODEL FOR THIS ONE. Describing an image and LOCALIZING in it are very different asks:
-// E2B labels correctly and places badly (asked for the llama and the mug in a test photo, it
-// labelled both right and put the llama's box inside the mug). 12B places both correctly from the
-// same prompt and the same code. Pass a smaller model explicitly if you want to see it fail:
-//     jbang Detect.java photo.jpg "a llama" ~/models/.../gemma-4-E2B-it-Q8_0.gguf ~/models/.../mmproj-F32.gguf
+// The 12B model is the default because localization is harder than image description. To compare
+// the smaller E2B model, pass its references explicitly:
+//     jbang Detect.java photo.jpg "a llama" \
+//         hf.co/unsloth/gemma-4-E2B-it-GGUF:Q8_0 \
+//         hf.co/unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf
 import com.qxotic.format.json.Json;
 import com.qxotic.jinfer.langchain4j.JinferChatModel;
 import dev.langchain4j.data.message.ImageContent;
@@ -53,7 +54,7 @@ public class Detect {
 
         String prompt = "Detect " + what + ". Output ONLY a JSON array, each element "
                 + "{\"label\": string, \"box_2d\": [ymin, xmin, ymax, xmax]} with coordinates "
-                + "normalized to 0-1024.";
+                + "normalized to 0-1000.";
 
         String reply;
         try (var model = JinferChatModel.builder()
@@ -71,7 +72,7 @@ public class Detect {
         draw(image, reply, Path.of("detected.png"));
     }
 
-    /** Rescale Gemma's 0-1024 boxes onto the real pixels and stroke them with their labels. */
+    /** Rescale Gemma's 0-1000 boxes onto the real pixels and stroke them with their labels. */
     private static void draw(Path source, String json, Path out) throws IOException {
         // Models may wrap the array in prose or a ```json fence. Parse the outermost array; object
         // field order is deliberately ignored because the model varies it.
@@ -121,6 +122,6 @@ public class Detect {
     }
 
     private static int scale(Number normalized, int pixels) {
-        return Math.clamp(Math.round(normalized.floatValue() / 1024f * pixels), 0, pixels);
+        return Math.clamp(Math.round(normalized.floatValue() / 1000f * pixels), 0, pixels);
     }
 }

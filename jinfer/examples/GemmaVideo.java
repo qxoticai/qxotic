@@ -2,27 +2,24 @@
 //JAVA 25
 //COMPILE_OPTIONS --release 25
 //RUNTIME_OPTIONS --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED -Xmx24g
-//REPOS mavenLocal,central
-//DEPS com.qxotic:jinfer-langchain4j:0.1.0
-//DEPS com.qxotic:jinfer-codecs:0.1.0
+//DEPS com.qxotic:jinfer-bom:0.1.0@pom
+//DEPS com.qxotic:jinfer-langchain4j com.qxotic:jinfer-gemma4 com.qxotic:jinfer-codecs
+//DEPS com.qxotic:jam-native com.qxotic:jam-vector
 //SOURCES scripts/Models.java
 
-// Gemma 4 video understanding (equivalent of the docs' "Describe this video."):
+// Gemma 4 video understanding:
 //   https://ai.google.dev/gemma/docs/capabilities/vision/video
-// jinfer decodes the video to sampled frames (ffmpeg) and feeds them as timestamped image blocks
-// ("00:00 <|image>…", "00:01 …") - Gemma's video-as-frames approach.
+// Jinfer samples timestamped frames with ffmpeg and sends them to the model as image content.
 //
-//   Install once:  cd jinfer && mvn -q -DskipTests install
 //   E2B:  jbang GemmaVideo.java clip.mp4
 //   12B:  jbang GemmaVideo.java clip.mp4 "Describe this video." \
-//             ~/models/unsloth/gemma-4-12b-it-GGUF/gemma-4-12b-it-Q8_0.gguf \
-//             ~/models/unsloth/gemma-4-12b-it-GGUF/mmproj-F32.gguf
+//             hf.co/unsloth/gemma-4-12b-it-GGUF:Q8_0 \
+//             hf.co/unsloth/gemma-4-12b-it-GGUF/mmproj-F32.gguf
 //
-// IMPORTANT: each frame is ~256 image tokens at the default budget, so many frames blow the context
-// fast. Use a LOW per-frame budget for video:
+// Each frame consumes part of the context window. Use a lower image token budget for video:
 //     jbang -Djinfer.gemma4.imageTokenBudget=140 GemmaVideo.java clip.mp4
-// Tune sampling with -Djinfer.video.frames (default 16 here; frames are spread uniformly across
-// the WHOLE duration, each stamped with its true timestamp).
+// Set -Djinfer.video.frames to control sampling. The default is 16 frames spread uniformly across
+// the video.
 
 import com.qxotic.jinfer.langchain4j.JinferChatModel;
 import com.qxotic.jinfer.codecs.VideoCodec;
