@@ -187,6 +187,7 @@ public final class Telemetry {
                     RuntimeEvent event = new RuntimeEvent();
                     if (!event.isEnabled()) return;
                     event.vectorBits = Segments.vectorBits();
+                    event.computeThreads = RuntimeFlags.COMPUTE_THREADS;
                     event.decodeThreads = RuntimeFlags.DECODE_THREADS;
                     event.commit();
                 });

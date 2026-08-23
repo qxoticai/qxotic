@@ -213,7 +213,7 @@ public final class Qwen35Vision implements MediaProjector<Media.Image> {
         MemoryView<MemorySegment> tokens = Views.allocateF32(scratch, nPos, visionDim);
         MemoryView<MemorySegment> patch1Out = Views.allocateF32(scratch, nPos, visionDim);
         MemoryView<MemorySegment> positions = resizePositions(scratch, patchesX, patchesY);
-        Parallel.forRows(
+        Parallel.forLoop(
                 nPos,
                 t -> {
                     int py = tokenY(t, patchesX), px = tokenX(t, patchesX);
@@ -232,7 +232,7 @@ public final class Qwen35Vision implements MediaProjector<Media.Image> {
         MatMul.gemm(patch0, patchCols, tokens, nPos);
         MatMul.gemm(patch1, patchCols, patch1Out, nPos);
         Ops.addInPlace(tokens, 0, patch1Out, 0, nPos * visionDim);
-        Parallel.forRows(
+        Parallel.forLoop(
                 nPos,
                 t -> {
                     int py = tokenY(t, patchesX), px = tokenX(t, patchesX);
@@ -373,7 +373,7 @@ public final class Qwen35Vision implements MediaProjector<Media.Image> {
         if (patchesX == positionSide && patchesY == positionSide) return positionEmbedding;
         MemoryView<MemorySegment> out =
                 Views.allocateF32(scratch, (long) patchesX * patchesY, visionDim);
-        Parallel.forRows(
+        Parallel.forLoop(
                 patchesY,
                 y -> {
                     float gy = y * (positionSide - 1.0f) / Math.max(1, patchesY - 1);
@@ -422,7 +422,7 @@ public final class Qwen35Vision implements MediaProjector<Media.Image> {
     private static void geluTanhInPlace(MemoryView<MemorySegment> t, int rows, int rowDim) {
         final float sqrt2OverPi = 0.79788456080286535587989211986876f;
         final float coefA = 0.044715f;
-        Parallel.forRows(
+        Parallel.forLoop(
                 rows,
                 r -> {
                     long base = (long) r * rowDim;

@@ -65,7 +65,7 @@ public final class GatedDeltaNet {
         Raw vo = Raw.f32(v, "v");
         int kOff = groups * headDim, vOff = 2 * groups * headDim;
         float scale = (float) (1.0 / Math.sqrt(headDim));
-        Parallel.forRows(
+        Parallel.forLoop(
                 rows,
                 row -> {
                     int cBase = row * convChannels;
@@ -169,7 +169,7 @@ public final class GatedDeltaNet {
             int rows,
             int heads,
             int headDim) {
-        Parallel.parallelFor(
+        Parallel.forLoop(
                 0,
                 heads,
                 head -> {
@@ -217,7 +217,7 @@ public final class GatedDeltaNet {
             float eps) {
         Raw in = Raw.f32(input, "input"), zr = Raw.f32(z, "z");
         Raw w = Raw.f32(weight, "weight"), out = Raw.f32(output, "output");
-        Parallel.forRows(
+        Parallel.forLoop(
                 rows,
                 row -> {
                     for (int head = 0; head < heads; head++) {

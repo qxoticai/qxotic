@@ -123,7 +123,7 @@ public final class Granite
                 throw new IllegalArgumentException(
                         "token id " + id + " outside [0," + configuration.vocabularySize + ")");
         if (n == 1)
-            Parallel.onDecodePool(
+            Parallel.runDecodeStep(
                     () -> {
                         forward(s, ids, from, n);
                         return null;
@@ -144,7 +144,7 @@ public final class Granite
             throw new IllegalArgumentException("output " + output + " outside retained outputs");
         int dim = configuration.embeddingLength;
         int row = s.lastBatchSize() - s.outputCount() + output;
-        return Parallel.onDecodePool(
+        return Parallel.runDecodeStep(
                 () -> {
                     Norms.rmsnorm(
                             s.normed,
@@ -217,7 +217,7 @@ public final class Granite
         MatMul.gemm(lw.wq(), state.normed, dim, state.query, queryDim, queryDim, seqLen, dim);
         MatMul.gemm(lw.wk(), state.normed, dim, state.batchK, kvDim, kvDim, seqLen, dim);
         MatMul.gemm(lw.wv(), state.normed, dim, state.batchV, kvDim, kvDim, seqLen, dim);
-        Parallel.forRows(
+        Parallel.forLoop(
                 seqLen,
                 s -> {
                     for (int h = 0; h < heads; h++) {

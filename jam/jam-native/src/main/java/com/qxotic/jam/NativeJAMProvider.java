@@ -14,7 +14,7 @@ public final class NativeJAMProvider implements JAM.Provider {
     @Override
     public boolean isAvailable() {
         try {
-            NativeJAM.global();
+            NativeLoader.load();
             return true;
         } catch (Throwable t) {
             return false;
@@ -23,7 +23,6 @@ public final class NativeJAMProvider implements JAM.Provider {
 
     @Override
     public JAM create() {
-        // NativeJAM is a single shared native context today; concurrent mm calls may return EBUSY.
         return NativeJAM.global();
     }
 }

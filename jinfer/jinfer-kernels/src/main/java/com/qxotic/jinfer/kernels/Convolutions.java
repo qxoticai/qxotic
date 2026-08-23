@@ -42,7 +42,7 @@ public final class Convolutions {
         Raw y = Raw.f32(out, "out");
         int timeOut = (timeIn - 1) / 2 + 1;
         int frequencyOut = (frequencyIn - 1) / 2 + 1;
-        Parallel.parallelFor(
+        Parallel.forLoop(
                 0,
                 outChannels,
                 oc -> {
@@ -100,7 +100,7 @@ public final class Convolutions {
         Raw x = Raw.f32(in, "in");
         Raw w = Raw.f32(taps, "taps");
         Raw y = Raw.f32(out, "out");
-        Parallel.forRows(
+        Parallel.forLoop(
                 time,
                 t -> {
                     for (int c = 0; c < channels; c++) {
@@ -157,7 +157,7 @@ public final class Convolutions {
         Raw state = Raw.f32(history, "history");
         Raw out = Raw.f32(output, "output");
         int hist = kernel - 1;
-        Parallel.parallelFor(
+        Parallel.forLoop(
                 0,
                 channels,
                 c -> {
@@ -304,7 +304,7 @@ public final class Convolutions {
         int groups = (outChannels + GROUP - 1) / GROUP;
 
         // Units write disjoint slices of `out` and only read `in`, so no synchronization is needed.
-        Parallel.parallelFor(
+        Parallel.forLoop(
                 0,
                 groups * tiles,
                 unit -> {

@@ -110,7 +110,7 @@ public final class GptOss
                     if (id < 0 || id >= configuration.vocabularySize)
                         throw new IllegalArgumentException("token id out of range: " + id);
                 if (n == 1)
-                    Parallel.onDecodePool(
+                    Parallel.runDecodeStep(
                             () -> {
                                 forward(state, ids, 0, from, n);
                                 return null;
@@ -140,7 +140,7 @@ public final class GptOss
                     "output " + output + " outside [0," + state.outputCount() + ")");
         int dim = configuration.embeddingLength;
         int row = state.lastBatchSize() - state.outputCount() + output;
-        return Parallel.onDecodePool(
+        return Parallel.runDecodeStep(
                 () -> {
                     tailAt(state, row);
                     Norms.rmsnorm(
@@ -197,7 +197,7 @@ public final class GptOss
         Norms.rmsnormRows(state.normed, state.residual, layer.attnNorm, seqLen, dim, c.rmsNormEps);
         MatMul.gemm(attn.wq, state.normed, state.query, seqLen);
         Ops.addRowBiasInPlace(state.query, 0, attn.qBias, 0, seqLen, queryDim);
-        Parallel.forRows(
+        Parallel.forLoop(
                 seqLen,
                 s -> {
                     for (int h = 0; h < heads; h++)
@@ -214,7 +214,7 @@ public final class GptOss
         MatMul.gemm(attn.wv, state.normed, bV, seqLen);
         Ops.addRowBiasInPlace(bK, 0, attn.kBias, 0, seqLen, kvDim);
         Ops.addRowBiasInPlace(bV, 0, attn.vBias, 0, seqLen, kvDim);
-        Parallel.forRows(
+        Parallel.forLoop(
                 seqLen,
                 s -> {
                     for (int h = 0; h < kvHeads; h++)
@@ -302,7 +302,7 @@ public final class GptOss
                             state.hidden, 0, moe.gateBias, (long) e * expertFf, n, expertFf);
                     Ops.addRowBiasInPlace(
                             state.hidden2, 0, moe.upBias, (long) e * expertFf, n, expertFf);
-                    Parallel.forRows(
+                    Parallel.forLoop(
                             n,
                             row ->
                                     Activations.clampedSwigluMultiply(
@@ -358,7 +358,7 @@ public final class GptOss
         MatMul.gemm(attn.wv, state.normed, bV, seqLen);
         Ops.addRowBiasInPlace(bK, 0, attn.kBias, 0, seqLen, kvDim);
         Ops.addRowBiasInPlace(bV, 0, attn.vBias, 0, seqLen, kvDim);
-        Parallel.forRows(
+        Parallel.forLoop(
                 seqLen,
                 s -> {
                     for (int h = 0; h < kvHeads; h++)

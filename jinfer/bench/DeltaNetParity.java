@@ -7,7 +7,7 @@ public class DeltaNetParity {
     static final VectorSpecies<Float> SP = FloatVector.SPECIES_PREFERRED;
 
     // Lever 1+2: same recurrence as seqOracle, but float[] state (no segment) + vectorized inner ops.
-    // This is the per-head body that goes inside parallelFor(heads) in the model (heads independent).
+    // This is the per-head body that goes inside forLoop(heads) in the model (heads independent).
     static float[] flippedVec(float[] K, float[] V, float[] Q, float[] beta, float[] a, float[] S0, float[] outO) {
         int Uw = SP.length();
         float[] S = S0.clone();

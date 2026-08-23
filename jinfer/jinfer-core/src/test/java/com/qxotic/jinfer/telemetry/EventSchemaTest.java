@@ -77,7 +77,7 @@ class EventSchemaTest {
                 RuntimeEvent.class,
                 "jinfer.Runtime",
                 List.of("jinfer", "Lifecycle"),
-                Set.of("vectorBits", "decodeThreads"));
+                Set.of("vectorBits", "computeThreads", "decodeThreads"));
     }
 
     @Test

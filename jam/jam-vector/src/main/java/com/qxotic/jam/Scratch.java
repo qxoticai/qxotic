@@ -9,7 +9,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
  *
  * <p>Owned by the matmul context (one per {@link VectorJAM} instance) and passed into each {@code
  * gemm} - NOT a {@code static}/{@code ThreadLocal}. This is the deliberate fix for the old {@code
- * BandGemm.DEQUANT_BAND} ThreadLocal, whose buffers were rooted in the (commonPool, JVM-lifetime)
+ * BandGemm.DEQUANT_BAND} ThreadLocal, whose buffers were rooted in the (common pool, JVM-lifetime)
  * worker threads and so were never released when a context was dropped. Here the buffers are
  * reachable only through this object: reused across every {@code mm} call (no per-call allocation
  * in steady state), and collected with the context that owns the pool.
@@ -21,8 +21,8 @@ import java.util.concurrent.ConcurrentLinkedQueue;
  * <p>A worker {@link #acquire}s a buffer at the top of its slice and {@link #release}s it at the
  * end; the pool is a lock-free free-list, so concurrent band workers within one gemm each get their
  * own buffer. The pool retains at most the peak number of concurrent workers' buffers (≤ {@code
- * THREADS}), each grown to the largest {@code k} seen - a few MB at most, freed when the owning
- * context is GC'd.
+ * configured parallelism), each grown to the largest {@code k} seen - a few MB at most, freed when
+ * the owning context is GC'd.
  */
 public final class Scratch {
 

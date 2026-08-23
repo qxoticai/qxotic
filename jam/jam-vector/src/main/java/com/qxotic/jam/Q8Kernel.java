@@ -11,7 +11,6 @@ import static com.qxotic.jam.VectorSupport.vectorSegment;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.ByteOrder;
-import java.util.function.IntConsumer;
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.VectorOperators;
@@ -2218,11 +2217,9 @@ public final class Q8Kernel {
             return;
         }
         final long outAddr = oBase;
-        int workers = Math.min(tileCount, Math.max(1, VectorSupport.THREADS));
-        IntConsumer action =
-                worker -> {
-                    int tileStart = (int) ((long) tileCount * worker / workers);
-                    int tileEnd = (int) ((long) tileCount * (worker + 1) / workers);
+        VectorSupport.parallelChunks(
+                tileCount,
+                (tileStart, tileEnd) -> {
                     for (int tileIndex = tileStart; tileIndex < tileEnd; tileIndex++) {
                         int rowStart = (tileIndex / seqTileCount) * rowTile;
                         int s0 = (tileIndex % seqTileCount) * seqTile;
@@ -2959,7 +2956,6 @@ public final class Q8Kernel {
                             }
                         }
                     }
-                };
-        VectorSupport.parallelFor(0, workers, action);
+                });
     }
 }

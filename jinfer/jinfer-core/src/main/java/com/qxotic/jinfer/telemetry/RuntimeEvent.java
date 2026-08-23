@@ -25,7 +25,7 @@ import jdk.jfr.StackTrace;
 @Name("jinfer.Runtime")
 @Label("Runtime")
 @Category({"jinfer", "Lifecycle"})
-@Description("Vector API width and decode thread count actually in use.")
+@Description("Vector API width and compute/decode thread counts actually in use.")
 @Period("everyChunk")
 @StackTrace(false)
 public final class RuntimeEvent extends Event {
@@ -34,7 +34,11 @@ public final class RuntimeEvent extends Event {
     @Label("Vector Bits")
     public int vectorBits;
 
-    /** jinfer's decode pool. The native gemm has its own, set by {@code JAM_NUM_THREADS}. */
+    /** Jinfer's compute pool. JAM providers own their worker pools. */
+    @Label("Compute Threads")
+    public int computeThreads;
+
+    /** Jinfer's decode pool. JAM providers own their worker pools. */
     @Label("Decode Threads")
     public int decodeThreads;
 }

@@ -227,7 +227,7 @@ public final class Gemma4Vision implements MediaProjector<Media.Image> {
             Norms.rmsnormRows(normalized, current, layer.norm2(), count, visionDim, normEps);
             layer.gate().gemm(normalized, visionDim, gate, ffnDim, count, clampScratch);
             layer.up().gemm(normalized, visionDim, up, ffnDim, count, clampScratch);
-            Parallel.forRows(
+            Parallel.forLoop(
                     count,
                     row ->
                             Activations.quickGeluMultiply(
@@ -253,7 +253,7 @@ public final class Gemma4Vision implements MediaProjector<Media.Image> {
         layer.query().gemm(x, visionDim, query, visionDim, count, clampScratch);
         layer.key().gemm(x, visionDim, key, visionDim, count, clampScratch);
         layer.value().gemm(x, visionDim, value, visionDim, count, clampScratch);
-        Parallel.forRows(
+        Parallel.forLoop(
                 count,
                 token -> {
                     for (int head = 0; head < headCount; head++) {
@@ -309,7 +309,7 @@ public final class Gemma4Vision implements MediaProjector<Media.Image> {
         MemoryView<MemorySegment> pooled = Views.allocateF32(scratch, rows, visionDim);
         float scale = (float) Math.sqrt(visionDim);
         Ops.windowedMeanPool(current, patchesX, patchesY, merge, visionDim, pooled);
-        Parallel.forRows(
+        Parallel.forLoop(
                 rows,
                 row -> {
                     long destinationBase = (long) row * visionDim;

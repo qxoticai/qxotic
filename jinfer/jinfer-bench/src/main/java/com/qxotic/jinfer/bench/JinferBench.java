@@ -3,6 +3,7 @@ package com.qxotic.jinfer.bench;
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.ContentKey;
 import com.qxotic.jinfer.ContextState;
+import com.qxotic.jinfer.RuntimeFlags;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.ChatEngine;
@@ -23,8 +24,8 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
-import java.util.concurrent.ForkJoinPool;
 
 /**
  * A llama-bench-parity harness driving every model through the generic loader ({@link Models#load}
@@ -120,30 +121,14 @@ public final class JinferBench {
         }
 
         if (threads <= 0) threads = physicalCores();
+        System.setProperty("jinfer.computeThreads", Integer.toString(threads));
         System.setProperty("jinfer.decodeThreads", Integer.toString(threads));
-        System.setProperty(
-                "java.util.concurrent.ForkJoinPool.common.parallelism",
-                Integer.toString(Math.max(1, threads - 1))); // +1 for the submitting thread
-        int prefillThreads = ForkJoinPool.commonPool().getParallelism() + 1;
-        int decodeThreads = com.qxotic.jinfer.RuntimeFlags.DECODE_THREADS;
+        System.setProperty("jam.threads", Integer.toString(threads));
+        int prefillThreads = RuntimeFlags.COMPUTE_THREADS;
+        int decodeThreads = RuntimeFlags.DECODE_THREADS;
         System.err.printf(
-                "threads: prefill=%d decode=%d (requested %d)%n",
-                prefillThreads, decodeThreads, threads);
-        String jamThreads = System.getenv("JAM_NUM_THREADS");
-        boolean jamAgrees =
-                jamThreads == null
-                        ? threads == physicalCores()
-                        : jamThreads.trim().equals(Integer.toString(threads));
-        if (!jamAgrees) {
-            System.err.printf(
-                    "WARNING: JAM_NUM_THREADS=%s, so the native gemm backend is NOT at %d threads"
-                            + " and pp is not comparable to llama-bench -t %d.%n         Re-run as:"
-                            + " JAM_NUM_THREADS=%d jinfer-bench ...%n",
-                    jamThreads == null ? "<unset, jam auto-picks physical cores>" : jamThreads,
-                    threads,
-                    threads,
-                    threads);
-        }
+                "threads: prefill=%d decode=%d jam.native=%s jam.vector=%s (requested %d)%n",
+                prefillThreads, decodeThreads, jamThreads("native"), jamThreads("vector"), threads);
 
         List<Row> rows = new ArrayList<>();
         List<CapRow> caps = new ArrayList<>();
@@ -578,6 +563,16 @@ public final class JinferBench {
     private static String name(String path) {
         String f = Path.of(path).getFileName().toString();
         return f.endsWith(".gguf") ? f.substring(0, f.length() - 5) : f;
+    }
+
+    private static String jamThreads(String provider) {
+        String property = "jam." + provider + ".threads";
+        String value = System.getProperty(property);
+        if (value == null || value.isBlank())
+            value = System.getenv(property.toUpperCase(Locale.ROOT).replace('.', '_'));
+        if (value == null || value.isBlank()) value = System.getProperty("jam.threads");
+        if (value == null || value.isBlank()) value = System.getenv("JAM_THREADS");
+        return value;
     }
 
     private static void usage(PrintStream out) {

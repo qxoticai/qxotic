@@ -1,79 +1,177 @@
 package com.qxotic.jinfer;
 
 import com.qxotic.jinfer.telemetry.PerformanceCliff;
-import java.util.concurrent.Callable;
 import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.ForkJoinTask;
+import java.util.concurrent.RecursiveAction;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.IntConsumer;
 import java.util.function.Supplier;
-import java.util.stream.IntStream;
 
-/**
- * jinfer's work runners, and the reason there are two. {@link #parallelFor} fans out on the common
- * pool - right for the compute-bound prefill gemm. A decode step runs on a spin-barrier pool at
- * physical-core width instead: decode is memory-bandwidth bound, so a second SMT sibling only
- * contends for its core's load/store ports, and the persistent workers dispatch the ~360 tiny
- * regions a single token fires without building a task tree or parking between them.
- */
+/** Routes parallel loops to Jinfer-owned compute and decode workers. */
 public final class Parallel {
-    public static void parallelFor(int startInclusive, int endExclusive, IntConsumer action) {
-        if (SPIN_OWNER.get()
-                == Thread.currentThread()) { // inside the active decode step: spin-barrier pool
-            DECODE_SPIN.parallelFor(startInclusive, endExclusive, action);
+    private static final long WORKER_KEEP_ALIVE_SECONDS = 60;
+    private static final int TASKS_PER_WORKER = 4;
+    private static final ForkJoinPool COMPUTE_POOL = newPool(RuntimeFlags.COMPUTE_THREADS);
+    private static final ForkJoinPool DECODE_POOL = newPool(RuntimeFlags.DECODE_THREADS);
+    private static final AtomicReference<Thread> ACTIVE_SPIN_SUBMITTER = new AtomicReference<>();
+
+    /** Run {@code action} once for every index in {@code [startInclusive, endExclusive)}. */
+    public static void forLoop(int startInclusive, int endExclusive, IntConsumer action) {
+        if (startInclusive >= endExclusive) {
             return;
         }
-        IntStream.range(startInclusive, endExclusive).parallel().forEach(action);
-    }
-
-    public static void forRows(int rows, IntConsumer action) {
-        if (rows == 1) {
-            action.accept(0);
-        } else {
-            parallelFor(0, rows, action);
+        if ((long) endExclusive - startInclusive == 1) {
+            action.accept(startInclusive);
+            return;
         }
+        if (ACTIVE_SPIN_SUBMITTER.get() == Thread.currentThread()) {
+            DecodeSpin.POOL.forLoop(startInclusive, endExclusive, action);
+            return;
+        }
+
+        ForkJoinPool current = ForkJoinTask.getPool();
+        ForkJoinPool pool =
+                current == COMPUTE_POOL || current == DECODE_POOL ? current : COMPUTE_POOL;
+        LoopTask task =
+                new LoopTask(
+                        startInclusive,
+                        endExclusive,
+                        maxChunkSize(pool, startInclusive, endExclusive),
+                        action);
+        if (current == pool) {
+            task.invoke();
+        } else {
+            pool.invoke(task);
+        }
+        if (task.failure != null) throw unchecked(task.failure);
     }
 
-    // Single-token (decode) work is memory-bandwidth bound: one thread per PHYSICAL core already
-    // saturates
-    // DRAM, and a second SMT sibling on the same core only contends for its load/store ports and
-    // L1, cutting
-    // effective bandwidth. The shared common pool sizes to every logical CPU — right for the
-    // compute-bound
-    // prefill gemm, wrong for decode. So a decode step runs at physical-core width on the SpinPool,
-    // whose
-    // persistent workers dispatch with no task-tree allocation and no park/unpark between the ~360
-    // tiny
-    // regions a token fires (the dominant cost vs llama.cpp). The SpinPool takes one submitter at a
-    // time, so
-    // concurrent decodes (a multi-request server) fall back to the equivalent-width ForkJoinPool.
-    private static final SpinPool DECODE_SPIN = new SpinPool(RuntimeFlags.DECODE_THREADS);
-    private static final ForkJoinPool DECODE_POOL = new ForkJoinPool(RuntimeFlags.DECODE_THREADS);
-    // The thread running the active decode step (DECODE_SPIN's sole submitter): its nested
-    // parallelFor calls
-    // route to the spin pool; every other thread's keep the common pool. null = no decode step in
-    // flight.
-    private static final AtomicReference<Thread> SPIN_OWNER = new AtomicReference<>();
+    /** Run {@code action} once for every index in {@code [0, count)}. */
+    public static void forLoop(int count, IntConsumer action) {
+        forLoop(0, count, action);
+    }
 
     /**
-     * Evaluate a memory-bandwidth-bound step (one decode token's forward / logits) at physical-core
-     * width: on the SpinPool when it is free (the single active decode), else the ForkJoinPool.
-     * Unchecked exceptions from {@code step} propagate unchanged.
+     * Evaluate one memory-bandwidth-bound decode step. The uncontended path uses the low-latency
+     * spin pool; concurrent decodes use the bounded decode pool.
      */
-    public static <T> T onDecodePool(Supplier<T> step) {
+    public static <T> T runDecodeStep(Supplier<T> step) {
         if (RuntimeFlags.DECODE_SPIN) {
-            if (SPIN_OWNER.compareAndSet(null, Thread.currentThread())) {
+            if (ACTIVE_SPIN_SUBMITTER.compareAndSet(null, Thread.currentThread())) {
                 try {
                     return step.get();
                 } finally {
-                    SPIN_OWNER.set(null);
+                    ACTIVE_SPIN_SUBMITTER.set(null);
                 }
             }
-            // The CAS was lost to another decode. (Spin explicitly disabled takes the same pool
-            // silently - that was the caller's choice, not a cliff.)
             PerformanceCliff.DECODE_CONTENTION.report();
         }
-        return DECODE_POOL
-                .submit((Callable<T>) step::get)
-                .join(); // concurrent decode or spin disabled
+        // Capture the outcome rather than trusting FJP's channels: an external join() surfaces a
+        // REFLECTIVE COPY of the failure (ForkJoinTask.getException) - mangled message, lost
+        // identity. quietlyJoin's happens-before makes plain fields safe; the contended path may
+        // allocate, the spin path above may not.
+        Outcome<T> outcome = new Outcome<>();
+        DECODE_POOL
+                .submit(
+                        () -> {
+                            try {
+                                outcome.value = step.get();
+                            } catch (Throwable t) {
+                                outcome.failure = t;
+                            }
+                        })
+                .quietlyJoin();
+        if (outcome.failure != null) throw unchecked(outcome.failure); // the original instance
+        return outcome.value;
     }
+
+    /** Carrier for the contended decode path - FJP's own result channels mangle exceptions. */
+    private static final class Outcome<T> {
+        T value;
+        Throwable failure;
+    }
+
+    private static ForkJoinPool newPool(int threads) {
+        // Bound compensation at the configured width; retire idle workers and their ThreadLocals.
+        return new ForkJoinPool(
+                threads,
+                ForkJoinPool.defaultForkJoinWorkerThreadFactory,
+                null,
+                false,
+                0,
+                threads,
+                1,
+                null,
+                WORKER_KEEP_ALIVE_SECONDS,
+                TimeUnit.SECONDS);
+    }
+
+    private static int maxChunkSize(ForkJoinPool pool, int start, int end) {
+        long size = (long) end - start;
+        long tasks = Math.min(size, (long) pool.getParallelism() * TASKS_PER_WORKER);
+        return (int) ((size + tasks - 1) / tasks);
+    }
+
+    private static final class LoopTask extends RecursiveAction {
+        private final int start;
+        private final int end;
+        private final int maxChunkSize;
+        private final IntConsumer action;
+        private LoopTask next;
+        private Throwable failure;
+
+        private LoopTask(int start, int end, int maxChunkSize, IntConsumer action) {
+            this.start = start;
+            this.end = end;
+            this.maxChunkSize = maxChunkSize;
+            this.action = action;
+        }
+
+        @Override
+        protected void compute() {
+            int lo = start;
+            int hi = end;
+            LoopTask forks = null;
+            try {
+                while ((long) hi - lo > maxChunkSize) {
+                    int middle = lo + (int) (((long) hi - lo) / 2);
+                    LoopTask right = new LoopTask(middle, hi, maxChunkSize, action);
+                    right.next = forks;
+                    forks = right;
+                    right.fork();
+                    hi = middle;
+                }
+                for (int i = lo; i < hi; i++) action.accept(i);
+            } catch (Throwable thrown) {
+                failure = thrown;
+            }
+
+            while (forks != null) {
+                forks.quietlyJoin();
+                if (forks.failure != null) {
+                    if (failure == null) failure = forks.failure;
+                    else if (failure != forks.failure) failure.addSuppressed(forks.failure);
+                }
+                forks = forks.next;
+            }
+        }
+    }
+
+    static RuntimeException unchecked(Throwable failure) {
+        if (failure instanceof RuntimeException runtime) {
+            return runtime;
+        }
+        if (failure instanceof Error error) {
+            throw error;
+        }
+        return new RuntimeException(failure);
+    }
+
+    private static final class DecodeSpin {
+        private static final SpinPool POOL = new SpinPool(RuntimeFlags.DECODE_THREADS);
+    }
+
+    private Parallel() {}
 }

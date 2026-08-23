@@ -121,20 +121,23 @@ final class BandGemm {
             MemorySegment raw = scratch.acquire(k);
             MemorySegment sv = VectorSupport.vectorSegment(raw);
             long sb = VectorSupport.vectorBase(raw);
-            for (int row = rem0; row < m; row++) {
-                deq.dequantize(w, wOff + (long) row * k, k, sv, sb);
-                int rr = row;
-                VectorSupport.parallelFor(
-                        0,
-                        n,
-                        s ->
-                                store(
-                                        o,
-                                        oBase,
-                                        (long) s * oStride + rr,
-                                        dotDeq(sv, sb, k, a, aBase, (long) s * aStride)));
+            try {
+                for (int row = rem0; row < m; row++) {
+                    deq.dequantize(w, wOff + (long) row * k, k, sv, sb);
+                    int rr = row;
+                    VectorSupport.parallelFor(
+                            0,
+                            n,
+                            s ->
+                                    store(
+                                            o,
+                                            oBase,
+                                            (long) s * oStride + rr,
+                                            dotDeq(sv, sb, k, a, aBase, (long) s * aStride)));
+                }
+            } finally {
+                scratch.release(raw);
             }
-            scratch.release(raw);
         }
     }
 

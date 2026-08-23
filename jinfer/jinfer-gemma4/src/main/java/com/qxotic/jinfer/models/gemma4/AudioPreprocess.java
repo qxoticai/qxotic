@@ -113,7 +113,7 @@ public final class AudioPreprocess {
         float[] padded = new float[totalPad + length];
         System.arraycopy(pcm, from, padded, WINDOW / 2, length);
         float[] output = new float[frames * nMel];
-        Parallel.parallelFor(
+        Parallel.forLoop(
                 0,
                 frames,
                 t -> {

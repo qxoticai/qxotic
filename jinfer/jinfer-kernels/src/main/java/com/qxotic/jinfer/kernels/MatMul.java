@@ -369,7 +369,7 @@ public final class MatMul {
             } else if (inPlace) {
                 // in-place must avoid read-after-write races under parallel execution
                 float[] tmp = new float[m];
-                Parallel.parallelFor(
+                Parallel.forLoop(
                         0,
                         m,
                         i ->
@@ -385,7 +385,7 @@ public final class MatMul {
                     writeFloat(cs, cBase + (long) i * 4, tmp[i]);
                 }
             } else {
-                Parallel.parallelFor(
+                Parallel.forLoop(
                         0,
                         m,
                         i ->
@@ -406,7 +406,7 @@ public final class MatMul {
         long aRowBytes = (long) aStride * 4, cRowBytes = (long) cStride * 4;
         if (inPlace) {
             float[] tmp = new float[n * m];
-            Parallel.parallelFor(
+            Parallel.forLoop(
                     0,
                     n * m,
                     idx -> {
@@ -426,7 +426,7 @@ public final class MatMul {
                 }
             }
         } else {
-            Parallel.parallelFor(
+            Parallel.forLoop(
                     0,
                     n * m,
                     idx -> {

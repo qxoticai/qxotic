@@ -996,7 +996,7 @@ public final class FlashAttention {
         boolean vec = Segments.USE_VECTOR_API; // qkTile/pvTile handle both F32 and F16 caches
         int nQBlocks = (seqLen + Br - 1) / Br;
 
-        Parallel.parallelFor(
+        Parallel.forLoop(
                 0,
                 nHeads * nQBlocks,
                 idx -> {
@@ -1322,7 +1322,7 @@ public final class FlashAttention {
         int attStart = window > 0 ? Math.max(0, startPos - window + 1) : 0;
         int nQBlocks = (seqLen + Br - 1) / Br;
 
-        Parallel.parallelFor(
+        Parallel.forLoop(
                 0,
                 nHeads * nQBlocks,
                 idx -> {
@@ -1570,7 +1570,7 @@ public final class FlashAttention {
             float scale,
             int ringMask,
             Raw sinks) {
-        Parallel.parallelFor(
+        Parallel.forLoop(
                 0,
                 nHeads,
                 h -> {
@@ -1694,7 +1694,7 @@ public final class FlashAttention {
 
         // Each (partition, head) does an independent online softmax over its key slice into a
         // partial.
-        Parallel.parallelFor(
+        Parallel.forLoop(
                 0,
                 totalPartials,
                 task -> {
@@ -1732,7 +1732,7 @@ public final class FlashAttention {
         // Merge the partitions' partials per head (two-pass online softmax), folding an optional
         // sink.
         Src pOSrc = new Src(pO, false);
-        Parallel.parallelFor(
+        Parallel.forLoop(
                 0,
                 nHeads,
                 h -> {

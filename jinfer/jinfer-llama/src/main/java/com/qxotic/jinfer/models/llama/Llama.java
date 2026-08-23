@@ -126,7 +126,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                 throw new IllegalArgumentException(
                         "token id " + id + " outside [0," + configuration.vocabularySize + ")");
         if (n == 1)
-            Parallel.onDecodePool(
+            Parallel.runDecodeStep(
                     () -> {
                         forward(s, ids, from, n);
                         return null;
@@ -147,7 +147,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
             throw new IllegalArgumentException("output " + output + " outside retained outputs");
         int dim = configuration.embeddingLength;
         int row = s.lastBatchSize() - s.outputCount() + output;
-        return Parallel.onDecodePool(
+        return Parallel.runDecodeStep(
                 () -> {
                     tailAt(s, row); // finish the deferred last-layer tail for this row -> s.th
                     Norms.rmsnorm(
@@ -236,7 +236,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
         MatMul.gemm(lw.wk(), state.normed, state.batchK, seqLen);
         MatMul.gemm(lw.wv(), state.normed, state.batchV, seqLen);
         if (config.useRope(l)) {
-            Parallel.forRows(
+            Parallel.forLoop(
                     seqLen,
                     s -> {
                         for (int h = 0; h < kvHeads; h++) {
@@ -348,7 +348,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
         MatMul.gemm(lw.wk(), state.normed, state.batchK, seqLen);
         MatMul.gemm(lw.wv(), state.normed, state.batchV, seqLen);
         boolean useRope = config.useRope(layer); // SmolLM3 NoPE: some layers skip RoPE entirely
-        Parallel.forRows(
+        Parallel.forLoop(
                 seqLen,
                 s -> {
                     if (useRope) {

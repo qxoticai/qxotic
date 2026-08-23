@@ -405,7 +405,7 @@ class JamBackendParityTest {
     // far more parallel work units than the m≤104 shapes above ever create. A race on shared worker
     // state
     // surfaces only at that scale, and is non-deterministic (thread-count dependent:
-    // JAM_NUM_THREADS=1 is
+    // JAM_NATIVE_THREADS=1 is
     // clean). Two runs on IDENTICAL inputs must be bit-identical; a difference is the race.
     // (Regression for
     // the jam-native threaded-gemm non-determinism observed in A4B Q8_0 prefill.)

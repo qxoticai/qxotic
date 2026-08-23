@@ -11,7 +11,7 @@
 // Build jinfer-bench, then run this main class in a fresh JVM for each
 // -Djinfer.convTile=auto|4x2|4x4 value. Pass the optional census path as the first argument.
 //
-// Runs inside Parallel.onDecodePool, because that is where the vocoder's convolutions actually run
+// Runs inside Parallel.runDecodeStep, because that is where the vocoder's convolutions actually run
 // (Inflect2:438) - the spin pool at physical-core width, not the common pool at logical width.
 // Measuring on the common pool would time a dispatch path the model never takes.
 package com.qxotic.jinfer.bench;
@@ -210,7 +210,7 @@ public final class ConvPeak {
             MemoryView<MemorySegment> in,
             MemoryView<MemorySegment> out,
             float[] taps) {
-        return Parallel.onDecodePool(
+        return Parallel.runDecodeStep(
                 () -> {
                     long t0 = System.nanoTime();
                     Convolutions.conv1dRows(

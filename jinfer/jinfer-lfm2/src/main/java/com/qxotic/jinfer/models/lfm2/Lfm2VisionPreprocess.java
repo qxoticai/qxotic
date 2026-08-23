@@ -153,7 +153,7 @@ final class Lfm2VisionPreprocess {
         float[] input = source.values();
         float[] output =
                 new float[Math.multiplyExact(Math.multiplyExact(regionWidth, regionHeight), 3)];
-        Parallel.forRows(
+        Parallel.forLoop(
                 regionHeight,
                 y -> {
                     int targetY = regionY + y;
@@ -194,7 +194,7 @@ final class Lfm2VisionPreprocess {
         int patchVector = Math.multiplyExact(3, Math.multiplyExact(patchSize, patchSize));
         float[] pixels = image.values();
         float[] data = new float[Math.multiplyExact(count, patchVector)];
-        Parallel.forRows(
+        Parallel.forLoop(
                 count,
                 patch -> {
                     int patchY = patch / patchesX, patchX = patch % patchesX;

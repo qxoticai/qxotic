@@ -149,7 +149,7 @@ public final class Lfm2
             case Batch.Input.Tokens t -> {
                 int[] ids = t.ids();
                 if (n == 1)
-                    Parallel.onDecodePool(
+                    Parallel.runDecodeStep(
                             () -> {
                                 forward(s, ids, 0, from, n);
                                 return null;
@@ -193,7 +193,7 @@ public final class Lfm2
         requireOutput(s, output);
         int dim = configuration.embeddingLength;
         int row = s.lastBatchSize() - s.outputCount() + output;
-        return Parallel.onDecodePool(
+        return Parallel.runDecodeStep(
                 () -> {
                     Norms.rmsnorm(
                             s.normed,
@@ -407,7 +407,7 @@ public final class Lfm2
         int headSize = configuration.headSize, halfHeadSize = headSize / 2;
         float eps = configuration.rmsNormEps;
         MemoryView<MemorySegment> cos = state.ropeCos, sin = state.ropeSin;
-        Parallel.forRows(
+        Parallel.forLoop(
                 seqLen,
                 s -> {
                     for (int h = 0; h < nHeads; h++) {
@@ -443,7 +443,7 @@ public final class Lfm2
                 state.normed, state.residual, ffnNormW, seqLen, dim, configuration.rmsNormEps);
         MatMul.gemm(ffn.gate(), state.normed, state.hidden, seqLen);
         MatMul.gemm(ffn.up(), state.normed, state.hidden2, seqLen);
-        Parallel.forRows(
+        Parallel.forLoop(
                 seqLen,
                 s ->
                         Activations.siluMultiply(
@@ -529,7 +529,7 @@ public final class Lfm2
                 (e, n, gather, out) -> {
                     MatMul.gemm(moe.gateExps()[e], gather, state.moeHidden, n);
                     MatMul.gemm(moe.upExps()[e], gather, state.moeHidden2, n);
-                    Parallel.forRows(
+                    Parallel.forLoop(
                             n,
                             j ->
                                     Activations.siluMultiply(
@@ -541,7 +541,7 @@ public final class Lfm2
                     MatMul.gemm(moe.downExps()[e], state.moeHidden, out, n);
                 });
 
-        Parallel.forRows(
+        Parallel.forLoop(
                 seqLen,
                 s -> {
                     if (postFfnNorm != null)

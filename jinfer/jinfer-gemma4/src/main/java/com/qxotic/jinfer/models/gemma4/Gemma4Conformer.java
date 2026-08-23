@@ -192,7 +192,7 @@ public final class Gemma4Conformer implements MediaProjector<Media.Audio> {
         }
         outputProjection.gemm(work.x, dim, work.projected, outputDim, rows, work.clamp);
         Ops.addRowBiasInPlace(work.projected, 0, outputBias, 0, rows, outputDim);
-        Parallel.forRows(
+        Parallel.forLoop(
                 rows,
                 row ->
                         Norms.rmsnormNoWeight(
@@ -250,10 +250,10 @@ public final class Gemma4Conformer implements MediaProjector<Media.Audio> {
             Scratch work) {
         Norms.rmsnormRows(work.norm, x, preNorm, rows, dim, eps);
         up.gemm(work.norm, dim, work.ff, ffDim, rows, work.clamp);
-        Parallel.forRows(rows, row -> Ops.siluInPlace(work.ff, (long) row * ffDim, ffDim));
+        Parallel.forLoop(rows, row -> Ops.siluInPlace(work.ff, (long) row * ffDim, ffDim));
         down.gemm(work.ff, ffDim, work.ffOutput, dim, rows, work.clamp);
         Norms.rmsnormRows(work.ffOutput, work.ffOutput, postNorm, rows, dim, eps);
-        Parallel.forRows(
+        Parallel.forLoop(
                 rows,
                 row ->
                         Ops.saxpyInPlace(
@@ -267,7 +267,7 @@ public final class Gemma4Conformer implements MediaProjector<Media.Audio> {
         block.value.gemm(work.norm, dim, work.value, dim, rows, work.clamp);
         float queryScale = (float) ((1.0 / Math.sqrt(headDim)) / Math.log(2.0));
         float keyScale = (float) (Math.log1p(Math.exp(1.0)) / Math.log(2.0));
-        Parallel.forRows(
+        Parallel.forLoop(
                 rows,
                 row -> {
                     long base = (long) row * dim;
@@ -286,7 +286,7 @@ public final class Gemma4Conformer implements MediaProjector<Media.Audio> {
                 });
 
         int blockCount = (rows + CHUNK - 1) / CHUNK;
-        Parallel.parallelFor(
+        Parallel.forLoop(
                 0,
                 blockCount * heads,
                 unit -> {
@@ -357,7 +357,7 @@ public final class Gemma4Conformer implements MediaProjector<Media.Audio> {
     private void convolution(MemoryView<MemorySegment> x, Block block, int rows, Scratch work) {
         Norms.rmsnormRows(work.norm, x, block.convPreNorm, rows, dim, eps);
         block.convPointwise1.gemm(work.norm, dim, work.pointwise, dim * 2, rows, work.clamp);
-        Parallel.forRows(
+        Parallel.forLoop(
                 rows,
                 row ->
                         Activations.glu(
@@ -369,7 +369,7 @@ public final class Gemma4Conformer implements MediaProjector<Media.Audio> {
         Convolutions.causalDepthwise1d(
                 work.glu, block.convDepthwise, work.norm, rows, dim, CONV_KERNEL);
         Norms.rmsnormRows(work.norm, work.norm, block.convPostNorm, rows, dim, eps);
-        Parallel.forRows(rows, row -> Ops.siluInPlace(work.norm, (long) row * dim, dim));
+        Parallel.forLoop(rows, row -> Ops.siluInPlace(work.norm, (long) row * dim, dim));
         block.convPointwise2.gemm(work.norm, dim, work.glu, dim, rows, work.clamp);
         Ops.addInPlace(x, 0, work.glu, 0, Math.multiplyExact(rows, dim));
     }

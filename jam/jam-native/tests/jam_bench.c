@@ -6,7 +6,7 @@
  * (gemv/decode, n small) where it should approach peak DRAM. Q8_0 weight = 34 B / 32 vals = 1.0625 B/val
  * vs F32's 4 — that byte reduction is exactly what GB/s captures and GFLOP/s hid.
  * One context per ISA level (capped via max_isa); levels the hardware lacks are skipped. Configure with
- * JAM_NUM_THREADS and args:
+ * JAM_NATIVE_THREADS and args:
  *   jam_bench [size=1024] [iters]      square m=n=k=size  (compute-bound -> GMAC/s is the metric)
  *   jam_bench M N K [iters]            explicit shape; e.g. a gemv 4096 1 4096 is bandwidth-bound,
  *                                      so its GB/s should approach peak DRAM. */
@@ -79,7 +79,9 @@ int main(int argc, char** argv) {
     if (argc >= 4) { M=atoi(argv[1]); N=atoi(argv[2]); K=atoi(argv[3]); iters = argc>4?atoi(argv[4]):6; }
     else { int S = argc>1?atoi(argv[1]):1024; M=N=K=S; iters = argc>2?atoi(argv[2]):6; }
     if (M<1) M=1; if (N<1) N=1; if (K<32) K=32; if (K%32) K -= K%32;   /* Q8_0 needs k a multiple of 32 */
-    const char* nts = getenv("JAM_NUM_THREADS"); int nt = nts?atoi(nts):0;
+    const char* nts = getenv("JAM_NATIVE_THREADS");
+    if (!nts || !*nts) nts = getenv("JAM_THREADS");
+    int nt = nts?atoi(nts):0;
     const char* want = getenv("JAM_ISA");   /* if set, bench only this isa (isolated -> stable numbers) */
     const char* wantdt = getenv("JAM_DTYPE"); /* if set, bench only this dtype (perf isolation) */
     /* scrub buffer must exceed the LLC to force DRAM reads — default 256MB covers up to a 128MB V-cache.

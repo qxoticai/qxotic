@@ -49,13 +49,9 @@ public final class Q4Kernel {
         final int rowTileCount = (m + rowTile - 1) / rowTile;
         int tileCount = rowTileCount * seqTileCount;
         if (tileCount == 0) return;
-        int workers = Math.min(tileCount, Math.max(1, VectorSupport.THREADS));
-        VectorSupport.parallelFor(
-                0,
-                workers,
-                worker -> {
-                    int tileStart = (int) ((long) tileCount * worker / workers);
-                    int tileEnd = (int) ((long) tileCount * (worker + 1) / workers);
+        VectorSupport.parallelChunks(
+                tileCount,
+                (tileStart, tileEnd) -> {
                     for (int tileIndex = tileStart; tileIndex < tileEnd; tileIndex++) {
                         int rowStart = (tileIndex / seqTileCount) * rowTile;
                         int s0 = (tileIndex % seqTileCount) * seqTile;

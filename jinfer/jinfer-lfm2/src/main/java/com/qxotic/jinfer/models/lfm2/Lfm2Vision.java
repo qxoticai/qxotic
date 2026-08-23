@@ -312,7 +312,7 @@ public final class Lfm2Vision implements MediaProjector<Media.Image> {
         float supportX = Math.max(1f, 1f / scaleX), inverseX = 1f / supportX;
         float supportY = Math.max(1f, 1f / scaleY), inverseY = 1f / supportY;
         float[] output = new float[targetWidth * targetHeight * channels];
-        Parallel.forRows(
+        Parallel.forLoop(
                 targetHeight,
                 y -> {
                     float sourceY = (y + 0.5f) / scaleY;
@@ -374,7 +374,7 @@ public final class Lfm2Vision implements MediaProjector<Media.Image> {
         MemoryView<MemorySegment> merged = Views.allocateF32(scratch, outputX * outputY, mergedDim);
         float[] input = Views.toFloatArray(source, "vision rows");
         float[] output = new float[Math.multiplyExact(outputX * outputY, mergedDim)];
-        Parallel.forRows(
+        Parallel.forLoop(
                 outputY,
                 outputRow -> {
                     for (int outputColumn = 0; outputColumn < outputX; outputColumn++) {
