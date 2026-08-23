@@ -1,48 +1,129 @@
-# jinfer-langchain4j
+# Jinfer for LangChain4j
 
-[langchain4j](https://github.com/langchain4j/langchain4j) chat models backed by [jinfer](../README.md): in-process CPU inference over local GGUF files.
-No server, no HTTP - the model runs inside your JVM.
-Prompts go through jinfer's hand-written, oracle-validated chat-template codecs (token-exact, injection-inert by construction); unported models fall back to a hardened render of their own embedded Jinja template.
+[![Java 25+](https://img.shields.io/badge/Java-25%2B-007396?logo=java&logoColor=white)](https://openjdk.org/projects/jdk/25/)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-green.svg?logo=apache)](../LICENSE)
+[![GraalVM Native Image](https://img.shields.io/badge/GraalVM-Native_Image-F29111?labelColor=00758F)](https://www.graalvm.org/latest/reference-manual/native-image/)
+
+A LangChain4j provider backed by the [Jinfer](../README.md) inference engine.
+
+**Local LLM inference inside your JVM. No server. No Python. No external processes.**
+
+## Run the demos
+
+Install [JBang](https://www.jbang.dev/), then run these commands from a repository checkout:
+
+```bash
+cd jinfer/examples/scripts
+
+jbang Chat.java "Invent a tiny language for talking to houseplants."
+jbang Json.java "Grace Hopper, born 1906 in New York City."
+jbang Narrate.java photo.jpg
+jbang Detect.java street.jpg "person, bicycle, traffic light"
+```
+
+The scripts request Java 25 and download their default models on first use. They stream text,
+constrain JSON during sampling, turn an image into a spoken WAV and draw object detections onto a
+PNG. `Detect.java` uses a 12B vision model and requests a 16 GB heap.
+
+The [complete demo gallery](../examples/scripts/README.md) also covers speech, semantic search,
+reranking and prompt caching.
+
+## Add the provider
+
+### Maven
+
+```xml
+<dependencyManagement>
+  <dependencies>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-bom</artifactId>
+      <version>0.1.0</version>
+      <type>pom</type>
+      <scope>import</scope>
+    </dependency>
+  </dependencies>
+</dependencyManagement>
+
+<dependencies>
+  <dependency>
+    <groupId>com.qxotic</groupId>
+    <artifactId>jinfer-langchain4j</artifactId>
+  </dependency>
+  <dependency>
+    <groupId>com.qxotic</groupId>
+    <artifactId>jinfer-models-all</artifactId>
+    <type>pom</type>
+  </dependency>
+</dependencies>
+```
+
+`jinfer-models-all` includes every provider. For a smaller classpath, replace it with the providers
+you use: `jinfer-lfm2`, `jinfer-gemma4`, `jinfer-qwen3`, `jinfer-llama` or `jinfer-inflect2`.
+
+The `AiServices` examples also require LangChain4j's high-level API:
+
+```xml
+<dependency>
+  <groupId>dev.langchain4j</groupId>
+  <artifactId>langchain4j</artifactId>
+  <version>1.18.0</version>
+</dependency>
+```
+
+Optional runtime backends:
 
 ```xml
 <dependency>
   <groupId>com.qxotic</groupId>
-  <artifactId>jinfer-langchain4j</artifactId>
-  <version>0.1.0</version>
+  <artifactId>jam-native</artifactId>
+  <scope>runtime</scope>
+</dependency>
+<dependency>
+  <groupId>com.qxotic</groupId>
+  <artifactId>jam-vector</artifactId>
+  <scope>runtime</scope>
 </dependency>
 ```
 
-Run your JVM with jinfer's flags:
+Include either backend or both. When both are present, Jinfer tries the native backend first and
+uses the Java Vector backend as a fallback. Without them, Jinfer uses its built-in kernels.
 
+### JBang
+
+```java
+//JAVA 25
+//RUNTIME_OPTIONS --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED
+//DEPS com.qxotic:jinfer-bom:0.1.0@pom
+//DEPS com.qxotic:jinfer-langchain4j
+//DEPS com.qxotic:jinfer-lfm2
+//DEPS com.qxotic:jam-native com.qxotic:jam-vector
 ```
---add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED
-```
+
+Java 25 is required.
 
 ## Chat
 
 ```java
-ChatModel model = JinferChatModel.builder()
-        .model("hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF:Q8_0")
-        .build();
+try (var model = JinferChatModel.builder()
+        .model("hf.co/LiquidAI/LFM2.5-350M-GGUF:Q8_0")
+        .build()) {
 
-String answer = model.chat("What is the capital of France?");
+    System.out.println(model.chat("Explain virtual threads in one sentence."));
+}
 ```
 
-`.model(String)` accepts a supported model reference (`hf.co/...` or `modelscope.cn/...`) and
-resolves it at `build()` into the shared model cache (resumable, sha256-verified; warm builds cost
-zero requests, `JINFER_OFFLINE=1` forbids the network). `.modelPath(Path)` accepts a local GGUF file
-and never touches the network. A plain URL is not a model reference; download it first, then pass
-its path. See [models from the hub](../README.md#models-from-a-hub).
-
-Companions use the same split: `.companion(capability, String)` accepts a model reference;
-`.companionPath(capability, Path)` accepts a local file.
+Use `.model("hf.co/...")` for a model reference and `.modelPath(Path.of("model.gguf"))` for a local
+file. Companions follow the same pattern with `.companion(...)` and `.companionPath(...)`. Examples
+pin `Q8_0`; a bare repository follows llama.cpp and selects `Q4_K_M`.
 
 ## Parameters
 
-Model-level defaults on the builder, per-request overrides on the `ChatRequest` - standard langchain4j semantics.
+Model defaults belong on the builder. Per-request overrides belong on `ChatRequest`, following
+LangChain4j conventions.
 
 ```java
-ChatModel model = JinferChatModel.builder()
+try (var model = JinferChatModel.builder()
         .modelPath(Path.of("models/LFM2.5-8B-A1B-Q8_0.gguf"))
         .contextLength(8192)      // 0 = the model's full context
         .temperature(0.7)
@@ -50,25 +131,25 @@ ChatModel model = JinferChatModel.builder()
         .maxOutputTokens(1024)
         .thinking(false)          // reasoning scaffold off (models without one ignore it)
         .seed(42)                 // deterministic sampling
-        .build();
+        .build()) {
 
-ChatResponse response = model.chat(ChatRequest.builder()
-        .messages(UserMessage.from("Explain BPE in two sentences."))
-        .maxOutputTokens(128)     // this request only
-        .build());
+    ChatResponse response = model.chat(ChatRequest.builder()
+            .messages(UserMessage.from("Explain BPE in two sentences."))
+            .maxOutputTokens(128)     // this request only
+            .build());
 
-System.out.println(response.aiMessage().text());
-System.out.println(response.tokenUsage());     // real token counts, not estimates
-System.out.println(response.finishReason());   // STOP | LENGTH | TOOL_EXECUTION
+    System.out.println(response.aiMessage().text());
+    System.out.println(response.tokenUsage());     // real token counts, not estimates
+    System.out.println(response.finishReason());   // STOP | LENGTH | TOOL_EXECUTION
+}
 ```
 
-String stop sequences, JSON response format (grammar-constrained decoding), and `toolChoice=REQUIRED` are supported.
-Tools compose with a JSON *schema* response format: one selection admits the model's own tool calls while visible text can only be the schema, so the agent may call first and must answer shaped.
-Unsupported knobs (penalties, per-request `modelName`, tools with schemaless JSON format, `REQUIRED` with a response format) throw `UnsupportedFeatureException` instead of being silently ignored.
+Stops, JSON response formats and `toolChoice=REQUIRED` are supported. Unsupported parameters fail
+instead of being ignored.
 
 ## Structured output
 
-`AiServices` returning a POJO works unchanged - the provider advertises `RESPONSE_FORMAT_JSON_SCHEMA`, so langchain4j sends the schema instead of asking for JSON in prose.
+Return a POJO from `AiServices`; Jinfer constrains generation to its schema:
 
 ```java
 record Person(String name, int age) {}
@@ -81,34 +162,17 @@ Person p = AiServices.create(PersonExtractor.class, model)
         .extract("Johann is 42 years old and lives in Munich.");   // Person[name=Johann, age=42]
 ```
 
-A schema does two jobs here, and a local model needs both.
-The grammar compiled from it masks the logits, so output that violates the schema is unrepresentable - not merely unlikely.
-The schema is *also* stated to the model in the prompt, because a mask constrains shape and says nothing about meaning: a model that never saw the schema answers `{"name": "user_agent", "age": 42}` - valid, and wrong.
-Hosted providers hide this behind models trained on a schema channel; a local GGUF has no such channel.
+The sampler rejects tokens outside the generated schema. No parser retry loop is required.
 
 ## Streaming
 
-`streaming()` shares the already-loaded model - the GGUF is mapped once, and `blocking()` gets you back (a model built with `buildStreaming()` reaches `fork()`, `withCachedPrompt` and the token estimator through it).
-Reasoning models stream on two lanes: content to `onPartialResponse`, thinking to `onPartialThinking`.
-
-```java
-StreamingChatModel streaming = model.streaming();
-
-streaming.chat("Tell me a haiku about rivers.", new StreamingChatResponseHandler() {
-    @Override public void onPartialResponse(String token) { System.out.print(token); }
-    @Override public void onPartialThinking(PartialThinking t) { /* reasoning lane */ }
-    @Override public void onCompleteResponse(ChatResponse done) { System.out.println(); }
-    @Override public void onError(Throwable error) { error.printStackTrace(); }
-});
-```
-
-In `AiServices`, the same model streams through the idiomatic `TokenStream` - including through the automatic tool loop:
+The streaming view shares the already-loaded weights:
 
 ```java
 interface Assistant { TokenStream chat(String message); }
 
 Assistant assistant = AiServices.builder(Assistant.class)
-        .streamingChatModel(streaming)
+        .streamingChatModel(model.streaming())
         .build();
 
 assistant.chat("Tell me a haiku about rivers.")
@@ -118,12 +182,9 @@ assistant.chat("Tell me a haiku about rivers.")
         .start();
 ```
 
-## Tools, the langchain4j way
+## Tool calling
 
-`JinferChatModel` is a regular `ChatModel`, so `AiServices` works unchanged - including automatic tool execution loops.
-Tool schemas are welded into the prompt in the exact canonical JSON the model was trained on.
-
-`AiServices` lives in the `dev.langchain4j:langchain4j` artifact (this module only needs `-core`).
+Use LangChain4j tools; `AiServices` runs the loop:
 
 ```java
 class Weather {
@@ -146,89 +207,60 @@ Assistant assistant = AiServices.builder(Assistant.class)
 assistant.chat("What's the weather in Paris?");   // calls Weather.weather, answers grounded
 ```
 
-## Images and audio (Gemma 4)
+## Images, audio and video
 
-Multimodal models take their encoders from a sidecar GGUF (llama.cpp's `mmproj` convention).
-Media is decoded locally (base64 or `file://` - this library never fetches over the network) and enters the model as embeddings, never as text.
-
-```java
-ChatModel gemma = JinferChatModel.builder()
-        .model("hf.co/unsloth/gemma-4-12b-it-qat-GGUF:Q4_K_XL")
-        .companion("media", "hf.co/unsloth/gemma-4-12b-it-qat-GGUF/mmproj-F32.gguf")
-        .build();
-
-ChatResponse seen = gemma.chat(ChatRequest.builder()
-        .messages(UserMessage.from(
-                ImageContent.from(base64Png, "image/png"),
-                TextContent.from("What is in this picture?")))
-        .build());
-
-ChatResponse heard = gemma.chat(ChatRequest.builder()
-        .messages(UserMessage.from(
-                AudioContent.from(base64Wav, "audio/wav"),
-                TextContent.from("Transcribe this recording.")))
-        .build());
-```
-
-## A local multi-model agent
-
-Two GGUFs, one JVM, zero cloud.
-LFM2.5 (fast, tool-capable) is the brain running langchain4j's automatic tool loop; Gemma 4 (vision + audio) is its eyes and ears, exposed *as tools*.
-The brain never sees pixels or samples - it delegates questions and reasons over the answers, with memory across turns.
+Multimodal models load their encoders from a companion model file, following llama.cpp's `mmproj`
+convention. Media is decoded from caller-provided base64 data or local file URIs. Jinfer does not
+fetch media during inference.
 
 ```java
-class Senses {
-    final ChatModel gemma;   // gemma-4-12B + mmproj, built with companion("media", ...)
+try (var gemma = JinferChatModel.builder()
+        .model("hf.co/unsloth/gemma-4-12b-it-GGUF:Q8_0")
+        .companion("media", "hf.co/unsloth/gemma-4-12b-it-GGUF/mmproj-F32.gguf")
+        .build()) {
 
-    @Tool("Look at an image file and answer a question about it")
-    String lookAt(@P("absolute path of the image file") String path,
-                  @P("what to look for or answer") String question) {
-        return gemma.chat(ChatRequest.builder()
-                .messages(UserMessage.from(
-                        ImageContent.from(base64(path), "image/png"),
-                        TextContent.from(question)))
-                .build()).aiMessage().text();
-    }
+    ChatResponse seen = gemma.chat(ChatRequest.builder()
+            .messages(UserMessage.from(
+                    ImageContent.from(Path.of("photo.png").toUri()),
+                    TextContent.from("What is in this picture?")))
+            .build());
 
-    @Tool("Listen to an audio file and answer a question about it")
-    String listenTo(@P("absolute path of the audio file") String path,
-                    @P("what to listen for") String question) { /* same shape, AudioContent */ }
+    ChatResponse heard = gemma.chat(ChatRequest.builder()
+            .messages(UserMessage.from(
+                    AudioContent.from(
+                            Base64.getEncoder().encodeToString(
+                                    Files.readAllBytes(Path.of("recording.wav"))),
+                            "audio/wav"),
+                    TextContent.from("Transcribe this recording.")))
+            .build());
+
+    System.out.println(seen.aiMessage().text());
+    System.out.println(heard.aiMessage().text());
 }
-
-interface Agent { String chat(String message); }
-
-Agent agent = AiServices.builder(Agent.class)
-        .chatModel(brain)                 // LFM2.5-8B
-        .tools(new Senses(gemma))         // gemma-4-12B behind the tools
-        .chatMemory(MessageWindowChatMemory.withMaxMessages(20))
-        .build();
 ```
 
-A real run (both models on one desktop CPU, ~70 s for the whole session):
+The runnable [`Narrate.java`](../examples/scripts/Narrate.java) uses Gemma to describe an image,
+then sends the description to a second model that writes a WAV file.
+[`GemmaVideo.java`](../examples/GemmaVideo.java) samples video frames and sends them as timestamped
+image content.
 
+## Multi-model agent
+
+Two models can share one JVM: a tool-capable model runs LangChain4j's agent loop while a multimodal
+model provides vision and audio as Java tools. The complete, tested example is
+[`LocalAgentIT.java`](src/test/java/com/qxotic/jinfer/langchain4j/LocalAgentIT.java).
+
+```java
+agent.chat("Look at dashboard.png, listen to operator-note.wav, "
+        + "then explain whether they describe the same incident.");
 ```
-USER>  Look at /tmp/scene/sign.png and tell me the color of the TOP lamp of the traffic light.
-  [tool] lookAt(/tmp/scene/sign.png, "the color of the TOP lamp of the traffic light")
-AGENT> The color of the top lamp of the traffic light is red.
 
-USER>  Now listen to /tmp/scene/memo.wav - is it speech, music, or something else?
-  [tool] listenTo(/tmp/scene/memo.wav, "speech, music, or something else")
-AGENT> ... the file contains elements the tool could not definitively classify ...
-
-USER>  Summarize everything you observed for me, one line each.
-AGENT> The top lamp of the traffic light is red.
-       The memo.wav file's content is ambiguous, with the tool explaining the differences
-       between speech and music but not definitively classifying it.
-```
-
-Note the last two answers: the recording was a pure sine tone - out of distribution for a speech-tuned audio encoder - and the agent reports the ambiguity instead of inventing content, then recalls both observations from memory.
-The runnable version is `LocalAgentIT` in this module's tests.
+The agent decides when to call `lookAt(...)` and `listenTo(...)`. Both tools invoke the second
+model directly. Pixels, samples, tool results and conversation state remain in the JVM.
 
 ## Embeddings
 
-`JinferEmbeddingModel` runs an embedding GGUF (Qwen3-Embedding, LFM2.5-Embedding) in-process, so the whole RAG stack - vectors, store, chat - stays in one JVM with zero egress.
-Segments are packed into context-sized ragged batches: one forward pass embeds many segments, so ingesting hundreds of chunks costs a handful of prefills, not hundreds.
-Usage reports exact token counts.
+Use embeddings in the same JVM as chat:
 
 ```java
 EmbeddingModel embeddings = JinferEmbeddingModel.builder()
@@ -237,12 +269,8 @@ EmbeddingModel embeddings = JinferEmbeddingModel.builder()
         .build();
 ```
 
-Qwen3 is Matryoshka-trained, so langchain4j's standard `dimensions` request parameter selects any
-width from 32 through the model's native width; the returned prefix is L2-normalized. Fixed-width
-models such as LFM2.5 reject that parameter instead of silently slicing their vectors.
-
-Retrieval-tuned embedders are trained with query/document framing (LFM2.5's `query: `/`document: ` pair, Qwen3's instructed query), and embedding bare text instead silently degrades retrieval.
-The provider speaks langchain4j's own vocabulary for this - `EmbeddingInputType` - so the framework knobs are all it takes:
+Qwen3 supports LangChain4j's `dimensions` parameter. Query/document framing uses the standard
+`EmbeddingInputType`:
 
 ```java
 EmbeddingStoreIngestor.builder()
@@ -257,95 +285,84 @@ EmbeddingStoreContentRetriever.builder()
         .build();
 ```
 
-Typeless traffic (plain `embed`/`embedAll`) embeds raw text as given - a one-time stderr note points at the knobs when the model is prefix-trained.
-
 ## Reranking
 
-`JinferScoringModel` runs a reranker GGUF (Qwen3-Reranker, LFM2 ColBERT) in-process: a `ScoringModel` for langchain4j's `ReRankingContentAggregator`, the standard second stage after embedding retrieval.
+Add reranking after embedding retrieval:
 
 ```java
 ScoringModel reranker = JinferScoringModel.builder()
-        .model("hf.co/Qwen/Qwen3-Reranker-0.6B-GGUF:Q8_0")
+        .model("hf.co/mradermacher/Qwen3-Reranker-0.6B-GGUF:Q8_0")
         .build();
 
 RetrievalAugmentor augmentor = DefaultRetrievalAugmentor.builder()
-        .contentRetriever(retriever)                       // wide net from the embedder
+        .contentRetriever(retriever)
         .contentAggregator(ReRankingContentAggregator.builder()
                 .scoringModel(reranker)
                 .minScore(0.5)
-                .build())                                  // precise cut from the reranker
+                .build())
         .build();
 ```
 
-The runnable version is `RerankRetrievalIT` in this module's tests.
+Try the smaller [Search.java](../examples/scripts/Search.java) and
+[Rerank.java](../examples/scripts/Rerank.java) demos side by side.
+
+## Speech synthesis
+
+Turn text into WAV bytes:
+
+```java
+try (var speech = JinferSpeechModel.builder()
+        .model("hf.co/remixerdec/Inflect-Nano-v2-GGUF:Q8_0")
+        .build()) {
+
+    var audio = speech.synthesize("Hello from local Java inference.").audio();
+    Files.write(Path.of("hello.wav"), audio.binaryData());
+}
+```
 
 ## Cached prompts
 
-A cached prompt is paid for once and cheap forever after: `withCachedPrompt` prefills the prefix
-(system prompt, tools, few-shot, even images) into an in-memory KV block tree and returns a model
-view whose requests restore it instead of recomputing it - users only pay for their own data.
-Content-addressed (no names), memory-only by default, byte-identical output to the uncached path.
+Prefill a system prompt once, then reuse it:
 
 ```java
 JinferChatModel base = JinferChatModel.builder().modelPath(gguf).build();
 
-// prefill once; every chat on the view pays only the user's text
 JinferChatModel support = base.withCachedPrompt(
         List.of(SystemMessage.from(SUPPORT_INSTRUCTIONS)), supportTools);
 support.chat("How do I reset my password?");
 
-// several prompts share one tree - common prefixes are stored once
-JinferChatModel sales = base.withCachedPrompt(
-        List.of(SystemMessage.from(SALES_INSTRUCTIONS)), salesTools);
-
-// optional persistence: freeze everything into one artifact...
 base.saveCachedPrompts(Path.of("dist/personas.jkv"));
 
-// ...and mount it in the next process: re-declaring a stored prompt costs zero prefill
 JinferChatModel base2 = JinferChatModel.builder()
         .modelPath(gguf)
-        .promptCache(Path.of("dist/personas.jkv"))        // read-only, model-checked
+        .promptCache(Path.of("dist/personas.jkv"))
         .build();
-JinferChatModel support2 = base2.withCachedPrompt(
-        List.of(SystemMessage.from(SUPPORT_INSTRUCTIONS)), supportTools);  // instant
 ```
 
-The model retains one completed conversation by default, so an append-only follow-up can resume its
-live state. Set `.retainSessions(0)` to close the state after every request; each subsequent request
-then starts with a fresh state and may still restore matching blocks. Values above one retain that
-many recent conversations. This is bounded process-local acceleration, not conversation identity:
-jinfer matches the rendered prompt content, so reconstructing equivalent messages still resumes.
-
-Cached-prompt views are immutable and composable (`withCachedPrompt` on a view branches on its
-prefix). `promptCache(path)` mounts exactly one read-only artifact; a missing, incompatible, or
-wrong-model artifact fails `build()` rather than silently running cold.
-A view's tools are its DEFAULT tool set, request over defaults like every other parameter: a request stating the same set (what AiServices does) serves from the cache, a different set (or `toolChoice NONE`) serves correctly at full prefill - byte-identical output either way, with a one-time stderr warning naming the override.
-Every response accounts for the cache: `((JinferTokenUsage) response.tokenUsage()).cachedInputTokens()` is the read, `servedFrom()` the tier - 0 and `FRESH` on a view mean you are paying full prefill, and the warning says why.
-An edited prompt matches to the divergence point and pays only the tail; a wrong-model artifact fails at `build()`.
-Requires a model with a native template codec (the Jinja fallback makes no prefix-stability promise).
+[`CachedPrompt.java`](../examples/scripts/CachedPrompt.java) reports how many prompt tokens were
+restored.
 
 ## Parallel pipelines
 
-One instance is one serial pipeline; concurrent calls queue fairly on it.
-For real parallelism, load the weights once into YOUR arena and fork - every builder has a `model(loaded)` seam and every model a `fork()`:
+One instance is one serial pipeline. Fork for parallel generation over shared weights:
 
 ```java
 try (Arena arena = Arena.ofShared()) {
-    var loaded = Models.load(ModelStore.standard().resolve("hf.co/...:Q4_K_M"), arena);
-    var a = JinferChatModel.builder().model(loaded).contextLength(8192).build();
-    var b = a.fork();               // second pipeline, same weights, a context's price
-    // ... concurrent chat on a and b ...
-    a.close(); b.close();
-}                                   // the owner frees the weights, at a brace
+    var path = ModelStore.standard().resolve("hf.co/LiquidAI/LFM2.5-350M-GGUF:Q8_0");
+    var loaded = Models.load(path, arena);
+    try (var a = JinferChatModel.builder().model(loaded).contextLength(8192).build();
+            var b = a.fork()) {     // second pipeline, shared weights, separate context
+        // Run concurrent requests through a and b.
+    }
+}                                   // Closing the arena frees the shared weights.
 ```
 
-The block structure is the ownership story: your arena outlives every instance built on it.
-A sequential violation is caught fail-fast - a safety canary at the forward pass throws `IllegalStateException` on freed weights - while freeing the arena DURING a request is a data race and can still crash the VM.
-`fork()` on a model that loaded its own weights refuses with that exact recipe - it frees its weights at `close()`, and a fork would dangle.
-The same seam and `fork()` exist on `JinferEmbeddingModel` (via `Models.loadEmbedder`) and `JinferScoringModel` (via `Models.loadReranker`).
+The arena owns the weights and must outlive both pipelines.
 
 ## Notes
 
 - One generation runs at a time per loaded model; concurrent `chat` calls queue fairly.
-- The model name in responses is the GGUF file name; `FinishReason.TOOL_EXECUTION` is reported whenever the reply carries tool calls.
-- Shaded/fat-jar consumers need Maven Shade's `ServicesResourceTransformer` (the architecture ports register via `ServiceLoader`).
+- The model name in responses is the GGUF file name; `FinishReason.TOOL_EXECUTION` is reported
+  whenever the reply carries tool calls.
+- Shaded JARs must preserve `ServiceLoader` entries. With Maven Shade, add
+  `ServicesResourceTransformer`.
