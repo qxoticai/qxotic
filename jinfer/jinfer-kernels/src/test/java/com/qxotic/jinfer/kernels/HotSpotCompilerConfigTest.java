@@ -15,7 +15,7 @@ class HotSpotCompilerConfigTest {
     @Test
     void everyInlineTargetExists() throws Exception {
         Path config = findConfig();
-        assertNotNull(config, "hotspot_compiler not found above the working directory");
+        assertNotNull(config, "hotspot_compile_commands not found above the working directory");
 
         for (String line : Files.readAllLines(config)) {
             if (!line.startsWith("inline ")) continue;
@@ -34,7 +34,7 @@ class HotSpotCompilerConfigTest {
 
     private static Path findConfig() {
         for (Path dir = Path.of("").toAbsolutePath(); dir != null; dir = dir.getParent()) {
-            Path candidate = dir.resolve("hotspot_compiler");
+            Path candidate = dir.resolve("hotspot_compile_commands");
             if (Files.isRegularFile(candidate)) return candidate;
         }
         return null;

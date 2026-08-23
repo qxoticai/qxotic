@@ -30,7 +30,7 @@ import org.junit.jupiter.api.Test;
 /**
  * The meaty showcase: a fully local multi-model agent. LFM2.5 (fast, tool-capable) is the brain
  * running langchain4j's automatic tool loop; Gemma 4 (vision + audio) is its eyes and ears, exposed
- * AS TOOLS. Two GGUFs, one JVM, zero cloud: the agent looks at images and listens to recordings by
+ * AS TOOLS. Two models, one JVM, zero cloud: the agent looks at images and listens to recordings by
  * calling the second model, keeps notes, and answers grounded across turns.
  *
  * <p>Model-gated (assume-skips without the GGUFs). The README's "local agent" section is this test.

@@ -53,6 +53,11 @@
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-lfm2</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
       <artifactId>json</artifactId>
     </dependency>
     <!-- the remote generator: Kimi's OpenAI-compatible endpoint -->

@@ -201,11 +201,6 @@
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
-        <artifactId>jota-memory</artifactId>
-        <version>0.1.0</version>
-      </dependency>
-      <dependency>
-        <groupId>com.qxotic</groupId>
         <artifactId>jinfer-models-all</artifactId>
         <version>${project.version}</version>
         <type>pom</type>

@@ -7,15 +7,16 @@
 #   ./gemma-budget-sweep.sh city-streets.jpg
 #   ./gemma-budget-sweep.sh city-streets.jpg "detect person and car, output only json"
 #
-# Point it at a bigger model for sharper detection by exporting GGUF/MMPROJ:
-#   GGUF=~/models/unsloth/gemma-4-12b-it-GGUF/gemma-4-12b-it-Q8_0.gguf \
-#   MMPROJ=~/models/unsloth/gemma-4-12b-it-GGUF/mmproj-F32.gguf ./gemma-budget-sweep.sh photo.jpg
+# Use a larger model for sharper detection:
+#   MODEL_REF=hf.co/unsloth/gemma-4-12b-it-GGUF:Q8_0 \
+#   MEDIA_REF=hf.co/unsloth/gemma-4-12b-it-GGUF/mmproj-F32.gguf \
+#     ./gemma-budget-sweep.sh photo.jpg
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 img="${1:?usage: gemma-budget-sweep.sh <image> [prompt]}"
 prompt="${2:-detect person and car, output only json}"
 args=("$img" "$prompt")
-[[ -n "${GGUF:-}" ]] && args+=("$GGUF" "${MMPROJ:?set MMPROJ alongside GGUF}")
+[[ -n "${MODEL_REF:-}" ]] && args+=("$MODEL_REF" "${MEDIA_REF:?set MEDIA_REF alongside MODEL_REF}")
 
 for budget in 70 140 280 560; do
     echo "════════════════════ budget = $budget tokens ════════════════════"

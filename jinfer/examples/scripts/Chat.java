@@ -2,8 +2,9 @@
 //JAVA 25
 //COMPILE_OPTIONS --release 25
 //RUNTIME_OPTIONS --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED
-//REPOS mavenLocal,central
-//DEPS com.qxotic:jinfer-langchain4j:0.1.0
+//DEPS com.qxotic:jinfer-bom:0.1.0@pom
+//DEPS com.qxotic:jinfer-langchain4j com.qxotic:jinfer-llama
+//DEPS com.qxotic:jam-native com.qxotic:jam-vector
 //SOURCES Models.java
 
 // Streaming chat, in-process. No server, no Python, no JNI glue.
