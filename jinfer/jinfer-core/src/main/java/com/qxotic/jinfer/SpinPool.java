@@ -1,32 +1,23 @@
-// Persistent spin-barrier worker pool for the latency-sensitive decode path. A decode token fires
-// ~360
-// tiny parallel regions (one per matmul / norm / sampling pass); the shared ForkJoinPool allocates
-// a task
-// tree and PARKS workers between regions, so each region pays unpark + task-tree latency that, on
-// the
-// bandwidth-bound decode gemv, roughly HALVES effective DRAM bandwidth (GemvSeqBench: 62 -> 125
-// GB/s here).
-// These workers instead SPIN (Thread.onSpinWait) on a generation counter, so a dispatch is two
-// plain stores
-// + one volatile bump — no allocation, no park/unpark. Between tokens (idle past SPIN_BEFORE_PARK)
-// they park
-// so the cores aren't burned when no decode is running. Single-submitter only — guarded by
-// Parallel.
-// llama.cpp's graph executor works the same way (persistent threads, spin-then-futex barriers).
 package com.qxotic.jinfer;
 
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.LockSupport;
 import java.util.function.IntConsumer;
 
+/**
+ * Persistent spin-barrier workers for latency-sensitive decode loops. Workers spin briefly between
+ * the many small parallel regions within a token, then park while decode is idle. {@link Parallel}
+ * enforces the single-submitter contract.
+ */
 final class SpinPool {
-    private static final int SPIN_BEFORE_PARK =
-            1 << 16; // ~100us of onSpinWait before an idle worker parks
+    /** Roughly 100 microseconds of {@link Thread#onSpinWait()} before an idle worker parks. */
+    private static final int SPIN_BEFORE_PARK = 1 << 16;
 
     private final int participants; // background workers + the submitting thread
     private final Thread[] workers;
     private volatile IntConsumer action; // current region body
-    private int rangeStart, rangeEnd; // published by the volatile generation store below
+    private int rangeStart; // published by the volatile generation store below
+    private int rangeEnd;
     private final AtomicInteger arrived = new AtomicInteger();
     private final AtomicInteger parked = new AtomicInteger();
     private volatile long generation;
@@ -37,7 +28,7 @@ final class SpinPool {
         this.workers = new Thread[this.participants - 1];
         for (int w = 0; w < workers.length; w++) {
             final int id = w;
-            Thread t = new Thread(() -> workerLoop(id), "decode-spin-" + w);
+            Thread t = new Thread(() -> workerLoop(id), "jinfer-decode-spin-" + w);
             t.setDaemon(true);
             workers[w] = t;
             t.start();
@@ -53,8 +44,9 @@ final class SpinPool {
                 idle = 0;
                 try {
                     runSlice(id);
-                } catch (Throwable t) { // keep the worker alive; surface to the submitter at the
-                    // barrier
+                } catch (Throwable t) {
+                    // Keep the worker alive and surface the failure to the submitter at the
+                    // barrier.
                     failure = t;
                 } finally {
                     arrived.incrementAndGet();
@@ -64,9 +56,8 @@ final class SpinPool {
                 Thread.onSpinWait();
             } else {
                 // idle a while: park until the next dispatch. Register first, then re-check
-                // generation, so a
-                // dispatch landing in this window is guaranteed to unpark us (seq-cst handshake
-                // with parked).
+                // generation, so a dispatch landing in this window is guaranteed to unpark us
+                // (sequentially consistent handshake with parked).
                 parked.incrementAndGet();
                 if (generation == seen) {
                     LockSupport.park();
@@ -78,19 +69,17 @@ final class SpinPool {
     }
 
     /**
-     * Participant {@code id} owns a single CONTIGUOUS band of the index range. Measured strictly
-     * better than a strided {id, id+P, ...} split across model shapes (Qwen 3.5 4B/2B, gemma-4 MoE,
-     * Llama-3.2): the strided stride aliases DRAM banks / cache sets for some weight row-strides (a
-     * −5% Qwen regression that contiguous bands turn into +5–7%), while each core here streams one
-     * sequential weight region.
+     * Each participant owns one contiguous band. This avoids the cache and memory-bank aliasing
+     * seen with strided slices while letting each core stream one sequential weight region.
      */
     private void runSlice(int id) {
-        IntConsumer act = action;
-        int start = rangeStart, end = rangeEnd;
-        int span = (end - start + participants - 1) / participants;
-        int lo = start + id * span, hi = Math.min(end, lo + span);
+        IntConsumer body = action;
+        long start = rangeStart, end = rangeEnd;
+        long span = (end - start + participants - 1) / participants;
+        int lo = (int) (start + id * span);
+        int hi = (int) Math.min(end, start + (id + 1L) * span);
         for (int i = lo; i < hi; i++) {
-            act.accept(i);
+            body.accept(i);
         }
     }
 
@@ -99,16 +88,16 @@ final class SpinPool {
      * returns once every index has been processed. Caller must be the sole submitter (enforced by
      * Parallel).
      */
-    void parallelFor(int start, int end, IntConsumer act) {
-        int n = end - start;
+    void forLoop(int start, int end, IntConsumer body) {
+        long n = (long) end - start;
         if (n <= 0) {
             return;
         }
         if (n == 1 || participants == 1) { // not worth waking the pool
-            for (int i = start; i < end; i++) act.accept(i);
+            for (int i = start; i < end; i++) body.accept(i);
             return;
         }
-        action = act;
+        action = body;
         rangeStart = start;
         rangeEnd = end;
         arrived.set(0);
@@ -125,14 +114,10 @@ final class SpinPool {
             Thread.onSpinWait();
         }
         Throwable f = failure;
+        action = null;
+        failure = null;
         if (f != null) { // a participant threw — propagate like ForkJoinPool would
-            failure = null;
-            sneakyThrow(f);
+            throw Parallel.unchecked(f);
         }
-    }
-
-    @SuppressWarnings("unchecked")
-    private static <E extends Throwable> void sneakyThrow(Throwable e) throws E {
-        throw (E) e;
     }
 }

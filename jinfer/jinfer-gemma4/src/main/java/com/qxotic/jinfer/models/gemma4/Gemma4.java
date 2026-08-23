@@ -150,7 +150,7 @@ public final class Gemma4
                     if (id < 0 || id >= configuration.vocabularySize)
                         throw new IllegalArgumentException("token id out of range: " + id);
                 if (n == 1)
-                    Parallel.onDecodePool(
+                    Parallel.runDecodeStep(
                             () -> {
                                 forward(state, ids, 0, from, n);
                                 return null;
@@ -193,7 +193,7 @@ public final class Gemma4
                     "output " + output + " outside [0," + state.outputCount() + ")");
         int dim = configuration.embeddingLength;
         int row = state.lastBatchSize() - state.outputCount() + output;
-        return Parallel.onDecodePool(
+        return Parallel.runDecodeStep(
                 () -> {
                     Norms.rmsnorm(
                             state.normed,
@@ -223,7 +223,7 @@ public final class Gemma4
         int vocab = configuration.vocabularySize;
         int n = state.outputCount();
         int first = state.lastBatchSize() - n;
-        Parallel.onDecodePool(
+        Parallel.runDecodeStep(
                 () -> {
                     for (int r = 0; r < n; r++) {
                         Norms.rmsnorm(
@@ -366,7 +366,7 @@ public final class Gemma4
             if (w.wv != null) MatMul.gemm(w.wv, state.normed, bV, seqLen);
             else Convert.copyF32(bK, 0, bV, 0, (long) seqLen * kvDim);
             headNormRope(bK, nKvHeads, headSize, w.kNorm, seqLen, cos, sin);
-            Parallel.forRows(
+            Parallel.forLoop(
                     seqLen,
                     s -> {
                         for (int h = 0; h < nKvHeads; h++)
@@ -438,7 +438,7 @@ public final class Gemma4
             MemoryView<MemorySegment> cos,
             MemoryView<MemorySegment> sin) {
         long stride = t.stride().flatAt(0);
-        Parallel.forRows(
+        Parallel.forLoop(
                 seqLen,
                 s -> {
                     long row = s * stride;
@@ -476,7 +476,7 @@ public final class Gemma4
         // own strides, not this layer's (possibly narrower) FFN width
         int gateStride = (int) state.hidden.stride().flatAt(0),
                 upStride = (int) state.hidden2.stride().flatAt(0);
-        Parallel.forRows(
+        Parallel.forLoop(
                 seqLen,
                 s ->
                         Activations.geluMultiply(
@@ -492,7 +492,7 @@ public final class Gemma4
         int dim = c.embeddingLength, total = plDim * c.numberOfLayers;
         LayerWeights w = weights.layers[l];
         MatMul.gemm(w.inputGate, state.residual, state.plGate, seqLen);
-        Parallel.forRows(
+        Parallel.forLoop(
                 seqLen,
                 s ->
                         Activations.geluMultiply(
@@ -523,7 +523,7 @@ public final class Gemma4
         denseMlp(state, l, w, seqLen, state.moeShared, moe.postNorm1);
 
         float invSqrtDim = 1f / (float) Math.sqrt(dim);
-        Parallel.forRows(
+        Parallel.forLoop(
                 seqLen,
                 s -> {
                     long off = (long) s * dim;
@@ -566,7 +566,7 @@ public final class Gemma4
                 moe.downScale,
                 (e, n, gather, out) -> {
                     MatMul.gemm(moe.gateUp[e], gather, state.moeHidden, n);
-                    Parallel.forRows(
+                    Parallel.forLoop(
                             n,
                             row ->
                                     Activations.geluMultiply(

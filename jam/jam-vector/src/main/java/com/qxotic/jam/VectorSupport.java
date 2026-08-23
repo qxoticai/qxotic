@@ -10,8 +10,11 @@ import com.oracle.svm.shared.AlwaysInline;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteOrder;
 import java.util.Locale;
+import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.ForkJoinTask;
+import java.util.concurrent.RecursiveAction;
+import java.util.concurrent.TimeUnit;
 import java.util.function.IntConsumer;
-import java.util.stream.IntStream;
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.VectorShape;
@@ -113,8 +116,22 @@ final class VectorSupport {
     static final int SEQ_TILE = jamPropInt("jam.vector.seqTile", 32);
 
     static final int ROW_TILE = jamPropInt("jam.vector.rowTile", 128);
-    static final int THREADS =
-            jamPropInt("jam.vector.threads", Runtime.getRuntime().availableProcessors() * 4);
+    static final int PARALLELISM = vectorThreads();
+
+    private static final int TASKS_PER_WORKER = 4;
+    private static final ForkJoinPool WORKERS = newPool(PARALLELISM);
+
+    private static int vectorThreads() {
+        String value = jamProp("jam.vector.threads", jamProp("jam.threads", null));
+        if (value == null) return Runtime.getRuntime().availableProcessors();
+        try {
+            int threads = Integer.parseInt(value.trim());
+            if (threads > 0) return threads;
+        } catch (NumberFormatException ignored) {
+            // Report malformed and non-positive values through one stable message.
+        }
+        throw new IllegalArgumentException("JAM thread count must be a positive integer: " + value);
+    }
 
     // ---- Register-tile selection, resolved once from -Djam.vector.tile + CPU width + JIT
     // (relocated from
@@ -267,9 +284,19 @@ final class VectorSupport {
                 : seg.get(JAVA_LONG_UNALIGNED, off);
     }
 
-    /** Prefill fan-out: vanilla parallel IntStream (measured-best for the compute-bound gemm). */
+    /** Run {@code body} for every index in {@code [from, to)} on Vector JAM's workers. */
     static void parallelFor(int from, int to, IntConsumer body) {
-        IntStream.range(from, to).parallel().forEach(body);
+        if (from >= to) return;
+        int maxChunkSize = maxChunkSize(from, to);
+        if (PARALLELISM == 1 || (long) to - from <= maxChunkSize) {
+            for (int i = from; i < to; i++) body.accept(i);
+            return;
+        }
+
+        RangeTask task = new RangeTask(from, to, maxChunkSize, body);
+        if (ForkJoinTask.getPool() == WORKERS) task.invoke();
+        else WORKERS.invoke(task);
+        if (task.failure != null) throw unchecked(task.failure);
     }
 
     /** A contiguous {@code [lo, hi)} slice of work handed to one parallel worker. */
@@ -279,24 +306,95 @@ final class VectorSupport {
     }
 
     /**
-     * Split {@code [0, count)} into {@code min(count, THREADS)} contiguous slices and run each as
-     * one parallel task. Unlike {@link #parallelFor}, the body owns a whole slice — so a band
-     * kernel can {@link Scratch#acquire} one dequant buffer per worker (not per group) and reuse it
-     * across the slice's rows. With {@link Scratch}'s context-owned pool this means no per-{@code
-     * mm} allocation, while the buffers stay reachable only through the context (freed when it is
-     * GC'd) rather than the old commonPool-rooted, JVM-lifetime ThreadLocal.
+     * Split {@code [0, count)} into contiguous slices and run them on Vector JAM's workers. Unlike
+     * {@link #parallelFor}, the body owns a whole slice — so a band kernel can {@link
+     * Scratch#acquire} one dequant buffer per worker (not per group) and reuse it across the
+     * slice's rows. With {@link Scratch}'s context-owned pool this means no per-{@code mm}
+     * allocation, while the buffers stay reachable only through the context (freed when it is GC'd)
+     * rather than the old common-pool-rooted, JVM-lifetime ThreadLocal.
      */
     static void parallelChunks(int count, ChunkConsumer body) {
         if (count <= 0) return;
-        int chunks = Math.min(count, Math.max(1, THREADS));
-        IntStream.range(0, chunks)
-                .parallel()
-                .forEach(
-                        c -> {
-                            int lo = (int) ((long) count * c / chunks);
-                            int hi = (int) ((long) count * (c + 1) / chunks);
-                            if (lo < hi) body.accept(lo, hi);
-                        });
+        int chunks = (int) Math.min(count, (long) PARALLELISM * TASKS_PER_WORKER);
+        parallelFor(
+                0,
+                chunks,
+                chunk -> {
+                    int lo = (int) ((long) count * chunk / chunks);
+                    int hi = (int) ((long) count * (chunk + 1) / chunks);
+                    body.accept(lo, hi);
+                });
+    }
+
+    private static ForkJoinPool newPool(int threads) {
+        return new ForkJoinPool(
+                threads,
+                ForkJoinPool.defaultForkJoinWorkerThreadFactory,
+                null,
+                false,
+                0,
+                threads,
+                0,
+                null,
+                60,
+                TimeUnit.SECONDS);
+    }
+
+    private static int maxChunkSize(int from, int to) {
+        long size = (long) to - from;
+        long tasks = Math.min(size, (long) PARALLELISM * TASKS_PER_WORKER);
+        return (int) ((size + tasks - 1) / tasks);
+    }
+
+    private static final class RangeTask extends RecursiveAction {
+        private final int from;
+        private final int to;
+        private final int maxChunkSize;
+        private final IntConsumer body;
+        private RangeTask next;
+        private Throwable failure;
+
+        private RangeTask(int from, int to, int maxChunkSize, IntConsumer body) {
+            this.from = from;
+            this.to = to;
+            this.maxChunkSize = maxChunkSize;
+            this.body = body;
+        }
+
+        @Override
+        protected void compute() {
+            int lo = from;
+            int hi = to;
+            RangeTask forks = null;
+            try {
+                while ((long) hi - lo > maxChunkSize) {
+                    int middle = lo + (int) (((long) hi - lo) / 2);
+                    RangeTask right = new RangeTask(middle, hi, maxChunkSize, body);
+                    right.next = forks;
+                    forks = right;
+                    right.fork();
+                    hi = middle;
+                }
+                for (int i = lo; i < hi; i++) body.accept(i);
+            } catch (Throwable thrown) {
+                failure = thrown;
+            }
+
+            while (forks != null) {
+                forks.quietlyJoin();
+                if (forks.failure != null) {
+                    if (failure == null) failure = forks.failure;
+                    else if (failure != forks.failure) failure.addSuppressed(forks.failure);
+                }
+                forks = forks.next;
+            }
+        }
+    }
+
+    private static RuntimeException unchecked(Throwable failure) {
+        if (failure instanceof RuntimeException runtime) return runtime;
+        if (failure instanceof Error error) throw error;
+        return new RuntimeException(failure);
     }
 
     /**

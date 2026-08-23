@@ -13,9 +13,8 @@ import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * The native ({@code libjam}) {@link JAM} implementation — a handle to a jam context (a {@code
- * jam_ctx*}; {@link #global()} is the process-global context). The constructor is private and
- * context creation isn't bound, so the global handle is the only instance today; per-context use
- * ({@code NativeJAM.create(...)}) is a non-breaking future add.
+ * jam_ctx*}; {@link #global()} is the process-wide Java context). The constructor is private and
+ * the provider owns one native context for the life of the process.
  *
  * <p>{@link #mm} rejects heap segments, bounds-checks each native {@link MemorySegment} against
  * what the kernel touches, and keeps them reachable across the native call. One native {@code
@@ -29,7 +28,7 @@ import java.util.concurrent.locks.ReentrantLock;
  */
 public final class NativeJAM implements JAM {
 
-    private final long ctx; // jam_ctx* (0 = global)
+    private final long ctx; // owned jam_ctx*
 
     /**
      * {@code -Djam.native.serial} (or {@code JAM_NATIVE_SERIAL}): default {@code true} — concurrent
@@ -50,10 +49,11 @@ public final class NativeJAM implements JAM {
         this.ctx = ctx;
     }
 
-    private static final NativeJAM GLOBAL = new NativeJAM(0L);
+    private static final NativeJAM GLOBAL;
 
     /**
-     * The process-global, env-configured native context ({@code JAM_NUM_THREADS}, {@code JAM_ISA}).
+     * The process-wide native context configured by {@code jam.native.threads} / {@code
+     * JAM_NATIVE_THREADS}, falling back to {@code jam.threads} / {@code JAM_THREADS}.
      */
     public static NativeJAM global() {
         return GLOBAL;
@@ -151,8 +151,7 @@ public final class NativeJAM implements JAM {
                             + " B");
     }
 
-    // ── backends: one native jam_mm, reached via JNI (default) or Panama. ctx is a jam_ctx* (0 =
-    // global). ──
+    // ── backends: one native jam_mm, reached via JNI (default) or Panama. ──
 
     /** JNI binding ({@code jam_jni.c}). Raw addresses; caller-managed liveness. */
     private static native int mmJni(
@@ -169,6 +168,9 @@ public final class NativeJAM implements JAM {
             int m,
             int n,
             int k);
+
+    /** Create the process-wide Java context through jam's existing context API. */
+    private static native long createJni(int threads);
 
     /** Panama binding: downcall straight to {@code jam_mm}. */
     private static int mmFfm(
@@ -207,6 +209,9 @@ public final class NativeJAM implements JAM {
 
     static {
         NativeLoader.load(); // always: the JNI backend needs libjam loaded too
+        long ctx = createJni(nativeThreads());
+        if (ctx == 0) throw new IllegalStateException("jam: failed to create native context");
+        GLOBAL = new NativeJAM(ctx);
         MM_FFM =
                 !FFM
                         ? null
@@ -223,10 +228,23 @@ public final class NativeJAM implements JAM {
                                         // jam_mm(ctx, w,wt,ldw, a,at,lda, r,rt,ldr, m,n,k) —
                                         // pointers as raw 64-bit addresses
                                         FunctionDescriptor.of(
-                                                JAVA_INT, JAVA_LONG, // jam_ctx* ctx (0 = global)
+                                                JAVA_INT, JAVA_LONG, // jam_ctx* ctx
                                                 JAVA_LONG, JAVA_INT, JAVA_INT, // w, wt, ldw
                                                 JAVA_LONG, JAVA_INT, JAVA_INT, // a, at, lda
                                                 JAVA_LONG, JAVA_INT, JAVA_INT, // r, rt, ldr
                                                 JAVA_INT, JAVA_INT, JAVA_INT)); // m, n, k
+    }
+
+    private static int nativeThreads() {
+        String value =
+                NativeLoader.config("jam.native.threads", NativeLoader.config("jam.threads", ""));
+        if (value.isEmpty()) return 0; // internal native auto-selection; not a user-facing value
+        try {
+            int threads = Integer.parseInt(value.trim());
+            if (threads > 0) return threads;
+        } catch (NumberFormatException ignored) {
+            // Report malformed and non-positive values through one stable message.
+        }
+        throw new IllegalArgumentException("JAM thread count must be a positive integer: " + value);
     }
 }

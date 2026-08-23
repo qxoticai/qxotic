@@ -103,7 +103,7 @@ public final class Maple implements LanguageModel<Maple.Configuration, Maple.Wei
                     if (id < 0 || id >= configuration.vocabularySize)
                         throw new IllegalArgumentException("token id out of range: " + id);
                 if (rows == 1)
-                    Parallel.onDecodePool(
+                    Parallel.runDecodeStep(
                             () -> {
                                 forward(state, tokens.ids(), startPos, rows);
                                 return null;
@@ -162,7 +162,7 @@ public final class Maple implements LanguageModel<Maple.Configuration, Maple.Wei
         MatMul.gemm(w.k, state.normed, state.batchK[layer], rows);
         MatMul.gemm(w.v, state.normed, state.batchV[layer], rows);
 
-        Parallel.forRows(
+        Parallel.forLoop(
                 rows,
                 row -> {
                     for (int h = 0; h < c.numberOfHeads; h++) {
@@ -323,7 +323,7 @@ public final class Maple implements LanguageModel<Maple.Configuration, Maple.Wei
                     "output " + output + " outside [0," + state.outputCount() + ")");
         int dim = configuration.embeddingLength;
         int row = state.lastBatchSize() - state.outputCount() + output;
-        return Parallel.onDecodePool(
+        return Parallel.runDecodeStep(
                 () -> {
                     Norms.rmsnorm(
                             state.head,

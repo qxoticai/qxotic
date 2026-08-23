@@ -49,7 +49,7 @@ final class VectorGatedDeltaNet {
             int headDim) {
         final int lanes = F_SPECIES.length();
         final int unroll = 4 * lanes;
-        Parallel.parallelFor(
+        Parallel.forLoop(
                 0,
                 heads,
                 head -> {

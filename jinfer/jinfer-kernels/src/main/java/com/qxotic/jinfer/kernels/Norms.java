@@ -117,7 +117,7 @@ public final class Norms {
             int rows,
             int rowDim,
             float rmsNormEps) {
-        Parallel.forRows(
+        Parallel.forLoop(
                 rows,
                 r ->
                         rmsnorm(
@@ -334,7 +334,7 @@ public final class Norms {
             float eps) {
         Raw xv = Raw.f32(x, "x");
         Raw w = Raw.f32(weight, "weight");
-        Parallel.parallelFor(
+        Parallel.forLoop(
                 0,
                 positions,
                 p -> {

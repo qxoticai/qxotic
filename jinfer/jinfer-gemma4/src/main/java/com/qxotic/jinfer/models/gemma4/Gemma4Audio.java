@@ -82,7 +82,7 @@ public final class Gemma4Audio implements MediaProjector<Media.Audio> {
             try {
                 MemoryView<MemorySegment> frames = Views.allocateF32(scratch, chunkRows, frameSize);
                 int rowBase = firstRow;
-                Parallel.forRows(
+                Parallel.forLoop(
                         chunkRows,
                         row -> {
                             int sourceBase = Math.multiplyExact(rowBase + row, frameSize);

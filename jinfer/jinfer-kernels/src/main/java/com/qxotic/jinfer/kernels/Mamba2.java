@@ -51,7 +51,7 @@ public final class Mamba2 {
             int groups,
             int stateSize) {
         int headDim = inner / heads, groupSize = heads / groups, qSize = groups * stateSize;
-        Parallel.parallelFor(
+        Parallel.forLoop(
                 0,
                 heads,
                 h -> {
@@ -101,7 +101,7 @@ public final class Mamba2 {
     static void groupedRmsNormScalar(
             Raw in, Raw w, Raw out, int rows, int inner, int groups, float eps) {
         int groupDim = inner / groups;
-        Parallel.forRows(
+        Parallel.forLoop(
                 rows,
                 row -> {
                     for (int group = 0; group < groups; group++) {

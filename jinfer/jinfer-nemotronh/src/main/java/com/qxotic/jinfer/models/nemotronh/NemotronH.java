@@ -121,7 +121,7 @@ public final class NemotronH
                 throw new IllegalArgumentException(
                         "token id " + token + " outside [0," + configuration.vocabularySize + ")");
         if (rows == 1)
-            Parallel.onDecodePool(
+            Parallel.runDecodeStep(
                     () -> {
                         forward(state, tokens, start, rows);
                         return null;
@@ -303,14 +303,14 @@ public final class NemotronH
                 null,
                 (expert, n, gather, out) -> {
                     MatMul.gemm(w.upExps[expert], gather, s.moeHidden, n);
-                    Parallel.forRows(
+                    Parallel.forLoop(
                             n, row -> Activations.reluSqr(s.moeHidden, row * expertFfn, expertFfn));
                     MatMul.gemm(w.downExps[expert], s.moeHidden, out, n);
                 });
         if (w.upShared != null) {
             int shared = c.expertSharedFeedForwardLength;
             MatMul.gemm(w.upShared, s.normed, s.sharedHidden, rows);
-            Parallel.forRows(
+            Parallel.forLoop(
                     rows, row -> Activations.reluSqr(s.sharedHidden, row * shared, shared));
             MatMul.gemm(w.downShared, s.sharedHidden, s.sharedOut, rows);
             Ops.addInPlace(s.branch, 0, s.sharedOut, 0, rows * dim);
@@ -329,7 +329,7 @@ public final class NemotronH
             throw new IllegalArgumentException("output " + output + " outside retained outputs");
         Configuration c = configuration;
         int row = state.lastBatchSize() - state.outputCount() + output;
-        return Parallel.onDecodePool(
+        return Parallel.runDecodeStep(
                 () -> {
                     Norms.rmsnorm(
                             state.normed,

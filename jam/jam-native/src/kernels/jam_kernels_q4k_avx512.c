@@ -433,7 +433,7 @@ void jam_q8_0_repack_band(void* arg, int t0, int t1, int tid) {
  * (~2.6 GMAC/s @ m4096·n512·k2048, ~3x llama.cpp's tinyBLAS) — the most you can ask of a compute-bound
  * prefill. At MATCHED threads the full model TIES llama.cpp: Llama-1B Q4_0 pp512 ~2234 t/s vs llama.cpp
  * ~2262 (both 32 threads), and Q8_0 wins outright (~1.4x). jinfer just needs all logical CPUs — both
- * JAM_NUM_THREADS and the jinfer FJP pool. Capping either to 16 starves the GEMM + the Java non-GEMM and
+ * JAM_NATIVE_THREADS and the jinfer FJP pool. Capping either to 16 starves the GEMM + the Java non-GEMM and
  * is what makes Q4_0 *look* ~10% slow; it is the thread budget, NOT this band. */
 
 /* PACKED repack: keep 2 nibbles/byte (256 B/block/16rows, HALF of Q8_0) so the band stays L1-resident

@@ -59,10 +59,15 @@
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-gemma4</artifactId>
     </dependency>
-    <!-- the native JAM backend prefill gemm routes to (ServiceLoader-discovered) -->
+    <!-- JAM prefill backends, selected through ServiceLoader. -->
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jam-native</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jam-vector</artifactId>
       <scope>runtime</scope>
     </dependency>
   </dependencies>

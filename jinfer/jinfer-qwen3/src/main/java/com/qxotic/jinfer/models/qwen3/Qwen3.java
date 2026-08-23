@@ -144,7 +144,7 @@ public final class Qwen3
                             "Qwen3 does not support embedding inputs");
         }
         if (n == 1)
-            Parallel.onDecodePool(
+            Parallel.runDecodeStep(
                     () -> {
                         forward(s, ids, from, n, nPieces);
                         return null;
@@ -374,7 +374,7 @@ public final class Qwen3
         int headSize = configuration.headSize, halfHeadSize = configuration.ropeDim / 2;
         float eps = configuration.rmsNormEps;
         MemoryView<MemorySegment> cos = state.ropeCos, sin = state.ropeSin;
-        Parallel.forRows(
+        Parallel.forLoop(
                 seqLen,
                 s -> {
                     for (int h = 0; h < nHeads; h++) {
@@ -403,7 +403,7 @@ public final class Qwen3
                 state.normed, state.residual, lw.ffnNorm(), seqLen, dim, configuration.rmsNormEps);
         MatMul.gemm(lw.w1(), state.normed, state.hidden, seqLen);
         MatMul.gemm(lw.w3(), state.normed, state.hidden2, seqLen);
-        Parallel.forRows(
+        Parallel.forLoop(
                 seqLen,
                 s ->
                         Activations.siluMultiply(
@@ -446,7 +446,7 @@ public final class Qwen3
         requireOutput(s, output);
         int dim = configuration.embeddingLength;
         int row = s.lastBatchSize() - s.outputCount() + output;
-        return Parallel.onDecodePool(
+        return Parallel.runDecodeStep(
                 () -> {
                     Norms.rmsnorm(
                             s.normed,

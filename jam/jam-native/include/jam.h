@@ -27,7 +27,8 @@
  *              best kernel chosen at runtime; builds and runs anywhere. No dependencies.
  *
  *   == Environment ==
- *     JAM_NUM_THREADS   GLOBAL context pool size (unset or 0 = auto); explicit contexts use jam_config
+ *     JAM_THREADS          global pool size (unset = auto)
+ *     JAM_NATIVE_THREADS   native-provider override
  *     JAM_ISA           HARD CEILING on the kernel ISA for EVERY context, global or explicit
  *                       (a capability name below; unset = best available)
  *     JAM_POOL/JAM_SPIN internal-pool wait mode for any context (spin vs condvar) + spin budget

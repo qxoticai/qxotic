@@ -187,7 +187,7 @@ public final class Qwen35
                         MemoryView<MemorySegment> rowsView =
                                 Views.castToSegmentBacked(e.rows(), "embedding rows");
                         if (rows == 1)
-                            Parallel.onDecodePool(
+                            Parallel.runDecodeStep(
                                     () -> {
                                         forwardMedia(state, rowsView, start, 1);
                                         return null;
@@ -203,7 +203,7 @@ public final class Qwen35
                 throw new IllegalArgumentException(
                         "token id " + token + " outside [0," + configuration.vocabularySize + ")");
         if (rows == 1)
-            Parallel.onDecodePool(
+            Parallel.runDecodeStep(
                     () -> {
                         forward(state, tokens, start, rows);
                         return null;
@@ -311,7 +311,7 @@ public final class Qwen35
 
     /** Fills {@code candidates[1..depth]} from the exact target seed in {@code candidates[0]}. */
     void draft(State state, int depth, int[] candidates) {
-        Parallel.onDecodePool(
+        Parallel.runDecodeStep(
                 () -> {
                     MemoryView<MemorySegment> hidden = state.pendingHidden;
                     int token = candidates[0];
@@ -349,7 +349,7 @@ public final class Qwen35
         MatMul.gemm(weights.attnV[layer], s.normed, s.v, rows);
         GatedDeltaNet.unpackAttentionQGate(
                 s.packedQ, s.q, s.attentionGate, rows, c.numberOfHeads, c.headSize);
-        Parallel.forRows(
+        Parallel.forLoop(
                 rows,
                 row -> {
                     for (int h = 0; h < c.numberOfHeads; h++) {
@@ -518,12 +518,12 @@ public final class Qwen35
             } else {
                 MatMul.gemm(weights.moeSharedInputGate[layer], s.normed, s.sharedScale, rows);
                 // sigmoid scalars read on the OWNING thread (checked access; a confined arena
-                // would reject reads from forRows workers), the saxpy rows stay parallel
+                // would reject reads from forLoop workers), the saxpy rows stay parallel
                 float[] scales = new float[rows];
                 for (int row = 0; row < rows; row++)
                     scales[row] =
                             Activations.sigmoid(Views.getFloat(s.sharedScale, row, "sharedScale"));
-                Parallel.forRows(
+                Parallel.forLoop(
                         rows,
                         row ->
                                 Ops.saxpyInPlace(
@@ -548,7 +548,7 @@ public final class Qwen35
                     "output " + output + " outside [0," + state.outputCount() + ")");
         int dim = configuration.embeddingLength;
         int row = state.lastBatchSize() - state.outputCount() + output;
-        return Parallel.onDecodePool(
+        return Parallel.runDecodeStep(
                 () -> {
                     if (configuration.hasMtp()) {
                         Convert.copyF32(state.targetHidden, (long) row * dim, state.normed, 0, dim);
@@ -571,7 +571,7 @@ public final class Qwen35
         int dim = configuration.embeddingLength;
         int rows = state.outputCount();
         int first = state.lastBatchSize() - rows;
-        Parallel.onDecodePool(
+        Parallel.runDecodeStep(
                 () -> {
                     if (configuration.hasMtp()) {
                         Convert.copyF32(

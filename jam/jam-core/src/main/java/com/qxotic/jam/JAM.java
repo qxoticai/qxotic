@@ -40,6 +40,11 @@ public interface JAM {
     /**
      * Available JAM providers, highest priority first.
      *
+     * <p>Threaded providers own their workers and scheduling policy. {@code jam.threads} / {@code
+     * JAM_THREADS} supplies a common worker count; {@code jam.<id>.threads} / {@code
+     * JAM_<ID>_THREADS} overrides it for one provider. Providers without CPU workers may ignore
+     * these settings.
+     *
      * <p>A provider can be turned off from the command line: {@code -Djam.<id>.disabled=true}
      * (system property only; only {@code true} disables). The flag names a provider {@link
      * Provider#id() id} - an id no installed provider carries is a silent no-op, and disabling

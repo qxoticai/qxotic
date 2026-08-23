@@ -106,10 +106,16 @@ your own `pp512` to measure your hardware.
 ## Configuration
 
 ```sh
-JAM_NUM_THREADS=16 JAM_ISA=avx2  ./app   # 16 threads, capped at AVX2
-JAM_ISA=metal                    ./app   # Apple GPU
-JAM_DEBUG=1                      ./app   # print detected features + bound kernels
+JAM_THREADS=16 JAM_ISA=avx2          ./app   # all providers: 16 threads, capped at AVX2
+JAM_VECTOR_THREADS=8                 ./app   # override one provider
+JAM_ISA=metal                        ./app   # Apple GPU
+JAM_DEBUG=1                          ./app   # print detected features + bound kernels
 ```
+
+The equivalent JVM settings are `-Djam.threads=N` and
+`-Djam.<provider>.threads=N`. A provider-specific setting takes precedence over the global one.
+Each provider owns its workers and scheduling policy. The value is that provider's worker count,
+not a shared process-wide budget. Without either setting, each provider chooses its own default.
 
 For per-pool control, create a context explicitly:
 

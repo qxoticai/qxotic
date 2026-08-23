@@ -93,7 +93,7 @@ public final class Ops {
             MemoryView<MemorySegment> src, int rows, int cols, MemoryView<MemorySegment> dst) {
         Raw s = Raw.f32(src, "src");
         Raw d = Raw.f32(dst, "dst");
-        Parallel.forRows(
+        Parallel.forLoop(
                 cols,
                 c -> {
                     for (int t = 0; t < rows; t++) {
@@ -231,7 +231,7 @@ public final class Ops {
             MemoryView<MemorySegment> dst) {
         Raw s = Raw.f32(src, "src");
         Raw d = Raw.f32(dst, "dst");
-        Parallel.forRows(
+        Parallel.forLoop(
                 rows,
                 t -> {
                     for (int f = 0; f < width; f++) {
@@ -268,7 +268,7 @@ public final class Ops {
         Raw s = Raw.f32(src, "src");
         Raw d = Raw.f32(dst, "dst");
         int outputX = Math.max(1, patchesX / merge), outputY = Math.max(1, patchesY / merge);
-        Parallel.forRows(
+        Parallel.forLoop(
                 Math.multiplyExact(outputX, outputY),
                 row -> {
                     int outputYIndex = row / outputX, outputXIndex = row % outputX, samples = 0;
@@ -313,7 +313,7 @@ public final class Ops {
             int positionSize) {
         Raw.f32(values, "values");
         Raw.f32(positions, "positions");
-        Parallel.forRows(
+        Parallel.forLoop(
                 count,
                 patch -> {
                     int x = patch % patchesX, y = patch / patchesX;

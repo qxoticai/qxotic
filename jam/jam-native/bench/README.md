@@ -16,7 +16,7 @@ To link against a different llama.cpp build dir (e.g. an AVX2-only build), set `
 
 ```sh
 ./build.sh
-JAM_NUM_THREADS=<physical cores> ./jam_vs_tinyblas 4096 512 4096
+JAM_NATIVE_THREADS=<physical cores> ./jam_vs_tinyblas 4096 512 4096
 ```
 
 Args: `[M N K] [iters]`, or `[size] [iters]` for a square `m=n=k`.
@@ -49,7 +49,7 @@ jam vs tinyBLAS   m=2048 n=2048 k=2048   threads=16   jam isa=avx512_vnni
   weight that may differ in size from the original block layout, so read it as indicative.
 - **tinyBLAS threading.** `llamafile_sgemm`'s own multithreading goes through ggml's threadpool
   (chunk-stealing), which isn't available standalone — so the harness drives a *single-threaded*
-  `llamafile_sgemm` per worker over a disjoint slice of output rows. With `JAM_NUM_THREADS=1` this *is*
+  `llamafile_sgemm` per worker over a disjoint slice of output rows. With `JAM_NATIVE_THREADS=1` this *is*
   tinyBLAS's native single-call path, and there jam is already ~3× faster (the repacked-weight kernel);
   the gap actually **narrows** to ~2.4× at 16 threads as both approach memory bandwidth. So the
   row-partition isn't handicapping tinyBLAS — if anything it helps it scale.
@@ -59,6 +59,6 @@ jam vs tinyBLAS   m=2048 n=2048 k=2048   threads=16   jam isa=avx512_vnni
 - The `k` argument to `llamafile_sgemm` is in **blocks** (`k/32`), not elements — and the CPU backend
   must be initialized (`ggml_cpu_init()`) before the first call. Both are handled; noted here because
   neither is obvious and either one silently corrupts results.
-- Set `JAM_NUM_THREADS` to your **physical** core count for the best numbers (it sizes both pools).
+- Set `JAM_NATIVE_THREADS` to your **physical** core count for the best numbers (it sizes both pools).
 - This is a cross-project harness (it links the sibling llama.cpp), so it is **not** wired into
   jam's CMake build — just `./build.sh`.

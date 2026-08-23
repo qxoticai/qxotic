@@ -208,7 +208,7 @@ public final class Moe {
         for (int e = 0; e < r.numExperts; e++) {
             int start = off[e], n = off[e + 1] - start;
             if (n == 0) continue;
-            Parallel.forRows(
+            Parallel.forLoop(
                     n,
                     j ->
                             Convert.copyF32(
@@ -218,7 +218,7 @@ public final class Moe {
                                     (long) j * dim,
                                     dim));
             kernel.apply(e, n, gather, expertOut);
-            Parallel.forRows(
+            Parallel.forLoop(
                     n,
                     j ->
                             Ops.saxpyInPlace(

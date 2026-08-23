@@ -6,7 +6,7 @@
  * Every per-OS primitive has a "don't know -> safe default" so this NEVER fails: an unknown platform
  * just yields "all allowed logical CPUs, unpinned" (the historical behaviour). The chosen plan is meant
  * to be DUMPED TO THE LOG (jam.c) so a user can see what was selected. The user-facing knobs come later;
- * for now JAM_NUM_THREADS still overrides the count (see jam.c). */
+ * the configured JAM thread count still overrides it (see jam.c). */
 #ifndef JAM_CPU_H
 #define JAM_CPU_H
 

@@ -93,9 +93,9 @@ final class VisionPreprocess {
         int plane = Math.multiplyExact(targetHeight, targetWidth);
         float[] chw = toCHW(image, targetWidth, targetHeight);
         // Gather into a heap buffer first (parallel-safe), then ONE bulk copy on the owning
-        // thread: a checked copy inside forRows would trip thread-confinement on confined arenas.
+        // thread: a checked copy inside forLoop would trip thread-confinement on confined arenas.
         float[] data = new float[Math.multiplyExact(count, patchVector)];
-        Parallel.forRows(
+        Parallel.forLoop(
                 count,
                 patch -> {
                     int gy = patch / patchesX, gx = patch % patchesX, column = patch * patchVector;

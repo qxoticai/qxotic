@@ -4,7 +4,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
- * Runtime flags read by the decode work-runners and the model boundary. Prompt and cache defaults
+ * Runtime flags read by the parallel work runners and the model boundary. Prompt and cache defaults
  * live with their owning modules.
  */
 public final class RuntimeFlags {
@@ -12,18 +12,30 @@ public final class RuntimeFlags {
     /** Default scratch width for {@code newState}: prefill batches up to this many tokens. */
     public static final int BATCH_CAPACITY = Integer.getInteger("jinfer.batchCapacity", 512);
 
-    // decode runs at physical-core width on a spin-barrier pool (Parallel.onDecodePool /
+    /** Worker count for compute-bound work such as prompt prefill. */
+    public static final int COMPUTE_THREADS =
+            positiveInt("jinfer.computeThreads", Runtime.getRuntime().availableProcessors());
+
+    // decode runs at physical-core width on a spin-barrier pool (Parallel.runDecodeStep /
     // SpinPool): decode is memory-bandwidth bound, so one thread per PHYSICAL core saturates DRAM
     // while a 2nd SMT sibling only contends for the core's load/store ports.
     // -Djinfer.decodeSpin=false forces the plain ForkJoin path.
     public static final int DECODE_THREADS =
-            Integer.getInteger("jinfer.decodeThreads", physicalCoreCount());
+            positiveInt("jinfer.decodeThreads", physicalCoreCount());
     public static final boolean DECODE_SPIN =
             !"false".equals(System.getProperty("jinfer.decodeSpin"));
 
     // Keys per flashDecode partition: below this there is nothing to gain from splitting the
     // attended range, so it falls through to rollingDecode.
     public static final int DECODE_BLOCK_SIZE = Integer.getInteger("jinfer.decodeBlockSize", 512);
+
+    private static int positiveInt(String property, int defaultValue) {
+        int value = Integer.getInteger(property, defaultValue);
+        if (value < 1) {
+            throw new IllegalArgumentException(property + " must be positive: " + value);
+        }
+        return value;
+    }
 
     /**
      * Best-effort physical-core count for sizing the bandwidth-bound decode pool. Linux reports SMT

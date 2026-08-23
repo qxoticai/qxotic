@@ -2,6 +2,7 @@ package com.qxotic.jinfer.bench;
 
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.ContextState;
+import com.qxotic.jinfer.RuntimeFlags;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.chat.LoadedEmbedder;
 import com.qxotic.jinfer.chat.Models;
@@ -11,7 +12,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.concurrent.ForkJoinPool;
 
 /**
  * Throughput for the ragged/packed batched-embedding path ({@code EmbeddingModel.embedAll}), any
@@ -32,6 +32,7 @@ public final class EmbedBench {
     public static void main(String[] args) throws Exception {
         String modelPath = null;
         int nSeq = 256, minLen = 8, maxLen = 64, batchCap = 512, reps = 5, warmup = 3;
+        int requestedThreads = 0;
         for (int i = 0; i < args.length; i++) {
             switch (args[i]) {
                 case "-m", "--model" -> modelPath = args[++i];
@@ -41,6 +42,7 @@ public final class EmbedBench {
                 case "-b", "--batch" -> batchCap = Integer.parseInt(args[++i]);
                 case "-r", "--repetitions" -> reps = Integer.parseInt(args[++i]);
                 case "-w", "--warmup" -> warmup = Integer.parseInt(args[++i]);
+                case "-t", "--threads" -> requestedThreads = Integer.parseInt(args[++i]);
                 case "-h", "--help" -> {
                     usage(System.out);
                     return;
@@ -56,6 +58,10 @@ public final class EmbedBench {
             usage(System.err);
             System.exit(2);
         }
+        if (requestedThreads > 0) {
+            System.setProperty("jinfer.computeThreads", Integer.toString(requestedThreads));
+            System.setProperty("jam.threads", Integer.toString(requestedThreads));
+        }
 
         // Ragged lengths in [minLen, maxLen] (deterministic pseudo-random via a multiplicative
         // hash) - EmbedBench's exact workload.
@@ -66,7 +72,7 @@ public final class EmbedBench {
             total += seqLen[j];
         }
         int ctx = total + 64; // the whole packed stream must fit in one context
-        int threads = ForkJoinPool.commonPool().getParallelism();
+        int threads = RuntimeFlags.COMPUTE_THREADS;
 
         String name = Path.of(modelPath).getFileName().toString().replaceAll("\\.gguf$", "");
         System.err.printf(
@@ -204,6 +210,7 @@ public final class EmbedBench {
                   -b, --batch <N>         per-chunk forward width / batchCapacity (default 512)
                   -r, --repetitions <N>   timed reps (default 5)
                   -w, --warmup <N>        min warmup passes; warms adaptively until throughput settles (default 3)\
+                  -t, --threads <N>       compute threads (default available processors)\
                 """);
     }
 }

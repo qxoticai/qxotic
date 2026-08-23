@@ -146,7 +146,7 @@ public final class Gemma4VisionUnified implements MediaProjector<Media.Image> {
 
         Ops.addGridPositions(current, positionEmbedding, count, patchesX, visionDim, positionSize);
         Norms.layerNorm(current, current, norm3Weight, norm3Bias, visionDim, count, LAYER_NORM_EPS);
-        Parallel.forRows(
+        Parallel.forLoop(
                 count,
                 row ->
                         Norms.rmsnormNoWeight(

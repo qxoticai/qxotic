@@ -22,7 +22,7 @@
  * Also prints max|Δ| between the two outputs — a free byte-compatibility / correctness cross-check.
  *
  * tinyBLAS requires n ≥ 2 (n==1 gemv falls back to generic ggml in real llama.cpp), so this harness
- * focuses on the prefill regime. Set JAM_NUM_THREADS to your PHYSICAL core count for the best numbers.
+ * focuses on the prefill regime. Set JAM_NATIVE_THREADS to your PHYSICAL core count for the best numbers.
  *
  *   jam_vs_tinyblas [size=1024] [iters=6]      square m=n=k=size
  *   jam_vs_tinyblas M N K [iters]              explicit shape
@@ -125,7 +125,9 @@ int main(int argc, char** argv) {
     if (M<1) M=1; if (N<2) N=2;                          /* tinyBLAS needs n>=2 */
     if (K<32) K=32; if (K%32) K -= K%32;                 /* q8_0/q4_0 block = 32 */
 
-    const char* nts = getenv("JAM_NUM_THREADS"); int nt = nts?atoi(nts):0;
+    const char* nts = getenv("JAM_NATIVE_THREADS");
+    if (!nts || !*nts) nts = getenv("JAM_THREADS");
+    int nt = nts?atoi(nts):0;
     int nth = nt>0 ? nt : (int) sysconf(_SC_NPROCESSORS_ONLN);   /* set jam's pool to match exactly (below) */
     int scrub_mb = getenv("JAM_BENCH_SCRUB_MB") ? atoi(getenv("JAM_BENCH_SCRUB_MB")) : 256;
     g_scrub_sz = (size_t)scrub_mb<<20; g_scrub = malloc(g_scrub_sz); memset(g_scrub, 1, g_scrub_sz);

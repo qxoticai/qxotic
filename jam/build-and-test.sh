@@ -32,20 +32,20 @@ hr "backends present on this machine"
 "$BUILD/jam_test" | sed -n '1,2p'
 
 hr "benchmark — all backends, SQUARE ${SIZE}³ (compute-bound -> GMAC/s is the metric)"
-JAM_NUM_THREADS="$THREADS" "$BUILD/jam_bench" "$SIZE" "$ITERS"
+JAM_THREADS="$THREADS" "$BUILD/jam_bench" "$SIZE" "$ITERS"
 
 hr "benchmark — all backends, GEMV 16384×1×8192 (bandwidth-bound -> GB/s approaches peak DRAM)"
 # weight (512MB F32 / 136MB Q8) far exceeds cache, so GB/s reflects real DRAM. F32 pins at peak and is
 # ISA-independent; Q8_0 finishes faster by streaming ~4x fewer weight bytes.
-JAM_NUM_THREADS="$THREADS" "$BUILD/jam_bench" 16384 1 8192 20
+JAM_THREADS="$THREADS" "$BUILD/jam_bench" 16384 1 8192 20
 
 # Multi-thread numbers above are thermally coupled (kernels run back-to-back). For a clean per-backend
 # reading, isolate each — Metal especially (GPU, untiled first cut) is worth seeing on its own.
 for ISA in i8mm metal; do
     hr "isolated: $ISA  (${SIZE}x${SIZE}x${SIZE}, ${THREADS} threads)"
-    JAM_ISA="$ISA" JAM_NUM_THREADS="$THREADS" "$BUILD/jam_bench" "$SIZE" "$ITERS" \
+    JAM_ISA="$ISA" JAM_THREADS="$THREADS" "$BUILD/jam_bench" "$SIZE" "$ITERS" \
         || echo "  ($ISA not available on this machine — skipped)"
 done
 
 hr "done"
-echo "Tip: JAM_ISA=<neon|dotprod|i8mm|metal> JAM_NUM_THREADS=N $BUILD/jam_bench <size> <iters>"
+echo "Tip: JAM_ISA=<neon|dotprod|i8mm|metal> JAM_THREADS=N $BUILD/jam_bench <size> <iters>"

@@ -61,7 +61,7 @@ final class VectorMamba2 {
         final int groupSize = heads / groups;
         final int qSize = groups * stateSize;
         final int convStride = inner + 2 * qSize;
-        Parallel.parallelFor(
+        Parallel.forLoop(
                 0,
                 heads,
                 head -> {
@@ -153,7 +153,7 @@ final class VectorMamba2 {
         final int lanes = F_SPECIES.length();
         final int unroll = 4 * lanes;
         final int groupDim = inner / groups;
-        Parallel.forRows(
+        Parallel.forLoop(
                 rows,
                 row -> {
                     for (int group = 0; group < groups; group++) {

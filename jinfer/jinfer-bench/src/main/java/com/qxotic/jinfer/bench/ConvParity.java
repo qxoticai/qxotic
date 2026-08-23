@@ -76,7 +76,7 @@ public final class ConvParity {
             for (int i = 0; i < biases.length; i++) biases[i] = random.nextFloat() - 0.5f;
             Views.copyFromArray(bias, 0, biases, 0, biases.length, "bias");
 
-            Parallel.onDecodePool(
+            Parallel.runDecodeStep(
                     () -> {
                         Convolutions.conv1dRows(
                                 in,

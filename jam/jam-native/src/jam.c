@@ -234,7 +234,7 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
     /* AUTO = one thread per physical PERFORMANCE core (cpu.n_primary), matching llama.cpp's
      * common_cpu_get_num_math(): E-cores harm lockstep threading and an SMT sibling shares one
      * core's load/store ports. The siblings are still in cpu.cpu after the primaries, so an
-     * explicit JAM_NUM_THREADS above n_primary widens onto them and still pins sanely. */
+     * explicit thread count above n_primary widens onto them and still pins sanely. */
     if (c->nthreads <= 0) { c->nthreads = c->cpu.n_primary; pin = c->cpu.cpu; }
     else if (c->nthreads <= c->cpu.n)              pin = c->cpu.cpu;
     c->nthreads_bw = c->cpu.n_primary < c->nthreads ? c->cpu.n_primary : c->nthreads;
@@ -410,7 +410,8 @@ static pthread_once_t  g_once = PTHREAD_ONCE_INIT;
 static void global_init(void) {
     jam_config cfg;
     memset(&cfg, 0, sizeof cfg);
-    const char* nt = getenv("JAM_NUM_THREADS");
+    const char* nt = getenv("JAM_NATIVE_THREADS");
+    if (!nt || !*nt) nt = getenv("JAM_THREADS");
     cfg.nthreads = nt ? atoi(nt) : 0;            /* 0 = online cpus */
     cfg.max_isa  = parse_isa(getenv("JAM_ISA")); /* AUTO if unset/unknown */
     cfg.name     = "global";

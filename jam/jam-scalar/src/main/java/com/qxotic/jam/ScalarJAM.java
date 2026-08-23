@@ -6,7 +6,11 @@ import static java.lang.foreign.ValueLayout.JAVA_SHORT_UNALIGNED;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.ref.Reference;
-import java.util.stream.IntStream;
+import java.util.Locale;
+import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.RecursiveAction;
+import java.util.concurrent.TimeUnit;
+import java.util.function.IntConsumer;
 
 /**
  * Pure-Java reference {@link JAM}: a {@code dot()}-based matmul that decodes the quantized weight
@@ -46,31 +50,26 @@ public final class ScalarJAM implements JAM {
         if (t == null || !decodable(t)) return EUNSUPPORTED;
 
         // C[token j][feature i] = Σ_l W[i][l] · A[j][l], written token-major: r[j·ldr + i].
-        IntStream.range(0, n * m)
-                .parallel()
-                .forEach(
-                        idx -> {
-                            int j = idx / m, i = idx - j * m;
-                            long wRow =
-                                    wOff + t.rowBytes((long) i * ldw); // byte base of weight row i
-                            long aRow =
-                                    aOff
-                                            + (long) j
-                                                    * lda
-                                                    * Float.BYTES; // byte base of activation row j
-                            double sum = 0;
-                            for (int l = 0; l < k; l++) {
-                                sum +=
-                                        (double) decode(w, wRow, t, l)
-                                                * a.get(
-                                                        JAVA_FLOAT_UNALIGNED,
-                                                        aRow + (long) l * Float.BYTES);
-                            }
-                            r.set(
-                                    JAVA_FLOAT_UNALIGNED,
-                                    rOff + ((long) j * ldr + i) * Float.BYTES,
-                                    (float) sum);
-                        });
+        Workers.forLoop(
+                n * m,
+                idx -> {
+                    int j = idx / m, i = idx - j * m;
+                    long wRow = wOff + t.rowBytes((long) i * ldw); // byte base of weight row i
+                    long aRow =
+                            aOff + (long) j * lda * Float.BYTES; // byte base of activation row j
+                    double sum = 0;
+                    for (int l = 0; l < k; l++) {
+                        sum +=
+                                (double) decode(w, wRow, t, l)
+                                        * a.get(
+                                                JAVA_FLOAT_UNALIGNED,
+                                                aRow + (long) l * Float.BYTES);
+                    }
+                    r.set(
+                            JAVA_FLOAT_UNALIGNED,
+                            rOff + ((long) j * ldr + i) * Float.BYTES,
+                            (float) sum);
+                });
         // Every read/write above goes through the segments' own checked accessors, so liveness is
         // already carried per access; the fences make this backend meet the same explicit contract
         // as NativeJAM/VectorJAM (operands reachable across the whole kernel), belt and braces.
@@ -89,6 +88,115 @@ public final class ScalarJAM implements JAM {
         return switch (t) {
             case F32, F16, BF16, Q4_0, Q8_0, Q4_K, Q5_K, Q6_K, MXFP4, NVFP4, Q1_0 -> true;
         };
+    }
+
+    /**
+     * Scalar JAM's provider-wide workers. Output dots all have the same {@code k}, so one
+     * contiguous slice per thread is sufficient.
+     */
+    private static final class Workers {
+        private static final int PARALLELISM = threads();
+        private static final ForkJoinPool POOL = newPool(PARALLELISM);
+
+        private static void forLoop(int count, IntConsumer body) {
+            if (count <= 0) return;
+            int maxChunkSize = (int) (((long) count + PARALLELISM - 1) / PARALLELISM);
+            if (PARALLELISM == 1 || count <= maxChunkSize) {
+                for (int i = 0; i < count; i++) body.accept(i);
+                return;
+            }
+            RangeTask task = new RangeTask(0, count, maxChunkSize, body);
+            POOL.invoke(task);
+            if (task.failure != null) throw unchecked(task.failure);
+        }
+
+        private static int threads() {
+            String value = config("jam.scalar.threads");
+            if (value == null) value = config("jam.threads");
+            if (value == null) return Runtime.getRuntime().availableProcessors();
+            try {
+                int threads = Integer.parseInt(value.trim());
+                if (threads > 0) return threads;
+            } catch (NumberFormatException ignored) {
+                // Report malformed and non-positive values through one stable message.
+            }
+            throw new IllegalArgumentException(
+                    "JAM thread count must be a positive integer: " + value);
+        }
+
+        private static String config(String property) {
+            String value = System.getProperty(property);
+            if (value == null || value.isBlank())
+                value = System.getenv(property.toUpperCase(Locale.ROOT).replace('.', '_'));
+            return value == null || value.isBlank() ? null : value;
+        }
+
+        private static ForkJoinPool newPool(int threads) {
+            return new ForkJoinPool(
+                    threads,
+                    ForkJoinPool.defaultForkJoinWorkerThreadFactory,
+                    null,
+                    false,
+                    0,
+                    threads,
+                    0,
+                    null,
+                    60,
+                    TimeUnit.SECONDS);
+        }
+
+        private static final class RangeTask extends RecursiveAction {
+            private final int from;
+            private final int to;
+            private final int maxChunkSize;
+            private final IntConsumer body;
+            private RangeTask next;
+            private Throwable failure;
+
+            private RangeTask(int from, int to, int maxChunkSize, IntConsumer body) {
+                this.from = from;
+                this.to = to;
+                this.maxChunkSize = maxChunkSize;
+                this.body = body;
+            }
+
+            @Override
+            protected void compute() {
+                int lo = from;
+                int hi = to;
+                RangeTask forks = null;
+                try {
+                    while ((long) hi - lo > maxChunkSize) {
+                        int middle = lo + (int) (((long) hi - lo) / 2);
+                        RangeTask right = new RangeTask(middle, hi, maxChunkSize, body);
+                        right.next = forks;
+                        forks = right;
+                        right.fork();
+                        hi = middle;
+                    }
+                    for (int i = lo; i < hi; i++) body.accept(i);
+                } catch (Throwable thrown) {
+                    failure = thrown;
+                }
+
+                while (forks != null) {
+                    forks.quietlyJoin();
+                    if (forks.failure != null) {
+                        if (failure == null) failure = forks.failure;
+                        else if (failure != forks.failure) failure.addSuppressed(forks.failure);
+                    }
+                    forks = forks.next;
+                }
+            }
+        }
+
+        private static RuntimeException unchecked(Throwable failure) {
+            if (failure instanceof RuntimeException runtime) return runtime;
+            if (failure instanceof Error error) throw error;
+            return new RuntimeException(failure);
+        }
+
+        private Workers() {}
     }
 
     /** Decode element {@code l} of a weight row whose block-0 starts at byte {@code rowBase}. */
