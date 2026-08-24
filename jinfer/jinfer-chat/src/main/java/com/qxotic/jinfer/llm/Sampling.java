@@ -1,7 +1,5 @@
 package com.qxotic.jinfer.llm;
 
-import java.util.concurrent.ThreadLocalRandom;
-
 /** Fully resolved sampling settings. */
 public record Sampling(float temperature, float topP, int topK, float minP, Long seed) {
     public Sampling {
@@ -12,13 +10,7 @@ public record Sampling(float temperature, float topP, int topK, float minP, Long
     }
 
     public Sampler sampler(int vocabularySize) {
-        return Sampler.select(
-                vocabularySize,
-                temperature,
-                topK,
-                topP,
-                minP,
-                seed != null ? seed : ThreadLocalRandom.current().nextLong());
+        return Samplers.create(this, vocabularySize);
     }
 
     public Sampling override(Float temperature, Float topP, Integer topK, Float minP, Long seed) {

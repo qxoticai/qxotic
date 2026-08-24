@@ -1,13 +1,18 @@
 package com.qxotic.jinfer.llm;
 
 import static com.qxotic.jinfer.llm.TestLogits.*;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jota.memory.MemoryView;
+import java.lang.foreign.MemorySegment;
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashSet;
+import java.util.Random;
 import java.util.Set;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -18,73 +23,109 @@ import org.junit.jupiter.api.Test;
  * agreement is pinned separately in {@code jinfer-kernels}.
  */
 class SamplerStackTest {
-
-    private static Sampler nucleus(int vocabularySize, float topP) {
-        return Sampler.select(vocabularySize, 1f, 0, topP, 0f, 7);
+    private static Sampler sampler(
+            int vocabularySize, float temperature, int topK, float topP, float minP, long seed) {
+        return new Sampling(temperature, topP, topK, minP, seed).sampler(vocabularySize);
     }
 
-    private static MemoryView<?> logits(float... values) {
-        MemoryView<?> t = view(values.length);
+    private static MemoryView<MemorySegment> logits(float... values) {
+        MemoryView<MemorySegment> t = view(values.length);
         for (int i = 0; i < values.length; i++) set(t, i, values[i]);
         return t;
     }
 
-    private static Set<Integer> survivors(MemoryView<?> t) {
-        var alive = new HashSet<Integer>();
-        for (int i = 0; i < size(t); i++) {
-            if (get(t, i) != Float.NEGATIVE_INFINITY) alive.add(i);
-        }
-        return alive;
-    }
-
-    private static Set<Integer> positive(MemoryView<?> t) {
+    private static Set<Integer> positiveIds(MemoryView<?> t) {
         var alive = new HashSet<Integer>();
         for (int i = 0; i < size(t); i++) if (get(t, i) > 0) alive.add(i);
         return alive;
     }
-
-    /** A sink inner sampler: samples nothing, leaves the masked tensor for inspection. */
-    private static final Sampler SINK = l -> -1;
 
     @Nested
     class TopK {
 
         @Test
         void keepsTheKHighestLogits() {
-            var t = logits(1f, 5f, 3f, 4f, 2f);
-            Sampler.withTopK(SINK, 2).sampleToken(t);
-            assertEquals(Set.of(1, 3), survivors(t));
+            int[] tokenIds = new int[2];
+            float[] values = new float[2];
+
+            Samplers.selectTopK(logits(1f, 5f, 3f, 4f, 2f), tokenIds, values);
+
+            assertArrayEquals(new int[] {1, 3}, tokenIds);
+            assertArrayEquals(new float[] {5f, 4f}, values);
         }
 
         @Test
         void kOneKeepsOnlyTheArgmax() {
-            var t = logits(1f, 5f, 3f);
-            Sampler.withTopK(SINK, 1).sampleToken(t);
-            assertEquals(Set.of(1), survivors(t));
+            int[] tokenIds = new int[1];
+            float[] values = new float[1];
+
+            Samplers.selectTopK(logits(1f, 5f, 3f), tokenIds, values);
+
+            assertArrayEquals(new int[] {1}, tokenIds);
+            assertArrayEquals(new float[] {5f}, values);
         }
 
         @Test
-        void tiesAtTheThresholdAllSurvive() {
-            var t = logits(2f, 2f, 2f, 1f);
-            Sampler.withTopK(SINK, 2).sampleToken(t);
-            assertEquals(Set.of(0, 1, 2), survivors(t)); // deterministic superset on ties
+        void tiesKeepExactlyKLowestTokenIds() {
+            int[] tokenIds = new int[2];
+            float[] values = new float[2];
+
+            Samplers.selectTopK(logits(2f, 2f, 2f, 1f), tokenIds, values);
+
+            assertArrayEquals(new int[] {0, 1}, tokenIds);
+            assertArrayEquals(new float[] {2f, 2f}, values);
         }
 
         @Test
-        void survivingLogitsAreUntouched() {
+        void selectionDoesNotModifyDenseLogits() {
             var t = logits(1f, 5f, 3f, 4f, 2f);
-            Sampler.withTopK(SINK, 2).sampleToken(t);
-            assertEquals(5f, get(t, 1));
-            assertEquals(4f, get(t, 3));
+            int[] tokenIds = new int[2];
+            float[] values = new float[2];
+
+            Samplers.selectTopK(t, tokenIds, values);
+
+            for (int i = 0; i < 5; i++) assertEquals(new float[] {1, 5, 3, 4, 2}[i], get(t, i));
         }
 
         @Test
         void scratchReusesCleanlyAcrossTokens() {
-            Sampler s = Sampler.withTopK(SINK, 2);
-            s.sampleToken(logits(9f, 8f, 0f)); // hot heap from a high-logit step
-            var t = logits(0.1f, 0.3f, 0.2f); // much lower logits next step
-            s.sampleToken(t);
-            assertEquals(Set.of(1, 2), survivors(t));
+            int[] tokenIds = new int[2];
+            float[] values = new float[2];
+            Samplers.selectTopK(logits(9f, 8f, 0f), tokenIds, values);
+
+            Samplers.selectTopK(logits(0.1f, 0.3f, 0.2f), tokenIds, values);
+
+            assertArrayEquals(new int[] {1, 2}, tokenIds);
+            assertArrayEquals(new float[] {0.3f, 0.2f}, values);
+        }
+
+        @Test
+        void matchesAFullSort() {
+            Random random = new Random(7);
+            for (int size = 1; size <= 64; size++) {
+                float[] source = new float[size];
+                Integer[] expected = new Integer[size];
+                for (int token = 0; token < size; token++) {
+                    source[token] = random.nextInt(11) - 5;
+                    expected[token] = token;
+                }
+                Arrays.sort(
+                        expected,
+                        Comparator.<Integer>comparingDouble(token -> source[token])
+                                .reversed()
+                                .thenComparingInt(Integer::intValue));
+
+                for (int k = 1; k <= size; k++) {
+                    int[] tokenIds = new int[k];
+                    float[] values = new float[k];
+                    Samplers.selectTopK(logits(source), tokenIds, values);
+
+                    for (int i = 0; i < k; i++) {
+                        assertEquals(expected[i], tokenIds[i]);
+                        assertEquals(source[expected[i]], values[i]);
+                    }
+                }
+            }
         }
     }
 
@@ -94,23 +135,33 @@ class SamplerStackTest {
         @Test
         void cutsRelativeToTheTopToken() {
             // p relative to max: e^0=1, e^-1~0.37, e^-3~0.05; minP 0.1 cuts only the last
-            var t = logits(10f, 9f, 7f);
-            Sampler.withMinP(SINK, 0.1f).sampleToken(t);
-            assertEquals(Set.of(0, 1), survivors(t));
+            assertEquals(
+                    2, Samplers.retainMinP(new float[] {10f, 9f, 7f}, 3, (float) Math.log(0.1f)));
         }
 
         @Test
         void theTopTokenAlwaysSurvives() {
-            var t = logits(-5f, -50f, -50f);
-            Sampler.withMinP(SINK, 0.99f).sampleToken(t);
-            assertTrue(survivors(t).contains(0));
+            assertEquals(
+                    1,
+                    Samplers.retainMinP(new float[] {-5f, -50f, -50f}, 3, (float) Math.log(0.99f)));
         }
 
         @Test
         void tinyMinPKeepsEverythingFinite() {
-            var t = logits(1f, 0f, -1f, Float.NEGATIVE_INFINITY);
-            Sampler.withMinP(SINK, 1e-9f).sampleToken(t);
-            assertEquals(Set.of(0, 1, 2), survivors(t)); // -inf stays dead
+            assertEquals(
+                    3,
+                    Samplers.retainMinP(
+                            new float[] {1f, 0f, -1f, Float.NEGATIVE_INFINITY},
+                            4,
+                            (float) Math.log(1e-9f)));
+        }
+
+        @Test
+        void aCandidateExactlyAtTheThresholdSurvives() {
+            assertEquals(
+                    2,
+                    Samplers.retainMinP(
+                            new float[] {0f, (float) Math.log(0.5)}, 2, (float) Math.log(0.5)));
         }
     }
 
@@ -120,47 +171,71 @@ class SamplerStackTest {
         @Test
         void keepsTheSmallestSetCrossingTopP() {
             // even distribution over 4: each p=0.25; topP=0.6 keeps 3 (the crossing token stays)
-            var t = logits(1f, 1f, 1f, 1f);
-            nucleus(4, 0.6f).sampleToken(t);
-            assertEquals(3, positive(t).size());
+            assertEquals(3, Samplers.retainTopP(new float[] {1f, 1f, 1f, 1f}, 4, 0.6f));
         }
 
         @Test
-        void aDominantTokenAloneCanBeTheNucleus() {
-            // p(max) ~ 1: it crosses topP=0.9 on its own
-            var t = logits(20f, 0f, 0f, 0f);
-            nucleus(4, 0.9f).sampleToken(t);
-            assertEquals(Set.of(0), positive(t));
-        }
-
-        @Test
-        void survivingNucleusValueStaysFinite() {
-            var t = logits(20f, 0f, 0f, 0f);
-            nucleus(4, 0.9f).sampleToken(t);
-            assertTrue(get(t, 0) > 0);
-        }
-
-        @Test
-        void topPNearOneKeepsEveryFiniteToken() {
-            var t = logits(1f, 0.5f, 0f, -0.5f);
-            nucleus(4, 0.9999f).sampleToken(t);
-            assertEquals(4, positive(t).size());
+        void filteringDoesNotRewriteLogits() {
+            float[] values = {20f, 0f, 0f, 0f};
+            Samplers.retainTopP(values, values.length, 0.9f);
+            assertArrayEquals(new float[] {20f, 0f, 0f, 0f}, values);
         }
 
         @Test
         void preMaskedTokensAreNeverResurrected() {
-            var t = logits(2f, Float.NEGATIVE_INFINITY, 1.9f, 1.8f);
-            nucleus(4, 0.99f).sampleToken(t);
-            assertTrue(!positive(t).contains(1));
+            assertEquals(
+                    3,
+                    Samplers.retainTopP(
+                            new float[] {2f, 1.9f, 1.8f, Float.NEGATIVE_INFINITY}, 4, 0.99f));
         }
 
         @Test
-        void scratchReusesCleanlyAcrossTokens() {
-            Sampler s = nucleus(4, 0.6f);
-            s.sampleToken(logits(9f, 0f, 0f, 0f));
-            var t = logits(1f, 1f, 1f, 1f);
-            s.sampleToken(t);
-            assertEquals(3, positive(t).size());
+        void exactTargetKeepsTheCrossingCandidate() {
+            assertEquals(1, Samplers.retainTopP(new float[] {0f, 0f}, 2, 0.5f));
+        }
+
+        @Test
+        void densePathAlwaysKeepsTheTopToken() {
+            var values = logits(2f, 1f, 0f);
+            sampler(3, 1f, 0, Float.MIN_VALUE, 0f, 7).sampleToken(values);
+            assertEquals(Set.of(0), positiveIds(values));
+        }
+
+        @Test
+        void densePathMatchesAFullSort() {
+            Random random = new Random(11);
+            for (int size = 1; size <= 64; size++) {
+                float[] source = new float[size];
+                Integer[] order = new Integer[size];
+                for (int token = 0; token < size; token++) {
+                    source[token] = 5f * token / size;
+                    order[token] = token;
+                }
+                for (int i = size - 1; i > 0; i--) {
+                    int j = random.nextInt(i + 1);
+                    float swap = source[i];
+                    source[i] = source[j];
+                    source[j] = swap;
+                }
+                Arrays.sort(
+                        order,
+                        Comparator.<Integer>comparingDouble(token -> source[token]).reversed());
+                float topP = random.nextFloat(0.05f, 1f);
+
+                double denominator = 0;
+                for (float value : source) denominator += Math.exp(value - source[order[0]]);
+                double cumulative = 0;
+                Set<Integer> expected = new HashSet<>();
+                for (int token : order) {
+                    expected.add(token);
+                    cumulative += Math.exp(source[token] - source[order[0]]);
+                    if (cumulative >= topP * denominator) break;
+                }
+
+                var values = logits(source);
+                sampler(size, 1f, 0, topP, 0f, 7).sampleToken(values);
+                assertEquals(expected, positiveIds(values), "vocabulary size " + size);
+            }
         }
     }
 
@@ -169,7 +244,7 @@ class SamplerStackTest {
 
         @Test
         void anEmptyBanSetIsTheSameSampler() {
-            assertSame(SINK, Sampler.banning(SINK, Set.of()));
+            assertSame(Sampler.ARGMAX, Sampler.banning(Sampler.ARGMAX, Set.of()));
         }
 
         @Test
@@ -180,18 +255,18 @@ class SamplerStackTest {
     }
 
     @Nested
-    class SelectDispatch {
+    class Creation {
 
         @Test
         void temperatureZeroIsGreedyAndIgnoresFilters() {
             var t = logits(1f, 5f, 3f);
-            assertEquals(1, Sampler.select(3, 0f, 2, 0.9f, 0.05f, 42).sampleToken(t));
+            assertEquals(1, sampler(3, 0f, 2, 0.9f, 0.05f, 42).sampleToken(t));
         }
 
         @Test
         void disabledKnobsFilterNothing() {
             // topK=0, topP=1, minP=0: pure temperature sampling - every token reachable
-            Sampler s = Sampler.select(4, 5f, 0, 1f, 0f, 7); // hot temp flattens the draw
+            Sampler s = sampler(4, 5f, 0, 1f, 0f, 7); // hot temp flattens the draw
             var seen = new HashSet<Integer>();
             for (int i = 0; i < 300; i++) {
                 seen.add(s.sampleToken(logits(1f, 0.9f, 1.1f, 1f)));
@@ -201,7 +276,7 @@ class SamplerStackTest {
 
         @Test
         void topKAtVocabularySizeIsDisabled() {
-            Sampler s = Sampler.select(3, 5f, 3, 1f, 0f, 7);
+            Sampler s = sampler(3, 5f, 3, 1f, 0f, 7);
             var seen = new HashSet<Integer>();
             for (int i = 0; i < 200; i++) seen.add(s.sampleToken(logits(1f, 1f, 1f)));
             assertEquals(Set.of(0, 1, 2), seen);
@@ -210,8 +285,8 @@ class SamplerStackTest {
         @Test
         void minPOneKeepsOnlyTheMaximum() {
             var t = logits(3f, 2f, 1f);
-            Sampler.select(3, 1f, 0, 1f, 1f, 7).sampleToken(t);
-            assertEquals(Set.of(0), positive(t));
+            sampler(3, 1f, 0, 1f, 1f, 7).sampleToken(t);
+            assertEquals(Set.of(0), positiveIds(t));
         }
     }
 
@@ -221,7 +296,7 @@ class SamplerStackTest {
         @Test
         void samplesOnlyFromTheFilteredSet() {
             // top-k 2 keeps ids {1,3}; the sampled token must always come from that set
-            Sampler stack = Sampler.select(5, 0.8f, 2, 0.95f, 0.05f, 7);
+            Sampler stack = sampler(5, 0.8f, 2, 0.95f, 0.05f, 7);
             for (int trial = 0; trial < 100; trial++) {
                 var t = logits(1f, 5f, 3f, 4f, 2f);
                 int token = stack.sampleToken(t);
@@ -230,23 +305,44 @@ class SamplerStackTest {
         }
 
         @Test
-        void chainOrderIsTopKThenNucleusThenMinP() {
-            // top-k 3 keeps {0,1,3}; over those, p ~ {0.34, 0.34, 0.31}: topP=0.5 keeps the
-            // two 2f tokens (the second crosses the line at 0.69); id 3 must stay dead even
-            // though the lax min-p alone would have kept it
-            Sampler stack = Sampler.select(4, 1f, 3, 0.5f, 0.01f, 7);
+        void nucleusRunsBeforeMinP() {
+            // Weights {0.5, 0.3, 0.2}: top-p 0.6 keeps the first two, then min-p 0.5 keeps both.
+            // Reversing the filters renormalizes {0.5, 0.3}, letting top-p keep only the first.
+            Sampler stack = sampler(4, 1f, 3, 0.6f, 0.5f, 7);
             var seen = new HashSet<Integer>();
             for (int i = 0; i < 300; i++) {
-                seen.add(stack.sampleToken(logits(2f, 2f, 1f, 1.9f)));
+                seen.add(
+                        stack.sampleToken(
+                                logits(
+                                        (float) Math.log(0.5),
+                                        (float) Math.log(0.3),
+                                        (float) Math.log(0.2),
+                                        -100f)));
             }
-            assertTrue(seen.contains(0) || seen.contains(1));
-            assertTrue(!seen.contains(2) && !seen.contains(3), "sampled " + seen);
+            assertEquals(Set.of(0, 1), seen);
+        }
+
+        @Test
+        void filtersRunBeforeTemperature() {
+            // The unscaled top probability is 0.5, so top-p 0.45 retains only token 0. Applying
+            // temperature first would flatten the distribution and incorrectly retain token 1.
+            Sampler stack = sampler(4, 5f, 3, 0.45f, 0f, 7);
+            for (int i = 0; i < 100; i++) {
+                assertEquals(
+                        0,
+                        stack.sampleToken(
+                                logits(
+                                        (float) Math.log(0.5),
+                                        (float) Math.log(0.3),
+                                        (float) Math.log(0.2),
+                                        -100f)));
+            }
         }
 
         @Test
         void sameSeedSameSequence() {
-            Sampler a = Sampler.select(5, 1.2f, 0, 0.99f, 0f, 1234);
-            Sampler b = Sampler.select(5, 1.2f, 0, 0.99f, 0f, 1234);
+            Sampler a = sampler(5, 1.2f, 0, 0.99f, 0f, 1234);
+            Sampler b = sampler(5, 1.2f, 0, 0.99f, 0f, 1234);
             for (int i = 0; i < 50; i++) {
                 assertEquals(
                         a.sampleToken(logits(1f, 2f, 3f, 2f, 1f)),
@@ -256,8 +352,8 @@ class SamplerStackTest {
 
         @Test
         void differentSeedsDiverge() {
-            Sampler a = Sampler.select(4, 5f, 0, 1f, 0f, 1);
-            Sampler b = Sampler.select(4, 5f, 0, 1f, 0f, 2);
+            Sampler a = sampler(4, 5f, 0, 1f, 0f, 1);
+            Sampler b = sampler(4, 5f, 0, 1f, 0f, 2);
             var sa = new StringBuilder();
             var sb = new StringBuilder();
             for (int i = 0; i < 60; i++) {
@@ -269,7 +365,7 @@ class SamplerStackTest {
 
         @Test
         void aPeakedDistributionMostlySamplesThePeak() {
-            Sampler s = Sampler.select(4, 1f, 0, 1f, 0f, 99);
+            Sampler s = sampler(4, 1f, 0, 1f, 0f, 99);
             int peak = 0;
             for (int i = 0; i < 200; i++) {
                 if (s.sampleToken(logits(6f, 0f, 0f, 0f)) == 0) peak++;
@@ -280,7 +376,7 @@ class SamplerStackTest {
         @Test
         void categoricalFrequenciesTrackProbabilities() {
             // ln(2) logit gap = 2:1 odds between ids 0 and 1
-            Sampler s = Sampler.select(2, 1f, 0, 1f, 0f, 5);
+            Sampler s = sampler(2, 1f, 0, 1f, 0f, 5);
             int zero = 0;
             int n = 3000;
             for (int i = 0; i < n; i++) {
