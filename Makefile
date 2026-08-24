@@ -100,8 +100,8 @@ release-canary: ## Prove the published shape works: install the release build in
 
 ##@ Miscellaneous
 
-examples: ## Build the demo apps (not part of the default reactor)
-	$(MAVEN) $(MAVEN_FLAGS) -Pexamples package
+examples: ## Build the demo apps (already in the default reactor; this target just limits the build to them)
+	$(MAVEN) $(MAVEN_FLAGS) -pl examples -am package
 
 help: ## Show this help
 	@awk 'BEGIN { FS = " *## *" } \
