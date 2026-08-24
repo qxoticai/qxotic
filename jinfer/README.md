@@ -65,13 +65,11 @@ Add one API and one or more model providers:
 </dependency>
 <dependency>
   <groupId>com.qxotic</groupId>
-  <artifactId>jinfer-models-all</artifactId>
-  <type>pom</type>
+  <artifactId>jinfer-lfm2</artifactId>
 </dependency>
 ```
 
-Replace `jinfer-models-all` with individual providers such as `jinfer-lfm2`, `jinfer-gemma4`,
-`jinfer-qwen3` or `jinfer-inflect2` to keep the classpath small.
+Add `jinfer-models-all` instead of `jinfer-lfm2` to include every model provider.
 
 For faster matrix multiplication, add either JAM backend or both. When both are present, Jinfer
 prefers the native backend and uses the Java Vector backend as a fallback.

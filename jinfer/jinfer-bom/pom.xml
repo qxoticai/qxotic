@@ -139,12 +139,16 @@
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-models-all</artifactId>
         <version>${project.version}</version>
-        <type>pom</type>
       </dependency>
 
       <!-- Substrate this release was built against. The jinfer ports' transitive graphs resolve
            these already; pinning them here is what keeps a direct jota/jam/gguf/toknroll
            dependency aligned when a downstream build adds one. -->
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>jota-core</artifactId>
+        <version>${project.version}</version>
+      </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jota-memory</artifactId>

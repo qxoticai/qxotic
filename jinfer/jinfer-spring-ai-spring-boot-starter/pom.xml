@@ -11,13 +11,9 @@
   <artifactId>jinfer-spring-ai-spring-boot-starter</artifactId>
   <packaging>jar</packaging>
 
-  <!-- Spring Boot starter for jinfer: the auto-configured JinferChatModel plus the
-       ChatClient stack (tool-calling advisor, chat memory) so a @Bean-less app gets the full
-       tool loop. -->
-  <name>jinfer-spring-ai-spring-boot-starter</name>
-  <description>Spring Boot starter for jinfer. Auto-configured ChatModel plus the full
-    ChatClient stack: tool advisors, chat memory, and structured output. Zero @Bean configuration
-    required.</description>
+  <name>Jinfer Spring AI Spring Boot Starter</name>
+  <description>Spring Boot starter for Jinfer models and the Spring AI ChatClient stack, including
+    tools, chat memory, structured output, and reranking.</description>
 
   <dependencyManagement>
     <dependencies>
@@ -56,6 +52,10 @@
     <dependency>
       <groupId>org.springframework.ai</groupId>
       <artifactId>spring-ai-client-chat</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.ai</groupId>
+      <artifactId>spring-ai-rag</artifactId>
     </dependency>
     <dependency>
       <groupId>org.springframework.ai</groupId>

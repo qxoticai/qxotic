@@ -61,7 +61,6 @@
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-models-all</artifactId>
-      <type>pom</type>
       <scope>runtime</scope>
     </dependency>
 

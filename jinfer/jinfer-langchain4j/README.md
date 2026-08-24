@@ -42,6 +42,13 @@ reranking and prompt caching.
       <type>pom</type>
       <scope>import</scope>
     </dependency>
+    <dependency>
+      <groupId>dev.langchain4j</groupId>
+      <artifactId>langchain4j-bom</artifactId>
+      <version>1.19.0</version>
+      <type>pom</type>
+      <scope>import</scope>
+    </dependency>
   </dependencies>
 </dependencyManagement>
 
@@ -52,14 +59,12 @@ reranking and prompt caching.
   </dependency>
   <dependency>
     <groupId>com.qxotic</groupId>
-    <artifactId>jinfer-models-all</artifactId>
-    <type>pom</type>
+    <artifactId>jinfer-lfm2</artifactId>
   </dependency>
 </dependencies>
 ```
 
-`jinfer-models-all` includes every provider. For a smaller classpath, replace it with the providers
-you use: `jinfer-lfm2`, `jinfer-gemma4`, `jinfer-qwen3`, `jinfer-llama` or `jinfer-inflect2`.
+Add `jinfer-models-all` instead of `jinfer-lfm2` to include every model provider.
 
 The `AiServices` examples also require LangChain4j's high-level API:
 
@@ -67,9 +72,11 @@ The `AiServices` examples also require LangChain4j's high-level API:
 <dependency>
   <groupId>dev.langchain4j</groupId>
   <artifactId>langchain4j</artifactId>
-  <version>1.18.0</version>
 </dependency>
 ```
+
+The BOMs manage versions only. Without them, add `0.1.0` to each Jinfer dependency and `1.19.0`
+to each LangChain4j dependency.
 
 Optional runtime backends:
 

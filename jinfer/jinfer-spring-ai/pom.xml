@@ -11,19 +11,9 @@
   <artifactId>jinfer-spring-ai</artifactId>
   <packaging>jar</packaging>
 
-  <!-- Spring AI chat-model provider backed by jinfer: in-process CPU
-       inference over GGUF models, native chat-template codec first (token-exact, injection-inert),
-       hardened Jinja whole-render fallback for unported models. Blocking + streaming, tools,
-       media, embeddings, reranking, speech. Runtime needs jinfer's JVM flags:
-       jdk.incubator.vector and enable-native-access.
-
-       Named jinfer-spring-ai, NOT spring-ai-jinfer: the spring-ai- prefix belongs to
-       modules released by that project, and wearing it under com.qxotic would read on Maven
-       Central as an official integration. Same convention as jinfer-langchain4j. -->
-  <name>jinfer-spring-ai</name>
-  <description>Spring AI provider for fast, local, in-process LLM inference on the JVM. No
-    server, no HTTP, no external processes. Chat, embeddings, document reranking, and
-    text-to-speech. End to end in Java.</description>
+  <name>Jinfer Spring AI Provider</name>
+  <description>Spring AI provider for local LLM inference inside the JVM. Supports chat,
+    streaming, embeddings, reranking, tools, multimodal input, and speech.</description>
 
   <dependencyManagement>
     <dependencies>
@@ -47,6 +37,7 @@
     <dependency>
       <groupId>org.springframework.ai</groupId>
       <artifactId>spring-ai-rag</artifactId>
+      <optional>true</optional>
     </dependency>
     <!-- the chat path: the engine, its cache, and the JSON codec Mappings speaks -->
     <dependency>
@@ -76,7 +67,6 @@
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-models-all</artifactId>
-      <type>pom</type>
       <scope>test</scope>
     </dependency>
     <dependency>
