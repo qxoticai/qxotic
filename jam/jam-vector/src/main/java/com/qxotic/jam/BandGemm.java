@@ -311,13 +311,15 @@ final class BandGemm {
 
     /** Scratch weight-row load at absolute byte offset (pinned route: checks fold). */
     @AlwaysInline(
-            "hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compile_commands)")
+            "hot Vector API helper: escaping FloatVector boxes per call (see"
+                    + " hotspot_compile_commands)")
     private static FloatVector wv(MemorySegment w, long byteOff) {
         return FloatVector.fromMemorySegment(F_SPECIES, w, byteOff, ByteOrder.LITTLE_ENDIAN);
     }
 
     @AlwaysInline(
-            "hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compile_commands)")
+            "hot Vector API helper: escaping FloatVector boxes per call (see"
+                    + " hotspot_compile_commands)")
     private static FloatVector av(MemorySegment a, long aBase, long elem) {
         return FloatVector.fromMemorySegment(
                 F_SPECIES, a, aBase + elem * 4, ByteOrder.LITTLE_ENDIAN);
