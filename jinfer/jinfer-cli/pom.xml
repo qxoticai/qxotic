@@ -91,15 +91,17 @@
       <artifactId>jinfer-testkit</artifactId>
       <scope>test</scope>
     </dependency>
+    <!-- Not imported by main sources, but jinfer-kernels' ModelLoader needs both on the
+         RUNTIME classpath of the shaded CLI jar and the native image. Compile scope is
+         load-bearing here: a narrower scope would shadow jinfer-kernels' transitive
+         compile edge (nearest-wins) and strip them from the shade. -->
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jota-core</artifactId>
-      <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jota-memory</artifactId>
-      <scope>test</scope>
     </dependency>
   </dependencies>
 
