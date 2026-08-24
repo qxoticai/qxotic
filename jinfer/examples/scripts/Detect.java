@@ -1,27 +1,13 @@
 ///usr/bin/env jbang "$0" "$@" ; exit $?
 //JAVA 25
-//COMPILE_OPTIONS --release 25
 //RUNTIME_OPTIONS --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED -Xmx16g
 //DEPS com.qxotic:jinfer-bom:0.1.0@pom
 //DEPS com.qxotic:jinfer-langchain4j com.qxotic:jinfer-gemma4
 //DEPS com.qxotic:jam-native com.qxotic:jam-vector
 //DEPS com.qxotic:json
-//SOURCES Models.java
 
-// Object detection with an annotated image. Gemma 4 returns normalized 0-1000 coordinates as JSON;
-// this script rescales the boxes to the source image and writes them to detected.png.
-//
+// Detect objects and draw their bounding boxes into detected.png.
 //   jbang Detect.java photo.jpg "person, dog, bicycle"
-//   -> detected.png
-//
-// Detection is prompt-driven. The same model describes and locates objects, with no separate
-// detector to configure.
-//
-// The 12B model is the default because localization is harder than image description. To compare
-// the smaller E2B model, pass its references explicitly:
-//     jbang Detect.java photo.jpg "a llama" \
-//         hf.co/unsloth/gemma-4-E2B-it-GGUF:Q8_0 \
-//         hf.co/unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf
 import com.qxotic.format.json.Json;
 import com.qxotic.jinfer.langchain4j.JinferChatModel;
 import dev.langchain4j.data.message.ImageContent;
@@ -42,18 +28,23 @@ import java.util.Map;
 
 public class Detect {
 
+    private static final String DEFAULT_MODEL =
+            "hf.co/unsloth/gemma-4-12b-it-GGUF:Q8_0";
+    private static final String DEFAULT_MEDIA =
+            "hf.co/unsloth/gemma-4-12b-it-GGUF/mmproj-F32.gguf";
+
     public static void main(String[] args) throws IOException {
-        if (args.length < 1) {
-            System.err.println("usage: Detect <image> [labels] [model-ref] [mmproj-ref]");
+        if (args.length == 0) {
+            System.err.println("usage: Detect <image> [labels] [model-ref] [media-ref]");
             System.exit(2);
         }
         Path image = Path.of(args[0]);
         String what = args.length > 1 ? args[1] : "every prominent object";
-        String modelRef = Models.gemmaDetect(args, 2);
-        String mediaRef = Models.gemmaDetectMmproj(args, 3);
+        String modelRef = args.length > 2 ? args[2] : DEFAULT_MODEL;
+        String mediaRef = args.length > 3 ? args[3] : DEFAULT_MEDIA;
 
-        String prompt = "Detect " + what + ". Output ONLY a JSON array, each element "
-                + "{\"label\": string, \"box_2d\": [ymin, xmin, ymax, xmax]} with coordinates "
+        String prompt = "Detect " + what + ". Return only a JSON array. Each element is "
+                + "{\"label\": \"name\", \"box_2d\": [ymin, xmin, ymax, xmax]} with coordinates "
                 + "normalized to 0-1000.";
 
         String reply;
@@ -72,10 +63,7 @@ public class Detect {
         draw(image, reply, Path.of("detected.png"));
     }
 
-    /** Rescale Gemma's 0-1000 boxes onto the real pixels and stroke them with their labels. */
     private static void draw(Path source, String json, Path out) throws IOException {
-        // Models may wrap the array in prose or a ```json fence. Parse the outermost array; object
-        // field order is deliberately ignored because the model varies it.
         int from = json.indexOf('[');
         int to = json.lastIndexOf(']');
         if (from < 0 || to < from) throw new IllegalStateException("no JSON array in reply:\n" + json);
@@ -84,7 +72,9 @@ public class Detect {
         BufferedImage canvas = ImageIO.read(source.toFile());
         if (canvas == null) throw new IOException("unsupported image: " + source);
 
-        Color[] palette = {Color.RED, Color.CYAN, Color.YELLOW, Color.GREEN, Color.MAGENTA, Color.ORANGE};
+        Color[] palette = {
+            Color.RED, Color.CYAN, Color.YELLOW, Color.GREEN, Color.MAGENTA, Color.ORANGE
+        };
         int found = 0;
         Graphics2D g = canvas.createGraphics();
         try {
@@ -93,12 +83,18 @@ public class Detect {
             g.setFont(g.getFont().deriveFont(Font.BOLD, Math.max(14f, canvas.getWidth() / 45f)));
 
             for (Object element : detections) {
-                if (!(element instanceof Map<?, ?> object)) continue;
-                if (!(object.get("box_2d") instanceof List<?> box) || box.size() != 4) continue;
+                if (!(element instanceof Map<?, ?> object)) {
+                    continue;
+                }
+                if (!(object.get("box_2d") instanceof List<?> box) || box.size() != 4) {
+                    continue;
+                }
                 if (!(box.get(0) instanceof Number y0)
                         || !(box.get(1) instanceof Number x0)
                         || !(box.get(2) instanceof Number y1)
-                        || !(box.get(3) instanceof Number x1)) continue;
+                        || !(box.get(3) instanceof Number x1)) {
+                    continue;
+                }
 
                 int py0 = scale(y0, canvas.getHeight());
                 int px0 = scale(x0, canvas.getWidth());
@@ -117,7 +113,7 @@ public class Detect {
             g.dispose();
         }
         ImageIO.write(canvas, "png", out.toFile());
-        System.out.printf("%n%d box(es) drawn on %dx%d -> %s%n",
+        System.out.printf("%nDrew %d box(es) on %dx%d. Wrote %s%n",
                 found, canvas.getWidth(), canvas.getHeight(), out.toAbsolutePath());
     }
 
