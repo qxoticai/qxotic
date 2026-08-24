@@ -58,7 +58,7 @@ public final class MemoryAccessChecks {
         } else assert MODE != Mode.ASSERT || condition : message;
     }
 
-    private static Mode resolveMode(String raw) {
+    static Mode resolveMode(String raw) {
         if (raw == null || raw.isBlank()) {
             return Mode.RUNTIME;
         }

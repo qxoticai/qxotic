@@ -56,7 +56,8 @@ public interface MemoryDomain<B> extends AutoCloseable {
                     "Shape mismatch: " + src.shape() + " vs " + dst.shape());
         }
 
-        if (srcContext.device().equals(dstContext.device())) {
+        if (srcContext.device().equals(dstContext.device())
+                && sharesMemoryOperations(srcContext, dstContext)) {
             copySameDevice(srcContext, src, dst);
             return;
         }
@@ -70,6 +71,10 @@ public interface MemoryDomain<B> extends AutoCloseable {
         MemoryView<D> dstContig = allocateContiguous(dstContext, dst.dataType(), dst.shape());
         copyContiguous(srcContext, srcContig, dstContext, dstContig);
         copySameDevice(dstContext, dstContig, dst);
+    }
+
+    private static boolean sharesMemoryOperations(MemoryDomain<?> left, MemoryDomain<?> right) {
+        return left.memoryOperations() == right.memoryOperations();
     }
 
     private static <S, D> void copySameDevice(

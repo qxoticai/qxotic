@@ -1,6 +1,7 @@
 package com.qxotic.jota.memory.impl;
 
 import com.qxotic.jota.Shape;
+import java.util.Arrays;
 
 /**
  * Describes the kind of view transformation applied to a tensor. Each variant captures the
@@ -14,6 +15,19 @@ public sealed interface ViewKind {
             if (permutation == null || permutation.length == 0) {
                 throw new IllegalArgumentException("permutation cannot be null or empty");
             }
+            boolean[] seen = new boolean[permutation.length];
+            for (int axis : permutation) {
+                if (axis < 0 || axis >= permutation.length || seen[axis]) {
+                    throw new IllegalArgumentException("invalid permutation");
+                }
+                seen[axis] = true;
+            }
+            permutation = permutation.clone();
+        }
+
+        @Override
+        public int[] permutation() {
+            return permutation.clone();
         }
 
         /** Returns the inverse permutation. */
@@ -23,6 +37,23 @@ public sealed interface ViewKind {
                 inv[permutation[i]] = i;
             }
             return inv;
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            return this == other
+                    || other instanceof Transpose transpose
+                            && Arrays.equals(permutation, transpose.permutation);
+        }
+
+        @Override
+        public int hashCode() {
+            return Arrays.hashCode(permutation);
+        }
+
+        @Override
+        public String toString() {
+            return "Transpose[permutation=" + Arrays.toString(permutation) + "]";
         }
     }
 

@@ -5,14 +5,12 @@ import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.memory.ScopedMemory;
 import com.qxotic.jota.memory.ScopedMemoryAllocatorArena;
 import java.lang.foreign.MemorySegment;
-import java.util.Collections;
+import java.util.HashSet;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 class NativeUnsafeAllocatorArena implements ScopedMemoryAllocatorArena<MemorySegment> {
 
-    private final Set<ScopedMemory<MemorySegment>> allocations =
-            Collections.newSetFromMap(new ConcurrentHashMap<>());
+    private final Set<ScopedMemory<MemorySegment>> allocations = new HashSet<>();
 
     private volatile boolean closed;
 
@@ -33,20 +31,18 @@ class NativeUnsafeAllocatorArena implements ScopedMemoryAllocatorArena<MemorySeg
     }
 
     @Override
-    public ScopedMemory<MemorySegment> allocateMemory(long byteSize, long byteAlignment) {
+    public synchronized ScopedMemory<MemorySegment> allocateMemory(
+            long byteSize, long byteAlignment) {
         if (closed) {
             throw new IllegalStateException("arena already closed");
         }
         ScopedMemory<MemorySegment> scopedMemory =
                 NativeUnsafeAllocator.instance().allocateMemory(byteSize, byteAlignment);
         allocations.add(scopedMemory);
-        // TODO(peterssen): Avoid extra indirection, copy UnsafeAllocator and include memory
-        // tracking.
         return new ScopedMemory<>() {
             @Override
             public void close() {
-                allocations.remove(scopedMemory);
-                scopedMemory.close();
+                closeAllocation(scopedMemory);
             }
 
             @Override
@@ -80,7 +76,7 @@ class NativeUnsafeAllocatorArena implements ScopedMemoryAllocatorArena<MemorySeg
                 StringBuilder sb = new StringBuilder("ArenaScopedMemory{address=0x");
                 sb.append(Long.toHexString(address));
                 sb.append(", byteSize=").append(byteSize());
-                sb.append(", tracked=").append(allocations.contains(scopedMemory));
+                sb.append(", tracked=").append(isTracked(scopedMemory));
                 if (isReadOnly()) {
                     sb.append(", readOnly=true");
                 }
@@ -93,8 +89,19 @@ class NativeUnsafeAllocatorArena implements ScopedMemoryAllocatorArena<MemorySeg
     @Override
     public synchronized void close() {
         closed = true;
-        this.allocations.forEach(ScopedMemory::close);
-        this.allocations.clear();
+        allocations.forEach(ScopedMemory::close);
+        allocations.clear();
+    }
+
+    private synchronized void closeAllocation(ScopedMemory<MemorySegment> allocation) {
+        if (!allocations.remove(allocation)) {
+            throw new IllegalStateException("memory already closed");
+        }
+        allocation.close();
+    }
+
+    private synchronized boolean isTracked(ScopedMemory<MemorySegment> allocation) {
+        return allocations.contains(allocation);
     }
 
     /** {@code close()} frees every tracked allocation: dead afterwards. */

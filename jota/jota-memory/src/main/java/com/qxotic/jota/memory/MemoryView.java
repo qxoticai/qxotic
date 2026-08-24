@@ -7,6 +7,7 @@ import com.qxotic.jota.Stride;
 import com.qxotic.jota.Util;
 import com.qxotic.jota.View;
 import com.qxotic.jota.memory.impl.MemoryViewFactory;
+import com.qxotic.jota.memory.impl.ViewTransforms;
 import java.util.Arrays;
 import java.util.stream.IntStream;
 
@@ -114,63 +115,8 @@ public interface MemoryView<B> extends View {
     }
 
     default MemoryView<B> broadcast(Shape targetShape) {
-        // Step 1: Reshape by adding singleton dimensions if needed (without copying)
-        Shape currentShape = shape();
-
-        // Determine how many mode dimensions we need to add
-        int numNewModes = targetShape.rank() - currentShape.rank();
-        if (numNewModes < 0) {
-            throw new IllegalArgumentException(
-                    "Cannot broadcast shape "
-                            + currentShape
-                            + " to shape "
-                            + targetShape
-                            + ": target has fewer modes");
-        }
-
-        // If ranks match, just expand directly
-        if (numNewModes == 0) {
-            return expand(targetShape);
-        }
-
-        // Need to add modes - check if we can do it
-        // We need to prepend singleton modes that match the target structure
-        // For now, only support flat prepending of singleton dimensions
-        if (!currentShape.isFlat() || !targetShape.isFlat()) {
-            // For nested layouts, we need to be more careful
-            // Prepend flat singleton dimensions
-            long[] newDims = new long[targetShape.flatRank()];
-            long[] currentDims = currentShape.toArray();
-
-            int prepend = targetShape.flatRank() - currentShape.flatRank();
-            Arrays.fill(newDims, 0, prepend, 1);
-            System.arraycopy(currentDims, 0, newDims, prepend, currentDims.length);
-
-            // Create shape preserving target structure if possible
-            Shape reshapedShape;
-            if (targetShape.isFlat()) {
-                reshapedShape = Shape.flat(newDims);
-            } else {
-                // Try to match target structure by prepending singletons
-                reshapedShape = Shape.flat(newDims);
-            }
-
-            MemoryView<B> reshaped = this.view(reshapedShape);
-            return reshaped.expand(targetShape);
-        }
-
-        // Simple flat case: prepend singleton dimensions
-        long[] newDims = new long[targetShape.rank()];
-        for (int i = 0; i < numNewModes; i++) {
-            newDims[i] = 1;
-        }
-        System.arraycopy(currentShape.toArray(), 0, newDims, numNewModes, currentShape.rank());
-
-        // Create the reshaped view
-        MemoryView<B> reshaped = this.view(Shape.flat(newDims));
-
-        // Step 2: Expand singleton dimensions to target sizes
-        return reshaped.expand(targetShape);
+        ViewTransforms.ViewTransformSpec spec = ViewTransforms.broadcast(layout(), targetShape);
+        return of(memory(), byteOffset() + spec.byteOffsetDelta(), dataType(), spec.layout());
     }
 
     // Factory methods
