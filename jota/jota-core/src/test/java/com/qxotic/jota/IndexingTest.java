@@ -119,7 +119,7 @@ class IndexingTest {
     }
 
     @Test
-    void viewOffsetsIncludeTheBaseOffsetAndNegativeStrides() {
+    void viewOffsetsIncludeTheBaseOffsetAndSupportNegativeStrides() {
         View view =
                 new View() {
                     @Override
@@ -140,6 +140,9 @@ class IndexingTest {
 
         assertEquals(12, Indexing.coordToOffset(view, 1));
         assertEquals(8, Indexing.linearToOffset(view, 2));
+        assertEquals(
+                -2 * DataType.Q8_0.byteSize(),
+                Indexing.linearToOffset(Shape.flat(3), Stride.flat(-1), DataType.Q8_0, 2));
         assertThrows(IllegalArgumentException.class, () -> Indexing.coordToOffset(view, 0, 1));
     }
 
