@@ -29,10 +29,7 @@ final class SamplingTest {
                 IllegalArgumentException.class, () -> new Sampling(-0.1f, 0.95f, 40, 0.05f, null));
     }
 
-    /**
-     * 0 is not "no nucleus filter": {@link Sampler#select} keeps top-p only while {@code 0 < topP <
-     * 1}, so accepting 0 would silently sample unfiltered. A caller who means "off" says 1.
-     */
+    /** 0 is not "no nucleus filter". A caller who means "off" says 1. */
     @Test
     void aZeroTopPIsRejectedRatherThanReadAsDisabled() {
         new Sampling(0.7f, 1f, 40, 0.05f, null);
