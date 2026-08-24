@@ -123,12 +123,17 @@ desktop.ini
 # Synthesized audio (the TTS CLI writes output.wav when --output is omitted)
 *.wav
 
-# Claude/opencode cache
+# Claude/opencode/codex/agents cache
 .claude/
 .opencode/
+.codex/
+.agents/
 
 # Raytracer output
 raytrace*.ppm
+
+# Shade's dependency-reduced pom (generated at package time)
+**/dependency-reduced-pom.xml
 
 test-fixtures
 
