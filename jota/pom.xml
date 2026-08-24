@@ -44,9 +44,11 @@
 
     <!-- Backend test skipping: panama (pure Java, no toolchain) is always on; the native and
          GPU backends stay opt-in via their profiles (-Pc, -Phip, -Pcuda, -Pmojo, -Pmetal,
-         -Popencl, -Pall) -->
+         -Popencl, -Pall). Each knob defaults from the standard skipTests flag, so -DskipTests
+         is honored everywhere even when a profile enables a backend. -->
+    <skipTests>false</skipTests>
     <skipTests.backend.c>true</skipTests.backend.c>
-    <skipTests.backend.panama>false</skipTests.backend.panama>
+    <skipTests.backend.panama>${skipTests}</skipTests.backend.panama>
     <skipTests.backend.hip>true</skipTests.backend.hip>
     <skipTests.backend.cuda>true</skipTests.backend.cuda>
     <skipTests.backend.mojo>true</skipTests.backend.mojo>
@@ -185,7 +187,7 @@
         <jota.test.device>c</jota.test.device>
         <jota.test.backends>single</jota.test.backends>
         <jota.native.backend>c</jota.native.backend>
-        <skipTests.backend.c>false</skipTests.backend.c>
+        <skipTests.backend.c>${skipTests}</skipTests.backend.c>
         <skipNative.backend.c>false</skipNative.backend.c>
       </properties>
       <build>
@@ -230,7 +232,7 @@ exit 1)</argument>
         <jota.test.device>hip</jota.test.device>
         <jota.test.backends>single</jota.test.backends>
         <jota.native.backend>panama</jota.native.backend>
-        <skipTests.backend.hip>false</skipTests.backend.hip>
+        <skipTests.backend.hip>${skipTests}</skipTests.backend.hip>
         <skipNative.backend.hip>false</skipNative.backend.hip>
       </properties>
       <build>
@@ -276,7 +278,7 @@ exit 1)</argument>
         <jota.test.device>cuda</jota.test.device>
         <jota.test.backends>single</jota.test.backends>
         <jota.native.backend>panama</jota.native.backend>
-        <skipTests.backend.cuda>false</skipTests.backend.cuda>
+        <skipTests.backend.cuda>${skipTests}</skipTests.backend.cuda>
         <skipNative.backend.cuda>false</skipNative.backend.cuda>
       </properties>
     </profile>
@@ -306,7 +308,7 @@ exit 1)</argument>
         <jota.test.device>mojo</jota.test.device>
         <jota.test.backends>single</jota.test.backends>
         <jota.native.backend>panama</jota.native.backend>
-        <skipTests.backend.mojo>false</skipTests.backend.mojo>
+        <skipTests.backend.mojo>${skipTests}</skipTests.backend.mojo>
         <skipNative.backend.mojo>false</skipNative.backend.mojo>
         <skipNative.backend.hip>false</skipNative.backend.hip>
       </properties>
@@ -348,7 +350,7 @@ exit 1)</argument>
         <jota.test.device>metal</jota.test.device>
         <jota.test.backends>single</jota.test.backends>
         <jota.native.backend>panama</jota.native.backend>
-        <skipTests.backend.metal>false</skipTests.backend.metal>
+        <skipTests.backend.metal>${skipTests}</skipTests.backend.metal>
         <skipNative.backend.metal>false</skipNative.backend.metal>
       </properties>
       <build>
@@ -394,7 +396,7 @@ exit 1)</argument>
         <jota.test.device>opencl</jota.test.device>
         <jota.test.backends>single</jota.test.backends>
         <jota.native.backend>panama</jota.native.backend>
-        <skipTests.backend.opencl>false</skipTests.backend.opencl>
+        <skipTests.backend.opencl>${skipTests}</skipTests.backend.opencl>
         <skipNative.backend.opencl>false</skipNative.backend.opencl>
       </properties>
       <build>
@@ -438,10 +440,10 @@ exit 1)</argument>
       <properties>
         <jota.test.backends>available</jota.test.backends>
         <!-- Enable all backends for testing (panama is always on) -->
-        <skipTests.backend.c>false</skipTests.backend.c>
-        <skipTests.backend.hip>false</skipTests.backend.hip>
-        <skipTests.backend.mojo>false</skipTests.backend.mojo>
-        <skipTests.backend.opencl>false</skipTests.backend.opencl>
+        <skipTests.backend.c>${skipTests}</skipTests.backend.c>
+        <skipTests.backend.hip>${skipTests}</skipTests.backend.hip>
+        <skipTests.backend.mojo>${skipTests}</skipTests.backend.mojo>
+        <skipTests.backend.opencl>${skipTests}</skipTests.backend.opencl>
         <skipNative.backend.c>false</skipNative.backend.c>
         <skipNative.backend.hip>false</skipNative.backend.hip>
         <skipNative.backend.opencl>false</skipNative.backend.opencl>
@@ -526,7 +528,7 @@ exit 1)</argument>
       </activation>
       <properties>
         <skipNative.backend.metal>false</skipNative.backend.metal>
-        <skipTests.backend.metal>false</skipTests.backend.metal>
+        <skipTests.backend.metal>${skipTests}</skipTests.backend.metal>
       </properties>
     </profile>
   </profiles>
