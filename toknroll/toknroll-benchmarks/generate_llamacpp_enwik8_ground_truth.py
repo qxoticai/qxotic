@@ -7,7 +7,7 @@ This script writes files compatible with TokenizerParityHarness:
 
 Example:
   python toknroll-benchmarks/generate_llamacpp_enwik8_ground_truth.py \
-    --llama-tokenize /home/mukel/Desktop/playground/llama.cpp/build/bin/llama-tokenize \
+    --llama-tokenize /path/to/llama.cpp/build/bin/llama-tokenize \
     --families unsloth_llama3_2,google_gemma4,openai_gpt_oss \
     --gguf-paths /models/Llama-3.2-1B-Instruct-Q8_0.gguf,/models/gemma-4-E2B-it-Q8_0.gguf,/models/gpt-oss-20b-Q8_0.gguf
 """

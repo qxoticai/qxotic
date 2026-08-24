@@ -7,11 +7,9 @@ import com.qxotic.toknroll.Toknroll;
 import com.qxotic.toknroll.Vocabulary;
 import com.qxotic.toknroll.loaders.TiktokenLoaders;
 import java.io.BufferedWriter;
-import java.io.FileWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Map;
 import java.util.regex.Pattern;
 
@@ -25,9 +23,6 @@ public class TestNativeGPT2 {
             "'(?:[sdmt]|ll|ve|re)| ?\\p{L}++| ?\\p{N}++|"
                     + " ?[^\\s\\p{L}\\p{N}]++|\\s++$|\\s+(?!\\S)|\\s";
 
-    private static final String FILE_PATH = "/home/mukel/Desktop/playground/enwik9";
-    private static final String OUTPUT_PATH =
-            "/home/mukel/Desktop/playground/llm4j/tokenizers/java_tokens_1mb.txt";
     private static final int SAMPLE_SIZE = 1024 * 1024; // 1MB
 
     public static void main(String[] args) throws Exception {
@@ -38,7 +33,7 @@ public class TestNativeGPT2 {
         Tokenizer tokenizer = createNativeGPT2Tokenizer();
 
         // Read first 1MB of file
-        Path filePath = Paths.get(FILE_PATH);
+        Path filePath = WikiCorpusPaths.enwik9();
         byte[] fileBytes = Files.readAllBytes(filePath);
         String text =
                 new String(
@@ -55,8 +50,9 @@ public class TestNativeGPT2 {
         System.out.printf("Java tokens: %,d%n", tokens.length());
 
         // Save to file
-        System.out.printf("Saving to: %s%n", OUTPUT_PATH);
-        try (BufferedWriter writer = new BufferedWriter(new FileWriter(OUTPUT_PATH))) {
+        Path output = WikiCorpusPaths.benchOutput("java_tokens_1mb.txt");
+        System.out.printf("Saving to: %s%n", output);
+        try (BufferedWriter writer = Files.newBufferedWriter(output)) {
             for (int i = 0; i < tokens.length(); i++) {
                 writer.write(String.format("%d: %d%n", i, tokens.intAt(i)));
             }

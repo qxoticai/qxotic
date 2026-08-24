@@ -8,7 +8,6 @@ import com.qxotic.toknroll.loaders.TiktokenLoaders;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Map;
 import java.util.regex.Pattern;
 
@@ -25,7 +24,6 @@ public class LargeFileBenchmarkGPT2 {
             "'(?:[sdmt]|ll|ve|re)| ?\\p{L}++| ?\\p{N}++|"
                     + " ?[^\\s\\p{L}\\p{N}]++|\\s++$|\\s+(?!\\S)|\\s";
 
-    private static final String FILE_PATH = "/home/mukel/Desktop/playground/enwik9";
     private static final int ITERATIONS = 3;
 
     public static void main(String[] args) throws Exception {
@@ -36,13 +34,13 @@ public class LargeFileBenchmarkGPT2 {
         Tokenizer tokenizer = createR50KTokenizer();
 
         // Read file
-        Path filePath = Paths.get(FILE_PATH);
+        Path filePath = WikiCorpusPaths.enwik9();
         byte[] fileBytes = Files.readAllBytes(filePath);
         String text = new String(fileBytes, StandardCharsets.UTF_8);
         long fileSizeBytes = fileBytes.length;
         double fileSizeMB = fileSizeBytes / (1024.0 * 1024.0);
 
-        System.out.printf("File: %s%n", FILE_PATH);
+        System.out.printf("File: %s%n", filePath);
         System.out.printf("Size: %.1f MB (%d bytes)%n", fileSizeMB, fileSizeBytes);
         System.out.printf("Characters: %,d%n%n", text.length());
 

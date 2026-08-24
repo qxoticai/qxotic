@@ -35,7 +35,9 @@ SUITES = {
 
 
 def cache_dir() -> Path:
-    path = Path.home() / ".cache" / "qxotic" / "tokenizers" / "corpus"
+    import cache_paths
+
+    path = cache_paths.corpus_dir()
     path.mkdir(parents=True, exist_ok=True)
     return path
 

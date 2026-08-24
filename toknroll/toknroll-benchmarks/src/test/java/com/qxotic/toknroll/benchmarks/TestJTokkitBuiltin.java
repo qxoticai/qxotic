@@ -6,17 +6,11 @@ import com.knuddels.jtokkit.api.EncodingRegistry;
 import com.knuddels.jtokkit.api.EncodingType;
 import com.knuddels.jtokkit.api.IntArrayList;
 import java.io.BufferedWriter;
-import java.io.FileWriter;
 import java.nio.file.Files;
-import java.nio.file.Paths;
+import java.nio.file.Path;
 
 /** Test jtokkit's built-in R50K_BASE tokenizer. */
 public class TestJTokkitBuiltin {
-
-    private static final String SLICE_FILE =
-            "/home/mukel/Desktop/playground/llm4j/tokenizers/slice_30_40m.txt";
-    private static final String OUTPUT_PATH =
-            "/home/mukel/Desktop/playground/llm4j/tokenizers/java_tokens_jtokkit_builtin.txt";
 
     public static void main(String[] args) throws Exception {
         System.out.println("Testing jtokkit built-in R50K_BASE tokenizer...");
@@ -27,9 +21,10 @@ public class TestJTokkitBuiltin {
         Encoding encoding = registry.getEncoding(EncodingType.R50K_BASE);
 
         // Read slice file
-        String text = Files.readString(Paths.get(SLICE_FILE));
+        Path sliceFile = WikiCorpusPaths.slice30To40M();
+        String text = Files.readString(sliceFile);
 
-        System.out.printf("Slice file: %s%n", SLICE_FILE);
+        System.out.printf("Slice file: %s%n", sliceFile);
         System.out.printf("Characters: %,d%n", text.length());
         System.out.println("Encoding...");
 
@@ -38,8 +33,9 @@ public class TestJTokkitBuiltin {
         System.out.printf("jtokkit tokens: %,d%n", tokens.size());
 
         // Save to file
-        System.out.printf("Saving to: %s%n", OUTPUT_PATH);
-        try (BufferedWriter writer = new BufferedWriter(new FileWriter(OUTPUT_PATH))) {
+        Path output = WikiCorpusPaths.benchOutput("java_tokens_jtokkit_builtin.txt");
+        System.out.printf("Saving to: %s%n", output);
+        try (BufferedWriter writer = Files.newBufferedWriter(output)) {
             for (int i = 0; i < tokens.size(); i++) {
                 writer.write(String.format("%d: %d%n", i, tokens.get(i)));
             }
