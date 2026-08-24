@@ -15,7 +15,9 @@
   <description>MemoryView inference for GPT-OSS.</description>
 
   <dependencies>
-    <!-- MemoryView's public hierarchy includes jota-core's View. -->
+    <!-- MemoryView's public hierarchy includes jota-core's View; javac needs the supertype
+         on the compile classpath, so this is a real compile dependency (dependency:analyze
+         cannot see supertype access and flags it unused). -->
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jota-core</artifactId>
