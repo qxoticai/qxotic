@@ -17,9 +17,8 @@ Install [JBang](https://www.jbang.dev/), then run the scripts from a repository 
 cd jinfer/examples
 ```
 
-Each script declares Java 25, its Jinfer dependencies and its model provider in the source header.
-The default models download on first use and remain in the Jinfer cache. Pass another supported
-model reference in the same argument position to override a default.
+Each Java file declares Java 25, its dependencies and its default model references. No shared source
+files are required. Models download on first use and remain in the Jinfer cache.
 
 | Task | JBang command |
 |---|---|
@@ -42,7 +41,8 @@ jbang Detect.java ../street.jpg "person, bicycle, traffic light"
 `GemmaVideo.java` requires `ffmpeg` on `PATH` and samples 16 frames by default. Override the count
 with `-Djinfer.video.frames=<count>`.
 
-The scripts support every Jinfer-compatible Gemma 4 size. E variants use the E2B projector:
+`GemmaVision.java` and `GemmaVideo.java` accept model and media references as trailing arguments.
+E variants use the E2B projector:
 
 ```bash
 # E2B (default)

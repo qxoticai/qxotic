@@ -1,14 +1,11 @@
 ///usr/bin/env jbang "$0" "$@" ; exit $?
 //JAVA 25
-//COMPILE_OPTIONS --release 25
 //RUNTIME_OPTIONS --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED
 //DEPS com.qxotic:jinfer-bom:0.1.0@pom
 //DEPS com.qxotic:jinfer-langchain4j com.qxotic:jinfer-llama
 //DEPS com.qxotic:jam-native com.qxotic:jam-vector
-//SOURCES Models.java
 
-// Structured output that CANNOT be malformed: a GBNF grammar constrains SAMPLING, so the model is
-// unable to emit a token that would break the schema. No retries, no "please reply in JSON".
+// Constrain generation to a JSON shape with a GBNF grammar.
 //   jbang Json.java "Ada Lovelace, born 1815 in London, wrote the first algorithm."
 import com.qxotic.jinfer.langchain4j.JinferChatModel;
 import com.qxotic.jinfer.langchain4j.JinferChatRequestParameters;
@@ -17,8 +14,10 @@ import dev.langchain4j.model.chat.request.ChatRequest;
 
 public class Json {
 
-    // {"name": "...", "year": 1234, "city": "..."} - in this order, nothing else possible.
-    static final String GRAMMAR = """
+    private static final String DEFAULT_MODEL =
+            "hf.co/unsloth/Llama-3.2-1B-Instruct-GGUF:Q8_0";
+
+    private static final String GRAMMAR = """
             root ::= "{" ws "\\"name\\":" ws str "," ws "\\"year\\":" ws num "," ws "\\"city\\":" ws str ws "}"
             str  ::= "\\"" [^"]* "\\""
             num  ::= [0-9]+
@@ -26,10 +25,12 @@ public class Json {
             """;
 
     public static void main(String[] args) {
-        var text = args.length > 0 ? args[0]
+        String text = args.length > 0 ? args[0]
                 : "Ada Lovelace, born 1815 in London, wrote the first algorithm.";
+        String modelRef = args.length > 1 ? args[1] : DEFAULT_MODEL;
+
         try (var model = JinferChatModel.builder()
-                .model(Models.chat(args, 1))
+                .model(modelRef)
                 .maxOutputTokens(96)
                 .thinking(false)
                 .build()) {
