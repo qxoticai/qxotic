@@ -45,11 +45,6 @@
       <scope>test</scope>
     </dependency>
     <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>json</artifactId>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
       <groupId>com.knuddels</groupId>
       <artifactId>jtokkit</artifactId>
       <scope>test</scope>
