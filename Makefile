@@ -56,6 +56,10 @@ jota-test: ## jota full suite (closed subtree): core, memory + the tensor suite 
 jam-test: ## jam and its cross-backend parity suite (NativeJAM included when libjam loads)
 	$(MAVEN) $(MAVEN_FLAGS) -pl jam/jam-vector -am verify
 
+toknroll-fixtures: ## Download the enwik benchmark corpora into the cache (FIXTURES="enwik8" to fetch just one; ~350MB for both)
+	$(MAVEN) $(MAVEN_FLAGS) -q -pl toknroll/toknroll-benchmarks -am install -DskipTests -Dspotless.check.skip=true
+	$(MAVEN) $(MAVEN_FLAGS) -q -pl toknroll/toknroll-benchmarks exec:java -Dexec.mainClass=com.qxotic.toknroll.benchmarks.FetchCorpus -Dexec.classpathScope=test -Dexec.args="$(FIXTURES)"
+
 ##@ Native image (GraalVM)
 
 NATIVE_IMAGE ?= $(if $(JAVA_HOME),$(JAVA_HOME)/bin/native-image,native-image)
