@@ -26,12 +26,12 @@ import zipfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from cache_paths import resolve_under_test_artifacts
+from cache_paths import corpus_dir, resolve_under_test_artifacts
 
 
 def get_cache_dir(cache_root_override: Optional[str] = None) -> Path:
     """Get the cache directory for enwik8 data."""
-    cache = resolve_under_test_artifacts("corpus", override=cache_root_override)
+    cache = corpus_dir(override=cache_root_override)
     cache.mkdir(parents=True, exist_ok=True)
     return cache
 
@@ -508,7 +508,7 @@ def main():
     parser.add_argument(
         "--cache-root",
         default=os.environ.get("TOKNROLL_TEST_CACHE_ROOT", ""),
-        help="Cache root override (defaults to OS-specific qxotic/toknroll/test-artifacts)",
+        help="Cache root override (defaults to the OS-specific qxotic/toknroll cache; enwik8 lands in its corpus/ subdirectory)",
     )
 
     args = parser.parse_args()

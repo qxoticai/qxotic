@@ -29,7 +29,9 @@ EXPECTED_SIZES = {
 
 
 def cache_dir() -> Path:
-    out = Path.home() / ".cache" / "qxotic" / "tokenizers" / "corpus"
+    import cache_paths
+
+    out = cache_paths.corpus_dir()
     out.mkdir(parents=True, exist_ok=True)
     return out
 

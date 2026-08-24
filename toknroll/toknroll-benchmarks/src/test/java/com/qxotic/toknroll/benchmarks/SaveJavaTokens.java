@@ -6,11 +6,9 @@ import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Toknroll;
 import com.qxotic.toknroll.loaders.TiktokenLoaders;
 import java.io.BufferedWriter;
-import java.io.FileWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Map;
 import java.util.regex.Pattern;
 
@@ -24,10 +22,6 @@ public class SaveJavaTokens {
             "'(?:[sdmt]|ll|ve|re)| ?\\p{L}++| ?\\p{N}++|"
                     + " ?[^\\s\\p{L}\\p{N}]++|\\s++$|\\s+(?!\\S)|\\s";
 
-    private static final String FILE_PATH = "/home/mukel/Desktop/playground/enwik9";
-    private static final String OUTPUT_PATH =
-            "/home/mukel/Desktop/playground/llm4j/tokenizers/java_tokens.txt";
-
     public static void main(String[] args) throws Exception {
         System.out.println("Saving Java tokens to file...");
         System.out.println("==============================\\n");
@@ -36,11 +30,11 @@ public class SaveJavaTokens {
         Tokenizer tokenizer = createR50KTokenizer();
 
         // Read file
-        Path filePath = Paths.get(FILE_PATH);
+        Path filePath = WikiCorpusPaths.enwik9();
         byte[] fileBytes = Files.readAllBytes(filePath);
         String text = new String(fileBytes, StandardCharsets.UTF_8);
 
-        System.out.printf("File: %s%n", FILE_PATH);
+        System.out.printf("File: %s%n", filePath);
         System.out.printf("Characters: %,d%n", text.length());
         System.out.println("Encoding...");
 
@@ -49,8 +43,9 @@ public class SaveJavaTokens {
         System.out.printf("Total tokens: %,d%n", tokens.length());
 
         // Save to file
-        System.out.printf("Saving to: %s%n", OUTPUT_PATH);
-        try (BufferedWriter writer = new BufferedWriter(new FileWriter(OUTPUT_PATH))) {
+        Path output = WikiCorpusPaths.benchOutput("java_tokens.txt");
+        System.out.printf("Saving to: %s%n", output);
+        try (BufferedWriter writer = Files.newBufferedWriter(output)) {
             for (int i = 0; i < tokens.length(); i++) {
                 writer.write(String.format("%d: %d%n", i, tokens.intAt(i)));
 
@@ -62,7 +57,7 @@ public class SaveJavaTokens {
         }
 
         System.out.println("\\nDone!");
-        System.out.printf("Tokens saved to: %s%n", OUTPUT_PATH);
+        System.out.printf("Tokens saved to: %s%n", output);
     }
 
     private static Tokenizer createR50KTokenizer() throws Exception {

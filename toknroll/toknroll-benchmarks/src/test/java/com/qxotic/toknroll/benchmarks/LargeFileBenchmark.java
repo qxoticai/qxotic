@@ -8,7 +8,6 @@ import com.qxotic.toknroll.loaders.TiktokenLoaders;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Map;
 import java.util.regex.Pattern;
 
@@ -33,7 +32,6 @@ public class LargeFileBenchmark {
                     + "\\n"
                     + "]|\\s+(?!\\S)|\\s";
 
-    private static final String FILE_PATH = "/home/mukel/Desktop/playground/enwik9";
     private static final int ITERATIONS = 3;
     // Process in 100MB chunks to avoid memory issues
     private static final int CHUNK_SIZE = 100 * 1024 * 1024;
@@ -46,13 +44,13 @@ public class LargeFileBenchmark {
         Tokenizer tokenizer = createCL100KTokenizer();
 
         // Read file
-        Path filePath = Paths.get(FILE_PATH);
+        Path filePath = WikiCorpusPaths.enwik9();
         byte[] fileBytes = Files.readAllBytes(filePath);
         String text = new String(fileBytes, StandardCharsets.UTF_8);
         long fileSizeBytes = fileBytes.length;
         double fileSizeMB = fileSizeBytes / (1024.0 * 1024.0);
 
-        System.out.printf("File: %s%n", FILE_PATH);
+        System.out.printf("File: %s%n", filePath);
         System.out.printf("Size: %.1f MB (%d bytes)%n", fileSizeMB, fileSizeBytes);
         System.out.printf("Characters: %,d%n%n", text.length());
 

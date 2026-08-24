@@ -7,11 +7,9 @@ import com.qxotic.toknroll.Toknroll;
 import com.qxotic.toknroll.Vocabulary;
 import com.qxotic.toknroll.loaders.TiktokenLoaders;
 import java.io.BufferedWriter;
-import java.io.FileWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Map;
 import java.util.regex.Pattern;
 
@@ -25,11 +23,8 @@ public class TestSlice30_40M {
             "'(?:[sdmt]|ll|ve|re)| ?\\p{L}++| ?\\p{N}++|"
                     + " ?[^\\s\\p{L}\\p{N}]++|\\s++$|\\s+(?!\\S)|\\s";
 
-    private static final String FILE_PATH = "/home/mukel/Desktop/playground/enwik9";
-    private static final String OUTPUT_PATH =
-            "/home/mukel/Desktop/playground/llm4j/tokenizers/java_tokens_slice_30_40m.txt";
-    private static final int START_CHAR = 30_000_000;
-    private static final int END_CHAR = 40_000_000;
+    private static final int START_CHAR = WikiCorpusPaths.SLICE_START_CHAR;
+    private static final int END_CHAR = WikiCorpusPaths.SLICE_END_CHAR;
 
     public static void main(String[] args) throws Exception {
         System.out.println("Testing Java tokenizer on slice (30M-40M chars)...");
@@ -39,7 +34,7 @@ public class TestSlice30_40M {
         Tokenizer tokenizer = createTokenizer();
 
         // Read file
-        Path filePath = Paths.get(FILE_PATH);
+        Path filePath = WikiCorpusPaths.enwik9();
         byte[] fileBytes = Files.readAllBytes(filePath);
         String text = new String(fileBytes, StandardCharsets.UTF_8);
 
@@ -54,8 +49,9 @@ public class TestSlice30_40M {
         System.out.printf("Java tokens: %,d%n", tokens.length());
 
         // Save to file
-        System.out.printf("Saving to: %s%n", OUTPUT_PATH);
-        try (BufferedWriter writer = new BufferedWriter(new FileWriter(OUTPUT_PATH))) {
+        Path output = WikiCorpusPaths.benchOutput("java_tokens_slice_30_40m.txt");
+        System.out.printf("Saving to: %s%n", output);
+        try (BufferedWriter writer = Files.newBufferedWriter(output)) {
             for (int i = 0; i < tokens.length(); i++) {
                 writer.write(String.format("%d: %d%n", i, tokens.intAt(i)));
             }

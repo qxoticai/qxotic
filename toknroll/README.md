@@ -31,6 +31,22 @@ While discouraged, the Tok'n'Roll API also supports multi-threaded implementatio
 
 <img width="1425" height="451" alt="Image" src="https://github.com/user-attachments/assets/753543f6-146e-454e-94d7-8221b2f7a736" />
 
+#### Running the benchmarks yourself
+
+The enwik corpora are expensive (enwik9 is a 322 MB download), so fetching them is an explicit
+command, never a side effect of a benchmark run:
+
+```bash
+make toknroll-fixtures                  # enwik8 and enwik9
+make toknroll-fixtures FIXTURES="enwik8" # just one
+```
+
+Corpora land in the OS cache (`~/.cache/qxotic/toknroll/corpus` on Linux; override with
+`-Dtoknroll.cache.root` or `TOKNROLL_CACHE_ROOT`), are size-verified, and are shared by the test
+suite and the benchmark drivers. To use your own copy: `-Dtoknroll.enwik8.path=/path/to/enwik8`
+(likewise `enwik9`). Benchmark drivers live in `toknroll-benchmarks/src/test` and are run via
+`exec:java`; their output goes to `bench-output/` under the same cache root, never into the
+working tree.
 
 ## Quick Start
 
