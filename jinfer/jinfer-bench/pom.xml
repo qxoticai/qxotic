@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/xsd/maven-4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
   <parent>
@@ -46,20 +46,16 @@
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-kernels</artifactId>
     </dependency>
-    <!-- the ports, ServiceLoader-discovered by Models.load at runtime -->
     <dependency>
       <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-lfm2</artifactId>
+      <artifactId>toknroll-core</artifactId>
     </dependency>
+    <!-- Model ports and JAM backends are selected through ServiceLoader. -->
     <dependency>
       <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-qwen3</artifactId>
+      <artifactId>jinfer-models-all</artifactId>
+      <scope>runtime</scope>
     </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-gemma4</artifactId>
-    </dependency>
-    <!-- JAM prefill backends, selected through ServiceLoader. -->
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jam-native</artifactId>

@@ -212,6 +212,10 @@
             <artifactId>flatten-maven-plugin</artifactId>
             <configuration>
               <flattenMode>bom</flattenMode>
+              <pomElements>
+                <!-- The catalog uses project.version; inherited build properties are not API. -->
+                <properties>remove</properties>
+              </pomElements>
             </configuration>
           </plugin>
         </plugins>

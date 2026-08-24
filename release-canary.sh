@@ -3,6 +3,7 @@
 #
 #   1. install the release build into a throwaway local repository
 #   2. compile isolated LangChain4j, Spring AI, and Spring Boot consumers against it
+#   3. compile the same entry points with explicit versions and no imported BOMs
 #
 # A green reactor can still ship a broken BOM or flattened pom; this catches broken
 # dependencyManagement, leaked test-scope deps and flatten-plugin regressions.
@@ -50,7 +51,9 @@ mkdir -p \
     "$WORK/consumer/langchain4j-ai-services/src/main/java/canary" \
     "$WORK/consumer/spring-ai-core/src/main/java/canary" \
     "$WORK/consumer/spring-ai-boot/src/main/java/canary" \
-    "$WORK/consumer/models-all"
+    "$WORK/consumer/models-all" \
+    "$WORK/no-bom-providers/src/main/java/canary" \
+    "$WORK/no-bom-boot/src/main/java/canary"
 
 cat > "$WORK/consumer/pom.xml" <<EOF
 <project xmlns="http://maven.apache.org/POM/4.0.0">
@@ -256,8 +259,89 @@ cat > "$WORK/consumer/models-all/pom.xml" <<'EOF'
 </project>
 EOF
 
+cat > "$WORK/no-bom-providers/pom.xml" <<EOF
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>canary</groupId>
+  <artifactId>no-bom-providers-canary</artifactId>
+  <version>0</version>
+  <properties>
+    <maven.compiler.release>25</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+  <dependencies>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-langchain4j</artifactId>
+      <version>$VERSION</version>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-spring-ai</artifactId>
+      <version>$VERSION</version>
+    </dependency>
+  </dependencies>
+</project>
+EOF
+cat > "$WORK/no-bom-providers/src/main/java/canary/Canary.java" <<'EOF'
+package canary;
+
+import java.nio.file.Path;
+
+final class Canary {
+
+    static dev.langchain4j.model.chat.ChatModel langChain4j(Path model) {
+        return com.qxotic.jinfer.langchain4j.JinferChatModel.builder().modelPath(model).build();
+    }
+
+    static org.springframework.ai.chat.model.ChatModel springAi(Path model) {
+        return com.qxotic.jinfer.spring.ai.JinferChatModel.builder().modelPath(model).build();
+    }
+}
+EOF
+
+cat > "$WORK/no-bom-boot/pom.xml" <<EOF
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>canary</groupId>
+  <artifactId>no-bom-boot-canary</artifactId>
+  <version>0</version>
+  <properties>
+    <maven.compiler.release>25</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+  <dependencies>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-spring-ai-spring-boot-starter</artifactId>
+      <version>$VERSION</version>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-models-all</artifactId>
+      <version>$VERSION</version>
+    </dependency>
+  </dependencies>
+</project>
+EOF
+cat > "$WORK/no-bom-boot/src/main/java/canary/Canary.java" <<'EOF'
+package canary;
+
+final class Canary {
+
+    static org.springframework.ai.chat.client.ChatClient chatClient(
+            org.springframework.ai.chat.client.ChatClient.Builder builder) {
+        return builder.build();
+    }
+}
+EOF
+
 echo "==> compiling isolated consumers against only the throwaway repository"
 # shellcheck disable=SC2086
 ( cd "$WORK/consumer" && $MVN -B -q compile -Dmaven.repo.local="$REPO" )
+# shellcheck disable=SC2086
+( cd "$WORK/no-bom-providers" && $MVN -B -q compile -Dmaven.repo.local="$REPO" )
+# shellcheck disable=SC2086
+( cd "$WORK/no-bom-boot" && $MVN -B -q compile -Dmaven.repo.local="$REPO" )
 
-echo "==> canary green: published BOMs and integration POMs resolve for all supported entry points"
+echo "==> canary green: published integration POMs resolve with and without BOMs"

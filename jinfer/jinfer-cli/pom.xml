@@ -25,9 +25,11 @@
 
   <dependencies>
     <dependency>
-      <!-- model refs on the model and companion flags: resolve and download from HF / ModelScope.
-           A TOOL concern: the provider libraries take real paths and must never pull a downloader
-           onto an application classpath. -->
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-core</artifactId>
+    </dependency>
+    <dependency>
+      <!-- Resolve model refs accepted by the model and companion flags. -->
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-hub</artifactId>
     </dependency>
@@ -47,6 +49,10 @@
       <!-- the AOT preload reads GGUF headers itself (it must, to bake them) -->
       <groupId>com.qxotic</groupId>
       <artifactId>gguf</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>toknroll-core</artifactId>
     </dependency>
     <dependency>
       <!-- the AOT preload bakes tokenizers; the property-override escape hatch rides the same
@@ -83,6 +89,16 @@
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-testkit</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jota-core</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jota-memory</artifactId>
       <scope>test</scope>
     </dependency>
   </dependencies>

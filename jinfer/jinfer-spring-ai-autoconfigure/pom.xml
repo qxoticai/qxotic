@@ -48,7 +48,6 @@
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-spring-ai</artifactId>
-      <version>${project.version}</version>
       <optional>true</optional>
     </dependency>
     <dependency>

@@ -86,10 +86,12 @@
     <surefire.excludedGroups>integration,bench,driver</surefire.excludedGroups>
     <jinfer.preload />
 
-    <!-- the Spring AI backend modules -->
+    <!-- Spring provider modules -->
     <spring-ai.version>2.0.1</spring-ai.version>
     <spring-boot.version>4.1.1</spring-boot.version>
-    <!-- observation test assertions; matches spring-ai-model's micrometer-observation -->
+    <!-- Direct provider dependencies aligned with Spring Boot's tested stack. -->
+    <spring-framework.version>7.0.9</spring-framework.version>
+    <reactor.version>3.8.7</reactor.version>
     <micrometer.version>1.17.1</micrometer.version>
 
     <!-- test libraries shared by the backend modules -->
@@ -201,8 +203,60 @@
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
+        <artifactId>jinfer-langchain4j</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>jinfer-spring-ai</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>jinfer-spring-ai-autoconfigure</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>jinfer-spring-ai-spring-boot-starter</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
         <artifactId>jinfer-models-all</artifactId>
         <version>${project.version}</version>
+      </dependency>
+      <!-- Framework APIs used directly by the providers. -->
+      <dependency>
+        <groupId>io.micrometer</groupId>
+        <artifactId>micrometer-observation</artifactId>
+        <version>${micrometer.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.micrometer</groupId>
+        <artifactId>micrometer-observation-test</artifactId>
+        <version>${micrometer.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.projectreactor</groupId>
+        <artifactId>reactor-core</artifactId>
+        <version>${reactor.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.springframework</groupId>
+        <artifactId>spring-core</artifactId>
+        <version>${spring-framework.version}</version>
+      </dependency>
+      <!-- Provider test libraries. -->
+      <dependency>
+        <groupId>org.assertj</groupId>
+        <artifactId>assertj-core</artifactId>
+        <version>${assertj.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.mockito</groupId>
+        <artifactId>mockito-core</artifactId>
+        <version>${mockito.version}</version>
       </dependency>
       <!-- enforcer pin for the Spring AI modules: jsonschema-generator pulls jackson-core
            3.0.3, spring-ai-model wants 3.1.5 (inert for every other module) -->

@@ -15,6 +15,11 @@
   <description>MemoryView inference for GPT-OSS.</description>
 
   <dependencies>
+    <!-- MemoryView's public hierarchy includes jota-core's View. -->
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jota-core</artifactId>
+    </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jota-memory</artifactId>
@@ -42,11 +47,6 @@
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>toknroll-gguf</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-testkit</artifactId>
-      <scope>test</scope>
     </dependency>
   </dependencies>
 
