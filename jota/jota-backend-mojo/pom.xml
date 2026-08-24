@@ -48,6 +48,15 @@
   </properties>
 
   <dependencies>
+    <!-- Backends implement the core/memory API surface directly; declare, not inherit. -->
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jota-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jota-memory</artifactId>
+    </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jota-tensor</artifactId>
@@ -128,7 +137,7 @@
     <profile>
       <id>mojo</id>
       <properties>
-        <skipTests.backend.mojo>false</skipTests.backend.mojo>
+        <skipTests.backend.mojo>${skipTests}</skipTests.backend.mojo>
         <skipNative.backend.mojo>false</skipNative.backend.mojo>
       </properties>
       <build>
