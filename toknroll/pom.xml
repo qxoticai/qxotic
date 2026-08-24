@@ -29,8 +29,11 @@
     <maven.compiler.testRelease>17</maven.compiler.testRelease>
     <!-- Keep test dependency versions resolvable when importing only toknroll/ in IDE -->
     <junit.version>6.1.3</junit.version>
-    <!-- Allows skipping tests in reactor-built dependency modules from submodule runs. -->
-    <toknroll.skipDependentTests>false</toknroll.skipDependentTests>
+    <!-- toknroll-core binds surefire's skipTests to this knob (for reactor dependency-module
+         runs). It defaults FROM the standard flag so -DskipTests keeps working, and can still
+         be set directly: -Dtoknroll.skipDependentTests=true. -->
+    <skipTests>false</skipTests>
+    <toknroll.skipDependentTests>${skipTests}</toknroll.skipDependentTests>
     <surefire.baseExcludedGroups>local-external,network</surefire.baseExcludedGroups>
     <surefire.excludedGroups>${surefire.baseExcludedGroups}</surefire.excludedGroups>
   </properties>
