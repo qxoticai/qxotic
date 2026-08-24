@@ -41,6 +41,15 @@
       <resource>
         <directory>dist/native</directory>
       </resource>
+      <!-- An explicit list shadows the parent's resources; re-include the legal pair. -->
+      <resource>
+        <targetPath>META-INF</targetPath>
+        <directory>${maven.multiModuleProjectDirectory}</directory>
+        <includes>
+          <include>LICENSE</include>
+          <include>NOTICE</include>
+        </includes>
+      </resource>
     </resources>
     <plugins>
       <!-- Build the native libjam via CMake before resources are processed. Skip with -Djam.native.skip=true. -->

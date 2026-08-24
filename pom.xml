@@ -278,6 +278,22 @@
   </dependencyManagement>
 
   <build>
+    <!-- Every jar carries the canonical legal pair from the repo root (rooted at .mvn/). An
+         explicit <resources> list replaces the implicit src/main/resources, so it is declared
+         first; a module declaring its own <resources> (jam-native) must re-include this block. -->
+    <resources>
+      <resource>
+        <directory>${project.basedir}/src/main/resources</directory>
+      </resource>
+      <resource>
+        <targetPath>META-INF</targetPath>
+        <directory>${maven.multiModuleProjectDirectory}</directory>
+        <includes>
+          <include>LICENSE</include>
+          <include>NOTICE</include>
+        </includes>
+      </resource>
+    </resources>
     <pluginManagement>
       <plugins>
         <!-- Core build plugins -->
