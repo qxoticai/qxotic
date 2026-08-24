@@ -21,22 +21,32 @@
   </properties>
 
   <dependencies>
-    <!-- the MediaProjector contract lives here too: Media, Views and MemoryView come from core -->
+    <!-- The MediaProjector contract uses Jinfer and Jota types directly. -->
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jota-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jota-memory</artifactId>
     </dependency>
     <!-- model resolution: a ref in, a cached path out, never the network -->
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-hub</artifactId>
     </dependency>
-    <!-- COMPILE scope on purpose (the inherited one is test): TestAbortedException lives in the
-         MAIN sources, so the abort semantics ride along to consumers' test classpaths -->
+    <!-- These fixtures use JUnit assertions and OpenTest4J aborts from main sources. -->
     <dependency>
       <groupId>org.junit.jupiter</groupId>
-      <artifactId>junit-jupiter</artifactId>
-      <scope>compile</scope>
+      <artifactId>junit-jupiter-api</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.opentest4j</groupId>
+      <artifactId>opentest4j</artifactId>
     </dependency>
   </dependencies>
 </project>

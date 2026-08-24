@@ -49,12 +49,10 @@
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-spring-ai-spring-boot-starter</artifactId>
-      <version>${project.version}</version>
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-lfm2</artifactId>
-      <version>${project.version}</version>
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>

@@ -27,10 +27,10 @@
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-kernels</artifactId>
     </dependency>
+    <!-- ModelProvider SPI and retrieval loading contracts. -->
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-chat</artifactId>
-      <!-- ModelProvider + the retrieval load path (ServiceLoader cargo) -->
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>

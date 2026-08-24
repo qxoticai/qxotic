@@ -39,7 +39,31 @@
       <artifactId>spring-ai-rag</artifactId>
       <optional>true</optional>
     </dependency>
-    <!-- the chat path: the engine, its cache, and the JSON codec Mappings speaks -->
+    <dependency>
+      <groupId>io.micrometer</groupId>
+      <artifactId>micrometer-observation</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.projectreactor</groupId>
+      <artifactId>reactor-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework</groupId>
+      <artifactId>spring-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+    </dependency>
+    <!-- Jinfer APIs and memory types used directly by the provider. -->
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jota-memory</artifactId>
+    </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-chat</artifactId>
@@ -83,14 +107,12 @@
     <dependency>
       <groupId>org.assertj</groupId>
       <artifactId>assertj-core</artifactId>
-      <version>${assertj.version}</version>
       <scope>test</scope>
     </dependency>
     <!-- observation assertions; matches spring-ai-model's micrometer-observation -->
     <dependency>
       <groupId>io.micrometer</groupId>
       <artifactId>micrometer-observation-test</artifactId>
-      <version>${micrometer.version}</version>
       <scope>test</scope>
     </dependency>
     <!-- ChatClient for the structured-output entity() dogfood -->

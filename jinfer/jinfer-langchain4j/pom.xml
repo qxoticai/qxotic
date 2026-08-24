@@ -36,33 +36,19 @@
       <groupId>dev.langchain4j</groupId>
       <artifactId>langchain4j-core</artifactId>
     </dependency>
-    <!-- High-level APIs are used only by integration tests. The provider requires core alone. -->
     <dependency>
-      <groupId>dev.langchain4j</groupId>
-      <artifactId>langchain4j</artifactId>
-      <scope>test</scope>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
     </dependency>
-    <!-- the compliance kit: AbstractChatModelIT and friends (test-jar) + its assertion deps -->
+    <!-- Jinfer APIs and memory types used directly by the provider. -->
     <dependency>
-      <groupId>dev.langchain4j</groupId>
-      <artifactId>langchain4j-core</artifactId>
-      <version>${langchain4j.version}</version>
-      <classifier>tests</classifier>
-      <scope>test</scope>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-core</artifactId>
     </dependency>
     <dependency>
-      <groupId>org.assertj</groupId>
-      <artifactId>assertj-core</artifactId>
-      <version>${assertj.version}</version>
-      <scope>test</scope>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jota-memory</artifactId>
     </dependency>
-    <dependency>
-      <groupId>org.mockito</groupId>
-      <artifactId>mockito-core</artifactId>
-      <version>${mockito.version}</version>
-      <scope>test</scope>
-    </dependency>
-    <!-- the chat path: the engine, its cache and the JSON codec Mappings speaks -->
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-chat</artifactId>
@@ -85,6 +71,34 @@
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-hub</artifactId>
     </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>toknroll-core</artifactId>
+    </dependency>
+    <!-- High-level APIs are used only by integration tests. The provider requires core alone. -->
+    <dependency>
+      <groupId>dev.langchain4j</groupId>
+      <artifactId>langchain4j</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <!-- The compliance kit: AbstractChatModelIT and friends, plus its assertion dependencies. -->
+    <dependency>
+      <groupId>dev.langchain4j</groupId>
+      <artifactId>langchain4j-core</artifactId>
+      <version>${langchain4j.version}</version>
+      <classifier>tests</classifier>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.assertj</groupId>
+      <artifactId>assertj-core</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.mockito</groupId>
+      <artifactId>mockito-core</artifactId>
+      <scope>test</scope>
+    </dependency>
     <!-- Exercise every architecture in this module's integration tests. Applications choose
          jinfer-models-all or individual providers explicitly. -->
     <dependency>
@@ -95,6 +109,27 @@
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-testkit</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <!-- GrammarCostProbe reads model metadata and exercises the tokenizer and kernel loaders. -->
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>gguf</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-kernels</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jota-core</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>toknroll-gguf</artifactId>
       <scope>test</scope>
     </dependency>
   </dependencies>

@@ -38,12 +38,10 @@
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-spring-ai</artifactId>
-      <version>${project.version}</version>
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-spring-ai-autoconfigure</artifactId>
-      <version>${project.version}</version>
     </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
@@ -78,7 +76,6 @@
     <dependency>
       <groupId>io.micrometer</groupId>
       <artifactId>micrometer-observation-test</artifactId>
-      <version>${micrometer.version}</version>
       <scope>test</scope>
     </dependency>
     <!-- the dogfood IT needs one architecture port -->

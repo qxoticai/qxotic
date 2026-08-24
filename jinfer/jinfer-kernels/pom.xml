@@ -19,6 +19,10 @@
   <dependencies>
     <dependency>
       <groupId>com.qxotic</groupId>
+      <artifactId>jota-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
       <artifactId>jota-memory</artifactId>
     </dependency>
     <dependency>
@@ -40,12 +44,6 @@
       <artifactId>graalvm-annotations</artifactId>
       <!-- @AlwaysInline: compile-only, not bundled; GraalVM supplies it at native-image build -->
       <scope>provided</scope>
-    </dependency>
-    <!-- test-only: checkpoint acquisition by ref (lookup only, never a download) -->
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-testkit</artifactId>
-      <scope>test</scope>
     </dependency>
     <!-- the pure-java jam rungs, for MatMulJamParityTest's dedicated surefire execution -->
     <dependency>

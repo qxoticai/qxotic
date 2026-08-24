@@ -15,7 +15,15 @@
   <dependencies>
     <dependency>
       <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
       <artifactId>jinfer-chat</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-cache</artifactId>
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
@@ -27,9 +35,14 @@
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
+      <artifactId>toknroll-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
       <artifactId>jinfer-testkit</artifactId>
       <scope>test</scope>
     </dependency>
+    <!-- ServerIntegrationTest loads its LFM model through ModelProvider's ServiceLoader. -->
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-lfm2</artifactId>

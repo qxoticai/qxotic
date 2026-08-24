@@ -16,6 +16,10 @@
   <dependencies>
     <dependency>
       <groupId>com.qxotic</groupId>
+      <artifactId>jota-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
       <artifactId>jota-memory</artifactId>
     </dependency>
     <dependency>
@@ -33,12 +37,6 @@
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-cache</artifactId>
-    </dependency>
-    <!-- test-only: checkpoint acquisition by ref (lookup only, never a download) -->
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-testkit</artifactId>
-      <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
