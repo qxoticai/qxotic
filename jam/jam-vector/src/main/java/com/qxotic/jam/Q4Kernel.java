@@ -279,7 +279,8 @@ public final class Q4Kernel {
     }
 
     @AlwaysInline(
-            "hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compile_commands)")
+            "hot Vector API helper: escaping FloatVector boxes per call (see"
+                    + " hotspot_compile_commands)")
     private static FloatVector av(MemorySegment a, long aBase, long elem) {
         return FloatVector.fromMemorySegment(
                 F_SPECIES, a, aBase + elem * 4, ByteOrder.LITTLE_ENDIAN);
