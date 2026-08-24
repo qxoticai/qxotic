@@ -113,5 +113,42 @@ class IndexingTest {
     void throwsForMismatchedStrideRank() {
         Stride stride = Stride.of(4, 1);
         assertThrows(IllegalArgumentException.class, () -> Indexing.coordToOffset(stride, 1));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> Indexing.linearToOffset(Shape.flat(2, 3), Stride.flat(1), DataType.I8, 0));
+    }
+
+    @Test
+    void viewOffsetsIncludeTheBaseOffsetAndNegativeStrides() {
+        View view =
+                new View() {
+                    @Override
+                    public Layout layout() {
+                        return Layout.of(Shape.flat(3), Stride.flat(-1));
+                    }
+
+                    @Override
+                    public DataType dataType() {
+                        return DataType.FP32;
+                    }
+
+                    @Override
+                    public long byteOffset() {
+                        return 16;
+                    }
+                };
+
+        assertEquals(12, Indexing.coordToOffset(view, 1));
+        assertEquals(8, Indexing.linearToOffset(view, 2));
+        assertThrows(IllegalArgumentException.class, () -> Indexing.coordToOffset(view, 0, 1));
+    }
+
+    @Test
+    void rejectsInvalidScalarLinearOffset() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        Indexing.linearToOffset(
+                                Shape.scalar(), Stride.rowMajor(Shape.scalar()), DataType.I8, 1));
     }
 }
