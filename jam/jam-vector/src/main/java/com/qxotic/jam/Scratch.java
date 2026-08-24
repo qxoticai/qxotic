@@ -21,7 +21,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
  * <p>A worker {@link #acquire}s a buffer at the top of its slice and {@link #release}s it at the
  * end; the pool is a lock-free free-list, so concurrent band workers within one gemm each get their
  * own buffer. The pool retains at most the peak number of concurrent workers' buffers (≤ {@code
- * configured parallelism), each grown to the largest {@code k} seen - a few MB at most, freed when
+ * configured parallelism}), each grown to the largest {@code k} seen - a few MB at most, freed when
  * the owning context is GC'd.
  */
 public final class Scratch {

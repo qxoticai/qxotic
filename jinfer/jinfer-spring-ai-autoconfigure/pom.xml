@@ -11,14 +11,19 @@
   <artifactId>jinfer-spring-ai-autoconfigure</artifactId>
   <packaging>jar</packaging>
 
-  <!-- Spring Boot auto-configuration for jinfer-spring-ai: one JinferChatModel bean from
-       spring.ai.jinfer.chat.* properties, selected via spring.ai.model.chat=jinfer. -->
-  <name>jinfer-spring-ai-autoconfigure</name>
-  <description>Spring Boot auto-configuration for jinfer-spring-ai. Wires a JinferChatModel bean
-    from spring.ai.jinfer.chat.* properties.</description>
+  <name>Jinfer Spring AI Auto-configuration</name>
+  <description>Spring Boot auto-configuration for Jinfer chat, embedding, reranking, and speech
+    models.</description>
 
   <dependencyManagement>
     <dependencies>
+      <dependency>
+        <groupId>org.springframework.ai</groupId>
+        <artifactId>spring-ai-bom</artifactId>
+        <version>${spring-ai.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
       <dependency>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-dependencies</artifactId>
@@ -33,19 +38,57 @@
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-codecs</artifactId>
+      <optional>true</optional>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-hub</artifactId>
+      <optional>true</optional>
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-spring-ai</artifactId>
       <version>${project.version}</version>
+      <optional>true</optional>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.ai</groupId>
+      <artifactId>spring-ai-model</artifactId>
+      <optional>true</optional>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.ai</groupId>
+      <artifactId>spring-ai-rag</artifactId>
+      <optional>true</optional>
+    </dependency>
+    <dependency>
+      <groupId>io.micrometer</groupId>
+      <artifactId>micrometer-observation</artifactId>
+      <optional>true</optional>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot</artifactId>
+      <optional>true</optional>
     </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-autoconfigure</artifactId>
+      <optional>true</optional>
     </dependency>
     <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-configuration-processor</artifactId>
+      <groupId>org.springframework</groupId>
+      <artifactId>spring-beans</artifactId>
+      <optional>true</optional>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework</groupId>
+      <artifactId>spring-context</artifactId>
+      <optional>true</optional>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework</groupId>
+      <artifactId>spring-core</artifactId>
       <optional>true</optional>
     </dependency>
     <dependency>
@@ -84,9 +127,7 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
         <configuration>
-          <!-- JDK 23+ javac no longer runs processors merely found on the classpath; the
-               processor must be NAMED or no spring-configuration-metadata.json is generated
-               and IDE completion for spring.ai.jinfer.* goes dark. -->
+          <!-- Keep the configuration processor off the runtime classpath. -->
           <annotationProcessorPaths>
             <path>
               <groupId>org.springframework.boot</groupId>

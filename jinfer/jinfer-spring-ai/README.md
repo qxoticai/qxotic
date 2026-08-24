@@ -10,11 +10,19 @@ A Spring AI provider backed by the [Jinfer](../README.md) inference engine.
 
 ## Add the provider
 
-Import the Jinfer BOM, then add the starter and model providers:
+Use the Spring Boot parent or BOM for Spring Boot itself. Import the Spring AI and Jinfer BOMs,
+then add the starter and a model provider:
 
 ```xml
 <dependencyManagement>
   <dependencies>
+    <dependency>
+      <groupId>org.springframework.ai</groupId>
+      <artifactId>spring-ai-bom</artifactId>
+      <version>2.0.1</version>
+      <type>pom</type>
+      <scope>import</scope>
+    </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-bom</artifactId>
@@ -32,14 +40,15 @@ Import the Jinfer BOM, then add the starter and model providers:
   </dependency>
   <dependency>
     <groupId>com.qxotic</groupId>
-    <artifactId>jinfer-models-all</artifactId>
-    <type>pom</type>
+    <artifactId>jinfer-lfm2</artifactId>
   </dependency>
 </dependencies>
 ```
 
-Replace `jinfer-models-all` with individual providers such as `jinfer-lfm2`, `jinfer-gemma4`,
-`jinfer-qwen3` or `jinfer-inflect2` to keep the classpath small.
+Add `jinfer-models-all` instead of `jinfer-lfm2` to include every model provider.
+
+The BOMs manage versions only. Without them, add `0.1.0` to each Jinfer dependency and `2.0.1`
+to each Spring AI dependency.
 
 Optional runtime backends:
 
@@ -246,6 +255,16 @@ JinferChatModel restoredSupport = restored.withCachedPrompt(
 [`CachedPrompt.java`](../examples/scripts/CachedPrompt.java) prints the restored token count.
 
 ## Embeddings and reranking
+
+When using reranking without the Spring Boot starter, add the RAG API. Its version comes from the
+Spring AI BOM:
+
+```xml
+<dependency>
+  <groupId>org.springframework.ai</groupId>
+  <artifactId>spring-ai-rag</artifactId>
+</dependency>
+```
 
 ```java
 try (var embeddings = JinferEmbeddingModel.builder()

@@ -6,6 +6,7 @@ import com.qxotic.jinfer.spring.ai.JinferDocumentPostProcessor;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.test.context.FilteredClassLoader;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 /** Context behavior, no model needed: activation by model path, and property binding. */
@@ -23,6 +24,17 @@ class JinferRerankAutoConfigurationTest {
                     assertThat(context).hasNotFailed();
                     assertThat(context).doesNotHaveBean(JinferDocumentPostProcessor.class);
                 });
+    }
+
+    @Test
+    void backsOffWithoutSpringAiRag() {
+        runner.withClassLoader(new FilteredClassLoader("org.springframework.ai.rag"))
+                .withPropertyValues("spring.ai.jinfer.rerank.model=/rerank.gguf")
+                .run(
+                        context -> {
+                            assertThat(context).hasNotFailed();
+                            assertThat(context).doesNotHaveBean("jinferDocumentPostProcessor");
+                        });
     }
 
     @Test

@@ -87,14 +87,14 @@
     <jinfer.preload />
 
     <!-- the Spring AI backend modules -->
-    <spring-ai.version>2.0.0</spring-ai.version>
-    <spring-boot.version>4.1.0</spring-boot.version>
+    <spring-ai.version>2.0.1</spring-ai.version>
+    <spring-boot.version>4.1.1</spring-boot.version>
     <!-- observation test assertions; matches spring-ai-model's micrometer-observation -->
-    <micrometer.version>1.17.0</micrometer.version>
+    <micrometer.version>1.17.1</micrometer.version>
 
     <!-- test libraries shared by the backend modules -->
-    <assertj.version>3.27.6</assertj.version>
-    <mockito.version>5.21.0</mockito.version>
+    <assertj.version>3.27.7</assertj.version>
+    <mockito.version>5.23.0</mockito.version>
   </properties>
 
   <dependencyManagement>
@@ -203,14 +203,13 @@
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-models-all</artifactId>
         <version>${project.version}</version>
-        <type>pom</type>
       </dependency>
       <!-- enforcer pin for the Spring AI modules: jsonschema-generator pulls jackson-core
-           3.0.3, spring-ai-model wants 3.1.4 (inert for every other module) -->
+           3.0.3, spring-ai-model wants 3.1.5 (inert for every other module) -->
       <dependency>
         <groupId>tools.jackson.core</groupId>
         <artifactId>jackson-core</artifactId>
-        <version>3.1.4</version>
+        <version>3.1.5</version>
       </dependency>
     </dependencies>
   </dependencyManagement>
