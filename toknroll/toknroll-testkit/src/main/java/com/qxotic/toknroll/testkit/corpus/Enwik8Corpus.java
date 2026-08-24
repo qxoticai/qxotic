@@ -20,7 +20,9 @@ public final class Enwik8Corpus {
 
     private static final String DOWNLOAD_URL = "https://www.mattmahoney.net/dc/enwik8.zip";
     private static final long EXPECTED_SIZE = 100_000_000L;
-    private static final Path CACHE_DIR = TestCachePaths.resolveUnderTestArtifacts("corpus");
+    // Shared corpus cache; the test-artifacts location is the legacy home, still honored.
+    private static final Path CACHE_DIR = TestCachePaths.corpusDir();
+    private static final Path LEGACY_DIR = TestCachePaths.resolveUnderTestArtifacts("corpus");
 
     private final Path enwik8Path;
     private final byte[] data;
@@ -31,19 +33,20 @@ public final class Enwik8Corpus {
     }
 
     public static Enwik8Corpus load() {
-        Path cacheDir = CACHE_DIR;
-        Path enwik8Path = cacheDir.resolve("enwik8");
-
-        if (Files.exists(enwik8Path) && enwik8Path.toFile().length() == EXPECTED_SIZE) {
-            try {
-                return new Enwik8Corpus(Files.readAllBytes(enwik8Path), enwik8Path);
-            } catch (IOException e) {
-                // Fall through to download
+        for (Path cacheDir : new Path[] {CACHE_DIR, LEGACY_DIR}) {
+            Path enwik8Path = cacheDir.resolve("enwik8");
+            if (Files.exists(enwik8Path) && enwik8Path.toFile().length() == EXPECTED_SIZE) {
+                try {
+                    return new Enwik8Corpus(Files.readAllBytes(enwik8Path), enwik8Path);
+                } catch (IOException e) {
+                    // Fall through to the next location
+                }
             }
         }
 
+        Path enwik8Path = CACHE_DIR.resolve("enwik8");
         try {
-            downloadAndExtract(cacheDir);
+            downloadAndExtract(CACHE_DIR);
             return new Enwik8Corpus(Files.readAllBytes(enwik8Path), enwik8Path);
         } catch (IOException | InterruptedException e) {
             throw new RuntimeException("Failed to download enwik8 corpus", e);
