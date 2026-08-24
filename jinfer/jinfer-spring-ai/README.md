@@ -26,7 +26,7 @@ then add the starter and a model provider:
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-bom</artifactId>
-      <version>0.1.0</version>
+      <version>0.2.0</version>
       <type>pom</type>
       <scope>import</scope>
     </dependency>
@@ -47,7 +47,7 @@ then add the starter and a model provider:
 
 Add `jinfer-models-all` instead of `jinfer-lfm2` to include every model provider.
 
-The BOMs manage versions only. Without them, add `0.1.0` to each Jinfer dependency and `2.0.1`
+The BOMs manage versions only. Without them, add `0.2.0` to each Jinfer dependency and `2.0.1`
 to each Spring AI dependency.
 
 Optional runtime backends:
@@ -75,7 +75,7 @@ For scripts that use the core Spring AI provider without Spring Boot:
 ```java
 //JAVA 25
 //RUNTIME_OPTIONS --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED
-//DEPS com.qxotic:jinfer-bom:0.1.0@pom
+//DEPS com.qxotic:jinfer-bom:0.2.0@pom
 //DEPS com.qxotic:jinfer-spring-ai com.qxotic:jinfer-lfm2
 //DEPS com.qxotic:jam-native com.qxotic:jam-vector
 ```

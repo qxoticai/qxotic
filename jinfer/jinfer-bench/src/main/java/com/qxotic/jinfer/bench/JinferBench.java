@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.bench;
 
 import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.CheckpointCodec;
 import com.qxotic.jinfer.ContentKey;
 import com.qxotic.jinfer.ContextState;
 import com.qxotic.jinfer.RuntimeFlags;
@@ -18,6 +19,7 @@ import com.qxotic.jinfer.llm.Sampling;
 import com.qxotic.jinfer.media.Multimodal;
 import java.io.PrintStream;
 import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -66,7 +68,7 @@ import java.util.Map;
  * {@code --media <file>} and a vision port - projected-media cold versus warm latency. State
  * allocation time and peak RSS (VmHWM) are reported per model.
  *
- * <pre>jinfer-bench -m model.gguf [-m ...] [-p 512] [-n 128] [-r 5] [-w 2] [--ctx N]
+ * <pre>jinfer-bench -m model.gguf [-m ...] [-p 512] [-n 128] [-d 0] [-r 5] [-w 2] [--ctx N]
  *                  [--media image.png]</pre>
  */
 public final class JinferBench {
@@ -81,8 +83,8 @@ public final class JinferBench {
     public static void main(String[] args) throws Exception {
         List<String> models = new ArrayList<>();
         Map<String, Path> companions = new java.util.LinkedHashMap<>();
-        int p = 512, n = 128, reps = 5, warmup = 2, ctx = 0, threads = 0;
-        boolean noWarmup = false;
+        int p = 512, n = 128, depth = 0, reps = 5, warmup = 2, ctx = 0, threads = 0;
+        boolean noWarmup = false, runCapabilities = true;
         Path media = null;
         for (int i = 0; i < args.length; i++) {
             switch (args[i]) {
@@ -98,9 +100,11 @@ public final class JinferBench {
                 }
                 case "-p", "--n-prompt" -> p = Integer.parseInt(args[++i]);
                 case "-n", "--n-gen" -> n = Integer.parseInt(args[++i]);
+                case "-d", "--n-depth" -> depth = Integer.parseInt(args[++i]);
                 case "-r", "--repetitions" -> reps = Integer.parseInt(args[++i]);
                 case "-w", "--warmup" -> warmup = Integer.parseInt(args[++i]);
                 case "--no-warmup" -> noWarmup = true;
+                case "--no-capabilities" -> runCapabilities = false;
                 case "--ctx" -> ctx = Integer.parseInt(args[++i]);
                 case "-t", "--threads" -> threads = Integer.parseInt(args[++i]);
                 case "--media" -> media = Path.of(args[++i]);
@@ -119,6 +123,7 @@ public final class JinferBench {
             usage(System.err);
             System.exit(2);
         }
+        if (depth < 0) throw new IllegalArgumentException("n-depth must be >= 0");
 
         if (threads <= 0) threads = physicalCores();
         System.setProperty("jinfer.computeThreads", Integer.toString(threads));
@@ -136,18 +141,18 @@ public final class JinferBench {
             System.err.printf("loading %s ...%n", path);
             BenchModel<?> bench = BenchModel.open(Path.of(path), companions);
             String name = name(path);
-            // llama-bench: pp and tg are separate tests on separate contexts sized to the work
-            // (n_ctx = n_prompt resp. n_gen; --ctx overrides both).
+            String suffix = depth == 0 ? "" : "@d" + depth;
             if (p > 0)
                 rows.add(
                         measure(
                                 bench,
                                 name,
                                 prefillThreads,
-                                "pp" + p,
+                                "pp" + p + suffix,
                                 p,
                                 true,
-                                ctx != 0 ? ctx : p,
+                                depth,
+                                ctx != 0 ? ctx : Math.addExact(depth, p),
                                 warmup,
                                 reps,
                                 noWarmup));
@@ -157,14 +162,16 @@ public final class JinferBench {
                                 bench,
                                 name,
                                 decodeThreads,
-                                "tg" + n,
+                                "tg" + n + suffix,
                                 n,
                                 false,
-                                ctx != 0 ? ctx : n,
+                                depth,
+                                ctx != 0 ? ctx : Math.addExact(depth, n),
                                 warmup,
                                 reps,
                                 noWarmup));
-            caps.add(capabilities(bench, name, p > 0 ? p : 512, Math.max(n, 16), media));
+            if (runCapabilities)
+                caps.add(capabilities(bench, name, p > 0 ? p : 512, Math.max(n, 16), media));
         }
         printTable(rows);
         printCaps(caps);
@@ -179,6 +186,8 @@ public final class JinferBench {
     private static final class BenchModel<S extends ContextState> {
         final LoadedModel<S> loaded;
         private S state;
+        private CheckpointCodec<S> depthCodec;
+        private MemorySegment depthSnapshot;
 
         private BenchModel(LoadedModel<S> loaded) {
             this.loaded = loaded;
@@ -205,6 +214,36 @@ public final class JinferBench {
         /** llama_memory_clear: KV/conv state back to empty, same buffers. */
         void reset() {
             state.reset();
+        }
+
+        void prepareDepth(int[] prefix) {
+            depthCodec = null;
+            depthSnapshot = null;
+            if (prefix.length == 0) return;
+            reset();
+            ingestPrefill(prefix);
+            loaded.model()
+                    .checkpointCodec()
+                    .ifPresent(
+                            codec -> {
+                                depthCodec = codec;
+                                depthSnapshot =
+                                        MemorySegment.ofArray(
+                                                new byte[Math.toIntExact(codec.byteSize(0))]);
+                                codec.capture(
+                                        state, prefix.length, prefix.length, depthSnapshot);
+                            });
+        }
+
+        void resetToDepth(int[] prefix) {
+            reset();
+            if (prefix.length == 0) return;
+            if (depthSnapshot == null) {
+                ingestPrefill(prefix);
+            } else {
+                depthCodec.restore(state, prefix.length, prefix.length, depthSnapshot);
+                state.resumeAt(prefix.length);
+            }
         }
 
         void ingestPrefill(int[] prompt) {
@@ -256,14 +295,17 @@ public final class JinferBench {
             String test,
             int count,
             boolean prefill,
+            int depth,
             int ctx,
             int minWarmup,
             int reps,
             boolean noWarmup) {
         int vocab = model.vocab();
         int[] prompt = prefill ? fillerTokens(vocab, count) : null;
+        int[] prefix = fillerTokens(vocab, depth);
         model.newState(ctx);
-        System.err.printf("  %-6s state: ctx=%d batch=%d%n", test, ctx, UBATCH);
+        System.err.printf("  %-12s state: ctx=%d depth=%d batch=%d%n", test, ctx, depth, UBATCH);
+        model.prepareDepth(prefix);
 
         if (noWarmup) {
             System.err.printf("  %-6s warmup skipped (--no-warmup)%n", test);
@@ -273,7 +315,7 @@ public final class JinferBench {
             double[] recent = new double[WINDOW];
             int passes = 0;
             while (passes < MAX) {
-                double t = runOnce(model, prompt, count, prefill, vocab);
+                double t = runOnce(model, prefix, prompt, count, prefill, vocab);
                 recent[passes % WINDOW] = t;
                 passes++;
                 System.err.printf("  %-6s [warmup %2d] %8.2f t/s%n", test, passes, t);
@@ -291,7 +333,7 @@ public final class JinferBench {
 
         double[] tps = new double[reps];
         for (int i = 0; i < reps; i++) {
-            tps[i] = runOnce(model, prompt, count, prefill, vocab);
+            tps[i] = runOnce(model, prefix, prompt, count, prefill, vocab);
             System.err.printf("  %-6s [rep    %2d] %8.2f t/s%n", test, i, tps[i]);
         }
         return new Row(name, threads, test, mean(tps), stddev(tps));
@@ -303,8 +345,13 @@ public final class JinferBench {
      * projection llama_decode computes for the last token of a batch / each step.
      */
     private static double runOnce(
-            BenchModel<?> model, int[] prompt, int count, boolean prefill, int vocab) {
-        model.reset(); // llama_memory_clear, outside the timed region
+            BenchModel<?> model,
+            int[] prefix,
+            int[] prompt,
+            int count,
+            boolean prefill,
+            int vocab) {
+        model.resetToDepth(prefix); // prefix restore/replay is outside the timed region
         if (prefill) {
             long t0 = System.nanoTime();
             model.ingestPrefill(prompt);
@@ -584,9 +631,11 @@ public final class JinferBench {
                   -m, --model <path>      model to benchmark (repeatable; any supported architecture)
                   -p, --n-prompt <N>      prefill tokens (default 512; 0 to skip pp)
                   -n, --n-gen <N>         decode tokens  (default 128; 0 to skip tg)
+                  -d, --n-depth <N>       resident prefix tokens, prepared outside timing (default 0)
                   -r, --repetitions <N>   timed reps     (default 5)
                   -w, --warmup <N>        min warmup passes; warms adaptively until throughput settles (default 2)
                       --no-warmup         skip warmup runs before benchmarking
+                      --no-capabilities   skip engine capability benchmarks
                   -t, --threads <N>       pp and tg threads (default physical cores)
                       --ctx <N>           override context size for both tests
                                           (default per test, as llama-bench: p for pp, n for tg)

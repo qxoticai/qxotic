@@ -48,7 +48,7 @@ Import the BOM once:
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-bom</artifactId>
-      <version>0.1.0</version>
+      <version>0.2.0</version>
       <type>pom</type>
       <scope>import</scope>
     </dependency>
@@ -92,7 +92,7 @@ prefers the native backend and uses the Java Vector backend as a fallback.
 ```java
 //JAVA 25
 //RUNTIME_OPTIONS --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED
-//DEPS com.qxotic:jinfer-bom:0.1.0@pom
+//DEPS com.qxotic:jinfer-bom:0.2.0@pom
 //DEPS com.qxotic:jinfer-langchain4j
 //DEPS com.qxotic:jinfer-lfm2
 //DEPS com.qxotic:jam-native com.qxotic:jam-vector

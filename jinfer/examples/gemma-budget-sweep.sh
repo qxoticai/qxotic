@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
-# Reproduces the Gemma docs' "token budget comparison" (snippets 5-6): run the SAME detection
-# prompt on the SAME image at each image-token budget and compare how the answer sharpens with
-# resolution. Uses the jinfer.gemma4.imageTokenBudget knob (one JVM per budget - the property is
-# read once per process).
+# Run the same image and prompt at four image-token budgets.
 #
 #   ./gemma-budget-sweep.sh city-streets.jpg
 #   ./gemma-budget-sweep.sh city-streets.jpg "detect person and car, output only json"
@@ -19,7 +16,6 @@ args=("$img" "$prompt")
 [[ -n "${MODEL_REF:-}" ]] && args+=("$MODEL_REF" "${MEDIA_REF:?set MEDIA_REF alongside MODEL_REF}")
 
 for budget in 70 140 280 560; do
-    echo "════════════════════ budget = $budget tokens ════════════════════"
+    printf '\n== %s image tokens ==\n' "$budget"
     jbang -Djinfer.gemma4.imageTokenBudget="$budget" "$here/GemmaVision.java" "${args[@]}"
-    echo
 done
