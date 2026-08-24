@@ -118,7 +118,7 @@ public final class Indexing {
             remaining /= dim;
             elementOffset += coord * strides[i];
         }
-        return dataType.byteSizeFor(elementOffset);
+        return Math.multiplyExact(dataType.byteSize(), elementOffset);
     }
 
     public static long linearToOffset(Layout layout, DataType dataType, long linearIndex) {
