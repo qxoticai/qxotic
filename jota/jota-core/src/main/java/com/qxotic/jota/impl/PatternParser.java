@@ -27,6 +27,9 @@ final class PatternParser {
         if (pattern == null) {
             throw new IllegalArgumentException("Pattern cannot be null");
         }
+        if (pattern.isEmpty()) {
+            throw new IllegalArgumentException("Pattern cannot be empty");
+        }
         char openChar = pattern.charAt(0);
         char closeChar = pattern.charAt(pattern.length() - 1);
         if (openChar != '(' || closeChar != ')') {

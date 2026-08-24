@@ -118,6 +118,12 @@ class DataTypeBlockShapeTest {
     }
 
     @Test
+    void byteSizeRejectsNegativeCountsAndOverflow() {
+        assertThrows(IllegalArgumentException.class, () -> DataType.FP32.byteSizeFor(-1));
+        assertThrows(ArithmeticException.class, () -> DataType.FP64.byteSizeFor(Long.MAX_VALUE));
+    }
+
+    @Test
     void viewLevelLogicalShapeAndSize() {
         // View is an interface; a stub pins the default methods without a backing MemoryView
         View view = stubView(Shape.flat(7, 2), DataType.Q8_0); // 7x2 blocks

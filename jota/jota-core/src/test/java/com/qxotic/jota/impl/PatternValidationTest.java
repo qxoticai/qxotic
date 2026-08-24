@@ -7,6 +7,19 @@ import org.junit.jupiter.api.Test;
 class PatternValidationTest {
 
     @Test
+    void testRejectNullAndEmptyPatterns() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PatternParser.parsePattern(null, 0, "dimension"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PatternParser.parsePattern("", 0, "dimension"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PatternParser.parsePattern(" ", 0, "dimension"));
+    }
+
+    @Test
     void testParseScalarPattern() {
         assertArrayEquals(new int[] {}, PatternParser.parsePattern("()", 0, "dimension"));
     }
@@ -39,5 +52,34 @@ class PatternValidationTest {
                 () -> {
                     PatternParser.parsePattern("((a))", 1, "dimension");
                 });
+    }
+
+    @Test
+    void testRejectMalformedSeparatorsAndNesting() {
+        assertAll(
+                () ->
+                        assertThrows(
+                                IllegalArgumentException.class,
+                                () -> PatternParser.parsePattern("(a b)", 2, "dimension")),
+                () ->
+                        assertThrows(
+                                IllegalArgumentException.class,
+                                () -> PatternParser.parsePattern("(a,)", 1, "dimension")),
+                () ->
+                        assertThrows(
+                                IllegalArgumentException.class,
+                                () -> PatternParser.parsePattern("(,a)", 1, "dimension")),
+                () ->
+                        assertThrows(
+                                IllegalArgumentException.class,
+                                () -> PatternParser.parsePattern("((a, b)", 2, "dimension")),
+                () ->
+                        assertThrows(
+                                IllegalArgumentException.class,
+                                () -> PatternParser.parsePattern("(a, b))", 2, "dimension")),
+                () ->
+                        assertThrows(
+                                IllegalArgumentException.class,
+                                () -> PatternParser.parsePattern("(a)", 2, "dimension")));
     }
 }
