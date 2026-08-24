@@ -56,7 +56,7 @@ working tree.
 <dependency>
   <groupId>com.qxotic</groupId>
   <artifactId>toknroll-core</artifactId>
-  <version>0.1.0</version>
+  <version>0.2.0</version>
 </dependency>
 ```
 
@@ -69,14 +69,14 @@ For loading tokenizers from HuggingFace, ModelScope, or GGUF files, add the load
 <dependency>
   <groupId>com.qxotic</groupId>
   <artifactId>toknroll-hf</artifactId>
-  <version>0.1.0</version>
+  <version>0.2.0</version>
 </dependency>
 
 <!-- GGUF (llama.cpp format) tokenizer loading -->
 <dependency>
   <groupId>com.qxotic</groupId>
   <artifactId>toknroll-gguf</artifactId>
-  <version>0.1.0</version>
+  <version>0.2.0</version>
 </dependency>
 ```
 

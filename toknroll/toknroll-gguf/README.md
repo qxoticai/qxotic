@@ -8,7 +8,7 @@ Loads Tok'n'Roll `Tokenizer` instances from GGUF files (llama.cpp format).
 <dependency>
   <groupId>com.qxotic</groupId>
   <artifactId>toknroll-gguf</artifactId>
-  <version>0.1.0</version>
+  <version>0.2.0</version>
 </dependency>
 ```
 

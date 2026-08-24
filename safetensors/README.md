@@ -34,7 +34,7 @@ This keeps the API small and predictable.
 <dependency>
     <groupId>com.qxotic</groupId>
     <artifactId>safetensors</artifactId>
-    <version>0.1.0</version>
+    <version>0.2.0</version>
 </dependency>
 ```
 

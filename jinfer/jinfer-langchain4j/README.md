@@ -38,7 +38,7 @@ reranking and prompt caching.
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-bom</artifactId>
-      <version>0.1.0</version>
+      <version>0.2.0</version>
       <type>pom</type>
       <scope>import</scope>
     </dependency>
@@ -75,7 +75,7 @@ The `AiServices` examples also require LangChain4j's high-level API:
 </dependency>
 ```
 
-The BOMs manage versions only. Without them, add `0.1.0` to each Jinfer dependency and `1.19.0`
+The BOMs manage versions only. Without them, add `0.2.0` to each Jinfer dependency and `1.19.0`
 to each LangChain4j dependency.
 
 Optional runtime backends:
@@ -101,7 +101,7 @@ uses the Java Vector backend as a fallback. Without them, Jinfer uses its built-
 ```java
 //JAVA 25
 //RUNTIME_OPTIONS --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED
-//DEPS com.qxotic:jinfer-bom:0.1.0@pom
+//DEPS com.qxotic:jinfer-bom:0.2.0@pom
 //DEPS com.qxotic:jinfer-langchain4j
 //DEPS com.qxotic:jinfer-lfm2
 //DEPS com.qxotic:jam-native com.qxotic:jam-vector

@@ -26,7 +26,7 @@ if ! find "$CLASSES/com/qxotic/jam/native" -type f 2>/dev/null | grep -q .; then
     echo "   WARNING: no native libs bundled - run a cmake build first so dist/native/ is populated"
 fi
 
-VER="${JAM_VERSION:-0.1.0}"
+VER="${JAM_VERSION:-0.2.0}"
 printf 'Implementation-Title: jam\nImplementation-Version: %s\n' "$VER" > "$OUT/MANIFEST.MF"
 jar --create --file "$OUT/jam.jar" --manifest "$OUT/MANIFEST.MF" -C "$CLASSES" .
 
