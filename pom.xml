@@ -1,8 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd"
-    child.project.url.inherit.append.path="false">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" child.project.url.inherit.append.path="false" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
   <groupId>com.qxotic</groupId>
@@ -53,10 +50,7 @@
     <module>examples</module>
   </modules>
 
-  <scm
-      child.scm.connection.inherit.append.path="false"
-      child.scm.developerConnection.inherit.append.path="false"
-      child.scm.url.inherit.append.path="false">
+  <scm child.scm.connection.inherit.append.path="false" child.scm.developerConnection.inherit.append.path="false" child.scm.url.inherit.append.path="false">
     <connection>scm:git:https://github.com/qxoticai/qxotic.git</connection>
     <developerConnection>scm:git:https://github.com/qxoticai/qxotic.git</developerConnection>
     <tag>HEAD</tag>
@@ -105,6 +99,8 @@
     <maven-release-plugin.version>3.1.1</maven-release-plugin.version>
     <maven-gpg-plugin.version>3.2.7</maven-gpg-plugin.version>
     <maven-enforcer-plugin.version>3.5.0</maven-enforcer-plugin.version>
+    <!-- default-lifecycle plugin; pinned so requirePluginVersions has nothing implicit -->
+    <maven-site-plugin.version>3.12.1</maven-site-plugin.version>
     <maven-source-plugin.version>3.3.1</maven-source-plugin.version>
     <maven-javadoc-plugin.version>3.10.1</maven-javadoc-plugin.version>
     <central-publishing-maven-plugin.version>0.9.0</central-publishing-maven-plugin.version>
@@ -345,6 +341,11 @@
           <artifactId>maven-dependency-plugin</artifactId>
           <version>${maven-dependency-plugin.version}</version>
         </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-site-plugin</artifactId>
+          <version>${maven-site-plugin.version}</version>
+        </plugin>
 
         <!-- Code quality -->
         <plugin>
@@ -449,6 +450,11 @@
                 </requireJavaVersion>
                 <banDuplicatePomDependencyVersions />
                 <requireUpperBoundDeps />
+                <!-- Every plugin must carry a version (pluginManagement above), never Maven's
+                     per-distribution default - same pom, same plugins, on any Maven. -->
+                <requirePluginVersions>
+                  <message>All plugins must declare a version via pluginManagement</message>
+                </requirePluginVersions>
               </rules>
             </configuration>
           </execution>
