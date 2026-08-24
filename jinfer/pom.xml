@@ -48,7 +48,6 @@
   <properties>
     <maven.compiler.release>25</maven.compiler.release>
 
-    <maven-shade-plugin.version>3.6.0</maven-shade-plugin.version>
     <native-maven-plugin.version>0.10.6</native-maven-plugin.version>
 
     <!-- Per-executable knobs for the shared shade + native-image config below. A module that ships a
@@ -92,6 +91,7 @@
     <!-- Direct provider dependencies aligned with Spring Boot's tested stack. -->
     <spring-framework.version>7.0.9</spring-framework.version>
     <reactor.version>3.8.7</reactor.version>
+    <reactive-streams.version>1.0.4</reactive-streams.version>
     <micrometer.version>1.17.1</micrometer.version>
 
     <!-- test libraries shared by the backend modules -->
@@ -243,6 +243,11 @@
         <version>${reactor.version}</version>
       </dependency>
       <dependency>
+        <groupId>org.reactivestreams</groupId>
+        <artifactId>reactive-streams</artifactId>
+        <version>${reactive-streams.version}</version>
+      </dependency>
+      <dependency>
         <groupId>org.springframework</groupId>
         <artifactId>spring-core</artifactId>
         <version>${spring-framework.version}</version>
@@ -329,7 +334,6 @@
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-shade-plugin</artifactId>
-          <version>${maven-shade-plugin.version}</version>
           <executions>
             <execution>
               <goals>
