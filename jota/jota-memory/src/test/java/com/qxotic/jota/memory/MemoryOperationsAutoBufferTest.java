@@ -1,5 +1,6 @@
 package com.qxotic.jota.memory;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -69,6 +70,130 @@ class MemoryOperationsAutoBufferTest {
                                 dst,
                                 0,
                                 0));
+    }
+
+    @Test
+    void rejectsNegativeCopySize() {
+        Memory<byte[]> src = byteDomain.memoryAllocator().allocateMemory(1);
+        Memory<byte[]> dst = byteDomain.memoryAllocator().allocateMemory(1);
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        MemoryOperations.copy(
+                                byteDomain.memoryOperations(),
+                                src,
+                                0,
+                                byteDomain.memoryOperations(),
+                                dst,
+                                0,
+                                -1));
+    }
+
+    @Test
+    void rejectsEmptyExplicitStagingBuffer() {
+        Memory<byte[]> src = byteDomain.memoryAllocator().allocateMemory(1);
+        Memory<byte[]> dst = byteDomain.memoryAllocator().allocateMemory(1);
+        Memory<MemorySegment> buffer =
+                MemoryFactory.ofMemorySegment(MemorySegment.ofArray(new byte[0]));
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        MemoryOperations.copy(
+                                byteDomain.memoryOperations(),
+                                src,
+                                0,
+                                byteDomain.memoryOperations(),
+                                dst,
+                                0,
+                                1,
+                                buffer));
+    }
+
+    @Test
+    void rejectsSizeMisalignedExplicitStagingBuffer() {
+        Memory<int[]> src = intDomain.memoryAllocator().allocateMemory(8);
+        Memory<int[]> dst = intDomain.memoryAllocator().allocateMemory(8);
+        Memory<MemorySegment> buffer =
+                MemoryFactory.ofMemorySegment(MemorySegment.ofArray(new byte[5]));
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        MemoryOperations.copy(
+                                intDomain.memoryOperations(),
+                                src,
+                                0,
+                                intDomain.memoryOperations(),
+                                dst,
+                                0,
+                                8,
+                                buffer));
+    }
+
+    @Test
+    void acceptsSizeAlignedExplicitStagingBuffer() {
+        Memory<int[]> src = MemoryFactory.ofInts(1, 2);
+        Memory<int[]> dst = intDomain.memoryAllocator().allocateMemory(8);
+        Memory<MemorySegment> buffer =
+                MemoryFactory.ofMemorySegment(MemorySegment.ofArray(new byte[4]));
+
+        MemoryOperations.copy(
+                intDomain.memoryOperations(),
+                src,
+                0,
+                intDomain.memoryOperations(),
+                dst,
+                0,
+                8,
+                buffer);
+
+        assertArrayEquals(new int[] {1, 2}, dst.base());
+    }
+
+    @Test
+    void alignsAutomaticStagingBufferSize() {
+        int elementCount = 8192;
+        long[] values = new long[elementCount];
+        for (int i = 0; i < values.length; i++) {
+            values[i] = Double.doubleToRawLongBits(i + 0.5);
+        }
+        Memory<long[]> src = MemoryFactory.ofLongs(values);
+        Memory<double[]> dst =
+                doubleDomain.memoryAllocator().allocateMemory((long) elementCount * Double.BYTES);
+
+        MemoryOperations.copy(
+                longDomain.memoryOperations(),
+                src,
+                0,
+                doubleDomain.memoryOperations(),
+                dst,
+                0,
+                (long) elementCount * Long.BYTES);
+
+        assertEquals(0.5, dst.base()[0]);
+        assertEquals(elementCount - 0.5, dst.base()[elementCount - 1]);
+    }
+
+    @Test
+    void emptyCopyDoesNotRequireAStagingBuffer() {
+        Memory<byte[]> src = byteDomain.memoryAllocator().allocateMemory(0);
+        Memory<byte[]> dst = byteDomain.memoryAllocator().allocateMemory(0);
+        Memory<MemorySegment> buffer =
+                MemoryFactory.ofMemorySegment(MemorySegment.ofArray(new byte[0]));
+
+        assertDoesNotThrow(
+                () ->
+                        MemoryOperations.copy(
+                                byteDomain.memoryOperations(),
+                                src,
+                                0,
+                                byteDomain.memoryOperations(),
+                                dst,
+                                0,
+                                0,
+                                buffer));
     }
 
     @Test

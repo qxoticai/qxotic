@@ -4,6 +4,7 @@ import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryAccessChecks;
 import com.qxotic.jota.memory.MemoryOperations;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.util.Arrays;
 
 class BooleansMemoryOperations implements MemoryOperations<boolean[]> {
@@ -43,8 +44,15 @@ class BooleansMemoryOperations implements MemoryOperations<boolean[]> {
             Memory<boolean[]> dst,
             long dstByteOffset,
             long byteSize) {
-        // MemorySegment.ofArray() doesn't support boolean[]
-        throw new UnsupportedOperationException("copyFromNative not supported for boolean[]");
+        MemoryAccessChecks.checkBounds(src, srcByteOffset, byteSize);
+        MemoryAccessChecks.checkBounds(dst, dstByteOffset, byteSize);
+        MemoryAccessChecks.checkWriteable(dst);
+        int dstOffset = Math.toIntExact(dstByteOffset);
+        int size = Math.toIntExact(byteSize);
+        for (int i = 0; i < size; i++) {
+            dst.base()[dstOffset + i] =
+                    src.base().get(ValueLayout.JAVA_BYTE, srcByteOffset + i) != 0;
+        }
     }
 
     @Override
@@ -54,8 +62,18 @@ class BooleansMemoryOperations implements MemoryOperations<boolean[]> {
             Memory<MemorySegment> dst,
             long dstByteOffset,
             long byteSize) {
-        // MemorySegment.ofArray() doesn't support boolean[]
-        throw new UnsupportedOperationException("copyToNative not supported for boolean[]");
+        MemoryAccessChecks.checkBounds(src, srcByteOffset, byteSize);
+        MemoryAccessChecks.checkBounds(dst, dstByteOffset, byteSize);
+        MemoryAccessChecks.checkWriteable(dst);
+        int srcOffset = Math.toIntExact(srcByteOffset);
+        int size = Math.toIntExact(byteSize);
+        for (int i = 0; i < size; i++) {
+            dst.base()
+                    .set(
+                            ValueLayout.JAVA_BYTE,
+                            dstByteOffset + i,
+                            (byte) (src.base()[srcOffset + i] ? 1 : 0));
+        }
     }
 
     @Override

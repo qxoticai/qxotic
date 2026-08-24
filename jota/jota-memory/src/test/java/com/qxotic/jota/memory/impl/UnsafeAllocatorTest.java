@@ -39,17 +39,9 @@ class UnsafeAllocatorTest {
     }
 
     @Test
-    void testCloseReleasesMemory() {
-        ScopedMemory<MemorySegment> memory = unsafeAllocator.allocateMemory(64 * (1 << 10));
-        MemorySegment segment = memory.base();
-        long address = segment.address();
-
+    void testDoubleCloseFails() {
+        ScopedMemory<MemorySegment> memory = unsafeAllocator.allocateMemory(64);
         memory.close();
-
-        // Verify memory was freed by trying to allocate at same address (this is a bit
-        // implementation-dependent)
-        try (ScopedMemory<MemorySegment> newMemory = unsafeAllocator.allocateMemory(100)) {
-            assertNotEquals(address, newMemory.base().address());
-        }
+        assertThrows(IllegalStateException.class, memory::close);
     }
 }

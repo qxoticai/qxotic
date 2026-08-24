@@ -177,7 +177,7 @@ public final class ViewTransforms {
         Shape newShape = layout.shape().permute(permutationIndices);
         Stride newStride = layout.stride().permute(permutationIndices);
         Layout newLayout = Layout.of(newShape, newStride);
-        ViewKind kind = new ViewKind.Transpose(permutationIndices.clone());
+        ViewKind kind = new ViewKind.Transpose(permutationIndices);
         return ViewTransformSpec.simple(kind, newLayout, 0L);
     }
 
@@ -251,16 +251,6 @@ public final class ViewTransforms {
         ViewKind kind = new ViewKind.Slice(axis, fromInclusive, indexStride);
         Layout newLayout = Layout.of(newShape, newStride);
         return ViewTransformSpec.lazy(kind, newLayout, byteOffsetDelta);
-    }
-
-    /**
-     * Returns true if the layout spans a contiguous memory range.
-     *
-     * <p>A layout spans a contiguous range if all elements fit within a contiguous block of memory
-     * without gaps: sum((dim_i - 1) * stride_i) == totalElements - 1.
-     */
-    private static boolean spansContiguousRange(Layout layout) {
-        return layout.isSpanContiguous();
     }
 
     private static boolean canReshapeWithoutCopy(

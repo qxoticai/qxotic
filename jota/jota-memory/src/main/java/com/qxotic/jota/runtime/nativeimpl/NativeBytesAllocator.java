@@ -28,8 +28,7 @@ final class NativeBytesAllocator
 
     @Override
     public Memory<MemorySegment> allocateMemory(long byteSize, long byteAlignment) {
-        if (defaultByteAlignment() % byteAlignment != 0) {
-            // Cannot guarantee more than 1 alignment.
+        if (byteAlignment != 1) {
             throw new IllegalArgumentException("unsupported byteAlignment");
         }
         int byteSizeInt = Math.toIntExact(byteSize);
