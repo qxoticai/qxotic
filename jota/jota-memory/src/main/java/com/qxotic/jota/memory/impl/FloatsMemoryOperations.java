@@ -149,8 +149,8 @@ final class FloatsMemoryOperations implements MemoryOperations<float[]> {
         int intFloatOffset = intByteOffset / Float.BYTES;
         int intFloatSize = intByteSize / Float.BYTES;
 
-        float f0 = Float.intBitsToFloat((int) (longValue & 0xFFFFFF));
-        float f1 = Float.intBitsToFloat((int) ((longValue >> 32) & 0xFFFFFF));
+        float f0 = Float.intBitsToFloat((int) longValue);
+        float f1 = Float.intBitsToFloat((int) (longValue >> 32));
         float[] base = memory.base();
         for (int i = 0; i < intFloatSize; i += floatsPerLong) {
             base[intFloatOffset + i] = f0;
