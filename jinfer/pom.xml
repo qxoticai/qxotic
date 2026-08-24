@@ -278,18 +278,7 @@
   </dependencies>
 
   <build>
-    <resources>
-      <resource>
-        <directory>${project.basedir}/src/main/resources</directory>
-      </resource>
-      <resource>
-        <targetPath>META-INF</targetPath>
-        <directory>..</directory>
-        <includes>
-          <include>LICENSE</include>
-        </includes>
-      </resource>
-    </resources>
+    <!-- Legal pair (LICENSE + NOTICE) is inherited from the qxotic parent's resources. -->
     <pluginManagement>
       <plugins>
         <plugin>
@@ -362,18 +351,15 @@
                   </transformer>
                   <!-- merge META-INF/services across modules (ModelProvider arch dispatch) -->
                   <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer" />
-                  <!-- retain colliding legal resources from shaded dependencies -->
-                  <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
-                    <resource>META-INF/LICENSE</resource>
-                  </transformer>
+                  <!-- All in-house jars carry the same canonical META-INF/LICENSE and NOTICE from
+                       the qxotic parent; first-wins keeps one copy (appending would duplicate the
+                       identical text once per shaded jar). The .txt/.md variants stay appending
+                       for future third-party cargo. -->
                   <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
                     <resource>META-INF/LICENSE.txt</resource>
                   </transformer>
                   <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
                     <resource>META-INF/LICENSE.md</resource>
-                  </transformer>
-                  <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
-                    <resource>META-INF/NOTICE</resource>
                   </transformer>
                   <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
                     <resource>META-INF/NOTICE.txt</resource>
