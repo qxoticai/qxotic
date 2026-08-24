@@ -1,5 +1,27 @@
 {
-  "comment": "FFM downcall stub for libjam's jam_mm, used by NativeJAM when -Djam.native.binding=ffm. Mirrors NativeJAM's FunctionDescriptor: int jam_mm(jlong ctx, jlong w,jint wt,jint ldw, jlong a,jint at,jint lda, jlong r,jint rt,jint ldr, jint m,jint n,jint k). GraalVM Native Image needs downcalls registered (no auto-detection); -H:+ForeignAPISupport is default-on in 25.",
+  "comment": "NativeJAM in a GraalVM image: 'jni' registers the JNI binding (the default -Djam.native.binding=jni) - unregistered native methods fail at call time with UnsatisfiedLinkError naming the JNI symbol. 'resources' embeds the bundled libjam so NativeLoader can extract and System.load it. 'foreign' registers the FFM downcall stub for -Djam.native.binding=ffm (no auto-detection; -H:+ForeignAPISupport is default-on in 25). Both mirror NativeJAM's signatures: int mmJni / jam_mm(jlong ctx, jlong w,jint wt,jint ldw, jlong a,jint at,jint lda, jlong r,jint rt,jint ldr, jint m,jint n,jint k) and jlong createJni(jint threads).",
+  "resources": [{"glob": "com/qxotic/jam/native/**"}],
+  "jni": [
+    {
+      "type": {"name": "com.qxotic.jam.NativeJAM"},
+      "methods": [
+        {
+          "name": "mmJni",
+          "parameterTypes": [
+            "long",
+            "long", "int", "int",
+            "long", "int", "int",
+            "long", "int", "int",
+            "int", "int", "int"
+          ]
+        },
+        {
+          "name": "createJni",
+          "parameterTypes": ["int"]
+        }
+      ]
+    }
+  ],
   "foreign": {
     "downcalls": [
       {
