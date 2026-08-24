@@ -32,6 +32,11 @@
       <groupId>org.springframework.ai</groupId>
       <artifactId>spring-ai-model</artifactId>
     </dependency>
+    <!-- Document, ToolDefinition, ToolCallback: used directly by the mappings and models. -->
+    <dependency>
+      <groupId>org.springframework.ai</groupId>
+      <artifactId>spring-ai-commons</artifactId>
+    </dependency>
     <!-- the post-retrieval seam (DocumentPostProcessor, Query): Spring AI models reranking as a
          RAG pipeline step, not as a model type -->
     <dependency>
