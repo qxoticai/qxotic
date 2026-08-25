@@ -16,7 +16,9 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.ForkJoinTask;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicIntegerArray;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
@@ -85,6 +87,29 @@ final class ParallelTest {
         for (int i = 0; i < visits.length(); i++) {
             assertEquals(1, visits.get(i), "cell " + i);
         }
+    }
+
+    @Test
+    void saturatedNestedLoopsCompleteOnTheBoundedPool() {
+        int repetitions = 100;
+        int threads = RuntimeFlags.COMPUTE_THREADS;
+        int outerCount = threads * 4;
+        int innerCount = 256;
+        AtomicLong visits = new AtomicLong();
+
+        for (int repetition = 0; repetition < repetitions; repetition++) {
+            AtomicInteger entered = new AtomicInteger();
+            Parallel.forLoop(
+                    outerCount,
+                    ignored -> {
+                        if (entered.getAndIncrement() < threads) {
+                            while (entered.get() < threads) Thread.onSpinWait();
+                        }
+                        Parallel.forLoop(innerCount, inner -> visits.incrementAndGet());
+                    });
+        }
+
+        assertEquals((long) repetitions * outerCount * innerCount, visits.get());
     }
 
     @Test
