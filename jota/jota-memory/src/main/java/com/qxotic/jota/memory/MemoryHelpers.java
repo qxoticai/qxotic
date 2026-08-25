@@ -1,9 +1,19 @@
 package com.qxotic.jota.memory;
 
+import static java.lang.foreign.ValueLayout.JAVA_BYTE;
+import static java.lang.foreign.ValueLayout.JAVA_DOUBLE;
+import static java.lang.foreign.ValueLayout.JAVA_FLOAT;
+import static java.lang.foreign.ValueLayout.JAVA_INT;
+import static java.lang.foreign.ValueLayout.JAVA_LONG;
+import static java.lang.foreign.ValueLayout.JAVA_SHORT;
+
 import com.qxotic.jota.BFloat16;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
+import com.qxotic.jota.memory.impl.MemoryFactory;
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
 
 public final class MemoryHelpers {
 
@@ -94,163 +104,63 @@ public final class MemoryHelpers {
         return full(domain, dataType, shape, 0);
     }
 
+    /**
+     * {@code [0, endExclusive)} as {@code dataType}, row-major. Built on the host and transferred
+     * with one {@link MemoryOperations#copyFromNative}, so opaque (GPU) domains work like host
+     * ones. A non-positive end yields an empty view.
+     */
     public static <B> MemoryView<B> arange(
             MemoryDomain<B> domain, DataType dataType, long endExclusive) {
-        if (dataType.isIntegral() || dataType == DataType.BOOL) {
-            return arangeIntegral(domain, dataType, 0L, endExclusive, 1L);
-        } else if (dataType.isFloatingPoint()) {
-            return arangeFloat(domain, dataType, 0.0, (double) endExclusive, 1.0);
+        if (!domain.supportsDataType(dataType)) {
+            throw new IllegalArgumentException(
+                    "Context does not support "
+                            + dataType
+                            + " (requires "
+                            + dataType.byteSize()
+                            + "-byte alignment, domain has "
+                            + domain.memoryGranularity()
+                            + "-byte granularity)");
+        }
+        long count = Math.max(0, endExclusive);
+        Memory<B> memory = domain.memoryAllocator().allocateMemory(dataType, count);
+        MemoryView<B> view = MemoryView.of(memory, dataType, Layout.rowMajor(Shape.flat(count)));
+        if (count == 0) {
+            return view;
+        }
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment sequence = arena.allocate(dataType.byteSizeFor(count));
+            writeSequence(sequence, dataType, count);
+            domain.memoryOperations()
+                    .copyFromNative(
+                            MemoryFactory.ofMemorySegment(sequence),
+                            0,
+                            memory,
+                            0,
+                            sequence.byteSize());
+        }
+        return view;
+    }
+
+    /** 0, 1, 2, ... encoded as {@code dataType}; the type is resolved once, not per element. */
+    private static void writeSequence(MemorySegment s, DataType dataType, long count) {
+        if (dataType == DataType.I8) {
+            for (long i = 0; i < count; i++) s.set(JAVA_BYTE, i, (byte) i);
+        } else if (dataType == DataType.I16) {
+            for (long i = 0; i < count; i++) s.setAtIndex(JAVA_SHORT, i, (short) i);
+        } else if (dataType == DataType.I32) {
+            for (long i = 0; i < count; i++) s.setAtIndex(JAVA_INT, i, (int) i);
+        } else if (dataType == DataType.I64) {
+            for (long i = 0; i < count; i++) s.setAtIndex(JAVA_LONG, i, i);
+        } else if (dataType == DataType.FP16) {
+            for (long i = 0; i < count; i++) s.setAtIndex(JAVA_SHORT, i, Float.floatToFloat16(i));
+        } else if (dataType == DataType.BF16) {
+            for (long i = 0; i < count; i++) s.setAtIndex(JAVA_SHORT, i, BFloat16.fromFloat(i));
+        } else if (dataType == DataType.FP32) {
+            for (long i = 0; i < count; i++) s.setAtIndex(JAVA_FLOAT, i, (float) i);
+        } else if (dataType == DataType.FP64) {
+            for (long i = 0; i < count; i++) s.setAtIndex(JAVA_DOUBLE, i, (double) i);
         } else {
             throw new IllegalArgumentException("Unsupported data type for arange: " + dataType);
         }
-    }
-
-    // ============================================================
-    // INTERNAL IMPLEMENTATION - Integral types
-    // ============================================================
-
-    private static <B> MemoryView<B> arangeIntegral(
-            MemoryDomain<B> domain, DataType dataType, long start, long end, long step) {
-        if (step == 0) {
-            throw new IllegalArgumentException("step cannot be 0");
-        }
-        if (!dataType.isIntegral()) {
-            throw new IllegalArgumentException(
-                    "Integral arange requires integral DataType, got: " + dataType);
-        }
-        if (!domain.supportsDataType(dataType)) {
-            throw new IllegalArgumentException(
-                    "Context does not support "
-                            + dataType
-                            + " (requires "
-                            + dataType.byteSize()
-                            + "-byte alignment, domain has "
-                            + domain.memoryGranularity()
-                            + "-byte granularity)");
-        }
-
-        MemoryAccess<B> memoryAccess = domain.directAccess();
-        if (memoryAccess == null) {
-            throw new UnsupportedOperationException(
-                    "Context does not support direct memory access");
-        }
-
-        long count = arangeCountLong(start, end, step);
-        Shape shape = Shape.flat(count);
-        MemoryAllocator<B> allocator = domain.memoryAllocator();
-        Memory<B> memory = allocator.allocateMemory(dataType, count);
-        MemoryView<B> view = MemoryView.of(memory, dataType, Layout.rowMajor(shape));
-
-        for (long i = 0; i < count; i++) {
-            long value = start + i * step;
-            long offset = i * dataType.byteSize();
-            if (dataType == DataType.I8) {
-                memoryAccess.writeByte(memory, offset, (byte) value);
-            } else if (dataType == DataType.I16) {
-                memoryAccess.writeShort(memory, offset, (short) value);
-            } else if (dataType == DataType.I32) {
-                memoryAccess.writeInt(memory, offset, (int) value);
-            } else if (dataType == DataType.I64) {
-                memoryAccess.writeLong(memory, offset, value);
-            } else {
-                throw new IllegalArgumentException("Unsupported data type for arange: " + dataType);
-            }
-        }
-        return view;
-    }
-
-    // ============================================================
-    // INTERNAL IMPLEMENTATION - Floating-point types
-    // ============================================================
-
-    private static <B> MemoryView<B> arangeFloat(
-            MemoryDomain<B> domain, DataType dataType, double start, double end, double step) {
-        if (step == 0.0) {
-            throw new IllegalArgumentException("step cannot be 0");
-        }
-        if (!dataType.isFloatingPoint()) {
-            throw new IllegalArgumentException(
-                    "Floating-point arange requires floating-point DataType, got: " + dataType);
-        }
-        if (!domain.supportsDataType(dataType)) {
-            throw new IllegalArgumentException(
-                    "Context does not support "
-                            + dataType
-                            + " (requires "
-                            + dataType.byteSize()
-                            + "-byte alignment, domain has "
-                            + domain.memoryGranularity()
-                            + "-byte granularity)");
-        }
-
-        MemoryAccess<B> memoryAccess = domain.directAccess();
-        if (memoryAccess == null) {
-            throw new UnsupportedOperationException(
-                    "Context does not support direct memory access");
-        }
-
-        long count = arangeCountDouble(start, end, step);
-        Shape shape = Shape.flat(count);
-        MemoryAllocator<B> allocator = domain.memoryAllocator();
-        Memory<B> memory = allocator.allocateMemory(dataType, count);
-        MemoryView<B> view = MemoryView.of(memory, dataType, Layout.rowMajor(shape));
-
-        for (long i = 0; i < count; i++) {
-            double value = start + i * step;
-            long offset = i * dataType.byteSize();
-            if (dataType == DataType.FP16) {
-                memoryAccess.writeShort(memory, offset, Float.floatToFloat16((float) value));
-            } else if (dataType == DataType.BF16) {
-                memoryAccess.writeShort(memory, offset, BFloat16.fromFloat((float) value));
-            } else if (dataType == DataType.FP32) {
-                memoryAccess.writeFloat(memory, offset, (float) value);
-            } else if (dataType == DataType.FP64) {
-                memoryAccess.writeDouble(memory, offset, value);
-            } else {
-                throw new IllegalArgumentException("Unsupported data type for arange: " + dataType);
-            }
-        }
-        return view;
-    }
-
-    // ============================================================
-    // HELPER METHODS
-    // ============================================================
-
-    private static long arangeCountLong(long start, long end, long step) {
-        if (step > 0) {
-            if (start >= end) {
-                return 0;
-            }
-            long span = end - start;
-            long count = span / step;
-            if (span % step != 0) {
-                count++;
-            }
-            return count;
-        }
-        if (start <= end) {
-            return 0;
-        }
-        long span = start - end;
-        long stride = Math.abs(step);
-        long count = span / stride;
-        if (span % stride != 0) {
-            count++;
-        }
-        return count;
-    }
-
-    private static long arangeCountDouble(double start, double end, double step) {
-        if (step > 0.0) {
-            if (start >= end) {
-                return 0;
-            }
-            return (long) Math.ceil((end - start) / step);
-        }
-        if (start <= end) {
-            return 0;
-        }
-        return (long) Math.ceil((start - end) / Math.abs(step));
     }
 }

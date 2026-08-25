@@ -107,7 +107,7 @@ public interface MemoryDomain<B> extends AutoCloseable {
             MemoryView<S> src,
             MemoryDomain<D> dstContext,
             MemoryView<D> dst) {
-        long bytes = src.shape().size() * src.dataType().byteSize();
+        long bytes = src.dataType().byteSizeFor(src.shape());
         if (bytes == 0) {
             return;
         }

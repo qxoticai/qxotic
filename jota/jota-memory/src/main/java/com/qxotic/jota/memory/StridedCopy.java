@@ -1,14 +1,16 @@
 package com.qxotic.jota.memory;
 
-import com.qxotic.jota.DataType;
-import com.qxotic.jota.Indexing;
-import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.impl.MemoryFactory;
+import com.qxotic.jota.runtime.nativeimpl.NativeMemoryFactory;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
 
 final class StridedCopy {
+
+    private static final MemoryAccess<MemorySegment> HOST_ACCESS =
+            NativeMemoryFactory.memoryAccess();
+    private static final MemoryOperations<MemorySegment> HOST_OPS =
+            NativeMemoryFactory.memoryOperations();
 
     private StridedCopy() {}
 
@@ -24,145 +26,121 @@ final class StridedCopy {
         if (!src.memory().device().equals(dst.memory().device())) {
             throw new IllegalArgumentException("Source and destination devices must match");
         }
-
-        if (src.isRowMajorContiguous() && dst.isRowMajorContiguous()) {
-            long bytes = src.shape().size() * src.dataType().byteSize();
-            if (bytes == 0) {
-                return;
-            }
-            domain.memoryOperations()
-                    .copy(src.memory(), src.byteOffset(), dst.memory(), dst.byteOffset(), bytes);
+        long bytes = src.dataType().byteSizeFor(src.shape());
+        if (bytes == 0) {
             return;
         }
-
+        MemoryOperations<B> ops = domain.memoryOperations();
+        if (src.isRowMajorContiguous() && dst.isRowMajorContiguous()) {
+            ops.copy(src.memory(), src.byteOffset(), dst.memory(), dst.byteOffset(), bytes);
+            return;
+        }
         MemoryAccess<B> access = domain.directAccess();
         if (access == null) {
             copyViaHost(domain, src, dst);
             return;
         }
-
-        if (src.memory().base() instanceof MemorySegment
-                && dst.memory().base() instanceof MemorySegment) {
-            copyWithMemorySegment(
-                    (MemorySegment) src.memory().base(),
-                    src,
-                    (MemorySegment) dst.memory().base(),
-                    dst,
-                    src.dataType());
+        if (src.memory() == dst.memory()) {
+            // ponytail: a self-copy goes through a contiguous temp (two passes). Only views over
+            // the same Memory are treated as aliased; two Memory objects over the same bytes are
+            // the caller's problem.
+            MemoryView<B> tmp =
+                    MemoryView.rowMajor(
+                            domain.memoryAllocator().allocateMemory(bytes),
+                            src.dataType(),
+                            src.shape());
+            copyElements(access, ops, src, tmp);
+            copyElements(access, ops, tmp, dst);
             return;
         }
-
-        copyWithAccess(access, src, dst, src.dataType());
+        copyElements(access, ops, src, dst);
     }
 
-    @SuppressWarnings("unchecked")
+    /**
+     * Odometer over the flat dims with running byte offsets. Scalar widths go through typed access;
+     * any other width (the block-quantized types, 17..210 bytes) is one bulk copy per element, so
+     * no dtype is ever named here.
+     */
+    private static <B> void copyElements(
+            MemoryAccess<B> a, MemoryOperations<B> ops, MemoryView<B> src, MemoryView<B> dst) {
+        long[] dims = src.shape().toArray();
+        long[] ss = src.byteStride().toArray();
+        long[] ds = dst.byteStride().toArray();
+        int elem = Math.toIntExact(src.dataType().byteSize());
+        int rank = dims.length;
+        long[] idx = new long[rank];
+        long so = src.byteOffset();
+        long doff = dst.byteOffset();
+        Memory<B> s = src.memory();
+        Memory<B> d = dst.memory();
+        while (true) {
+            switch (elem) {
+                case 1 -> a.writeByte(d, doff, a.readByte(s, so));
+                case 2 -> a.writeShort(d, doff, a.readShort(s, so));
+                case 4 -> a.writeInt(d, doff, a.readInt(s, so));
+                case 8 -> a.writeLong(d, doff, a.readLong(s, so));
+                default -> ops.copy(s, so, d, doff, elem);
+            }
+            int ax = rank - 1;
+            for (; ax >= 0; ax--) {
+                so += ss[ax];
+                doff += ds[ax];
+                if (++idx[ax] < dims[ax]) {
+                    break;
+                }
+                so -= ss[ax] * dims[ax];
+                doff -= ds[ax] * dims[ax];
+                idx[ax] = 0;
+            }
+            if (ax < 0) {
+                return;
+            }
+        }
+    }
+
+    /** Opaque domain (no direct access): mirror only each view's byte span on the host. */
     private static <B> void copyViaHost(
             MemoryDomain<B> domain, MemoryView<B> src, MemoryView<B> dst) {
-        DataType dtype = src.dataType();
-        Shape shape = src.shape();
-        MemoryOperations<B> deviceOps = domain.memoryOperations();
-
+        MemoryOperations<B> ops = domain.memoryOperations();
         try (Arena arena = Arena.ofConfined()) {
-            // Mirror src on host, preserving strides so offsets remain valid.
-            MemoryView<MemorySegment> hostSrc;
-            if (src.isRowMajorContiguous()) {
-                long bytes = shape.size() * dtype.byteSize();
-                Memory<MemorySegment> mem = MemoryFactory.ofMemorySegment(arena.allocate(bytes));
-                deviceOps.copyToNative(src.memory(), src.byteOffset(), mem, 0, bytes);
-                hostSrc = MemoryView.rowMajor(mem, dtype, shape);
-            } else {
-                long bytes = src.memory().byteSize();
-                Memory<MemorySegment> mem = MemoryFactory.ofMemorySegment(arena.allocate(bytes));
-                deviceOps.copyToNative(src.memory(), 0, mem, 0, bytes);
-                hostSrc = MemoryView.of(mem, src.byteOffset(), dtype, src.layout());
-            }
-
-            // Mirror dst on host and perform strided copy there.
-            if (dst.isRowMajorContiguous()) {
-                long bytes = shape.size() * dtype.byteSize();
-                Memory<MemorySegment> mem = MemoryFactory.ofMemorySegment(arena.allocate(bytes));
-                MemoryView<MemorySegment> hostDst = MemoryView.rowMajor(mem, dtype, shape);
-                copyWithMemorySegment(
-                        hostSrc.memory().base(), hostSrc, hostDst.memory().base(), hostDst, dtype);
-                deviceOps.copyFromNative(mem, 0, dst.memory(), dst.byteOffset(), bytes);
-            } else {
-                long bytes = dst.memory().byteSize();
-                Memory<MemorySegment> mem = MemoryFactory.ofMemorySegment(arena.allocate(bytes));
-                deviceOps.copyToNative(dst.memory(), 0, mem, 0, bytes);
-                MemoryView<MemorySegment> hostDst =
-                        MemoryView.of(mem, dst.byteOffset(), dtype, dst.layout());
-                copyWithMemorySegment(
-                        hostSrc.memory().base(), hostSrc, hostDst.memory().base(), hostDst, dtype);
-                deviceOps.copyFromNative(mem, 0, dst.memory(), 0, bytes);
-            }
+            MemoryView<MemorySegment> hostSrc = stage(arena, ops, src, true);
+            // A non-contiguous dst has gaps that must survive: bring its span down, write, push
+            // back.
+            boolean readBack = !dst.isRowMajorContiguous();
+            MemoryView<MemorySegment> hostDst = stage(arena, ops, dst, readBack);
+            copyElements(HOST_ACCESS, HOST_OPS, hostSrc, hostDst);
+            long[] span = byteSpan(dst);
+            ops.copyFromNative(hostDst.memory(), 0, dst.memory(), span[0], span[1] - span[0]);
         }
     }
 
-    private static <B> void copyWithAccess(
-            MemoryAccess<B> access, MemoryView<B> src, MemoryView<B> dst, DataType dataType) {
-        long size = src.shape().size();
-        for (long index = 0; index < size; index++) {
-            long srcOffset = Indexing.linearToOffset(src, index);
-            long dstOffset = Indexing.linearToOffset(dst, index);
-            if (dataType == DataType.BOOL || dataType == DataType.I8) {
-                byte value = access.readByte(src.memory(), srcOffset);
-                access.writeByte(dst.memory(), dstOffset, value);
-            } else if (dataType == DataType.I16
-                    || dataType == DataType.FP16
-                    || dataType == DataType.BF16) {
-                short value = access.readShort(src.memory(), srcOffset);
-                access.writeShort(dst.memory(), dstOffset, value);
-            } else if (dataType == DataType.I32) {
-                int value = access.readInt(src.memory(), srcOffset);
-                access.writeInt(dst.memory(), dstOffset, value);
-            } else if (dataType == DataType.I64) {
-                long value = access.readLong(src.memory(), srcOffset);
-                access.writeLong(dst.memory(), dstOffset, value);
-            } else if (dataType == DataType.FP32) {
-                float value = access.readFloat(src.memory(), srcOffset);
-                access.writeFloat(dst.memory(), dstOffset, value);
-            } else if (dataType == DataType.FP64) {
-                double value = access.readDouble(src.memory(), srcOffset);
-                access.writeDouble(dst.memory(), dstOffset, value);
-            } else {
-                throw new IllegalStateException("Unsupported data type: " + dataType);
-            }
+    private static <B> MemoryView<MemorySegment> stage(
+            Arena arena, MemoryOperations<B> ops, MemoryView<B> view, boolean download) {
+        long[] span = byteSpan(view);
+        long bytes = span[1] - span[0];
+        Memory<MemorySegment> mem = MemoryFactory.ofMemorySegment(arena.allocate(bytes));
+        if (download) {
+            ops.copyToNative(view.memory(), span[0], mem, 0, bytes);
         }
+        return MemoryView.of(mem, view.byteOffset() - span[0], view.dataType(), view.layout());
     }
 
-    private static void copyWithMemorySegment(
-            MemorySegment src,
-            MemoryView<?> srcView,
-            MemorySegment dst,
-            MemoryView<?> dstView,
-            DataType dataType) {
-        long size = srcView.shape().size();
-        for (long index = 0; index < size; index++) {
-            long srcOffset = Indexing.linearToOffset(srcView, index);
-            long dstOffset = Indexing.linearToOffset(dstView, index);
-            if (dataType == DataType.BOOL || dataType == DataType.I8) {
-                byte value = src.get(ValueLayout.JAVA_BYTE, srcOffset);
-                dst.set(ValueLayout.JAVA_BYTE, dstOffset, value);
-            } else if (dataType == DataType.I16
-                    || dataType == DataType.FP16
-                    || dataType == DataType.BF16) {
-                short value = src.get(ValueLayout.JAVA_SHORT_UNALIGNED, srcOffset);
-                dst.set(ValueLayout.JAVA_SHORT_UNALIGNED, dstOffset, value);
-            } else if (dataType == DataType.I32) {
-                int value = src.get(ValueLayout.JAVA_INT_UNALIGNED, srcOffset);
-                dst.set(ValueLayout.JAVA_INT_UNALIGNED, dstOffset, value);
-            } else if (dataType == DataType.I64) {
-                long value = src.get(ValueLayout.JAVA_LONG_UNALIGNED, srcOffset);
-                dst.set(ValueLayout.JAVA_LONG_UNALIGNED, dstOffset, value);
-            } else if (dataType == DataType.FP32) {
-                float value = src.get(ValueLayout.JAVA_FLOAT_UNALIGNED, srcOffset);
-                dst.set(ValueLayout.JAVA_FLOAT_UNALIGNED, dstOffset, value);
-            } else if (dataType == DataType.FP64) {
-                double value = src.get(ValueLayout.JAVA_DOUBLE_UNALIGNED, srcOffset);
-                dst.set(ValueLayout.JAVA_DOUBLE_UNALIGNED, dstOffset, value);
+    /**
+     * The [min, max) byte range a view touches: the same walk as {@link MemoryView#isWithinBounds}.
+     */
+    static long[] byteSpan(MemoryView<?> view) {
+        long min = view.byteOffset();
+        long max = view.byteOffset();
+        long[] dims = view.shape().toArray();
+        long[] strides = view.byteStride().toArray();
+        for (int i = 0; i < dims.length; i++) {
+            long span = Math.multiplyExact(dims[i] - 1, strides[i]);
+            if (span >= 0) {
+                max = Math.addExact(max, span);
             } else {
-                throw new IllegalStateException("Unsupported data type: " + dataType);
+                min = Math.addExact(min, span);
             }
         }
+        return new long[] {min, Math.addExact(max, view.dataType().byteSize())};
     }
 }
