@@ -36,6 +36,7 @@ import com.qxotic.jota.ir.tir.UnaryOp;
 import com.qxotic.jota.ir.tir.ViewOperation;
 import com.qxotic.jota.ir.tir.ViewTransform;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
@@ -957,29 +958,43 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
             ViewTransform vt, List<LIRExprNode> outputIndices) {
         return switch (vt.operation()) {
             case ViewOperation.Transpose transpose -> {
-                // Transpose: permute indices using inverse permutation
-                int[] invPerm = transpose.inverse();
-                List<LIRExprNode> result = new ArrayList<>(outputIndices.size());
-                for (int j : invPerm) {
-                    result.add(outputIndices.get(j));
+                Shape inputShape = vt.input().shape();
+                Shape outputShape = vt.shape();
+                LIRExprNode[] inputIndices = new LIRExprNode[inputShape.flatRank()];
+                int outputOffset = 0;
+                int[] permutation = transpose.permutation();
+                for (int outputMode = 0; outputMode < permutation.length; outputMode++) {
+                    int inputMode = permutation[outputMode];
+                    int inputOffset = flatModeOffset(inputShape, inputMode);
+                    int modeRank = outputShape.modeAt(outputMode).flatRank();
+                    for (int i = 0; i < modeRank; i++) {
+                        inputIndices[inputOffset + i] = outputIndices.get(outputOffset + i);
+                    }
+                    outputOffset += modeRank;
                 }
-                yield result;
+                yield new ArrayList<>(Arrays.asList(inputIndices));
             }
             case ViewOperation.Reshape reshape -> {
                 // Reshape: decompose linear index and recompose
                 // First flatten output indices to linear index
-                Shape toShape = reshape.toShape();
-                Shape fromShape = reshape.fromShape();
+                Shape toShape = reshape.shape();
+                Shape fromShape = vt.input().shape();
                 LIRExprNode linearIdx = flattenIndices(outputIndices, toShape);
                 // Then decompose to input shape coordinates
                 yield unflattenIndex(linearIdx, fromShape);
+            }
+            case ViewOperation.Unsqueeze unsqueeze -> {
+                List<LIRExprNode> result = new ArrayList<>(outputIndices);
+                int axis = Util.wrapAround(unsqueeze.axis(), vt.input().shape().rank() + 1);
+                result.remove(flatModeOffset(vt.shape(), axis));
+                yield result;
             }
             case ViewOperation.Broadcast broadcast -> {
                 // Broadcast: output has more/larger dims, input has fewer/smaller
                 // For broadcast dims (input size 1), the input index is always 0
                 // For other dims, pass through
-                Shape fromShape = broadcast.fromShape();
-                Shape toShape = broadcast.toShape();
+                Shape fromShape = vt.input().shape();
+                Shape toShape = broadcast.shape();
                 int fromRank = fromShape.flatRank();
                 int toRank = toShape.flatRank();
                 int offset = toRank - fromRank;
@@ -999,7 +1014,7 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
             }
             case ViewOperation.Expand expand -> {
                 // Expand is similar to broadcast within same rank
-                Shape fromShape = expand.fromShape();
+                Shape fromShape = vt.input().shape();
                 List<LIRExprNode> result = new ArrayList<>();
                 for (int i = 0; i < fromShape.flatRank(); i++) {
                     long fromDim = fromShape.flatAt(i);
@@ -1014,8 +1029,10 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
             case ViewOperation.Slice slice -> {
                 // Slice: output index maps to input index with offset and step
                 // input_idx = start + output_idx * step
-                List<LIRExprNode> result = new ArrayList<>(outputIndices);
-                LIRExprNode outIdx = outputIndices.get(slice.axis());
+                Shape inputShape = vt.input().shape();
+                int axis = Util.wrapAround(slice.axis(), inputShape.rank());
+                int flatAxis = flatModeOffset(inputShape, axis);
+                LIRExprNode outIdx = outputIndices.get(flatAxis);
                 LIRExprNode inIdx =
                         exprGraph.indexBinary(
                                 IndexBinaryOp.ADD,
@@ -1024,10 +1041,21 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
                                         IndexBinaryOp.MULTIPLY,
                                         outIdx,
                                         exprGraph.indexConst(slice.step())));
-                result.set(slice.axis(), inIdx);
+                List<LIRExprNode> result = new ArrayList<>(inputShape.flatRank());
+                result.addAll(outputIndices.subList(0, flatAxis));
+                result.addAll(unflattenIndex(inIdx, inputShape.modeAt(axis)));
+                result.addAll(outputIndices.subList(flatAxis + 1, outputIndices.size()));
                 yield result;
             }
         };
+    }
+
+    private static int flatModeOffset(Shape shape, int mode) {
+        int offset = 0;
+        for (int i = 0; i < mode; i++) {
+            offset += shape.modeAt(i).flatRank();
+        }
+        return offset;
     }
 
     /** Flattens multi-dimensional indices to a linear index using row-major order. */

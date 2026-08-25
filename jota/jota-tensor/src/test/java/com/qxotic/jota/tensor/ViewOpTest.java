@@ -12,6 +12,7 @@ import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryHelpers;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.testutil.RunOnAllAvailableBackends;
+import com.qxotic.jota.testutil.TensorTestReads;
 import java.lang.foreign.MemorySegment;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -535,6 +536,66 @@ class ViewOpTest {
         assertTrue(materialized.isContiguous());
     }
 
+    @Test
+    void sliceAppliesItsOriginAndStep() {
+        Tensor result = Tensor.iota(8, DataType.FP32).view(Shape.of(2, 4)).slice(1, 1, 4, 2);
+
+        assertTensorValues(result, 1, 3, 5, 7);
+    }
+
+    @Test
+    void negativeSliceReversesValues() {
+        Tensor result = Tensor.iota(4, DataType.FP32).slice(0, 3, -1, -1);
+
+        assertTensorValues(result, 3, 2, 1, 0);
+    }
+
+    @Test
+    void chainedSlicesAccumulateTheirOrigins() {
+        Tensor result =
+                Tensor.iota(12, DataType.FP32)
+                        .view(Shape.of(3, 4))
+                        .slice(0, 1, 3)
+                        .slice(1, 1, 4, 2);
+
+        assertTensorValues(result, 5, 7, 9, 11);
+    }
+
+    @Test
+    void nonAffineReshapePreservesLogicalOrder() {
+        Tensor result =
+                Tensor.iota(6, DataType.FP32)
+                        .view(Shape.of(2, 3))
+                        .transpose(0, 1)
+                        .view(Shape.of(6));
+
+        assertTensorValues(result, 0, 3, 1, 4, 2, 5);
+    }
+
+    @Test
+    void nestedPermutationRemapsWholeModes() {
+        Tensor result =
+                Tensor.iota(8, DataType.FP32).view(Shape.of(2, Shape.of(2L, 2L))).permute(1, 0);
+
+        assertTensorValues(result, 0, 4, 1, 5, 2, 6, 3, 7);
+    }
+
+    @Test
+    void nestedSliceLinearizesItsSelectedMode() {
+        Tensor result =
+                Tensor.iota(8, DataType.FP32).view(Shape.of(Shape.of(2L, 2L), 2)).slice(0, 1, 4, 2);
+
+        assertTensorValues(result, 2, 3, 6, 7);
+    }
+
+    @Test
+    void nestedUnsqueezePreservesValues() {
+        Tensor result =
+                Tensor.iota(8, DataType.FP32).view(Shape.of(2, Shape.of(2L, 2L))).unsqueeze(-1);
+
+        assertTensorValues(result, 0, 1, 2, 3, 4, 5, 6, 7);
+    }
+
     // ========== Incompatible Shape Size Tests ==========
 
     @Test
@@ -581,5 +642,12 @@ class ViewOpTest {
         IllegalArgumentException ex =
                 assertThrows(IllegalArgumentException.class, () -> input.view(nestedShape));
         assertTrue(ex.getMessage().contains("mismatch"));
+    }
+
+    private static void assertTensorValues(Tensor tensor, float... expected) {
+        assertEquals(expected.length, tensor.size());
+        for (int i = 0; i < expected.length; i++) {
+            assertEquals(expected[i], TensorTestReads.readFloat(tensor, i));
+        }
     }
 }

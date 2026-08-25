@@ -8,7 +8,6 @@ import com.qxotic.jota.Environment;
 import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
-import com.qxotic.jota.Stride;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryDomain;
@@ -390,9 +389,8 @@ class TIRInterpreterTest {
     void testViewTransformBroadcast() {
         // Create a scalar constant and broadcast it
         TIRNode scalar = ScalarConstant.of(floatBits(5.0f), DataType.FP32);
-        Layout broadcastLayout = Layout.of(Shape.of(3), Stride.zeros(Shape.of(3)));
-        ViewOperation operation = new ViewOperation.Broadcast(Shape.scalar(), Shape.of(3));
-        TIRNode broadcast = new ViewTransform(scalar, operation, broadcastLayout, false);
+        ViewOperation operation = new ViewOperation.Broadcast(Shape.of(3));
+        TIRNode broadcast = new ViewTransform(scalar, operation);
 
         MemoryView<?> input = createFloatTensor(new float[] {1.0f, 2.0f, 3.0f});
         TIRNode tensorInput = new TensorInput(0, DataType.FP32, input.layout());
@@ -403,6 +401,112 @@ class TIRInterpreterTest {
                 TIRInterpreter.execute(graph, List.of(input), memoryDomain);
 
         assertFloatEquals(new float[] {6.0f, 7.0f, 8.0f}, outputs.get(0));
+    }
+
+    @Test
+    void testViewTransformSliceAppliesStartAndStep() {
+        MemoryView<?> input =
+                createFloatTensor(new float[] {0, 1, 2, 3, 4, 5, 6, 7}, Shape.of(2, 4));
+        TIRNode tensorInput = new TensorInput(0, DataType.FP32, input.layout());
+        TIRNode slice = new ViewTransform(tensorInput, new ViewOperation.Slice(1, 1, 4, 2));
+
+        List<MemoryView<MemorySegment>> outputs =
+                TIRInterpreter.execute(
+                        new TIRGraph(List.of(tensorInput), List.of(slice)),
+                        List.of(input),
+                        memoryDomain);
+
+        assertEquals(Shape.of(2, 2), outputs.getFirst().shape());
+        assertFloatEquals(new float[] {1, 3, 5, 7}, outputs.getFirst());
+    }
+
+    @Test
+    void testViewTransformNegativeSlice() {
+        MemoryView<?> input = createFloatTensor(new float[] {0, 1, 2, 3});
+        TIRNode tensorInput = new TensorInput(0, DataType.FP32, input.layout());
+        TIRNode slice = new ViewTransform(tensorInput, new ViewOperation.Slice(0, 3, -1, -1));
+
+        List<MemoryView<MemorySegment>> outputs =
+                TIRInterpreter.execute(
+                        new TIRGraph(List.of(tensorInput), List.of(slice)),
+                        List.of(input),
+                        memoryDomain);
+
+        assertFloatEquals(new float[] {3, 2, 1, 0}, outputs.getFirst());
+    }
+
+    @Test
+    void testViewTransformChainedSlicesAccumulateOrigins() {
+        MemoryView<?> input =
+                createFloatTensor(
+                        new float[] {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}, Shape.of(3, 4));
+        TIRNode tensorInput = new TensorInput(0, DataType.FP32, input.layout());
+        TIRNode rows = new ViewTransform(tensorInput, new ViewOperation.Slice(0, 1, 3, 1));
+        TIRNode columns = new ViewTransform(rows, new ViewOperation.Slice(1, 1, 4, 2));
+
+        List<MemoryView<MemorySegment>> outputs =
+                TIRInterpreter.execute(
+                        new TIRGraph(List.of(tensorInput), List.of(columns)),
+                        List.of(input),
+                        memoryDomain);
+
+        assertFloatEquals(new float[] {5, 7, 9, 11}, outputs.getFirst());
+    }
+
+    @Test
+    void testViewTransformMaterializesOnlyNonAffineReshape() {
+        MemoryView<?> input = createFloatTensor(new float[] {0, 1, 2, 3, 4, 5}, Shape.of(2, 3));
+        TIRNode tensorInput = new TensorInput(0, DataType.FP32, input.layout());
+        TIRNode transposed =
+                new ViewTransform(tensorInput, new ViewOperation.Transpose(new int[] {1, 0}));
+        TIRNode flattened = new ViewTransform(transposed, new ViewOperation.Reshape(Shape.of(6)));
+
+        List<MemoryView<MemorySegment>> outputs =
+                TIRInterpreter.execute(
+                        new TIRGraph(List.of(tensorInput), List.of(flattened)),
+                        List.of(input),
+                        memoryDomain);
+
+        assertFloatEquals(new float[] {0, 3, 1, 4, 2, 5}, outputs.getFirst());
+    }
+
+    @Test
+    void testNonAffineReshapeCopiesWholeStorageUnits() {
+        Shape shape = Shape.of(2, 3);
+        DataType dataType = DataType.Q4_0;
+        Memory<MemorySegment> memory =
+                memoryDomain.memoryAllocator().allocateMemory(dataType, shape);
+        for (long block = 0; block < shape.size(); block++) {
+            for (long byteIndex = 0; byteIndex < dataType.byteSize(); byteIndex++) {
+                memoryAccess.writeByte(
+                        memory,
+                        block * dataType.byteSize() + byteIndex,
+                        (byte) (block * dataType.byteSize() + byteIndex));
+            }
+        }
+        MemoryView<?> input = MemoryViewFactory.of(dataType, memory, Layout.rowMajor(shape));
+        TIRNode tensorInput = new TensorInput(0, dataType, input.layout());
+        TIRNode transposed =
+                new ViewTransform(tensorInput, new ViewOperation.Transpose(new int[] {1, 0}));
+        TIRNode flattened = new ViewTransform(transposed, new ViewOperation.Reshape(Shape.of(6)));
+
+        MemoryView<MemorySegment> output =
+                TIRInterpreter.execute(
+                                new TIRGraph(List.of(tensorInput), List.of(flattened)),
+                                List.of(input),
+                                memoryDomain)
+                        .getFirst();
+
+        int[] expectedBlocks = {0, 3, 1, 4, 2, 5};
+        for (int outputBlock = 0; outputBlock < expectedBlocks.length; outputBlock++) {
+            for (long byteIndex = 0; byteIndex < dataType.byteSize(); byteIndex++) {
+                long expectedOffset = expectedBlocks[outputBlock] * dataType.byteSize() + byteIndex;
+                long actualOffset = outputBlock * dataType.byteSize() + byteIndex;
+                assertEquals(
+                        memoryAccess.readByte(memory, expectedOffset),
+                        memoryAccess.readByte(output.memory(), actualOffset));
+            }
+        }
     }
 
     // ==================== 2D Tensor Operations ====================
@@ -669,9 +773,8 @@ class TIRInterpreterTest {
                 new ReductionOp(ReductionOperator.SUM, exp_x, new int[] {0}, false, DataType.FP32);
 
         // Broadcast sum back to original shape for division
-        Layout broadcastLayout = Layout.of(Shape.of(3), Stride.zeros(Shape.of(3)));
-        ViewOperation operation = new ViewOperation.Broadcast(Shape.scalar(), Shape.of(3));
-        TIRNode sum_broadcast = new ViewTransform(sum_exp, operation, broadcastLayout, false);
+        ViewOperation operation = new ViewOperation.Broadcast(Shape.of(3));
+        TIRNode sum_broadcast = new ViewTransform(sum_exp, operation);
 
         // exp(x) / sum(exp(x))
         TIRNode softmax = new BinaryOp(BinaryOperator.DIVIDE, exp_x, sum_broadcast);
@@ -716,9 +819,8 @@ class TIRInterpreterTest {
         // mean = sum(x) / n
         TIRNode sum_x =
                 new ReductionOp(ReductionOperator.SUM, x, new int[] {0}, false, DataType.FP32);
-        Layout scalarBroadcast = Layout.of(shape, Stride.zeros(shape));
-        ViewOperation operation = new ViewOperation.Broadcast(Shape.scalar(), shape);
-        TIRNode sum_broadcast = new ViewTransform(sum_x, operation, scalarBroadcast, false);
+        ViewOperation operation = new ViewOperation.Broadcast(shape);
+        TIRNode sum_broadcast = new ViewTransform(sum_x, operation);
         TIRNode n_const = ScalarConstant.broadcast(floatBits((float) n), DataType.FP32, shape);
         TIRNode mean = new BinaryOp(BinaryOperator.DIVIDE, sum_broadcast, n_const);
 
@@ -732,7 +834,7 @@ class TIRInterpreterTest {
         TIRNode sum_sq =
                 new ReductionOp(
                         ReductionOperator.SUM, x_centered_sq, new int[] {0}, false, DataType.FP32);
-        TIRNode sum_sq_broadcast = new ViewTransform(sum_sq, operation, scalarBroadcast, false);
+        TIRNode sum_sq_broadcast = new ViewTransform(sum_sq, operation);
         TIRNode var = new BinaryOp(BinaryOperator.DIVIDE, sum_sq_broadcast, n_const);
 
         // sqrt(var + eps)

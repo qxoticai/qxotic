@@ -4,7 +4,6 @@ import com.qxotic.jota.DataType;
 import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.memory.Memory;
-import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.runtime.nativeimpl.NativeMemoryFactory;
@@ -28,12 +27,10 @@ public final class TIRInterpreter {
             }
 
             List<MemoryView<MemorySegment>> persistentOutputs = new ArrayList<>();
-            MemoryAccess<MemorySegment> memAccess =
-                    (MemoryAccess<MemorySegment>) memoryDomain.directAccess();
 
             for (MemoryView<MemorySegment> arenaOutput : arenaOutputs) {
                 DataType dtype = arenaOutput.dataType();
-                Layout layout = arenaOutput.layout();
+                Layout layout = Layout.rowMajor(arenaOutput.shape());
                 long size = layout.shape().size();
 
                 Memory<MemorySegment> persistentMemory =
@@ -44,32 +41,12 @@ public final class TIRInterpreter {
                 for (long i = 0; i < size; i++) {
                     long offset = Indexing.linearToOffset(arenaOutput, i);
                     long persistentOffset = Indexing.linearToOffset(persistentOutput, i);
-
-                    if (dtype == DataType.FP32) {
-                        float value = memAccess.readFloat(arenaOutput.memory(), offset);
-                        memAccess.writeFloat(persistentOutput.memory(), persistentOffset, value);
-                    } else if (dtype == DataType.FP64) {
-                        double value = memAccess.readDouble(arenaOutput.memory(), offset);
-                        memAccess.writeDouble(persistentOutput.memory(), persistentOffset, value);
-                    } else if (dtype == DataType.I8 || dtype == DataType.BOOL) {
-                        byte value = memAccess.readByte(arenaOutput.memory(), offset);
-                        memAccess.writeByte(persistentOutput.memory(), persistentOffset, value);
-                    } else if (dtype == DataType.I16) {
-                        short value = memAccess.readShort(arenaOutput.memory(), offset);
-                        memAccess.writeShort(persistentOutput.memory(), persistentOffset, value);
-                    } else if (dtype == DataType.I32) {
-                        int value = memAccess.readInt(arenaOutput.memory(), offset);
-                        memAccess.writeInt(persistentOutput.memory(), persistentOffset, value);
-                    } else if (dtype == DataType.I64) {
-                        long value = memAccess.readLong(arenaOutput.memory(), offset);
-                        memAccess.writeLong(persistentOutput.memory(), persistentOffset, value);
-                    } else if (dtype == DataType.FP16 || dtype == DataType.BF16) {
-                        short value = memAccess.readShort(arenaOutput.memory(), offset);
-                        memAccess.writeShort(persistentOutput.memory(), persistentOffset, value);
-                    } else {
-                        throw new UnsupportedOperationException(
-                                "Output copy not implemented for dtype: " + dtype);
-                    }
+                    MemorySegment.copy(
+                            arenaOutput.memory().base(),
+                            offset,
+                            persistentOutput.memory().base(),
+                            persistentOffset,
+                            dtype.byteSize());
                 }
 
                 persistentOutputs.add(persistentOutput);

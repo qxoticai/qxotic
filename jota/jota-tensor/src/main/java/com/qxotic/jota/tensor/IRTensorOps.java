@@ -17,7 +17,6 @@ import com.qxotic.jota.ir.tir.UnaryOp;
 import com.qxotic.jota.ir.tir.UnaryOperator;
 import com.qxotic.jota.ir.tir.ViewOperation;
 import com.qxotic.jota.ir.tir.ViewTransform;
-import com.qxotic.jota.memory.impl.ViewTransforms;
 
 final class IRTensorOps implements TensorOps {
 
@@ -370,12 +369,9 @@ final class IRTensorOps implements TensorOps {
     }
 
     @Override
-    public Tensor viewTransform(
-            Tensor input, ViewOperation operation, ViewTransforms.Result result) {
+    public Tensor viewTransform(Tensor input, ViewOperation operation) {
         IRTensorImpl tensor = requireIRTensor(input);
-        TIRNode node =
-                new ViewTransform(
-                        tensor.node(), operation, result.layout(), result.needsLazyIndexing());
+        TIRNode node = new ViewTransform(tensor.node(), operation);
         return new IRTensorImpl(node, tensor.device());
     }
 

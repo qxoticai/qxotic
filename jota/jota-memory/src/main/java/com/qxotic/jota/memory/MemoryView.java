@@ -6,8 +6,8 @@ import com.qxotic.jota.Shape;
 import com.qxotic.jota.Stride;
 import com.qxotic.jota.Util;
 import com.qxotic.jota.View;
+import com.qxotic.jota.ViewTransforms;
 import com.qxotic.jota.memory.impl.MemoryViewFactory;
-import com.qxotic.jota.memory.impl.ViewTransforms;
 import java.util.Arrays;
 import java.util.stream.IntStream;
 
@@ -112,7 +112,7 @@ public interface MemoryView<B> extends View {
 
     default MemoryView<B> broadcast(Shape targetShape) {
         ViewTransforms.Result result = ViewTransforms.broadcast(layout(), targetShape);
-        return of(memory(), byteOffset() + result.byteOffsetDelta(), dataType(), result.layout());
+        return of(memory(), byteOffset(), dataType(), result.layout());
     }
 
     // Factory methods

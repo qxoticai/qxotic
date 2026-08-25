@@ -1454,28 +1454,23 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
     @Override
     public MemoryView<MemorySegment> visitViewTransform(ViewTransform node) {
         MemoryView<MemorySegment> input = context.evaluate(node.input());
-
-        // If lazy indexing is needed (e.g., transpose + reshape), we must copy to contiguous first
-        // because the strides in node.layout() are placeholders.
-        if (node.needsLazyIndexing()) {
-            // Force contiguous copy, then apply the view with correct layout
-            MemoryView<MemorySegment> contiguous = copyToContiguous(input);
-            // After copy, data is row-major, so we can use row-major strides for the new shape
-            return MemoryView.of(
-                    contiguous.memory(),
-                    contiguous.byteOffset(),
-                    node.dataType(),
-                    Layout.rowMajor(node.layout().shape()));
+        var result = node.transform(input.layout());
+        if (result.isEmpty()) {
+            input = copyToContiguous(input);
+            result = node.transform(input.layout());
         }
-
-        return MemoryView.of(input.memory(), input.byteOffset(), node.dataType(), node.layout());
+        var transform = result.orElseThrow();
+        long byteOffsetDelta =
+                Math.multiplyExact(transform.elementOffsetDelta(), node.dataType().byteSize());
+        return MemoryView.of(
+                input.memory(),
+                Math.addExact(input.byteOffset(), byteOffsetDelta),
+                node.dataType(),
+                transform.layout());
     }
 
     private MemoryView<MemorySegment> copyToContiguous(MemoryView<MemorySegment> input) {
-        // Match eager contiguous() semantics: require row-major suffix contiguity,
-        // not just spanning a contiguous byte range (broadcast/transpose views may fail linear
-        // access).
-        if (input.layout().isSuffixContiguous(0)) {
+        if (input.isRowMajorContiguous()) {
             return input;
         }
         Layout rowMajor = Layout.rowMajor(input.shape());
@@ -1486,47 +1481,9 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
         for (long i = 0; i < size; i++) {
             long inOffset = Indexing.linearToOffset(input, i);
             long outOffset = i * dtype.byteSize();
-            copyElement(input, inOffset, output, outOffset, dtype);
+            copyElement(input.memory(), inOffset, output.memory(), outOffset, dtype);
         }
         return output;
-    }
-
-    private void copyElement(
-            MemoryView<MemorySegment> src,
-            long srcOffset,
-            MemoryView<MemorySegment> dst,
-            long dstOffset,
-            DataType dtype) {
-        if (dtype == DataType.FP32) {
-            float val = memAccess.readFloat(src.memory(), srcOffset);
-            memAccess.writeFloat(dst.memory(), dstOffset, val);
-        } else if (dtype == DataType.FP64) {
-            double val = memAccess.readDouble(src.memory(), srcOffset);
-            memAccess.writeDouble(dst.memory(), dstOffset, val);
-        } else if (dtype == DataType.I32) {
-            int val = memAccess.readInt(src.memory(), srcOffset);
-            memAccess.writeInt(dst.memory(), dstOffset, val);
-        } else if (dtype == DataType.I64) {
-            long val = memAccess.readLong(src.memory(), srcOffset);
-            memAccess.writeLong(dst.memory(), dstOffset, val);
-        } else if (dtype == DataType.I8) {
-            byte val = memAccess.readByte(src.memory(), srcOffset);
-            memAccess.writeByte(dst.memory(), dstOffset, val);
-        } else if (dtype == DataType.I16) {
-            short val = memAccess.readShort(src.memory(), srcOffset);
-            memAccess.writeShort(dst.memory(), dstOffset, val);
-        } else if (dtype == DataType.FP16) {
-            short val = memAccess.readShort(src.memory(), srcOffset);
-            memAccess.writeShort(dst.memory(), dstOffset, val);
-        } else if (dtype == DataType.BF16) {
-            short val = memAccess.readShort(src.memory(), srcOffset);
-            memAccess.writeShort(dst.memory(), dstOffset, val);
-        } else if (dtype == DataType.BOOL) {
-            byte val = memAccess.readByte(src.memory(), srcOffset);
-            memAccess.writeByte(dst.memory(), dstOffset, val);
-        } else {
-            throw new UnsupportedOperationException("Unsupported dtype: " + dtype);
-        }
     }
 
     @Override
@@ -1551,27 +1508,13 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
         return output;
     }
 
-    private void copyElement(
+    private static void copyElement(
             Memory<MemorySegment> src,
             long srcOffset,
             Memory<MemorySegment> dst,
             long dstOffset,
             DataType dtype) {
-        if (dtype == DataType.FP32) {
-            memAccess.writeFloat(dst, dstOffset, memAccess.readFloat(src, srcOffset));
-        } else if (dtype == DataType.FP64) {
-            memAccess.writeDouble(dst, dstOffset, memAccess.readDouble(src, srcOffset));
-        } else if (dtype == DataType.FP16 || dtype == DataType.BF16 || dtype == DataType.I16) {
-            memAccess.writeShort(dst, dstOffset, memAccess.readShort(src, srcOffset));
-        } else if (dtype == DataType.I32) {
-            memAccess.writeInt(dst, dstOffset, memAccess.readInt(src, srcOffset));
-        } else if (dtype == DataType.I64) {
-            memAccess.writeLong(dst, dstOffset, memAccess.readLong(src, srcOffset));
-        } else if (dtype == DataType.I8 || dtype == DataType.BOOL) {
-            memAccess.writeByte(dst, dstOffset, memAccess.readByte(src, srcOffset));
-        } else {
-            throw new UnsupportedOperationException("Unsupported data type: " + dtype);
-        }
+        MemorySegment.copy(src.base(), srcOffset, dst.base(), dstOffset, dtype.byteSize());
     }
 
     @Override
