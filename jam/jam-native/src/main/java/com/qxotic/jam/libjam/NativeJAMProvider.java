@@ -1,4 +1,6 @@
-package com.qxotic.jam;
+package com.qxotic.jam.libjam;
+
+import com.qxotic.jam.JAM;
 
 public final class NativeJAMProvider implements JAM.Provider {
     @Override

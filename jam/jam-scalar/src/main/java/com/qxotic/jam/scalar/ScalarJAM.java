@@ -1,9 +1,11 @@
-package com.qxotic.jam;
+package com.qxotic.jam.scalar;
 
 import static java.lang.foreign.ValueLayout.JAVA_BYTE;
 import static java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED;
 import static java.lang.foreign.ValueLayout.JAVA_SHORT_UNALIGNED;
 
+import com.qxotic.jam.JAM;
+import com.qxotic.jam.internal.GGMLType;
 import java.lang.foreign.MemorySegment;
 import java.lang.ref.Reference;
 import java.util.Locale;

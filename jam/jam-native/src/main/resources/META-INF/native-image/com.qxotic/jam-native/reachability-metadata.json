@@ -3,7 +3,7 @@
   "resources": [{"glob": "com/qxotic/jam/native/**"}],
   "jni": [
     {
-      "type": {"name": "com.qxotic.jam.NativeJAM"},
+      "type": {"name": "com.qxotic.jam.libjam.NativeJAM"},
       "methods": [
         {
           "name": "mmJni",

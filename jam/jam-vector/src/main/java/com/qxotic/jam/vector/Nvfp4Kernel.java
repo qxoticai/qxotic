@@ -1,6 +1,6 @@
-package com.qxotic.jam;
+package com.qxotic.jam.vector;
 
-import static com.qxotic.jam.VectorSupport.readByte;
+import static com.qxotic.jam.vector.VectorSupport.readByte;
 import static java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED;
 
 import java.lang.foreign.MemorySegment;

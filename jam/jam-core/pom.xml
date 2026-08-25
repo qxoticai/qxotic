@@ -11,9 +11,7 @@
   <artifactId>jam-core</artifactId>
   <packaging>jar</packaging>
 
-  <!-- The matmul contract: the JAM interface (dtype/status int tags, the strided + contiguous mm) and
-       GGMLType (the block geometry every backend needs for bounds/decode). Pure Java, zero dependencies.
-       Test scope only: jota-core, to pin the int tags / block geometry against jota's DataType. -->
+  <!-- The public JAM contract and the shared internal dtype geometry. -->
   <dependencies>
     <dependency>
       <groupId>com.qxotic</groupId>
@@ -27,20 +25,4 @@
     </dependency>
   </dependencies>
 
-  <build>
-    <plugins>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-jar-plugin</artifactId>
-        <configuration>
-          <archive>
-            <manifestEntries>
-              <!-- Stable JPMS name, reserved without committing to module-info.java yet. -->
-              <Automatic-Module-Name>com.qxotic.jam</Automatic-Module-Name>
-            </manifestEntries>
-          </archive>
-        </configuration>
-      </plugin>
-    </plugins>
-  </build>
 </project>

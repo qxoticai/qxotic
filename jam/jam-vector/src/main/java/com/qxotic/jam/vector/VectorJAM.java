@@ -1,5 +1,7 @@
-package com.qxotic.jam;
+package com.qxotic.jam.vector;
 
+import com.qxotic.jam.JAM;
+import com.qxotic.jam.internal.GGMLType;
 import java.lang.foreign.MemorySegment;
 import java.lang.ref.Reference;
 import java.util.concurrent.locks.ReentrantLock;
@@ -82,7 +84,7 @@ public final class VectorJAM implements JAM {
             return EUNSUPPORTED;
         GGMLType t = GGMLType.byCode(wt);
         if (t == null) return EUNSUPPORTED; // unknown tag; untiled dtypes hit the switch default
-        if (ldw != k || k % t.blockElems != 0)
+        if (ldw != k || k % t.elementsPerBlock() != 0)
             return EUNSUPPORTED; // contiguous weight rows, whole blocks
 
         // Weight read relative to its slice (kernel wOff = 0); activation/output via GLOBAL at

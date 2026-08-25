@@ -1,11 +1,11 @@
-/* JNI binding: com.qxotic.jam.NativeJAM -> libjam. Java creates one process-lifetime context and
+/* JNI binding: com.qxotic.jam.libjam.NativeJAM -> libjam. Java creates one process-lifetime context and
  * passes it to each mm call. Flat scalars in, an int status out; no JNI calls on the hot path. */
 #include "jam.h"
 #include <jni.h>
 #include <stdint.h>
 
 JNIEXPORT jlong JNICALL
-Java_com_qxotic_jam_NativeJAM_createJni(JNIEnv* env, jclass cls, jint threads)
+Java_com_qxotic_jam_libjam_NativeJAM_createJni(JNIEnv* env, jclass cls, jint threads)
 {
     (void) env; (void) cls;
     jam_config cfg = {0};
@@ -18,7 +18,7 @@ Java_com_qxotic_jam_NativeJAM_createJni(JNIEnv* env, jclass cls, jint threads)
  *   -> jam_status (0 = OK).  C = W @ Aᵀ (W = weights, A = activations).  ctx is a jam_ctx* (0 = global).
  *   (The Panama backend calls jam_mm directly; this JNI shim is the alternative binding, -Djam.native.binding=jni.) */
 JNIEXPORT jint JNICALL
-Java_com_qxotic_jam_NativeJAM_mmJni(JNIEnv* env, jclass cls, jlong ctx,
+Java_com_qxotic_jam_libjam_NativeJAM_mmJni(JNIEnv* env, jclass cls, jlong ctx,
                               jlong w, jint wt, jint ldw,
                               jlong a, jint at, jint lda,
                               jlong c, jint ct, jint ldc,

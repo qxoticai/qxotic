@@ -1,4 +1,4 @@
-package com.qxotic.jam;
+package com.qxotic.jam.libjam;
 
 import java.io.IOException;
 import java.io.InputStream;

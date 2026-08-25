@@ -1,4 +1,6 @@
-package com.qxotic.jam;
+package com.qxotic.jam.vector;
+
+import com.qxotic.jam.JAM;
 
 public final class VectorJAMProvider implements JAM.Provider {
     @Override

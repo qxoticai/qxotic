@@ -1,78 +1,126 @@
-package com.qxotic.jam;
+package com.qxotic.jam.vector;
 
 import static java.lang.foreign.ValueLayout.JAVA_BYTE;
 import static java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED;
 import static java.lang.foreign.ValueLayout.JAVA_SHORT_UNALIGNED;
-import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import com.qxotic.jam.JAM;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.util.Random;
-import org.junit.jupiter.api.Test;
 
 /**
- * {@link ScalarJAM} correctness. Each implemented dtype is encoded from values it represents
- * EXACTLY (so the decode is lossless), and the matmul must equal a double-precision reference
- * computed from those same values. Covers gemm + gemv across the dtypes and the decline contract;
- * Q1_0 parity lives in jam-vector's JamBackendParityTest. Self-contained in jam-scalar (no jinfer,
- * no native).
+ * Shared test fixtures: synthetic quantized weights for every JAM dtype, encoded into a native
+ * segment from values the format holds EXACTLY (lossless decode), so a backend's matmul can be
+ * checked against a double-precision reference over those same values. Lifted from {@code
+ * ScalarJamTest}'s encoders and parameterized by a caller-supplied {@link Random}/{@link Arena} so
+ * the cross-backend parity suite can drive every backend through the raw {@link JAM} segment
+ * contract — no jinfer, no {@code FloatTensor}.
  */
-class ScalarJamTest {
+final class QuantWeights {
 
-    private static final JAM jam = new ScalarJAM();
-    private static final Arena A = Arena.ofAuto();
-    private static final Random RNG = new Random(7);
+    private QuantWeights() {}
 
     /**
-     * A weight: its dtype tag, the encoded native segment, and the exact float values it decodes
-     * to.
+     * A weight: its JAM dtype tag, the encoded native segment, and the exact float values it
+     * decodes to.
      */
-    private record Weight(int tag, MemorySegment seg, float[] vals) {}
+    record Weight(int tag, MemorySegment seg, float[] vals) {}
 
     /** E2M1 FP4 code -> signed magnitude (MXFP4/NVFP4 nibble table). */
     private static final int[] FP4_KV = {0, 1, 2, 3, 4, 6, 8, 12, 0, -1, -2, -3, -4, -6, -8, -12};
 
+    /**
+     * Encode an {@code m×k} weight of the given JAM dtype tag. {@code k} must be a whole number of
+     * blocks.
+     */
+    static Weight encode(int tag, int m, int k, Arena a, Random rng) {
+        return switch (tag) {
+            case JAM.F32 -> f32(m, k, a, rng);
+            case JAM.F16 -> f16(m, k, a, rng);
+            case JAM.BF16 -> bf16(m, k, a, rng);
+            case JAM.Q8_0 -> q8_0(m, k, a, rng);
+            case JAM.Q4_0 -> q4_0(m, k, a, rng);
+            case JAM.Q4_K -> q4_k(m, k, a, rng);
+            case JAM.Q5_K -> q5_k(m, k, a, rng);
+            case JAM.Q6_K -> q6_k(m, k, a, rng);
+            case JAM.MXFP4 -> mxfp4(m, k, a, rng);
+            case JAM.NVFP4 -> nvfp4(m, k, a, rng);
+            case JAM.Q1_0 -> q1_0(m, k, a, rng);
+            default -> throw new IllegalArgumentException("no encoder for dtype tag " + tag);
+        };
+    }
+
+    /** A row of {@code n} F32 gaussians in a native segment (an activation/input row). */
+    static MemorySegment f32Row(int n, Arena a, Random rng) {
+        float[] v = gaussians(n, rng);
+        MemorySegment s = a.allocate(v.length * 4L, 64);
+        for (int i = 0; i < v.length; i++) s.set(JAVA_FLOAT_UNALIGNED, i * 4L, v[i]);
+        return s;
+    }
+
+    /**
+     * Double-precision reference for weight row {@code i} · activation token {@code j} over {@code
+     * k}, as {@code [dot, sumAbs]}. {@code sumAbs = Σ|w·a|} is the error scale for int8-activation
+     * backends (native VNNI / register tiles): each product is off by ~the quant step, so the dot's
+     * error grows with the sum of magnitudes, not with the (cancellation-prone) result.
+     */
+    static double[] refDot(Weight w, float[] act, int i, int j, int k) {
+        double dot = 0, sumAbs = 0;
+        for (int l = 0; l < k; l++) {
+            double p = (double) w.vals()[i * k + l] * act[j * k + l];
+            dot += p;
+            sumAbs += Math.abs(p);
+        }
+        return new double[] {dot, sumAbs};
+    }
+
     // ---- per-dtype encoders over values the format holds exactly ----
 
-    private static Weight f32(int m, int k) {
-        float[] v = gaussians(m * k);
-        MemorySegment s = A.allocate(v.length * 4L, 64);
+    private static Weight f32(int m, int k, Arena a, Random rng) {
+        float[] v = gaussians(m * k, rng);
+        MemorySegment s = a.allocate(v.length * 4L, 64);
         for (int i = 0; i < v.length; i++) s.set(JAVA_FLOAT_UNALIGNED, i * 4L, v[i]);
         return new Weight(JAM.F32, s, v);
     }
 
-    private static Weight f16(int m, int k) {
+    private static Weight f16(int m, int k, Arena a, Random rng) {
         float[] v = new float[m * k];
-        MemorySegment s = A.allocate(v.length * 2L, 64);
+        MemorySegment s = a.allocate(v.length * 2L, 64);
         for (int i = 0; i < v.length; i++) {
-            short h = floatToF16((float) RNG.nextGaussian());
+            short h = floatToF16((float) rng.nextGaussian());
             s.set(JAVA_SHORT_UNALIGNED, i * 2L, h);
-            v[i] = Float.float16ToFloat(h); // the exact value f16 holds (== ScalarJAM's decode)
+            v[i] = Float.float16ToFloat(h); // the exact value f16 holds
         }
         return new Weight(JAM.F16, s, v);
     }
 
-    private static Weight bf16(int m, int k) {
+    private static Weight bf16(int m, int k, Arena a, Random rng) {
         float[] v = new float[m * k];
-        MemorySegment s = A.allocate(v.length * 2L, 64);
+        MemorySegment s = a.allocate(v.length * 2L, 64);
         for (int i = 0; i < v.length; i++) {
-            short h = (short) (Float.floatToRawIntBits((float) RNG.nextGaussian()) >>> 16);
+            short h = (short) (Float.floatToRawIntBits((float) rng.nextGaussian()) >>> 16);
             s.set(JAVA_SHORT_UNALIGNED, i * 2L, h);
             v[i] = Float.intBitsToFloat((h & 0xFFFF) << 16);
         }
         return new Weight(JAM.BF16, s, v);
     }
 
-    private static Weight q8_0(int m, int k) { // scale 1.0, int8 qs -> exact integer values
+    private static Weight q8_0(
+            int m, int k, Arena a, Random rng) { // scale 1.0, int8 qs -> exact integers
         int nb = k / 32;
         float[] v = new float[m * k];
-        MemorySegment s = A.allocate((long) m * nb * 34, 64);
+        MemorySegment s = a.allocate((long) m * nb * 34, 64);
         for (int r = 0; r < m; r++)
             for (int b = 0; b < nb; b++) {
                 long blk = (long) (r * nb + b) * 34;
                 s.set(JAVA_SHORT_UNALIGNED, blk, floatToF16(1f));
                 for (int e = 0; e < 32; e++) {
-                    byte q = (byte) (RNG.nextInt(255) - 127);
+                    byte q =
+                            (byte)
+                                    (rng.nextInt(256)
+                                            - 128); // full int8 range INCLUDING -128 (sign-trick
+                    // edge)
                     s.set(JAVA_BYTE, blk + 2 + e, q);
                     v[r * k + b * 32 + e] = q;
                 }
@@ -80,16 +128,38 @@ class ScalarJamTest {
         return new Weight(JAM.Q8_0, s, v);
     }
 
-    private static Weight q4_0(int m, int k) { // scale 1.0, nibble -> value (nibble-8) in [-8,7]
+    private static Weight q1_0(
+            int m, int k, Arena a, Random rng) { // f16 d in [0.5,1), random sign bits, LSB-first
+        int nb = k / 128;
+        float[] v = new float[m * k];
+        MemorySegment s = a.allocate((long) m * nb * 18, 64);
+        for (int r = 0; r < m; r++)
+            for (int b = 0; b < nb; b++) {
+                long blk = (long) (r * nb + b) * 18;
+                short dBits = (short) (0x3800 | (rng.nextInt() & 0x3FF));
+                s.set(JAVA_SHORT_UNALIGNED, blk, dBits);
+                float d = Float.float16ToFloat(dBits);
+                for (int e = 0; e < 16; e++) {
+                    int bits = rng.nextInt(256);
+                    s.set(JAVA_BYTE, blk + 2 + e, (byte) bits);
+                    for (int bit = 0; bit < 8; bit++)
+                        v[r * k + b * 128 + e * 8 + bit] = ((bits >> bit) & 1) != 0 ? d : -d;
+                }
+            }
+        return new Weight(JAM.Q1_0, s, v);
+    }
+
+    private static Weight q4_0(
+            int m, int k, Arena a, Random rng) { // nibble -> value (nibble-8) in [-8,7]
         int nb = k / 32;
         float[] v = new float[m * k];
-        MemorySegment s = A.allocate((long) m * nb * 18, 64);
+        MemorySegment s = a.allocate((long) m * nb * 18, 64);
         for (int r = 0; r < m; r++)
             for (int b = 0; b < nb; b++) {
                 long blk = (long) (r * nb + b) * 18;
                 s.set(JAVA_SHORT_UNALIGNED, blk, floatToF16(1f));
                 for (int e = 0; e < 16; e++) {
-                    int lo = RNG.nextInt(16), hi = RNG.nextInt(16);
+                    int lo = rng.nextInt(16), hi = rng.nextInt(16);
                     s.set(JAVA_BYTE, blk + 2 + e, (byte) (lo | (hi << 4)));
                     v[r * k + b * 32 + e] = lo - 8;
                     v[r * k + b * 32 + 16 + e] = hi - 8;
@@ -98,23 +168,21 @@ class ScalarJamTest {
         return new Weight(JAM.Q4_0, s, v);
     }
 
-    // k-quants / FP4: scales chosen so every decoded value is a small integer (exact). k must be a
-    // multiple of the 256-element super-block (Q*_K) / 64 (NVFP4) / 32 (MXFP4).
-
-    private static Weight q4_k(int m, int k) { // 144B/256-elem; d=dmin=1 -> value = sc*nibble - mn
+    private static Weight q4_k(
+            int m, int k, Arena a, Random rng) { // 144B/256-elem; value = sc*nibble - mn
         int sb = k / 256;
         float[] v = new float[m * k];
-        MemorySegment s = A.allocate((long) m * sb * 144, 64);
+        MemorySegment s = a.allocate((long) m * sb * 144, 64);
         for (int r = 0; r < m; r++)
             for (int b = 0; b < sb; b++) {
                 long blk = (long) (r * sb + b) * 144;
                 s.set(JAVA_SHORT_UNALIGNED, blk, floatToF16(1f)); // d
                 s.set(JAVA_SHORT_UNALIGNED, blk + 2, floatToF16(1f)); // dmin
-                int[] sc = small(8), mn = small(8);
+                int[] sc = small(8, rng), mn = small(8, rng);
                 packScalesK4(s, blk + 4, sc, mn);
                 for (int g = 0; g < 4; g++)
                     for (int e = 0; e < 32; e++) {
-                        int lo = RNG.nextInt(16), hi = RNG.nextInt(16);
+                        int lo = rng.nextInt(16), hi = rng.nextInt(16);
                         s.set(JAVA_BYTE, blk + 16 + g * 32 + e, (byte) (lo | (hi << 4)));
                         v[r * k + b * 256 + g * 64 + e] = sc[g * 2] * lo - mn[g * 2];
                         v[r * k + b * 256 + g * 64 + 32 + e] = sc[g * 2 + 1] * hi - mn[g * 2 + 1];
@@ -123,24 +191,25 @@ class ScalarJamTest {
         return new Weight(JAM.Q4_K, s, v);
     }
 
-    private static Weight q5_k(int m, int k) { // 176B/256-elem; 5-bit q = nibble | (qh bit<<4)
+    private static Weight q5_k(
+            int m, int k, Arena a, Random rng) { // 176B/256-elem; q = nibble | (qh bit<<4)
         int sb = k / 256;
         float[] v = new float[m * k];
-        MemorySegment s = A.allocate((long) m * sb * 176, 64);
+        MemorySegment s = a.allocate((long) m * sb * 176, 64);
         for (int r = 0; r < m; r++)
             for (int b = 0; b < sb; b++) {
                 long blk = (long) (r * sb + b) * 176;
                 s.set(JAVA_SHORT_UNALIGNED, blk, floatToF16(1f));
                 s.set(JAVA_SHORT_UNALIGNED, blk + 2, floatToF16(1f));
-                int[] sc = small(8), mn = small(8);
+                int[] sc = small(8, rng), mn = small(8, rng);
                 packScalesK4(s, blk + 4, sc, mn);
                 int[] qh = new int[32]; // 5th bits, one byte per e
                 for (int g = 0; g < 4; g++)
                     for (int e = 0; e < 32; e++) {
-                        int lo = RNG.nextInt(16),
-                                hi = RNG.nextInt(16),
-                                bLo = RNG.nextInt(2),
-                                bHi = RNG.nextInt(2);
+                        int lo = rng.nextInt(16),
+                                hi = rng.nextInt(16),
+                                bLo = rng.nextInt(2),
+                                bHi = rng.nextInt(2);
                         qh[e] |= (bLo << (2 * g)) | (bHi << (2 * g + 1));
                         s.set(JAVA_BYTE, blk + 48 + g * 32 + e, (byte) (lo | (hi << 4)));
                         v[r * k + b * 256 + g * 64 + e] = sc[g * 2] * (lo | (bLo << 4)) - mn[g * 2];
@@ -152,18 +221,19 @@ class ScalarJamTest {
         return new Weight(JAM.Q5_K, s, v);
     }
 
-    private static Weight q6_k(int m, int k) { // 210B/256-elem; d=1 -> value = sc*(qv-32)
+    private static Weight q6_k(
+            int m, int k, Arena a, Random rng) { // 210B/256-elem; value = sc*(qv-32)
         int sb = k / 256;
         float[] v = new float[m * k];
-        MemorySegment s = A.allocate((long) m * sb * 210, 64);
+        MemorySegment s = a.allocate((long) m * sb * 210, 64);
         for (int r = 0; r < m; r++)
             for (int b = 0; b < sb; b++) {
                 long blk = (long) (r * sb + b) * 210;
-                int[] ql = new int[128], qh = new int[64], sc = small(16);
+                int[] ql = new int[128], qh = new int[64], sc = small(16, rng);
                 for (int h = 0; h < 2; h++)
                     for (int j = 0; j < 4; j++)
                         for (int ll = 0; ll < 32; ll++) {
-                            int qv = RNG.nextInt(64); // 6-bit
+                            int qv = rng.nextInt(64); // 6-bit
                             int qlIdx = h * 64 + ((j == 1 || j == 3) ? 32 + ll : ll);
                             if (j < 2) ql[qlIdx] |= qv & 0xF;
                             else ql[qlIdx] |= (qv & 0xF) << 4;
@@ -180,16 +250,16 @@ class ScalarJamTest {
     }
 
     private static Weight mxfp4(
-            int m, int k) { // 17B/32-elem; e=128 -> dhalf=1 -> value = kv[nibble]
+            int m, int k, Arena a, Random rng) { // 17B/32-elem; dhalf=1 -> value = kv[nibble]
         int nb = k / 32;
         float[] v = new float[m * k];
-        MemorySegment s = A.allocate((long) m * nb * 17, 64);
+        MemorySegment s = a.allocate((long) m * nb * 17, 64);
         for (int r = 0; r < m; r++)
             for (int b = 0; b < nb; b++) {
                 long blk = (long) (r * nb + b) * 17;
                 s.set(JAVA_BYTE, blk, (byte) 128);
                 for (int t = 0; t < 16; t++) {
-                    int lo = RNG.nextInt(16), hi = RNG.nextInt(16);
+                    int lo = rng.nextInt(16), hi = rng.nextInt(16);
                     s.set(JAVA_BYTE, blk + 1 + t, (byte) (lo | (hi << 4)));
                     v[r * k + b * 32 + t] = FP4_KV[lo];
                     v[r * k + b * 32 + 16 + t] = FP4_KV[hi];
@@ -199,17 +269,17 @@ class ScalarJamTest {
     }
 
     private static Weight nvfp4(
-            int m, int k) { // 36B/64-elem; d=0x38 -> ue4m3=1 -> value = kv[nibble]
+            int m, int k, Arena a, Random rng) { // 36B/64-elem; ue4m3=1 -> value = kv[nibble]
         int nb = k / 64;
         float[] v = new float[m * k];
-        MemorySegment s = A.allocate((long) m * nb * 36, 64);
+        MemorySegment s = a.allocate((long) m * nb * 36, 64);
         for (int r = 0; r < m; r++)
             for (int b = 0; b < nb; b++) {
                 long blk = (long) (r * nb + b) * 36;
                 for (int sub = 0; sub < 4; sub++) {
                     s.set(JAVA_BYTE, blk + sub, (byte) 0x38); // ue4m3 1.0
                     for (int j = 0; j < 8; j++) {
-                        int lo = RNG.nextInt(16), hi = RNG.nextInt(16);
+                        int lo = rng.nextInt(16), hi = rng.nextInt(16);
                         s.set(JAVA_BYTE, blk + 4 + sub * 8 + j, (byte) (lo | (hi << 4)));
                         v[r * k + b * 64 + sub * 16 + j] = FP4_KV[lo];
                         v[r * k + b * 64 + sub * 16 + 8 + j] = FP4_KV[hi];
@@ -219,10 +289,12 @@ class ScalarJamTest {
         return new Weight(JAM.NVFP4, s, v);
     }
 
+    // ---- helpers ----
+
     /** {@code n} small non-negative ints (0..7) — keeps scale·quant products exact. */
-    private static int[] small(int n) {
+    private static int[] small(int n, Random rng) {
         int[] x = new int[n];
-        for (int i = 0; i < n; i++) x[i] = RNG.nextInt(8);
+        for (int i = 0; i < n; i++) x[i] = rng.nextInt(8);
         return x;
     }
 
@@ -235,88 +307,9 @@ class ScalarJamTest {
         }
     }
 
-    // ---- the check: run ScalarJAM and compare to the double-precision reference over the exact
-    // values ----
-
-    private static void check(String name, Weight w, int m, int n, int k) {
-        float[] av = gaussians(n * k);
-        MemorySegment a = A.allocate(av.length * 4L, 64);
-        for (int i = 0; i < av.length; i++) a.set(JAVA_FLOAT_UNALIGNED, i * 4L, av[i]);
-        MemorySegment c = A.allocate((long) n * m * 4, 64);
-
-        int st = jam.mm(w.seg(), 0, w.tag(), k, a, 0, JAM.F32, k, c, 0, JAM.F32, m, m, n, k);
-        assertEquals(JAM.OK, st, name + " status");
-        for (int j = 0; j < n; j++)
-            for (int i = 0; i < m; i++) {
-                double ref = 0;
-                for (int l = 0; l < k; l++) ref += (double) w.vals()[i * k + l] * av[j * k + l];
-                float got = c.get(JAVA_FLOAT_UNALIGNED, ((long) j * m + i) * 4);
-                assertEquals(
-                        ref,
-                        got,
-                        Math.abs(ref) * 1e-4 + 1e-3,
-                        name + "[token " + j + ", row " + i + "]");
-            }
-    }
-
-    @Test
-    void gemmEveryDtype() {
-        int m = 20, n = 5, k = 64;
-        check("F32", f32(m, k), m, n, k);
-        check("F16", f16(m, k), m, n, k);
-        check("BF16", bf16(m, k), m, n, k);
-        check("Q8_0", q8_0(m, k), m, n, k);
-        check("Q4_0", q4_0(m, k), m, n, k);
-    }
-
-    @Test
-    void gemmKQuantFp4() {
-        int m = 18, n = 5, k = 256; // k = one super-block (also a multiple of 64 and 32)
-        check("Q4_K", q4_k(m, k), m, n, k);
-        check("Q5_K", q5_k(m, k), m, n, k);
-        check("Q6_K", q6_k(m, k), m, n, k);
-        check("MXFP4", mxfp4(m, k), m, n, k);
-        check("NVFP4", nvfp4(m, k), m, n, k);
-    }
-
-    @Test
-    void gemvEveryDtype() {
-        int m = 33, k = 96; // n == 1
-        check("F32.gemv", f32(m, k), m, 1, k);
-        check("F16.gemv", f16(m, k), m, 1, k);
-        check("Q8_0.gemv", q8_0(m, k), m, 1, k);
-        check("Q4_0.gemv", q4_0(m, k), m, 1, k);
-    }
-
-    @Test
-    void gemvKQuantFp4() {
-        int m = 40, k = 256; // n == 1
-        check("Q4_K.gemv", q4_k(m, k), m, 1, k);
-        check("Q5_K.gemv", q5_k(m, k), m, 1, k);
-        check("Q6_K.gemv", q6_k(m, k), m, 1, k);
-        check("MXFP4.gemv", mxfp4(m, k), m, 1, k);
-        check("NVFP4.gemv", nvfp4(m, k), m, 1, k);
-    }
-
-    @Test
-    void declinesUnsupported() {
-        MemorySegment d = A.allocate(64 * 1024, 64);
-        // every weight dtype now decodes — the only decline is a non-F32 activation or result.
-        assertEquals(
-                JAM.EUNSUPPORTED,
-                jam.mm(d, 0, JAM.Q8_0, 32, d, 0, JAM.F16, 32, d, 0, JAM.F32, 4, 4, 2, 32),
-                "F16 activation declined");
-        assertEquals(
-                JAM.EUNSUPPORTED,
-                jam.mm(d, 0, JAM.Q8_0, 32, d, 0, JAM.F32, 32, d, 0, JAM.BF16, 4, 4, 2, 32),
-                "BF16 result declined");
-    }
-
-    // ---- helpers ----
-
-    private static float[] gaussians(int n) {
+    static float[] gaussians(int n, Random rng) {
         float[] v = new float[n];
-        for (int i = 0; i < n; i++) v[i] = (float) RNG.nextGaussian();
+        for (int i = 0; i < n; i++) v[i] = (float) rng.nextGaussian();
         return v;
     }
 

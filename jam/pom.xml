@@ -13,12 +13,7 @@
   <packaging>pom</packaging>
 
   <name>jam (parent)</name>
-  <description>Fast quantized CPU matmul: the JAM interface and its backends.
-    jam-core is the interface plus dtype geometry (pure Java, no native); graalvm-annotations is the
-    compile-only @AlwaysInline stub (provided scope, shared with jinfer); jam-native is the libjam (C)
-    implementation behind NativeJAM (JNI/FFM); jam-scalar is the pure-Java reference (the dot floor,
-    every dtype); jam-vector is the Java Vector API backend (register-tiled SIMD gemm per dtype).
-    Plugin and dependency versions come from qxotic-parent; only the Java release differs.</description>
+  <description>Fast quantized matrix multiplication for Java and native applications.</description>
 
   <modules>
     <module>jam-core</module>
@@ -35,6 +30,33 @@
 
   <build>
     <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>default-testCompile</id>
+            <configuration>
+              <useModulePath>false</useModulePath>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <useModulePath>false</useModulePath>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-javadoc-plugin</artifactId>
+        <configuration>
+          <!-- Provider and shared-internal packages are deliberately not exported API. -->
+          <excludePackageNames>com.qxotic.jam.internal:com.qxotic.jam.libjam:com.qxotic.jam.scalar:com.qxotic.jam.vector</excludePackageNames>
+        </configuration>
+      </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-enforcer-plugin</artifactId>

@@ -1,4 +1,6 @@
-package com.qxotic.jam;
+package com.qxotic.jam.scalar;
+
+import com.qxotic.jam.JAM;
 
 public final class ScalarJAMProvider implements JAM.Provider {
     @Override
