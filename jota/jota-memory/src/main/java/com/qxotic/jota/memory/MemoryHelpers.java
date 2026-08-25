@@ -37,7 +37,7 @@ public final class MemoryHelpers {
             memoryOperations.fillShort(
                     memory, 0, byteSize, Float.floatToFloat16(value.floatValue()));
         } else if (dataType == DataType.BF16) {
-            memoryOperations.fillShort(memory, 0, byteSize, BFloat16.fromFloat(value.byteValue()));
+            memoryOperations.fillShort(memory, 0, byteSize, BFloat16.fromFloat(value.floatValue()));
         } else {
             throw new IllegalArgumentException("unsupported value " + value);
         }

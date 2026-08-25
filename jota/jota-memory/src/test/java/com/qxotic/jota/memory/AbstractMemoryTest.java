@@ -83,6 +83,10 @@ public abstract class AbstractMemoryTest {
                 DomainFactory::ofMemorySegment);
     }
 
+    public static Stream<MemoryDomain<?>> domainsSupportingBF16() {
+        return domainsSupportingI16();
+    }
+
     public static Stream<MemoryDomain<?>> domainsSupportingI32() {
         return suppliedBy(
                 DomainFactory::ofInts,
