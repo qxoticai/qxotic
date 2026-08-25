@@ -33,8 +33,8 @@ import com.qxotic.jota.ir.tir.TIRVisitor;
 import com.qxotic.jota.ir.tir.TensorInput;
 import com.qxotic.jota.ir.tir.TernaryOp;
 import com.qxotic.jota.ir.tir.UnaryOp;
+import com.qxotic.jota.ir.tir.ViewOperation;
 import com.qxotic.jota.ir.tir.ViewTransform;
-import com.qxotic.jota.memory.impl.ViewKind;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -955,8 +955,8 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
      */
     private List<LIRExprNode> applyInverseTransform(
             ViewTransform vt, List<LIRExprNode> outputIndices) {
-        return switch (vt.kind()) {
-            case ViewKind.Transpose transpose -> {
+        return switch (vt.operation()) {
+            case ViewOperation.Transpose transpose -> {
                 // Transpose: permute indices using inverse permutation
                 int[] invPerm = transpose.inverse();
                 List<LIRExprNode> result = new ArrayList<>(outputIndices.size());
@@ -965,7 +965,7 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
                 }
                 yield result;
             }
-            case ViewKind.Reshape reshape -> {
+            case ViewOperation.Reshape reshape -> {
                 // Reshape: decompose linear index and recompose
                 // First flatten output indices to linear index
                 Shape toShape = reshape.toShape();
@@ -974,7 +974,7 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
                 // Then decompose to input shape coordinates
                 yield unflattenIndex(linearIdx, fromShape);
             }
-            case ViewKind.Broadcast broadcast -> {
+            case ViewOperation.Broadcast broadcast -> {
                 // Broadcast: output has more/larger dims, input has fewer/smaller
                 // For broadcast dims (input size 1), the input index is always 0
                 // For other dims, pass through
@@ -997,7 +997,7 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
                 }
                 yield result;
             }
-            case ViewKind.Expand expand -> {
+            case ViewOperation.Expand expand -> {
                 // Expand is similar to broadcast within same rank
                 Shape fromShape = expand.fromShape();
                 List<LIRExprNode> result = new ArrayList<>();
@@ -1011,7 +1011,7 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
                 }
                 yield result;
             }
-            case ViewKind.Slice slice -> {
+            case ViewOperation.Slice slice -> {
                 // Slice: output index maps to input index with offset and step
                 // input_idx = start + output_idx * step
                 List<LIRExprNode> result = new ArrayList<>(outputIndices);

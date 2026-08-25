@@ -6,7 +6,6 @@ import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.Stride;
 import com.qxotic.jota.memory.MemoryView;
-import com.qxotic.jota.memory.impl.ViewTransforms;
 import com.qxotic.jota.runtime.BinaryOp;
 import com.qxotic.jota.runtime.UnaryOp;
 import java.util.Arrays;
@@ -405,11 +404,10 @@ abstract class AbstractTensorImpl implements Tensor {
     }
 
     public Tensor view(Shape newShape) {
-        ViewTransforms.ViewTransformSpec spec = ViewTransforms.view(layout(), newShape);
         if (Tracer.isTracing()) {
-            return TensorSupport.irOps().viewTransform(this, spec);
+            return TensorSupport.irOps().view(this, newShape);
         }
-        return Tracer.trace(this, t -> TensorSupport.irOps().viewTransform(t, spec));
+        return Tracer.trace(this, t -> TensorSupport.irOps().view(t, newShape));
     }
 
     public Tensor view(long... dims) {
@@ -428,11 +426,10 @@ abstract class AbstractTensorImpl implements Tensor {
     }
 
     public Tensor unsqueeze(int axis_) {
-        ViewTransforms.ViewTransformSpec spec = ViewTransforms.unsqueeze(layout(), axis_);
         if (Tracer.isTracing()) {
-            return TensorSupport.irOps().viewTransform(this, spec);
+            return TensorSupport.irOps().unsqueeze(this, axis_);
         }
-        return Tracer.trace(this, t -> TensorSupport.irOps().viewTransform(t, spec));
+        return Tracer.trace(this, t -> TensorSupport.irOps().unsqueeze(t, axis_));
     }
 
     public Tensor squeeze(int _axis) {
@@ -464,36 +461,31 @@ abstract class AbstractTensorImpl implements Tensor {
     }
 
     public Tensor broadcast(Shape targetShape) {
-        ViewTransforms.ViewTransformSpec spec = ViewTransforms.broadcast(layout(), targetShape);
         if (Tracer.isTracing()) {
-            return TensorSupport.irOps().viewTransform(this, spec);
+            return TensorSupport.irOps().broadcast(this, targetShape);
         }
-        return Tracer.trace(this, t -> TensorSupport.irOps().viewTransform(t, spec));
+        return Tracer.trace(this, t -> TensorSupport.irOps().broadcast(t, targetShape));
     }
 
     public Tensor expand(Shape targetShape) {
-        ViewTransforms.ViewTransformSpec spec = ViewTransforms.expand(layout(), targetShape);
         if (Tracer.isTracing()) {
-            return TensorSupport.irOps().viewTransform(this, spec);
+            return TensorSupport.irOps().expand(this, targetShape);
         }
-        return Tracer.trace(this, t -> TensorSupport.irOps().viewTransform(t, spec));
+        return Tracer.trace(this, t -> TensorSupport.irOps().expand(t, targetShape));
     }
 
     public Tensor transpose(int _axis0, int _axis1) {
-        ViewTransforms.ViewTransformSpec spec = ViewTransforms.transpose(layout(), _axis0, _axis1);
         if (Tracer.isTracing()) {
-            return TensorSupport.irOps().viewTransform(this, spec);
+            return TensorSupport.irOps().transpose(this, _axis0, _axis1);
         }
-        return Tracer.trace(this, t -> TensorSupport.irOps().viewTransform(t, spec));
+        return Tracer.trace(this, t -> TensorSupport.irOps().transpose(t, _axis0, _axis1));
     }
 
     public Tensor permute(int... permutationIndices) {
-        ViewTransforms.ViewTransformSpec spec =
-                ViewTransforms.permute(layout(), permutationIndices);
         if (Tracer.isTracing()) {
-            return TensorSupport.irOps().viewTransform(this, spec);
+            return TensorSupport.irOps().permute(this, permutationIndices);
         }
-        return Tracer.trace(this, t -> TensorSupport.irOps().viewTransform(t, spec));
+        return Tracer.trace(this, t -> TensorSupport.irOps().permute(t, permutationIndices));
     }
 
     public Tensor slice(int _axis, long start, long end) {
@@ -501,12 +493,11 @@ abstract class AbstractTensorImpl implements Tensor {
     }
 
     public Tensor slice(int _axis, long start, long end, long indexStride) {
-        ViewTransforms.ViewTransformSpec spec =
-                ViewTransforms.slice(layout(), dataType(), _axis, start, end, indexStride);
         if (Tracer.isTracing()) {
-            return TensorSupport.irOps().viewTransform(this, spec);
+            return TensorSupport.irOps().slice(this, _axis, start, end, indexStride);
         }
-        return Tracer.trace(this, t -> TensorSupport.irOps().viewTransform(t, spec));
+        return Tracer.trace(
+                this, t -> TensorSupport.irOps().slice(t, _axis, start, end, indexStride));
     }
 
     public Tensor repeat(long... repeats) {

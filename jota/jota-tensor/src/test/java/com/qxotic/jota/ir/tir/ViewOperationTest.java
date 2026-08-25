@@ -1,4 +1,4 @@
-package com.qxotic.jota.memory.impl;
+package com.qxotic.jota.ir.tir;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
@@ -9,12 +9,12 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import com.qxotic.jota.Shape;
 import org.junit.jupiter.api.Test;
 
-class ViewKindTest {
+class ViewOperationTest {
 
     @Test
     void transposeOwnsItsPermutationAndComputesItsInverse() {
         int[] permutation = {2, 0, 1};
-        ViewKind.Transpose transpose = new ViewKind.Transpose(permutation);
+        ViewOperation.Transpose transpose = new ViewOperation.Transpose(permutation);
         permutation[0] = 0;
 
         assertArrayEquals(new int[] {2, 0, 1}, transpose.permutation());
@@ -24,49 +24,51 @@ class ViewKindTest {
         returned[0] = 0;
         assertArrayEquals(new int[] {2, 0, 1}, transpose.permutation());
 
-        ViewKind.Transpose equal = new ViewKind.Transpose(new int[] {2, 0, 1});
+        ViewOperation.Transpose equal = new ViewOperation.Transpose(new int[] {2, 0, 1});
         assertEquals(transpose, equal);
         assertEquals(transpose.hashCode(), equal.hashCode());
-        assertNotEquals(transpose, new ViewKind.Transpose(new int[] {1, 2, 0}));
+        assertNotEquals(transpose, new ViewOperation.Transpose(new int[] {1, 2, 0}));
         assertEquals("Transpose[permutation=[2, 0, 1]]", transpose.toString());
     }
 
     @Test
-    void rejectsInvalidViewKinds() {
+    void rejectsInvalidOperations() {
         assertAll(
                 () ->
                         assertThrows(
-                                IllegalArgumentException.class, () -> new ViewKind.Transpose(null)),
+                                IllegalArgumentException.class,
+                                () -> new ViewOperation.Transpose(null)),
                 () ->
                         assertThrows(
                                 IllegalArgumentException.class,
-                                () -> new ViewKind.Transpose(new int[0])),
+                                () -> new ViewOperation.Transpose(new int[0])),
                 () ->
                         assertThrows(
                                 IllegalArgumentException.class,
-                                () -> new ViewKind.Transpose(new int[] {0, 0})),
+                                () -> new ViewOperation.Transpose(new int[] {0, 0})),
                 () ->
                         assertThrows(
                                 IllegalArgumentException.class,
-                                () -> new ViewKind.Transpose(new int[] {0, 2})),
+                                () -> new ViewOperation.Transpose(new int[] {0, 2})),
                 () ->
                         assertThrows(
                                 IllegalArgumentException.class,
-                                () -> new ViewKind.Reshape(null, Shape.of(1))),
+                                () -> new ViewOperation.Reshape(null, Shape.of(1))),
                 () ->
                         assertThrows(
                                 IllegalArgumentException.class,
-                                () -> new ViewKind.Reshape(Shape.of(1), Shape.of(2))),
+                                () -> new ViewOperation.Reshape(Shape.of(1), Shape.of(2))),
                 () ->
                         assertThrows(
                                 IllegalArgumentException.class,
-                                () -> new ViewKind.Broadcast(null, Shape.of(1))),
+                                () -> new ViewOperation.Broadcast(null, Shape.of(1))),
                 () ->
                         assertThrows(
                                 IllegalArgumentException.class,
-                                () -> new ViewKind.Expand(Shape.of(1), null)),
+                                () -> new ViewOperation.Expand(Shape.of(1), null)),
                 () ->
                         assertThrows(
-                                IllegalArgumentException.class, () -> new ViewKind.Slice(0, 0, 0)));
+                                IllegalArgumentException.class,
+                                () -> new ViewOperation.Slice(0, 0, 0)));
     }
 }

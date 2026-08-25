@@ -16,40 +16,32 @@ public final class ViewTransforms {
     /**
      * Result of a view transformation.
      *
-     * @param kind the transformation type with parameters (for lazy index computation)
      * @param layout result shape + strides (strides are valid for simple cases, placeholder for
      *     complex cases requiring lazy index computation)
      * @param byteOffsetDelta byte offset adjustment (for slicing)
-     * @param needsLazyIndexing true if strides couldn't be computed and lazy index composition is
-     *     required
+     * @param needsLazyIndexing whether consumers must preserve the logical index mapping
      */
-    public record ViewTransformSpec(
-            ViewKind kind, Layout layout, long byteOffsetDelta, boolean needsLazyIndexing) {
+    public record Result(Layout layout, long byteOffsetDelta, boolean needsLazyIndexing) {}
 
-        /** Convenience constructor for simple cases (no lazy indexing needed). */
-        public static ViewTransformSpec simple(ViewKind kind, Layout layout, long byteOffsetDelta) {
-            return new ViewTransformSpec(kind, layout, byteOffsetDelta, false);
-        }
-
-        /** Convenience constructor for complex cases requiring lazy index computation. */
-        public static ViewTransformSpec lazy(ViewKind kind, Layout layout, long byteOffsetDelta) {
-            return new ViewTransformSpec(kind, layout, byteOffsetDelta, true);
-        }
+    private static Result simple(Layout layout, long byteOffsetDelta) {
+        return new Result(layout, byteOffsetDelta, false);
     }
 
-    public static ViewTransformSpec view(Layout layout, Shape newShape) {
+    private static Result lazy(Layout layout, long byteOffsetDelta) {
+        return new Result(layout, byteOffsetDelta, true);
+    }
+
+    public static Result view(Layout layout, Shape newShape) {
         if (layout.shape().size() != newShape.size()) {
             throw new IllegalArgumentException("total element count mismatch");
         }
-
-        ViewKind kind = new ViewKind.Reshape(layout.shape(), newShape);
 
         // Fast path: data is contiguous in row-major order
         // Use isSuffixContiguous(0) to verify TRUE row-major contiguity,
         // not just spanning a contiguous range (which includes column-major layouts)
         // Scalars (rank 0) are always trivially contiguous
         if (layout.shape().rank() == 0 || layout.isSuffixContiguous(0)) {
-            return ViewTransformSpec.simple(kind, Layout.rowMajor(newShape), 0L);
+            return simple(Layout.rowMajor(newShape), 0L);
         }
 
         long[] oldStrides = layout.stride().toArray();
@@ -58,14 +50,13 @@ public final class ViewTransforms {
         if (canReshapeWithoutCopy(layout.shape(), newShape, oldStrides)) {
             long[] newStrides = computeReshapeStrides(layout.shape(), newShape, oldStrides);
             Layout newLayout = Layout.of(newShape, Stride.template(newShape, newStrides));
-            return ViewTransformSpec.simple(kind, newLayout, 0L);
+            return simple(newLayout, 0L);
         }
 
-        // Complex case: strides can't be computed simply, need lazy index composition.
-        // Return placeholder row-major strides; the actual indexing will be computed
-        // at LIR lowering time by walking the view chain.
+        // Complex case: strides alone cannot represent the reshape.
+        // Preserve the output shape and signal that index mapping is required.
         Layout placeholderLayout = Layout.rowMajor(newShape);
-        return ViewTransformSpec.lazy(kind, placeholderLayout, 0L);
+        return lazy(placeholderLayout, 0L);
     }
 
     /**
@@ -74,16 +65,15 @@ public final class ViewTransforms {
      * <p>This preserves data aliasing semantics (PyTorch-style unsqueeze): the inserted axis has
      * shape=1 and stride=0.
      */
-    public static ViewTransformSpec unsqueeze(Layout layout, int axis_) {
+    public static Result unsqueeze(Layout layout, int axis_) {
         int axis = Util.wrapAround(axis_, layout.shape().rank() + 1);
         Shape newShape = layout.shape().insert(axis, Shape.of(1));
         Stride newStride = layout.stride().insert(axis, Stride.of(0));
         Layout newLayout = Layout.of(newShape, newStride);
-        ViewKind kind = new ViewKind.Reshape(layout.shape(), newShape);
-        return ViewTransformSpec.simple(kind, newLayout, 0L);
+        return simple(newLayout, 0L);
     }
 
-    public static ViewTransformSpec expand(Layout layout, Shape newShape) {
+    public static Result expand(Layout layout, Shape newShape) {
         Shape currentShape = layout.shape();
 
         if (!currentShape.isCongruentWith(newShape)) {
@@ -116,13 +106,12 @@ public final class ViewTransforms {
             }
         }
 
-        ViewKind kind = new ViewKind.Expand(currentShape, newShape);
         Stride newStride = Stride.template(newShape, newStrides);
         Layout newLayout = Layout.of(newShape, newStride);
-        return ViewTransformSpec.simple(kind, newLayout, 0L);
+        return simple(newLayout, 0L);
     }
 
-    public static ViewTransformSpec broadcast(Layout layout, Shape targetShape) {
+    public static Result broadcast(Layout layout, Shape targetShape) {
         Shape currentShape = layout.shape();
         int numNewModes = targetShape.rank() - currentShape.rank();
         if (numNewModes < 0) {
@@ -134,16 +123,9 @@ public final class ViewTransforms {
                             + ": target has fewer modes");
         }
 
-        ViewKind kind = new ViewKind.Broadcast(currentShape, targetShape);
-
         if (numNewModes == 0) {
             // Same rank, just expand
-            ViewTransformSpec expandSpec = expand(layout, targetShape);
-            return new ViewTransformSpec(
-                    kind,
-                    expandSpec.layout(),
-                    expandSpec.byteOffsetDelta(),
-                    expandSpec.needsLazyIndexing());
+            return expand(layout, targetShape);
         }
 
         if (!currentShape.isFlat() || !targetShape.isFlat()) {
@@ -155,10 +137,10 @@ public final class ViewTransforms {
             System.arraycopy(currentDims, 0, newDims, prepend, currentDims.length);
 
             Shape reshapedShape = Shape.flat(newDims);
-            ViewTransformSpec reshaped = view(layout, reshapedShape);
-            ViewTransformSpec expandSpec = expand(reshaped.layout(), targetShape);
-            boolean needsLazy = reshaped.needsLazyIndexing() || expandSpec.needsLazyIndexing();
-            return new ViewTransformSpec(kind, expandSpec.layout(), 0L, needsLazy);
+            Result reshaped = view(layout, reshapedShape);
+            Result expanded = expand(reshaped.layout(), targetShape);
+            boolean needsLazy = reshaped.needsLazyIndexing() || expanded.needsLazyIndexing();
+            return new Result(expanded.layout(), 0L, needsLazy);
         }
 
         long[] newDims = new long[targetShape.rank()];
@@ -167,34 +149,25 @@ public final class ViewTransforms {
         }
         System.arraycopy(currentShape.toArray(), 0, newDims, numNewModes, currentShape.rank());
 
-        ViewTransformSpec reshaped = view(layout, Shape.flat(newDims));
-        ViewTransformSpec expandSpec = expand(reshaped.layout(), targetShape);
-        boolean needsLazy = reshaped.needsLazyIndexing() || expandSpec.needsLazyIndexing();
-        return new ViewTransformSpec(kind, expandSpec.layout(), 0L, needsLazy);
+        Result reshaped = view(layout, Shape.flat(newDims));
+        Result expanded = expand(reshaped.layout(), targetShape);
+        boolean needsLazy = reshaped.needsLazyIndexing() || expanded.needsLazyIndexing();
+        return new Result(expanded.layout(), 0L, needsLazy);
     }
 
-    public static ViewTransformSpec permute(Layout layout, int... permutationIndices) {
+    public static Result permute(Layout layout, int... permutationIndices) {
+        for (int axis : permutationIndices) {
+            if (axis < 0) {
+                throw new IllegalArgumentException("negative axis in permutation: " + axis);
+            }
+        }
         Shape newShape = layout.shape().permute(permutationIndices);
         Stride newStride = layout.stride().permute(permutationIndices);
         Layout newLayout = Layout.of(newShape, newStride);
-        ViewKind kind = new ViewKind.Transpose(permutationIndices);
-        return ViewTransformSpec.simple(kind, newLayout, 0L);
+        return simple(newLayout, 0L);
     }
 
-    public static ViewTransformSpec transpose(Layout layout, int _axis0, int _axis1) {
-        Shape shape = layout.shape();
-        int axis0 = Util.wrapAround(_axis0, shape.rank());
-        int axis1 = Util.wrapAround(_axis1, shape.rank());
-        int[] permutation = new int[shape.rank()];
-        for (int i = 0; i < shape.rank(); i++) {
-            permutation[i] = i;
-        }
-        permutation[axis0] = axis1;
-        permutation[axis1] = axis0;
-        return permute(layout, permutation);
-    }
-
-    public static ViewTransformSpec slice(
+    public static Result slice(
             Layout layout,
             DataType dataType,
             int _axis,
@@ -248,9 +221,8 @@ public final class ViewTransforms {
         Stride newModeStride = layout.stride().modeAt(axis).scale(indexStride);
         Stride newStride = layout.stride().replace(axis, newModeStride);
 
-        ViewKind kind = new ViewKind.Slice(axis, fromInclusive, indexStride);
         Layout newLayout = Layout.of(newShape, newStride);
-        return ViewTransformSpec.lazy(kind, newLayout, byteOffsetDelta);
+        return lazy(newLayout, byteOffsetDelta);
     }
 
     private static boolean canReshapeWithoutCopy(

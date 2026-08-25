@@ -83,20 +83,20 @@ final class MemoryViewImpl<T> implements MemoryView<T> {
 
     @Override
     public MemoryView<T> view(Shape newShape) {
-        ViewTransforms.ViewTransformSpec spec = ViewTransforms.view(layout, newShape);
-        if (spec.needsLazyIndexing()) {
+        ViewTransforms.Result result = ViewTransforms.view(layout, newShape);
+        if (result.needsLazyIndexing()) {
             throw new IllegalArgumentException(
                     "Cannot reshape non-contiguous view without copying. "
                             + "Use Tensor.view() which handles this automatically, "
                             + "or make a contiguous copy first.");
         }
-        return transformed(spec);
+        return transformed(result);
     }
 
     @Override
     public MemoryView<T> viewCuTe(Shape newShape) {
-        ViewTransforms.ViewTransformSpec spec = ViewTransforms.view(layout, newShape);
-        if (spec.needsLazyIndexing()) {
+        ViewTransforms.Result result = ViewTransforms.view(layout, newShape);
+        if (result.needsLazyIndexing()) {
             if (layout.isSpanContiguous() && layout.isNonOverlapping()) {
                 return create(Layout.rowMajor(newShape), dataType, byteOffset, memory);
             }
@@ -105,7 +105,7 @@ final class MemoryViewImpl<T> implements MemoryView<T> {
                             + "Use Tensor.view() to preserve linear order, "
                             + "or make a contiguous copy first.");
         }
-        return transformed(spec);
+        return transformed(result);
     }
 
     @Override
@@ -125,7 +125,7 @@ final class MemoryViewImpl<T> implements MemoryView<T> {
                         layout, dataType, axis, fromInclusive, toExclusive, indexStride));
     }
 
-    private MemoryView<T> transformed(ViewTransforms.ViewTransformSpec spec) {
-        return create(spec.layout(), dataType, byteOffset + spec.byteOffsetDelta(), memory);
+    private MemoryView<T> transformed(ViewTransforms.Result result) {
+        return create(result.layout(), dataType, byteOffset + result.byteOffsetDelta(), memory);
     }
 }

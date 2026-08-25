@@ -189,7 +189,8 @@ public class TIRRewriter implements TIRVisitor<TIRNode> {
         if (newInput == node.input()) {
             return node;
         }
-        return new ViewTransform(newInput, node.kind(), node.layout(), node.needsLazyIndexing());
+        return new ViewTransform(
+                newInput, node.operation(), node.layout(), node.needsLazyIndexing());
     }
 
     @Override
