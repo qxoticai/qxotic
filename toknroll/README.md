@@ -4,159 +4,102 @@
 [![GraalVM](https://img.shields.io/badge/GraalVM-Native_Image-F29111?labelColor=00758F)](https://www.graalvm.org/latest/reference-manual/native-image/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
 
-Token-perfect LLM tokenization. Pure Java. Zero dependencies.
+**Token-perfect LLM tokenization. Pure Java. Zero dependencies.**
+
+Tok'n'Roll matches the reference Python tokenizers token-for-token — verified by parity tests —
+while staying competitive with native implementations. No C extensions, no Rust bindings, no JNI.
+Runs on Java 11+, compiles to GraalVM native images out of the box.
 
 ## Why Tok'n'Roll?
 
-- **Fast.** Optimized fast paths for common model families. Competitive with native tokenizers.
-- **Pure Java, zero dependencies.** No C extensions, no Rust bindings, no JNI. The core library has no external dependencies.
-- **Clean, composable API.** Build tokenizers from sound, reusable components.
+- **Token-perfect.** Byte-exact parity with the reference tokenizers for
+  [10 model families](#tested-implementations) — not "close enough".
+- **Fast.** Guaranteed worst-case `O(n log n)` BPE merging, optimized fast paths per model
+  family, and zero-allocation, zero-copy APIs (`encodeInto`, `decodeBytesInto`) for hot loops.
+- **Loads what you already have.** HuggingFace `tokenizer.json`, ModelScope, and GGUF model files.
+- **Composable.** Assemble tokenizers from sound, reusable components — vocabulary, splitter,
+  model — or build your own from scratch.
 
-## Benchmarks
+## Quick start
 
-#### Single-thread
-These benchmarks show the standard encode/decode paths (string-to-tokens) using a single thread. The BPE merge engine ensures guaranteed worst-case `O(n log n)` complexity.  
-**Note:** Zero-allocation, zero-copy APIs are available for even higher throughput.
+```xml
+<dependency>
+  <groupId>com.qxotic</groupId>
+  <artifactId>toknroll-hf</artifactId>    <!-- tokenizer.json loading (HF / ModelScope) -->
+  <version>0.2.0</version>
+</dependency>
+```
 
-<img width="1424" height="536" alt="Image" src="https://github.com/user-attachments/assets/1ef13e40-1bee-4cb3-9c88-48e9b05b15f5" />
+```java
+Tokenizer t = HuggingFaceTokenizerLoader.fromHuggingFace("google", "gemma-4-e2b-it");
 
-<img width="1424" height="536" alt="Image" src="https://github.com/user-attachments/assets/29ff3107-8d81-465f-ad93-f3bd3bca275b" />
+int[] tokens = t.encodeToArray("Hello, world!");
+String text  = t.decode(tokens);
+int count    = t.countTokens("How many tokens is this?");
+```
 
+`toknroll-core` is the zero-dependency API and BPE engine; `toknroll-hf` loads `tokenizer.json`
+files, `toknroll-gguf` loads tokenizers straight out of llama.cpp model files. Remote loading
+fetches only tokenizer metadata — never model weights — and caches it on disk. Per-module details
+and advanced usage: [toknroll-hf](toknroll-hf/), [toknroll-gguf](toknroll-gguf/).
 
-#### Multi-thread
-The recommended way to parallelize Tok'n'Roll tokenizers is via batching, which is trivial to implement.  
-While discouraged, the Tok'n'Roll API also supports multi-threaded implementations (no batching), as some other libraries do.
+### From the command line
 
-<img width="1424" height="451" alt="Image" src="https://github.com/user-attachments/assets/69d543d8-be25-4c1f-8163-b159d3daadd8" />
-
-<img width="1425" height="451" alt="Image" src="https://github.com/user-attachments/assets/753543f6-146e-454e-94d7-8221b2f7a736" />
-
-#### Running the benchmarks yourself
-
-The enwik corpora are expensive (enwik9 is a 322 MB download), so fetching them is an explicit
-command, never a side effect of a benchmark run:
+A [JBang CLI](https://github.com/qxoticai/qxotic/blob/main/toknroll/scripts/toknroll.java) encodes,
+decodes and counts from any source — HuggingFace, ModelScope, GGUF, local files:
 
 ```bash
-make toknroll-fixtures                  # enwik8 and enwik9
-make toknroll-fixtures FIXTURES="enwik8" # just one
-```
-
-Corpora land in the OS cache (`~/.cache/qxotic/toknroll/corpus` on Linux; override with
-`-Dtoknroll.cache.root` or `TOKNROLL_CACHE_ROOT`), are size-verified, and are shared by the test
-suite and the benchmark drivers. To use your own copy: `-Dtoknroll.enwik8.path=/path/to/enwik8`
-(likewise `enwik9`). Benchmark drivers live in `toknroll-benchmarks/src/test` and are run via
-`exec:java`; their output goes to `bench-output/` under the same cache root, never into the
-working tree.
-
-## Quick Start
-
-### Maven
-
-```xml
-<dependency>
-  <groupId>com.qxotic</groupId>
-  <artifactId>toknroll-core</artifactId>
-  <version>0.2.0</version>
-</dependency>
-```
-
-`toknroll-core` is a high-level, generic tokenizer API with the core BPE algorithms and zero external dependencies. It does not include format-specific loading logic.
-
-For loading tokenizers from HuggingFace, ModelScope, or GGUF files, add the loader modules:
-
-```xml
-<!-- HuggingFace tokenizer.json / tiktoken.model loading -->
-<dependency>
-  <groupId>com.qxotic</groupId>
-  <artifactId>toknroll-hf</artifactId>
-  <version>0.2.0</version>
-</dependency>
-
-<!-- GGUF (llama.cpp format) tokenizer loading -->
-<dependency>
-  <groupId>com.qxotic</groupId>
-  <artifactId>toknroll-gguf</artifactId>
-  <version>0.2.0</version>
-</dependency>
+jbang toknroll@qxoticai --source google/gemma-4-e2b-it --input "Hello, Tok'n'Roll 🎸"
+echo "Hello\!" | jbang toknroll@qxoticai --count --source Qwen/Qwen3.6-35B-A3B
 ```
 
 ### Build a tokenizer from scratch
 
 ```java
-import java.util.regex.Pattern;
-import com.qxotic.toknroll.*;
-
-// Build a vocabulary from your model's ranked tokens
 Vocabulary vocab = Toknroll.vocabulary(specialTokens, rankedTokens);
 TokenizationModel model = Toknroll.tiktokenModel(vocab, mergeRules);
+Splitter splitter = Splitter.regex(Pattern.compile(/* e.g. the cl100k_base pattern */));
 
-// Choose a regex splitter (e.g. cl100k_base pattern for GPT-4)
-Splitter splitter = Splitter.regex(Pattern.compile(
-    "(?i:'(?:[sdmt]|ll|ve|re)|[^\\r\\n\\p{L}\\p{N}]?\\p{L}+|\\p{N}{1,3}|"
-    + " ?[^\\s\\p{L}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+)"));
-
-// Assemble the pipeline
 Tokenizer tokenizer = Toknroll.pipeline(splitter, model);
-
-// Use it
-int[] tokens = tokenizer.encodeToArray("Hello world");
-String text = tokenizer.decode(tokens);
-int count = tokenizer.countTokens("How many tokens is this?");
 ```
 
+## Benchmarks
 
-## Loading Tokenizers
+Single-threaded encode/decode against the usual suspects — competitive with native tokenizers,
+with a guaranteed `O(n log n)` worst case where others degrade:
 
-Load tokenizers from HuggingFace, ModelScope, or local files.
+<img width="1424" height="536" alt="Single-threaded encode benchmark" src="https://github.com/user-attachments/assets/1ef13e40-1bee-4cb3-9c88-48e9b05b15f5" />
 
-```java
-// HuggingFace tokenizer.json format
-Tokenizer t = HuggingFaceTokenizerLoader
-    .fromHuggingFace("google", "gemma-4-e2b-it");
+<img width="1424" height="536" alt="Single-threaded decode benchmark" src="https://github.com/user-attachments/assets/29ff3107-8d81-465f-ad93-f3bd3bca275b" />
 
-// ModelScope
-Tokenizer t = HuggingFaceTokenizerLoader
-    .fromModelScope("deepseek-ai", "DeepSeek-V4-Pro");
+Parallelize by batching — trivial with this API. Multi-threaded tokenization is supported but
+rarely the right answer:
 
-// GGUF format (llama.cpp)
-GGUFTokenizerLoader ggufLoader = GGUFTokenizerLoader
-    .createBuilderWithBuiltins()
-    .build();
+<img width="1424" height="451" alt="Multi-threaded encode benchmark" src="https://github.com/user-attachments/assets/69d543d8-be25-4c1f-8163-b159d3daadd8" />
 
-Tokenizer t = ggufLoader.fromHuggingFace(
-    "unsloth", "Llama-3.2-1B-Instruct-GGUF",
-    "Llama-3.2-1B-Instruct-Q8_0.gguf");
+<img width="1425" height="451" alt="Multi-threaded decode benchmark" src="https://github.com/user-attachments/assets/753543f6-146e-454e-94d7-8221b2f7a736" />
 
-// Local files
-Tokenizer t = HuggingFaceTokenizerLoader
-    .fromLocal(Path.of("/models/gemma-4-e2b-it"));
+Run them yourself: `make toknroll-fixtures` fetches the enwik corpora (explicitly — never as a
+side effect), then the drivers in `toknroll-benchmarks` write to `bench-output/` under the shared
+cache root. Details: [docs](https://qxotic.ai/docs/toknroll).
 
-Tokenizer t = ggufLoader.fromLocal(
-    Path.of("/models/model.gguf"));
+## Tested implementations
 
-// Encode / decode
-int[] tokens = t.encodeToArray("Hello, world!");
-String decoded = t.decode(tokens);
-```
+Token-perfect, backed by parity tests against the reference Python tokenizers:
 
-See [toknroll-hf](toknroll-hf/) and [toknroll-gguf](toknroll-gguf/) READMEs for per-model-family examples and advanced usage.
+- **OpenAI** — tiktoken (GPT-2, GPT-3.5, GPT-4, GPT-4o)
+- **Google** — Gemma 3, Gemma 4
+- **Alibaba** — Qwen 3.5+
+- **Moonshot AI** — Kimi 2.5+
+- **DeepSeek** — DeepSeek 3.2, DeepSeek 4
+- **Mistral AI** — Tekken
+- **IBM** — Granite 4+
+- **Meta** — Llama 3+
+- **Microsoft** — Phi 4+
+- **HuggingFace** — SmolLM3
 
-Remote loading fetches only tokenizer metadata, not model weights. Artifacts are cached on disk; cache location is configurable via `toknroll.cache.root` system property or `TOKNROLL_CACHE_ROOT` env var.
+Other BPE-based tokenizers likely work; they just aren't parity-tested.
 
+## License
 
-## Tested Implementations
-
-The test suite includes verified, token-perfect implementations backed by comprehensive parity tests against the Python implementations for:
-
-- **OpenAI** - tiktoken (GPT-2, GPT-3.5, GPT-4, GPT-4o)
-- **Google** - Gemma 3, Gemma 4
-- **Alibaba** - Qwen 3.5+
-- **Moonshot AI** - Kimi 2.5+
-- **DeepSeek** - DeepSeek 3.2, DeepSeek 4
-- **Mistral AI** - Tekken
-- **IBM** - Granite 4+
-- **Meta** - Llama 3+
-- **Microsoft** - Phi 4+
-- **HuggingFace** - SmolLM3
-
-Other models using BPE-based tokenizers are likely to work but are not tested against reference Python tokenizers.
+Apache 2.0

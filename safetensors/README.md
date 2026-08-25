@@ -4,31 +4,54 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
 [![GraalVM](https://img.shields.io/badge/GraalVM-Native_Image-F29111?labelColor=00758F)](https://www.graalvm.org/latest/reference-manual/native-image/)
 
-A pure Java library for reading and writing HuggingFace's [Safetensors](https://github.com/huggingface/safetensors) format.
+**Safetensors for the JVM.** Read and write HuggingFace's model format in pure Java — zero
+dependencies, Java 11+, GraalVM native-image ready.
 
-**Zero dependencies · Java 11+ · GraalVM Native Image ready**
+Strict schema validation, single-file and sharded models, and a JBang CLI that inspects headers
+straight off the hub — no multi-gigabyte download.
 
----
+## What you get
 
-## What this library does
+- **Read headers** — `__metadata__` plus every tensor entry (dtype, shape, offsets)
+- **Write headers** — build or modify with the builder API
+- **Strict validation** — dtype, shape, offset and overlap checks; malformed files fail loudly
+- **Sharded models** — `SafetensorsIndex` resolves which shard holds each tensor, from
+  `model.safetensors` or `model.safetensors.index.json`
 
-- Reads Safetensors headers (`__metadata__` + tensor entries)
-- Writes Safetensors headers from `Safetensors` instances
-- Validates strict schema constraints (dtype, shape, offsets, overlap)
-- Supports single-file and sharded model indexing via `SafetensorsIndex`
+Deliberately out of scope: tensor payload I/O and dtype conversion. Small API, predictable
+behavior — by design.
 
-## What this library does not do
+## Quick example
 
-- Does **not** read tensor payload bytes for you
-- Does **not** perform dtype conversion or inference
+```java
+Safetensors st = Safetensors.read(Path.of("model.safetensors"));
+TensorEntry tensor = st.requireTensor("model.embed_tokens.weight");
+System.out.println(tensor.byteSize());
 
-This keeps the API small and predictable.
+Safetensors modified = Builder.newBuilder(st)
+    .putMetadataKey("format", "pt")
+    .setAlignment(64)
+    .build();
+Safetensors.write(modified, Path.of("output.safetensors"));
+```
 
----
+## Sharded models
+
+```java
+SafetensorsIndex index = SafetensorsIndex.load(Path.of("/path/to/model-dir"));
+Path shard = index.requireSafetensorsPath("model.layers.0.self_attn.q_proj.weight");
+```
+
+## Peek from the CLI
+
+```bash
+jbang scripts/safetensors.java hf HuggingFaceTB/SmolLM2-135M --no-tensors
+jbang scripts/safetensors.java modelscope Qwen/Qwen3-4B --no-tensors
+```
+
+Pure JSON on stdout. Local files and arbitrary URLs work too.
 
 ## Installation
-
-### Maven
 
 ```xml
 <dependency>
@@ -38,63 +61,10 @@ This keeps the API small and predictable.
 </dependency>
 ```
 
----
-
-## Quick Example
-
-```java
-Safetensors st = Safetensors.read(Path.of("model.safetensors"));
-
-System.out.println(st.getAlignment());
-System.out.println(st.getTensorDataOffset());
-System.out.println(st.getMetadata());
-TensorEntry tensor = st.requireTensor("model.embed_tokens.weight");
-System.out.println(tensor.byteSize());
-```
-
----
-
-## Build or Modify Headers
-
-```java
-Safetensors modified = Builder.newBuilder(st)
-    .putMetadataKey("format", "pt")
-    .setAlignment(64)
-    .build();
-
-Safetensors.write(modified, Path.of("output.safetensors"));
-```
-
----
-
-## Sharded Models
-
-Use `SafetensorsIndex` to resolve which shard contains each tensor:
-
-```java
-SafetensorsIndex index = SafetensorsIndex.load(Path.of("/path/to/model-dir"));
-Path shard = index.requireSafetensorsPath("model.layers.0.self_attn.q_proj.weight");
-```
-
-The index loader handles both:
-- `model.safetensors` (single-file)
-- `model.safetensors.index.json` (sharded)
-
----
-
-## JBang CLI Script 
-
-Inspect headers directly from local files, URLs, HuggingFace or ModelScope:
-
-```bash
-jbang scripts/safetensors.java hf HuggingFaceTB/SmolLM2-135M --no-tensors
-jbang scripts/safetensors.java modelscope Qwen/Qwen3-4B --no-tensors
-```
-
-Output is pure JSON on stdout.
-
----
-
 ## Documentation
 
-Full docs and examples are in `docs/index.md`.
+Full docs and examples: [qxotic.ai/docs/safetensors](https://qxotic.ai/docs/safetensors).
+
+## License
+
+Apache 2.0

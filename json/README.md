@@ -1,40 +1,32 @@
-# JSON
+# json
 
 [![Maven Central](https://img.shields.io/maven-central/v/com.qxotic/json)](https://search.maven.org/artifact/com.qxotic/json)
 [![Java](https://img.shields.io/badge/Java-11+-blue)](https://openjdk.org/projects/jdk/11/)
 [![License][badge-license]](LICENSE)
 [![GraalVM Native Image][badge-native-image]](https://www.graalvm.org/latest/reference-manual/native-image/)
 
-Strict, minimal JSON parser and writer for Java. Parses JSON directly into standard Java collections. **Zero dependencies**, **RFC 8259 compliant**.
+**JSON for the JVM, minus the baggage.** A strict, minimal RFC 8259 parser and printer that maps
+JSON straight onto standard Java collections. **~10 KB. Zero dependencies. Zero reflection.**
 
 ```java
-// Parse JSON in one line
 Map<String, Object> data = Json.parseMap("{\"name\":\"alice\",\"age\":30}");
-
-// Serialize back to JSON
 String json = Json.stringify(data);
 ```
 
-## Why Quixotic JSON?
+## Why not Jackson?
 
-| Feature | Quixotic | Jackson | Gson |
-|---------|----------|---------|------|
+| | **qxotic json** | Jackson | Gson |
+|---|---|---|---|
 | Dependencies | **0** | 3+ | 1+ |
-| JAR Size | **~10KB** | ~3MB | ~250KB |
-| Reflection | **No** | Yes | Yes |
-| GraalVM Native Image | **✓** | Partial | Partial |
-| Setup | **None** | Annotations | Type tokens |
+| JAR size | **~10 KB** | ~3 MB | ~250 KB |
+| Reflection | **None** | Yes | Yes |
+| GraalVM native image | **Out of the box** | Partial | Partial |
+| Setup | **None** | Annotations, modules | Type tokens |
 
-**Perfect for:**
-- Configuration files
-- REST API clients
-- Microservices (minimal footprint)
-- GraalVM native images
-- Android apps (avoiding reflection)
+Perfect for config files, REST clients, microservices, Android, and native images — anywhere a
+3 MB reflection-driven mapper is overkill.
 
-## Installation
-
-### Maven
+## Quick start
 
 ```xml
 <dependency>
@@ -44,142 +36,65 @@ String json = Json.stringify(data);
 </dependency>
 ```
 
-## Quick Start
-
-### Parsing
+### Parse
 
 ```java
-// Parse into generic Object
-Object value = Json.parse(json);
-
-// Parse with specific root type
-Map<String, Object> object = Json.parseMap(json);
-List<Object> array = Json.parseList(json);
-String string = Json.parseString(json);
-Number number = Json.parseNumber(json);
-boolean bool = Json.parseBoolean(json);
+Object any    = Json.parse(json);          // generic
+Map<String, Object> obj = Json.parseMap(json);
+List<Object> arr        = Json.parseList(json);
 ```
 
-### Type Mappings
-
-| JSON Type | Java Type |
+| JSON type | Java type |
 |-----------|-----------|
-| Object | `LinkedHashMap<String, Object>` |
-| Array | `ArrayList<Object>` |
-| String | `String` |
-| Number (integer) | `Long` or `BigInteger` |
-| Number (decimal) | `BigDecimal` |
-| Boolean | `Boolean` |
+| object | `LinkedHashMap<String, Object>` |
+| array | `ArrayList<Object>` |
+| number (integer) | `Long` or `BigInteger` |
+| number (decimal) | `BigDecimal` |
 | null | `Json.NULL` |
 
-### Serialization
+### Print
 
 ```java
-Map<String, Object> data = Map.of(
-    "name", "alice",
-    "age", 30,
-    "active", true
-);
-
-// Compact format
-String compact = Json.stringify(data);
-// {"name":"alice","age":30,"active":true}
-
-// Pretty-printed
-String pretty = Json.stringify(data, true);
-// {
-//   "name": "alice",
-//   "age": 30,
-//   "active": true
-// }
+Json.stringify(data);        // {"name":"alice","age":30}
+Json.stringify(data, true);  // pretty-printed
 ```
 
-### Querying Nested Data
+### Query safely
 
 ```java
-String json = """
-    {
-        "user": {
-            "name": "alice",
-            "address": {
-                "city": "NYC"
-            }
-        }
-    }
-    """;
-
-Map<String, Object> data = Json.parseMap(json);
-
-// Safe navigation with Optional
 Optional<String> city = Json.queryString(data, "user", "address", "city");
-// Returns Optional.of("NYC")
-
-Optional<Number> age = Json.queryNumber(data, "user", "age");
-// Returns Optional.empty() (not present)
 ```
 
-### Configuration Options
+### Errors that point
 
 ```java
-// Default options
-Json.ParseOptions options = Json.ParseOptions.defaults()
-    .decimalsAsBigDecimal(true)    // Use BigDecimal for floats
-    .maxDepth(1000)                // Max nesting depth
-    .failOnDuplicateKeys(false);   // Reject duplicate keys?
-
-// Parse with custom options
-Map<String, Object> data = Json.parseMap(json, options);
-```
-
-### Validation
-
-```java
-// Check if JSON is valid without parsing
-boolean isValid = Json.isValid(json);
-
-// Validate with custom options
-boolean valid = Json.isValid(json, Json.ParseOptions.defaults().maxDepth(50));
-```
-
-### Error Handling
-
-```java
-try {
-    Map<String, Object> data = Json.parseMap(json);
-} catch (Json.ParseException e) {
-    // Get detailed error information
-    System.err.println("Error: " + e.getMessage());
-    System.err.println("Line: " + e.getLine());
-    System.err.println("Column: " + e.getColumn());
-    System.err.println("Position: " + e.getPosition());
+catch (Json.ParseException e) {
+    e.getLine(); e.getColumn(); e.getPosition();   // exact location, every time
 }
 ```
 
+Options (depth limits, duplicate-key strictness, decimal handling) and validation without parsing
+(`Json.isValid`) are covered in the [documentation](https://qxotic.ai/docs/json).
+
 ## Benchmarks
 
-Run benchmarks locally:
+JMH, typical hardware:
 
-```bash
-cd benchmarks
-mvn clean package
-java -jar target/json-benchmarks.jar
-```
-
-Results on typical hardware:
-
-| Operation | Qxotic | Jackson | Difference |
+| Operation | qxotic | Jackson | Difference |
 |-----------|--------|---------|------------|
-| Parse Small (~500B) | 0.81 µs | 0.88 µs | ~8% faster |
-| Round-trip Small | 1.36 µs | 1.70 µs | ~20% faster |
+| Parse small (~500 B) | 0.81 µs | 0.88 µs | ~8% faster |
+| Round-trip small | 1.36 µs | 1.70 µs | ~20% faster |
 
-*Benchmarks measured using JMH. See [benchmarks/](benchmarks/) for details.*
+Reproduce: `cd benchmarks && mvn package && java -jar target/json-benchmarks.jar`.
 
-# Documentation
+## Documentation
 
-- **[Parsing Guide](docs/guides/parsing.md)** - Detailed parsing options and techniques
-- **[Serialization Guide](docs/guides/serialization.md)** - Output formatting and custom options
-- **[Error Handling](docs/guides/error-handling.md)** - Working with parse exceptions
-- **[Migration Guide](docs/guides/migration.md)** - Migrating from Jackson, Gson, or org.json
+**[qxotic.ai/docs/json](https://qxotic.ai/docs/json)** — parsing, serialization, error handling,
+and migration from Jackson/Gson.
+
+## License
+
+Apache 2.0
 
 [badge-license]: https://img.shields.io/badge/license-Apache%202.0-green
 [badge-native-image]: https://img.shields.io/badge/GraalVM-Native_Image-F29111?labelColor=00758F
