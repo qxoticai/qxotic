@@ -11,32 +11,32 @@ public final class MemoryFactory {
         // no instances
     }
 
-    public static Memory<float[]> ofFloats(float... floats) {
-        return FloatsMemory.of(floats);
+    public static Memory<boolean[]> ofBooleans(boolean... booleans) {
+        return ArrayMemory.of(booleans);
     }
 
     public static Memory<byte[]> ofBytes(byte... bytes) {
-        return BytesMemory.of(bytes);
-    }
-
-    public static Memory<boolean[]> ofBooleans(boolean... booleans) {
-        return BooleansMemory.of(booleans);
-    }
-
-    public static Memory<int[]> ofInts(int... ints) {
-        return IntsMemory.of(ints);
+        return ArrayMemory.of(bytes);
     }
 
     public static Memory<short[]> ofShorts(short... shorts) {
-        return ShortsMemory.of(shorts);
+        return ArrayMemory.of(shorts);
+    }
+
+    public static Memory<int[]> ofInts(int... ints) {
+        return ArrayMemory.of(ints);
     }
 
     public static Memory<long[]> ofLongs(long... longs) {
-        return LongsMemory.of(longs);
+        return ArrayMemory.of(longs);
+    }
+
+    public static Memory<float[]> ofFloats(float... floats) {
+        return ArrayMemory.of(floats);
     }
 
     public static Memory<double[]> ofDoubles(double... doubles) {
-        return DoublesMemory.of(doubles);
+        return ArrayMemory.of(doubles);
     }
 
     public static Memory<ByteBuffer> ofByteBuffer(ByteBuffer byteBuffer) {

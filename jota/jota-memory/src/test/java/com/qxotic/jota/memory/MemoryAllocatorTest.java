@@ -1,6 +1,9 @@
 package com.qxotic.jota.memory;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jota.DataType;
@@ -10,6 +13,7 @@ import com.qxotic.jota.memory.impl.MemoryAllocatorFactory;
 import java.nio.ByteOrder;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -90,5 +94,29 @@ public class MemoryAllocatorTest {
     <B> void testByteBufferAllocatorsUseJavaDevice(
             Supplier<MemoryAllocator<B>> memoryAllocatorSupplier) {
         assertTrue(memoryAllocatorSupplier.get().device().belongsTo(DeviceType.JAVA));
+    }
+
+    @Test
+    void arrayAllocatorsValidateSizeAndAlignment() {
+        MemoryAllocator<int[]> allocator = MemoryAllocatorFactory.ofInts();
+
+        assertDoesNotThrow(() -> allocator.allocateMemory(Integer.BYTES, Integer.BYTES));
+        assertDoesNotThrow(() -> allocator.allocateMemory(Integer.BYTES, Short.BYTES));
+        assertThrows(
+                IllegalArgumentException.class, () -> allocator.allocateMemory(DataType.I8, 1));
+        assertThrows(IllegalArgumentException.class, () -> allocator.allocateMemory(-1));
+        assertThrows(IllegalArgumentException.class, () -> allocator.allocateMemory(1));
+        assertThrows(
+                IllegalArgumentException.class, () -> allocator.allocateMemory(Integer.BYTES, 0));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> allocator.allocateMemory(Integer.BYTES, Long.BYTES));
+    }
+
+    @Test
+    void booleanAllocatorOnlySupportsBooleanValues() {
+        MemoryAllocator<boolean[]> allocator = MemoryAllocatorFactory.ofBooleans();
+        assertTrue(allocator.supportsDataType(DataType.BOOL));
+        assertFalse(allocator.supportsDataType(DataType.I8));
     }
 }

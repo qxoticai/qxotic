@@ -6,38 +6,81 @@ import com.qxotic.jota.runtime.nativeimpl.NativeMemoryFactory;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;
 
-public class DomainFactory {
+public final class DomainFactory {
+
+    private static final MemoryDomain<boolean[]> BOOLEANS =
+            new ArrayMemoryDomain<>(
+                    boolean[].class,
+                    MemoryAllocatorFactory.ofBooleans(),
+                    BooleansMemoryAccess.instance(),
+                    BooleansMemoryOperations.instance());
+    private static final MemoryDomain<byte[]> BYTES =
+            new ArrayMemoryDomain<>(
+                    byte[].class,
+                    MemoryAllocatorFactory.ofBytes(),
+                    BytesMemoryAccess.instance(),
+                    BytesMemoryOperations.instance());
+    private static final MemoryDomain<short[]> SHORTS =
+            new ArrayMemoryDomain<>(
+                    short[].class,
+                    MemoryAllocatorFactory.ofShorts(),
+                    ShortsMemoryAccess.instance(),
+                    ShortsMemoryOperations.instance());
+    private static final MemoryDomain<int[]> INTS =
+            new ArrayMemoryDomain<>(
+                    int[].class,
+                    MemoryAllocatorFactory.ofInts(),
+                    IntsMemoryAccess.instance(),
+                    IntsMemoryOperations.instance());
+    private static final MemoryDomain<long[]> LONGS =
+            new ArrayMemoryDomain<>(
+                    long[].class,
+                    MemoryAllocatorFactory.ofLongs(),
+                    LongsMemoryAccess.instance(),
+                    LongsMemoryOperations.instance());
+    private static final MemoryDomain<float[]> FLOATS =
+            new ArrayMemoryDomain<>(
+                    float[].class,
+                    MemoryAllocatorFactory.ofFloats(),
+                    FloatsMemoryAccess.instance(),
+                    FloatsMemoryOperations.instance());
+    private static final MemoryDomain<double[]> DOUBLES =
+            new ArrayMemoryDomain<>(
+                    double[].class,
+                    MemoryAllocatorFactory.ofDoubles(),
+                    DoublesMemoryAccess.instance(),
+                    DoublesMemoryOperations.instance());
 
     private DomainFactory() {
         // no instances
     }
 
     public static MemoryDomain<boolean[]> ofBooleans() {
-        return BooleansDomain.instance();
+        return BOOLEANS;
     }
 
     public static MemoryDomain<byte[]> ofBytes() {
-        return BytesDomain.instance();
+        return BYTES;
     }
 
     public static MemoryDomain<short[]> ofShorts() {
-        return ShortsDomain.instance();
+        return SHORTS;
     }
 
     public static MemoryDomain<int[]> ofInts() {
-        return IntsDomain.instance();
+        return INTS;
     }
 
     public static MemoryDomain<long[]> ofLongs() {
-        return LongsDomain.instance();
+        return LONGS;
     }
 
     public static MemoryDomain<float[]> ofFloats() {
-        return FloatsDomain.instance();
+        return FLOATS;
     }
 
     public static MemoryDomain<double[]> ofDoubles() {
-        return DoublesDomain.instance();
+        return DOUBLES;
     }
 
     public static MemoryDomain<MemorySegment> ofMemorySegment(

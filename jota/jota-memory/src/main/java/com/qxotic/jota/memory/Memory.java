@@ -3,7 +3,7 @@ package com.qxotic.jota.memory;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Device;
 
-public interface Memory<B> extends Storage {
+public interface Memory<B> {
 
     long byteSize();
 
@@ -22,11 +22,11 @@ public interface Memory<B> extends Storage {
     long memoryGranularity();
 
     /**
-     * Checks if this memory can store the given DataType. A DataType is supported if its byteSize
-     * is a multiple of the memory granularity.
+     * Checks whether this memory can store the given data type. Byte-addressable memory supports
+     * every data type. Other memory supports data types matching its element size.
      *
      * @param dataType the data type to check
-     * @return true if this memory can store the given DataType
+     * @return true if this memory can store the given data type
      */
     default boolean supportsDataType(DataType dataType) {
         long granularity = memoryGranularity();
