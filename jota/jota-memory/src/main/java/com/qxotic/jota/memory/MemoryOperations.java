@@ -8,6 +8,11 @@ public interface MemoryOperations<B> {
 
     void copy(Memory<B> src, long srcByteOffset, Memory<B> dst, long dstByteOffset, long byteSize);
 
+    /**
+     * Transfers from a {@link MemorySegment}, heap ({@code MemorySegment.ofArray}) or native, into
+     * this backend. Implementations that hand addresses to a driver must check {@code isNative()}
+     * and stage heap segments themselves.
+     */
     void copyFromNative(
             Memory<MemorySegment> src,
             long srcByteOffset,
@@ -15,6 +20,7 @@ public interface MemoryOperations<B> {
             long dstByteOffset,
             long byteSize);
 
+    /** The mirror of {@link #copyFromNative}: this backend into a heap or native segment. */
     void copyToNative(
             Memory<B> src,
             long srcByteOffset,
@@ -82,6 +88,20 @@ public interface MemoryOperations<B> {
             throw new IllegalArgumentException("Negative size");
         }
         long copyGranularity = checkGranularity(src, srcByteOffset, dst, dstByteOffset, byteSize);
+        // One side already a MemorySegment (heap or native): the backend primitive is the direct
+        // transfer, so no staging buffer and no chunking.
+        if (dst.base() instanceof MemorySegment) {
+            @SuppressWarnings("unchecked")
+            Memory<MemorySegment> segment = (Memory<MemorySegment>) dst;
+            srcOps.copyToNative(src, srcByteOffset, segment, dstByteOffset, byteSize);
+            return;
+        }
+        if (src.base() instanceof MemorySegment) {
+            @SuppressWarnings("unchecked")
+            Memory<MemorySegment> segment = (Memory<MemorySegment>) src;
+            dstOps.copyFromNative(segment, srcByteOffset, dst, dstByteOffset, byteSize);
+            return;
+        }
         long bufferSize = computeBufferSize(byteSize, copyGranularity);
         try (var arena = Arena.ofConfined()) {
             MemorySegment memorySegment = arena.allocate(bufferSize, 4 << 10);

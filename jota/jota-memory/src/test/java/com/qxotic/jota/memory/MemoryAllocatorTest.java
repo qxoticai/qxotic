@@ -10,12 +10,14 @@ import com.qxotic.jota.DataType;
 import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.impl.MemoryAllocatorFactory;
+import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 public class MemoryAllocatorTest {
 
@@ -118,5 +120,23 @@ public class MemoryAllocatorTest {
         MemoryAllocator<boolean[]> allocator = MemoryAllocatorFactory.ofBooleans();
         assertTrue(allocator.supportsDataType(DataType.BOOL));
         assertFalse(allocator.supportsDataType(DataType.I8));
+    }
+
+    /** Regression: alignedSlice() rounded the limit down, so (100, 64) came back as 64 bytes. */
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void byteBufferAllocatorHonorsSizeAndAlignment(boolean direct) {
+        var allocator = MemoryAllocatorFactory.ofByteBuffer(direct);
+        int maxAlign = direct ? 4096 : 1;
+        for (int size : new int[] {1, 10, 100, 4097}) {
+            for (int align = 1; align <= maxAlign; align *= 2) {
+                Memory<ByteBuffer> memory = allocator.allocateMemory(size, align);
+                assertEquals(size, memory.byteSize(), "size=" + size + " align=" + align);
+                assertEquals(0, memory.base().alignmentOffset(0, align), "align=" + align);
+            }
+        }
+        if (!direct) {
+            assertThrows(IllegalArgumentException.class, () -> allocator.allocateMemory(100, 2));
+        }
     }
 }

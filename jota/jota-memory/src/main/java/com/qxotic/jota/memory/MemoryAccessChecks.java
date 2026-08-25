@@ -5,7 +5,8 @@ public final class MemoryAccessChecks {
     public static void checkBounds(Memory<?> memory, long byteOffset, long byteSize) {
         checkBounds(byteOffset >= 0, "negative byte offset");
         checkBounds(byteSize >= 0, "negative byte size");
-        checkBounds(byteOffset + byteSize <= memory.byteSize(), "out of bounds access");
+        // both operands are >= 0 here, so the subtraction cannot wrap (the sum could)
+        checkBounds(byteSize <= memory.byteSize() - byteOffset, "out of bounds access");
     }
 
     public static void checkWriteable(Memory<?> memory) {

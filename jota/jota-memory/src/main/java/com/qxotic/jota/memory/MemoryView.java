@@ -58,26 +58,30 @@ public interface MemoryView<B> extends View {
         if (layout.shape().size() == 0) {
             return true;
         }
-
-        long minRelativeOffset = 0;
-        long maxRelativeOffset = 0;
-        long[] strides = layout.stride().scale(dataType.byteSize()).toArray();
-        for (int i = 0; i < layout.shape().flatRank(); i++) {
-            long dim = layout.shape().flatAt(i);
-            if (dim <= 1) {
-                continue;
+        // Exact math: a span that overflows long is out of bounds by definition.
+        try {
+            long minRelativeOffset = 0;
+            long maxRelativeOffset = 0;
+            long[] strides = layout.stride().scale(dataType.byteSize()).toArray();
+            for (int i = 0; i < layout.shape().flatRank(); i++) {
+                long dim = layout.shape().flatAt(i);
+                if (dim <= 1) {
+                    continue;
+                }
+                long span = Math.multiplyExact(dim - 1, strides[i]);
+                if (span >= 0) {
+                    maxRelativeOffset = Math.addExact(maxRelativeOffset, span);
+                } else {
+                    minRelativeOffset = Math.addExact(minRelativeOffset, span);
+                }
             }
-            long stride = strides[i];
-            long span = (dim - 1) * stride;
-            if (stride >= 0) {
-                maxRelativeOffset += span;
-            } else {
-                minRelativeOffset += span;
-            }
+            long minOffset = Math.addExact(byteOffset, minRelativeOffset);
+            long maxOffset = Math.addExact(byteOffset, maxRelativeOffset);
+            return minOffset >= 0
+                    && Math.addExact(maxOffset, dataType.byteSize()) <= memory.byteSize();
+        } catch (ArithmeticException overflow) {
+            return false;
         }
-        long minOffset = byteOffset + minRelativeOffset;
-        long maxOffset = byteOffset + maxRelativeOffset;
-        return minOffset >= 0 && maxOffset + dataType.byteSize() <= memory.byteSize();
     }
 
     MemoryView<B> view(Shape newShape);

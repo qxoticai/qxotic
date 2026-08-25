@@ -156,4 +156,19 @@ class MemoryViewTest {
         assertDoesNotThrow(
                 () -> MemoryViewFactory.of(DataType.FP32, memory, memory.byteSize() + 16L, layout));
     }
+
+    @Test
+    void viewRejectsOverflowingSpan() {
+        // (dim - 1) * stride wraps negative and used to land on the "min" side of the span
+        Memory<byte[]> memory = MemoryFactory.ofBytes(new byte[16]);
+        long stride = Long.MAX_VALUE / 2 + 2;
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        MemoryView.of(
+                                memory,
+                                4,
+                                DataType.I8,
+                                Layout.of(Shape.flat(3), Stride.flat(stride))));
+    }
 }

@@ -37,11 +37,20 @@ final class ByteBufferAllocator implements MemoryAllocator<ByteBuffer> {
         if (!Util.isPowerOf2(byteAlignment)) {
             throw new IllegalArgumentException("invalid byteAlignment, not a power of 2");
         }
-        int intByteSize = Math.toIntExact(byteSize + byteAlignment - 1);
-        int intByteAlignment = Math.toIntExact(byteAlignment);
-        ByteBuffer byteBuffer =
-                direct ? ByteBuffer.allocateDirect(intByteSize) : ByteBuffer.allocate(intByteSize);
-        byteBuffer = byteBuffer.alignedSlice(intByteAlignment).order(byteOrder);
-        return MemoryFactory.ofByteBuffer(byteBuffer);
+        if (!direct && byteAlignment > 1) {
+            // A heap array can be moved by the GC, so a heap buffer has no address to align to.
+            throw new IllegalArgumentException(
+                    "heap ByteBuffer cannot be aligned to " + byteAlignment);
+        }
+        int size = Math.toIntExact(byteSize);
+        int align = Math.toIntExact(byteAlignment);
+        // Over-allocate by align-1 and slice exactly `size` bytes from the first aligned index.
+        // NOT alignedSlice(align): that rounds the limit DOWN to a multiple of align too, so the
+        // slice comes back shorter than requested.
+        int capacity = Math.addExact(size, align - 1);
+        ByteBuffer raw =
+                direct ? ByteBuffer.allocateDirect(capacity) : ByteBuffer.allocate(capacity);
+        int start = (align - raw.alignmentOffset(0, align)) & (align - 1);
+        return MemoryFactory.ofByteBuffer(raw.slice(start, size).order(byteOrder));
     }
 }
