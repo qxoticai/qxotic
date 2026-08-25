@@ -5,38 +5,21 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
 [![GraalVM](https://img.shields.io/badge/GraalVM-Native_Image-F29111?labelColor=00758F)](https://www.graalvm.org/latest/reference-manual/native-image/)
 
-A pure Java library for reading and writing [GGUF](https://github.com/ggml-org/ggml/blob/master/docs/gguf.md) files - the binary format used by [llama.cpp](https://github.com/ggml-org/llama.cpp) for storing machine learning model weights and metadata.
+**GGUF for the JVM.** Read and write llama.cpp's model format in pure Java — zero dependencies,
+Java 11+, GraalVM native-image ready.
 
-**Zero dependencies · Java 11+ · GraalVM Native Image ready**
+Every LLM worth running locally ships as GGUF. This library opens them: metadata, tensor layouts,
+tokenizer config, quantization types — type-safe, bounds-checked, embeddable anywhere a JVM runs.
 
----
+## Why this library
 
-## Why This Library?
+- **Zero dependencies.** `java.nio` and collections only. A few classes, no transitive tree.
+- **Read and write.** Inspect any GGUF, then modify metadata or build new files with the builder API.
+- **Type-safe.** `getValue(String.class, "general.name")` — no casting gymnastics.
+- **Every GGML type.** Q4_0, Q4_K, Q6_K, Q8_0, MXFP4, F16, F32 — the whole quantization zoo.
+- **Pure Java.** HotSpot, OpenJ9, GraalVM — native-image compiles with zero configuration.
 
-- **Zero Runtime Dependencies** - Only uses standard Java library (`java.nio`, collections). No external libraries required.
-- **Pure Java Implementation** - No native code, works on any JVM platform (HotSpot, OpenJ9, GraalVM).
-- **Java 11+ Compatible** - Minimum Java 11, tested on LTS versions (11, 17, 21).
-- **GraalVM Native Image Ready** - Compile to native binaries with zero configuration.
-- **Read & Write GGUF Files** - Full support for reading metadata/tensor info and creating/modifying files via builder API.
-- **Type-Safe Metadata Access** - Automatic casting with generic `getValue(Class<T>, key)`.
-- **Lightweight** - Small footprint, embeddable in CLI tools, servers, or desktop applications.
-
----
-
-## Installation
-
-### Maven
-
-```xml
-<dependency>
-    <groupId>com.qxotic</groupId>
-    <artifactId>gguf</artifactId>
-    <version>0.2.0</version>
-</dependency>
-```
----
-
-## Quick Example
+## Quick example
 
 ```java
 // Reading
@@ -49,50 +32,46 @@ GGUF modified = Builder.newBuilder(gguf)
     .build();
 GGUF.write(modified, Path.of("output.gguf"));
 ```
----
 
-## Peek GGUF metadata with [JBang](https://www.jbang.dev/)
+## Peek without downloading
 
-Peek GGUF metadata from [HuggingFace](https://huggingface.co) (or any URL) without downloading the full file:
+The [JBang script](scripts/gguf.java) reads GGUF metadata straight off HuggingFace (or any URL) —
+no multi-gigabyte download:
 
 ```bash
 jbang scripts/gguf.java hf unsloth/Qwen3-0.6B-GGUF/Q8_0 --no-tensors
 ```
 
----
+## Installation
+
+```xml
+<dependency>
+    <groupId>com.qxotic</groupId>
+    <artifactId>gguf</artifactId>
+    <version>0.2.0</version>
+</dependency>
+```
+
+## Deliberately out of scope
+
+- **No tensor payload I/O** — you read/write raw bytes at the offsets the library provides
+- **No quantization math** — raw bytes only
+- **No inference** — that's [jinfer](../jinfer)
+
+Small, focused, dependency-free — by design.
 
 ## Documentation
 
-See [docs/index.md](docs/index.md) for complete API documentation with detailed examples:
-
-- Reading from files, channels, and URLs
-- Accessing metadata with type-safe getters
-- Creating and modifying GGUF files
-- Tensor information and offset calculations
-- All GGML data types (Q4_0, Q8_0, F16, F32, etc.)
-
----
-
-## What This Library Does NOT Do
-
-- **No tensor data I/O** - You read/write raw tensor bytes at offsets the library provides
-- **No quantization/dequantization** - Raw bytes only, no math operations
-- **No inference** - Structure and metadata only, not a runtime
-
-This keeps the library focused, lightweight, and dependency-free.
-
----
+[Complete API documentation](https://qxotic.ai/docs/gguf): reading from files, channels and URLs; type-safe
+metadata access; creating and modifying files; tensor offsets; every GGML data type.
 
 ## Development
 
 ```bash
-mvnd compile
-mvnd test
-mvnd spotless:apply
+mvn test
+mvn spotless:apply
 ```
-
----
 
 ## License
 
-Apache License 2.0
+Apache 2.0
