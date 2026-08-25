@@ -34,7 +34,8 @@ public final class Convert {
 
     /** Decode F_SPECIES.length() consecutive F16 values to an F32 vector (IEEE half -> single). */
     @AlwaysInline(
-            "hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compile_commands)")
+            "hot Vector API helper: escaping FloatVector boxes per call (see"
+                    + " hotspot_compile_commands)")
     public static FloatVector f16ToF32Vector(MemorySegment memSeg, long byteOffset) {
         ShortVector bits16 =
                 ShortVector.fromMemorySegment(

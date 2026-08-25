@@ -414,8 +414,9 @@ public final class Convolutions {
      *   <li>JIT — 4x1 is right. 4x2 is model- and JVM-dependent (nano regresses ~5% on GraalVM
      *       25.2.4 while micro gains ~5%), and 4x4 loses outright. Note the JIT is ~1.9x slower
      *       than the image on the same single-threaded convolutions either way.
-     *   <li>Forcing {@code load}/{@code store} inline via hotspot_compile_commands made the JIT 10-20%
-     *       SLOWER (the loop is already register-starved) and did nothing at all in the image.
+     *   <li>Forcing {@code load}/{@code store} inline via hotspot_compile_commands made the JIT
+     *       10-20% SLOWER (the loop is already register-starved) and did nothing at all in the
+     *       image.
      * </ul>
      *
      * <p>So: default stays 4x1 for the JIT, and an image should be built with 4x4 — which it can
