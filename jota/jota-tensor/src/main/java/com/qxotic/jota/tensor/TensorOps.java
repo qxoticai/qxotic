@@ -3,6 +3,8 @@ package com.qxotic.jota.tensor;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Device;
 import com.qxotic.jota.Shape;
+import com.qxotic.jota.Util;
+import com.qxotic.jota.ir.tir.ViewOperation;
 import com.qxotic.jota.memory.impl.ViewTransforms;
 import java.util.Arrays;
 import java.util.stream.IntStream;
@@ -190,12 +192,16 @@ interface TensorOps {
 
     // === Shape Operations ===
 
-    Tensor viewTransform(Tensor x, ViewTransforms.ViewTransformSpec spec);
+    Tensor viewTransform(Tensor x, ViewOperation operation, ViewTransforms.Result result);
 
     default Tensor transpose(Tensor x, int _axis0, int _axis1) {
-        ViewTransforms.ViewTransformSpec spec =
-                ViewTransforms.transpose(x.layout(), _axis0, _axis1);
-        return viewTransform(x, spec);
+        int rank = x.shape().rank();
+        int axis0 = Util.wrapAround(_axis0, rank);
+        int axis1 = Util.wrapAround(_axis1, rank);
+        int[] permutation = IntStream.range(0, rank).toArray();
+        permutation[axis0] = axis1;
+        permutation[axis1] = axis0;
+        return permute(x, permutation);
     }
 
     default Tensor transpose(Tensor x) {
@@ -205,24 +211,29 @@ interface TensorOps {
     Tensor reshape(Tensor x, Shape newShape);
 
     default Tensor view(Tensor x, Shape newShape) {
-        ViewTransforms.ViewTransformSpec spec = ViewTransforms.view(x.layout(), newShape);
-        return viewTransform(x, spec);
+        ViewTransforms.Result result = ViewTransforms.view(x.layout(), newShape);
+        return viewTransform(x, new ViewOperation.Reshape(x.shape(), newShape), result);
+    }
+
+    default Tensor unsqueeze(Tensor x, int axis) {
+        ViewTransforms.Result result = ViewTransforms.unsqueeze(x.layout(), axis);
+        return viewTransform(
+                x, new ViewOperation.Reshape(x.shape(), result.layout().shape()), result);
     }
 
     default Tensor broadcast(Tensor x, Shape targetShape) {
-        ViewTransforms.ViewTransformSpec spec = ViewTransforms.broadcast(x.layout(), targetShape);
-        return viewTransform(x, spec);
+        ViewTransforms.Result result = ViewTransforms.broadcast(x.layout(), targetShape);
+        return viewTransform(x, new ViewOperation.Broadcast(x.shape(), targetShape), result);
     }
 
     default Tensor expand(Tensor x, Shape targetShape) {
-        ViewTransforms.ViewTransformSpec spec = ViewTransforms.expand(x.layout(), targetShape);
-        return viewTransform(x, spec);
+        ViewTransforms.Result result = ViewTransforms.expand(x.layout(), targetShape);
+        return viewTransform(x, new ViewOperation.Expand(x.shape(), targetShape), result);
     }
 
     default Tensor permute(Tensor x, int... permutationIndices) {
-        ViewTransforms.ViewTransformSpec spec =
-                ViewTransforms.permute(x.layout(), permutationIndices);
-        return viewTransform(x, spec);
+        ViewTransforms.Result result = ViewTransforms.permute(x.layout(), permutationIndices);
+        return viewTransform(x, new ViewOperation.Transpose(permutationIndices), result);
     }
 
     default Tensor slice(Tensor x, int _axis, long start, long end) {
@@ -230,9 +241,10 @@ interface TensorOps {
     }
 
     default Tensor slice(Tensor x, int _axis, long start, long end, long indexStride) {
-        ViewTransforms.ViewTransformSpec spec =
-                ViewTransforms.slice(x.layout(), x.dataType(), _axis, start, end, indexStride);
-        return viewTransform(x, spec);
+        int axis = Util.wrapAround(_axis, x.shape().rank());
+        ViewTransforms.Result result =
+                ViewTransforms.slice(x.layout(), x.dataType(), axis, start, end, indexStride);
+        return viewTransform(x, new ViewOperation.Slice(axis, start, indexStride), result);
     }
 
     // === Type Conversion ===

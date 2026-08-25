@@ -3,7 +3,6 @@ package com.qxotic.jota.ir.tir;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.ir.TextRenderUtils;
-import com.qxotic.jota.memory.impl.ViewKind;
 import java.util.IdentityHashMap;
 import java.util.Map;
 
@@ -406,17 +405,17 @@ public class TIRTextRenderer implements TIRVisitor<String> {
         String inputType = formatTensorType(layoutForNode(node.input()), node.dataType());
         String outputType = formatTensorType(node.layout(), node.dataType());
         String op =
-                switch (node.kind()) {
-                    case ViewKind.Transpose t ->
+                switch (node.operation()) {
+                    case ViewOperation.Transpose t ->
                             "tensor.transpose "
                                     + input
                                     + " perm=["
                                     + formatIntList(t.permutation())
                                     + "]";
-                    case ViewKind.Reshape __ -> "tensor.reshape " + input;
-                    case ViewKind.Broadcast __ -> "tensor.broadcast " + input;
-                    case ViewKind.Expand __ -> "tensor.expand " + input;
-                    case ViewKind.Slice s ->
+                    case ViewOperation.Reshape __ -> "tensor.reshape " + input;
+                    case ViewOperation.Broadcast __ -> "tensor.broadcast " + input;
+                    case ViewOperation.Expand __ -> "tensor.expand " + input;
+                    case ViewOperation.Slice s ->
                             "tensor.slice "
                                     + input
                                     + " axis="

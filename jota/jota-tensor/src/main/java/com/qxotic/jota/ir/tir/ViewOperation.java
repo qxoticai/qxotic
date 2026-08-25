@@ -1,16 +1,13 @@
-package com.qxotic.jota.memory.impl;
+package com.qxotic.jota.ir.tir;
 
 import com.qxotic.jota.Shape;
 import java.util.Arrays;
 
-/**
- * Describes the kind of view transformation applied to a tensor. Each variant captures the
- * parameters needed to invert the transformation when computing index expressions.
- */
-public sealed interface ViewKind {
+/** Describes a view operation and the parameters needed to invert it during lowering. */
+public sealed interface ViewOperation {
 
-    /** Transpose: permutes dimensions according to the given permutation. */
-    record Transpose(int[] permutation) implements ViewKind {
+    /** Permutes tensor axes. */
+    record Transpose(int[] permutation) implements ViewOperation {
         public Transpose {
             if (permutation == null || permutation.length == 0) {
                 throw new IllegalArgumentException("permutation cannot be null or empty");
@@ -32,11 +29,11 @@ public sealed interface ViewKind {
 
         /** Returns the inverse permutation. */
         public int[] inverse() {
-            int[] inv = new int[permutation.length];
+            int[] inverse = new int[permutation.length];
             for (int i = 0; i < permutation.length; i++) {
-                inv[permutation[i]] = i;
+                inverse[permutation[i]] = i;
             }
-            return inv;
+            return inverse;
         }
 
         @Override
@@ -57,8 +54,8 @@ public sealed interface ViewKind {
         }
     }
 
-    /** Reshape: changes the shape without changing element order. */
-    record Reshape(Shape fromShape, Shape toShape) implements ViewKind {
+    /** Changes shape without changing element order. */
+    record Reshape(Shape fromShape, Shape toShape) implements ViewOperation {
         public Reshape {
             if (fromShape == null || toShape == null) {
                 throw new IllegalArgumentException("shapes cannot be null");
@@ -73,8 +70,8 @@ public sealed interface ViewKind {
         }
     }
 
-    /** Broadcast: expands singleton dimensions to match target shape. */
-    record Broadcast(Shape fromShape, Shape toShape) implements ViewKind {
+    /** Adds or expands broadcast dimensions. */
+    record Broadcast(Shape fromShape, Shape toShape) implements ViewOperation {
         public Broadcast {
             if (fromShape == null || toShape == null) {
                 throw new IllegalArgumentException("shapes cannot be null");
@@ -82,8 +79,8 @@ public sealed interface ViewKind {
         }
     }
 
-    /** Expand: similar to broadcast but for explicit expansion of size-1 dims. */
-    record Expand(Shape fromShape, Shape toShape) implements ViewKind {
+    /** Expands singleton dimensions within an existing shape. */
+    record Expand(Shape fromShape, Shape toShape) implements ViewOperation {
         public Expand {
             if (fromShape == null || toShape == null) {
                 throw new IllegalArgumentException("shapes cannot be null");
@@ -91,8 +88,8 @@ public sealed interface ViewKind {
         }
     }
 
-    /** Slice: extracts a range from a dimension with optional step. */
-    record Slice(int axis, long start, long step) implements ViewKind {
+    /** Selects a strided range along one axis. */
+    record Slice(int axis, long start, long step) implements ViewOperation {
         public Slice {
             if (step == 0) {
                 throw new IllegalArgumentException("step cannot be zero");

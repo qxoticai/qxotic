@@ -2,7 +2,6 @@ package com.qxotic.jota.ir.tir;
 
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Shape;
-import com.qxotic.jota.memory.impl.ViewKind;
 import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
@@ -531,7 +530,7 @@ public final class TIRConstantFoldingPass implements TIRPass {
          */
         private Optional<ScalarConstant> extractFromViewTransform(ViewTransform vt) {
             // Check if this view preserves the "scalar constant" property
-            if (vt.kind() instanceof ViewKind.Broadcast b) {
+            if (vt.operation() instanceof ViewOperation.Broadcast b) {
                 // If broadcasting from a scalar, follow the chain
                 if (b.fromShape().isScalar()) {
                     return extractScalarConstant(vt.input());
@@ -541,7 +540,7 @@ public final class TIRConstantFoldingPass implements TIRPass {
                 if (inputSc.isPresent()) {
                     return inputSc;
                 }
-            } else if (vt.kind() instanceof ViewKind.Expand e) {
+            } else if (vt.operation() instanceof ViewOperation.Expand e) {
                 if (e.fromShape().isScalar()) {
                     return extractScalarConstant(vt.input());
                 }
@@ -549,10 +548,10 @@ public final class TIRConstantFoldingPass implements TIRPass {
                 if (inputSc.isPresent()) {
                     return inputSc;
                 }
-            } else if (vt.kind() instanceof ViewKind.Reshape) {
+            } else if (vt.operation() instanceof ViewOperation.Reshape) {
                 // Reshape preserves values
                 return extractScalarConstant(vt.input());
-            } else if (vt.kind() instanceof ViewKind.Transpose) {
+            } else if (vt.operation() instanceof ViewOperation.Transpose) {
                 // Transpose preserves values
                 return extractScalarConstant(vt.input());
             }
@@ -605,7 +604,7 @@ public final class TIRConstantFoldingPass implements TIRPass {
                 // Check if this view preserves the "constant" property
                 boolean stillFromScalar = fromScalar;
 
-                if (vt.kind() instanceof ViewKind.Broadcast b) {
+                if (vt.operation() instanceof ViewOperation.Broadcast b) {
                     // If broadcasting from a scalar, continue tracking
                     stillFromScalar = fromScalar && b.fromShape().isScalar();
                     // Even if fromShape isn't scalar, if we came from a scalar and this is
@@ -619,7 +618,7 @@ public final class TIRConstantFoldingPass implements TIRPass {
                             return inputSc;
                         }
                     }
-                } else if (vt.kind() instanceof ViewKind.Expand e) {
+                } else if (vt.operation() instanceof ViewOperation.Expand e) {
                     // Expand from scalar preserves constant property
                     stillFromScalar = fromScalar && e.fromShape().isScalar();
                     if (!stillFromScalar && fromScalar) {
@@ -629,7 +628,7 @@ public final class TIRConstantFoldingPass implements TIRPass {
                             return inputSc;
                         }
                     }
-                } else if (vt.kind() instanceof ViewKind.Reshape r) {
+                } else if (vt.operation() instanceof ViewOperation.Reshape r) {
                     // Reshape preserves values, so if input was scalar-originated, output is too
                     // but we need to check if input was actually a scalar broadcast
                     if (fromScalar) {
@@ -640,7 +639,7 @@ public final class TIRConstantFoldingPass implements TIRPass {
                         }
                     }
                     stillFromScalar = false;
-                } else if (vt.kind() instanceof ViewKind.Slice) {
+                } else if (vt.operation() instanceof ViewOperation.Slice) {
                     // Slice breaks the constant broadcast property
                     stillFromScalar = false;
                 }

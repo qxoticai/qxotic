@@ -115,8 +115,8 @@ public interface MemoryView<B> extends View {
     }
 
     default MemoryView<B> broadcast(Shape targetShape) {
-        ViewTransforms.ViewTransformSpec spec = ViewTransforms.broadcast(layout(), targetShape);
-        return of(memory(), byteOffset() + spec.byteOffsetDelta(), dataType(), spec.layout());
+        ViewTransforms.Result result = ViewTransforms.broadcast(layout(), targetShape);
+        return of(memory(), byteOffset() + result.byteOffsetDelta(), dataType(), result.layout());
     }
 
     // Factory methods

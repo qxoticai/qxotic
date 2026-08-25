@@ -308,7 +308,7 @@ public final class TIRCSEPass implements TIRPass {
                 return node;
             }
             return new ViewTransform(
-                    newInput, node.kind(), node.layout(), node.needsLazyIndexing());
+                    newInput, node.operation(), node.layout(), node.needsLazyIndexing());
         }
 
         @Override
