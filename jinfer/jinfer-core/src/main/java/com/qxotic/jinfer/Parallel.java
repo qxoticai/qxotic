@@ -9,7 +9,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.IntConsumer;
 import java.util.function.Supplier;
 
-/** Routes parallel loops to Jinfer-owned compute and decode workers. */
+/** Routes finite, non-blocking loops to Jinfer-owned compute and decode workers. */
 public final class Parallel {
     private static final long WORKER_KEEP_ALIVE_SECONDS = 60;
     private static final int TASKS_PER_WORKER = 4;
@@ -17,7 +17,12 @@ public final class Parallel {
     private static final ForkJoinPool DECODE_POOL = newPool(RuntimeFlags.DECODE_THREADS);
     private static final AtomicReference<Thread> ACTIVE_SPIN_SUBMITTER = new AtomicReference<>();
 
-    /** Run {@code action} once for every index in {@code [startInclusive, endExclusive)}. */
+    /**
+     * Run {@code action} once for every index in {@code [startInclusive, endExclusive)}.
+     *
+     * <p>Iterations may run concurrently and in any order. Nested calls are supported; iterations
+     * must be independent and non-blocking.
+     */
     public static void forLoop(int startInclusive, int endExclusive, IntConsumer action) {
         if (startInclusive >= endExclusive) {
             return;
@@ -48,7 +53,10 @@ public final class Parallel {
         if (task.failure != null) throw unchecked(task.failure);
     }
 
-    /** Run {@code action} once for every index in {@code [0, count)}. */
+    /**
+     * Run {@code action} once for every index in {@code [0, count)} under the same execution rules
+     * as {@link #forLoop(int, int, IntConsumer)}.
+     */
     public static void forLoop(int count, IntConsumer action) {
         forLoop(0, count, action);
     }
@@ -94,7 +102,8 @@ public final class Parallel {
     }
 
     private static ForkJoinPool newPool(int threads) {
-        // Bound compensation at the configured width; retire idle workers and their ThreadLocals.
+        // Structured kernel tasks need no compensation workers. Joins may reduce the active count,
+        // but the pool never exceeds the configured width.
         return new ForkJoinPool(
                 threads,
                 ForkJoinPool.defaultForkJoinWorkerThreadFactory,
@@ -102,7 +111,7 @@ public final class Parallel {
                 false,
                 0,
                 threads,
-                1,
+                0,
                 null,
                 WORKER_KEEP_ALIVE_SECONDS,
                 TimeUnit.SECONDS);
