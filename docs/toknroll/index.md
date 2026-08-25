@@ -4,9 +4,10 @@ sidebar_position: 1
 
 # Tok'n'Roll
 
-Pure Java, fast, composable tokenization for LLMs with token-perfect parity, matching reference Python implementations.
+**Token-perfect LLM tokenization. Pure Java. Zero dependencies.**
 
-Tok'n'Roll is designed to be simple and efficient. It runs on Java 11+, requires no native bindings, supports GraalVM Native Image.
+Fast, composable tokenization with byte-exact parity against the reference Python implementations.
+Runs on Java 11+, needs no native bindings, and compiles to GraalVM native images out of the box.
 
 Key properties:
 
@@ -37,21 +38,21 @@ import TabItem from '@theme/TabItem';
 <dependency>
   <groupId>com.qxotic</groupId>
   <artifactId>toknroll-core</artifactId>
-  <version>0.1.0</version>
+  <version>0.2.0</version>
 </dependency>
 
 <!-- HuggingFace tokenizer.json loading -->
 <dependency>
   <groupId>com.qxotic</groupId>
   <artifactId>toknroll-hf</artifactId>
-  <version>0.1.0</version>
+  <version>0.2.0</version>
 </dependency>
 
 <!-- GGUF (llama.cpp) tokenizer loading -->
 <dependency>
   <groupId>com.qxotic</groupId>
   <artifactId>toknroll-gguf</artifactId>
-  <version>0.1.0</version>
+  <version>0.2.0</version>
 </dependency>
 ```
 
@@ -59,18 +60,18 @@ import TabItem from '@theme/TabItem';
   <TabItem value="gradle" label="Gradle">
 
 ```groovy
-implementation 'com.qxotic:toknroll-core:0.1.0'
-implementation 'com.qxotic:toknroll-hf:0.1.0'
-implementation 'com.qxotic:toknroll-gguf:0.1.0'
+implementation 'com.qxotic:toknroll-core:0.2.0'
+implementation 'com.qxotic:toknroll-hf:0.2.0'
+implementation 'com.qxotic:toknroll-gguf:0.2.0'
 ```
 
   </TabItem>
   <TabItem value="mill" label="Mill">
 
 ```scala
-mvn"com.qxotic::toknroll-core:0.1.0"
-mvn"com.qxotic::toknroll-hf:0.1.0"
-mvn"com.qxotic::toknroll-gguf:0.1.0"
+mvn"com.qxotic::toknroll-core:0.2.0"
+mvn"com.qxotic::toknroll-hf:0.2.0"
+mvn"com.qxotic::toknroll-gguf:0.2.0"
 ```
 
   </TabItem>

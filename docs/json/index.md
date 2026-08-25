@@ -2,11 +2,11 @@
 sidebar_position: 1
 ---
 
-# JSON
+# json
 
-Strict, minimal JSON parser and printer for Java. RFC 8259 compliant.
+**JSON for the JVM, minus the baggage.** A strict, minimal RFC 8259 parser and printer — ~10 KB, zero dependencies, zero reflection, GraalVM native-image ready.
 
-Parses JSON directly into standard Java types: `Map` for objects, `List` for arrays, `String`, `Long`/`BigInteger`, `BigDecimal`, `Boolean`, and `Json.NULL`. No custom node objects.
+JSON maps straight onto standard Java types: `Map` for objects, `List` for arrays, `String`, `Long`/`BigInteger`, `BigDecimal`, `Boolean`, and `Json.NULL`. No custom node objects, no annotations, no setup.
 
 ## Installation
 
@@ -20,7 +20,7 @@ import TabItem from '@theme/TabItem';
 <dependency>
     <groupId>com.qxotic</groupId>
     <artifactId>json</artifactId>
-    <version>0.1.0</version>
+    <version>0.2.0</version>
 </dependency>
 ```
 
@@ -28,14 +28,14 @@ import TabItem from '@theme/TabItem';
   <TabItem value="gradle" label="Gradle">
 
 ```groovy
-implementation 'com.qxotic:json:0.1.0'
+implementation 'com.qxotic:json:0.2.0'
 ```
 
   </TabItem>
   <TabItem value="mill" label="Mill">
 
 ```scala
-mvn"com.qxotic:json:0.1.0"
+mvn"com.qxotic:json:0.2.0"
 ```
 
   </TabItem>

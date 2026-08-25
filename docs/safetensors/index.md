@@ -4,9 +4,7 @@ sidebar_position: 1
 
 # Safetensors
 
-A Java library for reading and writing [Safetensors](https://github.com/huggingface/safetensors) files, the format used by [Hugging Face](https://huggingface.co) for storing model weights and metadata. See the [Safetensors specification](https://huggingface.co/docs/safetensors/index).
-
-**Java 11+ · GraalVM Native Image ready**
+**Safetensors for the JVM.** Read and write [Hugging Face's model format](https://huggingface.co/docs/safetensors/index) in pure Java — zero dependencies, Java 11+, GraalVM native-image ready. Strict schema validation, single-file and sharded models.
 
 ## Quick Start
 
@@ -42,7 +40,7 @@ import TabItem from '@theme/TabItem';
 <dependency>
     <groupId>com.qxotic</groupId>
     <artifactId>safetensors</artifactId>
-    <version>0.1.0</version>
+    <version>0.2.0</version>
 </dependency>
 ```
 
@@ -50,14 +48,14 @@ import TabItem from '@theme/TabItem';
   <TabItem value="gradle" label="Gradle">
 
 ```groovy
-implementation 'com.qxotic:safetensors:0.1.0'
+implementation 'com.qxotic:safetensors:0.2.0'
 ```
 
   </TabItem>
   <TabItem value="mill" label="Mill">
 
 ```scala
-mvn"com.qxotic:safetensors:0.1.0"
+mvn"com.qxotic:safetensors:0.2.0"
 ```
 
   </TabItem>
