@@ -2,6 +2,7 @@ package com.qxotic.jota.memory;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import com.qxotic.jota.BFloat16;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Shape;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -30,6 +31,20 @@ class DomainHelpersTest extends AbstractMemoryTest {
             float actual =
                     memoryAccess.readFloat(flat.memory(), flat.byteOffset() + i * byteStride);
             assertEquals(3.5f, actual);
+        }
+    }
+
+    @ParameterizedTest
+    @MethodSource("domainsSupportingBF16")
+    <B> void fullPreservesBFloat16Values(MemoryDomain<B> domain) {
+        MemoryAccess<B> access = domain.directAccess();
+        Number[] values = {1.5f, -2.75, 128.5};
+
+        for (Number value : values) {
+            MemoryView<B> view = MemoryHelpers.full(domain, DataType.BF16, 2, value);
+            short expected = BFloat16.fromFloat(value.floatValue());
+            assertEquals(expected, access.readShort(view.memory(), 0));
+            assertEquals(expected, access.readShort(view.memory(), Short.BYTES));
         }
     }
 
