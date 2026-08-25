@@ -309,7 +309,7 @@ public class MemoryHelpersTest extends AbstractMemoryTest {
 
     @Test
     void testArangeUnsupportedDataType() {
-        // FloatsDomain has 4-byte granularity, cannot support I8 (1 byte)
+        // float[] storage has 4-byte granularity, so it cannot support I8.
         var domain =
                 AbstractMemoryTest.domainsSupportingF32()
                         .filter(

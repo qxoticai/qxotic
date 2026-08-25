@@ -10,36 +10,51 @@ import java.nio.ByteOrder;
 
 public final class MemoryAllocatorFactory {
 
+    private static final MemoryAllocator<boolean[]> BOOLEANS =
+            new ArrayMemoryAllocator<>(boolean[].class, boolean[]::new);
+    private static final MemoryAllocator<byte[]> BYTES =
+            new ArrayMemoryAllocator<>(byte[].class, byte[]::new);
+    private static final MemoryAllocator<short[]> SHORTS =
+            new ArrayMemoryAllocator<>(short[].class, short[]::new);
+    private static final MemoryAllocator<int[]> INTS =
+            new ArrayMemoryAllocator<>(int[].class, int[]::new);
+    private static final MemoryAllocator<long[]> LONGS =
+            new ArrayMemoryAllocator<>(long[].class, long[]::new);
+    private static final MemoryAllocator<float[]> FLOATS =
+            new ArrayMemoryAllocator<>(float[].class, float[]::new);
+    private static final MemoryAllocator<double[]> DOUBLES =
+            new ArrayMemoryAllocator<>(double[].class, double[]::new);
+
     private MemoryAllocatorFactory() {
         // no instances
     }
 
     public static MemoryAllocator<boolean[]> ofBooleans() {
-        return BooleansMemoryAllocator.instance();
+        return BOOLEANS;
     }
 
     public static MemoryAllocator<byte[]> ofBytes() {
-        return BytesMemoryAllocator.instance();
-    }
-
-    public static MemoryAllocator<float[]> ofFloats() {
-        return FloatsMemoryAllocator.instance();
-    }
-
-    public static MemoryAllocator<int[]> ofInts() {
-        return IntsMemoryAllocator.instance();
+        return BYTES;
     }
 
     public static MemoryAllocator<short[]> ofShorts() {
-        return ShortsMemoryAllocator.instance();
+        return SHORTS;
+    }
+
+    public static MemoryAllocator<int[]> ofInts() {
+        return INTS;
     }
 
     public static MemoryAllocator<long[]> ofLongs() {
-        return LongsMemoryAllocator.instance();
+        return LONGS;
+    }
+
+    public static MemoryAllocator<float[]> ofFloats() {
+        return FLOATS;
     }
 
     public static MemoryAllocator<double[]> ofDoubles() {
-        return DoublesMemoryAllocator.instance();
+        return DOUBLES;
     }
 
     public static MemoryAllocator<ByteBuffer> ofByteBuffer(boolean direct, ByteOrder byteOrder) {

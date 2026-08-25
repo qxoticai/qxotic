@@ -2,6 +2,7 @@ package com.qxotic.jota.memory;
 
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Shape;
+import java.util.Objects;
 
 public interface ScopedMemoryAllocator<B> extends MemoryAllocator<B> {
 
@@ -13,13 +14,16 @@ public interface ScopedMemoryAllocator<B> extends MemoryAllocator<B> {
 
     default ScopedMemory<B> allocateMemory(
             DataType dataType, long elementCount, long byteAlignment) {
+        Objects.requireNonNull(dataType, "dataType");
+        if (!supportsDataType(dataType)) {
+            throw new IllegalArgumentException("unsupported data type: " + dataType);
+        }
         long byteSize = dataType.byteSizeFor(elementCount);
         return allocateMemory(byteSize, byteAlignment);
     }
 
     default ScopedMemory<B> allocateMemory(DataType dataType, long elementCount) {
-        long byteSize = dataType.byteSizeFor(elementCount);
-        return allocateMemory(byteSize, defaultByteAlignment());
+        return allocateMemory(dataType, elementCount, defaultByteAlignment());
     }
 
     default ScopedMemory<B> allocateMemory(DataType dataType, Shape shape, long byteAlignment) {

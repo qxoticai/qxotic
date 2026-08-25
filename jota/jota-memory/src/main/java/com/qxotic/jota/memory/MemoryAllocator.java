@@ -3,6 +3,7 @@ package com.qxotic.jota.memory;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Device;
 import com.qxotic.jota.Shape;
+import java.util.Objects;
 
 public interface MemoryAllocator<B> {
     Device device();
@@ -22,11 +23,11 @@ public interface MemoryAllocator<B> {
     long memoryGranularity();
 
     /**
-     * Checks if this allocator can allocate memory for the given DataType. A DataType is supported
-     * if its byteSize is a multiple of the memory granularity.
+     * Checks whether this allocator can allocate memory for the given data type. Byte-addressable
+     * memory supports every data type. Other memory supports data types matching its element size.
      *
      * @param dataType the data type to check
-     * @return true if this allocator can allocate the given DataType
+     * @return true if this allocator can allocate the given data type
      */
     default boolean supportsDataType(DataType dataType) {
         long granularity = memoryGranularity();
@@ -38,13 +39,16 @@ public interface MemoryAllocator<B> {
     }
 
     default Memory<B> allocateMemory(DataType dataType, long elementCount, long byteAlignment) {
+        Objects.requireNonNull(dataType, "dataType");
+        if (!supportsDataType(dataType)) {
+            throw new IllegalArgumentException("unsupported data type: " + dataType);
+        }
         long byteSize = dataType.byteSizeFor(elementCount);
         return allocateMemory(byteSize, byteAlignment);
     }
 
     default Memory<B> allocateMemory(DataType dataType, long elementCount) {
-        long byteSize = dataType.byteSizeFor(elementCount);
-        return allocateMemory(byteSize, defaultByteAlignment());
+        return allocateMemory(dataType, elementCount, defaultByteAlignment());
     }
 
     default Memory<B> allocateMemory(DataType dataType, Shape shape, long byteAlignment) {

@@ -27,10 +27,6 @@ public interface MemoryView<B> extends View {
 
     Memory<B> memory();
 
-    default Storage storage() {
-        return memory();
-    }
-
     long byteOffset();
 
     default Stride byteStride() {
