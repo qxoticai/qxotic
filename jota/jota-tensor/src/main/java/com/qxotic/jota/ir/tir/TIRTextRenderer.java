@@ -413,6 +413,7 @@ public class TIRTextRenderer implements TIRVisitor<String> {
                                     + formatIntList(t.permutation())
                                     + "]";
                     case ViewOperation.Reshape __ -> "tensor.reshape " + input;
+                    case ViewOperation.Unsqueeze __ -> "tensor.unsqueeze " + input;
                     case ViewOperation.Broadcast __ -> "tensor.broadcast " + input;
                     case ViewOperation.Expand __ -> "tensor.expand " + input;
                     case ViewOperation.Slice s ->
@@ -422,6 +423,8 @@ public class TIRTextRenderer implements TIRVisitor<String> {
                                     + s.axis()
                                     + " start="
                                     + s.start()
+                                    + " end="
+                                    + s.end()
                                     + " step="
                                     + s.step();
                 };

@@ -6,7 +6,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import com.qxotic.jota.DataType;
+import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
+import com.qxotic.jota.Stride;
 import org.junit.jupiter.api.Test;
 
 class ViewOperationTest {
@@ -53,22 +56,41 @@ class ViewOperationTest {
                 () ->
                         assertThrows(
                                 IllegalArgumentException.class,
-                                () -> new ViewOperation.Reshape(null, Shape.of(1))),
+                                () -> new ViewOperation.Reshape(null)),
                 () ->
                         assertThrows(
                                 IllegalArgumentException.class,
-                                () -> new ViewOperation.Reshape(Shape.of(1), Shape.of(2))),
+                                () -> new ViewOperation.Broadcast(null)),
                 () ->
                         assertThrows(
                                 IllegalArgumentException.class,
-                                () -> new ViewOperation.Broadcast(null, Shape.of(1))),
+                                () -> new ViewOperation.Expand(null)),
                 () ->
                         assertThrows(
                                 IllegalArgumentException.class,
-                                () -> new ViewOperation.Expand(Shape.of(1), null)),
+                                () -> new ViewOperation.Slice(0, 0, 1, 0)));
+    }
+
+    @Test
+    void viewTransformDerivesAndValidatesItsLayout() {
+        TensorInput input = new TensorInput(0, DataType.FP32, Layout.rowMajor(Shape.of(2, 3)));
+
+        ViewTransform transposed =
+                new ViewTransform(input, new ViewOperation.Transpose(new int[] {1, 0}));
+
+        assertEquals(Layout.of(Shape.of(3, 2), Stride.of(1, 3)), transposed.layout());
+        assertAll(
                 () ->
                         assertThrows(
                                 IllegalArgumentException.class,
-                                () -> new ViewOperation.Slice(0, 0, 0)));
+                                () ->
+                                        new ViewTransform(
+                                                input, new ViewOperation.Reshape(Shape.of(5)))),
+                () ->
+                        assertThrows(
+                                IllegalArgumentException.class,
+                                () ->
+                                        new ViewTransform(
+                                                input, new ViewOperation.Slice(1, 0, 4, 1))));
     }
 }

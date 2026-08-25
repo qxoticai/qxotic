@@ -3,7 +3,7 @@ package com.qxotic.jota.ir.tir;
 import com.qxotic.jota.Shape;
 import java.util.Arrays;
 
-/** Describes a view operation and the parameters needed to invert it during lowering. */
+/** Describes a semantic view operation. */
 public sealed interface ViewOperation {
 
     /** Permutes tensor axes. */
@@ -54,42 +54,38 @@ public sealed interface ViewOperation {
         }
     }
 
-    /** Changes shape without changing element order. */
-    record Reshape(Shape fromShape, Shape toShape) implements ViewOperation {
+    /** Changes shape without changing logical element order. */
+    record Reshape(Shape shape) implements ViewOperation {
         public Reshape {
-            if (fromShape == null || toShape == null) {
-                throw new IllegalArgumentException("shapes cannot be null");
-            }
-            if (fromShape.size() != toShape.size()) {
-                throw new IllegalArgumentException(
-                        "reshape requires same number of elements: "
-                                + fromShape
-                                + " vs "
-                                + toShape);
+            if (shape == null) {
+                throw new IllegalArgumentException("shape cannot be null");
             }
         }
     }
 
+    /** Inserts a singleton axis. */
+    record Unsqueeze(int axis) implements ViewOperation {}
+
     /** Adds or expands broadcast dimensions. */
-    record Broadcast(Shape fromShape, Shape toShape) implements ViewOperation {
+    record Broadcast(Shape shape) implements ViewOperation {
         public Broadcast {
-            if (fromShape == null || toShape == null) {
-                throw new IllegalArgumentException("shapes cannot be null");
+            if (shape == null) {
+                throw new IllegalArgumentException("shape cannot be null");
             }
         }
     }
 
     /** Expands singleton dimensions within an existing shape. */
-    record Expand(Shape fromShape, Shape toShape) implements ViewOperation {
+    record Expand(Shape shape) implements ViewOperation {
         public Expand {
-            if (fromShape == null || toShape == null) {
-                throw new IllegalArgumentException("shapes cannot be null");
+            if (shape == null) {
+                throw new IllegalArgumentException("shape cannot be null");
             }
         }
     }
 
     /** Selects a strided range along one axis. */
-    record Slice(int axis, long start, long step) implements ViewOperation {
+    record Slice(int axis, long start, long end, long step) implements ViewOperation {
         public Slice {
             if (step == 0) {
                 throw new IllegalArgumentException("step cannot be zero");

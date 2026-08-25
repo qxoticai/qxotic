@@ -500,12 +500,7 @@ public final class TIRConstantFoldingPass implements TIRPass {
 
             // Case 2: ViewTransform wrapping a scalar constant
             if (node instanceof ViewTransform vt) {
-                return extractFromViewTransform(vt);
-            }
-
-            // Case 3: TensorInput with broadcasted scalar layout (all-zero strides)
-            if (node instanceof TensorInput ti) {
-                return extractFromTensorInput(ti);
+                return extractScalarConstant(vt.input());
             }
 
             return Optional.empty();
@@ -522,133 +517,6 @@ public final class TIRConstantFoldingPass implements TIRPass {
             Optional<ScalarConstant> sc = extractScalarConstant(node);
             // Only return if the scalar is not a graph input
             return sc.filter(this::canFold);
-        }
-
-        /**
-         * Extracts scalar constant from a ViewTransform chain. Follows through broadcasts, expands,
-         * and reshapes to find the underlying scalar.
-         */
-        private Optional<ScalarConstant> extractFromViewTransform(ViewTransform vt) {
-            // Check if this view preserves the "scalar constant" property
-            if (vt.operation() instanceof ViewOperation.Broadcast b) {
-                // If broadcasting from a scalar, follow the chain
-                if (b.fromShape().isScalar()) {
-                    return extractScalarConstant(vt.input());
-                }
-                // Check if input is itself a scalar broadcast
-                Optional<ScalarConstant> inputSc = extractScalarConstant(vt.input());
-                if (inputSc.isPresent()) {
-                    return inputSc;
-                }
-            } else if (vt.operation() instanceof ViewOperation.Expand e) {
-                if (e.fromShape().isScalar()) {
-                    return extractScalarConstant(vt.input());
-                }
-                Optional<ScalarConstant> inputSc = extractScalarConstant(vt.input());
-                if (inputSc.isPresent()) {
-                    return inputSc;
-                }
-            } else if (vt.operation() instanceof ViewOperation.Reshape) {
-                // Reshape preserves values
-                return extractScalarConstant(vt.input());
-            } else if (vt.operation() instanceof ViewOperation.Transpose) {
-                // Transpose preserves values
-                return extractScalarConstant(vt.input());
-            }
-            // Slice breaks the constant property
-            return Optional.empty();
-        }
-
-        /**
-         * Extracts scalar constant from a TensorInput. A TensorInput represents a broadcasted
-         * scalar if it has all-zero strides (meaning all elements point to the same memory
-         * location).
-         */
-        private Optional<ScalarConstant> extractFromTensorInput(TensorInput ti) {
-            // Check if this is a broadcasted scalar by examining strides
-            // All-zero strides means it's a broadcast of a single value
-            boolean allZeroStrides = true;
-            long[] strides = ti.layout().stride().toArray();
-            for (long stride : strides) {
-                if (stride != 0) {
-                    allZeroStrides = false;
-                    break;
-                }
-            }
-
-            if (allZeroStrides) {
-                // This is a broadcasted value - we need to extract the actual value
-                // However, TensorInput doesn't store the value directly; it's a placeholder
-                // for a runtime input. We can't constant-fold this without knowing the value.
-                // Return empty to indicate we can't fold this case.
-                return Optional.empty();
-            }
-
-            return Optional.empty();
-        }
-
-        /**
-         * Recursive helper that tracks whether we're still in a "scalar origin" chain.
-         *
-         * @param node the TIR node to examine
-         * @param fromScalar whether the chain so far has originated from a scalar
-         * @return Optional containing the ScalarConstant if the chain ends at one, empty otherwise
-         */
-        private Optional<ScalarConstant> extractScalarConstantRecursive(
-                TIRNode node, boolean fromScalar) {
-            if (node instanceof ScalarConstant sc) {
-                // Only return the scalar if the entire chain originated from a scalar
-                return fromScalar ? Optional.of(sc) : Optional.empty();
-            }
-            if (node instanceof ViewTransform vt) {
-                // Check if this view preserves the "constant" property
-                boolean stillFromScalar = fromScalar;
-
-                if (vt.operation() instanceof ViewOperation.Broadcast b) {
-                    // If broadcasting from a scalar, continue tracking
-                    stillFromScalar = fromScalar && b.fromShape().isScalar();
-                    // Even if fromShape isn't scalar, if we came from a scalar and this is
-                    // broadcasting a size-1 dim, it might still be constant
-                    if (!stillFromScalar && fromScalar) {
-                        // Check if all elements in fromShape would be the same constant
-                        // This happens when the input is itself a scalar broadcast
-                        Optional<ScalarConstant> inputSc =
-                                extractScalarConstantRecursive(vt.input(), true);
-                        if (inputSc.isPresent()) {
-                            return inputSc;
-                        }
-                    }
-                } else if (vt.operation() instanceof ViewOperation.Expand e) {
-                    // Expand from scalar preserves constant property
-                    stillFromScalar = fromScalar && e.fromShape().isScalar();
-                    if (!stillFromScalar && fromScalar) {
-                        Optional<ScalarConstant> inputSc =
-                                extractScalarConstantRecursive(vt.input(), true);
-                        if (inputSc.isPresent()) {
-                            return inputSc;
-                        }
-                    }
-                } else if (vt.operation() instanceof ViewOperation.Reshape r) {
-                    // Reshape preserves values, so if input was scalar-originated, output is too
-                    // but we need to check if input was actually a scalar broadcast
-                    if (fromScalar) {
-                        Optional<ScalarConstant> inputSc =
-                                extractScalarConstantRecursive(vt.input(), true);
-                        if (inputSc.isPresent()) {
-                            return inputSc;
-                        }
-                    }
-                    stillFromScalar = false;
-                } else if (vt.operation() instanceof ViewOperation.Slice) {
-                    // Slice breaks the constant broadcast property
-                    stillFromScalar = false;
-                }
-
-                if (stillFromScalar) {
-                    return extractScalarConstantRecursive(vt.input(), true);
-                }
-            }
-            return Optional.empty();
         }
 
         /**

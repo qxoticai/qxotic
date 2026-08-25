@@ -5,7 +5,6 @@ import com.qxotic.jota.Device;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.Util;
 import com.qxotic.jota.ir.tir.ViewOperation;
-import com.qxotic.jota.memory.impl.ViewTransforms;
 import java.util.Arrays;
 import java.util.stream.IntStream;
 
@@ -192,7 +191,7 @@ interface TensorOps {
 
     // === Shape Operations ===
 
-    Tensor viewTransform(Tensor x, ViewOperation operation, ViewTransforms.Result result);
+    Tensor viewTransform(Tensor x, ViewOperation operation);
 
     default Tensor transpose(Tensor x, int _axis0, int _axis1) {
         int rank = x.shape().rank();
@@ -211,29 +210,24 @@ interface TensorOps {
     Tensor reshape(Tensor x, Shape newShape);
 
     default Tensor view(Tensor x, Shape newShape) {
-        ViewTransforms.Result result = ViewTransforms.view(x.layout(), newShape);
-        return viewTransform(x, new ViewOperation.Reshape(x.shape(), newShape), result);
+        return viewTransform(x, new ViewOperation.Reshape(newShape));
     }
 
     default Tensor unsqueeze(Tensor x, int axis) {
-        ViewTransforms.Result result = ViewTransforms.unsqueeze(x.layout(), axis);
-        return viewTransform(
-                x, new ViewOperation.Reshape(x.shape(), result.layout().shape()), result);
+        int normalizedAxis = Util.wrapAround(axis, x.shape().rank() + 1);
+        return viewTransform(x, new ViewOperation.Unsqueeze(normalizedAxis));
     }
 
     default Tensor broadcast(Tensor x, Shape targetShape) {
-        ViewTransforms.Result result = ViewTransforms.broadcast(x.layout(), targetShape);
-        return viewTransform(x, new ViewOperation.Broadcast(x.shape(), targetShape), result);
+        return viewTransform(x, new ViewOperation.Broadcast(targetShape));
     }
 
     default Tensor expand(Tensor x, Shape targetShape) {
-        ViewTransforms.Result result = ViewTransforms.expand(x.layout(), targetShape);
-        return viewTransform(x, new ViewOperation.Expand(x.shape(), targetShape), result);
+        return viewTransform(x, new ViewOperation.Expand(targetShape));
     }
 
     default Tensor permute(Tensor x, int... permutationIndices) {
-        ViewTransforms.Result result = ViewTransforms.permute(x.layout(), permutationIndices);
-        return viewTransform(x, new ViewOperation.Transpose(permutationIndices), result);
+        return viewTransform(x, new ViewOperation.Transpose(permutationIndices));
     }
 
     default Tensor slice(Tensor x, int _axis, long start, long end) {
@@ -242,9 +236,7 @@ interface TensorOps {
 
     default Tensor slice(Tensor x, int _axis, long start, long end, long indexStride) {
         int axis = Util.wrapAround(_axis, x.shape().rank());
-        ViewTransforms.Result result =
-                ViewTransforms.slice(x.layout(), x.dataType(), axis, start, end, indexStride);
-        return viewTransform(x, new ViewOperation.Slice(axis, start, indexStride), result);
+        return viewTransform(x, new ViewOperation.Slice(axis, start, end, indexStride));
     }
 
     // === Type Conversion ===

@@ -4,6 +4,7 @@ import com.qxotic.jota.DataType;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.Stride;
+import com.qxotic.jota.ViewTransforms;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryView;
@@ -83,29 +84,25 @@ final class MemoryViewImpl<T> implements MemoryView<T> {
 
     @Override
     public MemoryView<T> view(Shape newShape) {
-        ViewTransforms.Result result = ViewTransforms.view(layout, newShape);
-        if (result.needsLazyIndexing()) {
-            throw new IllegalArgumentException(
-                    "Cannot reshape non-contiguous view without copying. "
-                            + "Use Tensor.view() which handles this automatically, "
-                            + "or make a contiguous copy first.");
-        }
-        return transformed(result);
+        return transformed(
+                ViewTransforms.reshape(layout, newShape)
+                        .orElseThrow(
+                                () ->
+                                        new IllegalArgumentException(
+                                                "cannot reshape view without copying")));
     }
 
     @Override
     public MemoryView<T> viewCuTe(Shape newShape) {
-        ViewTransforms.Result result = ViewTransforms.view(layout, newShape);
-        if (result.needsLazyIndexing()) {
-            if (layout.isSpanContiguous() && layout.isNonOverlapping()) {
-                return create(Layout.rowMajor(newShape), dataType, byteOffset, memory);
-            }
-            throw new IllegalArgumentException(
-                    "Cannot reshape non-span-contiguous view without copying. "
-                            + "Use Tensor.view() to preserve linear order, "
-                            + "or make a contiguous copy first.");
+        var result = ViewTransforms.reshape(layout, newShape);
+        if (result.isPresent()) {
+            return transformed(result.get());
         }
-        return transformed(result);
+        if (layout.isSpanContiguous() && layout.isNonOverlapping()) {
+            return create(Layout.rowMajor(newShape), dataType, spanStartByteOffset(), memory);
+        }
+        throw new IllegalArgumentException(
+                "cannot reshape non-span-contiguous view without copying");
     }
 
     @Override
@@ -121,11 +118,24 @@ final class MemoryViewImpl<T> implements MemoryView<T> {
     @Override
     public MemoryView<T> slice(int axis, long fromInclusive, long toExclusive, long indexStride) {
         return transformed(
-                ViewTransforms.slice(
-                        layout, dataType, axis, fromInclusive, toExclusive, indexStride));
+                ViewTransforms.slice(layout, axis, fromInclusive, toExclusive, indexStride));
     }
 
     private MemoryView<T> transformed(ViewTransforms.Result result) {
-        return create(result.layout(), dataType, byteOffset + result.byteOffsetDelta(), memory);
+        long byteOffsetDelta = Math.multiplyExact(result.elementOffsetDelta(), dataType.byteSize());
+        return create(
+                result.layout(), dataType, Math.addExact(byteOffset, byteOffsetDelta), memory);
+    }
+
+    private long spanStartByteOffset() {
+        long elementOffset = 0;
+        for (int axis = 0; axis < layout.shape().flatRank(); axis++) {
+            long stride = layout.stride().flatAt(axis);
+            if (stride < 0) {
+                long span = Math.multiplyExact(layout.shape().flatAt(axis) - 1, stride);
+                elementOffset = Math.addExact(elementOffset, span);
+            }
+        }
+        return Math.addExact(byteOffset, Math.multiplyExact(elementOffset, dataType.byteSize()));
     }
 }

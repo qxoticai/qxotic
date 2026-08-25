@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Indexing;
+import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.Stride;
 import com.qxotic.jota.memory.impl.MemoryFactory;
@@ -35,6 +36,17 @@ class SliceTest {
     }
 
     @Test
+    void elementOffsetsAreScaledByTheDataType() {
+        MemoryView<float[]> slice =
+                MemoryView.rowMajor(
+                                MemoryFactory.ofFloats(new float[5]), DataType.FP32, Shape.of(5))
+                        .slice(0, 2, 5);
+
+        assertEquals(2L * Float.BYTES, slice.byteOffset());
+        assertEquals(Stride.of(Float.BYTES), slice.byteStride());
+    }
+
+    @Test
     void slicesANonContiguousView() {
         MemoryView<byte[]> transposed =
                 vector(0, 1, 2, 3, 4, 5).view(Shape.flat(2, 3)).transpose(0, 1);
@@ -51,6 +63,34 @@ class SliceTest {
 
         assertEquals(Shape.flat(0), slice.shape());
         assertArrayEquals(new byte[0], values(slice));
+    }
+
+    @Test
+    void slicesAnAffineNestedMode() {
+        float[] data = new float[24];
+        for (int i = 0; i < data.length; i++) {
+            data[i] = i;
+        }
+        MemoryView<float[]> view =
+                MemoryView.of(
+                        MemoryFactory.ofFloats(data),
+                        DataType.FP32,
+                        Layout.rowMajor(Shape.of(Shape.of(2L, 3L), 4)));
+
+        MemoryView<float[]> slice = view.slice(0, 1, 5, 2);
+
+        assertEquals(Shape.of(2, 4), slice.shape());
+        assertEquals(4L * Float.BYTES, slice.byteOffset());
+        assertArrayEquals(new float[] {4, 5, 6, 7, 12, 13, 14, 15}, valuesAsFloats(slice));
+    }
+
+    @Test
+    void rejectsANonAffineNestedMode() {
+        Layout layout = Layout.of(Shape.of(Shape.of(2L, 3L), 4), Stride.of(Stride.of(4L, 8L), 1));
+        MemoryView<float[]> view =
+                MemoryView.of(MemoryFactory.ofFloats(new float[24]), DataType.FP32, layout);
+
+        assertThrows(IllegalArgumentException.class, () -> view.slice(0, 0, 6));
     }
 
     @Test
@@ -80,6 +120,15 @@ class SliceTest {
         byte[] values = new byte[Math.toIntExact(view.shape().size())];
         for (int i = 0; i < values.length; i++) {
             values[i] = view.memory().base()[Math.toIntExact(Indexing.linearToOffset(view, i))];
+        }
+        return values;
+    }
+
+    private static float[] valuesAsFloats(MemoryView<float[]> view) {
+        float[] values = new float[Math.toIntExact(view.shape().size())];
+        for (int i = 0; i < values.length; i++) {
+            long byteOffset = Indexing.linearToOffset(view, i);
+            values[i] = view.memory().base()[Math.toIntExact(byteOffset / Float.BYTES)];
         }
         return values;
     }

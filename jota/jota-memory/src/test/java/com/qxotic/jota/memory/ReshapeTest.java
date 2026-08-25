@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
+import com.qxotic.jota.Stride;
 import com.qxotic.jota.memory.impl.MemoryAccessFactory;
 import com.qxotic.jota.memory.impl.MemoryFactory;
 import com.qxotic.jota.memory.impl.MemoryViewFactory;
@@ -218,6 +219,25 @@ class ReshapeTest extends AbstractMemoryTest {
     }
 
     @Test
+    void viewCuTeStartsAtTheBeginningOfANegativeStrideSpan() {
+        MemoryView<float[]> reversedColumnMajor =
+                MemoryView.of(
+                        MemoryFactory.ofFloats(arange(6)),
+                        5L * Float.BYTES,
+                        DataType.FP32,
+                        Layout.of(Shape.of(2, 3), Stride.of(-1, -2)));
+
+        MemoryView<float[]> reshaped = reversedColumnMajor.viewCuTe(Shape.of(6));
+
+        assertEquals(0, reshaped.byteOffset());
+        assertEquals(Stride.of(1), reshaped.stride());
+        MemoryAccess<float[]> access = MemoryAccessFactory.ofFloats();
+        for (int i = 0; i < 6; i++) {
+            assertEquals(i, readFloat(access, reshaped, i));
+        }
+    }
+
+    @Test
     void testViewCuTeRejectsNonSpanContiguous() {
         float[] floats = arange(2 * 3 * 4);
         MemoryView<float[]> view =
@@ -408,19 +428,24 @@ class ReshapeTest extends AbstractMemoryTest {
 
         assertFalse(sliced.isContiguous());
 
-        // Should throw when trying to reshape non-contiguous data
-        assertThrows(IllegalArgumentException.class, () -> sliced.view(Shape.of(6)));
+        MemoryView<float[]> reshaped = sliced.view(Shape.of(6));
+        assertEquals(Stride.of(2), reshaped.stride());
+
+        MemoryAccess<float[]> memoryAccess = MemoryAccessFactory.ofFloats();
+        for (int i = 0; i < 6; i++) {
+            assertEquals(i * 2.0f, readFloat(memoryAccess, reshaped, i));
+        }
     }
 
     /**
-     * Tests that strided slices with gaps cannot be reshaped (except to same shape).
+     * Tests that reshape preserves independently strided contiguous chunks.
      *
      * <p>Taking every other row (rows 0 and 2) creates shape (2, 4) with stride (8, 1). This layout
      * accesses offsets {0,1,2,3, 8,9,10,11} - there's a gap at offsets 4-7. Span: (2-1)*8 + (4-1)*1
      * = 11 ≠ 8-1 = 7, so not contiguous.
      *
-     * <p>With CuTe semantics, reshapes that change dimensions fail because the memory has gaps.
-     * Same-shape "reshape" succeeds as it's effectively a no-op.
+     * <p>The inner four-element chunk can be split into two dimensions. Flattening across the gap
+     * is not representable by one affine stride.
      */
     @Test
     void testReshapeNonContiguousView4() {
@@ -436,8 +461,9 @@ class ReshapeTest extends AbstractMemoryTest {
         // Same-shape "reshape" is a no-op - succeeds trivially
         assertDoesNotThrow(() -> sliced.view(Shape.of(2, 4)));
 
-        // Reshapes that change dimensions fail - memory has gaps
-        assertThrows(IllegalArgumentException.class, () -> sliced.view(Shape.of(2, 2, 2)));
+        MemoryView<float[]> reshaped = sliced.view(Shape.of(2, 2, 2));
+        assertEquals(Stride.of(8, 2, 1), reshaped.stride());
+
         assertThrows(IllegalArgumentException.class, () -> sliced.view(Shape.of(8)));
     }
 
