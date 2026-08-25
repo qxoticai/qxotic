@@ -128,17 +128,16 @@ public record Batch(Input input, Outputs outputs) {
     }
 
     /**
-     * Normalizes a batch list for ingestion at {@code batchCapacity} (the old {@code
-     * Batch.prepare}, output-identical): adjacent LAST-output token batches merge into the largest
-     * legal prefill, oversized ones split at the capacity, anything else passes through unchanged.
-     * Embedding blocks stay atomic; an oversized bidirectional block is rejected, while causal
-     * embedding blocks pass through for now.
+     * Normalizes a batch list for ingestion at {@code batchCapacity}: adjacent LAST-output token
+     * batches merge into the largest legal prefill, oversized ones split at the capacity, anything
+     * else passes through unchanged. Embedding blocks stay atomic; an oversized bidirectional block
+     * is rejected, while causal embedding blocks pass through for now.
      *
-     * <p>Same output, less copying than the old {@code flushRun}: a single already-legal batch
-     * passes through with NO new array (aliased, not defensively copied - the contract is
-     * produce-then-ingest; revisit if a caller ever mutates between prepare and ingest), a single
-     * oversized batch slices straight from the source, and only a genuine multi-batch run pays the
-     * concat. Equivalence with the old algorithm is property-tested in {@code BatchTest}.
+     * <p>A single already-legal batch passes through with NO new array (aliased, not defensively
+     * copied - the contract is produce-then-ingest; revisit if a caller ever mutates between
+     * prepare and ingest), a single oversized batch slices straight from the source, and only a
+     * genuine multi-batch run pays the concat. Equivalence with the previous implementation is
+     * property-tested in {@code BatchTest}.
      */
     public static List<Batch> prepare(List<Batch> batches, int batchCapacity) {
         if (batchCapacity <= 0)
@@ -186,7 +185,7 @@ public record Batch(Input input, Outputs outputs) {
             }
             return;
         }
-        // a genuine merge run: the old flushRun verbatim - concat the parts, then slice
+        // a genuine merge run: concat the parts, then slice
         int total = 0;
         for (Batch b : run) total += ((Input.Tokens) b.input()).ids().length;
         int[] ids = new int[total];
