@@ -27,14 +27,9 @@
     <plugins>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-jar-plugin</artifactId>
+        <artifactId>maven-surefire-plugin</artifactId>
         <configuration>
-          <archive>
-            <manifestEntries>
-              <!-- Stable JPMS name, reserved without committing to module-info.java yet. -->
-              <Automatic-Module-Name>com.qxotic.jinfer.hub</Automatic-Module-Name>
-            </manifestEntries>
-          </archive>
+          <argLine>--add-modules jdk.httpserver --add-reads com.qxotic.jinfer.hub=jdk.httpserver</argLine>
         </configuration>
       </plugin>
     </plugins>
