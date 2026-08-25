@@ -26,9 +26,13 @@ public final class MemoryViewFactory {
         return of(dataType, memory, 0L, Layout.rowMajor(shape));
     }
 
+    /**
+     * Allocates backing storage for {@code shape} and returns a row-major view over it (the only
+     * sensible default: most tensors are created to be written densely, and a view with any other
+     * layout can be derived from the row-major one).
+     */
     public static <B> MemoryView<B> allocate(
             MemoryAllocator<B> memoryAllocator, DataType dataType, Shape shape) {
-        // TODO: rowMajor by default?
         return rowMajor(
                 dataType, memoryAllocator.allocateMemory(dataType.byteSizeFor(shape)), shape);
     }
