@@ -4,26 +4,21 @@ sidebar_position: 1
 
 # GGUF
 
-A Java library for reading and writing [GGUF](https://github.com/ggml-org/ggml/blob/master/docs/gguf.md) files, the binary format used by [llama.cpp](https://github.com/ggml-org/llama.cpp) for storing machine learning model weights and metadata.
+**GGUF for the JVM.** Read and write [GGUF](https://github.com/ggml-org/ggml/blob/master/docs/gguf.md) files — the binary format [llama.cpp](https://github.com/ggml-org/llama.cpp) uses to store model weights and metadata — in pure Java. Zero dependencies, Java 11+, GraalVM native-image ready.
 
 ## What is GGUF?
 
-GGUF (GGML Universal Format) is a binary file format for storing large language models. It contains:
+GGUF (GGML Universal Format) packs a large language model into one binary file:
 
-- **Metadata**: Key-value pairs describing the model (name, architecture, context length, tokenizer info, etc.)
-- **Tensor information**: Names, shapes, and data types for each weight tensor
-- **Tensor data**: The actual weight values, often compressed using quantization
+- **Metadata** — key-value pairs describing the model (name, architecture, context length, tokenizer info, ...)
+- **Tensor information** — names, shapes and data types for each weight tensor
+- **Tensor data** — the weight values themselves, usually quantized
 
-This library lets you read and write GGUF files from Java. It handles the format parsing and provides type-safe access to metadata and tensor information.
+This library handles the format parsing and provides type-safe access to metadata and tensor information.
 
-:::info
+:::info Library scope
 
-**Library Scope:** This library provides **metadata and tensor layout information only**. It does **not**:
-
-- Read or write tensor data (you do this yourself)
-- Perform inference or model execution
-- Handle quantization/dequantization
-- Provide tensor operations
+**Metadata and tensor layout only.** This library does **not** read or write tensor payload bytes (you do that yourself, at offsets it provides), perform inference, or do quantization math. That keeps it small, focused and dependency-free — for inference, see [jinfer](/jinfer).
 
 :::
 
@@ -79,7 +74,7 @@ import TabItem from '@theme/TabItem';
 <dependency>
     <groupId>com.qxotic</groupId>
     <artifactId>gguf</artifactId>
-    <version>0.1.0</version>
+    <version>0.2.0</version>
 </dependency>
 ```
 
@@ -87,14 +82,14 @@ import TabItem from '@theme/TabItem';
   <TabItem value="gradle" label="Gradle">
 
 ```groovy
-implementation 'com.qxotic:gguf:0.1.0'
+implementation 'com.qxotic:gguf:0.2.0'
 ```
 
   </TabItem>
   <TabItem value="mill" label="Mill">
 
 ```scala
-ivy"com.qxotic::gguf:0.1.0"
+ivy"com.qxotic::gguf:0.2.0"
 ```
 
   </TabItem>

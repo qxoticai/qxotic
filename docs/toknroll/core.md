@@ -4,11 +4,9 @@ sidebar_position: 2
 
 # Core API
 
-The core module (`toknroll-core`) is an **extensible tokenizer API** with efficient implementations of the two dominant BPE algorithms used by modern LLMs: **Tiktoken** (OpenAI GPT family) and **SentencePiece BPE** (Llama, Mistral, Gemma, DeepSeek, Qwen, etc.). Tiktoken is just an optimisation of BPE. Same foundation, different merge rule representation.
+`toknroll-core` is an **extensible tokenizer API** with efficient implementations of the two dominant LLM BPE algorithms: **Tiktoken** (OpenAI GPT family) and **SentencePiece BPE** (Llama, Mistral, Gemma, DeepSeek, Qwen, ...). Tiktoken is an optimization of BPE — same foundation, different merge-rule representation.
 
-The API is extensible (you can implement your own `Splitter`, `Normalizer`, or `TokenizationModel`) but ships with these two implementations. No BERT, WordPiece, Unigram, or other NLP-focused tokenization. Targets LLM inference workloads.
-
-Zero external dependencies. Java 11+.
+Zero external dependencies. Java 11+. The API is extensible — implement your own `Splitter`, `Normalizer`, or `TokenizationModel` — but deliberately ships no BERT, WordPiece or Unigram: this library targets LLM inference workloads.
 
 ## Philosophy
 
