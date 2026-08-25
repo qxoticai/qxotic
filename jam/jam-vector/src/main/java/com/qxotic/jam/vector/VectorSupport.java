@@ -1,4 +1,4 @@
-package com.qxotic.jam;
+package com.qxotic.jam.vector;
 
 import static java.lang.foreign.ValueLayout.JAVA_BYTE;
 import static java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED;

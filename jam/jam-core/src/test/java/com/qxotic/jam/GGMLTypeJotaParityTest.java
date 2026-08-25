@@ -3,6 +3,7 @@ package com.qxotic.jam;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
+import com.qxotic.jam.internal.GGMLType;
 import com.qxotic.jota.DataType;
 import org.junit.jupiter.api.Test;
 
@@ -44,13 +45,16 @@ class GGMLTypeJotaParityTest {
             GGMLType type = (GGMLType) row[1];
             DataType dt = (DataType) row[2];
             assertSame(type, GGMLType.byCode(tag), type + " <- tag " + tag);
-            assertEquals(type.ggml, tag, type + " ggml code == JAM tag");
-            assertEquals(type.blockElems, dt.elementsPerBlock(), type + " elements/block vs jota");
-            assertEquals(type.blockBytes, dt.byteSize(), type + " bytes/block vs jota");
+            assertEquals(type.code(), tag, type + " ggml code == JAM tag");
+            assertEquals(
+                    type.elementsPerBlock(),
+                    dt.elementsPerBlock(),
+                    type + " elements/block vs jota");
+            assertEquals(type.bytesPerBlock(), dt.byteSize(), type + " bytes/block vs jota");
             // ...and through rowBytes, the conversion the mm bounds checks actually run
             assertEquals(
                     3 * dt.byteSize(),
-                    type.rowBytes(3L * type.blockElems),
+                    type.rowBytes(3L * type.elementsPerBlock()),
                     type + " rowBytes vs jota");
         }
     }

@@ -1,12 +1,12 @@
-package com.qxotic.jam;
+package com.qxotic.jam.vector;
 
-import static com.qxotic.jam.VectorSupport.F_SPECIES;
-import static com.qxotic.jam.VectorSupport.putFloat;
-import static com.qxotic.jam.VectorSupport.readByte;
-import static com.qxotic.jam.VectorSupport.readFloat16;
-import static com.qxotic.jam.VectorSupport.readShort;
-import static com.qxotic.jam.VectorSupport.vectorBase;
-import static com.qxotic.jam.VectorSupport.vectorSegment;
+import static com.qxotic.jam.vector.VectorSupport.F_SPECIES;
+import static com.qxotic.jam.vector.VectorSupport.putFloat;
+import static com.qxotic.jam.vector.VectorSupport.readByte;
+import static com.qxotic.jam.vector.VectorSupport.readFloat16;
+import static com.qxotic.jam.vector.VectorSupport.readShort;
+import static com.qxotic.jam.vector.VectorSupport.vectorBase;
+import static com.qxotic.jam.vector.VectorSupport.vectorSegment;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;

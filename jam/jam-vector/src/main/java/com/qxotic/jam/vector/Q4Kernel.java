@@ -1,7 +1,7 @@
-package com.qxotic.jam;
+package com.qxotic.jam.vector;
 
-import static com.qxotic.jam.VectorSupport.F_SPECIES;
-import static com.qxotic.jam.VectorSupport.readFloat16;
+import static com.qxotic.jam.vector.VectorSupport.F_SPECIES;
+import static com.qxotic.jam.vector.VectorSupport.readFloat16;
 import static java.lang.foreign.ValueLayout.JAVA_BYTE;
 import static java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED;
 

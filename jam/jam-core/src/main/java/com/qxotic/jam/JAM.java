@@ -31,8 +31,8 @@ public interface JAM {
         /**
          * Returns a usable backend. The returned backend may be shared; a shared backend either
          * serializes concurrent {@link JAM#mm} calls internally or surfaces {@link JAM#EBUSY} (e.g.
-         * {@code NativeJAM} serializes by default, surfaces EBUSY with {@code
-         * -Djam.native.serial=false}) — callers must handle EBUSY either way.
+         * the {@code native} provider serializes by default and surfaces EBUSY with {@code
+         * -Djam.native.serial=false}); callers must handle EBUSY either way.
          */
         JAM create();
     }

@@ -1,10 +1,12 @@
-package com.qxotic.jam;
+package com.qxotic.jam.libjam;
 
 import static java.lang.foreign.ValueLayout.JAVA_BYTE;
 import static java.lang.foreign.ValueLayout.JAVA_FLOAT;
 import static java.lang.foreign.ValueLayout.JAVA_SHORT;
 import static org.junit.jupiter.api.Assertions.*;
 
+import com.qxotic.jam.JAM;
+import com.qxotic.jam.internal.GGMLType;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;
@@ -651,9 +653,9 @@ class JamTest {
             throws Exception { // structural invariant: internal enum <-> public int tags
         for (GGMLType g : GGMLType.values()) {
             assertEquals(
-                    g, GGMLType.byCode(g.ggml), () -> g + ": byCode round-trip"); // code -> enum
+                    g, GGMLType.byCode(g.code()), () -> g + ": byCode round-trip"); // code -> enum
             assertEquals(
-                    g.ggml,
+                    g.code(),
                     JAM.class.getField(g.name()).getInt(null),
                     () -> g + ": public int tag"); // enum <-> JAM.<name>
         }

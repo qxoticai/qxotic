@@ -1,4 +1,4 @@
-package com.qxotic.jam;
+package com.qxotic.jam.vector;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;

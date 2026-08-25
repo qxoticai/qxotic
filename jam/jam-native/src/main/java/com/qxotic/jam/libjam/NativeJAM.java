@@ -1,8 +1,10 @@
-package com.qxotic.jam;
+package com.qxotic.jam.libjam;
 
 import static java.lang.foreign.ValueLayout.JAVA_INT;
 import static java.lang.foreign.ValueLayout.JAVA_LONG;
 
+import com.qxotic.jam.JAM;
+import com.qxotic.jam.internal.GGMLType;
 import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.Linker;
 import java.lang.foreign.MemorySegment;

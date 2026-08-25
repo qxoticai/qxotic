@@ -1,8 +1,9 @@
-package com.qxotic.jam;
+package com.qxotic.jam.vector;
 
 import static java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import com.qxotic.jam.JAM;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.util.Random;
@@ -13,18 +14,23 @@ import org.junit.jupiter.api.Test;
  * Standalone correctness for jam-vector's relocated SIMD kernels — so the jam reactor verifies its
  * own register-tiled gemm instead of relying on jinfer downstream. For each tileable dtype a
  * synthetic quantized weight (exact-representable, via the shared {@link QuantWeights} fixture) and
- * a random F32 activation are fed through BOTH the vector kernel and {@link ScalarJAM} (the
- * complete reference floor); the two must agree to within the int8-activation quantization the
- * tiles use. Kernels are invoked exactly as jinfer does — weight as a raw segment, activation +
- * output through the GLOBAL segment at their absolute addresses — which is uniform whether a kernel
- * stores via {@code o.set} or absolute {@code putFloat}.
+ * a random F32 activation are fed through both the vector kernel and the scalar reference; the two
+ * must agree to within the int8-activation quantization the tiles use. Kernels are invoked exactly
+ * as jinfer does — weight as a raw segment, activation + output through the GLOBAL segment at their
+ * absolute addresses — which is uniform whether a kernel stores via {@code o.set} or absolute
+ * {@code putFloat}.
  *
  * <p>The kernels need a 128/256/512-bit FloatVector; the suite is skipped (not failed) where that's
  * absent.
  */
 class VectorKernelTest {
 
-    private static final ScalarJAM SCALAR = new ScalarJAM();
+    private static final JAM SCALAR =
+            JAM.providers().stream()
+                    .filter(provider -> provider.id().equals("scalar"))
+                    .findFirst()
+                    .orElseThrow()
+                    .create();
     private static final Arena A = Arena.ofAuto();
     private static final Random RNG = new Random(11);
 

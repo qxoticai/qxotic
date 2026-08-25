@@ -1,18 +1,17 @@
-package com.qxotic.jam;
+package com.qxotic.jam.internal;
+
+import com.qxotic.jam.JAM;
 
 /**
- * INTERNAL dtype geometry — elements-per-block + bytes-per-block of jam's supported weight dtypes.
- * NOT public API: package-private, but shared across the jam-* modules — they all live in the
- * {@code com.qxotic.jam} package, so same-package access works on the classpath (jam-native's
- * bounds check, jam-scalar/jam-vector's decode). The public dtype surface is the {@code int} tags
- * on {@link JAM} (mirroring GGML's {@code ggml_type}).
+ * Internal block geometry shared by JAM's built-in providers. The public dtype surface remains the
+ * {@code int} tags on {@link JAM}.
  *
  * <p>Only the dtypes jam runs are listed — a one-to-one mirror of {@link JAM}'s tags (a test keeps
  * them in sync). An unrecognized code -> {@link #byCode} returns {@code null}. Codes match
  * GGML/GGUF, but jam keeps its OWN copy here and carries <b>no dependency</b> on {@code
  * com.qxotic.gguf}.
  */
-enum GGMLType {
+public enum GGMLType {
     //    ggml  blockElems  blockBytes
     F32(0, 1, 4),
     F16(1, 1, 2),
@@ -26,19 +25,31 @@ enum GGMLType {
     NVFP4(40, 64, 36),
     Q1_0(41, 128, 18);
 
-    final int ggml; // ggml_type code (the GGUF on-disk tag)
-    final int blockElems; // elements per quant block
-    final int blockBytes; // bytes per quant block
+    private final int code;
+    private final int elementsPerBlock;
+    private final int bytesPerBlock;
 
-    GGMLType(int ggml, int blockElems, int blockBytes) {
-        this.ggml = ggml;
-        this.blockElems = blockElems;
-        this.blockBytes = blockBytes;
+    GGMLType(int code, int elementsPerBlock, int bytesPerBlock) {
+        this.code = code;
+        this.elementsPerBlock = elementsPerBlock;
+        this.bytesPerBlock = bytesPerBlock;
+    }
+
+    public int code() {
+        return code;
+    }
+
+    public int elementsPerBlock() {
+        return elementsPerBlock;
+    }
+
+    public int bytesPerBlock() {
+        return bytesPerBlock;
     }
 
     /** Byte span of {@code elements} consecutive elements of this dtype (block multiple). */
-    long rowBytes(long elements) {
-        return elements / blockElems * (long) blockBytes;
+    public long rowBytes(long elements) {
+        return elements / elementsPerBlock * (long) bytesPerBlock;
     }
 
     /**
@@ -47,19 +58,19 @@ enum GGMLType {
      * data. This is the element-stride → byte-span conversion {@link JAM#mm}'s bounds check needs
      * (it then compares this to {@code MemorySegment.byteSize()}).
      */
-    long spanBytes(int rows, int stride, int rowElems) {
+    public long spanBytes(int rows, int stride, int rowElems) {
         return (long) (rows - 1) * rowBytes(stride) + rowBytes(rowElems);
     }
 
     /** O(1) code → dtype lookup; {@code null} for an unrecognized or unsupported code. */
-    static GGMLType byCode(int ggml) {
-        return (ggml >= 0 && ggml < BY_CODE.length) ? BY_CODE[ggml] : null;
+    public static GGMLType byCode(int code) {
+        return (code >= 0 && code < BY_CODE.length) ? BY_CODE[code] : null;
     }
 
     private static final GGMLType[] BY_CODE =
             new GGMLType[42]; // codes 0..41 (Q1_0); gaps stay null
 
     static {
-        for (GGMLType q : values()) BY_CODE[q.ggml] = q;
+        for (GGMLType type : values()) BY_CODE[type.code] = type;
     }
 }

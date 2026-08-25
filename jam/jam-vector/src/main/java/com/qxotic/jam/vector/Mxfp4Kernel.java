@@ -1,7 +1,7 @@
-package com.qxotic.jam;
+package com.qxotic.jam.vector;
 
-import static com.qxotic.jam.VectorSupport.F_SPECIES;
-import static com.qxotic.jam.VectorSupport.readByte;
+import static com.qxotic.jam.vector.VectorSupport.F_SPECIES;
+import static com.qxotic.jam.vector.VectorSupport.readByte;
 
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteOrder;

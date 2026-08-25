@@ -1,9 +1,10 @@
-package com.qxotic.jam;
+package com.qxotic.jam.vector;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jam.JAM;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -15,11 +16,11 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Cross-backend parity for the JAM matmul backends, driven through the raw {@link JAM} segment
- * contract: {@link ScalarJAM} (the reference floor, jam-scalar), {@link VectorJAM} (jam-vector),
- * and {@link NativeJAM} (jam-native, only when libjam loads). Every backend runs on the same
- * synthetic quantized weights ({@link QuantWeights}, exact-value encoders) and is checked against a
- * double-precision reference over those values. This is the JUnit 6 form of the former {@code
- * JamBackendTest} main() harness, relocated to jam now that the kernels live here.
+ * contract: scalar (the reference floor), vector, and native (only when libjam loads). Every
+ * backend runs on the same synthetic quantized weights ({@link QuantWeights}, exact-value encoders)
+ * and is checked against a double-precision reference over those values. This is the JUnit 6 form
+ * of the former {@code JamBackendTest} main() harness, relocated to jam now that the kernels live
+ * here.
  *
  * <p>Covers: gemm ({@code n>1}) for every dtype; gemv ({@code n==1}) for the dtype-agnostic
  * backends; VectorJAM's decline contract; cross-backend agreement on identical inputs; and
@@ -30,13 +31,15 @@ class JamBackendParityTest {
     private static final long SEED = 0x5A11C0DEL;
     private static final Arena A = Arena.ofAuto();
 
-    private static final JAM SCALAR = new ScalarJAM();
+    private static final JAM SCALAR =
+            JAM.providers().stream()
+                    .filter(provider -> provider.id().equals("scalar"))
+                    .findFirst()
+                    .orElseThrow()
+                    .create();
     private static final JAM VECTOR = new VectorJAM();
 
-    /**
-     * The native backend if libjam loaded (its class init runs NativeLoader.load), else null ->
-     * skipped.
-     */
+    /** The native backend if libjam loads, otherwise {@code null} and native checks are skipped. */
     private static final JAM NATIVE = tryNative();
 
     /** Dtypes with a VectorJAM register-tiled / band gemm (the rest decline on VectorJAM). */
@@ -82,7 +85,13 @@ class JamBackendParityTest {
 
     private static JAM tryNative() {
         try {
-            JAM n = NativeJAM.global();
+            JAM n =
+                    JAM.providers().stream()
+                            .filter(provider -> provider.id().equals("native"))
+                            .findFirst()
+                            .map(JAM.Provider::create)
+                            .orElse(null);
+            if (n == null) return null;
             // a tiny real mm forces the native lib to actually load + run; null it out on any
             // failure
             try (Arena ar = Arena.ofConfined()) {
