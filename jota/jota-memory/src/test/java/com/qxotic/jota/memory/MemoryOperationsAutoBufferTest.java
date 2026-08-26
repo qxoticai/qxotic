@@ -130,7 +130,7 @@ class MemoryOperationsAutoBufferTest {
 
     @Test
     void acceptsSizeAlignedExplicitStagingBuffer() {
-        Memory<int[]> src = Memories.of(1, 2);
+        Memory<int[]> src = Memories.of(new int[] {1, 2});
         Memory<int[]> dst = intDomain.memoryAllocator().allocateMemory(8);
         Memory<MemorySegment> buffer = Memories.of(MemorySegment.ofArray(new byte[4]));
 
