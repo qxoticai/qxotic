@@ -9,6 +9,7 @@ import com.qxotic.jota.DataType;
 import com.qxotic.jota.DeviceType;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.nio.ByteBuffer;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -71,5 +72,13 @@ class MemoryTest {
         Memory<boolean[]> memory = Memories.of(new boolean[] {false});
         assertTrue(memory.supportsDataType(DataType.BOOL));
         assertFalse(memory.supportsDataType(DataType.I8));
+    }
+
+    @Test
+    void byteBufferMemoryIsTheWholeBufferRegardlessOfItsCursor() {
+        ByteBuffer buffer = ByteBuffer.allocate(16);
+        buffer.position(8).limit(12);
+        assertEquals(16, Memories.of(buffer).byteSize());
+        assertEquals(4, Memories.of(buffer.slice()).byteSize()); // a window is the caller's slice
     }
 }
