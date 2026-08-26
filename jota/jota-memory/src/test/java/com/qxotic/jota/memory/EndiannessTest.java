@@ -6,8 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
-import com.qxotic.jota.memory.internal.DomainFactory;
-import com.qxotic.jota.memory.internal.MemoryAllocatorFactory;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.ByteBuffer;
@@ -52,11 +50,11 @@ class EndiannessTest extends AbstractMemoryTest {
 
     static Stream<MemoryDomain<?>> f32Domains() {
         return Stream.of(
-                DomainFactory.ofBytes(),
-                DomainFactory.ofFloats(),
-                DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
-                DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
-                DomainFactory.ofMemorySegment());
+                MemoryDomains.bytes(),
+                MemoryDomains.floats(),
+                MemoryDomains.ofByteBuffer(MemoryAllocators.newByteBuffer(false)),
+                MemoryDomains.ofByteBuffer(MemoryAllocators.newByteBuffer(true)),
+                MemoryDomains.of(MemoryAllocators.newScopedArena()));
     }
 
     // ---- 1. Cross-domain copies are byte-faithful for asymmetric values ----
@@ -98,9 +96,9 @@ class EndiannessTest extends AbstractMemoryTest {
 
     @Test
     void intAndLongCopyBetweenDomainsPreservesValues() {
-        MemoryDomain<float[]> floats = DomainFactory.ofFloats();
-        MemoryDomain<byte[]> bytes = DomainFactory.ofBytes();
-        MemoryDomain<MemorySegment> seg = DomainFactory.ofMemorySegment();
+        MemoryDomain<float[]> floats = MemoryDomains.floats();
+        MemoryDomain<byte[]> bytes = MemoryDomains.bytes();
+        MemoryDomain<MemorySegment> seg = MemoryDomains.of(MemoryAllocators.newScopedArena());
 
         MemoryView<float[]> intsInFloats =
                 MemoryView.of(
@@ -149,9 +147,9 @@ class EndiannessTest extends AbstractMemoryTest {
     @Test
     void copiesBetweenHeapAndDirectByteBuffers() {
         MemoryDomain<ByteBuffer> heap =
-                DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false));
+                MemoryDomains.ofByteBuffer(MemoryAllocators.newByteBuffer(false));
         MemoryDomain<ByteBuffer> direct =
-                DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true));
+                MemoryDomains.ofByteBuffer(MemoryAllocators.newByteBuffer(true));
 
         float[] values = {1.5f, -2.0f, 123.456f};
         MemoryView<ByteBuffer> src = viewOf(heap, values);
@@ -178,7 +176,7 @@ class EndiannessTest extends AbstractMemoryTest {
 
     @Test
     void segmentBytesAreNativeOrder() {
-        MemoryDomain<MemorySegment> seg = DomainFactory.ofMemorySegment();
+        MemoryDomain<MemorySegment> seg = MemoryDomains.of(MemoryAllocators.newScopedArena());
         MemoryAccess<MemorySegment> access = seg.directAccess();
         MemoryView<MemorySegment> view =
                 MemoryView.of(
@@ -195,7 +193,7 @@ class EndiannessTest extends AbstractMemoryTest {
     @Test
     void byteBufferBytesAreNativeOrder() {
         MemoryDomain<ByteBuffer> bb =
-                DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false));
+                MemoryDomains.ofByteBuffer(MemoryAllocators.newByteBuffer(false));
         MemoryAccess<ByteBuffer> access = bb.directAccess();
         MemoryView<ByteBuffer> view =
                 MemoryView.of(

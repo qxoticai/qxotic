@@ -3,7 +3,6 @@ package com.qxotic.jota.memory;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import com.qxotic.jota.memory.internal.MemoryFactory;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -28,7 +27,7 @@ class MemoryAccessChecksTest {
     @Test
     void checkBoundsRejectsOverflowingRange() {
         // offset + size wraps negative and used to satisfy "<= byteSize"
-        Memory<byte[]> memory = MemoryFactory.ofBytes(new byte[16]);
+        Memory<byte[]> memory = Memories.of(new byte[16]);
         assertThrows(
                 IndexOutOfBoundsException.class,
                 () -> MemoryAccessChecks.checkBounds(memory, 8, Long.MAX_VALUE));

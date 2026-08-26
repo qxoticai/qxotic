@@ -6,10 +6,10 @@ import com.qxotic.jota.DataType;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.AbstractMemoryTest;
+import com.qxotic.jota.memory.Memories;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
-import com.qxotic.jota.memory.internal.MemoryFactory;
-import com.qxotic.jota.memory.internal.MemoryViewFactory;
+import com.qxotic.jota.memory.MemoryViews;
 import com.qxotic.jota.testutil.RunOnAllAvailableBackends;
 import com.qxotic.jota.testutil.TensorTestReads;
 import java.lang.foreign.MemorySegment;
@@ -153,9 +153,9 @@ class ReciprocalOpTest extends AbstractMemoryTest {
     void reciprocalThrowsForBoolType() {
         Shape shape = Shape.of(2);
         MemoryView<MemorySegment> view =
-                MemoryViewFactory.rowMajor(
+                MemoryViews.rowMajor(
+                        Memories.of(MemorySegment.ofArray(new byte[] {1, 0})),
                         DataType.BOOL,
-                        MemoryFactory.ofMemorySegment(MemorySegment.ofArray(new byte[] {1, 0})),
                         shape);
         Tensor boolTensor = Tensor.of(view);
 

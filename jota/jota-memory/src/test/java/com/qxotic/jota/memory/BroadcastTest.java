@@ -9,7 +9,6 @@ import com.qxotic.jota.DataType;
 import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.Stride;
-import com.qxotic.jota.memory.internal.MemoryFactory;
 import org.junit.jupiter.api.Test;
 
 class BroadcastTest {
@@ -18,7 +17,7 @@ class BroadcastTest {
     void broadcastsValuesFromAViewWithAnOffset() {
         MemoryView<byte[]> source =
                 MemoryView.of(
-                        MemoryFactory.ofBytes(new byte[] {9, 1, 2, 3, 9}),
+                        Memories.of(new byte[] {9, 1, 2, 3, 9}),
                         1,
                         DataType.I8,
                         com.qxotic.jota.Layout.rowMajor(Shape.flat(3)));
@@ -33,10 +32,7 @@ class BroadcastTest {
     @Test
     void broadcastsANegativeStrideView() {
         MemoryView<byte[]> reversed =
-                MemoryView.rowMajor(
-                                MemoryFactory.ofBytes(new byte[] {1, 2, 3}),
-                                DataType.I8,
-                                Shape.flat(3))
+                MemoryView.rowMajor(Memories.of(new byte[] {1, 2, 3}), DataType.I8, Shape.flat(3))
                         .slice(0, 2, -1, -1);
 
         MemoryView<byte[]> result = reversed.broadcast(Shape.flat(2, 3));
@@ -48,8 +44,7 @@ class BroadcastTest {
     @Test
     void broadcastsAnEmptyDimension() {
         MemoryView<byte[]> source =
-                MemoryView.rowMajor(
-                        MemoryFactory.ofBytes(new byte[0]), DataType.I8, Shape.flat(1, 0));
+                MemoryView.rowMajor(Memories.of(new byte[0]), DataType.I8, Shape.flat(1, 0));
 
         MemoryView<byte[]> result = source.broadcast(Shape.flat(4, 0));
 
@@ -60,10 +55,9 @@ class BroadcastTest {
     @Test
     void rejectsIncompatibleTargets() {
         MemoryView<byte[]> vector =
-                MemoryView.rowMajor(MemoryFactory.ofBytes(new byte[3]), DataType.I8, Shape.flat(3));
+                MemoryView.rowMajor(Memories.of(new byte[3]), DataType.I8, Shape.flat(3));
         MemoryView<byte[]> matrix =
-                MemoryView.rowMajor(
-                        MemoryFactory.ofBytes(new byte[6]), DataType.I8, Shape.flat(2, 3));
+                MemoryView.rowMajor(Memories.of(new byte[6]), DataType.I8, Shape.flat(2, 3));
 
         assertAll(
                 () ->

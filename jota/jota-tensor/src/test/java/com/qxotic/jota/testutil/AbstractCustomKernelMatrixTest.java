@@ -4,9 +4,10 @@ import com.qxotic.jota.DataType;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryAccess;
+import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryDomain;
+import com.qxotic.jota.memory.MemoryDomains;
 import com.qxotic.jota.memory.MemoryView;
-import com.qxotic.jota.memory.internal.DomainFactory;
 import com.qxotic.jota.runtime.DeviceRuntime;
 import com.qxotic.jota.runtime.KernelProgram;
 import com.qxotic.jota.runtime.LaunchConfig;
@@ -26,7 +27,7 @@ public abstract class AbstractCustomKernelMatrixTest {
     protected abstract DeviceRuntime createRuntime();
 
     protected final MemoryDomain<MemorySegment> hostDomain() {
-        return DomainFactory.ofMemorySegment();
+        return MemoryDomains.of(MemoryAllocators.newScopedArena());
     }
 
     protected static <B> MemoryView<B> allocateF32(MemoryDomain<B> domain, Shape shape) {

@@ -6,10 +6,10 @@ import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
+import com.qxotic.jota.memory.Memories;
 import com.qxotic.jota.memory.MemoryDomain;
+import com.qxotic.jota.memory.MemoryDomains;
 import com.qxotic.jota.memory.MemoryView;
-import com.qxotic.jota.memory.internal.DomainFactory;
-import com.qxotic.jota.memory.internal.MemoryFactory;
 import com.qxotic.jota.runtime.RuntimeDiagnostic;
 import com.qxotic.jota.tensor.Tensor;
 import java.awt.Color;
@@ -537,12 +537,9 @@ public final class NBodySwingDemo {
             @SuppressWarnings("unchecked")
             MemoryView<Object> srcView = (MemoryView<Object>) src;
 
-            MemoryDomain<float[]> dstDomain = DomainFactory.ofFloats();
+            MemoryDomain<float[]> dstDomain = MemoryDomains.floats();
             MemoryView<float[]> dstView =
-                    MemoryView.of(
-                            MemoryFactory.ofFloats(out),
-                            DataType.FP32,
-                            Layout.rowMajor(src.shape()));
+                    MemoryView.of(Memories.of(out), DataType.FP32, Layout.rowMajor(src.shape()));
 
             MemoryDomain.copy(srcDomain, srcView, dstDomain, dstView);
             return out;

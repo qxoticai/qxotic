@@ -3,9 +3,10 @@ package com.qxotic.jota;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.qxotic.jota.ir.tir.TIRGraph;
+import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryDomain;
+import com.qxotic.jota.memory.MemoryDomains;
 import com.qxotic.jota.memory.MemoryView;
-import com.qxotic.jota.memory.internal.DomainFactory;
 import com.qxotic.jota.runtime.ComputeEngine;
 import com.qxotic.jota.runtime.DefaultRuntimeRegistry;
 import com.qxotic.jota.runtime.DeviceRuntime;
@@ -76,10 +77,13 @@ class EnvironmentTest {
         Device javaLogical = DeviceType.JAVA.deviceIndex(0);
         Device panamaLogical = DeviceType.PANAMA.deviceIndex(0);
         registry.registerFactory(
-                javaLogical, d -> new StubDeviceRuntime(DomainFactory.ofBytes(), dummyRuntime()));
+                javaLogical, d -> new StubDeviceRuntime(MemoryDomains.bytes(), dummyRuntime()));
         registry.registerFactory(
                 panamaLogical,
-                d -> new StubDeviceRuntime(DomainFactory.ofMemorySegment(), dummyRuntime()));
+                d ->
+                        new StubDeviceRuntime(
+                                MemoryDomains.of(MemoryAllocators.newScopedArena()),
+                                dummyRuntime()));
 
         assertTrue(registry.devices().contains(javaLogical));
         assertTrue(registry.devices().contains(panamaLogical));
@@ -300,7 +304,8 @@ class EnvironmentTest {
 
         @Override
         protected DeviceRuntime createForDevice(Device device) {
-            return new StubDeviceRuntime(DomainFactory.ofMemorySegment(), dummyRuntime());
+            return new StubDeviceRuntime(
+                    MemoryDomains.of(MemoryAllocators.newScopedArena()), dummyRuntime());
         }
     }
 }

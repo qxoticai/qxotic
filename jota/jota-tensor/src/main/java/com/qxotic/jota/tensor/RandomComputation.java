@@ -5,14 +5,16 @@ import com.qxotic.jota.Device;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
+import com.qxotic.jota.memory.Memories;
 import com.qxotic.jota.memory.Memory;
+import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryDomain;
+import com.qxotic.jota.memory.MemoryDomains;
 import com.qxotic.jota.memory.MemoryOperations;
 import com.qxotic.jota.memory.MemoryView;
-import com.qxotic.jota.memory.internal.DomainFactory;
-import com.qxotic.jota.memory.internal.MemoryFactory;
 import com.qxotic.jota.random.RandomAlgorithms;
 import com.qxotic.jota.random.RandomKey;
+import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.util.List;
 import java.util.Map;
@@ -76,8 +78,9 @@ final class RandomComputation implements LazyComputation {
     private static <B> MemoryView<B> copyFloatArray(
             MemoryDomain<B> memoryDomain, float[] data, Shape shape) {
         Memory<B> dst = memoryDomain.memoryAllocator().allocateMemory(DataType.FP32, data.length);
-        Memory<MemorySegment> src = MemoryFactory.ofMemorySegment(MemorySegment.ofArray(data));
-        MemoryOperations<MemorySegment> srcOps = DomainFactory.ofMemorySegment().memoryOperations();
+        Memory<MemorySegment> src = Memories.of(MemorySegment.ofArray(data));
+        MemoryOperations<MemorySegment> srcOps =
+                MemoryDomains.of(MemoryAllocators.ofArena(Arena.global())).memoryOperations();
         MemoryOperations.copy(
                 srcOps,
                 src,
@@ -92,8 +95,9 @@ final class RandomComputation implements LazyComputation {
     private static <B> MemoryView<B> copyDoubleArray(
             MemoryDomain<B> memoryDomain, double[] data, Shape shape) {
         Memory<B> dst = memoryDomain.memoryAllocator().allocateMemory(DataType.FP64, data.length);
-        Memory<MemorySegment> src = MemoryFactory.ofMemorySegment(MemorySegment.ofArray(data));
-        MemoryOperations<MemorySegment> srcOps = DomainFactory.ofMemorySegment().memoryOperations();
+        Memory<MemorySegment> src = Memories.of(MemorySegment.ofArray(data));
+        MemoryOperations<MemorySegment> srcOps =
+                MemoryDomains.of(MemoryAllocators.ofArena(Arena.global())).memoryOperations();
         MemoryOperations.copy(
                 srcOps,
                 src,

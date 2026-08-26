@@ -5,8 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.jota.memory.internal.DomainFactory;
-import com.qxotic.jota.memory.internal.MemoryFactory;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -22,7 +20,7 @@ class MemoryOperationsDirectTransferTest {
 
     /** byte[] backend that records every transfer it is asked to do. */
     private static final class Recording implements MemoryOperations<byte[]> {
-        final MemoryOperations<byte[]> delegate = DomainFactory.ofBytes().memoryOperations();
+        final MemoryOperations<byte[]> delegate = MemoryDomains.bytes().memoryOperations();
         final List<Long> toNative = new ArrayList<>();
         final List<Long> fromNative = new ArrayList<>();
 
@@ -60,10 +58,10 @@ class MemoryOperationsDirectTransferTest {
             MemorySegment dst = arena.allocate(SIZE);
             MemoryOperations.copy(
                     ops,
-                    MemoryFactory.ofBytes(data),
+                    Memories.of(data),
                     0,
-                    DomainFactory.ofMemorySegment().memoryOperations(),
-                    MemoryFactory.ofMemorySegment(dst),
+                    MemoryDomains.of(MemoryAllocators.ofArena(Arena.global())).memoryOperations(),
+                    Memories.of(dst),
                     0,
                     SIZE);
             assertEquals(List.of((long) SIZE), ops.toNative);
@@ -79,11 +77,11 @@ class MemoryOperationsDirectTransferTest {
             MemorySegment src = arena.allocate(SIZE);
             for (int i = 0; i < SIZE; i++) src.set(ValueLayout.JAVA_BYTE, i, (byte) (i * 7));
             MemoryOperations.copy(
-                    DomainFactory.ofMemorySegment().memoryOperations(),
-                    MemoryFactory.ofMemorySegment(src),
+                    MemoryDomains.of(MemoryAllocators.ofArena(Arena.global())).memoryOperations(),
+                    Memories.of(src),
                     0,
                     ops,
-                    MemoryFactory.ofBytes(result),
+                    Memories.of(result),
                     0,
                     SIZE);
             assertEquals(List.of((long) SIZE), ops.fromNative);
@@ -101,14 +99,15 @@ class MemoryOperationsDirectTransferTest {
         for (int i = 0; i < SIZE; i++) data[i] = (byte) (i * 3);
         byte[] heap = new byte[SIZE];
         Recording ops = new Recording();
-        MemoryOperations<MemorySegment> segOps = DomainFactory.ofMemorySegment().memoryOperations();
+        MemoryOperations<MemorySegment> segOps =
+                MemoryDomains.of(MemoryAllocators.ofArena(Arena.global())).memoryOperations();
 
         MemoryOperations.copy(
                 ops,
-                MemoryFactory.ofBytes(data),
+                Memories.of(data),
                 0,
                 segOps,
-                MemoryFactory.ofMemorySegment(MemorySegment.ofArray(heap)),
+                Memories.of(MemorySegment.ofArray(heap)),
                 0,
                 SIZE);
         assertEquals(List.of((long) SIZE), ops.toNative);
@@ -117,10 +116,10 @@ class MemoryOperationsDirectTransferTest {
         byte[] back = new byte[SIZE];
         MemoryOperations.copy(
                 segOps,
-                MemoryFactory.ofMemorySegment(MemorySegment.ofArray(heap)),
+                Memories.of(MemorySegment.ofArray(heap)),
                 0,
                 ops,
-                MemoryFactory.ofBytes(back),
+                Memories.of(back),
                 0,
                 SIZE);
         assertEquals(List.of((long) SIZE), ops.fromNative);
@@ -132,31 +131,18 @@ class MemoryOperationsDirectTransferTest {
         byte[] data = new byte[64];
         for (int i = 0; i < data.length; i++) data[i] = (byte) i;
         Recording ops = new Recording();
-        MemoryOperations<MemorySegment> segOps = DomainFactory.ofMemorySegment().memoryOperations();
+        MemoryOperations<MemorySegment> segOps =
+                MemoryDomains.of(MemoryAllocators.ofArena(Arena.global())).memoryOperations();
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment seg = arena.allocate(64);
             // bytes 8..24 of the array land at 32..48 of the segment
-            MemoryOperations.copy(
-                    ops,
-                    MemoryFactory.ofBytes(data),
-                    8,
-                    segOps,
-                    MemoryFactory.ofMemorySegment(seg),
-                    32,
-                    16);
+            MemoryOperations.copy(ops, Memories.of(data), 8, segOps, Memories.of(seg), 32, 16);
             byte[] expected = new byte[64];
             System.arraycopy(data, 8, expected, 32, 16);
             assertArrayEquals(expected, seg.toArray(ValueLayout.JAVA_BYTE));
 
             byte[] back = new byte[64];
-            MemoryOperations.copy(
-                    segOps,
-                    MemoryFactory.ofMemorySegment(seg),
-                    32,
-                    ops,
-                    MemoryFactory.ofBytes(back),
-                    48,
-                    16);
+            MemoryOperations.copy(segOps, Memories.of(seg), 32, ops, Memories.of(back), 48, 16);
             byte[] expectedBack = new byte[64];
             System.arraycopy(data, 8, expectedBack, 48, 16);
             assertArrayEquals(expectedBack, back);
@@ -167,11 +153,12 @@ class MemoryOperationsDirectTransferTest {
     void directBranchesStillEnforceGranularity() {
         // int[] memory has 4-byte granularity: an odd offset or size must be rejected before any
         // transfer
-        Memory<int[]> ints = MemoryFactory.ofInts(new int[16]);
-        MemoryOperations<int[]> intOps = DomainFactory.ofInts().memoryOperations();
-        MemoryOperations<MemorySegment> segOps = DomainFactory.ofMemorySegment().memoryOperations();
+        Memory<int[]> ints = Memories.of(new int[16]);
+        MemoryOperations<int[]> intOps = MemoryDomains.ints().memoryOperations();
+        MemoryOperations<MemorySegment> segOps =
+                MemoryDomains.of(MemoryAllocators.ofArena(Arena.global())).memoryOperations();
         try (Arena arena = Arena.ofConfined()) {
-            Memory<MemorySegment> seg = MemoryFactory.ofMemorySegment(arena.allocate(64));
+            Memory<MemorySegment> seg = Memories.of(arena.allocate(64));
             assertThrows(
                     IllegalArgumentException.class,
                     () -> MemoryOperations.copy(intOps, ints, 2, segOps, seg, 0, 8));
@@ -187,11 +174,12 @@ class MemoryOperationsDirectTransferTest {
     @Test
     void zeroBytesIsANoOp() {
         Recording ops = new Recording();
-        MemoryOperations<MemorySegment> segOps = DomainFactory.ofMemorySegment().memoryOperations();
+        MemoryOperations<MemorySegment> segOps =
+                MemoryDomains.of(MemoryAllocators.ofArena(Arena.global())).memoryOperations();
         try (Arena arena = Arena.ofConfined()) {
-            Memory<MemorySegment> seg = MemoryFactory.ofMemorySegment(arena.allocate(8));
-            MemoryOperations.copy(ops, MemoryFactory.ofBytes(new byte[8]), 0, segOps, seg, 0, 0);
-            MemoryOperations.copy(segOps, seg, 0, ops, MemoryFactory.ofBytes(new byte[8]), 0, 0);
+            Memory<MemorySegment> seg = Memories.of(arena.allocate(8));
+            MemoryOperations.copy(ops, Memories.of(new byte[8]), 0, segOps, seg, 0, 0);
+            MemoryOperations.copy(segOps, seg, 0, ops, Memories.of(new byte[8]), 0, 0);
         }
         assertEquals(List.of(), ops.toNative);
         assertEquals(List.of(), ops.fromNative);
@@ -205,14 +193,7 @@ class MemoryOperationsDirectTransferTest {
         Recording srcOps = new Recording();
         Recording dstOps = new Recording();
 
-        MemoryOperations.copy(
-                srcOps,
-                MemoryFactory.ofBytes(data),
-                0,
-                dstOps,
-                MemoryFactory.ofBytes(result),
-                0,
-                SIZE);
+        MemoryOperations.copy(srcOps, Memories.of(data), 0, dstOps, Memories.of(result), 0, SIZE);
 
         assertArrayEquals(data, result);
         // chunked through the staging buffer: several transfers per side, summing to SIZE

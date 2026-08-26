@@ -7,10 +7,10 @@ import com.qxotic.jota.ir.lir.LIRGraph;
 import com.qxotic.jota.ir.lir.LIRInput;
 import com.qxotic.jota.ir.lir.ScalarInput;
 import com.qxotic.jota.memory.Memory;
+import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryDomain;
+import com.qxotic.jota.memory.MemoryDomains;
 import com.qxotic.jota.memory.MemoryView;
-import com.qxotic.jota.memory.internal.DomainFactory;
-import com.qxotic.jota.memory.internal.MemoryAllocatorFactory;
 import com.qxotic.jota.runtime.KernelArgs;
 import com.qxotic.jota.runtime.ScalarArg;
 import com.qxotic.jota.tensor.Tensor;
@@ -263,30 +263,30 @@ public final class LIRKernelArgsBuilder {
     private static <B> MemoryDomain<B> sourceDomainFor(Memory<B> memory) {
         Object base = memory.base();
         if (base instanceof boolean[]) {
-            return (MemoryDomain<B>) DomainFactory.ofBooleans();
+            return (MemoryDomain<B>) MemoryDomains.booleans();
         }
         if (base instanceof byte[]) {
-            return (MemoryDomain<B>) DomainFactory.ofBytes();
+            return (MemoryDomain<B>) MemoryDomains.bytes();
         }
         if (base instanceof short[]) {
-            return (MemoryDomain<B>) DomainFactory.ofShorts();
+            return (MemoryDomain<B>) MemoryDomains.shorts();
         }
         if (base instanceof int[]) {
-            return (MemoryDomain<B>) DomainFactory.ofInts();
+            return (MemoryDomain<B>) MemoryDomains.ints();
         }
         if (base instanceof long[]) {
-            return (MemoryDomain<B>) DomainFactory.ofLongs();
+            return (MemoryDomain<B>) MemoryDomains.longs();
         }
         if (base instanceof float[]) {
-            return (MemoryDomain<B>) DomainFactory.ofFloats();
+            return (MemoryDomain<B>) MemoryDomains.floats();
         }
         if (base instanceof double[]) {
-            return (MemoryDomain<B>) DomainFactory.ofDoubles();
+            return (MemoryDomain<B>) MemoryDomains.doubles();
         }
         if (base instanceof ByteBuffer byteBuffer) {
             return (MemoryDomain<B>)
-                    DomainFactory.ofByteBuffer(
-                            MemoryAllocatorFactory.ofByteBuffer(byteBuffer.isDirect()));
+                    MemoryDomains.ofByteBuffer(
+                            MemoryAllocators.newByteBuffer(byteBuffer.isDirect()));
         }
         if (base instanceof MemorySegment) {
             return (MemoryDomain<B>) Environment.nativeMemoryDomain();

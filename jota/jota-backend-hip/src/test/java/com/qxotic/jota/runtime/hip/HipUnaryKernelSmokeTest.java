@@ -8,9 +8,10 @@ import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryAccess;
+import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryDomain;
+import com.qxotic.jota.memory.MemoryDomains;
 import com.qxotic.jota.memory.MemoryView;
-import com.qxotic.jota.memory.internal.DomainFactory;
 import com.qxotic.jota.tensor.Tensor;
 import com.qxotic.jota.tensor.Tracer;
 import com.qxotic.jota.testutil.ConfiguredTestDevice;
@@ -24,7 +25,7 @@ class HipUnaryKernelSmokeTest {
         HipTestAssumptions.assumeHipReady();
 
         int n = 256;
-        MemoryDomain<MemorySegment> host = DomainFactory.ofMemorySegment();
+        MemoryDomain<MemorySegment> host = MemoryDomains.of(MemoryAllocators.newScopedArena());
         var hostMem = host.memoryAllocator().allocateMemory(DataType.FP32, n);
         MemoryView<MemorySegment> hostView =
                 MemoryView.of(hostMem, DataType.FP32, Layout.rowMajor(Shape.flat(n)));

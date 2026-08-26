@@ -12,8 +12,8 @@ import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryDomain;
-import com.qxotic.jota.memory.MemoryHelpers;
 import com.qxotic.jota.memory.MemoryView;
+import com.qxotic.jota.memory.MemoryViews;
 import com.qxotic.jota.testutil.ConfiguredTestDevice;
 import com.qxotic.jota.testutil.RunOnAllAvailableBackends;
 import com.qxotic.jota.testutil.TensorTestReads;
@@ -40,7 +40,7 @@ class ToOpTest {
     @Test
     void toReturnsSameInstanceOnSameDevice() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(domain, DataType.FP32, 4).view(Shape.of(4));
+                MemoryViews.arange(domain, DataType.FP32, 4).view(Shape.of(4));
         Tensor input = Tensor.of(view);
         assertSame(input, input.to(input.device()));
     }
@@ -48,7 +48,7 @@ class ToOpTest {
     @Test
     void toThrowsInsideTracingContext() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(domain, DataType.FP32, 4).view(Shape.of(4));
+                MemoryViews.arange(domain, DataType.FP32, 4).view(Shape.of(4));
         Tensor input = Tensor.of(view);
         assertThrows(
                 UnsupportedOperationException.class,

@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.impl.ShapeFactory;
-import com.qxotic.jota.memory.internal.MemoryViewFactory;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -15,7 +14,7 @@ class TestOperations extends AbstractMemoryTest {
     @MethodSource("domainsSupportingF32")
     <B> void testScalar(MemoryDomain<B> domain) {
         var allocator = domain.memoryAllocator();
-        MemoryView<B> view = MemoryViewFactory.allocate(allocator, DataType.FP32, Shape.scalar());
+        MemoryView<B> view = MemoryViews.allocate(allocator, DataType.FP32, Shape.scalar());
         assertEquals(DataType.FP32.byteSize(), view.memory().byteSize());
     }
 
@@ -24,7 +23,7 @@ class TestOperations extends AbstractMemoryTest {
     <B> void testMatrix(MemoryDomain<B> domain) {
         var allocator = domain.memoryAllocator();
         Shape shape = ShapeFactory.of(3, 5);
-        MemoryView<B> view = MemoryViewFactory.allocate(allocator, DataType.FP32, shape);
+        MemoryView<B> view = MemoryViews.allocate(allocator, DataType.FP32, shape);
         assertEquals(DataType.FP32.byteSizeFor(shape), view.memory().byteSize());
     }
 }

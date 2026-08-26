@@ -9,11 +9,11 @@ import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
+import com.qxotic.jota.memory.Memories;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryDomain;
+import com.qxotic.jota.memory.MemoryDomains;
 import com.qxotic.jota.memory.MemoryView;
-import com.qxotic.jota.memory.internal.DomainFactory;
-import com.qxotic.jota.memory.internal.MemoryFactory;
 import com.qxotic.jota.tensor.Tensor;
 import java.io.IOException;
 import java.io.InputStream;
@@ -122,10 +122,9 @@ final class MnistMlp {
         @SuppressWarnings("unchecked")
         MemoryView<Object> srcView = (MemoryView<Object>) src;
 
-        MemoryDomain<float[]> floatDomain = DomainFactory.ofFloats();
+        MemoryDomain<float[]> floatDomain = MemoryDomains.floats();
         MemoryView<float[]> dstView =
-                MemoryView.of(
-                        MemoryFactory.ofFloats(out), DataType.FP32, Layout.rowMajor(src.shape()));
+                MemoryView.of(Memories.of(out), DataType.FP32, Layout.rowMajor(src.shape()));
 
         MemoryDomain.copy(srcDomain, srcView, floatDomain, dstView);
         return out;
@@ -289,10 +288,7 @@ final class MnistMlp {
                             expectedBytes,
                             arena);
             MemoryView<MemorySegment> view =
-                    MemoryView.of(
-                            MemoryFactory.ofMemorySegment(mapped),
-                            DataType.FP32,
-                            Layout.rowMajor(shape));
+                    MemoryView.of(Memories.of(mapped), DataType.FP32, Layout.rowMajor(shape));
             Tensor hostMapped = Tensor.of(view);
             return hostMapped;
         }

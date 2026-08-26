@@ -11,8 +11,8 @@ import com.qxotic.jota.ir.tir.TIRGraph;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryDomain;
-import com.qxotic.jota.memory.MemoryHelpers;
 import com.qxotic.jota.memory.MemoryView;
+import com.qxotic.jota.memory.MemoryViews;
 import com.qxotic.jota.tensor.Tensor;
 import com.qxotic.jota.tensor.TensorTracing;
 import com.qxotic.jota.tensor.Tracer;
@@ -32,7 +32,7 @@ class LIRInterpreterTraceTest {
     void interpretsTracedGelu() {
         MemoryDomain<MemorySegment> domain = Environment.nativeMemoryDomain();
         MemoryView<MemorySegment> input =
-                MemoryHelpers.arange(domain, DataType.FP32, 4).view(Shape.flat(4));
+                MemoryViews.arange(domain, DataType.FP32, 4).view(Shape.flat(4));
         Tensor inputTensor = Tensor.of(input);
 
         Tensor traced = Tracer.trace(inputTensor, Tensor::gelu);

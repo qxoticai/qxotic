@@ -2,9 +2,6 @@ package com.qxotic.jota.memory;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 
-import com.qxotic.jota.memory.internal.DomainFactory;
-import com.qxotic.jota.memory.internal.MemoryAllocatorFactory;
-import com.qxotic.jota.memory.internal.MemoryFactory;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.ByteBuffer;
@@ -21,9 +18,9 @@ class MemoryOperationsFillTest {
         return Stream.concat(
                 AbstractMemoryTest.onHeapDomains(),
                 Stream.of(
-                        DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
-                        DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
-                        DomainFactory.ofMemorySegment()));
+                        MemoryDomains.ofByteBuffer(MemoryAllocators.newByteBuffer(false)),
+                        MemoryDomains.ofByteBuffer(MemoryAllocators.newByteBuffer(true)),
+                        MemoryDomains.of(MemoryAllocators.newScopedArena())));
     }
 
     @ParameterizedTest
@@ -35,7 +32,7 @@ class MemoryOperationsFillTest {
                 fill.apply(domain.memoryOperations(), memory);
 
                 Memory<MemorySegment> nativeCopy =
-                        MemoryFactory.ofMemorySegment(MemorySegment.ofArray(new byte[BYTE_SIZE]));
+                        Memories.of(MemorySegment.ofArray(new byte[BYTE_SIZE]));
                 domain.memoryOperations().copyToNative(memory, 0, nativeCopy, 0, BYTE_SIZE);
 
                 assertArrayEquals(

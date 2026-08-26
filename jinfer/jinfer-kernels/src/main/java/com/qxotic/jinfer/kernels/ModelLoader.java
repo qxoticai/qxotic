@@ -9,9 +9,9 @@ import com.qxotic.jinfer.Views;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
+import com.qxotic.jota.memory.Memories;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryView;
-import com.qxotic.jota.memory.internal.MemoryFactory;
 import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.lang.foreign.Arena;
@@ -81,7 +81,7 @@ public final class ModelLoader {
                         arena);
         // ONE jota Memory over the whole mapping; each tensor is a byte-offset view into it
         // (replaces FloatTensor.create over per-tensor asSlice segments).
-        Memory<MemorySegment> memory = MemoryFactory.ofMemorySegment(tensorData);
+        Memory<MemorySegment> memory = Memories.of(tensorData);
         Map<String, MemoryView<MemorySegment>> tensorViews = HashMap.newHashMap(tensors.size());
         for (TensorEntry tensor : tensors) {
             DataType dtype =

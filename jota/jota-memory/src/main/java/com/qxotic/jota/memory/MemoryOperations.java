@@ -1,6 +1,5 @@
 package com.qxotic.jota.memory;
 
-import com.qxotic.jota.memory.internal.MemoryFactory;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 
@@ -105,7 +104,7 @@ public interface MemoryOperations<B> {
         long bufferSize = computeBufferSize(byteSize, copyGranularity);
         try (var arena = Arena.ofConfined()) {
             MemorySegment memorySegment = arena.allocate(bufferSize, 4 << 10);
-            Memory<MemorySegment> memory = MemoryFactory.ofMemorySegment(memorySegment);
+            Memory<MemorySegment> memory = Memories.of(memorySegment);
             copy(srcOps, src, srcByteOffset, dstOps, dst, dstByteOffset, byteSize, memory);
         }
     }

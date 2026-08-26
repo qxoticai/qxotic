@@ -19,7 +19,7 @@ class MemoryViewToStringTest extends AbstractMemoryTest {
         Assumptions.assumeTrue(memoryAccess != null, "memory access required");
 
         Shape shape = Shape.of(2, 3);
-        MemoryView<B> view = MemoryHelpers.arange(domain, DataType.FP32, shape.size()).view(shape);
+        MemoryView<B> view = MemoryViews.arange(domain, DataType.FP32, shape.size()).view(shape);
 
         String text = view.toString();
         assertTrue(text.startsWith("MemoryView{"));
@@ -35,7 +35,7 @@ class MemoryViewToStringTest extends AbstractMemoryTest {
         Assumptions.assumeTrue(memoryAccess != null, "memory access required");
 
         Shape shape = Shape.of(10, 10);
-        MemoryView<B> view = MemoryHelpers.arange(domain, DataType.FP32, shape.size()).view(shape);
+        MemoryView<B> view = MemoryViews.arange(domain, DataType.FP32, shape.size()).view(shape);
 
         String text = view.toString(memoryAccess);
         assertTrue(text.contains("..."));
@@ -48,7 +48,7 @@ class MemoryViewToStringTest extends AbstractMemoryTest {
         Assumptions.assumeTrue(memoryAccess != null, "memory access required");
 
         Shape shape = Shape.of(2, 2);
-        MemoryView<B> view = MemoryHelpers.arange(domain, DataType.FP32, shape.size()).view(shape);
+        MemoryView<B> view = MemoryViews.arange(domain, DataType.FP32, shape.size()).view(shape);
 
         String text = view.toString(memoryAccess, ViewPrintOptions.valuesOnly());
         assertFalse(text.contains("MemoryView{"));
@@ -62,7 +62,7 @@ class MemoryViewToStringTest extends AbstractMemoryTest {
         Assumptions.assumeTrue(memoryAccess != null, "memory access required");
 
         Shape shape = Shape.scalar();
-        MemoryView<B> view = MemoryHelpers.arange(domain, DataType.FP32, shape.size()).view(shape);
+        MemoryView<B> view = MemoryViews.arange(domain, DataType.FP32, shape.size()).view(shape);
 
         String text = view.toString(memoryAccess, ViewPrintOptions.valuesOnly());
         assertTrue(text.startsWith("["));
@@ -78,12 +78,12 @@ class MemoryViewToStringTest extends AbstractMemoryTest {
         Shape shape = Shape.scalar();
 
         // Test true
-        MemoryView<B> trueView = MemoryHelpers.full(domain, DataType.BOOL, shape, 1);
+        MemoryView<B> trueView = MemoryViews.full(domain, DataType.BOOL, shape, 1);
         String trueText = trueView.toString(memoryAccess, ViewPrintOptions.valuesOnly());
         assertTrue(trueText.contains("true"));
 
         // Test false
-        MemoryView<B> falseView = MemoryHelpers.full(domain, DataType.BOOL, shape, 0);
+        MemoryView<B> falseView = MemoryViews.full(domain, DataType.BOOL, shape, 0);
         String falseText = falseView.toString(memoryAccess, ViewPrintOptions.valuesOnly());
         assertTrue(falseText.contains("false"));
     }
@@ -96,7 +96,7 @@ class MemoryViewToStringTest extends AbstractMemoryTest {
 
         Shape shape = Shape.of(5);
         // Create array: [true, false, true, true, false]
-        MemoryView<B> view = MemoryHelpers.zeros(domain, DataType.BOOL, shape);
+        MemoryView<B> view = MemoryViews.zeros(domain, DataType.BOOL, shape);
         memoryAccess.writeByte(view.memory(), view.byteOffset() + 0, (byte) 1);
         memoryAccess.writeByte(view.memory(), view.byteOffset() + 1, (byte) 0);
         memoryAccess.writeByte(view.memory(), view.byteOffset() + 2, (byte) 1);
@@ -120,7 +120,7 @@ class MemoryViewToStringTest extends AbstractMemoryTest {
         // Create 2x3 array:
         // [[true, false, true],
         //  [false, true, false]]
-        MemoryView<B> view = MemoryHelpers.zeros(domain, DataType.BOOL, shape);
+        MemoryView<B> view = MemoryViews.zeros(domain, DataType.BOOL, shape);
         memoryAccess.writeByte(view.memory(), view.byteOffset() + 0, (byte) 1);
         memoryAccess.writeByte(view.memory(), view.byteOffset() + 1, (byte) 0);
         memoryAccess.writeByte(view.memory(), view.byteOffset() + 2, (byte) 1);
@@ -143,7 +143,7 @@ class MemoryViewToStringTest extends AbstractMemoryTest {
         Assumptions.assumeTrue(memoryAccess != null, "memory access required");
 
         Shape shape = Shape.of(3);
-        MemoryView<B> view = MemoryHelpers.ones(domain, DataType.BOOL, shape);
+        MemoryView<B> view = MemoryViews.ones(domain, DataType.BOOL, shape);
 
         String text = view.toString();
         assertTrue(text.startsWith("MemoryView{"));
@@ -158,7 +158,7 @@ class MemoryViewToStringTest extends AbstractMemoryTest {
         Assumptions.assumeTrue(memoryAccess != null, "memory access required");
 
         Shape shape = Shape.of(4);
-        MemoryView<B> view = MemoryHelpers.ones(domain, DataType.BOOL, shape);
+        MemoryView<B> view = MemoryViews.ones(domain, DataType.BOOL, shape);
 
         String text = view.toString(memoryAccess, ViewPrintOptions.valuesOnly());
         // Count occurrences of "true"
@@ -175,7 +175,7 @@ class MemoryViewToStringTest extends AbstractMemoryTest {
         Assumptions.assumeTrue(memoryAccess != null, "memory access required");
 
         Shape shape = Shape.of(4);
-        MemoryView<B> view = MemoryHelpers.zeros(domain, DataType.BOOL, shape);
+        MemoryView<B> view = MemoryViews.zeros(domain, DataType.BOOL, shape);
 
         String text = view.toString(memoryAccess, ViewPrintOptions.valuesOnly());
         // Count occurrences of "false"
@@ -192,7 +192,7 @@ class MemoryViewToStringTest extends AbstractMemoryTest {
         Assumptions.assumeTrue(memoryAccess != null, "memory access required");
 
         Shape shape = Shape.of(100);
-        MemoryView<B> view = MemoryHelpers.ones(domain, DataType.BOOL, shape);
+        MemoryView<B> view = MemoryViews.ones(domain, DataType.BOOL, shape);
 
         String text = view.toString(memoryAccess);
         // Should have elision marker

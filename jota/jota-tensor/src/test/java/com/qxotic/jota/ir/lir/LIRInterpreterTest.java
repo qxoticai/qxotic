@@ -9,8 +9,8 @@ import com.qxotic.jota.Shape;
 import com.qxotic.jota.ir.tir.BinaryOperator;
 import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryDomain;
-import com.qxotic.jota.memory.MemoryHelpers;
 import com.qxotic.jota.memory.MemoryView;
+import com.qxotic.jota.memory.MemoryViews;
 import com.qxotic.jota.runtime.ScalarArg;
 import java.lang.foreign.MemorySegment;
 import java.util.List;
@@ -22,10 +22,10 @@ class LIRInterpreterTest {
     void executesElementwiseAdd() {
         MemoryDomain<MemorySegment> domain = Environment.nativeMemoryDomain();
         MemoryView<MemorySegment> left =
-                MemoryHelpers.arange(domain, DataType.FP32, 4).view(Shape.flat(4));
+                MemoryViews.arange(domain, DataType.FP32, 4).view(Shape.flat(4));
         MemoryView<MemorySegment> right =
-                MemoryHelpers.full(domain, DataType.FP32, Shape.flat(4), 2.0f);
-        MemoryView<MemorySegment> out = MemoryHelpers.zeros(domain, DataType.FP32, Shape.flat(4));
+                MemoryViews.full(domain, DataType.FP32, Shape.flat(4), 2.0f);
+        MemoryView<MemorySegment> out = MemoryViews.zeros(domain, DataType.FP32, Shape.flat(4));
 
         LIRGraph.Builder builder = LIRGraph.builder();
         BufferRef leftBuf = builder.addContiguousInput(DataType.FP32, 4);
@@ -63,8 +63,8 @@ class LIRInterpreterTest {
     void executesReductionWithIterArgs() {
         MemoryDomain<MemorySegment> domain = Environment.nativeMemoryDomain();
         MemoryView<MemorySegment> input =
-                MemoryHelpers.arange(domain, DataType.FP32, 4).view(Shape.flat(4));
-        MemoryView<MemorySegment> out = MemoryHelpers.zeros(domain, DataType.FP32, Shape.flat(1));
+                MemoryViews.arange(domain, DataType.FP32, 4).view(Shape.flat(4));
+        MemoryView<MemorySegment> out = MemoryViews.zeros(domain, DataType.FP32, Shape.flat(1));
 
         LIRGraph.Builder builder = LIRGraph.builder();
         BufferRef inputBuf = builder.addContiguousInput(DataType.FP32, 4);
@@ -106,8 +106,8 @@ class LIRInterpreterTest {
     void supportsScalarInputs() {
         MemoryDomain<MemorySegment> domain = Environment.nativeMemoryDomain();
         MemoryView<MemorySegment> input =
-                MemoryHelpers.arange(domain, DataType.FP32, 3).view(Shape.flat(3));
-        MemoryView<MemorySegment> out = MemoryHelpers.zeros(domain, DataType.FP32, Shape.flat(3));
+                MemoryViews.arange(domain, DataType.FP32, 3).view(Shape.flat(3));
+        MemoryView<MemorySegment> out = MemoryViews.zeros(domain, DataType.FP32, Shape.flat(3));
 
         LIRGraph.Builder builder = LIRGraph.builder();
         BufferRef inputBuf = builder.addContiguousInput(DataType.FP32, 3);

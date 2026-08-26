@@ -1,6 +1,5 @@
 package com.qxotic.jota.memory;
 
-import com.qxotic.jota.memory.internal.MemoryFactory;
 import com.qxotic.jota.memory.internal.NativeMemoryFactory;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -118,7 +117,7 @@ final class StridedCopy {
             Arena arena, MemoryOperations<B> ops, MemoryView<B> view, boolean download) {
         long[] span = byteSpan(view);
         long bytes = span[1] - span[0];
-        Memory<MemorySegment> mem = MemoryFactory.ofMemorySegment(arena.allocate(bytes));
+        Memory<MemorySegment> mem = Memories.of(arena.allocate(bytes));
         if (download) {
             ops.copyToNative(view.memory(), span[0], mem, 0, bytes);
         }

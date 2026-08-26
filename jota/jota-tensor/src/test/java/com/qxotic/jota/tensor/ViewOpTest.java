@@ -9,8 +9,8 @@ import com.qxotic.jota.Shape;
 import com.qxotic.jota.Stride;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryDomain;
-import com.qxotic.jota.memory.MemoryHelpers;
 import com.qxotic.jota.memory.MemoryView;
+import com.qxotic.jota.memory.MemoryViews;
 import com.qxotic.jota.testutil.RunOnAllAvailableBackends;
 import com.qxotic.jota.testutil.TensorTestReads;
 import java.lang.foreign.MemorySegment;
@@ -30,7 +30,7 @@ class ViewOpTest {
     @Test
     void viewBasicReshape() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
+                MemoryViews.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
         Tensor input = Tensor.of(view);
 
         Tensor result = input.view(Shape.of(4, 3));
@@ -138,7 +138,7 @@ class ViewOpTest {
     @Test
     void viewFlatten() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(domain, DataType.FP32, 24).view(Shape.of(2, 3, 4));
+                MemoryViews.arange(domain, DataType.FP32, 24).view(Shape.of(2, 3, 4));
         Tensor input = Tensor.of(view);
 
         Tensor result = input.view(Shape.of(24));
@@ -149,7 +149,7 @@ class ViewOpTest {
     @Test
     void viewAddDimensions() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(domain, DataType.FP32, 12).view(Shape.of(12));
+                MemoryViews.arange(domain, DataType.FP32, 12).view(Shape.of(12));
         Tensor input = Tensor.of(view);
 
         Tensor result = input.view(Shape.of(2, 2, 3));
@@ -160,7 +160,7 @@ class ViewOpTest {
     @Test
     void viewWithSingletonDimensions() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(domain, DataType.FP32, 6).view(Shape.of(2, 3));
+                MemoryViews.arange(domain, DataType.FP32, 6).view(Shape.of(2, 3));
         Tensor input = Tensor.of(view);
 
         Tensor result = input.view(Shape.of(1, 2, 3, 1));
@@ -171,7 +171,7 @@ class ViewOpTest {
     @Test
     void viewSharesMemory() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
+                MemoryViews.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
         Tensor input = Tensor.of(view);
 
         Tensor result = input.view(Shape.of(4, 3));
@@ -183,7 +183,7 @@ class ViewOpTest {
     @Test
     void viewThrowsOnSizeMismatch() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
+                MemoryViews.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
         Tensor input = Tensor.of(view);
 
         IllegalArgumentException ex =
@@ -199,7 +199,7 @@ class ViewOpTest {
     @Test
     void viewTransposedCanFlatten() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
+                MemoryViews.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
         MemoryView<MemorySegment> transposed = view.transpose(0, 1);
         assertFalse(transposed.layout().isSuffixContiguous(0));
         Tensor input = Tensor.of(transposed);
@@ -218,7 +218,7 @@ class ViewOpTest {
     @Test
     void viewSlicedWithStride() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
+                MemoryViews.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
         MemoryView<MemorySegment> sliced = view.slice(1, 0, 4, 2);
         assertFalse(sliced.isRowMajorContiguous());
         Tensor input = Tensor.of(sliced);
@@ -233,7 +233,7 @@ class ViewOpTest {
     @Test
     void viewAllowsCompatibleNonContiguousReshape() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
+                MemoryViews.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
         MemoryView<MemorySegment> slicedRows = view.slice(0, 0, 3, 2);
         assertFalse(slicedRows.isRowMajorContiguous());
         Tensor input = Tensor.of(slicedRows);
@@ -245,7 +245,7 @@ class ViewOpTest {
 
     @Test
     void viewScalarToVector() {
-        MemoryView<MemorySegment> view = MemoryHelpers.arange(domain, DataType.FP32, 1);
+        MemoryView<MemorySegment> view = MemoryViews.arange(domain, DataType.FP32, 1);
         Tensor input = Tensor.of(view);
 
         Tensor result = input.view(Shape.of(1));
@@ -256,7 +256,7 @@ class ViewOpTest {
     @Test
     void viewPreservesDataType() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(domain, DataType.FP64, 6).view(Shape.of(2, 3));
+                MemoryViews.arange(domain, DataType.FP64, 6).view(Shape.of(2, 3));
         Tensor input = Tensor.of(view);
 
         Tensor result = input.view(Shape.of(3, 2));
@@ -477,7 +477,7 @@ class ViewOpTest {
     @Test
     void viewWithStridedSlice() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(domain, DataType.FP32, 12).view(Shape.of(4, 3));
+                MemoryViews.arange(domain, DataType.FP32, 12).view(Shape.of(4, 3));
 
         // Take every other row: rows 0 and 2
         MemoryView<MemorySegment> sliced = view.slice(0, 0, 4, 2); // shape (2, 3), stride (6, 1)
@@ -499,7 +499,7 @@ class ViewOpTest {
     @Test
     void viewWithColumnSlice() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
+                MemoryViews.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
 
         // Take every other column: columns 0 and 2
         MemoryView<MemorySegment> sliced = view.slice(1, 0, 4, 2); // shape (3, 2), stride (4, 2)
@@ -601,7 +601,7 @@ class ViewOpTest {
     @Test
     void viewThrowsWhenNewShapeTooLarge() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
+                MemoryViews.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
         Tensor input = Tensor.of(view);
 
         IllegalArgumentException ex =
@@ -612,7 +612,7 @@ class ViewOpTest {
     @Test
     void viewThrowsWhenNewShapeTooSmall() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
+                MemoryViews.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
         Tensor input = Tensor.of(view);
 
         IllegalArgumentException ex =
@@ -623,7 +623,7 @@ class ViewOpTest {
     @Test
     void viewThrowsWhenFlatteningToWrongSize() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
+                MemoryViews.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
         Tensor input = Tensor.of(view);
 
         IllegalArgumentException ex =
@@ -634,7 +634,7 @@ class ViewOpTest {
     @Test
     void viewThrowsWithNestedShapeSizeMismatch() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(domain, DataType.FP32, 8).view(Shape.of(2, 4));
+                MemoryViews.arange(domain, DataType.FP32, 8).view(Shape.of(2, 4));
         Tensor input = Tensor.of(view);
 
         // 8 elements -> nested shape with 12 elements

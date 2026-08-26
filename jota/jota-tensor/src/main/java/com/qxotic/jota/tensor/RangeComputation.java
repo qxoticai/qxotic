@@ -4,8 +4,8 @@ import com.qxotic.jota.DataType;
 import com.qxotic.jota.Device;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.memory.MemoryDomain;
-import com.qxotic.jota.memory.MemoryHelpers;
 import com.qxotic.jota.memory.MemoryView;
+import com.qxotic.jota.memory.MemoryViews;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -33,6 +33,6 @@ record RangeComputation(long count, Device device) implements LazyComputation {
     @Override
     public MemoryView<?> execute() {
         MemoryDomain<?> memoryDomain = Environment.memoryDomainFor(device);
-        return MemoryHelpers.arange(memoryDomain, DataType.I64, count);
+        return MemoryViews.arange(memoryDomain, DataType.I64, count);
     }
 }

@@ -4,12 +4,14 @@ import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.ContextModel;
 import com.qxotic.jinfer.Reranker;
 import com.qxotic.jinfer.Views;
+import com.qxotic.jota.memory.Memories;
 import com.qxotic.jota.memory.Memory;
+import com.qxotic.jota.memory.MemoryAllocators;
+import com.qxotic.jota.memory.MemoryDomains;
 import com.qxotic.jota.memory.MemoryOperations;
 import com.qxotic.jota.memory.MemoryView;
-import com.qxotic.jota.memory.internal.MemoryFactory;
-import com.qxotic.jota.memory.internal.NativeMemoryFactory;
 import com.qxotic.toknroll.Tokenizer;
+import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -37,10 +39,10 @@ import java.util.function.DoubleConsumer;
  *
  * <p>Buffers: {@link Lfm2#colbertRow} hands out a REUSED per-state view, so query rows (retained
  * across all documents) are copied out the jota way - the row's {@code float[]} wrapped by {@code
- * MemoryFactory.ofFloats}, filled by a {@code MemoryOperations.copy} bridge. Document rows are
- * consumed immediately, so they are never copied: each is projected ONCE and dotted against every
- * query row straight from the reused buffer (the loop inversion that lets the old recipe's
- * per-document {@code float[][]} allocation go away).
+ * Memories.of}, filled by a {@code MemoryOperations.copy} bridge. Document rows are consumed
+ * immediately, so they are never copied: each is projected ONCE and dotted against every query row
+ * straight from the reused buffer (the loop inversion that lets the old recipe's per-document
+ * {@code float[][]} allocation go away).
  */
 public final class Lfm2Colbert implements Reranker<Lfm2.State> {
 
@@ -165,14 +167,14 @@ public final class Lfm2Colbert implements Reranker<Lfm2.State> {
     }
 
     private static final MemoryOperations<MemorySegment> NATIVE_OPS =
-            NativeMemoryFactory.memoryOperations();
+            MemoryDomains.of(MemoryAllocators.ofArena(Arena.global())).memoryOperations();
 
     /**
      * One projected+normalized row, copied OUT of the reused per-state buffer. The destination
      * {@code float[]} is wrapped as a heap segment ({@code MemorySegment.ofArray} → {@code
-     * MemoryFactory.ofMemorySegment}), so the native domain's own {@code copy} bridges native→heap
-     * - the jota idiom, without touching {@code Environment} (its global init requires a native
-     * backend runtime that this model does not otherwise need).
+     * Memories.of}), so the native domain's own {@code copy} bridges native→heap - the jota idiom,
+     * without touching {@code Environment} (its global init requires a native backend runtime that
+     * this model does not otherwise need).
      */
     private float[] copyRow(Lfm2.State state, int row) {
         MemoryView<?> view = model.colbertRow(state, row);
@@ -180,7 +182,7 @@ public final class Lfm2Colbert implements Reranker<Lfm2.State> {
         int outDim = model.configuration().embeddingLengthOut();
         float[] dst = new float[outDim];
         MemoryView<MemorySegment> src = Views.castToSegmentBacked(view, "colbertRow");
-        Memory<MemorySegment> dstMem = MemoryFactory.ofMemorySegment(MemorySegment.ofArray(dst));
+        Memory<MemorySegment> dstMem = Memories.of(MemorySegment.ofArray(dst));
         // the offset is the VIEW's byteOffset within its Memory - NOT Raw.vbase (that one is an
         // absolute address into Segments' reinterpreted global segment, for raw kernel reads)
         NATIVE_OPS.copy(src.memory(), src.byteOffset(), dstMem, 0, (long) outDim * Float.BYTES);

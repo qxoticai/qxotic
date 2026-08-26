@@ -7,8 +7,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.DeviceType;
-import com.qxotic.jota.memory.internal.MemoryAllocatorFactory;
-import com.qxotic.jota.memory.internal.MemoryFactory;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.util.stream.Stream;
@@ -21,7 +19,7 @@ class MemoryTest {
 
     @Test
     void testAllocate() {
-        var allocator = MemoryAllocatorFactory.ofPanama();
+        var allocator = MemoryAllocators.newScopedArena();
         DataType dataType = DataType.FP32;
         long totalBytes = dataType.byteSizeFor(3 * 5);
         try (var memory = allocator.allocateMemory(totalBytes)) {
@@ -34,7 +32,7 @@ class MemoryTest {
     void testPanamaMemoryBase() {
         try (var arena = Arena.ofShared()) {
             MemorySegment memorySegment = arena.allocate(Float.BYTES * 16);
-            Memory<MemorySegment> memory = MemoryFactory.ofMemorySegment(memorySegment);
+            Memory<MemorySegment> memory = Memories.of(memorySegment);
             assertEquals(memorySegment.byteSize(), memory.byteSize());
             assertSame(memorySegment, memory.base());
         }
@@ -49,13 +47,13 @@ class MemoryTest {
         float[] floats = {1, 2};
         double[] doubles = {1, 2};
         return Stream.of(
-                Arguments.of(MemoryFactory.ofBooleans(booleans), booleans, Byte.BYTES),
-                Arguments.of(MemoryFactory.ofBytes(bytes), bytes, Byte.BYTES),
-                Arguments.of(MemoryFactory.ofShorts(shorts), shorts, Short.BYTES),
-                Arguments.of(MemoryFactory.ofInts(ints), ints, Integer.BYTES),
-                Arguments.of(MemoryFactory.ofLongs(longs), longs, Long.BYTES),
-                Arguments.of(MemoryFactory.ofFloats(floats), floats, Float.BYTES),
-                Arguments.of(MemoryFactory.ofDoubles(doubles), doubles, Double.BYTES));
+                Arguments.of(Memories.of(booleans), booleans, Byte.BYTES),
+                Arguments.of(Memories.of(bytes), bytes, Byte.BYTES),
+                Arguments.of(Memories.of(shorts), shorts, Short.BYTES),
+                Arguments.of(Memories.of(ints), ints, Integer.BYTES),
+                Arguments.of(Memories.of(longs), longs, Long.BYTES),
+                Arguments.of(Memories.of(floats), floats, Float.BYTES),
+                Arguments.of(Memories.of(doubles), doubles, Double.BYTES));
     }
 
     @ParameterizedTest
@@ -70,7 +68,7 @@ class MemoryTest {
 
     @Test
     void booleanMemoryOnlySupportsBooleanValues() {
-        Memory<boolean[]> memory = MemoryFactory.ofBooleans(false);
+        Memory<boolean[]> memory = Memories.of(false);
         assertTrue(memory.supportsDataType(DataType.BOOL));
         assertFalse(memory.supportsDataType(DataType.I8));
     }

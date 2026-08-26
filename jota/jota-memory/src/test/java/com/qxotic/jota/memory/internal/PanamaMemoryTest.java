@@ -3,6 +3,7 @@ package com.qxotic.jota.memory.internal;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.qxotic.jota.DeviceType;
+import com.qxotic.jota.memory.Memories;
 import com.qxotic.jota.memory.Memory;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -15,7 +16,7 @@ class PanamaMemoryTest {
     void testOfMemorySegment() {
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment segment = arena.allocate(100);
-            Memory<MemorySegment> memory = MemoryFactory.ofMemorySegment(segment);
+            Memory<MemorySegment> memory = Memories.of(segment);
             assertSame(segment, memory.base());
             assertEquals(100, memory.byteSize());
             assertFalse(memory.isReadOnly());
@@ -26,8 +27,7 @@ class PanamaMemoryTest {
     @Test
     void testOfBuffer() {
         ByteBuffer buffer = ByteBuffer.allocate(40);
-        Memory<MemorySegment> memory =
-                MemoryFactory.ofMemorySegment(MemorySegment.ofBuffer(buffer));
+        Memory<MemorySegment> memory = Memories.of(MemorySegment.ofBuffer(buffer));
         assertEquals(40, memory.byteSize());
         assertFalse(memory.isReadOnly());
     }
@@ -36,23 +36,21 @@ class PanamaMemoryTest {
     void testReadOnlySegment() {
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment segment = arena.allocate(40).asReadOnly();
-            Memory<MemorySegment> memory = MemoryFactory.ofMemorySegment(segment);
+            Memory<MemorySegment> memory = Memories.of(segment);
             assertTrue(memory.isReadOnly());
         }
     }
 
     @Test
     void testNullMemorySegment() {
-        assertThrows(
-                NullPointerException.class,
-                () -> MemoryFactory.ofMemorySegment((MemorySegment) null));
+        assertThrows(NullPointerException.class, () -> Memories.of((MemorySegment) null));
     }
 
     @Test
     void testToString() {
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment segment = arena.allocate(40);
-            Memory<MemorySegment> memory = MemoryFactory.ofMemorySegment(segment);
+            Memory<MemorySegment> memory = Memories.of(segment);
             String str = memory.toString();
             assertTrue(str.contains("byteSize=40"));
             assertFalse(str.contains("readOnly=true")); // rw

@@ -9,8 +9,6 @@ import com.qxotic.jota.Device;
 import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
-import com.qxotic.jota.memory.internal.DomainFactory;
-import com.qxotic.jota.memory.internal.MemoryFactory;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.lang.reflect.InvocationTargetException;
@@ -28,7 +26,7 @@ class MemoryCopyTest extends AbstractMemoryTest {
 
     @BeforeAll
     static void setupDomain() {
-        domain = DomainFactory.ofMemorySegment();
+        domain = MemoryDomains.of(MemoryAllocators.newScopedArena());
     }
 
     @Test
@@ -134,8 +132,7 @@ class MemoryCopyTest extends AbstractMemoryTest {
 
     private static void copyBytes(TestByteDomain srcDomain, TestByteDomain dstDomain) {
         byte[] values = {1, 2, 3, 4};
-        MemoryView<byte[]> src =
-                MemoryView.rowMajor(MemoryFactory.ofBytes(values), DataType.I8, Shape.of(4));
+        MemoryView<byte[]> src = MemoryView.rowMajor(Memories.of(values), DataType.I8, Shape.of(4));
         MemoryView<byte[]> dst = allocate(dstDomain, DataType.I8, Shape.of(4));
 
         MemoryDomain.copy(srcDomain, src, dstDomain, dst);
@@ -145,7 +142,7 @@ class MemoryCopyTest extends AbstractMemoryTest {
 
     @SuppressWarnings("unchecked")
     private static MemoryOperations<byte[]> forwardingByteOperations() {
-        MemoryOperations<byte[]> delegate = DomainFactory.ofBytes().memoryOperations();
+        MemoryOperations<byte[]> delegate = MemoryDomains.bytes().memoryOperations();
         return (MemoryOperations<byte[]>)
                 Proxy.newProxyInstance(
                         MemoryOperations.class.getClassLoader(),
@@ -170,17 +167,17 @@ class MemoryCopyTest extends AbstractMemoryTest {
 
         @Override
         public Device device() {
-            return DomainFactory.ofBytes().device();
+            return MemoryDomains.bytes().device();
         }
 
         @Override
         public MemoryAllocator<byte[]> memoryAllocator() {
-            return DomainFactory.ofBytes().memoryAllocator();
+            return MemoryDomains.bytes().memoryAllocator();
         }
 
         @Override
         public MemoryAccess<byte[]> directAccess() {
-            return DomainFactory.ofBytes().directAccess();
+            return MemoryDomains.bytes().directAccess();
         }
 
         @Override
@@ -205,8 +202,8 @@ class MemoryCopyTest extends AbstractMemoryTest {
     private static <B> MemoryView<B> range(MemoryDomain<B> domain, DataType dataType, Shape shape) {
         MemoryView<B> flat =
                 dataType == DataType.BOOL
-                        ? MemoryHelpers.full(domain, dataType, shape.size(), 1)
-                        : MemoryHelpers.arange(domain, dataType, shape.size());
+                        ? MemoryViews.full(domain, dataType, shape.size(), 1)
+                        : MemoryViews.arange(domain, dataType, shape.size());
         return flat.view(shape);
     }
 
