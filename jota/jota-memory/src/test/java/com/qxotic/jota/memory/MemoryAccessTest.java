@@ -1,6 +1,8 @@
 package com.qxotic.jota.memory;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Layout;
@@ -53,5 +55,20 @@ public class MemoryAccessTest {
                 MemoryView.of(memory, DataType.I64, Layout.of(Shape.of(10, 10), Stride.of(0, 0)));
         long l = domain.directAccess().readByte(view.memory(), view.byteOffset());
         System.out.println(l);
+    }
+
+    @Test
+    void booleanMemoryIsByteAddressableOnly() {
+        Memory<boolean[]> memory = MemoryFactory.ofBooleans(new boolean[4]);
+        MemoryAccess<boolean[]> access = MemoryAccessFactory.ofBooleans();
+        access.writeByte(memory, 1, (byte) 7); // any non-zero byte is true, stored as exactly 1
+        assertEquals(1, access.readByte(memory, 1));
+        assertTrue(memory.base()[1]);
+        assertThrows(
+                UnsupportedOperationException.class, () -> access.writeInt(memory, 0, 0x01010101));
+        assertThrows(
+                UnsupportedOperationException.class, () -> access.writeShort(memory, 0, (short) 1));
+        assertThrows(UnsupportedOperationException.class, () -> access.readLong(memory, 0));
+        assertThrows(UnsupportedOperationException.class, () -> access.readFloat(memory, 0));
     }
 }

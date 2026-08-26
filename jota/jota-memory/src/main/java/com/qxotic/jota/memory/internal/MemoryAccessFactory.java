@@ -9,6 +9,10 @@ public class MemoryAccessFactory {
         // no instances
     }
 
+    public static MemoryAccess<boolean[]> ofBooleans() {
+        return BooleansMemoryAccess.instance();
+    }
+
     public static MemoryAccess<float[]> ofFloats() {
         return FloatsMemoryAccess.instance();
     }

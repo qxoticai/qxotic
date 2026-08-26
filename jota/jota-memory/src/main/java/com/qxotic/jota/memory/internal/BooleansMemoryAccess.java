@@ -5,10 +5,14 @@ import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryAccessChecks;
 import sun.misc.Unsafe;
 
+/**
+ * A {@code boolean[]} only holds BOOL (see {@link ArrayMemory#supportsDataType}), so only byte
+ * access is defined: the JVM leaves a boolean holding a value other than 0/1 undefined, which is
+ * what any wider Unsafe write would create.
+ */
 final class BooleansMemoryAccess implements MemoryAccess<boolean[]> {
 
     private static final Unsafe UNSAFE = UnsafeAccess.get();
-
     private static final BooleansMemoryAccess INSTANCE = new BooleansMemoryAccess();
 
     public static MemoryAccess<boolean[]> instance() {
@@ -26,36 +30,6 @@ final class BooleansMemoryAccess implements MemoryAccess<boolean[]> {
     }
 
     @Override
-    public short readShort(Memory<boolean[]> memory, long byteOffset) {
-        MemoryAccessChecks.checkBounds(memory, byteOffset, Short.BYTES);
-        return UNSAFE.getShort(memory.base(), Unsafe.ARRAY_BOOLEAN_BASE_OFFSET + byteOffset);
-    }
-
-    @Override
-    public int readInt(Memory<boolean[]> memory, long byteOffset) {
-        MemoryAccessChecks.checkBounds(memory, byteOffset, Integer.BYTES);
-        return UNSAFE.getInt(memory.base(), Unsafe.ARRAY_BOOLEAN_BASE_OFFSET + byteOffset);
-    }
-
-    @Override
-    public float readFloat(Memory<boolean[]> memory, long byteOffset) {
-        MemoryAccessChecks.checkBounds(memory, byteOffset, Float.BYTES);
-        return UNSAFE.getFloat(memory.base(), Unsafe.ARRAY_BOOLEAN_BASE_OFFSET + byteOffset);
-    }
-
-    @Override
-    public long readLong(Memory<boolean[]> memory, long byteOffset) {
-        MemoryAccessChecks.checkBounds(memory, byteOffset, Long.BYTES);
-        return UNSAFE.getLong(memory.base(), Unsafe.ARRAY_BOOLEAN_BASE_OFFSET + byteOffset);
-    }
-
-    @Override
-    public double readDouble(Memory<boolean[]> memory, long byteOffset) {
-        MemoryAccessChecks.checkBounds(memory, byteOffset, Double.BYTES);
-        return UNSAFE.getDouble(memory.base(), Unsafe.ARRAY_BOOLEAN_BASE_OFFSET + byteOffset);
-    }
-
-    @Override
     public void writeByte(Memory<boolean[]> memory, long byteOffset, byte value) {
         MemoryAccessChecks.checkWriteable(memory);
         MemoryAccessChecks.checkBounds(memory, byteOffset, Byte.BYTES);
@@ -63,37 +37,32 @@ final class BooleansMemoryAccess implements MemoryAccess<boolean[]> {
     }
 
     @Override
+    public short readShort(Memory<boolean[]> memory, long byteOffset) {
+        throw new UnsupportedOperationException("boolean[] memory is byte-addressable only");
+    }
+
+    @Override
+    public int readInt(Memory<boolean[]> memory, long byteOffset) {
+        throw new UnsupportedOperationException("boolean[] memory is byte-addressable only");
+    }
+
+    @Override
+    public long readLong(Memory<boolean[]> memory, long byteOffset) {
+        throw new UnsupportedOperationException("boolean[] memory is byte-addressable only");
+    }
+
+    @Override
     public void writeShort(Memory<boolean[]> memory, long byteOffset, short value) {
-        MemoryAccessChecks.checkWriteable(memory);
-        MemoryAccessChecks.checkBounds(memory, byteOffset, Short.BYTES);
-        UNSAFE.putShort(memory.base(), Unsafe.ARRAY_BOOLEAN_BASE_OFFSET + byteOffset, value);
+        throw new UnsupportedOperationException("boolean[] memory is byte-addressable only");
     }
 
     @Override
     public void writeInt(Memory<boolean[]> memory, long byteOffset, int value) {
-        MemoryAccessChecks.checkWriteable(memory);
-        MemoryAccessChecks.checkBounds(memory, byteOffset, Integer.BYTES);
-        UNSAFE.putInt(memory.base(), Unsafe.ARRAY_BOOLEAN_BASE_OFFSET + byteOffset, value);
-    }
-
-    @Override
-    public void writeFloat(Memory<boolean[]> memory, long byteOffset, float value) {
-        MemoryAccessChecks.checkWriteable(memory);
-        MemoryAccessChecks.checkBounds(memory, byteOffset, Float.BYTES);
-        UNSAFE.putFloat(memory.base(), Unsafe.ARRAY_BOOLEAN_BASE_OFFSET + byteOffset, value);
+        throw new UnsupportedOperationException("boolean[] memory is byte-addressable only");
     }
 
     @Override
     public void writeLong(Memory<boolean[]> memory, long byteOffset, long value) {
-        MemoryAccessChecks.checkWriteable(memory);
-        MemoryAccessChecks.checkBounds(memory, byteOffset, Long.BYTES);
-        UNSAFE.putLong(memory.base(), Unsafe.ARRAY_BOOLEAN_BASE_OFFSET + byteOffset, value);
-    }
-
-    @Override
-    public void writeDouble(Memory<boolean[]> memory, long byteOffset, double value) {
-        MemoryAccessChecks.checkWriteable(memory);
-        MemoryAccessChecks.checkBounds(memory, byteOffset, Double.BYTES);
-        UNSAFE.putDouble(memory.base(), Unsafe.ARRAY_BOOLEAN_BASE_OFFSET + byteOffset, value);
+        throw new UnsupportedOperationException("boolean[] memory is byte-addressable only");
     }
 }
