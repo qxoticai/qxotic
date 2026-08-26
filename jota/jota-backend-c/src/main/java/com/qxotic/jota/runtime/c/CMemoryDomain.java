@@ -11,6 +11,11 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 
 final class CMemoryDomain implements MemoryDomain<MemorySegment> {
+
+    /** Host-side services (access, operations); the global arena is never allocated from here. */
+    private static final MemoryDomain<MemorySegment> HOST =
+            MemoryDomains.of(MemoryAllocators.ofArena(Arena.global()));
+
     private final Device device;
     private final MemoryAllocator<MemorySegment> allocator;
 
@@ -31,12 +36,12 @@ final class CMemoryDomain implements MemoryDomain<MemorySegment> {
 
     @Override
     public MemoryAccess<MemorySegment> directAccess() {
-        return MemoryDomains.of(MemoryAllocators.ofArena(Arena.global())).directAccess();
+        return HOST.directAccess();
     }
 
     @Override
     public MemoryOperations<MemorySegment> memoryOperations() {
-        return MemoryDomains.of(MemoryAllocators.ofArena(Arena.global())).memoryOperations();
+        return HOST.memoryOperations();
     }
 
     @Override

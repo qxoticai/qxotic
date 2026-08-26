@@ -7,7 +7,7 @@ import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
-import com.qxotic.jota.memory.ScopedMemoryAllocatorArena;
+import com.qxotic.jota.memory.ScopedArena;
 import java.lang.foreign.MemorySegment;
 import java.util.HashMap;
 import java.util.List;
@@ -15,13 +15,13 @@ import java.util.Map;
 
 public final class TIREvalContext implements AutoCloseable {
 
-    private final ScopedMemoryAllocatorArena<MemorySegment> arena;
+    private final ScopedArena<MemorySegment> arena;
     private final Map<Integer, MemoryView<MemorySegment>> inputMap;
     private final Map<TIRNode, MemoryView<MemorySegment>> resultCache;
     private final MemoryAccess<MemorySegment> memAccess;
 
     private TIREvalContext(
-            ScopedMemoryAllocatorArena<MemorySegment> arena,
+            ScopedArena<MemorySegment> arena,
             Map<Integer, MemoryView<MemorySegment>> inputMap,
             Map<TIRNode, MemoryView<MemorySegment>> resultCache,
             MemoryAccess<MemorySegment> memAccess) {
@@ -40,7 +40,7 @@ public final class TIREvalContext implements AutoCloseable {
 
         MemoryAccess<MemorySegment> memAccess =
                 (MemoryAccess<MemorySegment>) memoryDomain.directAccess();
-        ScopedMemoryAllocatorArena<MemorySegment> arena = MemoryAllocators.newScopedArena();
+        ScopedArena<MemorySegment> arena = MemoryAllocators.newScopedArena();
 
         return new TIREvalContext(arena, inputMap, new HashMap<>(), memAccess);
     }

@@ -2,7 +2,7 @@ package com.qxotic.jota.memory.internal;
 
 import com.qxotic.jota.memory.MemoryAllocator;
 import com.qxotic.jota.memory.MemoryArena;
-import com.qxotic.jota.memory.ScopedMemoryAllocatorArena;
+import com.qxotic.jota.memory.ScopedArena;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;
@@ -60,7 +60,7 @@ public final class MemoryAllocatorFactory {
         return ByteBufferAllocator.create(direct);
     }
 
-    public static ScopedMemoryAllocatorArena<MemorySegment> newPanamaArena() {
+    public static ScopedArena<MemorySegment> newPanamaArena() {
         return NativeMemoryFactory.createArena();
     }
 

@@ -20,6 +20,11 @@ import java.util.List;
 import java.util.Map;
 
 final class RandomComputation implements LazyComputation {
+
+    /** Host-side services (access, operations); the global arena is never allocated from here. */
+    private static final MemoryDomain<MemorySegment> HOST =
+            MemoryDomains.of(MemoryAllocators.ofArena(Arena.global()));
+
     private final Shape shape;
     private final DataType dtype;
     private final Device device;
@@ -79,8 +84,7 @@ final class RandomComputation implements LazyComputation {
             MemoryDomain<B> memoryDomain, float[] data, Shape shape) {
         Memory<B> dst = memoryDomain.memoryAllocator().allocateMemory(DataType.FP32, data.length);
         Memory<MemorySegment> src = Memories.of(MemorySegment.ofArray(data));
-        MemoryOperations<MemorySegment> srcOps =
-                MemoryDomains.of(MemoryAllocators.ofArena(Arena.global())).memoryOperations();
+        MemoryOperations<MemorySegment> srcOps = HOST.memoryOperations();
         MemoryOperations.copy(
                 srcOps,
                 src,
@@ -96,8 +100,7 @@ final class RandomComputation implements LazyComputation {
             MemoryDomain<B> memoryDomain, double[] data, Shape shape) {
         Memory<B> dst = memoryDomain.memoryAllocator().allocateMemory(DataType.FP64, data.length);
         Memory<MemorySegment> src = Memories.of(MemorySegment.ofArray(data));
-        MemoryOperations<MemorySegment> srcOps =
-                MemoryDomains.of(MemoryAllocators.ofArena(Arena.global())).memoryOperations();
+        MemoryOperations<MemorySegment> srcOps = HOST.memoryOperations();
         MemoryOperations.copy(
                 srcOps,
                 src,
