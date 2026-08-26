@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.qxotic.jinfer.Views;
+import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -59,19 +60,15 @@ class ConvolutionsTest {
         int rows = 3, channels = 2, kernel = 3;
         try (Arena arena = Arena.ofConfined()) {
             MemoryView<MemorySegment> input =
-                    Views.allocateF32(
-                            new com.qxotic.jinfer.PanamaMemoryArena(arena), rows, channels);
+                    Views.allocateF32(MemoryAllocators.ofArena(arena), rows, channels);
             MemoryView<MemorySegment> taps =
-                    Views.allocateF32(
-                            new com.qxotic.jinfer.PanamaMemoryArena(arena), channels, kernel);
+                    Views.allocateF32(MemoryAllocators.ofArena(arena), channels, kernel);
             MemoryView<MemorySegment> bias =
-                    Views.allocateF32(new com.qxotic.jinfer.PanamaMemoryArena(arena), channels);
+                    Views.allocateF32(MemoryAllocators.ofArena(arena), channels);
             MemoryView<MemorySegment> history =
-                    Views.allocateF32(
-                            new com.qxotic.jinfer.PanamaMemoryArena(arena), kernel - 1, channels);
+                    Views.allocateF32(MemoryAllocators.ofArena(arena), kernel - 1, channels);
             MemoryView<MemorySegment> output =
-                    Views.allocateF32(
-                            new com.qxotic.jinfer.PanamaMemoryArena(arena), rows, channels);
+                    Views.allocateF32(MemoryAllocators.ofArena(arena), rows, channels);
             Views.copyFromArray(input, 0, new float[] {1, 2, 3, 4, 5, 6}, 0, 6, "input");
             Views.copyFromArray(taps, 0, new float[] {.1f, .2f, .3f, -.2f, .4f, .1f}, 0, 6, "taps");
             Views.copyFromArray(bias, 0, new float[] {.5f, -.25f}, 0, 2, "bias");

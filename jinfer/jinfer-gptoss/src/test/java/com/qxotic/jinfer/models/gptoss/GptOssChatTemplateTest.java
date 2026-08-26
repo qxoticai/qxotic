@@ -4,13 +4,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.ReplyLanguage;
 import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Tool;
+import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.StandardTokenType;
@@ -249,7 +249,7 @@ class GptOssChatTemplateTest {
 
     private static MemoryView<MemorySegment> zeros() {
         return Views.fromFloatArray(
-                new PanamaMemoryArena(Arena.ofAuto()), new float[TOKENIZER.vocabulary().size()]);
+                MemoryAllocators.ofArena(Arena.ofAuto()), new float[TOKENIZER.vocabulary().size()]);
     }
 
     private static float logit(MemoryView<MemorySegment> logits, char character) {

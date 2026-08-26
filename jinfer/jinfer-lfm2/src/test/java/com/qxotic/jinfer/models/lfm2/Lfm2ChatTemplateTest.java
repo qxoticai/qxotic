@@ -11,7 +11,6 @@ import com.qxotic.format.gguf.Builder;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.ContentKey;
-import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.chat.Channel;
 import com.qxotic.jinfer.chat.ChatTemplate;
@@ -27,10 +26,13 @@ import com.qxotic.jinfer.kernels.ModelLoader;
 import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.testkit.TestModels;
+import com.qxotic.jota.memory.MemoryAllocators;
+import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
 import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -301,7 +303,7 @@ final class Lfm2ChatTemplateTest {
         ContentKey key = new ContentKey("image:test");
         Media.Image image = new Media.Image(new float[2000 * 1000 * 3], 1000, 2000, 3);
         try (Arena arena = Arena.ofShared()) {
-            Lfm2Vision vision = tinyVision(new PanamaMemoryArena(arena));
+            Lfm2Vision vision = tinyVision(MemoryAllocators.ofArena(arena));
             Lfm2ChatTemplate template = new Lfm2ChatTemplate(current, vision, false);
             MediaEncodingCache mediaCache = new MediaEncodingCache();
             IntSequence.Builder tokens = IntSequence.newBuilder();
@@ -388,7 +390,7 @@ final class Lfm2ChatTemplateTest {
         return new Tool("get_weather", definition);
     }
 
-    private static Lfm2Vision tinyVision(PanamaMemoryArena arena) {
+    private static Lfm2Vision tinyVision(MemoryArena<MemorySegment> arena) {
         int patchVector = 3 * 16 * 16;
         return new Lfm2Vision(
                 16,
@@ -415,7 +417,7 @@ final class Lfm2ChatTemplateTest {
     }
 
     private static com.qxotic.jota.memory.MemoryView<java.lang.foreign.MemorySegment> one(
-            PanamaMemoryArena arena) {
+            MemoryArena<MemorySegment> arena) {
         var value = Views.allocateF32(arena, 1);
         Views.copyFromArray(value, 0, new float[] {1}, 0, 1, "test weight");
         return value;

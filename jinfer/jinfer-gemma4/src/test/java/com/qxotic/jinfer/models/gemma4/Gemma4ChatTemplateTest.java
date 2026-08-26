@@ -8,7 +8,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.ContentKey;
-import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.chat.Channel;
 import com.qxotic.jinfer.chat.ChatTemplate;
@@ -23,6 +22,7 @@ import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.media.MediaProjector;
 import com.qxotic.jinfer.media.Multimodal;
 import com.qxotic.jinfer.testkit.TestModels;
+import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
@@ -278,7 +278,8 @@ final class Gemma4ChatTemplateTest {
                                 int maxChunkSize,
                                 java.util.function.Consumer<MemoryView<?>> sink) {
                             projections.incrementAndGet();
-                            sink.accept(Views.allocateF32(new PanamaMemoryArena(arena), rows, 3));
+                            sink.accept(
+                                    Views.allocateF32(MemoryAllocators.ofArena(arena), rows, 3));
                         }
                     };
             return Optional.of(projector);

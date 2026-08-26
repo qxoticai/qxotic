@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryArena;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -69,16 +70,16 @@ class ModelArenaMatrixTest {
     @Test
     void ownedFactoryFreesItsPrivateArena() {
         RuntimeStateLifecycleTest.ProbeState state = model.newState(8, 8);
-        Arena arena = state.jdkArena();
+        MemoryArena<MemorySegment> arena = state.memoryArena();
         state.close();
-        assertFalse(arena.scope().isAlive());
+        assertFalse(arena.isAlive());
     }
 
     @Test
     void borrowedFactoryNeverClosesTheCallersArena() {
         try (Arena arena = Arena.ofShared()) {
             RuntimeStateLifecycleTest.ProbeState state =
-                    model.newState(8, 8, new PanamaMemoryArena(arena));
+                    model.newState(8, 8, MemoryAllocators.ofArena(arena));
             state.close();
             assertTrue(arena.scope().isAlive());
         }

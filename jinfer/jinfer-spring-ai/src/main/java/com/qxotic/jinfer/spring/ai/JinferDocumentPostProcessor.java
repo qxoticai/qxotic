@@ -2,11 +2,11 @@ package com.qxotic.jinfer.spring.ai;
 
 import com.qxotic.jinfer.Arenas;
 import com.qxotic.jinfer.ContextState;
-import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.jinfer.chat.LoadedReranker;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.hub.ModelStore;
+import com.qxotic.jota.memory.MemoryAllocators;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.Arena;
@@ -109,7 +109,7 @@ public final class JinferDocumentPostProcessor implements DocumentPostProcessor,
 
     private static <S extends ContextState> S newState(
             LoadedReranker<S> l, int contextCapacity, Arena arena) {
-        return l.model().newState(contextCapacity, new PanamaMemoryArena(arena));
+        return l.model().newState(contextCapacity, MemoryAllocators.ofArena(arena));
     }
 
     /**

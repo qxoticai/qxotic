@@ -6,9 +6,10 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.qxotic.format.gguf.Builder;
 import com.qxotic.format.gguf.GGUF;
-import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.media.Media;
+import com.qxotic.jota.memory.MemoryAllocators;
+import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -31,7 +32,8 @@ class Gemma4AudioTest {
     @Test
     void streamsCausalRowsAndPositionsMatchesEveryEdgeCase() {
         try (Arena weightsArena = Arena.ofConfined()) {
-            MemoryView<MemorySegment> projection = projection(new PanamaMemoryArena(weightsArena));
+            MemoryView<MemorySegment> projection =
+                    projection(MemoryAllocators.ofArena(weightsArena));
             Gemma4Audio audio = new Gemma4Audio(2, 1e-6f, projection);
             float[] pcm = new float[FRAME_SIZE + 1];
             for (int i = 0; i < FRAME_SIZE; i++) pcm[i] = 1;
@@ -60,7 +62,7 @@ class Gemma4AudioTest {
                         .putInteger("clip.audio.projection_dim", 2)
                         .build();
         try (Arena arena = Arena.ofConfined()) {
-            PanamaMemoryArena memory = new PanamaMemoryArena(arena);
+            MemoryArena<MemorySegment> memory = MemoryAllocators.ofArena(arena);
             MemoryView<MemorySegment> valid = projection(memory);
             Gemma4Audio.loadModel(
                     Path.of("synthetic.gguf"), gguf, Map.of("mm.a.input_projection.weight", valid));
@@ -118,7 +120,7 @@ class Gemma4AudioTest {
         return output;
     }
 
-    private static MemoryView<MemorySegment> projection(PanamaMemoryArena arena) {
+    private static MemoryView<MemorySegment> projection(MemoryArena<MemorySegment> arena) {
         MemoryView<MemorySegment> value = Views.allocateF32(arena, 2, FRAME_SIZE);
         float[] values = new float[2 * FRAME_SIZE];
         values[0] = 1;

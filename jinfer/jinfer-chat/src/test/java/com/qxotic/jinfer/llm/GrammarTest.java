@@ -4,8 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.Views;
+import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -31,7 +31,7 @@ final class GrammarTest {
         Grammar.Cursor cursor = Grammar.of("root ::= \"(\" root \")\" | \"x\"", VOCAB).cursor();
         try (Arena arena = Arena.ofConfined()) {
             MemoryView<MemorySegment> logits =
-                    Views.allocateF32(new PanamaMemoryArena(arena), VOCAB.size());
+                    Views.allocateF32(MemoryAllocators.ofArena(arena), VOCAB.size());
 
             assertMask(cursor, logits, true, false, true, false);
             cursor.advanceWith(0);
@@ -48,7 +48,8 @@ final class GrammarTest {
     void undersizedLogitsFailBeforeWriting() {
         Grammar.Cursor cursor = Grammar.of("root ::= \"x\"", VOCAB).cursor();
         try (Arena arena = Arena.ofConfined()) {
-            MemoryView<MemorySegment> logits = Views.allocateF32(new PanamaMemoryArena(arena), 2);
+            MemoryView<MemorySegment> logits =
+                    Views.allocateF32(MemoryAllocators.ofArena(arena), 2);
             IllegalArgumentException error =
                     org.junit.jupiter.api.Assertions.assertThrows(
                             IllegalArgumentException.class, () -> cursor.maskLogits(logits));

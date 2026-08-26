@@ -7,9 +7,10 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.qxotic.format.gguf.Builder;
 import com.qxotic.format.gguf.GGUF;
-import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.media.Media;
+import com.qxotic.jota.memory.MemoryAllocators;
+import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -45,7 +46,7 @@ class Gemma4ConformerTest {
     @Test
     void computesWholeMelTowerThenStreamsFinalRows() {
         try (Arena weightsArena = Arena.ofConfined()) {
-            PanamaMemoryArena weights = new PanamaMemoryArena(weightsArena);
+            MemoryArena<MemorySegment> weights = MemoryAllocators.ofArena(weightsArena);
             Gemma4Conformer conformer = synthetic(weights);
             Media.Audio audio = new Media.Audio(new float[1_000], 16_000, 1);
             List<float[]> output = new ArrayList<>();
@@ -77,7 +78,7 @@ class Gemma4ConformerTest {
     void parsedLoaderRequiresGemma4aAndChecksEveryTensorShape() {
         GGUF gguf = metadata("gemma4a");
         try (Arena arena = Arena.ofConfined()) {
-            PanamaMemoryArena memory = new PanamaMemoryArena(arena);
+            MemoryArena<MemorySegment> memory = MemoryAllocators.ofArena(arena);
             Map<String, MemoryView<MemorySegment>> tensors = tensors(memory);
             Gemma4Conformer.loadModel(Path.of("synthetic.gguf"), gguf, tensors, arena);
 
@@ -102,7 +103,7 @@ class Gemma4ConformerTest {
                 () -> Gemma4Conformer.loadModel(metadata("gemma4ua"), Map.of(), Arena.ofAuto()));
     }
 
-    private static Gemma4Conformer synthetic(PanamaMemoryArena memory) {
+    private static Gemma4Conformer synthetic(MemoryArena<MemorySegment> memory) {
         return new Gemma4Conformer(
                 DIM,
                 1,
@@ -133,7 +134,8 @@ class Gemma4ConformerTest {
                 .build();
     }
 
-    private static Map<String, MemoryView<MemorySegment>> tensors(PanamaMemoryArena memory) {
+    private static Map<String, MemoryView<MemorySegment>> tensors(
+            MemoryArena<MemorySegment> memory) {
         Map<String, MemoryView<MemorySegment>> tensors = new HashMap<>();
         tensors.put("a.conv1d.0.weight", filled(memory, new long[] {128, 1, 3, 3}, 0f));
         tensors.put("a.conv1d.0.norm.weight", filled(memory, new long[] {128}, 1f));
@@ -152,7 +154,7 @@ class Gemma4ConformerTest {
     }
 
     private static MemoryView<MemorySegment> identity(
-            PanamaMemoryArena memory, int rows, int columns) {
+            MemoryArena<MemorySegment> memory, int rows, int columns) {
         MemoryView<MemorySegment> value = Views.allocateF32(memory, rows, columns);
         float[] values = new float[rows * columns];
         for (int i = 0; i < Math.min(rows, columns); i++) values[i * columns + i] = 1f;
@@ -161,7 +163,7 @@ class Gemma4ConformerTest {
     }
 
     private static MemoryView<MemorySegment> filled(
-            PanamaMemoryArena memory, long[] shape, float fill) {
+            MemoryArena<MemorySegment> memory, long[] shape, float fill) {
         MemoryView<MemorySegment> value = Views.allocateF32(memory, shape);
         float[] values = new float[Math.toIntExact(value.shape().size())];
         Arrays.fill(values, fill);
@@ -170,7 +172,7 @@ class Gemma4ConformerTest {
     }
 
     private static MemoryView<MemorySegment> tensor(
-            PanamaMemoryArena memory, long[] shape, float... values) {
+            MemoryArena<MemorySegment> memory, long[] shape, float... values) {
         MemoryView<MemorySegment> value = Views.allocateF32(memory, shape);
         assertEquals(value.shape().size(), values.length);
         Views.copyFromArray(value, 0, values, 0, values.length, "test tensor");

@@ -1,7 +1,7 @@
 package com.qxotic.jinfer.llm;
 
-import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.Views;
+import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -11,11 +11,11 @@ final class TestLogits {
     private TestLogits() {}
 
     static MemoryView<MemorySegment> view(long size) {
-        return Views.allocateF32(new PanamaMemoryArena(Arena.ofAuto()), size);
+        return Views.allocateF32(MemoryAllocators.ofArena(Arena.ofAuto()), size);
     }
 
     static MemoryView<MemorySegment> view(float... values) {
-        return Views.fromFloatArray(new PanamaMemoryArena(Arena.ofAuto()), values);
+        return Views.fromFloatArray(MemoryAllocators.ofArena(Arena.ofAuto()), values);
     }
 
     static long size(MemoryView<?> view) {

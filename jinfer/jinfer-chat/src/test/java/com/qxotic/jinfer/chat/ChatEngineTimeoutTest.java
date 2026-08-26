@@ -9,11 +9,11 @@ import com.qxotic.jinfer.ContentKey;
 import com.qxotic.jinfer.ContextConfiguration;
 import com.qxotic.jinfer.ContextState;
 import com.qxotic.jinfer.LanguageModel;
-import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.Sampler;
 import com.qxotic.jinfer.llm.SpeculativeDecoding;
+import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.toknroll.IntSequence;
@@ -266,7 +266,7 @@ final class ChatEngineTimeoutTest {
         @Override
         public ProbeState newState(int contextCapacity, int batchCapacity) {
             return new ProbeState(
-                    contextCapacity, batchCapacity, new PanamaMemoryArena(Arena.ofAuto()));
+                    contextCapacity, batchCapacity, MemoryAllocators.ofArena(Arena.ofAuto()));
         }
 
         @Override

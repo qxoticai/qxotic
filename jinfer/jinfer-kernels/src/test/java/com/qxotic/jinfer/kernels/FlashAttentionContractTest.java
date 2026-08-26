@@ -2,8 +2,9 @@ package com.qxotic.jinfer.kernels;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.Views;
+import com.qxotic.jota.memory.MemoryAllocators;
+import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -19,7 +20,7 @@ class FlashAttentionContractTest {
     private static final int KV_DIM = (HEADS / KV_MUL) * HEAD_SIZE;
     private static final int QUERY_DIM = HEADS * HEAD_SIZE;
 
-    private final PanamaMemoryArena memory = new PanamaMemoryArena(Arena.ofAuto());
+    private final MemoryArena<MemorySegment> memory = MemoryAllocators.ofArena(Arena.ofAuto());
 
     @Test
     void chunkedPrefillMatchesSingleShotAtDepth() {

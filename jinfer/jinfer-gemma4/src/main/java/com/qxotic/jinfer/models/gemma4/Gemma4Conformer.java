@@ -2,7 +2,6 @@ package com.qxotic.jinfer.models.gemma4;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.Arenas;
-import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.Parallel;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.kernels.Activations;
@@ -16,6 +15,7 @@ import com.qxotic.jinfer.kernels.Ops;
 import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.media.MediaProjector;
 import com.qxotic.jota.Shape;
+import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import java.io.IOException;
@@ -428,7 +428,7 @@ public final class Gemma4Conformer implements MediaProjector<Media.Audio> {
         if (blockCount < 0) throw new IllegalArgumentException("block_count must not be negative");
         validateArchitecture(label, dim, heads, nMel);
 
-        PanamaMemoryArena persistent = new PanamaMemoryArena(arena);
+        MemoryArena<MemorySegment> persistent = MemoryAllocators.ofArena(arena);
         MemoryView<MemorySegment> positions =
                 Views.fromFloatArray(persistent, buildPositionEmbedding(dim))
                         .view(Shape.flat(RPE, dim));
@@ -560,7 +560,7 @@ public final class Gemma4Conformer implements MediaProjector<Media.Audio> {
     private static float[] taps(
             Map<String, MemoryView<MemorySegment>> tensors,
             String name,
-            PanamaMemoryArena arena,
+            MemoryArena<MemorySegment> arena,
             long... dimensions) {
         Shape shape = Shape.flat(dimensions);
         int count = Math.toIntExact(shape.size());

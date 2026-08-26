@@ -5,8 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.ContentKey;
-import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.Views;
+import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -23,7 +23,7 @@ import org.junit.jupiter.api.Test;
 final class MediaFingerprintTest {
 
     private static Batch embeddings(Arena arena, ContentKey key, float seed) {
-        MemoryView<MemorySegment> rows = Views.allocateF32(new PanamaMemoryArena(arena), 2, 4);
+        MemoryView<MemorySegment> rows = Views.allocateF32(MemoryAllocators.ofArena(arena), 2, 4);
         float[] values = new float[8];
         for (int i = 0; i < values.length; i++) values[i] = seed + i;
         Views.copyFromArray(rows, 0, values, 0, values.length, "rows");

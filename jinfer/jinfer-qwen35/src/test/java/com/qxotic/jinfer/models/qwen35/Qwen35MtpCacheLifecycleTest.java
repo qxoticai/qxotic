@@ -7,7 +7,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.ContentKey;
-import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.ChatEngine;
@@ -16,6 +15,7 @@ import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.Sampler;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryAllocator;
+import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
@@ -328,7 +328,7 @@ final class Qwen35MtpCacheLifecycleTest {
     private static Qwen35 tinyModel(Arena arena, boolean mtp) {
         Qwen35.Configuration c =
                 mtp ? Qwen35MtpLoadTest.config(false) : Qwen35MtpLoadTest.withoutMtp();
-        MemoryAllocator<MemorySegment> memory = new PanamaMemoryArena(arena);
+        MemoryAllocator<MemorySegment> memory = MemoryAllocators.ofArena(arena);
         Map<String, MemoryView<MemorySegment>> t = new HashMap<>();
         float[] embedding = new float[c.vocabularySize() * c.embeddingLength()];
         for (int i = 0; i < embedding.length; i++)

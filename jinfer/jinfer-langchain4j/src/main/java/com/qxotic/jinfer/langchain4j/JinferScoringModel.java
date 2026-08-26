@@ -2,11 +2,11 @@ package com.qxotic.jinfer.langchain4j;
 
 import com.qxotic.jinfer.Arenas;
 import com.qxotic.jinfer.ContextState;
-import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.jinfer.chat.LoadedReranker;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.hub.ModelStore;
+import com.qxotic.jota.memory.MemoryAllocators;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.output.Response;
 import dev.langchain4j.model.output.TokenUsage;
@@ -94,7 +94,7 @@ public final class JinferScoringModel implements ScoringModel, AutoCloseable {
 
     private static <S extends ContextState> S newState(
             LoadedReranker<S> l, int contextCapacity, Arena arena) {
-        return l.model().newState(contextCapacity, new PanamaMemoryArena(arena));
+        return l.model().newState(contextCapacity, MemoryAllocators.ofArena(arena));
     }
 
     /**

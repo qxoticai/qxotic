@@ -5,7 +5,6 @@ import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.ContextState;
 import com.qxotic.jinfer.LanguageModel;
 import com.qxotic.jinfer.LeakWatch;
-import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.llm.Generator;
@@ -18,6 +17,8 @@ import com.qxotic.jinfer.telemetry.InferenceEvent;
 import com.qxotic.jinfer.telemetry.MediaCacheSample;
 import com.qxotic.jinfer.telemetry.Telemetry;
 import com.qxotic.jota.DataType;
+import com.qxotic.jota.memory.MemoryAllocators;
+import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.toknroll.IntSequence;
 import java.io.IOException;
@@ -609,7 +610,7 @@ public final class ChatEngine implements AutoCloseable {
         Conversation conversation =
                 new Conversation(request.messages(), request.tools(), think, "");
         Encoded encoded =
-                encode(conversation, request.templateKwargs(), new PanamaMemoryArena(memory));
+                encode(conversation, request.templateKwargs(), MemoryAllocators.ofArena(memory));
         Sampler sampler =
                 sampler(
                         request.sampling(),
@@ -773,7 +774,7 @@ public final class ChatEngine implements AutoCloseable {
      * prompt batches are ingested after {@code ChatTemplate#encode} returns. Non-media batches pass
      * through.
      */
-    private static Batch own(Batch batch, PanamaMemoryArena arena) {
+    private static Batch own(Batch batch, MemoryArena<MemorySegment> arena) {
         if (!(batch.input() instanceof Batch.Input.Embeddings e)) return batch;
         MemoryView<MemorySegment> rows = Views.castToSegmentBacked(e.rows(), "embedding rows");
         Views.requireDense(rows, DataType.FP32, "embedding rows");
@@ -798,7 +799,7 @@ public final class ChatEngine implements AutoCloseable {
         lock.lock();
         try {
             checkOpen();
-            return encode(conversation, templateKwargs, new PanamaMemoryArena(Arena.ofAuto()));
+            return encode(conversation, templateKwargs, MemoryAllocators.ofArena(Arena.ofAuto()));
         } finally {
             lock.unlock();
         }
@@ -807,7 +808,7 @@ public final class ChatEngine implements AutoCloseable {
     private Encoded encode(
             Conversation conversation,
             Map<String, Object> templateKwargs,
-            PanamaMemoryArena mediaRows) {
+            MemoryArena<MemorySegment> mediaRows) {
         Optional<ChatTemplate> template = loaded.template();
         UnsupportedConversation punted = null;
         // kwargs the codec has no equivalent for force the whole-render - taking the native path
@@ -1318,13 +1319,13 @@ public final class ChatEngine implements AutoCloseable {
         lock.lock();
         try {
             checkOpen();
-            return encodeNative(conversation, new PanamaMemoryArena(Arena.ofAuto()));
+            return encodeNative(conversation, MemoryAllocators.ofArena(Arena.ofAuto()));
         } finally {
             lock.unlock();
         }
     }
 
-    private Encoded encodeNative(Conversation conversation, PanamaMemoryArena mediaRows) {
+    private Encoded encodeNative(Conversation conversation, MemoryArena<MemorySegment> mediaRows) {
         ChatTemplate template =
                 loaded.template()
                         .orElseThrow(
@@ -1356,7 +1357,7 @@ public final class ChatEngine implements AutoCloseable {
         lock.lock();
         try {
             checkOpen();
-            cache.define(encodeNative(prefix, new PanamaMemoryArena(memory)).prompt());
+            cache.define(encodeNative(prefix, MemoryAllocators.ofArena(memory)).prompt());
             cacheSnapshot = cache.sample(); // a define changes blocks/bytes like a pass does
         } finally {
             lock.unlock();

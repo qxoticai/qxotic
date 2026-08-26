@@ -6,13 +6,14 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.kernels.Convert;
 import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.testkit.MediaProjectorContract;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Shape;
+import com.qxotic.jota.memory.MemoryAllocators;
+import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -102,7 +103,7 @@ class Qwen35VisionComponentsTest {
 
         List<MemoryView<MemorySegment>> borrowed = new ArrayList<>();
         try (Arena arena = Arena.ofConfined()) {
-            PanamaMemoryArena memory = new PanamaMemoryArena(arena);
+            MemoryArena<MemorySegment> memory = MemoryAllocators.ofArena(arena);
             Qwen35Vision tower =
                     tinyTower(
                             memory,
@@ -149,7 +150,7 @@ class Qwen35VisionComponentsTest {
         int visionDim = 8, patchVector = 3, modelDim = 4;
         int projectorDim = 16, projectorInput = 32;
         try (Arena arena = Arena.ofConfined()) {
-            PanamaMemoryArena memory = new PanamaMemoryArena(arena);
+            MemoryArena<MemorySegment> memory = MemoryAllocators.ofArena(arena);
             float[] kernel = new float[visionDim * patchVector];
             for (int c = 0; c < visionDim; c++) kernel[c * patchVector + c % 3] = 1f;
             MemoryView<MemorySegment> patchF32 =
@@ -212,7 +213,7 @@ class Qwen35VisionComponentsTest {
     }
 
     private static Qwen35Vision tinyTower(
-            PanamaMemoryArena memory,
+            MemoryArena<MemorySegment> memory,
             MemoryView<MemorySegment> patch0,
             MemoryView<MemorySegment> patch1,
             MemoryView<MemorySegment> mm0Weight,
@@ -255,22 +256,23 @@ class Qwen35VisionComponentsTest {
                 new Qwen35Vision.Layer[] {layer});
     }
 
-    private static MemoryView<MemorySegment> ones(PanamaMemoryArena arena, long d0) {
+    private static MemoryView<MemorySegment> ones(MemoryArena<MemorySegment> arena, long d0) {
         float[] values = new float[Math.toIntExact(d0)];
         java.util.Arrays.fill(values, 1f);
         return tensor(arena, new long[] {d0}, values);
     }
 
-    private static MemoryView<MemorySegment> zeros(PanamaMemoryArena arena, long d0) {
+    private static MemoryView<MemorySegment> zeros(MemoryArena<MemorySegment> arena, long d0) {
         return tensor(arena, new long[] {d0}, new float[Math.toIntExact(d0)]);
     }
 
-    private static MemoryView<MemorySegment> zeros(PanamaMemoryArena arena, long d0, long d1) {
+    private static MemoryView<MemorySegment> zeros(
+            MemoryArena<MemorySegment> arena, long d0, long d1) {
         return tensor(arena, new long[] {d0, d1}, new float[Math.toIntExact(d0 * d1)]);
     }
 
     private static MemoryView<MemorySegment> tensor(
-            PanamaMemoryArena arena, long[] shape, float[] values) {
+            MemoryArena<MemorySegment> arena, long[] shape, float[] values) {
         MemoryView<MemorySegment> view = Views.allocateF32(arena, shape);
         assertEquals(view.shape().size(), values.length);
         Views.copyFromArray(view, 0, values, 0, values.length, "test tensor");

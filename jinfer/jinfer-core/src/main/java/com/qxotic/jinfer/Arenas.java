@@ -1,5 +1,6 @@
 package com.qxotic.jinfer;
 
+import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryArena;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -44,7 +45,7 @@ public final class Arenas {
      * instead - this factory is only the built-in default.
      */
     public static MemoryArena<MemorySegment> newCrossThreadMemoryArena() {
-        return new PanamaMemoryArena(newCrossThread());
+        return MemoryAllocators.ofArena(newCrossThread());
     }
 
     /** Closes a runtime-selected arena when its implementation supports eager release. */

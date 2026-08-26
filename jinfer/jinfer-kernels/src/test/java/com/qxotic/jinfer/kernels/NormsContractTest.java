@@ -4,10 +4,10 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Shape;
+import com.qxotic.jota.memory.MemoryAllocators;
 import java.lang.foreign.Arena;
 import org.junit.jupiter.api.Test;
 
@@ -17,7 +17,7 @@ class NormsContractTest {
     @Test
     void rmsNormMatchesItsDefinitionAcrossTheVectorTail() {
         try (Arena arena = Arena.ofConfined()) {
-            var memory = new PanamaMemoryArena(arena);
+            var memory = MemoryAllocators.ofArena(arena);
             float[] values = new float[35];
             float[] weights = new float[33];
             for (int i = 0; i < values.length; i++) values[i] = (i % 9) - 4.25f;
@@ -41,7 +41,7 @@ class NormsContractTest {
     @Test
     void layerNormMatchesItsDefinitionPerRow() {
         try (Arena arena = Arena.ofConfined()) {
-            var memory = new PanamaMemoryArena(arena);
+            var memory = MemoryAllocators.ofArena(arena);
             float[] values = {1, 2, 5, 8, -2, 0, 4, 6};
             float[] gamma = {1, 0.5f, 2, -1};
             float[] beta = {0, 1, -2, 3};
@@ -79,7 +79,7 @@ class NormsContractTest {
     @Test
     void rejectsWrongDatatype() {
         try (Arena arena = Arena.ofConfined()) {
-            var memory = new PanamaMemoryArena(arena);
+            var memory = MemoryAllocators.ofArena(arena);
             var f32 = Views.allocateF32(memory, 4);
             var f16 = Views.wrap(arena.allocate(8), DataType.FP16, Shape.flat(4));
             assertThrows(

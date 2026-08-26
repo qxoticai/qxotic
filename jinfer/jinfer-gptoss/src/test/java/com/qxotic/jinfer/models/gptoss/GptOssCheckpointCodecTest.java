@@ -3,7 +3,7 @@ package com.qxotic.jinfer.models.gptoss;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import com.qxotic.jinfer.PanamaMemoryArena;
+import com.qxotic.jota.memory.MemoryAllocators;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -25,7 +25,7 @@ final class GptOssCheckpointCodecTest {
             MemorySegment actual = arena.allocate(codec.byteSize(4), 64);
             MemorySegment expected = arena.allocate(codec.byteSize(4), 64);
             GptOss.State state =
-                    new GptOss.State(config, 8, 4, new PanamaMemoryArena(arena), false);
+                    new GptOss.State(config, 8, 4, MemoryAllocators.ofArena(arena), false);
 
             // spans stay within W=4, so no ring slot aliases: every row lands on its own slot
             codec.restore(state, 0, 2, first);
@@ -51,7 +51,7 @@ final class GptOssCheckpointCodecTest {
         GptOssCheckpointCodec codec = new GptOssCheckpointCodec(config());
         try (Arena arena = Arena.ofConfined()) {
             GptOss.State state =
-                    new GptOss.State(config(), 8, 4, new PanamaMemoryArena(arena), false);
+                    new GptOss.State(config(), 8, 4, MemoryAllocators.ofArena(arena), false);
             MemorySegment block = arena.allocate(codec.byteSize(2), 64);
             assertThrows(IllegalArgumentException.class, () -> codec.restore(state, -1, 1, block));
             assertThrows(IllegalArgumentException.class, () -> codec.restore(state, 0, 9, block));

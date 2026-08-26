@@ -3,7 +3,7 @@ package com.qxotic.jinfer.cache;
 import com.qxotic.jinfer.CheckpointCodec;
 import com.qxotic.jinfer.ContentKey;
 import com.qxotic.jinfer.ContextState;
-import com.qxotic.jinfer.PanamaMemoryArena;
+import com.qxotic.jota.memory.MemoryAllocators;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import org.junit.jupiter.api.Test;
@@ -18,7 +18,7 @@ public final class BlockTreeEvictionTest {
     static final class FakeState extends ContextState {
 
         FakeState() {
-            super(1 << 20, 512, new PanamaMemoryArena(Arena.ofAuto()), false);
+            super(1 << 20, 512, MemoryAllocators.ofArena(Arena.ofAuto()), false);
         }
 
         @Override

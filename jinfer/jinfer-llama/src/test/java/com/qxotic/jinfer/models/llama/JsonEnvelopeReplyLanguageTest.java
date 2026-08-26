@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.format.gguf.GGUF;
-import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.Content;
@@ -13,6 +12,7 @@ import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.kernels.ModelLoader;
 import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.jinfer.testkit.TestModels;
+import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
@@ -132,7 +132,7 @@ class JsonEnvelopeReplyLanguageTest {
 
     private static MemoryView<MemorySegment> zeros(Tokenizer tokenizer) {
         return Views.fromFloatArray(
-                new PanamaMemoryArena(Arena.ofAuto()), new float[tokenizer.vocabulary().size()]);
+                MemoryAllocators.ofArena(Arena.ofAuto()), new float[tokenizer.vocabulary().size()]);
     }
 
     private static void assertCall(ReplyLanguage.Walk walk) {

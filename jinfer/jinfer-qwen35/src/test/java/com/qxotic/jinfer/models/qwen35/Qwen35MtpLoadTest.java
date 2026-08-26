@@ -6,9 +6,10 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.testkit.TestModels;
+import com.qxotic.jota.memory.MemoryAllocators;
+import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -87,7 +88,7 @@ final class Qwen35MtpLoadTest {
 
     private static Map<String, MemoryView<MemorySegment>> tensors(
             Qwen35.Configuration config, Arena arena) {
-        PanamaMemoryArena memory = new PanamaMemoryArena(arena);
+        MemoryArena<MemorySegment> memory = MemoryAllocators.ofArena(arena);
         // One placeholder view shared by every tensor whose shape is never inspected during load;
         // the expert stacks are the only tensors that must carry a real 3D shape.
         MemoryView<MemorySegment> view = Views.allocateF32(memory, 2L * config.embeddingLength());
@@ -160,7 +161,7 @@ final class Qwen35MtpLoadTest {
     }
 
     private static MemoryView<MemorySegment> expertStack(
-            PanamaMemoryArena memory, int experts, int rows, int cols) {
+            MemoryArena<MemorySegment> memory, int experts, int rows, int cols) {
         return Views.allocateF32(memory, experts, rows, cols);
     }
 

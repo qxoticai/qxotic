@@ -2,10 +2,10 @@ package com.qxotic.jinfer.langchain4j;
 
 import com.qxotic.jinfer.Arenas;
 import com.qxotic.jinfer.ContextState;
-import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.chat.LoadedEmbedder;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.hub.ModelStore;
+import com.qxotic.jota.memory.MemoryAllocators;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.model.TokenCountEstimator;
 import dev.langchain4j.model.embedding.EmbeddingModel;
@@ -80,7 +80,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
     }
 
     private static <S extends ContextState> S newState(LoadedEmbedder<S> l, int ctx, Arena arena) {
-        return l.model().newState(ctx, new PanamaMemoryArena(arena));
+        return l.model().newState(ctx, MemoryAllocators.ofArena(arena));
     }
 
     /**

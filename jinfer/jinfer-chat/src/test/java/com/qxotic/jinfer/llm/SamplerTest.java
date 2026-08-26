@@ -4,8 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.Views;
+import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -39,6 +39,6 @@ final class SamplerTest {
     }
 
     private static MemoryView<MemorySegment> logits(Arena arena, float... values) {
-        return Views.fromFloatArray(new PanamaMemoryArena(arena), values);
+        return Views.fromFloatArray(MemoryAllocators.ofArena(arena), values);
     }
 }

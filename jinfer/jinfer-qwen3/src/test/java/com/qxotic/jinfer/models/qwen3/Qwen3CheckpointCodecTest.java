@@ -3,7 +3,7 @@ package com.qxotic.jinfer.models.qwen3;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import com.qxotic.jinfer.PanamaMemoryArena;
+import com.qxotic.jota.memory.MemoryAllocators;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import org.junit.jupiter.api.Test;
@@ -23,7 +23,8 @@ final class Qwen3CheckpointCodecTest {
             MemorySegment second = patterned(arena, codec.byteSize(3), 71);
             MemorySegment actual = arena.allocate(codec.byteSize(5), 64);
             MemorySegment expected = arena.allocate(codec.byteSize(5), 64);
-            Qwen3.State state = new Qwen3.State(config, 8, 4, new PanamaMemoryArena(arena), false);
+            Qwen3.State state =
+                    new Qwen3.State(config, 8, 4, MemoryAllocators.ofArena(arena), false);
 
             codec.restore(state, 0, 2, first);
             codec.restore(state, 2, 5, second);
@@ -44,7 +45,7 @@ final class Qwen3CheckpointCodecTest {
         Qwen3CheckpointCodec codec = new Qwen3CheckpointCodec(config());
         try (Arena arena = Arena.ofConfined()) {
             Qwen3.State state =
-                    new Qwen3.State(config(), 8, 4, new PanamaMemoryArena(arena), false);
+                    new Qwen3.State(config(), 8, 4, MemoryAllocators.ofArena(arena), false);
             MemorySegment block = arena.allocate(codec.byteSize(2), 64);
             assertThrows(IllegalArgumentException.class, () -> codec.restore(state, -1, 1, block));
             assertThrows(IllegalArgumentException.class, () -> codec.restore(state, 0, 9, block));
